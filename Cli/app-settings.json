@@ -1,0 +1,4 @@
+﻿{
+  "openRouterApiUrl": "https://openrouter.ai/api/v1/chat/completions/",
+  "openRouterApiKey": ""
+}
