@@ -27,9 +27,9 @@ public record OpenRouterFunction
 
 public record OpenRouterMessage
 {
-    public string Role { get; init; } = string.Empty;
+    public required string Role { get; init; }
     public string Content { get; init; } = string.Empty;
-
+    public string? ToolCallId { get; init; }
     public OpenRouterToolCall[] ToolCalls { get; init; } = [];
 }
 
@@ -50,7 +50,7 @@ public record OpenRouterResponse
                     {
                         Id = tc.Id,
                         Name = tc.Function.Name,
-                        Parameters = tc.Function.Arguments
+                        Parameters = tc.Function.Arguments is null ? null : JsonNode.Parse(tc.Function.Arguments)
                     }).ToArray()
             }).ToArray();
     }
@@ -85,7 +85,7 @@ public record OpenRouterToolCall
 public record OpenRouterFunctionCall
 {
     public required string Name { get; init; }
-    public JsonNode? Arguments { get; init; }
+    public string? Arguments { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

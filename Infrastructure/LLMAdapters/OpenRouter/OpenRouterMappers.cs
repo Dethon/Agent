@@ -9,9 +9,33 @@ public static class MessageExtensions
 {
     public static OpenRouterMessage ToOpenRouterMessage(this Message message)
     {
+        return message switch
+        {
+            ToolMessage toolMessage => toolMessage.ToOpenRouterMessage(),
+            ToolRequestMessage toolRequestMessage => toolRequestMessage.ToOpenRouterMessage(),
+            _ => new OpenRouterMessage
+            {
+                Role = message.Role.ToOpenRouterRoleString(),
+                Content = message.Content
+            }
+        };
+    }
+
+    private static OpenRouterMessage ToOpenRouterMessage(this ToolMessage message)
+    {
         return new OpenRouterMessage
         {
-            Role = message.Role.ToString().ToLowerInvariant(),
+            Role = message.Role.ToOpenRouterRoleString(),
+            Content = message.Content,
+            ToolCallId = message.ToolCallId
+        };
+    }
+
+    private static OpenRouterMessage ToOpenRouterMessage(this ToolRequestMessage message)
+    {
+        return new OpenRouterMessage
+        {
+            Role = message.Role.ToOpenRouterRoleString(),
             Content = message.Content,
             ToolCalls = message.ToolCalls.Select(tc => new OpenRouterToolCall
             {
@@ -20,9 +44,21 @@ public static class MessageExtensions
                 Function = new OpenRouterFunctionCall
                 {
                     Name = tc.Name,
-                    Arguments = tc.Parameters
+                    Arguments = tc.Parameters?.ToJsonString()
                 }
             }).ToArray()
+        };
+    }
+
+    private static string ToOpenRouterRoleString(this Role role)
+    {
+        return role switch
+        {
+            Role.User => "user",
+            Role.Assistant => "assistant",
+            Role.System => "system",
+            Role.Tool => "tool",
+            _ => throw new ArgumentOutOfRangeException(nameof(role), role, $"Unexpected message role: {role}")
         };
     }
 }

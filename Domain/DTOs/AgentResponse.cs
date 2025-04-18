@@ -1,6 +1,6 @@
 ﻿namespace Domain.DTOs;
 
-public record AgentResponse : Message
+public record AgentResponse : ToolRequestMessage
 {
     public required StopReason StopReason { get; init; }
 };

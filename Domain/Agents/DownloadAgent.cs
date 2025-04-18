@@ -4,12 +4,15 @@ using Domain.Tools;
 
 namespace Domain.Agents;
 
-public class DownloadAgent(ILargeLanguageModel largeLanguageModel) : BaseAgent(largeLanguageModel), IAgent
+public class DownloadAgent(
+    ILargeLanguageModel largeLanguageModel,
+    FileSearchTool fileSearchTool,
+    FileDownloadTool fileDownloadTool) : BaseAgent(largeLanguageModel), IAgent
 {
-    private readonly Dictionary<string, ToolDefinition> _tools = new()
+    private readonly Dictionary<string, ITool> _tools = new()
     {
-        { "FileDownload", new FileDownloadTool().GetToolDefinition() },
-        { "FileSearch", new FileSearchTool().GetToolDefinition() }
+        { fileDownloadTool.Name, fileDownloadTool },
+        { fileSearchTool.Name, fileSearchTool }
     };
 
     public async Task<AgentResponse[]> Run(string userPrompt, CancellationToken cancellationToken = default)

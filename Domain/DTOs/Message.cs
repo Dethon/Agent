@@ -6,6 +6,15 @@ public record Message
 {
     public required Role Role { get; init; }
     public required string Content { get; init; }
+}
+
+public record ToolMessage : Message
+{
+    public required string ToolCallId { get; init; }
+}
+
+public record ToolRequestMessage : Message
+{
     public ToolCall[] ToolCalls { get; init; } = [];
 }
 
