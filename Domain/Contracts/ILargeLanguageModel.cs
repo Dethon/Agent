@@ -1,6 +1,11 @@
-﻿namespace Domain.Contracts;
+﻿using Domain.DTOs;
+
+namespace Domain.Contracts;
 
 public interface ILargeLanguageModel
 {
-    Task<string> Prompt(string prompt, CancellationToken cancellationToken = default);
+    Task<AgentResponse[]> Prompt(
+        IEnumerable<Message> messages,
+        IEnumerable<ToolDefinition> tools,
+        CancellationToken cancellationToken = default);
 }

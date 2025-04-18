@@ -2,13 +2,13 @@
 
 namespace Domain.Agents;
 
-public static class AgentResolver
+public class AgentResolver(ILargeLanguageModel languageModel)
 {
-    public static IAgent Resolve(AgentType agentType)
+    public IAgent Resolve(AgentType agentType)
     {
         return agentType switch
         {
-            AgentType.Download => new DownloadAgent(),
+            AgentType.Download => new DownloadAgent(languageModel),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
     }

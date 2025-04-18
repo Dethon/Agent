@@ -8,7 +8,6 @@ public static class ConfigModule
     public static AgentConfiguration GetSettings(this ConfigurationManager configuration)
     {
         configuration
-            .AddJsonFile("app-settings.json")
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>();
 
@@ -17,6 +16,7 @@ public static class ConfigModule
         {
             throw new InvalidOperationException("Settings not found");
         }
+
         return settings;
     }
 }

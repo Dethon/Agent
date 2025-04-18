@@ -1,6 +1,6 @@
 ﻿namespace Domain.DTOs;
 
-public record AgentResponse
+public record AgentResponse : Message
 {
-    public string Answer { get; init; } = string.Empty;
+    public required StopReason StopReason { get; init; }
 };
