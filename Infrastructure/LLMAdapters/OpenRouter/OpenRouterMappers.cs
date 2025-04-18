@@ -40,7 +40,7 @@ public static class MessageExtensions
             ToolCalls = message.ToolCalls.Select(tc => new OpenRouterToolCall
             {
                 Id = tc.Id,
-                Type = tc.Name,
+                Type = "function",
                 Function = new OpenRouterFunctionCall
                 {
                     Name = tc.Name,

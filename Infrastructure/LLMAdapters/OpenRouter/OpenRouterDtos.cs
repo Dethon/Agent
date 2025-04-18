@@ -30,7 +30,7 @@ public record OpenRouterMessage
     public required string Role { get; init; }
     public string Content { get; init; } = string.Empty;
     public string? ToolCallId { get; init; }
-    public OpenRouterToolCall[] ToolCalls { get; init; } = [];
+    public OpenRouterToolCall[]? ToolCalls { get; init; }
 }
 
 public record OpenRouterResponse
@@ -45,13 +45,13 @@ public record OpenRouterResponse
                 StopReason = GetStopReason(x.FinishReason),
                 Role = Role.Assistant,
                 Content = x.Message.Content,
-                ToolCalls = x.Message.ToolCalls
+                ToolCalls = x.Message.ToolCalls?
                     .Select(tc => new ToolCall
                     {
                         Id = tc.Id,
                         Name = tc.Function.Name,
                         Parameters = tc.Function.Arguments is null ? null : JsonNode.Parse(tc.Function.Arguments)
-                    }).ToArray()
+                    }).ToArray() ?? []
             }).ToArray();
     }
 
