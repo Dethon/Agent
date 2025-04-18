@@ -2,7 +2,6 @@
 using Domain.Agents;
 using Domain.Tools;
 using Infrastructure.ToolAdapters.FileDownloadTools;
-using Infrastructure.ToolAdapters.FileSearchTools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -10,9 +9,9 @@ var builder = Host.CreateApplicationBuilder(args);
 var settings = builder.Configuration.GetSettings();
 builder.Services
     .AddOpenRouterAdapter(settings)
+    .AddJacketTool(settings)
     .AddTransient<AgentResolver>()
-    .AddTransient<FileDownloadTool, QBittorrentDownloadAdapter>()
-    .AddTransient<FileSearchTool, JackettSearchAdapter>();
+    .AddTransient<FileDownloadTool, QBittorrentDownloadAdapter>();
 
 using var host = builder.Build();
 await host.StartAsync();

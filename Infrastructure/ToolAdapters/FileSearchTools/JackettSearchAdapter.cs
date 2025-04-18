@@ -3,7 +3,7 @@ using Domain.Tools;
 
 namespace Infrastructure.ToolAdapters.FileSearchTools;
 
-public class JackettSearchAdapter : FileSearchTool
+public class JackettSearchAdapter(HttpClient client) : FileSearchTool
 {
     protected override async Task<JsonNode> Resolve(FileSearchParams parameters, CancellationToken cancellationToken)
     {
