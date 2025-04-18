@@ -1,12 +1,17 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Polly;
 using Polly.Extensions.Http;
 using Polly.Timeout;
-using Polly;
 
 namespace Infrastructure.Extensions;
+
 public static class HttpClientBuilderExtensions
 {
-    public static IHttpClientBuilder AddRetryWithExponentialWaitPolicy(this IHttpClientBuilder builder, int attempts, TimeSpan waitTime, TimeSpan attemptTimeout)
+    public static IHttpClientBuilder AddRetryWithExponentialWaitPolicy(
+        this IHttpClientBuilder builder,
+        int attempts,
+        TimeSpan waitTime,
+        TimeSpan attemptTimeout)
     {
         var retryPolicy = HttpPolicyExtensions
             .HandleTransientHttpError()

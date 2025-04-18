@@ -20,7 +20,7 @@ await host.StartAsync();
 var agentResolver = host.Services.GetRequiredService<AgentResolver>();
 var agent = agentResolver.Resolve(AgentType.Download);
 var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-var responses = await agent.Run("Download t-rex origami diagrams", lifetime.ApplicationStopping);
+var responses = await agent.Run("Download frozen 2 movie in english", lifetime.ApplicationStopping);
 Console.WriteLine(string.Join('\n', responses.Select(r => r.Content)));
 // Application logic end
 

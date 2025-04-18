@@ -31,11 +31,7 @@ public abstract class FileSearchTool : ITool
         return new ToolDefinition<FileSearchParams>
         {
             Name = Name,
-            Description = "Search for file in the internet using a search string",
-            Parameters = new FileSearchParams
-            {
-                SearchString = string.Empty
-            }
+            Description = "Search for file in the internet using a search string"
         };
     }
 }

@@ -6,7 +6,4 @@ public abstract record ToolDefinition(Type ParamsType)
     public required string Description { get; init; }
 }
 
-public record ToolDefinition<TParams>() : ToolDefinition(typeof(TParams)) where TParams : class
-{
-    public required TParams Parameters { get; init; }
-}
+public record ToolDefinition<TParams>() : ToolDefinition(typeof(TParams)) where TParams : class;

@@ -16,12 +16,12 @@ public static class InjectorModule
         {
             httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
             httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
-            httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
+            httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
             return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
         }).AddRetryWithExponentialWaitPolicy(
             attempts: 3,
             waitTime: TimeSpan.FromSeconds(2),
-            attemptTimeout: TimeSpan.FromSeconds(5));
+            TimeSpan.FromMinutes(1));
 
         return services;
     }
@@ -31,13 +31,12 @@ public static class InjectorModule
         services.AddHttpClient<FileSearchTool, JackettSearchAdapter>((httpClient, _) =>
         {
             httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.Jackett.ApiKey}");
-            httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-            return new JackettSearchAdapter(httpClient);
+            httpClient.Timeout = TimeSpan.FromMinutes(10); // Timeout for all attempts combined.
+            return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey);
         }).AddRetryWithExponentialWaitPolicy(
             3,
             TimeSpan.FromSeconds(2),
-            TimeSpan.FromSeconds(5));
+            TimeSpan.FromMinutes(2));
 
         return services;
     }

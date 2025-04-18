@@ -31,11 +31,7 @@ public abstract class FileDownloadTool : ITool
         return new ToolDefinition<FileDownloadParams>
         {
             Name = Name,
-            Description = "Download a file from the internet using a file source",
-            Parameters = new FileDownloadParams
-            {
-                FileSource = string.Empty
-            }
+            Description = "Download a file from the internet using a file source"
         };
     }
 }
