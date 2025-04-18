@@ -10,12 +10,12 @@ public static class InjectorModule
 {
     public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentConfiguration settings)
     {
-        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((c, _) =>
+        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
         {
-            c.BaseAddress = new Uri(settings.OpenRouterApiUrl);
-            c.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouterApiKey}");
-            c.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-            return new OpenRouterAdapter(c, settings.OpenRouterModel);
+            httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
+            httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
+            return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
         }).AddRetryWithExponentialWaitPolicy(
             attempts: 3,
             waitTime: TimeSpan.FromSeconds(2),

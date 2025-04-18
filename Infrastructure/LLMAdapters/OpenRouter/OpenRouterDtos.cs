@@ -1,6 +1,7 @@
 ﻿using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.DTOs;
+using JetBrains.Annotations;
 
 namespace Infrastructure.LLMAdapters.OpenRouter;
 
@@ -67,6 +68,7 @@ public record OpenRouterResponse
     }
 }
 
+[UsedImplicitly]
 public record OpenRouterResponseChoice
 {
     public required FinishReason FinishReason { get; init; }
