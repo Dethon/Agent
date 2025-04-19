@@ -37,6 +37,7 @@ public static class MessageExtensions
         {
             Role = message.Role.ToOpenRouterRoleString(),
             Content = message.Content,
+            Reasoning = message.Reasoning,
             ToolCalls = message.ToolCalls.Select(tc => new OpenRouterToolCall
             {
                 Id = tc.Id,

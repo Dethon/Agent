@@ -29,6 +29,7 @@ public record OpenRouterMessage
 {
     public required string Role { get; init; }
     public string Content { get; init; } = string.Empty;
+    public string? Reasoning { get; init; }
     public string? ToolCallId { get; init; }
     public OpenRouterToolCall[]? ToolCalls { get; init; }
 }
@@ -45,6 +46,7 @@ public record OpenRouterResponse
                 StopReason = GetStopReason(x.FinishReason),
                 Role = Role.Assistant,
                 Content = x.Message.Content,
+                Reasoning = x.Message.Reasoning,
                 ToolCalls = x.Message.ToolCalls?
                     .Select(tc => new ToolCall
                     {
