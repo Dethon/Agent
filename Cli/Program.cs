@@ -17,10 +17,19 @@ using var host = builder.Build();
 await host.StartAsync();
 
 // Application logic start
+if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
+{
+    Console.WriteLine("Usage: download-agent [prompt]");
+    Console.WriteLine("Example: download-agent \"frozen 2 movie in english\"");
+    return;
+}
+
+var prompt = string.Join(' ', args);
+
 var agentResolver = host.Services.GetRequiredService<AgentResolver>();
 var agent = agentResolver.Resolve(AgentType.Download);
 var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
-var responses = await agent.Run("frozen 2 movie in english", lifetime.ApplicationStopping);
+var responses = await agent.Run(prompt, lifetime.ApplicationStopping);
 Console.WriteLine(string.Join('\n', responses.Select(r => r.Content)));
 // Application logic end
 
