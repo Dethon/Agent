@@ -44,7 +44,7 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
         };
     }
 
-    private static JsonArray TrimResponseForLlm(IEnumerable<JsonElement> allResults, int maxResults = 50)
+    private static JsonArray TrimResponseForLlm(IEnumerable<JsonElement> allResults, int maxResults = 25)
     {
         var trimmedResults = allResults
             .Where(x => x.GetProperty("Seeders").GetInt32() > 0)

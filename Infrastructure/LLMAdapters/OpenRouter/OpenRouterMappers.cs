@@ -16,6 +16,7 @@ public static class MessageExtensions
             _ => new OpenRouterMessage
             {
                 Role = message.Role.ToOpenRouterRoleString(),
+                Reasoning = message.Reasoning,
                 Content = message.Content
             }
         };
@@ -26,6 +27,7 @@ public static class MessageExtensions
         return new OpenRouterMessage
         {
             Role = message.Role.ToOpenRouterRoleString(),
+            Reasoning = message.Reasoning,
             Content = message.Content,
             ToolCallId = message.ToolCallId
         };
