@@ -22,9 +22,9 @@ public static class InjectorModule
                 return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
             })
             .AddRetryWithExponentialWaitPolicy(
-                3,
-                TimeSpan.FromSeconds(2),
-                TimeSpan.FromMinutes(1));
+                attempts: 3,
+                waitTime: TimeSpan.FromSeconds(2),
+                attemptTimeout: TimeSpan.FromMinutes(1));
 
         return services;
     }
@@ -38,9 +38,9 @@ public static class InjectorModule
                 return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey);
             })
             .AddRetryWithExponentialWaitPolicy(
-                3,
-                TimeSpan.FromSeconds(2),
-                TimeSpan.FromMinutes(2));
+                attempts: 3,
+                waitTime: TimeSpan.FromSeconds(2),
+                attemptTimeout: TimeSpan.FromMinutes(2));
 
         return services;
     }
@@ -64,9 +64,9 @@ public static class InjectorModule
                 UseCookies = true
             })
             .AddRetryWithExponentialWaitPolicy(
-                3,
-                TimeSpan.FromSeconds(2),
-                TimeSpan.FromSeconds(10));
+                attempts: 3,
+                waitTime: TimeSpan.FromSeconds(2),
+                attemptTimeout: TimeSpan.FromSeconds(10));
 
         return services;
     }
