@@ -7,6 +7,9 @@ public record AgentConfiguration
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required JackettConfiguration Jackett { get; init; }
     public required QBittorrentConfiguration QBittorrent { get; init; }
+    public required string DownloadLocation { get; init; }
+
+    public required string BaseLibraryPath { get; init; }
 }
 
 [UsedImplicitly]

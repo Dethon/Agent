@@ -54,9 +54,11 @@ public static class InjectorModule
                 httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
                 return new QBittorrentDownloadAdapter(
                     httpClient,
+                    cookieContainer,
                     settings.QBittorrent.User,
                     settings.QBittorrent.Password,
-                    cookieContainer);
+                    settings.DownloadLocation
+                );
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {

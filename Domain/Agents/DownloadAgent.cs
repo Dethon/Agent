@@ -7,12 +7,16 @@ namespace Domain.Agents;
 public class DownloadAgent(
     ILargeLanguageModel largeLanguageModel,
     FileSearchTool fileSearchTool,
-    FileDownloadTool fileDownloadTool) : BaseAgent(largeLanguageModel), IAgent
+    FileDownloadTool fileDownloadTool,
+    LibraryDescriptionTool libraryDescriptionTool,
+    FileMoveTool fileMoveTool) : BaseAgent(largeLanguageModel), IAgent
 {
     private readonly Dictionary<string, ITool> _tools = new()
     {
         { fileDownloadTool.Name, fileDownloadTool },
-        { fileSearchTool.Name, fileSearchTool }
+        { fileSearchTool.Name, fileSearchTool },
+        { libraryDescriptionTool.Name, libraryDescriptionTool },
+        { fileMoveTool.Name, fileMoveTool }
     };
 
     public async Task<List<Message>> Run(string userPrompt, CancellationToken cancellationToken = default)
@@ -39,6 +43,8 @@ public class DownloadAgent(
                           For the download, once you have all the information you need you will make a decision without 
                           asking the user. Prioritize high-quality content that is NOT HDR, bigger files with better 
                           bitrate are usually preferred over lighter alternatives.
+                          If asked to, you will be able to decide where to move the downloaded files according to the
+                          existing library structure.
                           """
             },
             new()
