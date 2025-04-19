@@ -29,7 +29,9 @@ public class DownloadAgent(
                           usually a good search string. 
                           Avoid including language or specific resolutions in the search string, that information 
                           should only be used to chose what to download from the list.
-                          If no relevant results are found you should try with slightly different search strings.
+                          If no relevant results are found or if none of the look good enough in terms of quality 
+                          or number of seeders you should try with slightly different search strings.
+                          You can try to search for multiple alternative search strings at the same time.
                           The search string will be used to search across a set of torrent trackers, so you can 
                           try to optimize them for this kind of search.
                           """

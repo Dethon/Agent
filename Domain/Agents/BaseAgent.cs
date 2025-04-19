@@ -17,19 +17,16 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
         {
             var responseMessages = await largeLanguageModel.Prompt(messages, toolDefinitions, cancellationToken);
 
-            var toolRequests = responseMessages
+            var toolTasks = responseMessages
                 .Where(x => x.StopReason == StopReason.ToolCalls)
                 .SelectMany(x => x.ToolCalls)
+                .Select(x => ResolveToolRequest(tools[x.Name], x, cancellationToken))
                 .ToArray();
-            // TODO: Parallelize tool calling
-            var toolResponseMessages = await toolRequests
-                .ToAsyncEnumerable()
-                .SelectAwait(async x => await ResolveToolRequest(tools[x.Name], x, cancellationToken))
-                .ToArrayAsync(cancellationToken);
+            var toolResponseMessages = await Task.WhenAll(toolTasks);
             messages.AddRange(responseMessages);
             messages.AddRange(toolResponseMessages);
 
-            if (toolRequests.Length == 0)
+            if (toolTasks.Length == 0)
             {
                 return responseMessages;
             }
