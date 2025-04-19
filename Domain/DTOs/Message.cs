@@ -6,6 +6,7 @@ public record Message
 {
     public required Role Role { get; init; }
     public required string Content { get; init; }
+    public string? Reasoning { get; init; }
 }
 
 public record ToolMessage : Message

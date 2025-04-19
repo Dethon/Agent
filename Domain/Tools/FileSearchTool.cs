@@ -18,8 +18,10 @@ public abstract class FileSearchTool : ITool
     {
         var typedParams = parameters?.Deserialize<FileSearchParams>();
         if (typedParams is null)
+        {
             throw new ArgumentNullException(
                 nameof(parameters), $"{typeof(FileSearchTool)} cannot have null parameters");
+        }
 
         return await Resolve(typedParams, cancellationToken);
     }
@@ -31,7 +33,10 @@ public abstract class FileSearchTool : ITool
         return new ToolDefinition<FileSearchParams>
         {
             Name = Name,
-            Description = "Search for file in the internet using a search string"
+            Description = """
+                          Search for a file in the internet using a search string. Search strings must be concise and
+                          not include too many details.
+                          """
         };
     }
 }

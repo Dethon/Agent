@@ -5,7 +5,7 @@ namespace Domain.Agents;
 
 public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
 {
-    protected async Task<AgentResponse[]> ExecuteAgentLoop(
+    protected async Task<List<Message>> ExecuteAgentLoop(
         List<Message> messages,
         Dictionary<string, ITool> tools,
         CancellationToken cancellationToken = default)
@@ -16,6 +16,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
         while (true)
         {
             var responseMessages = await largeLanguageModel.Prompt(messages, toolDefinitions, cancellationToken);
+            DisplayResponses(responseMessages);
 
             var toolTasks = responseMessages
                 .Where(x => x.StopReason == StopReason.ToolCalls)
@@ -28,7 +29,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
 
             if (toolTasks.Length == 0)
             {
-                return responseMessages;
+                return messages;
             }
         }
     }
@@ -44,5 +45,31 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
             Content = toolResponse.ToJsonString(),
             ToolCallId = toolCall.Id
         };
+    }
+
+    private static void DisplayResponses(AgentResponse[] agentResponses)
+    {
+        foreach (var message in agentResponses)
+        {
+            if (!string.IsNullOrEmpty(message.Reasoning))
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.WriteLine(message.Reasoning);
+            }
+
+            if (!string.IsNullOrEmpty(message.Content))
+            {
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine(message.Content);
+            }
+
+            foreach (var toolCall in message.ToolCalls)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"{toolCall.Name}({toolCall.Parameters?.ToJsonString()})");
+            }
+        }
+
+        Console.ResetColor();
     }
 }

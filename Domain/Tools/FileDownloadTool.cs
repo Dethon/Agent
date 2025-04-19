@@ -18,8 +18,10 @@ public abstract class FileDownloadTool : ITool
     {
         var typedParams = parameters?.Deserialize<FileDownloadParams>();
         if (typedParams is null)
+        {
             throw new ArgumentNullException(
                 nameof(parameters), $"{typeof(FileDownloadTool)} cannot have null parameters");
+        }
 
         return await Resolve(typedParams, cancellationToken);
     }
@@ -31,7 +33,7 @@ public abstract class FileDownloadTool : ITool
         return new ToolDefinition<FileDownloadParams>
         {
             Name = Name,
-            Description = "Download a file from the internet using a file source"
+            Description = "Download a file from the internet using a file link"
         };
     }
 }

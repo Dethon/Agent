@@ -15,7 +15,7 @@ public class DownloadAgent(
         { fileSearchTool.Name, fileSearchTool }
     };
 
-    public async Task<AgentResponse[]> Run(string userPrompt, CancellationToken cancellationToken = default)
+    public async Task<List<Message>> Run(string userPrompt, CancellationToken cancellationToken = default)
     {
         var messages = new List<Message>
         {
@@ -24,16 +24,20 @@ public class DownloadAgent(
                 Role = Role.System,
                 Content = """
                           You are a download agent. You will help the user download files from the internet.
-                          Prioritize high-quality content that matches with the user intent.
-                          To generate search strings make them concise and highly specific, title and category is 
-                          usually a good search string. 
-                          Avoid including language or specific resolutions in the search string, that information 
-                          should only be used to chose what to download from the list.
-                          If no relevant results are found or if none of the look good enough in terms of quality 
-                          or number of seeders you should try with slightly different search strings.
+                          To generate search strings make them concise, for example title and category is a good 
+                          search string. 
+                          don't include too much specific information in the search string as that produces worse 
+                          results, that information should only be used to choose what to download from the list.
+                          If no relevant results are found or if they are subpar in terms of quality or number of 
+                          seeders you must try with slightly different search strings, for example in video or movies 
+                          anything lower than 1080p is bad quality.
+                          Prioritize high-quality content that matches with the user intent over download speed, bigger
+                          files with better bitrate are usually preferred over lighter alternatives.
                           You can try to search for multiple alternative search strings at the same time.
-                          The search string will be used to search across a set of torrent trackers, so you can 
-                          try to optimize them for this kind of search.
+                          The search string will be used to search across a set of torrent trackers, so you can try to 
+                          optimize them for this kind of search.
+                          For the download, once you have all the information you need you will make a decision without 
+                          asking the user.
                           """
             },
             new()
