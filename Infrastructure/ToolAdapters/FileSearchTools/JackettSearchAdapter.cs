@@ -44,7 +44,7 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
         };
     }
 
-    private static JsonArray TrimResponseForLlm(IEnumerable<JsonElement> allResults, int maxResults = 200)
+    private static JsonArray TrimResponseForLlm(IEnumerable<JsonElement> allResults, int maxResults = 50)
     {
         var trimmedResults = allResults
             .Where(x => x.GetProperty("Seeders").GetInt32() > 0)
@@ -54,7 +54,7 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
             {
                 ["Title"] = x.GetProperty("Title").GetString(),
                 ["Category"] = x.GetProperty("CategoryDesc").GetString(),
-                ["Link"] = x.GetProperty("Link").GetString(),
+                ["Link"] = x.GetProperty("Link").GetString() ?? x.GetProperty("MagnetUri").GetString(),
                 ["PublishDate"] = x.GetProperty("PublishDate").GetString(),
                 ["Size"] = ForceGetInt(x.GetProperty("Size")),
                 ["Seeders"] = ForceGetInt(x.GetProperty("Seeders")),
