@@ -35,7 +35,8 @@ public abstract class FileMoveTool : ITool
         {
             Name = Name,
             Description = """
-                          Moves a file to a destination folder. Both arguments have to be absolute paths. 
+                          Moves a file to a destination folder, both arguments have to be absolute paths and must be
+                          derived from the LibraryDescription tool response.
                           If the destination folder does not exist it will be created."
                           """
         };
