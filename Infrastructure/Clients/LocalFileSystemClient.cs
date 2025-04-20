@@ -1,22 +1,28 @@
-﻿using Domain.Tools;
+﻿using Domain.Contracts;
+using Domain.DTOs;
 
-namespace Infrastructure.ToolAdapters.LibraryDescriptionTools;
+namespace Infrastructure.Clients;
 
-public class LocalLibraryDescriptionAdapter(string baseLibraryPath) : LibraryDescriptionTool
+public class LocalFileSystemClient : IFileSystemClient
 {
-    protected override LibraryDescriptionNode Resolve()
+    public Task<LibraryDescriptionNode> DescribeDirectory(string path)
     {
-        if (!Directory.Exists(baseLibraryPath))
+        if (!Directory.Exists(path))
         {
-            throw new DirectoryNotFoundException($"Library directory not found: {baseLibraryPath}");
+            throw new DirectoryNotFoundException($"Library directory not found: {path}");
         }
 
-        return new LibraryDescriptionNode
+        return Task.FromResult(new LibraryDescriptionNode
         {
-            Name = Path.GetFileName(baseLibraryPath),
+            Name = Path.GetFileName(path),
             Type = LibraryEntryType.Directory,
-            Children = GetLibraryChildNodes(baseLibraryPath)
-        };
+            Children = GetLibraryChildNodes(path)
+        });
+    }
+
+    public Task Move(string sourceFile, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
     }
 
     private static LibraryDescriptionNode[] GetLibraryChildNodes(string basePath)

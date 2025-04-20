@@ -1,6 +1,5 @@
 ﻿using Cli.Modules;
 using Domain.Agents;
-using Domain.Tools.Attachments;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -20,10 +19,11 @@ var builder = Host.CreateApplicationBuilder(args);
 var settings = builder.Configuration.GetSettings();
 builder.Services
     .AddOpenRouterAdapter(settings)
-    .AddQBittorrentTool(settings)
-    .AddJacketTool(settings)
-    .AddFileManagingTools(settings, sshMode)
-    .AddScoped<SearchHistory>()
+    .AddJacketClient(settings)
+    .AddQBittorrentClient(settings)
+    .AddFileSystemClient(settings, sshMode)
+    .AddAttachments()
+    .AddTools(settings)
     .AddTransient<AgentResolver>();
 
 using var host = builder.Build();

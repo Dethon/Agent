@@ -1,5 +1,6 @@
 ﻿using Domain.Contracts;
 using Domain.Tools;
+using Domain.Tools.Attachments;
 
 namespace Domain.Agents;
 
@@ -8,7 +9,8 @@ public class AgentResolver(
     FileDownloadTool fileDownloadTool,
     FileSearchTool fileSearchTool,
     FileMoveTool fileMoveTool,
-    LibraryDescriptionTool libraryDescriptionTool)
+    LibraryDescriptionTool libraryDescriptionTool,
+    DownloadMonitor downloadMonitor)
 {
     public IAgent Resolve(AgentType agentType)
     {
@@ -19,7 +21,8 @@ public class AgentResolver(
                 fileSearchTool,
                 fileDownloadTool,
                 libraryDescriptionTool,
-                fileMoveTool),
+                fileMoveTool,
+                downloadMonitor),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
     }

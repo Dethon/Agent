@@ -1,4 +1,6 @@
-﻿namespace Domain.Tools.Attachments;
+﻿using Domain.DTOs;
+
+namespace Domain.Tools.Attachments;
 
 public class SearchHistory
 {

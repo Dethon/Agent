@@ -1,33 +1,45 @@
-﻿using System.Text.Json;
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.Attachments;
+using JetBrains.Annotations;
 
 namespace Domain.Tools;
 
+[UsedImplicitly]
 public record FileDownloadParams
 {
-    public required int SearchResultId { get; init; }
+    public required int SearchResultId { get; [UsedImplicitly] init; }
 }
 
-public abstract class FileDownloadTool : ITool
+public class FileDownloadTool(
+    IDownloadClient client,
+    SearchHistory history,
+    DownloadMonitor monitor,
+    string baseDownloadLocation) : BaseTool, ITool
 {
     public string Name => "FileDownload";
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = parameters?.Deserialize<FileDownloadParams>();
-        if (typedParams is null)
+        var typedParams = ParseParams<FileDownloadParams>(parameters);
+
+        var savePath = $"{baseDownloadLocation}/{typedParams.SearchResultId}";
+        var itemToDownload = history.History[typedParams.SearchResultId];
+        await client.Download(
+            itemToDownload.Link,
+            savePath,
+            typedParams.SearchResultId.ToString(),
+            cancellationToken);
+
+        monitor.Add(itemToDownload, savePath);
+        return new JsonObject
         {
-            throw new ArgumentNullException(
-                nameof(parameters), $"{typeof(FileDownloadTool)} cannot have null parameters");
-        }
-
-        return await Resolve(typedParams, cancellationToken);
+            ["status"] = "success",
+            ["message"] = "Torrent added to qBittorrent successfully",
+            ["downloadId"] = typedParams.SearchResultId
+        };
     }
-
-    protected abstract Task<JsonNode> Resolve(FileDownloadParams parameters, CancellationToken cancellationToken);
-    public abstract Task<bool> IsDownloadComplete(CancellationToken cancellationToken);
 
     public ToolDefinition GetToolDefinition()
     {

@@ -1,67 +1,37 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Domain.Tools;
-using Domain.Tools.Attachments;
+using Domain.Contracts;
 
-namespace Infrastructure.ToolAdapters.FileDownloadTools;
+namespace Infrastructure.Clients;
 
-public class QBittorrentDownloadAdapter(
+public class QBittorrentDownloadClient(
     HttpClient client,
     CookieContainer cookieContainer,
     string user,
-    string password,
-    string downloadLocation,
-    SearchHistory searchHistory)
-    : FileDownloadTool
+    string password)
+    : IDownloadClient
 {
-    private string? _torrentName;
-
-    protected override async Task<JsonNode> Resolve(FileDownloadParams parameters, CancellationToken cancellationToken)
+    public async Task Download(string link, string savePath, string id, CancellationToken cancellationToken = default)
     {
-        if (!await IsDownloadComplete(cancellationToken))
-        {
-            throw new InvalidOperationException("Download in progress");
-        }
-
         await Authenticate(cancellationToken);
-        var link = searchHistory.History[parameters.SearchResultId].Link;
         var addTorrentContent = new FormUrlEncodedContent([
             new KeyValuePair<string, string>("urls", link),
-            new KeyValuePair<string, string>("savepath", downloadLocation),
-            new KeyValuePair<string, string>("rename", $"{parameters.SearchResultId}")
+            new KeyValuePair<string, string>("savepath", savePath),
+            new KeyValuePair<string, string>("rename", $"{id}")
         ]);
         var addTorrentResponse = await client.PostAsync("torrents/add", addTorrentContent, cancellationToken);
         addTorrentResponse.EnsureSuccessStatusCode();
-        _torrentName = $"{parameters.SearchResultId}";
-
         await Task.Delay(5000, cancellationToken); // Wait to make sure the torrent got added
-        if (await GetDownloadingTorrent(cancellationToken) is not null)
+        if (await GetDownloadingTorrent(id, cancellationToken) is null)
         {
-            return new JsonObject
-            {
-                ["status"] = "success",
-                ["message"] = "Torrent added to qBittorrent successfully",
-                ["downloadId"] = parameters.SearchResultId
-            };
+            throw new InvalidOperationException("Torrent cannot be added. Try another link. Search again if necessary");
         }
-
-        _torrentName = null;
-        return new JsonObject
-        {
-            ["status"] = "Error",
-            ["message"] = "Torrent cannot be added. try another link. Search again if necessary"
-        };
     }
 
-    public override async Task<bool> IsDownloadComplete(CancellationToken cancellationToken)
+    public async Task<bool> IsDownloadComplete(string id, CancellationToken cancellationToken = default)
     {
-        if (_torrentName == null)
-        {
-            return true;
-        }
-
-        var torrent = await GetDownloadingTorrent(cancellationToken);
+        var torrent = await GetDownloadingTorrent(id, cancellationToken);
         var progress = torrent?["progress"]?.GetValue<double>() ?? 0;
         var state = torrent?["state"]?.GetValue<string>() ?? string.Empty;
         var isCompleted = torrent is null ||
@@ -69,22 +39,17 @@ public class QBittorrentDownloadAdapter(
                           state.Equals("completed", StringComparison.OrdinalIgnoreCase) ||
                           state.Equals("finished", StringComparison.OrdinalIgnoreCase);
 
-        if (isCompleted)
-        {
-            _torrentName = null;
-        }
-
         return isCompleted;
     }
 
-    private async Task<JsonNode?> GetDownloadingTorrent(CancellationToken cancellationToken)
+    private async Task<JsonNode?> GetDownloadingTorrent(string id, CancellationToken cancellationToken)
     {
         await Authenticate(cancellationToken);
         var torrents = await client.GetFromJsonAsync<JsonNode[]>("torrents/info", cancellationToken);
         return torrents?.SingleOrDefault(x =>
         {
             var name = x["name"]?.GetValue<string>() ?? string.Empty;
-            return name.Equals(_torrentName, StringComparison.OrdinalIgnoreCase);
+            return name.Equals(id, StringComparison.OrdinalIgnoreCase);
         });
     }
 

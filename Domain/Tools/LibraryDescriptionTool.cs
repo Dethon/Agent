@@ -7,24 +7,10 @@ using JetBrains.Annotations;
 
 namespace Domain.Tools;
 
-[PublicAPI]
+[UsedImplicitly]
 public record LibraryDescriptionParams;
 
-public record LibraryDescriptionNode
-{
-    public required LibraryEntryType Type { [UsedImplicitly] get; init; }
-    public required string Name { [UsedImplicitly] get; init; }
-    public LibraryDescriptionNode[]? Children { [UsedImplicitly] get; init; }
-}
-
-[JsonConverter(typeof(JsonStringEnumConverter))]
-public enum LibraryEntryType
-{
-    File,
-    Directory
-}
-
-public abstract class LibraryDescriptionTool : ITool
+public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath) : BaseTool, ITool
 {
     public string Name => "LibraryDescription";
 
@@ -35,14 +21,12 @@ public abstract class LibraryDescriptionTool : ITool
 
     public Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var result = Resolve();
+        var result = client.DescribeDirectory(libraryPath);
         var jsonResult = JsonSerializer.SerializeToNode(result, _options);
         return jsonResult is not null
             ? Task.FromResult(jsonResult)
             : throw new InvalidOperationException("Failed to serialize LibraryDescriptionNode");
     }
-
-    protected abstract LibraryDescriptionNode Resolve();
 
     public ToolDefinition GetToolDefinition()
     {

@@ -3,12 +3,9 @@ using Cli.Settings;
 using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Attachments;
+using Infrastructure.Clients;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
-using Infrastructure.ToolAdapters.FileDownloadTools;
-using Infrastructure.ToolAdapters.FileMoveTools;
-using Infrastructure.ToolAdapters.FileSearchTools;
-using Infrastructure.ToolAdapters.LibraryDescriptionTools;
 using Microsoft.Extensions.DependencyInjection;
 using Renci.SshNet;
 
@@ -16,31 +13,37 @@ namespace Cli.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddAttachments(this IServiceCollection services)
     {
-        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
-                httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
-                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromMinutes(1));
-
-        return services;
+        return services
+            .AddScoped<SearchHistory>()
+            .AddScoped<DownloadMonitor>();
     }
 
-    public static IServiceCollection AddJacketTool(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddTools(this IServiceCollection services, AgentConfiguration settings)
     {
-        services.AddHttpClient<FileSearchTool, JackettSearchAdapter>((httpClient, sp) =>
+        return services
+            .AddTransient<FileSearchTool>()
+            .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
+                sp.GetRequiredService<IDownloadClient>(),
+                sp.GetRequiredService<SearchHistory>(),
+                sp.GetRequiredService<DownloadMonitor>(),
+                settings.DownloadLocation))
+            .AddTransient<LibraryDescriptionTool>(sp => new LibraryDescriptionTool(
+                sp.GetRequiredService<IFileSystemClient>(),
+                settings.BaseLibraryPath))
+            .AddTransient<FileMoveTool>(sp => new FileMoveTool(
+                sp.GetRequiredService<IFileSystemClient>(),
+                settings.BaseLibraryPath));
+    }
+
+    public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentConfiguration settings)
+    {
+        services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
                 httpClient.Timeout = TimeSpan.FromSeconds(30); // Timeout for all attempts combined.
-                var searchHistory = sp.GetRequiredService<SearchHistory>();
-                return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey, searchHistory);
+                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,
@@ -50,21 +53,18 @@ public static class InjectorModule
         return services;
     }
 
-    public static IServiceCollection AddQBittorrentTool(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddQBittorrentClient(this IServiceCollection services, AgentConfiguration settings)
     {
         var cookieContainer = new CookieContainer();
-        services.AddHttpClient<FileDownloadTool, QBittorrentDownloadAdapter>((httpClient, sp) =>
+        services.AddHttpClient<IDownloadClient, QBittorrentDownloadClient>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.QBittorrent.ApiUrl);
                 httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                var searchHistory = sp.GetRequiredService<SearchHistory>();
-                return new QBittorrentDownloadAdapter(
+                return new QBittorrentDownloadClient(
                     httpClient,
                     cookieContainer,
                     settings.QBittorrent.UserName,
-                    settings.QBittorrent.Password,
-                    settings.DownloadLocation,
-                    searchHistory
+                    settings.QBittorrent.Password
                 );
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -80,24 +80,35 @@ public static class InjectorModule
         return services;
     }
 
-    public static IServiceCollection AddFileManagingTools(
+    public static IServiceCollection AddFileSystemClient(
         this IServiceCollection services, AgentConfiguration settings, bool sshMode)
     {
         if (!sshMode)
         {
-            return services
-                .AddTransient<LibraryDescriptionTool, LocalLibraryDescriptionAdapter>(_ =>
-                    new LocalLibraryDescriptionAdapter(settings.BaseLibraryPath))
-                .AddTransient<FileMoveTool, LocalFileMoveAdapter>(_ =>
-                    new LocalFileMoveAdapter(settings.BaseLibraryPath));
+            return services.AddTransient<IFileSystemClient, LocalFileSystemClient>();
         }
 
         var sshKey = new PrivateKeyFile(settings.Ssh.KeyPath, settings.Ssh.KeyPass);
         var sshClient = new SshClient(settings.Ssh.Host, settings.Ssh.UserName, sshKey);
         return services
             .AddSingleton(sshClient)
-            .AddTransient<FileMoveTool, SshFileMoveAdapter>(_ => new SshFileMoveAdapter(sshClient))
-            .AddTransient<LibraryDescriptionTool, SshLibraryDescriptionAdapter>(_ =>
-                new SshLibraryDescriptionAdapter(sshClient, settings.BaseLibraryPath));
+            .AddTransient<IFileSystemClient, SshFileSystemClient>(_ => new SshFileSystemClient(sshClient));
+    }
+
+    public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentConfiguration settings)
+    {
+        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
+            {
+                httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
+                httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
+                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
+            })
+            .AddRetryWithExponentialWaitPolicy(
+                attempts: 3,
+                waitTime: TimeSpan.FromSeconds(2),
+                attemptTimeout: TimeSpan.FromMinutes(1));
+
+        return services;
     }
 }

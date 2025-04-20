@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
+using Domain.Tools.Attachments;
 
 namespace Domain.Agents;
 
@@ -9,7 +10,8 @@ public class DownloadAgent(
     FileSearchTool fileSearchTool,
     FileDownloadTool fileDownloadTool,
     LibraryDescriptionTool libraryDescriptionTool,
-    FileMoveTool fileMoveTool) : BaseAgent(largeLanguageModel), IAgent
+    FileMoveTool fileMoveTool,
+    DownloadMonitor downloadMonitor) : BaseAgent(largeLanguageModel), IAgent
 {
     private readonly Dictionary<string, ITool> _tools = new()
     {
@@ -58,7 +60,7 @@ public class DownloadAgent(
         };
 
         messages = await ExecuteAgentLoop(messages, _tools, cancellationToken);
-        while (!await fileDownloadTool.IsDownloadComplete(cancellationToken))
+        while (await downloadMonitor.AreDownloadsInProgress(cancellationToken))
         {
             await Task.Delay(1000, cancellationToken);
         }

@@ -2,18 +2,17 @@
 using System.Text.Json;
 using System.Web;
 using System.Xml.Linq;
-using Domain.Tools;
-using Domain.Tools.Attachments;
+using Domain.Contracts;
+using Domain.DTOs;
 
-namespace Infrastructure.ToolAdapters.FileSearchTools;
+namespace Infrastructure.Clients;
 
-public class JackettSearchAdapter(HttpClient client, string apiKey, SearchHistory history) : FileSearchTool(history)
+public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClient
 {
-    protected override async Task<SearchResult[]> Resolve(FileSearchParams parameters,
-        CancellationToken cancellationToken)
+    public async Task<SearchResult[]> Search(string query, CancellationToken cancellationToken = default)
     {
         var indexers = await GetIndexers(cancellationToken);
-        var tasks = indexers.Select(x => QueryIndexer(x, parameters.SearchString, cancellationToken));
+        var tasks = indexers.Select(x => QueryIndexer(x, query, cancellationToken));
         return (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
     }
 

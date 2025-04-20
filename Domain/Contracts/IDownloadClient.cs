@@ -1,0 +1,7 @@
+﻿namespace Domain.Contracts;
+
+public interface IDownloadClient
+{
+    Task Download(string link, string savePath, string id, CancellationToken cancellationToken = default);
+    Task<bool> IsDownloadComplete(string id, CancellationToken cancellationToken = default);
+}

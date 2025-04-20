@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.Attachments;
@@ -8,20 +7,10 @@ using JetBrains.Annotations;
 
 namespace Domain.Tools;
 
+[UsedImplicitly]
 public record FileSearchParams
 {
-    public required string SearchString { get; init; }
-}
-
-public record SearchResult
-{
-    public required string Title { get; init; }
-    public string? Category { get; init; }
-    public required int Id { get; init; }
-    public long? Size { get; init; }
-    public long? Seeders { get; init; }
-    public long? Peers { get; init; }
-    [JsonIgnore] public required string Link { get; init; }
+    public required string SearchString { get; [UsedImplicitly] init; }
 }
 
 public record SearchResultToSerialize
@@ -44,20 +33,15 @@ public record SearchResultToSerialize
     }
 }
 
-public abstract class FileSearchTool(SearchHistory history) : ITool
+public class FileSearchTool(ISearchClient client, SearchHistory history) : BaseTool, ITool
 {
     public string Name => "FileSearch";
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = parameters?.Deserialize<FileSearchParams>();
-        if (typedParams is null)
-        {
-            throw new ArgumentNullException(
-                nameof(parameters), $"{typeof(FileSearchTool)} cannot have null parameters");
-        }
+        var typedParams = ParseParams<FileSearchParams>(parameters);
 
-        var results = await Resolve(typedParams, cancellationToken);
+        var results = await client.Search(typedParams.SearchString, cancellationToken);
         history.Add(results);
         return new JsonObject
         {
@@ -67,8 +51,6 @@ public abstract class FileSearchTool(SearchHistory history) : ITool
             ["results"] = JsonSerializer.SerializeToNode(results.Select(x => new SearchResultToSerialize(x)))
         };
     }
-
-    protected abstract Task<SearchResult[]> Resolve(FileSearchParams parameters, CancellationToken cancellationToken);
 
     public ToolDefinition GetToolDefinition()
     {

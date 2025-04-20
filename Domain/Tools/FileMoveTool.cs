@@ -1,33 +1,43 @@
-﻿using System.Text.Json;
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using JetBrains.Annotations;
 
 namespace Domain.Tools;
 
+[UsedImplicitly]
 public record FileMoveParams
 {
-    public required string SourceFile { get; init; }
-    public required string DestinationPath { get; init; }
+    public required string SourceFile { get; [UsedImplicitly] init; }
+    public required string DestinationPath { get; [UsedImplicitly] init; }
 }
 
-public abstract class FileMoveTool : ITool
+public class FileMoveTool(IFileSystemClient client, string libraryPath) : BaseTool, ITool
 {
     public string Name => "FileMove";
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = parameters?.Deserialize<FileMoveParams>();
-        if (typedParams is null)
+        var typedParams = ParseParams<FileMoveParams>(parameters);
+
+        if (!typedParams.SourceFile.StartsWith(libraryPath) || !typedParams.DestinationPath.StartsWith(libraryPath))
         {
-            throw new ArgumentNullException(
-                nameof(parameters), $"{typeof(FileMoveTool)} cannot have null parameters");
+            throw new ArgumentException($"""
+                                         {typeof(FileMoveTool)} parameters must be absolute paths derived from the 
+                                         LibraryDescription tool response. 
+                                         They must start with the library path: {libraryPath}
+                                         """);
         }
 
-        return await Resolve(typedParams, cancellationToken);
+        await client.Move(typedParams.SourceFile, typedParams.DestinationPath, cancellationToken);
+        return new JsonObject
+        {
+            ["status"] = "success",
+            ["message"] = "File moved successfully",
+            ["source"] = typedParams.SourceFile,
+            ["destination"] = typedParams.DestinationPath
+        };
     }
-
-    protected abstract Task<JsonNode> Resolve(FileMoveParams parameters, CancellationToken cancellationToken);
 
     public ToolDefinition GetToolDefinition()
     {
