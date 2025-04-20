@@ -33,7 +33,10 @@ public abstract class FileDownloadTool : ITool
         return new ToolDefinition<FileDownloadParams>
         {
             Name = Name,
-            Description = "Download a file from the internet using a file link"
+            Description = """
+                          Download a file from the internet using a file link that can be obtained from the FileSearch 
+                          tool.
+                          """
         };
     }
 }

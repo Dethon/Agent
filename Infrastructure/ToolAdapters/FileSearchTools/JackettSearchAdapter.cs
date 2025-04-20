@@ -55,7 +55,6 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
                 ["Title"] = x.GetProperty("Title").GetString(),
                 ["Category"] = x.GetProperty("CategoryDesc").GetString(),
                 ["Link"] = x.GetProperty("Link").GetString() ?? x.GetProperty("MagnetUri").GetString(),
-                ["PublishDate"] = x.GetProperty("PublishDate").GetString(),
                 ["Size"] = ForceGetInt(x.GetProperty("Size")),
                 ["Seeders"] = ForceGetInt(x.GetProperty("Seeders")),
                 ["Peers"] = ForceGetInt(x.GetProperty("Peers"))

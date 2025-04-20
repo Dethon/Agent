@@ -7,30 +7,37 @@ namespace Infrastructure.LLMAdapters.OpenRouter;
 
 public record OpenRouterRequest
 {
-    public required string Model { get; init; }
-    public OpenRouterTool[] Tools { get; init; } = [];
-    public OpenRouterMessage[] Messages { get; init; } = [];
+    public required string Model { [UsedImplicitly] get; init; }
+    public OpenRouterTool[] Tools { [UsedImplicitly] get; init; } = [];
+    public OpenRouterMessage[] Messages { [UsedImplicitly] get; init; } = [];
+    [UsedImplicitly] public OpenRouterReasoning Reasoning { get; init; } = new();
+}
+
+public record OpenRouterReasoning
+{
+    [UsedImplicitly] public string Effort { get; init; } = "low";
+    [UsedImplicitly] public bool Exclude { get; init; }
 }
 
 public record OpenRouterTool
 {
-    public string Type { get; } = "function";
-    public required OpenRouterFunction Function { get; init; }
+    [UsedImplicitly] public string Type { get; } = "function";
+    public required OpenRouterFunction Function { [UsedImplicitly] get; init; }
 }
 
 public record OpenRouterFunction
 {
-    public required string Name { get; init; }
-    public required string Description { get; init; }
-    public JsonNode? Parameters { get; init; }
+    public required string Name { [UsedImplicitly] get; init; }
+    public required string Description { [UsedImplicitly] get; init; }
+    public JsonNode? Parameters { [UsedImplicitly] get; init; }
 }
 
 public record OpenRouterMessage
 {
-    public required string Role { get; init; }
+    public required string Role { [UsedImplicitly] get; init; }
     public string Content { get; init; } = string.Empty;
     public string? Reasoning { get; init; }
-    public string? ToolCallId { get; init; }
+    public string? ToolCallId { [UsedImplicitly] get; init; }
     public OpenRouterToolCall[]? ToolCalls { get; init; }
 }
 
@@ -52,7 +59,9 @@ public record OpenRouterResponse
                     {
                         Id = tc.Id,
                         Name = tc.Function.Name,
-                        Parameters = tc.Function.Arguments is null ? null : JsonNode.Parse(tc.Function.Arguments)
+                        Parameters = string.IsNullOrEmpty(tc.Function.Arguments)
+                            ? null
+                            : JsonNode.Parse(tc.Function.Arguments)
                     }).ToArray() ?? []
             }).ToArray();
     }
@@ -70,17 +79,16 @@ public record OpenRouterResponse
     }
 }
 
-[UsedImplicitly]
 public record OpenRouterResponseChoice
 {
-    public required FinishReason FinishReason { get; init; }
-    public required OpenRouterMessage Message { get; init; }
+    public required FinishReason FinishReason { get; [UsedImplicitly] init; }
+    public required OpenRouterMessage Message { get; [UsedImplicitly] init; }
 }
 
 public record OpenRouterToolCall
 {
     public required string Id { get; init; }
-    public required string Type { get; init; }
+    public required string Type { [UsedImplicitly] get; init; }
     public required OpenRouterFunctionCall Function { get; init; }
 }
 

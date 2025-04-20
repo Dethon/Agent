@@ -34,7 +34,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
         }
     }
 
-    private static async Task<ToolMessage> ResolveToolRequest(
+    private async Task<ToolMessage> ResolveToolRequest(
         ITool tool, ToolCall toolCall, CancellationToken cancellationToken)
     {
         // TODO: Handle errors

@@ -5,8 +5,11 @@ using Domain.Tools;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
 using Infrastructure.ToolAdapters.FileDownloadTools;
+using Infrastructure.ToolAdapters.FileMoveTools;
 using Infrastructure.ToolAdapters.FileSearchTools;
+using Infrastructure.ToolAdapters.LibraryDescriptionTools;
 using Microsoft.Extensions.DependencyInjection;
+using Renci.SshNet;
 
 namespace Cli.Modules;
 
@@ -55,7 +58,7 @@ public static class InjectorModule
                 return new QBittorrentDownloadAdapter(
                     httpClient,
                     cookieContainer,
-                    settings.QBittorrent.User,
+                    settings.QBittorrent.UserName,
                     settings.QBittorrent.Password,
                     settings.DownloadLocation
                 );
@@ -71,5 +74,27 @@ public static class InjectorModule
                 attemptTimeout: TimeSpan.FromSeconds(10));
 
         return services;
+    }
+
+    public static IServiceCollection AddFileManagingTools(
+        this IServiceCollection services, AgentConfiguration settings, bool sshMode)
+    {
+        if (!sshMode)
+        {
+            return services
+                .AddTransient<LibraryDescriptionTool, LocalLibraryDescriptionAdapter>(_ =>
+                    new LocalLibraryDescriptionAdapter(settings.BaseLibraryPath))
+                .AddTransient<FileMoveTool, LocalFileMoveAdapter>(_ =>
+                    new LocalFileMoveAdapter(settings.BaseLibraryPath));
+        }
+
+        var sshKey = new PrivateKeyFile(settings.Ssh.KeyPath, settings.Ssh.KeyPass);
+        var sshClient = new SshClient(settings.Ssh.Host, settings.Ssh.UserName, sshKey);
+        return services
+            .AddSingleton(sshClient)
+            .AddTransient<LibraryDescriptionTool, SshLibraryDescriptionAdapter>(_ =>
+                new SshLibraryDescriptionAdapter(sshClient, settings.BaseLibraryPath))
+            .AddTransient<FileMoveTool, SshFileMoveAdapter>(_ =>
+                new SshFileMoveAdapter(sshClient, settings.BaseLibraryPath));
     }
 }

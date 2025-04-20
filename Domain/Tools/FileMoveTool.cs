@@ -13,7 +13,7 @@ public record FileMoveParams
 
 public abstract class FileMoveTool : ITool
 {
-    public string Name => "LibraryDescription";
+    public string Name => "FileMove";
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
@@ -31,10 +31,13 @@ public abstract class FileMoveTool : ITool
 
     public ToolDefinition GetToolDefinition()
     {
-        return new ToolDefinition<FileSearchParams>
+        return new ToolDefinition<FileMoveParams>
         {
             Name = Name,
-            Description = "Moves a file to a destination folder. If the folder does not exist it will be created."
+            Description = """
+                          Moves a file to a destination folder. Both arguments have to be absolute paths. 
+                          If the destination folder does not exist it will be created."
+                          """
         };
     }
 }

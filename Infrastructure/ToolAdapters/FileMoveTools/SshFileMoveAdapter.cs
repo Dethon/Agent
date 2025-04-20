@@ -1,9 +1,10 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Tools;
+using Renci.SshNet;
 
 namespace Infrastructure.ToolAdapters.FileMoveTools;
 
-public class LocalFileMoveAdapter(string baseLibraryPath) : FileMoveTool
+public class SshFileMoveAdapter(SshClient client, string baseLibraryPath) : FileMoveTool
 {
     protected override Task<JsonNode> Resolve(FileMoveParams parameters, CancellationToken cancellationToken)
     {

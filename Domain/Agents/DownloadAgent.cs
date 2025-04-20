@@ -40,11 +40,13 @@ public class DownloadAgent(
                           anything lower than 1080p is bad quality.
                           The search string will be used to search across a set of torrent trackers, so you can try to 
                           optimize them for this kind of search.
-                          For the download, once you have all the information you need you will make a decision without 
-                          asking the user. Prioritize high-quality content that is NOT HDR, bigger files with better 
-                          bitrate are usually preferred over lighter alternatives.
-                          If asked to, you will be able to decide where to move the downloaded files according to the
-                          existing library structure.
+                          Prioritize high-quality content that is NOT HDR, bigger files with better bitrate are usually 
+                          preferred over lighter alternatives.
+                          You are allowed to start the download of just one file, the one you find most appropriate. DO
+                          NOT ask the user to confirm the choice. 
+                          Once the download finishes you will be asked to organize it within the library, when you 
+                          receive that command you will be able to explore the library structure and move files 
+                          accordingly.
                           """
             },
             new()
@@ -54,6 +56,12 @@ public class DownloadAgent(
             }
         };
 
+        messages = await ExecuteAgentLoop(messages, _tools, cancellationToken);
+        messages.Add(new Message
+        {
+            Role = Role.User,
+            Content = "Organize the file you just downloaded in the library folder structure."
+        });
         return await ExecuteAgentLoop(messages, _tools, cancellationToken);
     }
 }
