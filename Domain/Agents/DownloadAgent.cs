@@ -57,10 +57,18 @@ public class DownloadAgent(
         };
 
         messages = await ExecuteAgentLoop(messages, _tools, cancellationToken);
+        while (!await fileDownloadTool.IsDownloadComplete(cancellationToken))
+        {
+            await Task.Delay(1000, cancellationToken);
+        }
+
         messages.Add(new Message
         {
             Role = Role.User,
-            Content = "Organize the file you just downloaded in the library folder structure."
+            Content = """
+                      The download just finished. Organize the files that were downloaded according to the current 
+                      library structure. Hint: Use the LibraryDescription and FileMove tools.
+                      """
         });
         return await ExecuteAgentLoop(messages, _tools, cancellationToken);
     }

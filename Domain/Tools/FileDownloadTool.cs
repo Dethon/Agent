@@ -27,6 +27,7 @@ public abstract class FileDownloadTool : ITool
     }
 
     protected abstract Task<JsonNode> Resolve(FileDownloadParams parameters, CancellationToken cancellationToken);
+    public abstract Task<bool> IsDownloadComplete(CancellationToken cancellationToken);
 
     public ToolDefinition GetToolDefinition()
     {

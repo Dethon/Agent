@@ -2,6 +2,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Web;
+using System.Xml.Linq;
 using Domain.Tools;
 
 namespace Infrastructure.ToolAdapters.FileSearchTools;
@@ -10,41 +11,75 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
 {
     protected override async Task<JsonNode> Resolve(FileSearchParams parameters, CancellationToken cancellationToken)
     {
-        var baseUrl = $"indexers/all/results/?apikey={apiKey}";
-        var requestUri = $"{baseUrl}&Query={HttpUtility.UrlEncode(parameters.SearchString)}";
-        var response = await client.GetAsync(requestUri, cancellationToken);
-        response.EnsureSuccessStatusCode();
-
-        var jackettResponse = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken);
-        return GetResults(jackettResponse);
-    }
-
-    private static JsonObject GetResults(JsonDocument? jackettResponse)
-    {
-        if (jackettResponse is null)
-            throw new ArgumentNullException(nameof(jackettResponse), "Jackett response cannot be null");
-
-        var existingResults = jackettResponse.RootElement.TryGetProperty("Results", out var jackettResults);
-        var results = jackettResults.EnumerateArray().AsEnumerable().ToArray();
-        if (!existingResults || results.Length == 0)
-            return new JsonObject
-            {
-                ["status"] = "noResults",
-                ["message"] = "File search completed successfully but returned no results",
-                ["totalResults"] = 0
-            };
-
-        var trimmedResults = TrimResponseForLlm(results);
+        var indexers = await GetIndexers(cancellationToken);
+        var tasks = indexers.Select(x => QueryIndexer(x, parameters.SearchString, cancellationToken));
+        var results = (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
         return new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File search completed successfully",
-            ["totalResults"] = trimmedResults.Count,
-            ["results"] = trimmedResults
+            ["totalResults"] = results.Length,
+            ["results"] = new JsonArray(results)
         };
     }
 
-    private static JsonArray TrimResponseForLlm(IEnumerable<JsonElement> allResults, int maxResults = 25)
+    private async Task<string[]> GetIndexers(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var requestUri = $"indexers/all/results/torznab/api?apikey={apiKey}&t=indexers&configured=true";
+            var response = await client.GetStringAsync(requestUri, cancellationToken);
+            var xmlDoc = XDocument.Parse(response);
+
+            var indexerIds = xmlDoc.Descendants("indexer")
+                .Select(x => x.Attribute("id")?.Value ?? x.Element("id")?.Value)
+                .Where(x => x is not null)
+                .Cast<string>()
+                .ToArray();
+
+            return indexerIds.Length > 0 ? indexerIds : ["all"];
+        }
+        catch
+        {
+            return ["all"];
+        }
+    }
+
+    private async Task<JsonNode[]> QueryIndexer(string indexer, string searchQuery, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var encodedQuery = HttpUtility.UrlEncode(searchQuery);
+            var requestUri = $"indexers/{indexer}/results/?apikey={apiKey}&Query={encodedQuery}";
+            var response = await client.GetAsync(requestUri, cancellationToken);
+            return !response.IsSuccessStatusCode
+                ? []
+                : ParseSingleResponse(await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken));
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static JsonNode[] ParseSingleResponse(JsonDocument? jackettResponse)
+    {
+        if (jackettResponse?.RootElement is null)
+        {
+            return [];
+        }
+
+        var existingResults = jackettResponse.RootElement.TryGetProperty("Results", out var jackettResults);
+        if (!existingResults)
+        {
+            return [];
+        }
+
+        var results = jackettResults.EnumerateArray().AsEnumerable().ToArray();
+        return TrimSingleResultSet(results);
+    }
+
+    private static JsonNode[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 5)
     {
         var trimmedResults = allResults
             .Where(x => x.GetProperty("Seeders").GetInt32() > 0)
@@ -62,7 +97,7 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
             .Cast<JsonNode>()
             .ToArray();
 
-        return new JsonArray(trimmedResults);
+        return trimmedResults;
     }
 
     private static long? ForceGetInt(JsonElement jsonElement)

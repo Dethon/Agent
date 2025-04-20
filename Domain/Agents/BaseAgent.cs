@@ -34,17 +34,28 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
         }
     }
 
-    private async Task<ToolMessage> ResolveToolRequest(
+    private static async Task<ToolMessage> ResolveToolRequest(
         ITool tool, ToolCall toolCall, CancellationToken cancellationToken)
     {
-        // TODO: Handle errors
-        var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
-        return new ToolMessage
+        try
         {
-            Role = Role.Tool,
-            Content = toolResponse.ToJsonString(),
-            ToolCallId = toolCall.Id
-        };
+            var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
+            return new ToolMessage
+            {
+                Role = Role.Tool,
+                Content = toolResponse.ToJsonString(),
+                ToolCallId = toolCall.Id
+            };
+        }
+        catch (Exception ex)
+        {
+            return new ToolMessage
+            {
+                Role = Role.Tool,
+                Content = $"Exception: {ex.Message}",
+                ToolCallId = toolCall.Id
+            };
+        }
     }
 
     private static void DisplayResponses(AgentResponse[] agentResponses)

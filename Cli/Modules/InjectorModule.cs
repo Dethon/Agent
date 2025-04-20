@@ -37,13 +37,13 @@ public static class InjectorModule
         services.AddHttpClient<FileSearchTool, JackettSearchAdapter>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromMinutes(10); // Timeout for all attempts combined.
+                httpClient.Timeout = TimeSpan.FromSeconds(30); // Timeout for all attempts combined.
                 return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,
                 waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromMinutes(2));
+                attemptTimeout: TimeSpan.FromSeconds(20));
 
         return services;
     }
@@ -92,9 +92,8 @@ public static class InjectorModule
         var sshClient = new SshClient(settings.Ssh.Host, settings.Ssh.UserName, sshKey);
         return services
             .AddSingleton(sshClient)
+            .AddTransient<FileMoveTool, SshFileMoveAdapter>(_ => new SshFileMoveAdapter(sshClient))
             .AddTransient<LibraryDescriptionTool, SshLibraryDescriptionAdapter>(_ =>
-                new SshLibraryDescriptionAdapter(sshClient, settings.BaseLibraryPath))
-            .AddTransient<FileMoveTool, SshFileMoveAdapter>(_ =>
-                new SshFileMoveAdapter(sshClient, settings.BaseLibraryPath));
+                new SshLibraryDescriptionAdapter(sshClient, settings.BaseLibraryPath));
     }
 }
