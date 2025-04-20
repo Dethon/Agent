@@ -7,7 +7,7 @@ namespace Domain.Tools;
 
 public record FileDownloadParams
 {
-    public required string FileSource { get; init; }
+    public required int SearchResultId { get; init; }
 }
 
 public abstract class FileDownloadTool : ITool
@@ -35,8 +35,9 @@ public abstract class FileDownloadTool : ITool
         {
             Name = Name,
             Description = """
-                          Download a file from the internet using a file link that can be obtained from the FileSearch 
-                          tool.
+                          Download a file from the internet using a file id that can be obtained from the FileSearch 
+                          tool. The SearchResultId parameter is the id EXACTLY as it appears in the response of the
+                          FileSearch tool
                           """
         };
     }

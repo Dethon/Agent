@@ -1,26 +1,20 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Web;
 using System.Xml.Linq;
 using Domain.Tools;
+using Domain.Tools.Attachments;
 
 namespace Infrastructure.ToolAdapters.FileSearchTools;
 
-public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearchTool
+public class JackettSearchAdapter(HttpClient client, string apiKey, SearchHistory history) : FileSearchTool(history)
 {
-    protected override async Task<JsonNode> Resolve(FileSearchParams parameters, CancellationToken cancellationToken)
+    protected override async Task<SearchResult[]> Resolve(FileSearchParams parameters,
+        CancellationToken cancellationToken)
     {
         var indexers = await GetIndexers(cancellationToken);
         var tasks = indexers.Select(x => QueryIndexer(x, parameters.SearchString, cancellationToken));
-        var results = (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
-        return new JsonObject
-        {
-            ["status"] = "success",
-            ["message"] = "File search completed successfully",
-            ["totalResults"] = results.Length,
-            ["results"] = new JsonArray(results)
-        };
+        return (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
     }
 
     private async Task<string[]> GetIndexers(CancellationToken cancellationToken)
@@ -45,7 +39,8 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
         }
     }
 
-    private async Task<JsonNode[]> QueryIndexer(string indexer, string searchQuery, CancellationToken cancellationToken)
+    private async Task<SearchResult[]> QueryIndexer(string indexer, string searchQuery,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -62,7 +57,7 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
         }
     }
 
-    private static JsonNode[] ParseSingleResponse(JsonDocument? jackettResponse)
+    private static SearchResult[] ParseSingleResponse(JsonDocument? jackettResponse)
     {
         if (jackettResponse?.RootElement is null)
         {
@@ -79,22 +74,26 @@ public class JackettSearchAdapter(HttpClient client, string apiKey) : FileSearch
         return TrimSingleResultSet(results);
     }
 
-    private static JsonNode[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 5)
+    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 5)
     {
         var trimmedResults = allResults
             .Where(x => x.GetProperty("Seeders").GetInt32() > 0)
             .OrderByDescending(x => x.GetProperty("Seeders").GetInt32())
             .Take(maxResults)
-            .Select(x => new JsonObject
+            .Select(x =>
             {
-                ["Title"] = x.GetProperty("Title").GetString(),
-                ["Category"] = x.GetProperty("CategoryDesc").GetString(),
-                ["Link"] = x.GetProperty("Link").GetString() ?? x.GetProperty("MagnetUri").GetString(),
-                ["Size"] = ForceGetInt(x.GetProperty("Size")),
-                ["Seeders"] = ForceGetInt(x.GetProperty("Seeders")),
-                ["Peers"] = ForceGetInt(x.GetProperty("Peers"))
+                var link = x.GetProperty("Link").GetString() ?? x.GetProperty("MagnetUri").GetString() ?? string.Empty;
+                return new SearchResult
+                {
+                    Title = x.GetProperty("Title").GetString() ?? string.Empty,
+                    Category = x.GetProperty("CategoryDesc").GetString(),
+                    Id = link.GetHashCode(),
+                    Link = link,
+                    Size = ForceGetInt(x.GetProperty("Size")),
+                    Seeders = ForceGetInt(x.GetProperty("Seeders")),
+                    Peers = ForceGetInt(x.GetProperty("Peers"))
+                };
             })
-            .Cast<JsonNode>()
             .ToArray();
 
         return trimmedResults;

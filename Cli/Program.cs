@@ -1,5 +1,6 @@
 ﻿using Cli.Modules;
 using Domain.Agents;
+using Domain.Tools.Attachments;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -22,15 +23,18 @@ builder.Services
     .AddQBittorrentTool(settings)
     .AddJacketTool(settings)
     .AddFileManagingTools(settings, sshMode)
+    .AddScoped<SearchHistory>()
     .AddTransient<AgentResolver>();
 
 using var host = builder.Build();
 await host.StartAsync();
 
 // Application logic start
-var agentResolver = host.Services.GetRequiredService<AgentResolver>();
+var scope = host.Services.CreateAsyncScope();
+var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
+var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
+
 var agent = agentResolver.Resolve(AgentType.Download);
-var lifetime = host.Services.GetRequiredService<IHostApplicationLifetime>();
 await agent.Run(prompt, lifetime.ApplicationStopping);
 // Application logic end
 

@@ -65,7 +65,7 @@ public record OpenRouterResponse
             }).ToArray();
     }
 
-    private static StopReason GetStopReason(FinishReason finishReason)
+    private static StopReason GetStopReason(FinishReason? finishReason)
     {
         return finishReason switch
         {
@@ -73,6 +73,8 @@ public record OpenRouterResponse
             FinishReason.ToolCalls => StopReason.ToolCalls,
             FinishReason.Length => StopReason.Length,
             FinishReason.ContentFilter => StopReason.ContentFilter,
+            FinishReason.Error => StopReason.Error,
+            null => StopReason.Error,
             _ => throw new ArgumentOutOfRangeException(nameof(finishReason), finishReason, null)
         };
     }
@@ -80,7 +82,7 @@ public record OpenRouterResponse
 
 public record OpenRouterResponseChoice
 {
-    public required FinishReason FinishReason { get; [UsedImplicitly] init; }
+    public FinishReason? FinishReason { get; [UsedImplicitly] init; }
     public required OpenRouterMessage Message { get; [UsedImplicitly] init; }
 }
 
@@ -103,5 +105,6 @@ public enum FinishReason
     Stop,
     ToolCalls,
     Length,
-    ContentFilter
+    ContentFilter,
+    Error
 }

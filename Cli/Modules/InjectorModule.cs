@@ -2,6 +2,7 @@
 using Cli.Settings;
 using Domain.Contracts;
 using Domain.Tools;
+using Domain.Tools.Attachments;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
 using Infrastructure.ToolAdapters.FileDownloadTools;
@@ -34,11 +35,12 @@ public static class InjectorModule
 
     public static IServiceCollection AddJacketTool(this IServiceCollection services, AgentConfiguration settings)
     {
-        services.AddHttpClient<FileSearchTool, JackettSearchAdapter>((httpClient, _) =>
+        services.AddHttpClient<FileSearchTool, JackettSearchAdapter>((httpClient, sp) =>
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
                 httpClient.Timeout = TimeSpan.FromSeconds(30); // Timeout for all attempts combined.
-                return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey);
+                var searchHistory = sp.GetRequiredService<SearchHistory>();
+                return new JackettSearchAdapter(httpClient, settings.Jackett.ApiKey, searchHistory);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,
@@ -51,16 +53,18 @@ public static class InjectorModule
     public static IServiceCollection AddQBittorrentTool(this IServiceCollection services, AgentConfiguration settings)
     {
         var cookieContainer = new CookieContainer();
-        services.AddHttpClient<FileDownloadTool, QBittorrentDownloadAdapter>((httpClient, _) =>
+        services.AddHttpClient<FileDownloadTool, QBittorrentDownloadAdapter>((httpClient, sp) =>
             {
                 httpClient.BaseAddress = new Uri(settings.QBittorrent.ApiUrl);
                 httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
+                var searchHistory = sp.GetRequiredService<SearchHistory>();
                 return new QBittorrentDownloadAdapter(
                     httpClient,
                     cookieContainer,
                     settings.QBittorrent.UserName,
                     settings.QBittorrent.Password,
-                    settings.DownloadLocation
+                    settings.DownloadLocation,
+                    searchHistory
                 );
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler

@@ -33,7 +33,8 @@ public class DownloadAgent(
                           don't include too much specific information in the search string as that produces worse 
                           results, that information should only be used to choose what to download from the list.
                           You should always try to perform several searches with slightly different search strings to
-                          have a better chance of finding relevant results.
+                          have a better chance of finding relevant results, changing the separators between words yields 
+                          good results.
                           You can search for multiple alternative search strings at the same time.
                           If no relevant results are found or if they are subpar in terms of quality or number of 
                           seeders you must try with slightly different search strings, for example in video or movies 
@@ -68,6 +69,7 @@ public class DownloadAgent(
             Content = """
                       The download just finished. Organize the files that were downloaded according to the current 
                       library structure. Hint: Use the LibraryDescription and FileMove tools.
+                      If there is no appropriate folder for the category you should create it.
                       """
         });
         return await ExecuteAgentLoop(messages, _tools, cancellationToken);
