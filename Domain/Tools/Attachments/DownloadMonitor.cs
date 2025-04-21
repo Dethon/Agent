@@ -3,9 +3,9 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Attachments;
 
-public abstract class DownloadMonitor(IDownloadClient client)
+public class DownloadMonitor(IDownloadClient client)
 {
-    private Dictionary<int, DownloadItem> Downloads { get; } = [];
+    private Dictionary<int, DownloadItem> Downloads { get; set; } = [];
     private readonly Lock _lLock = new();
 
     public void Add(SearchResult info, string savePath)
@@ -30,17 +30,38 @@ public abstract class DownloadMonitor(IDownloadClient client)
         }
     }
 
-    public async Task<bool> AreDownloadsInProgress(CancellationToken cancellationToken = default)
+    public async Task<bool> AreDownloadsPending(CancellationToken cancellationToken = default)
     {
         await Refresh(cancellationToken);
         lock (_lLock)
         {
-            return Downloads.Any(x => x.Value.Status != DownloadStatus.Completed);
+            return Downloads.Count > 0;
         }
     }
 
-    public async Task<bool> Refresh(CancellationToken cancellationToken = default)
+    public async Task<int[]> PopCompletedDownloads(CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        await Refresh(cancellationToken);
+        lock (_lLock)
+        {
+            var completedIds = Downloads.Values
+                .Where(x => x.Status == DownloadStatus.Completed)
+                .Select(x => x.Id)
+                .ToArray();
+            Downloads = Downloads
+                .Where(x => x.Value.Status != DownloadStatus.Completed)
+                .ToDictionary(x => x.Key, x => x.Value);
+
+            return completedIds;
+        }
+    }
+
+    private async Task Refresh(CancellationToken cancellationToken = default)
+    {
+        var items = await client.RefreshDownloadItems(Downloads.Values, cancellationToken);
+        lock (_lLock)
+        {
+            Downloads = items.ToDictionary(x => x.Id, x => x);
+        }
     }
 }

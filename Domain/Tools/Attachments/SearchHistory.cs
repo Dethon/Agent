@@ -9,10 +9,13 @@ public class SearchHistory
 
     public void Add(IEnumerable<SearchResult> results)
     {
+        var resultDict = results
+            .ToLookup(x => x.Id, x => x)
+            .ToDictionary(x => x.Key, x => x.First());
         lock (_lLock)
         {
             History = History
-                .Concat(results.ToDictionary(x => x.Id, x => x))
+                .Concat(resultDict)
                 .ToLookup(x => x.Key, x => x.Value)
                 .ToDictionary(x => x.Key, x => x.First());
         }

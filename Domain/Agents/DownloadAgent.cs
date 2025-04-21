@@ -60,20 +60,25 @@ public class DownloadAgent(
         };
 
         messages = await ExecuteAgentLoop(messages, _tools, cancellationToken);
-        while (await downloadMonitor.AreDownloadsInProgress(cancellationToken))
+
+        while (await downloadMonitor.AreDownloadsPending(cancellationToken))
         {
             await Task.Delay(1000, cancellationToken);
+            foreach (var id in await downloadMonitor.PopCompletedDownloads(cancellationToken))
+            {
+                messages.Add(new Message
+                {
+                    Role = Role.User,
+                    Content = $"""
+                               The download with id {id} just finished. Organize the files that were downloaded according to the current 
+                               library structure. Hint: Use the LibraryDescription and FileMove tools.
+                               If there is no appropriate folder for the category you should create it.
+                               """
+                });
+                await ExecuteAgentLoop(messages, _tools, cancellationToken);
+            }
         }
 
-        messages.Add(new Message
-        {
-            Role = Role.User,
-            Content = """
-                      The download just finished. Organize the files that were downloaded according to the current 
-                      library structure. Hint: Use the LibraryDescription and FileMove tools.
-                      If there is no appropriate folder for the category you should create it.
-                      """
-        });
-        return await ExecuteAgentLoop(messages, _tools, cancellationToken);
+        return messages;
     }
 }
