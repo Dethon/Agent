@@ -20,11 +20,13 @@ public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguage
     public async Task<AgentResponse[]> Prompt(
         IEnumerable<Message> messages,
         IEnumerable<ToolDefinition> tools,
+        float? temperature = null,
         CancellationToken cancellationToken = default)
     {
         var request = new OpenRouterRequest
         {
             Model = model,
+            Temperature = temperature,
             Messages = messages.Select(m => m.ToOpenRouterMessage()).ToArray(),
             Tools = tools.Select(t => t.ToOpenRouterTool()).ToArray()
         };

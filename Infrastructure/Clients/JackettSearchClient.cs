@@ -73,10 +73,10 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
         return TrimSingleResultSet(results);
     }
 
-    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 5)
+    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 10)
     {
         var trimmedResults = allResults
-            .Where(x => x.GetProperty("Seeders").GetInt32() > 0)
+            .Where(x => x.GetProperty("Seeders").GetInt32() > 1)
             .OrderByDescending(x => x.GetProperty("Seeders").GetInt32())
             .Take(maxResults)
             .Select(x =>

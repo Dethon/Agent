@@ -9,7 +9,7 @@ namespace Domain.Tools;
 public record FileMoveParams
 {
     public required string SourceFile { get; [UsedImplicitly] init; }
-    public required string DestinationPath { get; [UsedImplicitly] init; }
+    public required string DestinationDirectory { get; [UsedImplicitly] init; }
 }
 
 public class FileMoveTool(IFileSystemClient client, string libraryPath) : BaseTool, ITool
@@ -20,7 +20,8 @@ public class FileMoveTool(IFileSystemClient client, string libraryPath) : BaseTo
     {
         var typedParams = ParseParams<FileMoveParams>(parameters);
 
-        if (!typedParams.SourceFile.StartsWith(libraryPath) || !typedParams.DestinationPath.StartsWith(libraryPath))
+        if (!typedParams.SourceFile.StartsWith(libraryPath) ||
+            !typedParams.DestinationDirectory.StartsWith(libraryPath))
         {
             throw new ArgumentException($"""
                                          {typeof(FileMoveTool)} parameters must be absolute paths derived from the 
@@ -29,13 +30,13 @@ public class FileMoveTool(IFileSystemClient client, string libraryPath) : BaseTo
                                          """);
         }
 
-        await client.Move(typedParams.SourceFile, typedParams.DestinationPath, cancellationToken);
+        await client.Move(typedParams.SourceFile, typedParams.DestinationDirectory, cancellationToken);
         return new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File moved successfully",
             ["source"] = typedParams.SourceFile,
-            ["destination"] = typedParams.DestinationPath
+            ["destination"] = typedParams.DestinationDirectory
         };
     }
 
@@ -45,9 +46,13 @@ public class FileMoveTool(IFileSystemClient client, string libraryPath) : BaseTo
         {
             Name = Name,
             Description = """
-                          Moves a file to a destination folder, both arguments have to be absolute paths and must be
-                          derived from the LibraryDescription tool response.
-                          If the destination folder does not exist it will be created automatically."
+                          Moves a file or directory to a destination DIRECTORY, both arguments have to be absolute paths 
+                          and must be derived from the LibraryDescription tool response.
+                          If the destination folder does not exist it will be created automatically.
+                          When moving a file, the destination must be a directory and the source will be moved inside,
+                          equivalent to 'mv' {SourceFile} {DestinationDirectory} bash command"
+                          When moving a directory, the destination must be a directory and the source will be renamed as
+                          the destination, equivalent to 'mv -T {SourceFile} {DestinationDirectory}' bash command.
                           """
         };
     }

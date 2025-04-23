@@ -8,6 +8,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
     protected async Task<List<Message>> ExecuteAgentLoop(
         List<Message> messages,
         Dictionary<string, ITool> tools,
+        float? temperature = null,
         CancellationToken cancellationToken = default)
     {
         var toolDefinitions = tools.Values
@@ -15,7 +16,8 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
             .ToArray();
         while (true)
         {
-            var responseMessages = await largeLanguageModel.Prompt(messages, toolDefinitions, cancellationToken);
+            var responseMessages = await largeLanguageModel.Prompt(
+                messages, toolDefinitions, temperature, cancellationToken);
             DisplayResponses(responseMessages);
 
             var toolTasks = responseMessages

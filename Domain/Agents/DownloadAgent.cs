@@ -13,10 +13,14 @@ public class DownloadAgent(
     FileMoveTool fileMoveTool,
     DownloadMonitor downloadMonitor) : BaseAgent(largeLanguageModel), IAgent
 {
-    private readonly Dictionary<string, ITool> _tools = new()
+    private readonly Dictionary<string, ITool> _downloadTools = new()
     {
         { fileDownloadTool.Name, fileDownloadTool },
         { fileSearchTool.Name, fileSearchTool },
+    };
+
+    private readonly Dictionary<string, ITool> _organizingTools = new()
+    {
         { libraryDescriptionTool.Name, libraryDescriptionTool },
         { fileMoveTool.Name, fileMoveTool }
     };
@@ -30,9 +34,9 @@ public class DownloadAgent(
                 Role = Role.System,
                 Content = """
                           You are a download agent. You will help the user download files from the internet.
-                          To generate search strings make them concise and generic, for example title and category is a
-                          good search string. 
-                          don't include too much specific information in the search string as that produces worse 
+                          To generate search strings make them short and broad, for example, using just the title
+                          usually yields good results. 
+                          Don't include too much specific information in the search string as that produces worse 
                           results, that information should only be used to choose what to download from the list.
                           You should always try to perform several searches with slightly different search strings to
                           have a better chance of finding relevant results, changing the separators between words yields 
@@ -41,12 +45,13 @@ public class DownloadAgent(
                           If no relevant results are found or if they are subpar in terms of quality or number of 
                           seeders you must try with slightly different search strings, for example in video or movies 
                           anything lower than 1080p is bad quality.
+                          You should try to search with up to 50 different search strings before giving up.
                           The search string will be used to search across a set of torrent trackers, so you can try to 
                           optimize them for this kind of search.
                           Prioritize high-quality content that is NOT HDR, bigger files with better bitrate are usually 
                           preferred over lighter alternatives.
-                          You are allowed to start the download of just one file, the one you find most appropriate. DO
-                          NOT ask the user to confirm the choice. 
+                          You are allowed to automatically start the download of the selected file/s, the ones you find 
+                          most appropriate. DO NOT ask the user to confirm the choice. 
                           Once the download finishes you will be asked to organize it within the library, when you 
                           receive that command you will be able to explore the library structure and move files 
                           accordingly.
@@ -59,7 +64,7 @@ public class DownloadAgent(
             }
         };
 
-        messages = await ExecuteAgentLoop(messages, _tools, cancellationToken);
+        messages = await ExecuteAgentLoop(messages, _downloadTools, 0.5f, cancellationToken);
 
         while (await downloadMonitor.AreDownloadsPending(cancellationToken))
         {
@@ -75,7 +80,7 @@ public class DownloadAgent(
                                If there is no appropriate folder for the category you should create it.
                                """
                 });
-                await ExecuteAgentLoop(messages, _tools, cancellationToken);
+                await ExecuteAgentLoop(messages, _organizingTools, 0.3f, cancellationToken);
             }
         }
 

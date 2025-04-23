@@ -38,7 +38,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         }
     }
 
-    public Task Move(string sourceFile, string destinationPath, CancellationToken cancellationToken = default)
+    public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         if (!client.IsConnected)
         {
@@ -47,14 +47,20 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
 
         try
         {
-            if (!DoesFileExist(sourceFile))
+            if (DoesFileExist(sourcePath))
             {
-                throw new Exception("Source file does not exist");
+                CreateDestinationPath(destinationPath);
+                MvCommand(sourcePath, destinationPath);
+                return Task.CompletedTask;
+            }
+            else if (DoesFolderExist(sourcePath))
+            {
+                CreateDestinationPath(destinationPath);
+                MvCommand(sourcePath, destinationPath, "-T");
+                return Task.CompletedTask;
             }
 
-            CreateDestinationPath(destinationPath);
-            MoveFile(sourceFile, destinationPath);
-            return Task.CompletedTask;
+            throw new Exception("Source file does not exist");
         }
         finally
         {
@@ -92,9 +98,9 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         return nodes.Length > 0 ? nodes : null;
     }
 
-    private void MoveFile(string sourceFile, string destinationPath)
+    private void MvCommand(string sourcePath, string destinationPath, string options = "")
     {
-        var moveCommand = client.CreateCommand($"mv \"{sourceFile}\" \"{destinationPath}\"");
+        var moveCommand = client.CreateCommand($"mv {options} \"{sourcePath}\" \"{destinationPath}\"");
         moveCommand.Execute();
         if (!string.IsNullOrEmpty(moveCommand.Error))
         {
@@ -104,12 +110,12 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
 
     private void CreateDestinationPath(string destinationPath)
     {
-        if (DoesFolderExist(destinationPath))
+        if (DoesFolderExist(destinationPath) || DoesFileExist(destinationPath))
         {
             return;
         }
 
-        var createDirCommand = client.RunCommand($"mkdir -p \"{destinationPath}\"");
+        var createDirCommand = client.RunCommand($"mkdir -m775 -p \"{destinationPath}\"");
         createDirCommand.Execute();
         if (!string.IsNullOrEmpty(createDirCommand.Error))
         {

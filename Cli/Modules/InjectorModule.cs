@@ -42,12 +42,12 @@ public static class InjectorModule
         services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(30); // Timeout for all attempts combined.
+                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
                 return new JackettSearchClient(httpClient, settings.Jackett.ApiKey);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
+                waitTime: TimeSpan.FromSeconds(1),
                 attemptTimeout: TimeSpan.FromSeconds(20));
 
         return services;

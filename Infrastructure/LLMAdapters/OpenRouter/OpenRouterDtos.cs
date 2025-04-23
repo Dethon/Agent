@@ -7,6 +7,7 @@ namespace Infrastructure.LLMAdapters.OpenRouter;
 
 public record OpenRouterRequest
 {
+    public required float? Temperature { [UsedImplicitly] get; init; }
     public required string Model { [UsedImplicitly] get; init; }
     public OpenRouterTool[] Tools { [UsedImplicitly] get; init; } = [];
     public OpenRouterMessage[] Messages { [UsedImplicitly] get; init; } = [];
