@@ -6,18 +6,13 @@ namespace Infrastructure.Clients;
 
 public class SshFileSystemClient(SshClient client) : IFileSystemClient
 {
+    private readonly Lock _lLock = new();
+
     public Task<LibraryDescriptionNode> DescribeDirectory(string path)
     {
-        if (!client.IsConnected)
+        return ConnectionWrapper(() =>
         {
-            client.Connect();
-        }
-
-        try
-        {
-            var checkDirCommand = $"[ -d \"{path}\" ] && echo \"EXISTS\" || echo \"NOT_EXISTS\"";
-            var checkResult = client.RunCommand(checkDirCommand).Result.Trim();
-            if (checkResult != "EXISTS")
+            if (!DoesFolderExist(path))
             {
                 throw new DirectoryNotFoundException($"Library directory not found: {path}");
             }
@@ -28,46 +23,72 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
                 Type = LibraryEntryType.Directory,
                 Children = GetLibraryChildNodes(path)
             });
-        }
-        finally
-        {
-            if (client.IsConnected)
-            {
-                client.Disconnect();
-            }
-        }
+        });
     }
 
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
-        if (!client.IsConnected)
+        return ConnectionWrapper(() =>
         {
-            client.Connect();
-        }
-
-        try
-        {
-            if (DoesFileExist(sourcePath))
+            if (!DoesFileExist(sourcePath) && !DoesFolderExist(sourcePath))
             {
-                CreateDestinationPath(destinationPath);
-                MvCommand(sourcePath, destinationPath);
-                return Task.CompletedTask;
-            }
-            else if (DoesFolderExist(sourcePath))
-            {
-                CreateDestinationPath(destinationPath);
-                MvCommand(sourcePath, destinationPath, "-T");
-                return Task.CompletedTask;
+                throw new Exception("Source file does not exist");
             }
 
-            throw new Exception("Source file does not exist");
-        }
-        finally
+            CreateDestinationPath(destinationPath);
+            RunCommand($"mv -T \"{sourcePath}\" \"{destinationPath}\"");
+            return Task.CompletedTask;
+        });
+    }
+
+    public Task RemoveDirectory(string path, CancellationToken cancellationToken = default)
+    {
+        return ConnectionWrapper(() =>
         {
-            if (client.IsConnected)
+            RunCommand($"rm -rf \"{path}\"");
+            return Task.CompletedTask;
+        });
+    }
+
+    public Task RemoveFile(string path, CancellationToken cancellationToken = default)
+    {
+        return ConnectionWrapper(() =>
+        {
+            RunCommand($"rm -f \"{path}\"");
+            return Task.CompletedTask;
+        });
+    }
+
+    private T ConnectionWrapper<T>(Func<T> action)
+    {
+        lock (_lLock)
+        {
+            if (!client.IsConnected)
             {
-                client.Disconnect();
+                client.Connect();
             }
+
+            try
+            {
+                return action();
+            }
+            finally
+            {
+                if (client.IsConnected)
+                {
+                    client.Disconnect();
+                }
+            }
+        }
+    }
+
+    private void RunCommand(string command)
+    {
+        var sshCommand = client.CreateCommand(command);
+        sshCommand.Execute();
+        if (!string.IsNullOrEmpty(sshCommand.Error))
+        {
+            throw new Exception($"Failed to to execute {command} file: {sshCommand.Error}");
         }
     }
 
@@ -96,16 +117,6 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
             .Concat(fileNodes)
             .ToArray();
         return nodes.Length > 0 ? nodes : null;
-    }
-
-    private void MvCommand(string sourcePath, string destinationPath, string options = "")
-    {
-        var moveCommand = client.CreateCommand($"mv {options} \"{sourcePath}\" \"{destinationPath}\"");
-        moveCommand.Execute();
-        if (!string.IsNullOrEmpty(moveCommand.Error))
-        {
-            throw new Exception($"Failed to move file: {moveCommand.Error}");
-        }
     }
 
     private void CreateDestinationPath(string destinationPath)

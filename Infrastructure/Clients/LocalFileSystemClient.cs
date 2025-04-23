@@ -25,6 +25,16 @@ public class LocalFileSystemClient : IFileSystemClient
         throw new NotImplementedException();
     }
 
+    public Task RemoveDirectory(string path, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
+    public Task RemoveFile(string path, CancellationToken cancellationToken = default)
+    {
+        throw new NotImplementedException();
+    }
+
     private static LibraryDescriptionNode[] GetLibraryChildNodes(string basePath)
     {
         var fileNodes = Directory.GetFiles(basePath)

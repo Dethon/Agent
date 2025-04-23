@@ -30,6 +30,32 @@ public class QBittorrentDownloadClient(
         }
     }
 
+    public async Task Cleanup(string id, CancellationToken cancellationToken = default)
+    {
+        await Authenticate(cancellationToken);
+
+        var torrent = await GetSingleTorrent(id, cancellationToken);
+        if (torrent is null)
+        {
+            return;
+        }
+
+        var hash = torrent["hash"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(hash))
+        {
+            throw new InvalidOperationException("Cannot cleanup torrent: unable to get hash");
+        }
+
+        var deleteTorrentContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("hashes", hash),
+            new KeyValuePair<string, string>("deleteFiles", "true")
+        ]);
+
+        var deleteTorrentResponse = await client
+            .PostAsync("torrents/delete", deleteTorrentContent, cancellationToken);
+        deleteTorrentResponse.EnsureSuccessStatusCode();
+    }
+
     public async Task<IEnumerable<DownloadItem>> RefreshDownloadItems(
         IEnumerable<DownloadItem> items, CancellationToken cancellationToken = default)
     {

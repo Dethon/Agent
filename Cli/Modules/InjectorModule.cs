@@ -32,9 +32,13 @@ public static class InjectorModule
             .AddTransient<LibraryDescriptionTool>(sp => new LibraryDescriptionTool(
                 sp.GetRequiredService<IFileSystemClient>(),
                 settings.BaseLibraryPath))
-            .AddTransient<FileMoveTool>(sp => new FileMoveTool(
+            .AddTransient<MoveTool>(sp => new MoveTool(
                 sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath));
+                settings.BaseLibraryPath))
+            .AddTransient<CleanupTool>(sp => new CleanupTool(
+                sp.GetRequiredService<IDownloadClient>(),
+                sp.GetRequiredService<IFileSystemClient>(),
+                settings.DownloadLocation));
     }
 
     public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentConfiguration settings)

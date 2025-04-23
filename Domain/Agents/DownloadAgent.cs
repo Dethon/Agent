@@ -10,7 +10,8 @@ public class DownloadAgent(
     FileSearchTool fileSearchTool,
     FileDownloadTool fileDownloadTool,
     LibraryDescriptionTool libraryDescriptionTool,
-    FileMoveTool fileMoveTool,
+    MoveTool moveTool,
+    CleanupTool cleanupTool,
     DownloadMonitor downloadMonitor) : BaseAgent(largeLanguageModel), IAgent
 {
     private readonly Dictionary<string, ITool> _downloadTools = new()
@@ -22,7 +23,8 @@ public class DownloadAgent(
     private readonly Dictionary<string, ITool> _organizingTools = new()
     {
         { libraryDescriptionTool.Name, libraryDescriptionTool },
-        { fileMoveTool.Name, fileMoveTool }
+        { moveTool.Name, moveTool },
+        { cleanupTool.Name, cleanupTool }
     };
 
     public async Task<List<Message>> Run(string userPrompt, CancellationToken cancellationToken = default)
@@ -54,7 +56,10 @@ public class DownloadAgent(
                           most appropriate. DO NOT ask the user to confirm the choice. 
                           Once the download finishes you will be asked to organize it within the library, when you 
                           receive that command you will be able to explore the library structure and move files 
-                          accordingly.
+                          accordingly. 
+                          Try to mimic the structure of directories that already exist in the library.
+                          You can leave out some files if they are not relevant to the user.
+                          Finally cleanup the leftover files from the download.
                           """
             },
             new()

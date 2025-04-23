@@ -8,7 +8,8 @@ public class AgentResolver(
     ILargeLanguageModel languageModel,
     FileDownloadTool fileDownloadTool,
     FileSearchTool fileSearchTool,
-    FileMoveTool fileMoveTool,
+    MoveTool moveTool,
+    CleanupTool cleanupTool,
     LibraryDescriptionTool libraryDescriptionTool,
     DownloadMonitor downloadMonitor)
 {
@@ -21,7 +22,8 @@ public class AgentResolver(
                 fileSearchTool,
                 fileDownloadTool,
                 libraryDescriptionTool,
-                fileMoveTool,
+                moveTool,
+                cleanupTool,
                 downloadMonitor),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
