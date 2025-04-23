@@ -33,7 +33,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         {
             if (!DoesFileExist(sourcePath) && !DoesFolderExist(sourcePath))
             {
-                throw new Exception("Source file does not exist");
+                throw new IOException("Source file does not exist");
             }
 
             CreateDestinationParentPath(destinationPath);
@@ -123,7 +123,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
     private void CreateDestinationParentPath(string destinationPath)
     {
         var parentPath = Path.GetDirectoryName(destinationPath);
-        if (DoesFolderExist(destinationPath) || DoesFileExist(destinationPath) || string.IsNullOrEmpty(parentPath))
+        if (string.IsNullOrEmpty(parentPath) || DoesFolderExist(parentPath) || DoesFileExist(parentPath))
         {
             return;
         }
