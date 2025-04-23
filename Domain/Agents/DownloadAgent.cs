@@ -12,7 +12,8 @@ public class DownloadAgent(
     LibraryDescriptionTool libraryDescriptionTool,
     MoveTool moveTool,
     CleanupTool cleanupTool,
-    DownloadMonitor downloadMonitor) : BaseAgent(largeLanguageModel), IAgent
+    DownloadMonitor downloadMonitor,
+    int maxDepth = 10) : BaseAgent(largeLanguageModel, maxDepth), IAgent
 {
     private readonly Dictionary<string, ITool> _downloadTools = new()
     {

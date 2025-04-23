@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.DTOs;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 
 namespace Infrastructure.Clients;
 
@@ -88,7 +89,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         sshCommand.Execute();
         if (!string.IsNullOrEmpty(sshCommand.Error))
         {
-            throw new Exception($"Failed to to execute {command}: {sshCommand.Error}");
+            throw new SshException($"Failed to to execute {command}: {sshCommand.Error}");
         }
     }
 

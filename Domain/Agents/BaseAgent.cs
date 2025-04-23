@@ -1,10 +1,14 @@
 ﻿using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Exceptions;
+using JetBrains.Annotations;
 
 namespace Domain.Agents;
 
-public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
+public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxDepth)
 {
+    [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
+
     protected async Task<List<Message>> ExecuteAgentLoop(
         List<Message> messages,
         Dictionary<string, ITool> tools,
@@ -14,7 +18,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
         var toolDefinitions = tools.Values
             .Select(x => x.GetToolDefinition())
             .ToArray();
-        while (true)
+        for (var i = 0; i < MaxDepth; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
                 messages, toolDefinitions, temperature, cancellationToken);
@@ -34,6 +38,8 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel)
                 return messages;
             }
         }
+
+        throw new AgentLoopException($"Agent loop reached max depth ({MaxDepth}). Anti-loop safeguard reached.");
     }
 
     private static async Task<ToolMessage> ResolveToolRequest(
