@@ -35,7 +35,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
                 throw new Exception("Source file does not exist");
             }
 
-            CreateDestinationPath(destinationPath);
+            CreateDestinationParentPath(destinationPath);
             RunCommand($"mv -T \"{sourcePath}\" \"{destinationPath}\"");
             return Task.CompletedTask;
         });
@@ -88,7 +88,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         sshCommand.Execute();
         if (!string.IsNullOrEmpty(sshCommand.Error))
         {
-            throw new Exception($"Failed to to execute {command} file: {sshCommand.Error}");
+            throw new Exception($"Failed to to execute {command}: {sshCommand.Error}");
         }
     }
 
@@ -119,19 +119,15 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         return nodes.Length > 0 ? nodes : null;
     }
 
-    private void CreateDestinationPath(string destinationPath)
+    private void CreateDestinationParentPath(string destinationPath)
     {
-        if (DoesFolderExist(destinationPath) || DoesFileExist(destinationPath))
+        var parentPath = Path.GetDirectoryName(destinationPath);
+        if (DoesFolderExist(destinationPath) || DoesFileExist(destinationPath) || string.IsNullOrEmpty(parentPath))
         {
             return;
         }
 
-        var createDirCommand = client.RunCommand($"mkdir -m775 -p \"{destinationPath}\"");
-        createDirCommand.Execute();
-        if (!string.IsNullOrEmpty(createDirCommand.Error))
-        {
-            throw new Exception($"Failed to create destination directory: {createDirCommand.Error}");
-        }
+        RunCommand($"umask 002 && mkdir -p \"{parentPath}\" && umask 022");
     }
 
     private bool DoesFolderExist(string path)
