@@ -1,10 +1,10 @@
 ﻿using Domain.Contracts;
-using Renci.SshNet;
+using Infrastructure.Wrappers;
 using Renci.SshNet.Common;
 
 namespace Infrastructure.Clients;
 
-public class SshFileSystemClient(SshClient client) : IFileSystemClient
+public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
 {
     private readonly Lock _lLock = new();
 

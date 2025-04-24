@@ -6,8 +6,8 @@ using Domain.Tools.Attachments;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
+using Infrastructure.Wrappers;
 using Microsoft.Extensions.DependencyInjection;
-using Renci.SshNet;
 
 namespace Cli.Modules;
 
@@ -92,8 +92,8 @@ public static class InjectorModule
             return services.AddTransient<IFileSystemClient, LocalFileSystemClient>();
         }
 
-        var sshKey = new PrivateKeyFile(settings.Ssh.KeyPath, settings.Ssh.KeyPass);
-        var sshClient = new SshClient(settings.Ssh.Host, settings.Ssh.UserName, sshKey);
+        var sshClient = new SshClientWrapper(settings.Ssh.Host, settings.Ssh.UserName, settings.Ssh.KeyPath,
+            settings.Ssh.KeyPass);
         return services
             .AddSingleton(sshClient)
             .AddTransient<IFileSystemClient, SshFileSystemClient>(_ => new SshFileSystemClient(sshClient));

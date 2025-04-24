@@ -77,11 +77,9 @@ public class JackettSearchClientTests
         var indexerIds = new[] { "indexer1", "indexer2" };
         SetupIndexersResponse(indexerIds);
 
-        // Set up successful response for first indexer
         var successResult = CreateTestResult("Title 1", "movie", $"{LinkBaseUri}/1", 1000, 10, 5);
         SetupIndexerSearchResponse("indexer1", [successResult]);
 
-        // Set up failed response for second indexer
         SetupMockResponse($"indexers/indexer2/results/?apikey={ApiKey}&Query={DefaultQuery}",
             HttpStatusCode.InternalServerError, "Error");
 
