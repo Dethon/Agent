@@ -57,10 +57,13 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         }
         catch (Exception ex)
         {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine(ex.Message);
+            Console.ResetColor();
             return new ToolMessage
             {
                 Role = Role.Tool,
-                Content = $"Exception: {ex.Message}",
+                Content = $"There was an error. Exception: {ex.Message}",
                 ToolCallId = toolCall.Id
             };
         }
@@ -72,7 +75,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         {
             if (!string.IsNullOrEmpty(message.Reasoning))
             {
-                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.ForegroundColor = ConsoleColor.DarkBlue;
                 Console.WriteLine(message.Reasoning);
             }
 
@@ -84,7 +87,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
 
             foreach (var toolCall in message.ToolCalls)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
+                Console.ForegroundColor = ConsoleColor.DarkCyan;
                 Console.WriteLine($"{toolCall.Name}({toolCall.Parameters?.ToJsonString()})");
             }
         }

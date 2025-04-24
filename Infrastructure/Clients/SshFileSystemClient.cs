@@ -1,5 +1,4 @@
 ﻿using Domain.Contracts;
-using Domain.DTOs;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
@@ -9,7 +8,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
 {
     private readonly Lock _lLock = new();
 
-    public Task<LibraryDescriptionNode> DescribeDirectory(string path)
+    public Task<string[]> DescribeDirectory(string path)
     {
         return ConnectionWrapper(() =>
         {
@@ -18,12 +17,7 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
                 throw new DirectoryNotFoundException($"Library directory not found: {path}");
             }
 
-            return Task.FromResult(new LibraryDescriptionNode
-            {
-                Name = path,
-                Type = LibraryEntryType.Directory,
-                Children = GetLibraryChildNodes(path)
-            });
+            return Task.FromResult(GetLibraryPaths(path));
         });
     }
 
@@ -89,40 +83,23 @@ public class SshFileSystemClient(SshClient client) : IFileSystemClient
         sshCommand.Execute();
         if (!string.IsNullOrEmpty(sshCommand.Error))
         {
-            throw new SshException($"Failed to to execute {command}: {sshCommand.Error}");
+            throw new SshException($"{sshCommand.Error}");
         }
     }
 
-    private LibraryDescriptionNode[]? GetLibraryChildNodes(string basePath)
+    private string[] GetLibraryPaths(string basePath)
     {
-        var dirs = client.RunCommand($"find \"{basePath}\" -maxdepth 1 -type d -not -path \"{basePath}\"")
-            .Result.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var files = client.RunCommand($"find \"{basePath}\" -maxdepth 1 -type f")
-            .Result.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-
-        var fileNodes = files
-            .Select(file => new LibraryDescriptionNode
-            {
-                Name = Path.GetFileName(file),
-                Type = LibraryEntryType.File
-            });
-
-        var nodes = dirs
-            .Where(dir => dir != basePath)
-            .Select(dir => new LibraryDescriptionNode
-            {
-                Name = Path.GetFileName(dir),
-                Type = LibraryEntryType.Directory,
-                Children = GetLibraryChildNodes(dir)
-            })
-            .Concat(fileNodes)
+        return client.RunCommand($"find \"{basePath}\" -type f").Result
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .ToLookup(x => Path.GetDirectoryName(x)?.Replace('\\', '/') ?? string.Empty, x => x)
+            .Where(x => x.Key != string.Empty)
+            .SelectMany(x => x.Take(3))
             .ToArray();
-        return nodes.Length > 0 ? nodes : null;
     }
 
     private void CreateDestinationParentPath(string destinationPath)
     {
-        var parentPath = Path.GetDirectoryName(destinationPath);
+        var parentPath = Path.GetDirectoryName(destinationPath)?.Replace('\\', '/');
         if (string.IsNullOrEmpty(parentPath) || DoesFolderExist(parentPath) || DoesFileExist(parentPath))
         {
             return;

@@ -1,23 +1,17 @@
 ﻿using Domain.Contracts;
-using Domain.DTOs;
 
 namespace Infrastructure.Clients;
 
 public class LocalFileSystemClient : IFileSystemClient
 {
-    public Task<LibraryDescriptionNode> DescribeDirectory(string path)
+    public Task<string[]> DescribeDirectory(string path)
     {
         if (!Directory.Exists(path))
         {
             throw new DirectoryNotFoundException($"Library directory not found: {path}");
         }
 
-        return Task.FromResult(new LibraryDescriptionNode
-        {
-            Name = Path.GetFileName(path),
-            Type = LibraryEntryType.Directory,
-            Children = GetLibraryChildNodes(path)
-        });
+        return Task.FromResult(GetLibraryPaths(path));
     }
 
     public Task Move(string sourceFile, string destinationPath, CancellationToken cancellationToken = default)
@@ -61,23 +55,13 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.CompletedTask;
     }
 
-    private static LibraryDescriptionNode[] GetLibraryChildNodes(string basePath)
+    private static string[] GetLibraryPaths(string basePath)
     {
-        var fileNodes = Directory.GetFiles(basePath)
-            .Select(file => new LibraryDescriptionNode
-            {
-                Name = Path.GetFileName(file),
-                Type = LibraryEntryType.File
-            });
-        return Directory.GetDirectories(basePath)
-            .Select(directory => new LibraryDescriptionNode
-            {
-                Name = Path.GetFileName(directory) ??
-                       throw new DirectoryNotFoundException($"Directory name not found: {directory}"),
-                Type = LibraryEntryType.Directory,
-                Children = GetLibraryChildNodes(directory)
-            })
-            .Concat(fileNodes)
+        return Directory
+            .EnumerateFiles(basePath, "*", SearchOption.AllDirectories)
+            .ToLookup(x => Path.GetDirectoryName(x) ?? string.Empty, x => x)
+            .Where(x => x.Key != string.Empty)
+            .SelectMany(x => x.Take(3))
             .ToArray();
     }
 

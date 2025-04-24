@@ -29,7 +29,7 @@ public class CleanupTool(
         return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = "Download leftovers removed",
+            ["message"] = "Download leftovers removed successfully",
             ["downloadId"] = typedParams.DownloadId
         };
     }

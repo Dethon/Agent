@@ -50,6 +50,7 @@ public class MoveTool(IFileSystemClient client, string libraryPath) : BaseTool, 
                           and must be derived from the LibraryDescription tool response.
                           Equivalent to 'mv -T {SourcePath} {DestinationPath}' bash command.
                           The destination path must not exist, otherwise an exception will be thrown.
+                          All necessary parent directories will be created automatically.
                           """
         };
     }

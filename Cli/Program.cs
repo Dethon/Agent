@@ -15,6 +15,11 @@ if (args.Length == 0 || args.Any(x => x is "--help" or "-h"))
 var sshMode = args.Contains("--ssh");
 var prompt = args[^1];
 
+if (sshMode)
+{
+    Console.WriteLine("SSH mode enabled.");
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 var settings = builder.Configuration.GetSettings();
 builder.Services
