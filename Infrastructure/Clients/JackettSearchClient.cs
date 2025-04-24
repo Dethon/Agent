@@ -1,5 +1,6 @@
 ﻿using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Web;
 using System.Xml.Linq;
 using Domain.Contracts;
@@ -69,45 +70,50 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
             return [];
         }
 
-        var results = jackettResults.EnumerateArray().AsEnumerable().ToArray();
+        var results = jackettResults.EnumerateArray()
+            .Select(x => x.Deserialize<JsonNode>())
+            .Where(x => x is not null)
+            .Cast<JsonNode>()
+            .ToArray();
         return TrimSingleResultSet(results);
     }
 
-    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonElement> allResults, int maxResults = 10)
+    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonNode> allResults, int maxResults = 10)
     {
         var trimmedResults = allResults
-            .Where(x => x.GetProperty("Seeders").GetInt32() > 1)
-            .OrderByDescending(x => x.GetProperty("Seeders").GetInt32())
+            .Where(x => ForceGetInt(x["Seeders"]) > 1)
+            .OrderByDescending(x => ForceGetInt(x["Seeders"]))
             .Take(maxResults)
             .Select(x =>
             {
-                var link = x.GetProperty("Link").GetString() ?? x.GetProperty("MagnetUri").GetString() ?? string.Empty;
-                return new SearchResult
+                try
                 {
-                    Title = x.GetProperty("Title").GetString() ?? string.Empty,
-                    Category = x.GetProperty("CategoryDesc").GetString(),
-                    Id = link.GetHashCode(),
-                    Link = link,
-                    Size = ForceGetInt(x.GetProperty("Size")),
-                    Seeders = ForceGetInt(x.GetProperty("Seeders")),
-                    Peers = ForceGetInt(x.GetProperty("Peers"))
-                };
+                    var link = x["Link"]?.GetValue<string>() ?? x["MagnetUri"]?.GetValue<string>() ?? string.Empty;
+                    return new SearchResult
+                    {
+                        Title = x["Title"]?.GetValue<string>() ?? string.Empty,
+                        Category = x["CategoryDesc"]?.GetValue<string>(),
+                        Id = link.GetHashCode(),
+                        Link = link,
+                        Size = ForceGetInt(x["Size"]),
+                        Seeders = ForceGetInt(x["Seeders"]),
+                        Peers = ForceGetInt(x["Peers"])
+                    };
+                }
+                catch
+                {
+                    return null;
+                }
             })
+            .Where(x => x is not null && x.Link != string.Empty)
+            .Cast<SearchResult>()
             .ToArray();
 
         return trimmedResults;
     }
 
-    private static long? ForceGetInt(JsonElement jsonElement)
+    private static long? ForceGetInt(JsonNode? jsonNode)
     {
-        if (jsonElement.ValueKind != JsonValueKind.Number) return null;
-
-        var longSuccess = jsonElement.TryGetInt64(out var longResult);
-        var doubleSuccess = jsonElement.TryGetDouble(out var doubleResult);
-        if (longSuccess) return longResult;
-
-        if (doubleSuccess) return (long)doubleResult;
-
-        return null;
+        return (long?)jsonNode?.GetValue<double?>();
     }
 }
