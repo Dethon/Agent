@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using Renci.SshNet;
 
 namespace Infrastructure.Wrappers;
 
+[ExcludeFromCodeCoverage]
 public class SshClientWrapper : ISshClientWrapper
 {
     private readonly SshClient _sshClient;
