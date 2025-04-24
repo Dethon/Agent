@@ -56,7 +56,7 @@ public class SshFileSystemClientTests
         // given
         const string sourcePath = "/source/file.txt";
         const string destinationPath = "/dest/path/file.txt";
-        var parentPath = "/dest/path";
+        const string parentPath = "/dest/path";
 
         SetupFileExists(sourcePath, exists: true);
         SetupFolderExists(sourcePath, exists: false);
