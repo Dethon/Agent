@@ -8,7 +8,7 @@ using Moq;
 using Moq.Protected;
 using Shouldly;
 
-namespace Tests.Integration.Clients;
+namespace Tests.Unit.Clients;
 
 public class JackettSearchClientTests
 {
