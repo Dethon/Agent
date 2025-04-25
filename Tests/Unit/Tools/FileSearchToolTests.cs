@@ -100,8 +100,8 @@ public class FileSearchToolTests
 
     private static SearchResult[] CreateSampleSearchResults()
     {
-        return new[]
-        {
+        return
+        [
             new SearchResult
             {
                 Title = "Test File 1",
@@ -122,7 +122,7 @@ public class FileSearchToolTests
                 Seeders = 20,
                 Peers = 15
             }
-        };
+        ];
     }
 
     #endregion
