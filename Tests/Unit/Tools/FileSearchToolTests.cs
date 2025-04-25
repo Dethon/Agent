@@ -89,7 +89,29 @@ public class FileSearchToolTests
         definition.Description.ShouldContain("Search for a file in the internet");
     }
 
+    [Fact]
+    public async Task Run_WithClientFailure_ShouldPropagateException()
+    {
+        // given
+        var fileSearchTool = new FileSearchTool(_mockSearchClient.Object, _searchHistory);
+        var parameters = new JsonObject
+        {
+            ["SearchString"] = "test search"
+        };
+        SetupClientFailure("error");
+
+        // when/then
+        await Should.ThrowAsync<Exception>(async () => await fileSearchTool.Run(parameters));
+    }
+
     #region Helper Methods
+
+    private void SetupClientFailure(string errorMessage)
+    {
+        _mockSearchClient
+            .Setup(x => x.Search(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception(errorMessage));
+    }
 
     private void SetupSearchResults(SearchResult[] results)
     {

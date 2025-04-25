@@ -8,7 +8,7 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
 {
     private readonly Lock _lLock = new();
 
-    public Task<string[]> DescribeDirectory(string path)
+    public Task<string[]> DescribeDirectory(string path, CancellationToken cancellationToken = default)
     {
         return ConnectionWrapper(() =>
         {

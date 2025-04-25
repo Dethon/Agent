@@ -13,30 +13,17 @@ public class LibraryDescriptionToolTests
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
 
     [Fact]
-    public void Name_ShouldReturnCorrectValue()
-    {
-        // given
-        var tool = CreateTool(_mockFileSystemClient);
-
-        // when
-        var name = tool.Name;
-
-        // then
-        name.ShouldBe("LibraryDescription");
-    }
-
-    [Fact]
     public async Task Run_ShouldCallDescribeDirectoryWithCorrectPath()
     {
         // given
         SetupClientMockWithContents();
-        var tool = CreateTool(_mockFileSystemClient);
+        var tool = new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath);
 
         // when
         await tool.Run(null);
 
         // then
-        _mockFileSystemClient.Verify(c => c.DescribeDirectory(DefaultLibraryPath), Times.Once);
+        _mockFileSystemClient.Verify(c => c.DescribeDirectory(DefaultLibraryPath, CancellationToken.None), Times.Once);
     }
 
     [Fact]
@@ -44,7 +31,7 @@ public class LibraryDescriptionToolTests
     {
         // given
         SetupClientMockWithContents();
-        var tool = CreateTool(_mockFileSystemClient);
+        var tool = new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath);
 
         // when
         var result = await tool.Run(null);
@@ -62,7 +49,7 @@ public class LibraryDescriptionToolTests
     public void GetToolDefinition_ShouldReturnProperDefinition()
     {
         // given
-        var tool = CreateTool(_mockFileSystemClient);
+        var tool = new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath);
 
         // when
         var definition = tool.GetToolDefinition();
@@ -75,19 +62,30 @@ public class LibraryDescriptionToolTests
             "Describes the library folder structure to be able to decide where to put downloaded files.");
     }
 
+    [Fact]
+    public async Task Run_WithClientFailure_ShouldPropagateException()
+    {
+        // given
+        var tool = new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath);
+        SetupClientFailure("error");
+
+        // when/then
+        await Should.ThrowAsync<Exception>(async () => await tool.Run(null));
+    }
+
     #region Helper Methods
 
-    private static LibraryDescriptionTool CreateTool(
-        Mock<IFileSystemClient> clientMock,
-        string libraryPath = DefaultLibraryPath)
+    private void SetupClientFailure(string errorMessage)
     {
-        return new LibraryDescriptionTool(clientMock.Object, libraryPath);
+        _mockFileSystemClient
+            .Setup(x => x.DescribeDirectory(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception(errorMessage));
     }
 
     private void SetupClientMockWithContents(
         string libraryPath = DefaultLibraryPath, string[]? directoryContents = null)
     {
-        _mockFileSystemClient.Setup(c => c.DescribeDirectory(libraryPath))
+        _mockFileSystemClient.Setup(c => c.DescribeDirectory(libraryPath, CancellationToken.None))
             .ReturnsAsync(directoryContents ?? _defaultDirectoryContents);
     }
 

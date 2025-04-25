@@ -4,7 +4,7 @@ namespace Infrastructure.Clients;
 
 public class LocalFileSystemClient : IFileSystemClient
 {
-    public Task<string[]> DescribeDirectory(string path)
+    public Task<string[]> DescribeDirectory(string path, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(path))
         {
