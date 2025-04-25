@@ -5,7 +5,7 @@ namespace Domain.Tools.Attachments;
 
 public class DownloadMonitor(IDownloadClient client)
 {
-    private Dictionary<int, DownloadItem> Downloads { get; set; } = [];
+    public Dictionary<int, DownloadItem> Downloads { get; private set; } = [];
     private readonly Lock _lLock = new();
 
     public void Add(SearchResult info, string savePath)

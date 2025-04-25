@@ -17,7 +17,7 @@ public class SearchHistory
             History = History
                 .Concat(resultDict)
                 .ToLookup(x => x.Key, x => x.Value)
-                .ToDictionary(x => x.Key, x => x.First());
+                .ToDictionary(x => x.Key, x => x.Last());
         }
     }
 }
