@@ -1,4 +1,5 @@
-﻿using Domain.Contracts;
+﻿using System.Runtime.CompilerServices;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
 using JetBrains.Annotations;
@@ -8,12 +9,12 @@ namespace Domain.Agents;
 public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxDepth)
 {
     [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
+    protected List<Message> _messages = [];
 
-    protected async Task<List<Message>> ExecuteAgentLoop(
-        List<Message> messages,
+    protected async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
         Dictionary<string, ITool> tools,
         float? temperature = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var toolDefinitions = tools.Values
             .Select(x => x.GetToolDefinition())
@@ -21,8 +22,11 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         for (var i = 0; i < MaxDepth; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
-                messages, toolDefinitions, temperature, cancellationToken);
-            DisplayResponses(responseMessages);
+                _messages, toolDefinitions, temperature, cancellationToken);
+            foreach (var responseMessage in responseMessages)
+            {
+                yield return responseMessage;
+            }
 
             var toolTasks = responseMessages
                 .Where(x => x.StopReason == StopReason.ToolCalls)
@@ -30,12 +34,12 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
                 .Select(x => ResolveToolRequest(tools[x.Name], x, cancellationToken))
                 .ToArray();
             var toolResponseMessages = await Task.WhenAll(toolTasks);
-            messages.AddRange(responseMessages);
-            messages.AddRange(toolResponseMessages);
+            _messages.AddRange(responseMessages);
+            _messages.AddRange(toolResponseMessages);
 
             if (toolTasks.Length == 0)
             {
-                return messages;
+                yield break;
             }
         }
 
@@ -58,7 +62,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         catch (Exception ex)
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine(ex.Message);
+            Console.WriteLine(ex.Message); // TODO: Change to logger
             Console.ResetColor();
             return new ToolMessage
             {
@@ -67,31 +71,5 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
                 ToolCallId = toolCall.Id
             };
         }
-    }
-
-    private static void DisplayResponses(AgentResponse[] agentResponses)
-    {
-        foreach (var message in agentResponses)
-        {
-            if (!string.IsNullOrEmpty(message.Reasoning))
-            {
-                Console.ForegroundColor = ConsoleColor.DarkBlue;
-                Console.WriteLine(message.Reasoning);
-            }
-
-            if (!string.IsNullOrEmpty(message.Content))
-            {
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine(message.Content);
-            }
-
-            foreach (var toolCall in message.ToolCalls)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkCyan;
-                Console.WriteLine($"{toolCall.Name}({toolCall.Parameters?.ToJsonString()})");
-            }
-        }
-
-        Console.ResetColor();
     }
 }

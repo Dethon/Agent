@@ -41,7 +41,7 @@ public class DownloadAgentTests
         SetupLlmResponses([[]]);
 
         // when
-        await _agent.Run(userPrompt);
+        var responses = await _agent.Run(userPrompt).ToArrayAsync();
 
         // then
     }

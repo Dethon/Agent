@@ -1,38 +1,43 @@
-﻿using Domain.Contracts;
+﻿using System.Runtime.CompilerServices;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
 using Domain.Tools.Attachments;
 
 namespace Domain.Agents;
 
-public class DownloadAgent(
-    ILargeLanguageModel largeLanguageModel,
-    FileSearchTool fileSearchTool,
-    FileDownloadTool fileDownloadTool,
-    LibraryDescriptionTool libraryDescriptionTool,
-    MoveTool moveTool,
-    CleanupTool cleanupTool,
-    DownloadMonitor downloadMonitor,
-    int maxDepth = 10) : BaseAgent(largeLanguageModel, maxDepth), IAgent
+public class DownloadAgent : BaseAgent, IAgent
 {
-    private readonly Dictionary<string, ITool> _downloadTools = new()
-    {
-        { fileDownloadTool.Name, fileDownloadTool },
-        { fileSearchTool.Name, fileSearchTool },
-    };
+    private readonly Dictionary<string, ITool> _downloadTools;
 
-    private readonly Dictionary<string, ITool> _organizingTools = new()
-    {
-        { libraryDescriptionTool.Name, libraryDescriptionTool },
-        { moveTool.Name, moveTool },
-        { cleanupTool.Name, cleanupTool }
-    };
+    private readonly Dictionary<string, ITool> _organizingTools;
 
-    public async Task<List<Message>> Run(string userPrompt, CancellationToken cancellationToken = default)
+    private readonly DownloadMonitor _downloadMonitor;
+
+    public DownloadAgent(ILargeLanguageModel largeLanguageModel,
+        FileSearchTool fileSearchTool,
+        FileDownloadTool fileDownloadTool,
+        LibraryDescriptionTool libraryDescriptionTool,
+        MoveTool moveTool,
+        CleanupTool cleanupTool,
+        DownloadMonitor downloadMonitor,
+        int maxDepth = 10) : base(largeLanguageModel, maxDepth)
     {
-        var messages = new List<Message>
+        _downloadMonitor = downloadMonitor;
+        _downloadTools = new Dictionary<string, ITool>
         {
-            new()
+            { fileDownloadTool.Name, fileDownloadTool },
+            { fileSearchTool.Name, fileSearchTool },
+        };
+        _organizingTools = new Dictionary<string, ITool>
+        {
+            { libraryDescriptionTool.Name, libraryDescriptionTool },
+            { moveTool.Name, moveTool },
+            { cleanupTool.Name, cleanupTool }
+        };
+
+        _messages.Add(
+            new Message
             {
                 Role = Role.System,
                 Content = """
@@ -73,22 +78,28 @@ public class DownloadAgent(
                           Make sure the necessary files are moved into the library before you cleanup the download's 
                           leftovers.
                           """
-            },
-            new()
-            {
-                Role = Role.User,
-                Content = userPrompt
-            }
-        };
+            });
+    }
 
-        messages = await ExecuteAgentLoop(messages, _downloadTools, 0.5f, cancellationToken);
+    public async IAsyncEnumerable<AgentResponse> Run(
+        string userPrompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        _messages.Add(new Message
+        {
+            Role = Role.User,
+            Content = userPrompt
+        });
 
-        while (await downloadMonitor.AreDownloadsPending(cancellationToken))
+        await foreach (var response in ExecuteAgentLoop(_downloadTools, 0.5f, cancellationToken))
+        {
+            yield return response;
+        }
+        while (await _downloadMonitor.AreDownloadsPending(cancellationToken))
         {
             await Task.Delay(1000, cancellationToken);
-            foreach (var id in await downloadMonitor.PopCompletedDownloads(cancellationToken))
+            foreach (var id in await _downloadMonitor.PopCompletedDownloads(cancellationToken))
             {
-                messages.Add(new Message
+                _messages.Add(new Message
                 {
                     Role = Role.User,
                     Content = $"""
@@ -99,10 +110,11 @@ public class DownloadAgent(
                                Hint: Use the LibraryDescription, Move andCleanup tools.
                                """
                 });
-                await ExecuteAgentLoop(messages, _organizingTools, 0.3f, cancellationToken);
+                await foreach(var response in ExecuteAgentLoop(_organizingTools, 0.3f, cancellationToken))
+                {
+                    yield return response;
+                }
             }
         }
-
-        return messages;
     }
 }
