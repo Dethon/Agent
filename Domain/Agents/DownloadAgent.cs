@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
 using Domain.Tools.Attachments;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
@@ -21,7 +22,8 @@ public class DownloadAgent : BaseAgent, IAgent
         MoveTool moveTool,
         CleanupTool cleanupTool,
         DownloadMonitor downloadMonitor,
-        int maxDepth = 10) : base(largeLanguageModel, maxDepth)
+        ILogger<DownloadAgent> logger,
+        int maxDepth = 10) : base(largeLanguageModel, maxDepth, logger)
     {
         _downloadMonitor = downloadMonitor;
         _downloadTools = new Dictionary<string, ITool>

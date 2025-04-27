@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using Cli.Settings;
+using Domain.ChatMonitor;
 using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Attachments;
@@ -114,5 +115,14 @@ public static class InjectorModule
                 attemptTimeout: TimeSpan.FromMinutes(1));
 
         return services;
+    }
+
+    public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentConfiguration settings)
+    {
+        return services
+            .AddSingleton<TaskQueue>()
+            .AddSingleton<ChatMonitor>()
+            .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
+                new TelegramBotChatClient(settings.Telegram.BotToken));
     }
 }

@@ -24,4 +24,9 @@ public record ToolCall
     public required string Id { get; init; }
     public required string Name { get; init; }
     public JsonNode? Parameters { get; init; }
+
+    public override string ToString()
+    {
+        return $"{Name}({Parameters?.ToJsonString()})";
+    }
 }

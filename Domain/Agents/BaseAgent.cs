@@ -3,13 +3,14 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
 using JetBrains.Annotations;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
-public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxDepth)
+public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxDepth, ILogger<BaseAgent> logger)
 {
     [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
-    protected List<Message> _messages = [];
+    protected readonly List<Message> _messages = [];
 
     protected async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
         Dictionary<string, ITool> tools,
@@ -46,7 +47,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         throw new AgentLoopException($"Agent loop reached max depth ({MaxDepth}). Anti-loop safeguard reached.");
     }
 
-    private static async Task<ToolMessage> ResolveToolRequest(
+    private async Task<ToolMessage> ResolveToolRequest(
         ITool tool, ToolCall toolCall, CancellationToken cancellationToken)
     {
         try
@@ -61,9 +62,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         }
         catch (Exception ex)
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine(ex.Message); // TODO: Change to logger
-            Console.ResetColor();
+            logger.LogError(ex, "Tool {} Error: {}", tool.Name, ex.Message);
             return new ToolMessage
             {
                 Role = Role.Tool,

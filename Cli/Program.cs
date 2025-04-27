@@ -16,7 +16,6 @@ if (args.Length == 0 || args.Any(x => x is "--help" or "-h"))
 
 var sshMode = args.Contains("--ssh");
 var isDaemon = args.Contains("-d");
-var prompt = args[^1];
 
 if (sshMode)
 {
@@ -30,26 +29,26 @@ builder.Services
     .AddJacketClient(settings)
     .AddQBittorrentClient(settings)
     .AddFileSystemClient(settings, sshMode)
+    .AddChatMonitoring(settings)
     .AddAttachments()
     .AddTools(settings)
     .AddTransient<AgentResolver>();
 
 if (isDaemon)
 {
-    builder.Services.AddSingleton<TaskQueue>();
-    builder.Services.AddSingleton<TelegramMonitor>();
     builder.Services.AddHostedService<TaskRunner>();
     using var host = builder.Build();
     
-    var telegramMonitor = host.Services.GetRequiredService<TelegramMonitor>();
     await host.StartAsync();
-    await telegramMonitor.Monitor();
+    await Monitoring.Start(host.Services);
     await host.StopAsync();
 }
 else
 {
     using var host = builder.Build();
+    
     await host.StartAsync();
+    var prompt = args[^1];
     await Command.Start(host.Services, prompt);
     await host.StopAsync();
 }

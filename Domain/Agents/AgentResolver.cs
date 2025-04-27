@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Attachments;
+using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
@@ -11,7 +12,8 @@ public class AgentResolver(
     MoveTool moveTool,
     CleanupTool cleanupTool,
     LibraryDescriptionTool libraryDescriptionTool,
-    DownloadMonitor downloadMonitor)
+    DownloadMonitor downloadMonitor,
+    ILoggerFactory  loggerFactory)
 {
     public IAgent Resolve(AgentType agentType)
     {
@@ -24,7 +26,8 @@ public class AgentResolver(
                 libraryDescriptionTool,
                 moveTool,
                 cleanupTool,
-                downloadMonitor),
+                downloadMonitor,
+                loggerFactory.CreateLogger<DownloadAgent>()),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
     }

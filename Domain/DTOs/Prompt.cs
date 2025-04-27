@@ -1,0 +1,7 @@
+﻿namespace Domain.DTOs;
+
+public record ChatPrompt
+{
+    public required string Prompt {get; init;}
+    public required long ChatId {get; init;}
+}

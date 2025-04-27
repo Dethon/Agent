@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
 using Domain.Tools.Attachments;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 
 namespace Tests.Unit.Agents;
@@ -29,7 +30,8 @@ public class DownloadAgentTests
             new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation),
-            _downloadMonitor
+            _downloadMonitor,
+            NullLogger<DownloadAgent>.Instance
         );
     }
 
