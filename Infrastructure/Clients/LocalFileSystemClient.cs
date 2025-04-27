@@ -4,7 +4,7 @@ namespace Infrastructure.Clients;
 
 public class LocalFileSystemClient : IFileSystemClient
 {
-    public Task<string[]> DescribeDirectory(string path, CancellationToken cancellationToken = default)
+    public Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(path))
         {
@@ -55,14 +55,16 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.CompletedTask;
     }
 
-    private static string[] GetLibraryPaths(string basePath)
+    private static Dictionary<string, string[]> GetLibraryPaths(string basePath)
     {
         return Directory
             .EnumerateFiles(basePath, "*", SearchOption.AllDirectories)
-            .ToLookup(x => Path.GetDirectoryName(x) ?? string.Empty, x => x)
-            .Where(x => x.Key != string.Empty)
-            .SelectMany(x => x.Take(3))
-            .ToArray();
+            .ToLookup(
+                // ReSharper disable once ConvertClosureToMethodGroup
+                x => Path.GetDirectoryName(x) ?? string.Empty, 
+                x => Path.GetFileName(x))
+            .Where(x => !string.IsNullOrEmpty(x.Key))
+            .ToDictionary(x => x.Key, x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
     }
 
     private static void CreateDestinationParentPath(string destinationPath)

@@ -30,6 +30,9 @@ public class DownloadAgent : BaseAgent, IAgent
         {
             { fileDownloadTool.Name, fileDownloadTool },
             { fileSearchTool.Name, fileSearchTool },
+            { libraryDescriptionTool.Name, libraryDescriptionTool },
+            { moveTool.Name, moveTool },
+            { cleanupTool.Name, cleanupTool }
         };
         _organizingTools = new Dictionary<string, ITool>
         {

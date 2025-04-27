@@ -9,7 +9,12 @@ namespace Tests.Unit.Tools;
 public class LibraryDescriptionToolTests
 {
     private const string DefaultLibraryPath = "test/library/path";
-    private readonly string[] _defaultDirectoryContents = ["file1.txt", "folder1/", "folder2/file2.txt"];
+
+    private readonly Dictionary<string, string[]> _defaultDirectoryContents = new()
+    {
+        { "folder1/subfolder", ["file1.txt"] },
+        { "folder2", ["file2.txt"] },
+    };
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
 
     [Fact]
@@ -29,20 +34,7 @@ public class LibraryDescriptionToolTests
     [Fact]
     public async Task Run_ShouldReturnSerializedDirectoryDescription()
     {
-        // given
-        SetupClientMockWithContents();
-        var tool = new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath);
-
-        // when
-        var result = await tool.Run(null);
-
-        // then
-        result.ShouldNotBeNull();
-        var resultArray = result.AsArray();
-        resultArray.Count.ShouldBe(3);
-        resultArray[0]!.GetValue<string>().ShouldBe("file1.txt");
-        resultArray[1]!.GetValue<string>().ShouldBe("folder1/");
-        resultArray[2]!.GetValue<string>().ShouldBe("folder2/file2.txt");
+        // givenS"file2.txt"]);
     }
 
     [Fact]
@@ -83,7 +75,7 @@ public class LibraryDescriptionToolTests
     }
 
     private void SetupClientMockWithContents(
-        string libraryPath = DefaultLibraryPath, string[]? directoryContents = null)
+        string libraryPath = DefaultLibraryPath, Dictionary<string, string[]>? directoryContents = null)
     {
         _mockFileSystemClient.Setup(c => c.DescribeDirectory(libraryPath, CancellationToken.None))
             .ReturnsAsync(directoryContents ?? _defaultDirectoryContents);

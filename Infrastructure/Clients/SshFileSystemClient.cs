@@ -8,7 +8,7 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
 {
     private readonly Lock _lLock = new();
 
-    public Task<string[]> DescribeDirectory(string path, CancellationToken cancellationToken = default)
+    public Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default)
     {
         return ConnectionWrapper(() =>
         {
@@ -87,14 +87,16 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
         }
     }
 
-    private string[] GetLibraryPaths(string basePath)
+    private Dictionary<string, string[]> GetLibraryPaths(string basePath)
     {
         return client.RunCommand($"find \"{basePath}\" -type f").Result
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .ToLookup(x => Path.GetDirectoryName(x)?.Replace('\\', '/') ?? string.Empty, x => x)
-            .Where(x => x.Key != string.Empty)
-            .SelectMany(x => x.Take(3))
-            .ToArray();
+            .ToLookup(
+                // ReSharper disable once ConvertClosureToMethodGroup
+                x => Path.GetDirectoryName(x)?.Replace('\\', '/') ?? string.Empty, 
+                x => Path.GetFileName(x))
+            .Where(x => !string.IsNullOrEmpty(x.Key) )
+            .ToDictionary(x => x.Key, x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
     }
 
     private void CreateDestinationParentPath(string destinationPath)

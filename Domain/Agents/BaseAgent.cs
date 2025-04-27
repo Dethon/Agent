@@ -62,7 +62,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Tool {} Error: {}", tool.Name, ex.Message);
+            logger.LogError(ex, "Tool {ToolName} Error: {ExceptionMessage}", tool.Name, ex.Message);
             return new ToolMessage
             {
                 Role = Role.Tool,

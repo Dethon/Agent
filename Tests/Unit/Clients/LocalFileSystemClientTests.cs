@@ -41,10 +41,9 @@ public class LocalFileSystemClientTests : IDisposable
 
         // then
         result.ShouldNotBeEmpty();
-        result.Length.ShouldBe(3);
-        result.ShouldContain(file1);
-        result.ShouldContain(file2);
-        result.ShouldContain(file3);
+        result.Count.ShouldBe(1);
+        result.ShouldContainKey(subDir);
+        result[subDir].ShouldBe(["file1.txt", "file2.txt", "file3.txt"]);
     }
 
     [Fact]

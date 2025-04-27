@@ -34,9 +34,9 @@ public class SshFileSystemClientTests
 
         // then
         result.ShouldNotBeEmpty();
-        result.Length.ShouldBe(2);
-        result.ShouldContain("/test/path/file1");
-        result.ShouldContain("/test/path/file2");
+        result.Count.ShouldBe(1);
+        result.ShouldContainKey("/test/path");
+        result["/test/path"].ShouldBe(["file1", "file2"]);
     }
 
     [Fact]

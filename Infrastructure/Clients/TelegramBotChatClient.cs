@@ -2,12 +2,13 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Telegram.Bot;
+using Telegram.Bot.Types.Enums;
 
 namespace Infrastructure.Clients;
 
 public class TelegramBotChatClient(string token) : IChatClient
 {
-    private readonly TelegramBotClient _botClient = new TelegramBotClient(token);
+    private readonly TelegramBotClient _botClient = new(token);
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -27,6 +28,7 @@ public class TelegramBotChatClient(string token) : IChatClient
                     {
                         Prompt = update.Message.Text,
                         ChatId = update.Message.Chat.Id,
+                        MessageId = update.Message.MessageId,
                     };
                 }
                 if (cancellationToken.IsCancellationRequested) break;
@@ -34,8 +36,17 @@ public class TelegramBotChatClient(string token) : IChatClient
         }
     }
 
-    public async Task SendResponse(long chatId, string response, CancellationToken cancellationToken = default)
+    public async Task SendResponse(
+        long chatId, string response, int? replyId = null, CancellationToken cancellationToken = default)
     {
-        await _botClient.SendMessage(chatId, response, cancellationToken: cancellationToken);
+        var trimmedMessage = response.Length > 4000
+            ? $"{response[..4000]} ... (truncated)"
+            : response;
+        await _botClient.SendMessage(
+            chatId, 
+            trimmedMessage, 
+            parseMode: ParseMode.Html,
+            replyParameters: replyId, 
+            cancellationToken: cancellationToken);
     }
 }

@@ -15,7 +15,7 @@ public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var result = await client.DescribeDirectory(libraryPath);
+        var result = await client.DescribeDirectory(libraryPath, cancellationToken);
         var jsonResult = JsonSerializer.SerializeToNode(result);
         return jsonResult ?? throw new InvalidOperationException("Failed to serialize LibraryDescriptionNode");
     }

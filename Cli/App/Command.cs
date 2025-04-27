@@ -38,7 +38,7 @@ public static class Command
             foreach (var toolCall in message.ToolCalls)
             {
                 Console.ForegroundColor = ConsoleColor.DarkCyan;
-                Console.WriteLine($"{toolCall.Name}({toolCall.Parameters?.ToJsonString()})");
+                Console.WriteLine(toolCall.ToString());
             }
         }
 
