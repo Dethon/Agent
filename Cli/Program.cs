@@ -36,7 +36,7 @@ builder.Services
 
 if (isDaemon)
 {
-    builder.Services.AddHostedService<TaskRunner>();
+    builder.Services.AddWorkers(10);
     using var host = builder.Build();
     
     await host.StartAsync();

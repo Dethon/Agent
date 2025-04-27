@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using Cli.App;
 using Cli.Settings;
 using Domain.ChatMonitor;
 using Domain.Contracts;
@@ -9,6 +10,7 @@ using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
 using Infrastructure.Wrappers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Cli.Modules;
 
@@ -124,5 +126,14 @@ public static class InjectorModule
             .AddSingleton<ChatMonitor>()
             .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
                 new TelegramBotChatClient(settings.Telegram.BotToken));
+    }
+
+    public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)
+    {
+        for(var i = 0; i < amount; i++)
+        {
+            services.AddSingleton<IHostedService, TaskRunner>();
+        }
+        return services;
     }
 }
