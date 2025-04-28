@@ -125,15 +125,16 @@ public static class InjectorModule
             .AddSingleton<TaskQueue>()
             .AddSingleton<ChatMonitor>()
             .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
-                new TelegramBotChatClient(settings.Telegram.BotToken));
+                new TelegramBotChatClient(settings.Telegram.BotToken, settings.Telegram.AllowedUserNames));
     }
 
     public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)
     {
-        for(var i = 0; i < amount; i++)
+        for (var i = 0; i < amount; i++)
         {
             services.AddSingleton<IHostedService, TaskRunner>();
         }
+
         return services;
     }
 }

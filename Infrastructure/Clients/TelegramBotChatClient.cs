@@ -6,9 +6,10 @@ using Telegram.Bot.Types.Enums;
 
 namespace Infrastructure.Clients;
 
-public class TelegramBotChatClient(string token) : IChatClient
+public class TelegramBotChatClient(string token, string[] allowedUserNames) : IChatClient
 {
     private readonly TelegramBotClient _botClient = new(token);
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -16,21 +17,33 @@ public class TelegramBotChatClient(string token) : IChatClient
         while (!cancellationToken.IsCancellationRequested)
         {
             var updates = await _botClient.GetUpdates(
-                offset: offset, 
-                timeout: timeout, 
+                offset: offset,
+                timeout: timeout,
                 cancellationToken: cancellationToken);
             foreach (var update in updates)
             {
                 offset = update.Id + 1;
                 if (update.Message?.Text is not null)
                 {
-                    yield return new ChatPrompt
+                    if (allowedUserNames.Contains(update.Message.Chat.Username))
                     {
-                        Prompt = update.Message.Text,
-                        ChatId = update.Message.Chat.Id,
-                        MessageId = update.Message.MessageId,
-                    };
+                        yield return new ChatPrompt
+                        {
+                            Prompt = update.Message.Text,
+                            ChatId = update.Message.Chat.Id,
+                            MessageId = update.Message.MessageId
+                        };
+                    }
+                    else
+                    {
+                        await _botClient.SendMessage(
+                            update.Message.Chat.Id,
+                            "You are not authorized to use this bot.",
+                            replyParameters: update.Message.Id,
+                            cancellationToken: cancellationToken);
+                    }
                 }
+
                 if (cancellationToken.IsCancellationRequested) break;
             }
         }
@@ -43,10 +56,10 @@ public class TelegramBotChatClient(string token) : IChatClient
             ? $"{response[..4000]} ... (truncated)"
             : response;
         await _botClient.SendMessage(
-            chatId, 
-            trimmedMessage, 
+            chatId,
+            trimmedMessage,
             parseMode: ParseMode.Html,
-            replyParameters: replyId, 
+            replyParameters: replyId,
             cancellationToken: cancellationToken);
     }
 }

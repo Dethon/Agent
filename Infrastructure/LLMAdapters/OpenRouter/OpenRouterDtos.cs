@@ -16,7 +16,7 @@ public record OpenRouterRequest
 
 public record OpenRouterReasoning
 {
-    [UsedImplicitly] public int MaxTokens { get; init; } = 2000;
+    [UsedImplicitly] public int MaxTokens { get; init; } = 1000;
 }
 
 public record OpenRouterTool
