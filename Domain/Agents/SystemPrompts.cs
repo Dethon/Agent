@@ -28,8 +28,8 @@ public static class DownloadSystemPrompt
                                  You are allowed to automatically start the download of the selected file/s, the ones 
                                  you find most appropriate. DO NOT ask the user to confirm the choice. 
 
-                                 After starting the download you must wait for it to finish. after that you will be 
-                                 asked to organize it within the library. 
+                                 After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
+                                 provided for that. After that you will be asked to organize it within the library. 
                                  When you receive that command you will be able to explore the library structure and 
                                  move files accordingly.
                                  It is important that you only move the files related to the download you received the 
