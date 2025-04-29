@@ -17,7 +17,6 @@ public class DownloadAgent : BaseAgent
         LibraryDescriptionTool libraryDescriptionTool,
         MoveTool moveTool,
         CleanupTool cleanupTool,
-        List<Message> messages,
         ILogger<DownloadAgent> logger,
         int maxDepth = 10) : base(largeLanguageModel, maxDepth, logger)
     {
@@ -30,15 +29,11 @@ public class DownloadAgent : BaseAgent
             { moveTool.Name, moveTool },
             { cleanupTool.Name, cleanupTool }
         };
-        Messages = messages;
-        if (Messages.Count == 0)
+        Messages.Add(new Message
         {
-            Messages.Add(new Message
-            {
-                Role = Role.System,
-                Content = DownloadSystemPrompt.Prompt
-            });
-        }
+            Role = Role.System,
+            Content = DownloadSystemPrompt.Prompt
+        });
     }
 
     public override IAsyncEnumerable<AgentResponse> Run(

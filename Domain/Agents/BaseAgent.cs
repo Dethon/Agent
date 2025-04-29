@@ -13,7 +13,7 @@ public abstract class BaseAgent(
     ILogger<BaseAgent> logger) : IAgent
 {
     [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
-    public List<Message> Messages { get; protected init; } = [];
+    public List<Message> Messages { get; } = [];
 
     public abstract IAsyncEnumerable<AgentResponse> Run(
         string userPrompt, CancellationToken cancellationToken = default);

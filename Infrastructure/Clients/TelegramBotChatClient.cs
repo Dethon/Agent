@@ -32,6 +32,9 @@ public class TelegramBotChatClient(string token, string[] allowedUserNames) : IC
                             Prompt = update.Message.Text,
                             ChatId = update.Message.Chat.Id,
                             MessageId = update.Message.MessageId,
+                            Sender = update.Message.Chat.Username ??
+                                     update.Message.Chat.FirstName ??
+                                     $"{update.Message.Chat.Id}",
                             ReplyToMessageId = update.Message.ReplyToMessage?.MessageId
                         };
                     }

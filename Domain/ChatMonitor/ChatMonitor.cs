@@ -43,7 +43,8 @@ public class ChatMonitor(
                 var message = $"{mainMessage}<blockquote expandable><code>{toolMessage}</code></blockquote>";
                 var messageId = await chatClient
                     .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
-                agentResolver.AssociateMessageIdToAgent(messageId, agent);
+
+                agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
             }
         }
         catch (Exception ex)

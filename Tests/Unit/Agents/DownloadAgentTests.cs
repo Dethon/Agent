@@ -31,7 +31,6 @@ public class DownloadAgentTests
             new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation),
-            [],
             NullLogger<DownloadAgent>.Instance
         );
     }

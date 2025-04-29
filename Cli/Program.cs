@@ -25,6 +25,7 @@ if (sshMode)
 var builder = Host.CreateApplicationBuilder(args);
 var settings = builder.Configuration.GetSettings();
 builder.Services
+    .AddMemoryCache()
     .AddOpenRouterAdapter(settings)
     .AddJacketClient(settings)
     .AddQBittorrentClient(settings)

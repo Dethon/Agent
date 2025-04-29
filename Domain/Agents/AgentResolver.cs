@@ -1,6 +1,6 @@
 ﻿using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Tools;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
@@ -13,37 +13,49 @@ public class AgentResolver(
     MoveTool moveTool,
     CleanupTool cleanupTool,
     LibraryDescriptionTool libraryDescriptionTool,
+    IMemoryCache cache,
     ILoggerFactory loggerFactory)
 {
-    private readonly Dictionary<int, List<Message>> _historics = [];
     private readonly Lock _lLock = new();
 
     public IAgent Resolve(AgentType agentType, int? sourceMessageId = null)
     {
-        lock (_lLock)
+        return GetAgentFromCache(sourceMessageId) ?? agentType switch
         {
-            return agentType switch
-            {
-                AgentType.Download => new DownloadAgent(
-                    languageModel,
-                    fileSearchTool,
-                    fileDownloadTool,
-                    waitForDownloadTool,
-                    libraryDescriptionTool,
-                    moveTool,
-                    cleanupTool,
-                    sourceMessageId is null ? [] : _historics.GetValueOrDefault(sourceMessageId.Value) ?? [],
-                    loggerFactory.CreateLogger<DownloadAgent>()),
-                _ => throw new ArgumentException($"Unknown agent type: {agentType}")
-            };
-        }
+            AgentType.Download => new DownloadAgent(
+                languageModel,
+                fileSearchTool,
+                fileDownloadTool,
+                waitForDownloadTool,
+                libraryDescriptionTool,
+                moveTool,
+                cleanupTool,
+                loggerFactory.CreateLogger<DownloadAgent>()),
+            _ => throw new ArgumentException($"Unknown agent type: {agentType}")
+        };
     }
 
-    public void AssociateMessageIdToAgent(int messageId, IAgent agent)
+    public void AssociateMessageToAgent(int messageId, IAgent agent)
     {
         lock (_lLock)
         {
-            _historics[messageId] = agent.Messages;
+            cache.Set($"IAgent{messageId}", agent, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpiration = DateTimeOffset.UtcNow.AddDays(1)
+            });
+        }
+    }
+
+    private IAgent? GetAgentFromCache(int? sourceMessageId)
+    {
+        lock (_lLock)
+        {
+            if (sourceMessageId.HasValue && cache.TryGetValue($"IAgent{sourceMessageId}", out IAgent? agent))
+            {
+                return agent;
+            }
+
+            return null;
         }
     }
 }
