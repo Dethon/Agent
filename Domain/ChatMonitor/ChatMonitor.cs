@@ -28,7 +28,9 @@ public class ChatMonitor(
         {
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
-            var referencedMessageId = prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
+            var referencedMessageId = prompt.ReplyToMessageId is null
+                ? null
+                : prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
             var agent = agentResolver.Resolve(AgentType.Download, referencedMessageId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
 
