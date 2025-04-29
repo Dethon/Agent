@@ -1,125 +1,54 @@
-﻿using System.Runtime.CompilerServices;
-using Domain.Contracts;
+﻿using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
-using Domain.Tools.Attachments;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
-public class DownloadAgent : BaseAgent, IAgent
+public class DownloadAgent : BaseAgent
 {
-    private readonly Dictionary<string, ITool> _downloadTools;
+    private readonly Dictionary<string, ITool> _tools;
 
-    private readonly Dictionary<string, ITool> _organizingTools;
-
-    private readonly DownloadMonitor _downloadMonitor;
-
-    public DownloadAgent(ILargeLanguageModel largeLanguageModel,
+    public DownloadAgent(
+        ILargeLanguageModel largeLanguageModel,
         FileSearchTool fileSearchTool,
         FileDownloadTool fileDownloadTool,
+        WaitForDownloadTool waitForDownloadTool,
         LibraryDescriptionTool libraryDescriptionTool,
         MoveTool moveTool,
         CleanupTool cleanupTool,
-        DownloadMonitor downloadMonitor,
+        List<Message> messages,
         ILogger<DownloadAgent> logger,
         int maxDepth = 10) : base(largeLanguageModel, maxDepth, logger)
     {
-        _downloadMonitor = downloadMonitor;
-        _downloadTools = new Dictionary<string, ITool>
+        _tools = new Dictionary<string, ITool>
         {
             { fileDownloadTool.Name, fileDownloadTool },
             { fileSearchTool.Name, fileSearchTool },
+            { waitForDownloadTool.Name, waitForDownloadTool },
             { libraryDescriptionTool.Name, libraryDescriptionTool },
             { moveTool.Name, moveTool },
             { cleanupTool.Name, cleanupTool }
         };
-        _organizingTools = new Dictionary<string, ITool>
+        Messages = messages;
+        if (Messages.Count == 0)
         {
-            { libraryDescriptionTool.Name, libraryDescriptionTool },
-            { moveTool.Name, moveTool },
-            { cleanupTool.Name, cleanupTool }
-        };
-
-        _messages.Add(
-            new Message
+            Messages.Add(new Message
             {
                 Role = Role.System,
-                Content = """
-                          You are a download agent. You will help the user download files from the internet.
-
-                          To generate search strings make them short and broad, for example, using just the title
-                          usually yields good results. 
-                          Don't include too much specific information in the search string as that produces worse 
-                          results, that information should only be used to choose what to download from the list.
-
-                          You should always try to perform several searches with slightly different search strings to
-                          have a better chance of finding relevant results, changing the separators between words yields 
-                          good results.
-                          You can search for multiple alternative search strings at the same time.
-                          If no relevant results are found or if they are subpar in terms of quality or number of 
-                          seeders you must try with slightly different search strings, for example in video or movies 
-                          anything lower than 1080p is bad quality.
-                          You should try to search with up to 20 different search strings before giving up.
-
-                          The search string will be used to search across a set of torrent trackers, so you can try to 
-                          optimize them for this kind of search.
-                          Prioritize high-quality content that is NOT HDR, bigger files with better bitrate are usually 
-                          preferred over lighter alternatives.
-
-                          You are allowed to automatically start the download of the selected file/s, the ones you find 
-                          most appropriate. DO NOT ask the user to confirm the choice. 
-
-                          Once the download finishes you will be asked to organize it within the library. 
-                          When you receive that command you will be able to explore the library structure and move files 
-                          accordingly
-                          It is imperative that you only move the files related to the download you received the 
-                          notification for. Moving files from other downloads before they finish can cause catastrophic
-                          data loss
-
-                          Try to mimic the structure of directories that already exist in the library.
-                          You can leave out some files if they are not relevant to the user.
-                          Finally cleanup the leftover files from the download.
-                          Make sure the necessary files are moved into the library before you cleanup the download's 
-                          leftovers.
-                          """
+                Content = DownloadSystemPrompt.Prompt
             });
+        }
     }
 
-    public async IAsyncEnumerable<AgentResponse> Run(
-        string userPrompt, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public override IAsyncEnumerable<AgentResponse> Run(
+        string userPrompt, CancellationToken cancellationToken = default)
     {
-        _messages.Add(new Message
+        Messages.Add(new Message
         {
             Role = Role.User,
             Content = userPrompt
         });
-
-        await foreach (var response in ExecuteAgentLoop(_downloadTools, 0.5f, cancellationToken))
-        {
-            yield return response;
-        }
-        while (await _downloadMonitor.AreDownloadsPending(cancellationToken))
-        {
-            await Task.Delay(1000, cancellationToken);
-            foreach (var id in await _downloadMonitor.PopCompletedDownloads(cancellationToken))
-            {
-                _messages.Add(new Message
-                {
-                    Role = Role.User,
-                    Content = $"""
-                               The download with id {id} just finished. Now your task is to organize the files that 
-                               were downloaded by download {id} into the current library structure.
-                               If there is no appropriate folder for the category you should create it.
-                               Afterwards cleanup the download leftovers.
-                               Hint: Use the LibraryDescription, Move andCleanup tools.
-                               """
-                });
-                await foreach(var response in ExecuteAgentLoop(_organizingTools, 0.3f, cancellationToken))
-                {
-                    yield return response;
-                }
-            }
-        }
+        return ExecuteAgentLoop(_tools, 0.5f, cancellationToken);
     }
 }

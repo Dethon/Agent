@@ -1,5 +1,6 @@
 ﻿using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Exceptions;
 
 namespace Domain.Tools.Attachments;
 
@@ -36,6 +37,26 @@ public class DownloadMonitor(IDownloadClient client)
         lock (_lLock)
         {
             return Downloads.Count > 0;
+        }
+    }
+
+    public async Task<bool> PopCompletedDownload(int downloadId, CancellationToken cancellationToken = default)
+    {
+        await Refresh(cancellationToken);
+        lock (_lLock)
+        {
+            if (!Downloads.TryGetValue(downloadId, out var item))
+            {
+                throw new MissingDownloadException("Download missing. It probably got removed externally");
+            }
+
+            var isFinished = item.Status == DownloadStatus.Completed;
+            if (isFinished)
+            {
+                Downloads.Remove(downloadId);
+            }
+
+            return isFinished;
         }
     }
 

@@ -1,6 +1,6 @@
 ﻿using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Tools;
-using Domain.Tools.Attachments;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
@@ -9,26 +9,41 @@ public class AgentResolver(
     ILargeLanguageModel languageModel,
     FileDownloadTool fileDownloadTool,
     FileSearchTool fileSearchTool,
+    WaitForDownloadTool waitForDownloadTool,
     MoveTool moveTool,
     CleanupTool cleanupTool,
     LibraryDescriptionTool libraryDescriptionTool,
-    DownloadMonitor downloadMonitor,
-    ILoggerFactory  loggerFactory)
+    ILoggerFactory loggerFactory)
 {
-    public IAgent Resolve(AgentType agentType)
+    private readonly Dictionary<int, List<Message>> _historics = [];
+    private readonly Lock _lLock = new();
+
+    public IAgent Resolve(AgentType agentType, int? sourceMessageId = null)
     {
-        return agentType switch
+        lock (_lLock)
         {
-            AgentType.Download => new DownloadAgent(
-                languageModel,
-                fileSearchTool,
-                fileDownloadTool,
-                libraryDescriptionTool,
-                moveTool,
-                cleanupTool,
-                downloadMonitor,
-                loggerFactory.CreateLogger<DownloadAgent>()),
-            _ => throw new ArgumentException($"Unknown agent type: {agentType}")
-        };
+            return agentType switch
+            {
+                AgentType.Download => new DownloadAgent(
+                    languageModel,
+                    fileSearchTool,
+                    fileDownloadTool,
+                    waitForDownloadTool,
+                    libraryDescriptionTool,
+                    moveTool,
+                    cleanupTool,
+                    sourceMessageId is null ? [] : _historics.GetValueOrDefault(sourceMessageId.Value) ?? [],
+                    loggerFactory.CreateLogger<DownloadAgent>()),
+                _ => throw new ArgumentException($"Unknown agent type: {agentType}")
+            };
+        }
+    }
+
+    public void AssociateMessageIdToAgent(int messageId, IAgent agent)
+    {
+        lock (_lLock)
+        {
+            _historics[messageId] = agent.Messages;
+        }
     }
 }

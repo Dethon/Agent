@@ -45,7 +45,7 @@ public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguage
 
             if (attempt == maxRetryAttempts)
             {
-                throw new Exception($"OpenRouter failed after {maxRetryAttempts} attempts.");
+                throw new HttpRequestException($"OpenRouter failed after {maxRetryAttempts} attempts.");
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(baseDelayMs * Math.Pow(2, attempt)), cancellationToken);

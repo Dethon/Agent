@@ -32,6 +32,7 @@ public static class InjectorModule
                 sp.GetRequiredService<SearchHistory>(),
                 sp.GetRequiredService<DownloadMonitor>(),
                 settings.DownloadLocation))
+            .AddTransient<WaitForDownloadTool>()
             .AddTransient<LibraryDescriptionTool>(sp => new LibraryDescriptionTool(
                 sp.GetRequiredService<IFileSystemClient>(),
                 settings.BaseLibraryPath))

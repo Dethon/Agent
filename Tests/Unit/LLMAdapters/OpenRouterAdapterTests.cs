@@ -188,21 +188,21 @@ public class OpenRouterAdapterTests
         return await _adapter.Prompt(messages, tools, temperature);
     }
 
-    private void AssertSingleResponseWithContent(AgentResponse[] response, string expectedContent)
+    private static void AssertSingleResponseWithContent(AgentResponse[] response, string expectedContent)
     {
         response.ShouldNotBeNull();
         response.Length.ShouldBe(1);
         response[0].Content.ShouldBe(expectedContent);
     }
 
-    private void AssertStopReason(AgentResponse[] response, StopReason expectedReason)
+    private static void AssertStopReason(AgentResponse[] response, StopReason expectedReason)
     {
         response.ShouldNotBeNull();
         response.Length.ShouldBe(1);
         response[0].StopReason.ShouldBe(expectedReason);
     }
 
-    private void AssertToolCall(AgentResponse[] response, string expectedToolCallId, string expectedToolName)
+    private static void AssertToolCall(AgentResponse[] response, string expectedToolCallId, string expectedToolName)
     {
         response.ShouldNotBeNull();
         response.Length.ShouldBe(1);
@@ -221,7 +221,7 @@ public class OpenRouterAdapterTests
             ItExpr.IsAny<CancellationToken>());
     }
 
-    private void AssertRequestContainsTemperature(string? request, float expectedTemperature)
+    private static void AssertRequestContainsTemperature(string? request, float expectedTemperature)
     {
         request.ShouldNotBeNull();
         request.ShouldNotBeEmpty();

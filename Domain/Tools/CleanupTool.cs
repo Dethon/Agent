@@ -39,7 +39,10 @@ public class CleanupTool(
         return new ToolDefinition<CleanupParams>
         {
             Name = Name,
-            Description = "Cleans a download leftover files after it has been organized."
+            Description = """
+                          Cleans a download leftover files after it has been organized.
+                          It can also be use to cancel a download if the user requests it.
+                          """
         };
     }
 }

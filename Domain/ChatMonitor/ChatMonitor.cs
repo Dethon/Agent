@@ -7,14 +7,17 @@ using Microsoft.Extensions.Logging;
 namespace Domain.ChatMonitor;
 
 public class ChatMonitor(
-    IServiceProvider services, TaskQueue queue, IChatClient chatClient, ILogger<ChatMonitor> logger)
+    IServiceProvider services,
+    TaskQueue queue,
+    IChatClient chatClient,
+    ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken = default)
     {
         var prompts = chatClient.ReadPrompts(1000, cancellationToken);
         await foreach (var prompt in prompts)
         {
-            await queue.QueueTask((c) => AgentTask(prompt, c));
+            await queue.QueueTask(c => AgentTask(prompt, c));
         }
     }
 
@@ -24,23 +27,26 @@ public class ChatMonitor(
         {
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
-            var agent = agentResolver.Resolve(AgentType.Download);
+            var agent = agentResolver.Resolve(AgentType.Download, prompt.ReplyToMessageId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
             await foreach (var response in responses)
             {
-                var toolMessages = response.ToolCalls.Select(x => x.ToString()).ToArray();
-                if (!string.IsNullOrEmpty(response.Content))
+                var mainMessage = response.Content;
+                var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
+                var messageLength = mainMessage.Length + toolMessage.Length;
+
+                if (messageLength is 0 or > 3950)
                 {
-                    await chatClient.SendResponse(prompt.ChatId, response.Content, prompt.MessageId, cancellationToken);
+                    continue;
                 }
-                foreach (var toolMessage in toolMessages)
-                {
-                    var formattedMessage = $"<code>{toolMessage}</code>";
-                    await chatClient.SendResponse(prompt.ChatId, formattedMessage, prompt.MessageId, cancellationToken);
-                }
+
+                var message = $"{mainMessage}<blockquote expandable><code>{toolMessage}</code></blockquote>";
+                var messageId = await chatClient
+                    .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
+                agentResolver.AssociateMessageIdToAgent(messageId, agent);
             }
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             logger.LogError(ex, "AgentTask exception: {exceptionMessage}", ex.Message);
         }

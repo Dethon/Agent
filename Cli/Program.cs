@@ -32,13 +32,13 @@ builder.Services
     .AddChatMonitoring(settings)
     .AddAttachments()
     .AddTools(settings)
-    .AddTransient<AgentResolver>();
+    .AddSingleton<AgentResolver>();
 
 if (isDaemon)
 {
     builder.Services.AddWorkers(10);
     using var host = builder.Build();
-    
+
     await host.StartAsync();
     await Monitoring.Start(host.Services);
     await host.StopAsync();
@@ -46,7 +46,7 @@ if (isDaemon)
 else
 {
     using var host = builder.Build();
-    
+
     await host.StartAsync();
     var prompt = args[^1];
     await Command.Start(host.Services, prompt);

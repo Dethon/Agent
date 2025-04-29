@@ -7,10 +7,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
-public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxDepth, ILogger<BaseAgent> logger)
+public abstract class BaseAgent(
+    ILargeLanguageModel largeLanguageModel,
+    int maxDepth,
+    ILogger<BaseAgent> logger) : IAgent
 {
     [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
-    protected readonly List<Message> _messages = [];
+    public List<Message> Messages { get; protected init; } = [];
+
+    public abstract IAsyncEnumerable<AgentResponse> Run(
+        string userPrompt, CancellationToken cancellationToken = default);
 
     protected async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
         Dictionary<string, ITool> tools,
@@ -23,7 +29,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         for (var i = 0; i < MaxDepth; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
-                _messages, toolDefinitions, temperature, cancellationToken);
+                Messages, toolDefinitions, temperature, cancellationToken);
             foreach (var responseMessage in responseMessages)
             {
                 yield return responseMessage;
@@ -35,8 +41,8 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
                 .Select(x => ResolveToolRequest(tools[x.Name], x, cancellationToken))
                 .ToArray();
             var toolResponseMessages = await Task.WhenAll(toolTasks);
-            _messages.AddRange(responseMessages);
-            _messages.AddRange(toolResponseMessages);
+            Messages.AddRange(responseMessages);
+            Messages.AddRange(toolResponseMessages);
 
             if (toolTasks.Length == 0)
             {
@@ -53,6 +59,7 @@ public abstract class BaseAgent(ILargeLanguageModel largeLanguageModel, int maxD
         try
         {
             var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
+            logger.LogInformation("Tool {ToolName} : {toolResponse}", tool.Name, toolResponse);
             return new ToolMessage
             {
                 Role = Role.Tool,

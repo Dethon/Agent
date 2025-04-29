@@ -31,7 +31,8 @@ public class TelegramBotChatClient(string token, string[] allowedUserNames) : IC
                         {
                             Prompt = update.Message.Text,
                             ChatId = update.Message.Chat.Id,
-                            MessageId = update.Message.MessageId
+                            MessageId = update.Message.MessageId,
+                            ReplyToMessageId = update.Message.ReplyToMessage?.MessageId
                         };
                     }
                     else
@@ -49,17 +50,18 @@ public class TelegramBotChatClient(string token, string[] allowedUserNames) : IC
         }
     }
 
-    public async Task SendResponse(
+    public async Task<int> SendResponse(
         long chatId, string response, int? replyId = null, CancellationToken cancellationToken = default)
     {
-        var trimmedMessage = response.Length > 4000
-            ? $"{response[..4000]} ... (truncated)"
+        var trimmedMessage = response.Length > 4050
+            ? $"{response[..4050]} ... (truncated)"
             : response;
-        await _botClient.SendMessage(
+        var message = await _botClient.SendMessage(
             chatId,
             trimmedMessage,
             parseMode: ParseMode.Html,
             replyParameters: replyId,
             cancellationToken: cancellationToken);
+        return message.Id;
     }
 }

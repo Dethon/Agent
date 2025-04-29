@@ -27,10 +27,11 @@ public class DownloadAgentTests
             _mockLargeLanguageModel.Object,
             new FileSearchTool(_mockSearchClient.Object, _searchHistory),
             new FileDownloadTool(_mockDownloadClient.Object, _searchHistory, _downloadMonitor, DefaultDownloadLocation),
+            new WaitForDownloadTool(_downloadMonitor),
             new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
             new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation),
-            _downloadMonitor,
+            [],
             NullLogger<DownloadAgent>.Instance
         );
     }
