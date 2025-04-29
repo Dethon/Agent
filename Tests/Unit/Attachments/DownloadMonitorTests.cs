@@ -84,6 +84,70 @@ public class DownloadMonitorTests
     }
 
     [Fact]
+    public async Task PopCompletedDownload_ShouldReturnTrueAndRemoveCompletedDownload()
+    {
+        // given
+        var monitor = new DownloadMonitor(_mockClient.Object);
+
+        // Add three downloads
+        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.Add(CreateSearchResult(2, "Item 2"), "path2");
+        monitor.Add(CreateSearchResult(3, "Item 3"), "path3");
+
+        // Set up mock to return one in progress and two completed
+        var refreshedItems = new List<DownloadItem>
+        {
+            CreateDownloadItem(1, "Item 1", "path1", DownloadStatus.InProgress),
+            CreateDownloadItem(2, "Item 2", "path2", DownloadStatus.Completed),
+            CreateDownloadItem(3, "Item 3", "path3", DownloadStatus.Completed)
+        };
+
+        SetupMockClientToReturn(refreshedItems);
+
+        // when
+        var completedIds = await monitor.PopCompletedDownload(2);
+
+        // then
+        completedIds.ShouldBe(true);
+        monitor.Downloads.Count.ShouldBe(2);
+        monitor.Downloads.ShouldContainKey(1);
+        monitor.Downloads.ShouldNotContainKey(2);
+        monitor.Downloads.ShouldContainKey(3);
+    }
+
+    [Fact]
+    public async Task PopCompletedDownload_ShouldReturnFalseForIncompleteDownload()
+    {
+        // given
+        var monitor = new DownloadMonitor(_mockClient.Object);
+
+        // Add three downloads
+        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.Add(CreateSearchResult(2, "Item 2"), "path2");
+        monitor.Add(CreateSearchResult(3, "Item 3"), "path3");
+
+        // Set up mock to return one in progress and two completed
+        var refreshedItems = new List<DownloadItem>
+        {
+            CreateDownloadItem(1, "Item 1", "path1", DownloadStatus.InProgress),
+            CreateDownloadItem(2, "Item 2", "path2", DownloadStatus.Completed),
+            CreateDownloadItem(3, "Item 3", "path3", DownloadStatus.Completed)
+        };
+
+        SetupMockClientToReturn(refreshedItems);
+
+        // when
+        var completedIds = await monitor.PopCompletedDownload(1);
+
+        // then
+        completedIds.ShouldBe(false);
+        monitor.Downloads.Count.ShouldBe(3);
+        monitor.Downloads.ShouldContainKey(1);
+        monitor.Downloads.ShouldContainKey(2);
+        monitor.Downloads.ShouldContainKey(3);
+    }
+
+    [Fact]
     public async Task PopCompletedDownloads_ShouldReturnAndRemoveCompletedDownloads()
     {
         // given

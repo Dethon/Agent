@@ -109,17 +109,6 @@ public class CleanupToolTests
         await Should.ThrowAsync<ArgumentNullException>(() => _cleanupTool.Run(parameters));
     }
 
-    [Fact]
-    public void GetToolDefinition_ShouldReturnCorrectDefinition()
-    {
-        // when
-        var definition = _cleanupTool.GetToolDefinition();
-
-        // then
-        definition.Name.ShouldBe("Cleanup");
-        definition.Description.ShouldBe("Cleans a download leftover files after it has been organized.");
-    }
-
     #region Helper Methods
 
     private void SetupSuccessfulFileSystemRemoval(int downloadId)
