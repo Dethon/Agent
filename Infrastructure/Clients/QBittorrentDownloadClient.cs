@@ -23,7 +23,7 @@ public class QBittorrentDownloadClient(
         ]);
         var addTorrentResponse = await client.PostAsync("torrents/add", addTorrentContent, cancellationToken);
         addTorrentResponse.EnsureSuccessStatusCode();
-        await Task.Delay(5000, cancellationToken); // Wait to make sure the torrent got added
+        await Task.Delay(10000, cancellationToken); // Wait to make sure the torrent got added
         if (await GetSingleTorrent(id, cancellationToken) is null)
         {
             throw new InvalidOperationException("Torrent cannot be added. Try another link. Search again if necessary");
