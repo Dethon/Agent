@@ -1,6 +1,7 @@
 ﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -27,20 +28,22 @@ public class ChatMonitor(
         {
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
-            var agent = agentResolver.Resolve(AgentType.Download, prompt.ReplyToMessageId);
+            var referencedMessageId = prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
+            var agent = agentResolver.Resolve(AgentType.Download, referencedMessageId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
+
             await foreach (var response in responses)
             {
                 var mainMessage = response.Content;
                 var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-                var messageLength = mainMessage.Length + toolMessage.Length;
-
-                if (messageLength is 0 or > 3950)
+                if (mainMessage.Length == 0 && toolMessage.Length == 0)
                 {
                     continue;
                 }
 
-                var message = $"{mainMessage}<blockquote expandable><code>{toolMessage}</code></blockquote>";
+                var trimMainMessage = mainMessage.Left(2000);
+                var trimToolMessage = toolMessage.Left(2000);
+                var message = $"{trimMainMessage}<blockquote expandable><code>{trimToolMessage}</code></blockquote>";
                 var messageId = await chatClient
                     .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
 
