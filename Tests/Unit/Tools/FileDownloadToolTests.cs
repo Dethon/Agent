@@ -110,7 +110,7 @@ public class FileDownloadToolTests
             Link = link,
             Size = size
         };
-        _searchHistory.History.Add(id, searchResult);
+        _searchHistory.History[id] = searchResult;
         return searchResult;
     }
 

@@ -16,8 +16,6 @@ public class AgentResolver(
     IMemoryCache cache,
     ILoggerFactory loggerFactory)
 {
-    private readonly Lock _lLock = new();
-
     public IAgent Resolve(AgentType agentType, int? sourceMessageId = null)
     {
         return GetAgentFromCache(sourceMessageId) ?? agentType switch
@@ -37,25 +35,19 @@ public class AgentResolver(
 
     public void AssociateMessageToAgent(int messageId, IAgent agent)
     {
-        lock (_lLock)
+        cache.Set($"IAgent{messageId}", agent, new MemoryCacheEntryOptions
         {
-            cache.Set($"IAgent{messageId}", agent, new MemoryCacheEntryOptions
-            {
-                AbsoluteExpiration = DateTimeOffset.UtcNow.AddDays(1)
-            });
-        }
+            AbsoluteExpiration = DateTimeOffset.UtcNow.AddDays(1)
+        });
     }
 
     private IAgent? GetAgentFromCache(int? sourceMessageId)
     {
-        lock (_lLock)
+        if (sourceMessageId.HasValue && cache.TryGetValue($"IAgent{sourceMessageId}", out IAgent? agent))
         {
-            if (sourceMessageId.HasValue && cache.TryGetValue($"IAgent{sourceMessageId}", out IAgent? agent))
-            {
-                return agent;
-            }
-
-            return null;
+            return agent;
         }
+
+        return null;
     }
 }
