@@ -20,15 +20,19 @@ public class AgentResolver(
     {
         return GetAgentFromCache(sourceMessageId) ?? agentType switch
         {
-            AgentType.Download => new DownloadAgent(
+            AgentType.Download => new Agent(
+                DownloadSystemPrompt.Prompt,
                 languageModel,
-                fileSearchTool,
-                fileDownloadTool,
-                waitForDownloadTool,
-                libraryDescriptionTool,
-                moveTool,
-                cleanupTool,
-                loggerFactory.CreateLogger<DownloadAgent>()),
+                [
+                    fileSearchTool,
+                    fileDownloadTool,
+                    waitForDownloadTool,
+                    libraryDescriptionTool,
+                    moveTool,
+                    cleanupTool
+                ],
+                10,
+                loggerFactory.CreateLogger<Agent>()),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
     }

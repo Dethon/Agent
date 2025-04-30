@@ -4,6 +4,5 @@ namespace Domain.Contracts;
 
 public interface IAgent
 {
-    public List<Message> Messages { get; }
-    IAsyncEnumerable<AgentResponse> Run(string userPrompt, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AgentResponse> Run(string prompt, CancellationToken cancellationToken = default);
 }

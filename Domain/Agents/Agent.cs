@@ -1,35 +1,61 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
-using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Agents;
 
-public abstract class BaseAgent(
+public class Agent(
+    string systemPrompt,
     ILargeLanguageModel largeLanguageModel,
+    ITool[] tools,
     int maxDepth,
-    ILogger<BaseAgent> logger) : IAgent
+    ILogger<Agent> logger) : IAgent
 {
-    [PublicAPI] public int MaxDepth { get; set; } = maxDepth;
-    public List<Message> Messages { get; } = [];
+    private int MaxDepth { get; } = maxDepth;
+    private readonly Lock _messagesLock = new();
+    private readonly ConcurrentDictionary<string, ITool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
+    private readonly List<Message> _messages =
+    [
+        new()
+        {
+            Role = Role.System,
+            Content = systemPrompt
+        }
+    ];
+    
+    public IAsyncEnumerable<AgentResponse> Run(string prompt, CancellationToken cancellationToken = default)
+    {
+        lock (_messagesLock)
+        {
+            _messages.Add(new Message
+            {
+                Role = Role.User,
+                Content = prompt
+            });
+        }
+        return ExecuteAgentLoop(0.5f, cancellationToken);
+    }
 
-    public abstract IAsyncEnumerable<AgentResponse> Run(
-        string userPrompt, CancellationToken cancellationToken = default);
-
-    protected async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
-        Dictionary<string, ITool> tools,
+    private async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var toolDefinitions = tools.Values
+        List<Message> messageSnapshot;
+        lock (_messagesLock)
+        {
+            messageSnapshot = _messages.ToList();
+        }
+        var toolDefinitions = _tools.Values
             .Select(x => x.GetToolDefinition())
             .ToArray();
+        
         for (var i = 0; i < MaxDepth; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
-                Messages, toolDefinitions, temperature, cancellationToken);
+                messageSnapshot, toolDefinitions, temperature, cancellationToken);
             foreach (var responseMessage in responseMessages)
             {
                 yield return responseMessage;
@@ -38,11 +64,15 @@ public abstract class BaseAgent(
             var toolTasks = responseMessages
                 .Where(x => x.StopReason == StopReason.ToolCalls)
                 .SelectMany(x => x.ToolCalls)
-                .Select(x => ResolveToolRequest(tools[x.Name], x, cancellationToken))
+                .Select(x => ResolveToolRequest(_tools[x.Name], x, cancellationToken))
                 .ToArray();
             var toolResponseMessages = await Task.WhenAll(toolTasks);
-            Messages.AddRange(responseMessages);
-            Messages.AddRange(toolResponseMessages);
+            lock (_messagesLock)
+            {
+                _messages.AddRange(responseMessages);
+                _messages.AddRange(toolResponseMessages);
+                messageSnapshot = _messages.ToList();
+            }
 
             if (toolTasks.Length == 0)
             {

@@ -12,7 +12,7 @@ public class DownloadAgentTests
 {
     private const string DefaultLibraryPath = "test/library/path";
     private const string DefaultDownloadLocation = "test/library/downloads";
-    private readonly DownloadAgent _agent;
+    private readonly Agent _agent;
     private readonly Mock<ILargeLanguageModel> _mockLargeLanguageModel = new();
     private readonly Mock<IDownloadClient> _mockDownloadClient = new();
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
@@ -23,15 +23,20 @@ public class DownloadAgentTests
     public DownloadAgentTests()
     {
         _downloadMonitor = new DownloadMonitor(_mockDownloadClient.Object);
-        _agent = new DownloadAgent(
+        _agent = new Agent(
+            DownloadSystemPrompt.Prompt,
             _mockLargeLanguageModel.Object,
-            new FileSearchTool(_mockSearchClient.Object, _searchHistory),
-            new FileDownloadTool(_mockDownloadClient.Object, _searchHistory, _downloadMonitor, DefaultDownloadLocation),
-            new WaitForDownloadTool(_downloadMonitor),
-            new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
-            new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
-            new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation),
-            NullLogger<DownloadAgent>.Instance
+            [
+                new FileSearchTool(_mockSearchClient.Object, _searchHistory),
+                new FileDownloadTool(_mockDownloadClient.Object, _searchHistory, _downloadMonitor,
+                    DefaultDownloadLocation),
+                new WaitForDownloadTool(_downloadMonitor),
+                new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation)
+            ],
+            10,
+            NullLogger<Agent>.Instance
         );
     }
 
