@@ -20,7 +20,8 @@ public class WaitForDownloadTool(DownloadMonitor monitor) : BaseTool, ITool
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams<WaitForDownloadParams>(parameters);
-        while (!await monitor.PopCompletedDownload(typedParams.DownloadId, cancellationToken))
+        while (!cancellationToken.IsCancellationRequested && 
+               !await monitor.PopCompletedDownload(typedParams.DownloadId, cancellationToken))
         {
             await Task.Delay(1000, cancellationToken);
         }

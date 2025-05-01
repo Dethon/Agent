@@ -14,7 +14,8 @@ public class Agent(
     int maxDepth,
     ILogger<Agent> logger) : IAgent
 {
-    private int MaxDepth { get; } = maxDepth;
+    private CancellationTokenSource _childCancelTokenSource = new();
+    private readonly int _maxDepth = maxDepth;
     private readonly Lock _messagesLock = new();
     private readonly ConcurrentDictionary<string, ITool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
     private readonly List<Message> _messages =
@@ -36,7 +37,10 @@ public class Agent(
                 Content = prompt
             });
         }
-        return ExecuteAgentLoop(0.5f, cancellationToken);
+        _childCancelTokenSource.Cancel();
+        _childCancelTokenSource.Dispose();
+        _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        return ExecuteAgentLoop(0.5f, _childCancelTokenSource.Token);
     }
 
     private async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
@@ -52,7 +56,7 @@ public class Agent(
             .Select(x => x.GetToolDefinition())
             .ToArray();
         
-        for (var i = 0; i < MaxDepth; i++)
+        for (var i = 0; i < _maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
                 messageSnapshot, toolDefinitions, temperature, cancellationToken);
@@ -80,7 +84,7 @@ public class Agent(
             }
         }
 
-        throw new AgentLoopException($"Agent loop reached max depth ({MaxDepth}). Anti-loop safeguard reached.");
+        throw new AgentLoopException($"Agent loop reached max depth ({_maxDepth}). Anti-loop safeguard reached.");
     }
 
     private async Task<ToolMessage> ResolveToolRequest(
