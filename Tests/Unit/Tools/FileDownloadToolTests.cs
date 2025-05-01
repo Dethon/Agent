@@ -42,13 +42,13 @@ public class FileDownloadToolTests
         };
         var expectedSavePath = GetExpectedSavePath(searchResultId);
 
-        SetupDownloadClientSuccess(searchResult.Link, expectedSavePath, searchResultId.ToString());
+        SetupDownloadClientSuccess(searchResult.Link, expectedSavePath, searchResultId);
 
         // when
         var result = await _sut.Run(parameters);
 
         // then
-        VerifyDownloadWasCalled(searchResult.Link, expectedSavePath, searchResultId.ToString());
+        VerifyDownloadWasCalled(searchResult.Link, expectedSavePath, searchResultId);
         VerifySuccessResult(result, searchResultId);
         _downloadMonitor.Downloads.ShouldContainKey(searchResultId);
     }
@@ -120,7 +120,7 @@ public class FileDownloadToolTests
         return $"{_baseDownloadLocation}/{searchResultId}";
     }
 
-    private void SetupDownloadClientSuccess(string link, string savePath, string id)
+    private void SetupDownloadClientSuccess(string link, string savePath, int id)
     {
         _mockClient
             .Setup(c => c.Download(
@@ -137,12 +137,12 @@ public class FileDownloadToolTests
             .Setup(c => c.Download(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.IsAny<string>(),
+                It.IsAny<int>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception(errorMessage));
     }
 
-    private void VerifyDownloadWasCalled(string link, string savePath, string id)
+    private void VerifyDownloadWasCalled(string link, string savePath, int id)
     {
         _mockClient.Verify(c => c.Download(
                 link,

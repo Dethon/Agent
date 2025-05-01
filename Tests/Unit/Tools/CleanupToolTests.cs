@@ -128,14 +128,14 @@ public class CleanupToolTests
     private void SetupSuccessfulDownloadCleanup(int downloadId)
     {
         _mockDownloadClient
-            .Setup(x => x.Cleanup($"{downloadId}", It.IsAny<CancellationToken>()))
+            .Setup(x => x.Cleanup(downloadId, It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
     }
 
     private void SetupFailingDownloadCleanup(Exception exception)
     {
         _mockDownloadClient
-            .Setup(x => x.Cleanup(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.Cleanup(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(exception);
     }
 
@@ -149,7 +149,7 @@ public class CleanupToolTests
     private void VerifyDownloadCleanupCalled(int downloadId, Times times)
     {
         _mockDownloadClient.Verify(
-            x => x.Cleanup($"{downloadId}", It.IsAny<CancellationToken>()),
+            x => x.Cleanup(downloadId, It.IsAny<CancellationToken>()),
             times);
     }
 

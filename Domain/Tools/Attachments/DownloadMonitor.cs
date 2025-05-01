@@ -9,23 +9,34 @@ public class DownloadMonitor(IDownloadClient client)
 {
     public ConcurrentDictionary<int, DownloadItem> Downloads { get; private set; } = [];
 
-    public void Add(SearchResult info, string savePath)
+    public bool TryAdd(SearchResult info, string savePath)
     {
-        if (!Downloads.TryAdd(info.Id, new DownloadItem
-            {
-                Id = info.Id,
-                Title = info.Title,
-                Link = info.Link,
-                Category = info.Category,
-                Size = info.Size,
-                SavePath = savePath,
-                Seeders = info.Seeders,
-                Peers = info.Peers,
-                Status = DownloadStatus.Added
-            }))
+        return Downloads.TryAdd(info.Id, new DownloadItem
         {
-            throw new Exception("Download already exists");
+            Id = info.Id,
+            Title = info.Title,
+            Link = info.Link,
+            Category = info.Category,
+            Size = info.Size,
+            SavePath = savePath,
+            Seeders = info.Seeders,
+            Peers = info.Peers,
+            Status = DownloadStatus.Added
+        });
+    }
+    
+    public async Task<bool> TryAdd(int downloadId)
+    {
+        if (Downloads.ContainsKey(downloadId))
+        {
+            return false;
         }
+        var item = await client.GetDownloadItem(downloadId);
+        if (item is null)
+        {
+            throw new MissingDownloadException("Download missing");
+        }
+        return Downloads.TryAdd(item.Id, item);
     }
 
     public async Task<bool> AreDownloadsPending(CancellationToken cancellationToken = default)

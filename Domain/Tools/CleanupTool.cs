@@ -24,7 +24,7 @@ public class CleanupTool(
         var downloadPath = $"{baseDownloadLocation}/{typedParams.DownloadId}";
 
         await fileSystemClient.RemoveDirectory(downloadPath, cancellationToken);
-        await downloadClient.Cleanup($"{typedParams.DownloadId}", cancellationToken);
+        await downloadClient.Cleanup(typedParams.DownloadId, cancellationToken);
 
         return new JsonObject
         {

@@ -17,7 +17,7 @@ public class QBittorrentDownloadClientTests
     private const string Password = "testpassword";
     private const string TestLink = "magnet:?xt=urn:btih:123456";
     private const string TestSavePath = "/downloads/";
-    private const string TestId = "test-download-123";
+    private const int TestId = 123;
     private const string TestHash = "abcdef123456";
 
     private readonly Mock<HttpMessageHandler> _handlerMock;
@@ -48,7 +48,7 @@ public class QBittorrentDownloadClientTests
         });
 
         SetupAddTorrentResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
 
         // when
         await _client.Download(TestLink, TestSavePath, TestId);
@@ -73,7 +73,7 @@ public class QBittorrentDownloadClientTests
         // given
         SetupAuthenticationResponse(true);
         SetupAddTorrentResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
 
         // when/then
         await Should.NotThrowAsync(() => _client.Download(TestLink, TestSavePath, TestId));
@@ -109,7 +109,7 @@ public class QBittorrentDownloadClientTests
     {
         // given
         SetupAuthenticationResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
         SetupDeleteTorrentResponse(true);
 
         // when/then
@@ -132,7 +132,7 @@ public class QBittorrentDownloadClientTests
     {
         // given
         SetupAuthenticationResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
         SetupDeleteTorrentResponse(false);
 
         // when/then
@@ -144,7 +144,7 @@ public class QBittorrentDownloadClientTests
     {
         // given
         SetupAuthenticationResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
 
         // when
         var result = await _client.IsDownloadComplete(TestId);
@@ -158,7 +158,7 @@ public class QBittorrentDownloadClientTests
     {
         // given
         SetupAuthenticationResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash, 0.5, "downloading")]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash, 0.5, "downloading")]);
 
         // when
         var result = await _client.IsDownloadComplete(TestId);
@@ -208,7 +208,7 @@ public class QBittorrentDownloadClientTests
     {
         // given
         SetupAuthenticationResponse(true);
-        SetupGetTorrentsResponse([CreateTorrentInfo(TestId, TestHash)]);
+        SetupGetTorrentsResponse([CreateTorrentInfo($"{TestId}", TestHash)]);
 
         // when
         var result = await _client.RefreshDownloadItems([]);

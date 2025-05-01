@@ -88,7 +88,7 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
             {
                 try
                 {
-                    var link = x["Link"]?.GetValue<string>() ?? x["MagnetUri"]?.GetValue<string>() ?? string.Empty;
+                    var link = x["MagnetUri"]?.GetValue<string>() ?? x["Link"]?.GetValue<string>() ?? string.Empty;
                     return new SearchResult
                     {
                         Title = x["Title"]?.GetValue<string>() ?? string.Empty,

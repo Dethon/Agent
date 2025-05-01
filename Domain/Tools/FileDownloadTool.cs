@@ -29,10 +29,10 @@ public class FileDownloadTool(
         await client.Download(
             itemToDownload.Link,
             savePath,
-            typedParams.SearchResultId.ToString(),
+            typedParams.SearchResultId,
             cancellationToken);
 
-        monitor.Add(itemToDownload, savePath);
+        monitor.TryAdd(itemToDownload, savePath);
         return new JsonObject
         {
             ["status"] = "success",

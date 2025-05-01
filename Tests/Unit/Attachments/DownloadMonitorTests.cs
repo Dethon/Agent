@@ -19,7 +19,7 @@ public class DownloadMonitorTests
         const string savePath = @"C:\test\path";
 
         // when
-        monitor.Add(searchResult, savePath);
+        monitor.TryAdd(searchResult, savePath);
 
         // then
         monitor.Downloads.Count.ShouldBe(1);
@@ -30,17 +30,19 @@ public class DownloadMonitorTests
     }
 
     [Fact]
-    public void Add_ShouldThrowException_WhenAddingDuplicateId()
+    public void Add_ShouldReturnFalse_WhenAddingDuplicateId()
     {
         // given
         var monitor = new DownloadMonitor(_mockClient.Object);
         var searchResult = CreateSearchResult(1);
         const string savePath = @"C:\test\path";
-        monitor.Add(searchResult, savePath);
+        monitor.TryAdd(searchResult, savePath);
 
-        // when/then
-        Should.Throw<Exception>(() => monitor.Add(searchResult, savePath))
-            .Message.ShouldBe("Download already exists");
+        // when
+        var result = monitor.TryAdd(searchResult, savePath);
+            
+        // then
+        result.ShouldBeFalse();
     }
 
     [Fact]
@@ -50,7 +52,7 @@ public class DownloadMonitorTests
         var monitor = new DownloadMonitor(_mockClient.Object);
         var searchResult = CreateSearchResult(1);
         const string savePath = @"C:\test\path";
-        monitor.Add(searchResult, savePath);
+        monitor.TryAdd(searchResult, savePath);
 
         var expectedItems = new List<DownloadItem>
         {
@@ -90,9 +92,9 @@ public class DownloadMonitorTests
         var monitor = new DownloadMonitor(_mockClient.Object);
 
         // Add three downloads
-        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
-        monitor.Add(CreateSearchResult(2, "Item 2"), "path2");
-        monitor.Add(CreateSearchResult(3, "Item 3"), "path3");
+        monitor.TryAdd(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.TryAdd(CreateSearchResult(2, "Item 2"), "path2");
+        monitor.TryAdd(CreateSearchResult(3, "Item 3"), "path3");
 
         // Set up mock to return one in progress and two completed
         var refreshedItems = new List<DownloadItem>
@@ -122,9 +124,9 @@ public class DownloadMonitorTests
         var monitor = new DownloadMonitor(_mockClient.Object);
 
         // Add three downloads
-        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
-        monitor.Add(CreateSearchResult(2, "Item 2"), "path2");
-        monitor.Add(CreateSearchResult(3, "Item 3"), "path3");
+        monitor.TryAdd(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.TryAdd(CreateSearchResult(2, "Item 2"), "path2");
+        monitor.TryAdd(CreateSearchResult(3, "Item 3"), "path3");
 
         // Set up mock to return one in progress and two completed
         var refreshedItems = new List<DownloadItem>
@@ -154,9 +156,9 @@ public class DownloadMonitorTests
         var monitor = new DownloadMonitor(_mockClient.Object);
 
         // Add three downloads
-        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
-        monitor.Add(CreateSearchResult(2, "Item 2"), "path2");
-        monitor.Add(CreateSearchResult(3, "Item 3"), "path3");
+        monitor.TryAdd(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.TryAdd(CreateSearchResult(2, "Item 2"), "path2");
+        monitor.TryAdd(CreateSearchResult(3, "Item 3"), "path3");
 
         // Set up mock to return one in progress and two completed
         var refreshedItems = new List<DownloadItem>
@@ -184,7 +186,7 @@ public class DownloadMonitorTests
     {
         // given
         var monitor = new DownloadMonitor(_mockClient.Object);
-        monitor.Add(CreateSearchResult(1, "Item 1"), "path1");
+        monitor.TryAdd(CreateSearchResult(1, "Item 1"), "path1");
 
         var refreshedItems = new List<DownloadItem>
         {
@@ -207,7 +209,7 @@ public class DownloadMonitorTests
         // given
         var monitor = new DownloadMonitor(_mockClient.Object);
         const string savePath = @"C:\test\path";
-        monitor.Add(CreateSearchResult(1), savePath);
+        monitor.TryAdd(CreateSearchResult(1), savePath);
 
         var updatedItem = CreateDownloadItem(1, "Test Item", savePath, DownloadStatus.InProgress);
 

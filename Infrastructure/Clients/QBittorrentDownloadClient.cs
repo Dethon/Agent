@@ -13,7 +13,7 @@ public class QBittorrentDownloadClient(
     string password)
     : IDownloadClient
 {
-    public async Task Download(string link, string savePath, string id, CancellationToken cancellationToken = default)
+    public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
         await Authenticate(cancellationToken);
         var addTorrentContent = new FormUrlEncodedContent([
@@ -24,17 +24,17 @@ public class QBittorrentDownloadClient(
         var addTorrentResponse = await client.PostAsync("torrents/add", addTorrentContent, cancellationToken);
         addTorrentResponse.EnsureSuccessStatusCode();
         await Task.Delay(10000, cancellationToken); // Wait to make sure the torrent got added
-        if (await GetSingleTorrent(id, cancellationToken) is null)
+        if (await GetSingleTorrent($"{id}", cancellationToken) is null)
         {
             throw new InvalidOperationException("Torrent cannot be added. Try another link. Search again if necessary");
         }
     }
 
-    public async Task Cleanup(string id, CancellationToken cancellationToken = default)
+    public async Task Cleanup(int id, CancellationToken cancellationToken = default)
     {
         await Authenticate(cancellationToken);
 
-        var torrent = await GetSingleTorrent(id, cancellationToken);
+        var torrent = await GetSingleTorrent($"{id}", cancellationToken);
         if (torrent is null)
         {
             return;
@@ -81,9 +81,25 @@ public class QBittorrentDownloadClient(
             .Cast<DownloadItem>();
     }
 
-    public async Task<bool> IsDownloadComplete(string id, CancellationToken cancellationToken = default)
+    public async Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
     {
-        var torrent = await GetSingleTorrent(id, cancellationToken);
+        var torrent = await GetSingleTorrent($"{id}", cancellationToken);
+        return new DownloadItem
+        {
+            Id = id,
+            Title = torrent?["name"]?.GetValue<string>() ?? string.Empty,
+            Size = torrent?["total_size"]?.GetValue<long>() ?? 0,
+            Status = GetDownloadStatus(torrent),
+            Seeders = torrent?["num_seeds"]?.GetValue<int>() ?? 0,
+            Peers = torrent?["num_leechs"]?.GetValue<int>() ?? 0,
+            SavePath = torrent?["save_path"]?.GetValue<string>() ?? string.Empty,
+            Link = torrent?["magnet_uri"]?.GetValue<string>() ?? string.Empty,
+        };
+    }
+
+    public async Task<bool> IsDownloadComplete(int id, CancellationToken cancellationToken = default)
+    {
+        var torrent = await GetSingleTorrent($"{id}", cancellationToken);
         return GetDownloadStatus(torrent) == DownloadStatus.Completed;
     }
 
