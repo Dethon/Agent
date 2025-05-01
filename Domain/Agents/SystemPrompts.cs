@@ -39,9 +39,9 @@ public static class DownloadSystemPrompt
 
                                  Try to mimic the structure of directories that already exist in the library.
                                  You can leave out some files if they are not relevant to the user.
-                                 Finally cleanup the leftover files from the download.
-                                 Make sure the necessary files are moved into the library before you cleanup the 
-                                 download's leftovers.
+                                 Finally, AFTER you receive confirmation that the files have been moved (or make sure 
+                                 everything is properly organized by getting an updated library description), you should 
+                                 cleanup the leftover files from the download.
                                  """;
 
     public static string AfterDownloadPrompt(int id)
