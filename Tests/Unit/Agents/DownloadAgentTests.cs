@@ -36,6 +36,7 @@ public class DownloadAgentTests
                 new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation)
             ],
             10,
+            true,
             NullLogger<Agent>.Instance
         );
     }
@@ -61,6 +62,7 @@ public class DownloadAgentTests
             .SetupSequence<Task<AgentResponse[]>>(x => x.Prompt(
                 It.IsAny<IEnumerable<Message>>(),
                 It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<bool>(),
                 It.IsAny<float?>(),
                 It.IsAny<CancellationToken>()));
 

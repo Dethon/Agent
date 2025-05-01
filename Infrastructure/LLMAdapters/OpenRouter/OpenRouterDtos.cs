@@ -9,9 +9,21 @@ public record OpenRouterRequest
 {
     public required float? Temperature { [UsedImplicitly] get; init; }
     public required string Model { [UsedImplicitly] get; init; }
+    public OpenRouterPlugin[] Plugins { [UsedImplicitly] get; init; } = [];
     public OpenRouterTool[] Tools { [UsedImplicitly] get; init; } = [];
     public OpenRouterMessage[] Messages { [UsedImplicitly] get; init; } = [];
     [UsedImplicitly] public OpenRouterReasoning Reasoning { get; init; } = new();
+}
+
+public abstract record OpenRouterPlugin(string Id)
+{
+    public string Id { [UsedImplicitly] get; init; } = Id;
+}
+
+public record OpenRouterSearchPlugin() : OpenRouterPlugin("web")
+{
+    public int? MaxResults { get; init; }
+    public string? SearchPrompt { get; init; }
 }
 
 public record OpenRouterReasoning

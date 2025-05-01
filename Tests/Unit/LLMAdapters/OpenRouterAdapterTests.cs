@@ -147,7 +147,7 @@ public class OpenRouterAdapterTests
         SetupMockResponseWithRequestCapture(response, request => capturedRequest = request);
 
         // when
-        await _adapter.Prompt(messages, [], temperature);
+        await _adapter.Prompt(messages, [], false, temperature);
 
         // then
         AssertRequestContainsTemperature(capturedRequest, temperature);
@@ -185,7 +185,7 @@ public class OpenRouterAdapterTests
         ToolDefinition[] tools,
         float? temperature = null)
     {
-        return await _adapter.Prompt(messages, tools, temperature);
+        return await _adapter.Prompt(messages, tools, true, temperature);
     }
 
     private static void AssertSingleResponseWithContent(AgentResponse[] response, string expectedContent)

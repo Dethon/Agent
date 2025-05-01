@@ -13,6 +13,7 @@ public class Agent(
     ILargeLanguageModel largeLanguageModel,
     ITool[] tools,
     int maxDepth,
+    bool enableSearch,
     ILogger<Agent> logger) : IAgent
 {
     private CancellationTokenSource _childCancelTokenSource = new();
@@ -62,7 +63,7 @@ public class Agent(
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
-                messageSnapshot, toolDefinitions, temperature, cancellationToken);
+                messageSnapshot, toolDefinitions, enableSearch, temperature, cancellationToken);
             foreach (var responseMessage in responseMessages)
             {
                 yield return responseMessage;
