@@ -8,7 +8,8 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
 {
     private readonly Lock _lLock = new();
 
-    public Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default)
+    public Task<Dictionary<string, string[]>> DescribeDirectory(string path,
+        CancellationToken cancellationToken = default)
     {
         return ConnectionWrapper(() =>
         {
@@ -27,7 +28,7 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
         {
             if (!DoesFileExist(sourcePath) && !DoesFolderExist(sourcePath))
             {
-                throw new IOException("Source file does not exist");
+                throw new IOException($"Source path {sourcePath} does not exist");
             }
 
             CreateDestinationParentPath(destinationPath);
@@ -93,9 +94,9 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
             .Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .ToLookup(
                 // ReSharper disable once ConvertClosureToMethodGroup
-                x => Path.GetDirectoryName(x)?.Replace('\\', '/') ?? string.Empty, 
+                x => Path.GetDirectoryName(x)?.Replace('\\', '/') ?? string.Empty,
                 x => Path.GetFileName(x))
-            .Where(x => !string.IsNullOrEmpty(x.Key) )
+            .Where(x => !string.IsNullOrEmpty(x.Key))
             .ToDictionary(x => x.Key, x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
     }
 

@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
@@ -17,6 +18,7 @@ public class Agent(
     private CancellationTokenSource _childCancelTokenSource = new();
     private readonly Lock _messagesLock = new();
     private readonly ConcurrentDictionary<string, ITool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
+
     private readonly List<Message> _messages =
     [
         new()
@@ -25,7 +27,7 @@ public class Agent(
             Content = systemPrompt
         }
     ];
-    
+
     public IAsyncEnumerable<AgentResponse> Run(string prompt, CancellationToken cancellationToken = default)
     {
         lock (_messagesLock)
@@ -39,6 +41,7 @@ public class Agent(
             _childCancelTokenSource.Dispose();
             _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         }
+
         return ExecuteAgentLoop(0.5f, _childCancelTokenSource.Token);
     }
 
@@ -51,10 +54,11 @@ public class Agent(
         {
             messageSnapshot = _messages.ToList();
         }
+
         var toolDefinitions = _tools.Values
             .Select(x => x.GetToolDefinition())
             .ToArray();
-        
+
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responseMessages = await largeLanguageModel.Prompt(
@@ -92,7 +96,9 @@ public class Agent(
         try
         {
             var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
-            logger.LogInformation("Tool {ToolName} : {toolResponse}", tool.Name, toolResponse);
+            logger.LogInformation(
+                "Tool {ToolName} with {Params} : {toolResponse}",
+                tool.Name, toolCall.Parameters, toolResponse);
             return new ToolMessage
             {
                 Role = Role.Tool,
@@ -102,11 +108,19 @@ public class Agent(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Tool {ToolName} Error: {ExceptionMessage}", tool.Name, ex.Message);
+            logger.LogError(
+                ex,
+                "Tool {ToolName} with {Params} Error: {ExceptionMessage}",
+                tool.Name, toolCall.Parameters, ex.Message);
+
             return new ToolMessage
             {
                 Role = Role.Tool,
-                Content = $"There was an error. Exception: {ex.Message}",
+                Content = new JsonObject
+                {
+                    ["status"] = "success",
+                    ["message"] = $"There was an error on tool call {toolCall.Id}: {ex.Message}"
+                }.ToJsonString(),
                 ToolCallId = toolCall.Id
             };
         }

@@ -4,7 +4,8 @@ namespace Infrastructure.Clients;
 
 public class LocalFileSystemClient : IFileSystemClient
 {
-    public Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default)
+    public Task<Dictionary<string, string[]>> DescribeDirectory(string path,
+        CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(path))
         {
@@ -14,22 +15,21 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.FromResult(GetLibraryPaths(path));
     }
 
-    public Task Move(string sourceFile, string destinationPath, CancellationToken cancellationToken = default)
+    public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(sourceFile) && !Directory.Exists(sourceFile))
+        if (!File.Exists(sourcePath) && !Directory.Exists(sourcePath))
         {
-            throw new IOException("Source file does not exist");
+            throw new IOException($"Source path {sourcePath} does not exist");
         }
 
         CreateDestinationParentPath(destinationPath);
-
-        if (File.Exists(sourceFile))
+        if (File.Exists(sourcePath))
         {
-            File.Move(sourceFile, destinationPath);
+            File.Move(sourcePath, destinationPath);
         }
-        else if (Directory.Exists(sourceFile))
+        else if (Directory.Exists(sourcePath))
         {
-            Directory.Move(sourceFile, destinationPath);
+            Directory.Move(sourcePath, destinationPath);
         }
 
         return Task.CompletedTask;
@@ -57,14 +57,16 @@ public class LocalFileSystemClient : IFileSystemClient
 
     private static Dictionary<string, string[]> GetLibraryPaths(string basePath)
     {
+        // ReSharper disable once ConvertClosureToMethodGroup | It messes with the nullability checks somehow
         return Directory
             .EnumerateFiles(basePath, "*", SearchOption.AllDirectories)
-            .ToLookup(
-                // ReSharper disable once ConvertClosureToMethodGroup
-                x => Path.GetDirectoryName(x) ?? string.Empty, 
+            .GroupBy(
+                x => Path.GetDirectoryName(x) ?? string.Empty,
                 x => Path.GetFileName(x))
             .Where(x => !string.IsNullOrEmpty(x.Key))
-            .ToDictionary(x => x.Key, x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
+            .ToDictionary(
+                x => x.Key,
+                x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
     }
 
     private static void CreateDestinationParentPath(string destinationPath)
