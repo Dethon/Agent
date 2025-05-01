@@ -15,18 +15,12 @@ public class QBittorrentDownloadClient(
 {
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
-        await Authenticate(cancellationToken);
-        var addTorrentContent = new FormUrlEncodedContent([
-            new KeyValuePair<string, string>("urls", link),
-            new KeyValuePair<string, string>("savepath", savePath),
-            new KeyValuePair<string, string>("rename", $"{id}")
-        ]);
-        var addTorrentResponse = await client.PostAsync("torrents/add", addTorrentContent, cancellationToken);
-        addTorrentResponse.EnsureSuccessStatusCode();
+        await CallQBittorrent(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
         await Task.Delay(10000, cancellationToken); // Wait to make sure the torrent got added
         if (await GetSingleTorrent($"{id}", cancellationToken) is null)
         {
-            throw new InvalidOperationException("Torrent cannot be added. Try another link. Search again if necessary");
+            throw new InvalidOperationException(
+                "Torrent cannot be added. Try another link. Search again if necessary");
         }
     }
 
@@ -44,20 +38,13 @@ public class QBittorrentDownloadClient(
             throw new InvalidOperationException("Cannot cleanup torrent: unable to get hash");
         }
 
-        var deleteTorrentContent = new FormUrlEncodedContent([
-            new KeyValuePair<string, string>("hashes", hash),
-            new KeyValuePair<string, string>("deleteFiles", "true")
-        ]);
-
-        var deleteTorrentResponse = await client
-            .PostAsync("torrents/delete", deleteTorrentContent, cancellationToken);
-        deleteTorrentResponse.EnsureSuccessStatusCode();
+        await CallQBittorrent(c => RemoveTorrent(hash, c), cancellationToken);
     }
 
     public async Task<IEnumerable<DownloadItem>> RefreshDownloadItems(
         IEnumerable<DownloadItem> items, CancellationToken cancellationToken = default)
     {
-        var torrents = (await GetAllTorrents(cancellationToken))
+        var torrents = (await CallQBittorrent(GetAllTorrents, cancellationToken))
             .ToLookup(x => x["name"]?.GetValue<string>() ?? string.Empty, x => x)
             .ToDictionary(x => x.Key, x => x.First());
 
@@ -102,7 +89,7 @@ public class QBittorrentDownloadClient(
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
     {
-        var torrents = await GetAllTorrents(cancellationToken);
+        var torrents = await CallQBittorrent(GetAllTorrents, cancellationToken);
         return torrents.SingleOrDefault(x =>
         {
             var name = x["name"]?.GetValue<string>() ?? string.Empty;
@@ -110,16 +97,59 @@ public class QBittorrentDownloadClient(
         });
     }
 
-    private async Task<JsonNode[]> GetAllTorrents(CancellationToken cancellationToken)
+    private async Task<T> CallQBittorrent<T>(Func<CancellationToken, Task<T>> func, CancellationToken cancellationToken)
     {
         await Authenticate(cancellationToken);
-        var torrents = await client.GetFromJsonAsync<JsonNode[]>("torrents/info", cancellationToken);
+        try
+        {
+            return await func(cancellationToken);
+        }
+        catch (HttpRequestException e)
+        {
+            if (e.StatusCode != HttpStatusCode.Forbidden)
+            {
+                throw;
+            }
+
+            await Authenticate(cancellationToken, true);
+            return await func(cancellationToken);
+        }
+    }
+
+    private async Task<JsonNode[]> GetAllTorrents(CancellationToken cancellationToken)
+    {
+        var response = await client.GetAsync("torrents/info", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var torrents = await response.Content.ReadFromJsonAsync<JsonNode[]>(cancellationToken);
         return torrents ?? [];
     }
 
-    private async Task Authenticate(CancellationToken cancellationToken)
+    private async Task<bool> AddTorrent(string id, string link, string savePath, CancellationToken cancellationToken)
     {
-        if (IsAuthenticated())
+        var addTorrentContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("urls", link),
+            new KeyValuePair<string, string>("savepath", savePath),
+            new KeyValuePair<string, string>("rename", $"{id}")
+        ]);
+        var response = await client.PostAsync("torrents/add", addTorrentContent, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
+    private async Task<bool> RemoveTorrent(string hash, CancellationToken cancellationToken)
+    {
+        var deleteTorrentContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("hashes", hash),
+            new KeyValuePair<string, string>("deleteFiles", "true")
+        ]);
+        var response = await client.PostAsync("torrents/delete", deleteTorrentContent, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
+    private async Task Authenticate(CancellationToken cancellationToken, bool force = false)
+    {
+        if (!force && IsAuthenticated())
         {
             return;
         }
