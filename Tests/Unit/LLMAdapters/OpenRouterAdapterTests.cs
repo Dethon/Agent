@@ -115,7 +115,7 @@ public class OpenRouterAdapterTests
         await Should.ThrowAsync<Exception>(async () =>
             await InvokePrompt(messages, []));
 
-        VerifyHttpCallCount(3);
+        VerifyHttpCallCount(5);
     }
 
     [Fact]

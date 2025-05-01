@@ -31,7 +31,7 @@ public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguage
             Tools = tools.Select(t => t.ToOpenRouterTool()).ToArray()
         };
 
-        const int maxRetryAttempts = 3;
+        const int maxRetryAttempts = 5;
         const int baseDelayMs = 1000;
         OpenRouterResponse? openRouterResponse = null;
         for (var attempt = 1; attempt <= maxRetryAttempts; attempt++)
