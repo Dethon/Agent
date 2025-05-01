@@ -32,8 +32,6 @@ public class QBittorrentDownloadClient(
 
     public async Task Cleanup(int id, CancellationToken cancellationToken = default)
     {
-        await Authenticate(cancellationToken);
-
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
         if (torrent is null)
         {
@@ -59,7 +57,6 @@ public class QBittorrentDownloadClient(
     public async Task<IEnumerable<DownloadItem>> RefreshDownloadItems(
         IEnumerable<DownloadItem> items, CancellationToken cancellationToken = default)
     {
-        await Authenticate(cancellationToken);
         var torrents = (await GetAllTorrents(cancellationToken))
             .ToLookup(x => x["name"]?.GetValue<string>() ?? string.Empty, x => x)
             .ToDictionary(x => x.Key, x => x.First());
@@ -115,6 +112,7 @@ public class QBittorrentDownloadClient(
 
     private async Task<JsonNode[]> GetAllTorrents(CancellationToken cancellationToken)
     {
+        await Authenticate(cancellationToken);
         var torrents = await client.GetFromJsonAsync<JsonNode[]>("torrents/info", cancellationToken);
         return torrents ?? [];
     }
