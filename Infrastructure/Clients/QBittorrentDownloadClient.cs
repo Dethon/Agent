@@ -72,16 +72,21 @@ public class QBittorrentDownloadClient(
     public async Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
     {
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
+        if (torrent is null)
+        {
+            return null;
+        }
+
         return new DownloadItem
         {
             Id = id,
-            Title = torrent?["name"]?.GetValue<string>() ?? string.Empty,
-            Size = torrent?["total_size"]?.GetValue<long>() ?? 0,
+            Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
+            Size = torrent["total_size"]?.GetValue<long>() ?? 0,
             Status = GetDownloadStatus(torrent),
-            Seeders = torrent?["num_seeds"]?.GetValue<int>() ?? 0,
-            Peers = torrent?["num_leechs"]?.GetValue<int>() ?? 0,
-            SavePath = torrent?["save_path"]?.GetValue<string>() ?? string.Empty,
-            Link = torrent?["magnet_uri"]?.GetValue<string>() ?? string.Empty,
+            Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
+            Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
+            SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
+            Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty
         };
     }
 

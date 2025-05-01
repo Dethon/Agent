@@ -24,25 +24,27 @@ public class DownloadMonitor(IDownloadClient client)
             Status = DownloadStatus.Added
         });
     }
-    
+
     public async Task<bool> TryAdd(int downloadId)
     {
         if (Downloads.ContainsKey(downloadId))
         {
             return false;
         }
+
         var item = await client.GetDownloadItem(downloadId);
         if (item is null)
         {
             throw new MissingDownloadException("Download missing");
         }
+
         return Downloads.TryAdd(item.Id, item);
     }
 
     public async Task<bool> AreDownloadsPending(CancellationToken cancellationToken = default)
     {
         await Refresh(cancellationToken);
-        return Downloads.Count > 0;
+        return !Downloads.IsEmpty;
     }
 
     public async Task<bool> PopCompletedDownload(int downloadId, CancellationToken cancellationToken = default)
