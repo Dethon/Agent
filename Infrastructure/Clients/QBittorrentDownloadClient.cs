@@ -15,7 +15,7 @@ public class QBittorrentDownloadClient(
 {
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
-        await CallQBittorrent(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
+        await CallApi(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
         for (var i = 0; i < 20; i++)
         {
             await Task.Delay(500, cancellationToken);
@@ -42,13 +42,13 @@ public class QBittorrentDownloadClient(
             throw new InvalidOperationException("Cannot cleanup torrent: unable to get hash");
         }
 
-        await CallQBittorrent(c => RemoveTorrent(hash, c), cancellationToken);
+        await CallApi(c => RemoveTorrent(hash, c), cancellationToken);
     }
 
     public async Task<IEnumerable<DownloadItem>> RefreshDownloadItems(
         IEnumerable<DownloadItem> items, CancellationToken cancellationToken = default)
     {
-        var torrents = (await CallQBittorrent(GetAllTorrents, cancellationToken))
+        var torrents = (await CallApi(GetAllTorrents, cancellationToken))
             .ToLookup(x => x["name"]?.GetValue<string>() ?? string.Empty, x => x)
             .ToDictionary(x => x.Key, x => x.First());
 
@@ -93,7 +93,7 @@ public class QBittorrentDownloadClient(
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
     {
-        var torrents = await CallQBittorrent(GetAllTorrents, cancellationToken);
+        var torrents = await CallApi(GetAllTorrents, cancellationToken);
         return torrents.SingleOrDefault(x =>
         {
             var name = x["name"]?.GetValue<string>() ?? string.Empty;
@@ -101,7 +101,7 @@ public class QBittorrentDownloadClient(
         });
     }
 
-    private async Task<T> CallQBittorrent<T>(Func<CancellationToken, Task<T>> func, CancellationToken cancellationToken)
+    private async Task<T> CallApi<T>(Func<CancellationToken, Task<T>> func, CancellationToken cancellationToken)
     {
         await Authenticate(cancellationToken);
         try
