@@ -11,6 +11,7 @@ using Infrastructure.LLMAdapters.OpenRouter;
 using Infrastructure.Wrappers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Telegram.Bot;
 
 namespace Cli.Modules;
 
@@ -126,7 +127,9 @@ public static class InjectorModule
             .AddSingleton<TaskQueue>()
             .AddSingleton<ChatMonitor>()
             .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
-                new TelegramBotChatClient(settings.Telegram.BotToken, settings.Telegram.AllowedUserNames));
+                new TelegramBotChatClient(
+                    new TelegramBotClient(settings.Telegram.BotToken),
+                    settings.Telegram.AllowedUserNames));
     }
 
     public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)

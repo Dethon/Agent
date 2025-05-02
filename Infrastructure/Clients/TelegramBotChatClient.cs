@@ -6,17 +6,15 @@ using Telegram.Bot.Types.Enums;
 
 namespace Infrastructure.Clients;
 
-public class TelegramBotChatClient(string token, string[] allowedUserNames) : IChatClient
+public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUserNames) : IChatClient
 {
-    private readonly TelegramBotClient _botClient = new(token);
-
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         int? offset = null;
         while (!cancellationToken.IsCancellationRequested)
         {
-            var updates = await _botClient.GetUpdates(
+            var updates = await client.GetUpdates(
                 offset: offset,
                 timeout: timeout,
                 cancellationToken: cancellationToken);
@@ -40,7 +38,7 @@ public class TelegramBotChatClient(string token, string[] allowedUserNames) : IC
                     }
                     else
                     {
-                        await _botClient.SendMessage(
+                        await client.SendMessage(
                             update.Message.Chat.Id,
                             "You are not authorized to use this bot.",
                             replyParameters: update.Message.Id,
@@ -59,7 +57,7 @@ public class TelegramBotChatClient(string token, string[] allowedUserNames) : IC
         var trimmedMessage = response.Length > 4050
             ? $"{response[..4050]} ... (truncated)"
             : response;
-        var message = await _botClient.SendMessage(
+        var message = await client.SendMessage(
             chatId,
             trimmedMessage,
             parseMode: ParseMode.Html,
