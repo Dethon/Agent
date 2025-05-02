@@ -118,15 +118,8 @@ public class AgentTests
         responses[1].ShouldBe(downloadToolResponse);
         responses[2].ShouldBe(finalResponse);
 
-        _mockSearchClient.Verify(
-            x => x.Search("test file", It.IsAny<CancellationToken>()), Times.Once);
-        _mockDownloadClient.Verify(
-            x => x.Download(
-                "https://example.com/file",
-                $"{DefaultDownloadLocation}/1",
-                1,
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        VerifySearchClientCalled("test file");
+        VerifyDownloadClientCalled("https://example.com/file", $"{DefaultDownloadLocation}/1", 1);
     }
 
     [Fact]
@@ -139,15 +132,14 @@ public class AgentTests
         var firstResponse = CreateAgentResponse("First response", StopReason.Stop);
         var secondResponse = CreateAgentResponse("Second response", StopReason.Stop);
 
-        var setup = _mockLargeLanguageModel
-            .Setup(x => x.Prompt(
-                It.IsAny<IEnumerable<Message>>(),
-                It.IsAny<IEnumerable<ToolDefinition>>(),
-                It.IsAny<bool>(),
-                It.IsAny<float?>(),
-                It.IsAny<CancellationToken>()));
-        setup.Returns(async (IEnumerable<Message> _, IEnumerable<ToolDefinition> _, bool _, float? _,
-            CancellationToken c) =>
+        var setup = _mockLargeLanguageModel.Setup(x => x.Prompt(
+            It.IsAny<IEnumerable<Message>>(),
+            It.IsAny<IEnumerable<ToolDefinition>>(),
+            It.IsAny<bool>(),
+            It.IsAny<float?>(),
+            It.IsAny<CancellationToken>()));
+        setup.Returns<IEnumerable<Message>, IEnumerable<ToolDefinition>, bool, float?, CancellationToken>
+        (async (_, _, _, _, c) =>
         {
             await Task.Delay(5000, c);
             return [firstResponse];
@@ -181,14 +173,7 @@ public class AgentTests
                 ["SearchString"] = "test"
             });
 
-        _mockLargeLanguageModel
-            .Setup(x => x.Prompt(
-                It.IsAny<IEnumerable<Message>>(),
-                It.IsAny<IEnumerable<ToolDefinition>>(),
-                It.IsAny<bool>(),
-                It.IsAny<float?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync([toolCallResponse]);
+        SetupLlmToolCallsOnly([toolCallResponse]);
         SetupSearchClient("test", "Test File", 1, "https://example.com/file");
 
         // when/then
@@ -217,6 +202,18 @@ public class AgentTests
         {
             mock = mock.ReturnsAsync(item);
         }
+    }
+
+    private void SetupLlmToolCallsOnly(AgentResponse[] toolCallResponses)
+    {
+        _mockLargeLanguageModel
+            .Setup(x => x.Prompt(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<bool>(),
+                It.IsAny<float?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(toolCallResponses);
     }
 
     private Agent CreateAgent(int maxDepth)
@@ -279,6 +276,23 @@ public class AgentTests
             It.IsAny<bool>(),
             It.IsAny<float?>(),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void VerifySearchClientCalled(string query)
+    {
+        _mockSearchClient.Verify(
+            x => x.Search(query, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void VerifyDownloadClientCalled(string link, string savePath, int id)
+    {
+        _mockDownloadClient.Verify(
+            x => x.Download(
+                link,
+                savePath,
+                id,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     private static AgentResponse CreateAgentResponse(string content, StopReason stopReason)
