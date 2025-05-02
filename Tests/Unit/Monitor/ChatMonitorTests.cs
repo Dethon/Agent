@@ -59,151 +59,68 @@ public class ChatMonitorTests
         // when
         await _chatMonitor.Monitor(_cancellationToken);
         
-        // then - Verify two tasks were queued
+        // then
+        Assert.Equal(2, _taskQueue.Count);
         var task1 = await _taskQueue.DequeueTask(_cancellationToken);
         var task2 = await _taskQueue.DequeueTask(_cancellationToken);
-        
         Assert.NotNull(task1);
         Assert.NotNull(task2);
+        Assert.Equal(0, _taskQueue.Count);
     }
 
     [Fact]
     public async Task AgentTask_ProcessesPromptAndSendsResponse()
     {
         // given
-        var prompt = new ChatPrompt
-        {
-            ChatId = 123,
-            MessageId = 456,
-            Prompt = "Test prompt",
-            Sender = "user123"
-        };
+        var prompt = CreateChatPrompt();
+        var agentResponse = CreateAgentResponse("Response content", includeToolCalls: true);
         
-        var agentResponse = new AgentResponse
-        {
-            Content = "Response content",
-            ToolCalls = [new ToolCall
-                {
-                    Name = "TestTool",
-                    Parameters = new JsonObject
-                    {
-                        ["arg1"] = "value1",
-                        ["arg2"] = "value2"
-                    },
-                    Id = "434"
-                }
-            ],
-            StopReason = StopReason.Error,
-            Role = Role.User
-        };
-
-        _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, null))
-            .Returns(_agentMock.Object);
+        SetupAgentResolver();
+        SetupAgentRun(prompt.Prompt, agentResponse);
+        SetupChatClientSendResponse(789);
         
-        _agentMock.Setup(x => x.Run(prompt.Prompt, _cancellationToken))
-            .Returns(new[] { agentResponse }.ToAsyncEnumerable());
-        
-        _chatClientMock.Setup(x => x.SendResponse(
-                It.IsAny<long>(), 
-                It.IsAny<string>(), 
-                It.IsAny<int>(), 
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(789);
-        
-        // when - Queue and execute the agent task
-        await _taskQueue.QueueTask(c => InvokeAgentTaskMethod(prompt, c));
-        var task = await _taskQueue.DequeueTask(_cancellationToken);
-        await task(_cancellationToken);
+        // when
+        await ExecuteAgentTask(prompt);
         
         // then
-        _agentResolverMock.Verify(
-            x => x.Resolve(AgentType.Download, null), 
-            Times.Once);
-        
-        _agentMock.Verify(
-            x => x.Run(prompt.Prompt, _cancellationToken), 
-            Times.Once);
-        
-        _chatClientMock.Verify(
-            x => x.SendResponse(
-                prompt.ChatId, 
-                It.IsAny<string>(),
-                prompt.MessageId, 
-                _cancellationToken), 
-            Times.Once);
-        
-        _agentResolverMock.Verify(
-            x => x.AssociateMessageToAgent(It.IsAny<int>(), _agentMock.Object),
-            Times.Once);
+        VerifyAgentResolver(null);
+        VerifyAgentRun(prompt.Prompt);
+        VerifyResponseSent(prompt);
+        VerifyMessageAssociatedWithAgent();
     }
     
     [Fact]
     public async Task AgentTask_WithReplyToMessageId_ResolvesAgentWithReferenceId()
     {
         // given
-        var prompt = new ChatPrompt
-        {
-            ChatId = 123,
-            MessageId = 456,
-            Prompt = "Test prompt",
-            Sender = "user123",
-            ReplyToMessageId = 100
-        };
-        
+        var prompt = CreateChatPrompt(replyToMessageId: 100);
         var referenceId = prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
-        var agentResponse = new AgentResponse
-        {
-            Content = "Response content",
-            ToolCalls = [],
-            StopReason = StopReason.Error,
-            Role = Role.User
-        };
-
-        _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, referenceId))
-            .Returns(_agentMock.Object);
+        var agentResponse = CreateAgentResponse("Response content");
         
-        _agentMock.Setup(x => x.Run(prompt.Prompt, _cancellationToken))
-            .Returns(new[] { agentResponse }.ToAsyncEnumerable());
-        
-        _chatClientMock.Setup(x => x.SendResponse(
-                It.IsAny<long>(), 
-                It.IsAny<string>(), 
-                It.IsAny<int>(), 
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(789);
+        SetupAgentResolver(referenceId);
+        SetupAgentRun(prompt.Prompt, agentResponse);
+        SetupChatClientSendResponse(789);
         
         // when
-        await _taskQueue.QueueTask(c => InvokeAgentTaskMethod(prompt, c));
-        var task = await _taskQueue.DequeueTask(_cancellationToken);
-        await task(_cancellationToken);
+        await ExecuteAgentTask(prompt);
         
         // then
-        _agentResolverMock.Verify(
-            x => x.Resolve(AgentType.Download, referenceId), 
-            Times.Once);
+        VerifyAgentResolver(referenceId);
     }
     
     [Fact]
     public async Task AgentTask_ExceptionHandling_LogsError()
     {
         // given
-        var prompt = new ChatPrompt
-        {
-            ChatId = 123,
-            MessageId = 456,
-            Prompt = "Test prompt",
-            Sender = "user123"
-        };
+        var prompt = CreateChatPrompt();
         
         _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, null))
             .Throws(new Exception("Test exception"));
         
         // when
-        await _taskQueue.QueueTask(c => InvokeAgentTaskMethod(prompt, c));
-        var task = await _taskQueue.DequeueTask(_cancellationToken);
-        await task(_cancellationToken);
+        await ExecuteAgentTask(prompt);
         
-        // then - verify exception was logged
+        // then
         _loggerMock.Verify(
             x => x.Log(
                 LogLevel.Error,
@@ -218,34 +135,111 @@ public class ChatMonitorTests
     public async Task AgentTask_EmptyResponse_DoesNotSendMessage()
     {
         // given
-        var prompt = new ChatPrompt
-        {
-            ChatId = 123,
-            MessageId = 456,
-            Prompt = "Test prompt",
-            Sender = "user123"
-        };
+        var prompt = CreateChatPrompt();
+        var agentResponse = CreateAgentResponse("", includeToolCalls: false);
+
+        SetupAgentResolver();
+        SetupAgentRun(prompt.Prompt, agentResponse);
         
-        var agentResponse = new AgentResponse
+        // when
+        await ExecuteAgentTask(prompt);
+        
+        // then
+        VerifyResponseNotSent();
+    }
+    
+    #region Helper Methods
+    
+    private static ChatPrompt CreateChatPrompt(long chatId = 123, int messageId = 456, string promptText = "Test prompt", 
+        string sender = "user123", int? replyToMessageId = null)
+    {
+        return new ChatPrompt
         {
-            Content = "",
-            ToolCalls = [],
+            ChatId = chatId,
+            MessageId = messageId,
+            Prompt = promptText,
+            Sender = sender,
+            ReplyToMessageId = replyToMessageId
+        };
+    }
+    
+    private static AgentResponse CreateAgentResponse(string content, bool includeToolCalls = false)
+    {
+        var toolCall = new ToolCall
+        {
+            Name = "TestTool",
+            Parameters = new JsonObject
+            {
+                ["arg1"] = "value1",
+                ["arg2"] = "value2"
+            },
+            Id = "434"
+        };
+        return new AgentResponse
+        {
+            Content = content,
+            ToolCalls = includeToolCalls ? [toolCall] : [],
             StopReason = StopReason.Error,
             Role = Role.User
         };
-
-        _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, null))
+    }
+    
+    private void SetupAgentResolver(int? referenceId = null)
+    {
+        _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, referenceId))
             .Returns(_agentMock.Object);
-        
-        _agentMock.Setup(x => x.Run(prompt.Prompt, _cancellationToken))
-            .Returns(new[] { agentResponse }.ToAsyncEnumerable());
-        
-        // when
+    }
+    
+    private void SetupAgentRun(string promptText, AgentResponse response)
+    {
+        _agentMock.Setup(x => x.Run(promptText, _cancellationToken))
+            .Returns(new[] { response }.ToAsyncEnumerable());
+    }
+    
+    private void SetupChatClientSendResponse(int responseId)
+    {
+        _chatClientMock.Setup(x => x.SendResponse(
+                It.IsAny<long>(), 
+                It.IsAny<string>(), 
+                It.IsAny<int>(), 
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(responseId);
+    }
+    
+    private async Task ExecuteAgentTask(ChatPrompt prompt)
+    {
         await _taskQueue.QueueTask(c => InvokeAgentTaskMethod(prompt, c));
         var task = await _taskQueue.DequeueTask(_cancellationToken);
         await task(_cancellationToken);
-        
-        // then - verify SendResponse was not called
+    }
+    
+    private void VerifyAgentResolver(int? referenceId)
+    {
+        _agentResolverMock.Verify(
+            x => x.Resolve(AgentType.Download, referenceId), 
+            Times.Once);
+    }
+    
+    private void VerifyAgentRun(string promptText)
+    {
+        _agentMock.Verify(
+            x => x.Run(promptText, _cancellationToken), 
+            Times.Once);
+    }
+    
+    private void VerifyResponseSent(ChatPrompt prompt)
+    {
+        _chatClientMock.Verify(
+            x => x.SendResponse(
+                prompt.ChatId, 
+                It.IsAny<string>(),
+                prompt.MessageId, 
+                _cancellationToken), 
+            Times.Once);
+    }
+    
+    private void VerifyResponseNotSent()
+    {
         _chatClientMock.Verify(
             x => x.SendResponse(
                 It.IsAny<long>(), 
@@ -255,11 +249,24 @@ public class ChatMonitorTests
             Times.Never);
     }
     
-    // Helper method to invoke the private AgentTask method via reflection
+    private void VerifyMessageAssociatedWithAgent()
+    {
+        _agentResolverMock.Verify(
+            x => x.AssociateMessageToAgent(It.IsAny<int>(), _agentMock.Object),
+            Times.Once);
+    }
+    
     private async Task InvokeAgentTaskMethod(ChatPrompt prompt, CancellationToken cancellationToken)
     {
-        await (Task)typeof(ChatMonitor)
-            .GetMethod("AgentTask", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            .Invoke(_chatMonitor, new object[] { prompt, cancellationToken });
+        var method = typeof(ChatMonitor)
+            .GetMethod("AgentTask", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var result = method?.Invoke(_chatMonitor, new object[] { prompt, cancellationToken });
+        if (result == null)
+        {
+            throw new InvalidOperationException("Method invocation failed.");
+        }
+        await (Task)result;
     }
+    
+    #endregion
 }

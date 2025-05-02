@@ -5,6 +5,7 @@ namespace Domain.Monitor;
 public class TaskQueue
 {
     private readonly Channel<Func<CancellationToken, Task>> _queue;
+    public int Count => _queue.Reader.Count;
 
     public TaskQueue(int capacity = 10)
     {
