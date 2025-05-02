@@ -1,0 +1,310 @@
+﻿using System.Text.Json.Nodes;
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.Exceptions;
+using Domain.Tools;
+using Domain.Tools.Attachments;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+
+namespace Tests.Unit.Agents;
+
+public class AgentTests
+{
+    private const string DefaultLibraryPath = "test/library/path";
+    private const string DefaultDownloadLocation = "test/library/downloads";
+    private readonly Agent _agent;
+    private readonly Mock<ILargeLanguageModel> _mockLargeLanguageModel = new();
+    private readonly Mock<IDownloadClient> _mockDownloadClient = new();
+    private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
+    private readonly Mock<ISearchClient> _mockSearchClient = new();
+    private readonly SearchHistory _searchHistory = new();
+    private readonly DownloadMonitor _downloadMonitor;
+
+    public AgentTests()
+    {
+        _downloadMonitor = new DownloadMonitor(_mockDownloadClient.Object);
+        _agent = CreateAgent(10);
+    }
+
+    [Fact]
+    public async Task RunAgent_ShouldReturnLlmResponse_WhenNoToolCalls()
+    {
+        // given
+        const string userPrompt = "test prompt";
+        var expectedResponse = CreateAgentResponse("This is a test response", StopReason.Stop);
+        SetupLlmResponses([[expectedResponse]]);
+
+        // when
+        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+
+        // then
+        Assert.Single(responses);
+        Assert.Equal(expectedResponse, responses[0]);
+        VerifyLlmPromptContainsUserMessage(userPrompt);
+    }
+
+    [Fact]
+    public async Task RunAgent_ShouldExecuteToolCalls_WhenToolCallsAreRequested()
+    {
+        // given
+        const string userPrompt = "search for a file";
+        const string toolCallId = "tool-call-id-1";
+
+        var llmResponse = CreateToolCallResponse(
+            "I'll search for that file",
+            toolCallId,
+            "FileSearch",
+            new JsonObject
+            {
+                ["SearchString"] = "test query"
+            });
+
+        var finalResponse = CreateAgentResponse("I found your file", StopReason.Stop);
+
+        SetupLlmResponses([[llmResponse], [finalResponse]]);
+        SetupSearchClient("test query", "Test File", 1, "https://example.com/file");
+
+        // when
+        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+
+        // then
+        Assert.Equal(2, responses.Length);
+        Assert.Equal(llmResponse, responses[0]);
+        Assert.Equal(finalResponse, responses[1]);
+
+        VerifyLlmPromptContainsToolResponse(toolCallId);
+    }
+
+    [Fact]
+    public async Task RunAgent_ShouldContinueLoop_WithMultipleToolCalls()
+    {
+        // given
+        const string userPrompt = "search and download a file";
+        const string searchToolCallId = "search-tool-id";
+        const string downloadToolCallId = "download-tool-id";
+
+        var searchToolResponse = CreateToolCallResponse(
+            "I'll search for that file",
+            searchToolCallId,
+            "FileSearch",
+            new JsonObject
+            {
+                ["SearchString"] = "test file"
+            });
+
+        var downloadToolResponse = CreateToolCallResponse(
+            "Now I'll download the file",
+            downloadToolCallId,
+            "FileDownload",
+            new JsonObject
+            {
+                ["SearchResultId"] = 1
+            });
+
+        var finalResponse = CreateAgentResponse("File has been downloaded", StopReason.Stop);
+
+        SetupLlmResponses([[searchToolResponse], [downloadToolResponse], [finalResponse]]);
+        SetupSearchClient("test file", "Test File", 1, "https://example.com/file");
+        SetupDownloadClient(1, "https://example.com/file", $"{DefaultDownloadLocation}/1");
+
+        // when
+        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+
+        // then
+        Assert.Equal(3, responses.Length);
+        Assert.Equal(searchToolResponse, responses[0]);
+        Assert.Equal(downloadToolResponse, responses[1]);
+        Assert.Equal(finalResponse, responses[2]);
+
+        _mockSearchClient.Verify(x => x.Search("test file", It.IsAny<CancellationToken>()), Times.Once);
+        _mockDownloadClient.Verify(x => x.Download(
+            "https://example.com/file", $"{DefaultDownloadLocation}/1", 1, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAgent_ShouldCancelPreviousOperation_WhenNewPromptIsSubmitted()
+    {
+        // given
+        const string firstPrompt = "first prompt";
+        const string secondPrompt = "second prompt";
+
+        var firstResponse = CreateAgentResponse("First response", StopReason.Stop);
+        var secondResponse = CreateAgentResponse("Second response", StopReason.Stop);
+
+        var setup = _mockLargeLanguageModel
+            .Setup(x => x.Prompt(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<bool>(),
+                It.IsAny<float?>(),
+                It.IsAny<CancellationToken>()));
+        setup.Returns(async (IEnumerable<Message> _, IEnumerable<ToolDefinition> _, bool _, float? _,
+            CancellationToken c) =>
+        {
+            await Task.Delay(5000, c);
+            return [firstResponse];
+        });
+
+
+        // when
+        var firstTask = _agent.Run(firstPrompt).ToArrayAsync();
+        await Task.Delay(500);
+        setup.ReturnsAsync([secondResponse]);
+        var secondResponses = await _agent.Run(secondPrompt).ToArrayAsync();
+
+        // then
+        await Assert.ThrowsAsync<TaskCanceledException>(async () => await firstTask);
+        Assert.Single(secondResponses);
+        Assert.Equal(secondResponse, secondResponses[0]);
+        VerifyLlmPromptContainsUserMessage(secondPrompt);
+    }
+
+    [Fact]
+    public async Task RunAgent_ShouldThrowAgentLoopException_WhenMaxDepthIsReached()
+    {
+        // given
+        var agent = CreateAgent(2);
+        const string userPrompt = "test prompt";
+        var toolCallResponse = CreateToolCallResponse(
+            "Calling tool",
+            "tool-call",
+            "FileSearch",
+            new JsonObject
+            {
+                ["SearchString"] = "test"
+            });
+
+        _mockLargeLanguageModel
+            .Setup(x => x.Prompt(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<bool>(),
+                It.IsAny<float?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([toolCallResponse]);
+        SetupSearchClient("test", "Test File", 1, "https://example.com/file");
+
+        // when/then
+        var exception = await Assert.ThrowsAsync<AgentLoopException>(async () =>
+        {
+            await agent.Run(userPrompt).ToArrayAsync();
+        });
+
+        Assert.Contains("max depth (2)", exception.Message);
+    }
+
+    #region Helper Methods
+
+    private void SetupLlmResponses(AgentResponse[][] responseSequence)
+    {
+        var mock = _mockLargeLanguageModel
+            .SetupSequence<Task<AgentResponse[]>>(x => x.Prompt(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<bool>(),
+                It.IsAny<float?>(),
+                It.IsAny<CancellationToken>()));
+
+        // ReSharper disable once LoopCanBeConvertedToQuery
+        foreach (var item in responseSequence)
+        {
+            mock = mock.ReturnsAsync(item);
+        }
+    }
+
+    private Agent CreateAgent(int maxDepth)
+    {
+        return new Agent(
+            DownloadSystemPrompt.Prompt,
+            _mockLargeLanguageModel.Object,
+            [
+                new FileSearchTool(_mockSearchClient.Object, _searchHistory),
+                new FileDownloadTool(_mockDownloadClient.Object, _searchHistory, _downloadMonitor,
+                    DefaultDownloadLocation),
+                new WaitForDownloadTool(_downloadMonitor),
+                new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation)
+            ],
+            maxDepth,
+            true,
+            NullLogger<Agent>.Instance
+        );
+    }
+
+    private void SetupSearchClient(string query, string title, int id, string link)
+    {
+        _mockSearchClient
+            .Setup(x => x.Search(query, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new SearchResult
+                {
+                    Title = title,
+                    Id = id,
+                    Link = link
+                }
+            ]);
+    }
+
+    private void SetupDownloadClient(int id, string link, string savePath)
+    {
+        _mockDownloadClient
+            .Setup(x => x.Download(link, savePath, id, It.IsAny<CancellationToken>()));
+    }
+
+    private void VerifyLlmPromptContainsUserMessage(string userPrompt)
+    {
+        _mockLargeLanguageModel.Verify(x => x.Prompt(
+            It.Is<IEnumerable<Message>>(m => m.Any(msg => msg.Role == Role.User && msg.Content == userPrompt)),
+            It.IsAny<IEnumerable<ToolDefinition>>(),
+            It.IsAny<bool>(),
+            It.IsAny<float?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private void VerifyLlmPromptContainsToolResponse(string toolCallId)
+    {
+        _mockLargeLanguageModel.Verify(x => x.Prompt(
+            It.Is<IEnumerable<Message>>(m => m.Any(msg => msg is ToolMessage &&
+                                                          msg.Role == Role.Tool &&
+                                                          ((ToolMessage)msg).ToolCallId == toolCallId)),
+            It.IsAny<IEnumerable<ToolDefinition>>(),
+            It.IsAny<bool>(),
+            It.IsAny<float?>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static AgentResponse CreateAgentResponse(string content, StopReason stopReason)
+    {
+        return new AgentResponse
+        {
+            Role = Role.Assistant,
+            Content = content,
+            StopReason = stopReason
+        };
+    }
+
+    private static AgentResponse CreateToolCallResponse(
+        string content, string toolCallId, string toolName, JsonNode parameters)
+    {
+        return new AgentResponse
+        {
+            Role = Role.Assistant,
+            Content = content,
+            StopReason = StopReason.ToolCalls,
+            ToolCalls =
+            [
+                new ToolCall
+                {
+                    Id = toolCallId,
+                    Name = toolName,
+                    Parameters = parameters
+                }
+            ]
+        };
+    }
+
+    #endregion
+}
