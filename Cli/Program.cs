@@ -1,6 +1,7 @@
 ﻿using Cli.App;
 using Cli.Modules;
 using Domain.Agents;
+using Domain.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -33,7 +34,7 @@ builder.Services
     .AddChatMonitoring(settings)
     .AddAttachments()
     .AddTools(settings)
-    .AddSingleton<AgentResolver>();
+    .AddSingleton<IAgentResolver, AgentResolver>();
 
 if (isDaemon)
 {

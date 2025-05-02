@@ -30,12 +30,12 @@ public class ProgramTests
             .AddChatMonitoring(settings)
             .AddAttachments()
             .AddTools(settings)
-            .AddSingleton<AgentResolver>();
+            .AddSingleton<IAgentResolver, AgentResolver>();
 
         var provider = builder.Services.BuildServiceProvider();
 
         // then
-        provider.GetService<AgentResolver>().ShouldNotBeNull();
+        provider.GetService<IAgentResolver>().ShouldNotBeNull();
         provider.GetService<ILargeLanguageModel>().ShouldNotBeNull();
         provider.GetService<ISearchClient>().ShouldNotBeNull();
         provider.GetService<IDownloadClient>().ShouldNotBeNull();

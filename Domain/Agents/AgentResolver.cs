@@ -14,7 +14,7 @@ public class AgentResolver(
     CleanupTool cleanupTool,
     LibraryDescriptionTool libraryDescriptionTool,
     IMemoryCache cache,
-    ILoggerFactory loggerFactory)
+    ILoggerFactory loggerFactory) : IAgentResolver
 {
     public IAgent Resolve(AgentType agentType, int? sourceMessageId = null)
     {

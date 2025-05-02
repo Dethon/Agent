@@ -1,4 +1,5 @@
 ﻿using Domain.Agents;
+using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,7 +11,7 @@ public static class Command
     public static async Task Start(IServiceProvider services, string prompt)
     {
         await using var scope = services.CreateAsyncScope();
-        var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
+        var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
         var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
 
         var agent = agentResolver.Resolve(AgentType.Download);
