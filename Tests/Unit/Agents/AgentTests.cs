@@ -7,6 +7,7 @@ using Domain.Tools;
 using Domain.Tools.Attachments;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Shouldly;
 
 namespace Tests.Unit.Agents;
 
@@ -40,8 +41,8 @@ public class AgentTests
         var responses = await _agent.Run(userPrompt).ToArrayAsync();
 
         // then
-        Assert.Single(responses);
-        Assert.Equal(expectedResponse, responses[0]);
+        responses.Length.ShouldBe(1);
+        responses[0].ShouldBe(expectedResponse);
         VerifyLlmPromptContainsUserMessage(userPrompt);
     }
 
@@ -70,10 +71,9 @@ public class AgentTests
         var responses = await _agent.Run(userPrompt).ToArrayAsync();
 
         // then
-        Assert.Equal(2, responses.Length);
-        Assert.Equal(llmResponse, responses[0]);
-        Assert.Equal(finalResponse, responses[1]);
-
+        responses.Length.ShouldBe(2);
+        responses[0].ShouldBe(llmResponse);
+        responses[1].ShouldBe(finalResponse);
         VerifyLlmPromptContainsToolResponse(toolCallId);
     }
 
@@ -113,14 +113,20 @@ public class AgentTests
         var responses = await _agent.Run(userPrompt).ToArrayAsync();
 
         // then
-        Assert.Equal(3, responses.Length);
-        Assert.Equal(searchToolResponse, responses[0]);
-        Assert.Equal(downloadToolResponse, responses[1]);
-        Assert.Equal(finalResponse, responses[2]);
+        responses.Length.ShouldBe(3);
+        responses[0].ShouldBe(searchToolResponse);
+        responses[1].ShouldBe(downloadToolResponse);
+        responses[2].ShouldBe(finalResponse);
 
-        _mockSearchClient.Verify(x => x.Search("test file", It.IsAny<CancellationToken>()), Times.Once);
-        _mockDownloadClient.Verify(x => x.Download(
-            "https://example.com/file", $"{DefaultDownloadLocation}/1", 1, It.IsAny<CancellationToken>()), Times.Once);
+        _mockSearchClient.Verify(
+            x => x.Search("test file", It.IsAny<CancellationToken>()), Times.Once);
+        _mockDownloadClient.Verify(
+            x => x.Download(
+                "https://example.com/file",
+                $"{DefaultDownloadLocation}/1",
+                1,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -147,7 +153,6 @@ public class AgentTests
             return [firstResponse];
         });
 
-
         // when
         var firstTask = _agent.Run(firstPrompt).ToArrayAsync();
         await Task.Delay(500);
@@ -155,9 +160,9 @@ public class AgentTests
         var secondResponses = await _agent.Run(secondPrompt).ToArrayAsync();
 
         // then
-        await Assert.ThrowsAsync<TaskCanceledException>(async () => await firstTask);
-        Assert.Single(secondResponses);
-        Assert.Equal(secondResponse, secondResponses[0]);
+        await Should.ThrowAsync<TaskCanceledException>(async () => await firstTask);
+        secondResponses.Length.ShouldBe(1);
+        secondResponses[0].ShouldBe(secondResponse);
         VerifyLlmPromptContainsUserMessage(secondPrompt);
     }
 
@@ -187,12 +192,12 @@ public class AgentTests
         SetupSearchClient("test", "Test File", 1, "https://example.com/file");
 
         // when/then
-        var exception = await Assert.ThrowsAsync<AgentLoopException>(async () =>
+        var exception = await Should.ThrowAsync<AgentLoopException>(async () =>
         {
             await agent.Run(userPrompt).ToArrayAsync();
         });
 
-        Assert.Contains("max depth (2)", exception.Message);
+        exception.Message.ShouldContain("max depth (2)");
     }
 
     #region Helper Methods
