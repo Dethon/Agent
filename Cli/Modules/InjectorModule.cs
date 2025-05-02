@@ -1,8 +1,8 @@
 ﻿using System.Net;
 using Cli.App;
 using Cli.Settings;
-using Domain.ChatMonitor;
 using Domain.Contracts;
+using Domain.Monitor;
 using Domain.Tools;
 using Domain.Tools.Attachments;
 using Infrastructure.Clients;

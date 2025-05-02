@@ -1,4 +1,4 @@
-namespace Tests.Unit.ChatMonitor;
+namespace Tests.Unit.Monitor;
 
 public class ChatMonitorTests
 {

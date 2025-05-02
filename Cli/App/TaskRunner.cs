@@ -1,4 +1,4 @@
-﻿using Domain.ChatMonitor;
+﻿using Domain.Monitor;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +21,4 @@ public class TaskRunner(TaskQueue queue, ILogger<TaskRunner> logger) : Backgroun
             }
         }
     }
-
-    
 }

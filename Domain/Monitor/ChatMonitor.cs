@@ -5,7 +5,7 @@ using Domain.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Domain.ChatMonitor;
+namespace Domain.Monitor;
 
 public class ChatMonitor(
     IServiceProvider services,

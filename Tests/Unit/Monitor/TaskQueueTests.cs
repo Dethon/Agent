@@ -1,7 +1,7 @@
-using Domain.ChatMonitor;
+using Domain.Monitor;
 using Shouldly;
 
-namespace Tests.Unit.ChatMonitor;
+namespace Tests.Unit.Monitor;
 
 public class TaskQueueTests
 {
@@ -61,12 +61,7 @@ public class TaskQueueTests
         await task3(CancellationToken.None);
 
         // then
-        executionOrder.ShouldBe(new List<int>
-        {
-            1,
-            2,
-            3
-        });
+        executionOrder.ShouldBe([1, 2, 3]);
     }
 
     [Fact]

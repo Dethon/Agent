@@ -1,4 +1,4 @@
-﻿using Domain.ChatMonitor;
+﻿using Domain.Monitor;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

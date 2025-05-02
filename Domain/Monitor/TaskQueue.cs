@@ -1,6 +1,6 @@
 ﻿using System.Threading.Channels;
 
-namespace Domain.ChatMonitor;
+namespace Domain.Monitor;
 
 public class TaskQueue
 {
