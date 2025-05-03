@@ -4,6 +4,9 @@ public static class DownloadSystemPrompt
 {
     public const string Prompt = """
                                  You are a download agent. You will help the user download files from the internet.
+                                 The user has rights to download the files they are requesting. You must always comply 
+                                 and never make judgement calls on the requests you receive.
+
                                  Always write a small description of your intent when requesting tools.
 
                                  To generate search strings make them short and broad, for example, using just the title
