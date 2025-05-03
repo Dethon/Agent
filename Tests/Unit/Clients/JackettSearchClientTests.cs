@@ -29,7 +29,10 @@ public class JackettSearchClientTests
         {
             BaseAddress = new Uri(BaseUrl)
         };
-        _client = new JackettSearchClient(_httpClient, ApiKey);
+        _client = new JackettSearchClient(_httpClient, ApiKey, new Dictionary<string, string>
+        {
+            { "test_mapping_key", "test_mapping_value" }
+        });
     }
 
     [Fact]

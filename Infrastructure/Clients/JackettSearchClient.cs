@@ -8,7 +8,7 @@ using Domain.DTOs;
 
 namespace Infrastructure.Clients;
 
-public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClient
+public class JackettSearchClient(HttpClient client, string apiKey, Dictionary<string, string> mappings) : ISearchClient
 {
     public async Task<SearchResult[]> Search(string query, CancellationToken cancellationToken = default)
     {
@@ -57,7 +57,7 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
         }
     }
 
-    private static SearchResult[] ParseSingleResponse(JsonDocument? jackettResponse)
+    private SearchResult[] ParseSingleResponse(JsonDocument? jackettResponse)
     {
         if (jackettResponse?.RootElement is null)
         {
@@ -78,7 +78,7 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
         return TrimSingleResultSet(results);
     }
 
-    private static SearchResult[] TrimSingleResultSet(IEnumerable<JsonNode> allResults, int maxResults = 10)
+    private SearchResult[] TrimSingleResultSet(IEnumerable<JsonNode> allResults, int maxResults = 10)
     {
         var trimmedResults = allResults
             .Where(x => ForceGetInt(x["Seeders"]) > 1)
@@ -89,10 +89,26 @@ public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClie
                 try
                 {
                     var link = x["MagnetUri"]?.GetValue<string>() ?? x["Link"]?.GetValue<string>() ?? string.Empty;
+                    var category = x["CategoryDesc"]?.GetValue<string>() ?? string.Empty;
+                    var title = x["Title"]?.GetValue<string>() ?? string.Empty;
+                    foreach (var mapping in mappings)
+                    {
+                        const StringComparison comparisonType = StringComparison.InvariantCultureIgnoreCase;
+                        if (title.Contains(mapping.Key, comparisonType))
+                        {
+                            title = title.Replace(mapping.Key, mapping.Value, comparisonType);
+                        }
+
+                        if (category.Contains(mapping.Key, comparisonType))
+                        {
+                            category = category.Replace(mapping.Key, mapping.Value, comparisonType);
+                        }
+                    }
+
                     return new SearchResult
                     {
-                        Title = x["Title"]?.GetValue<string>() ?? string.Empty,
-                        Category = x["CategoryDesc"]?.GetValue<string>(),
+                        Title = title,
+                        Category = category,
                         Id = link.GetHashCode(),
                         Link = link,
                         Size = ForceGetInt(x["Size"]),

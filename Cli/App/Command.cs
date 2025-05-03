@@ -18,7 +18,7 @@ public static class Command
         var responses = agent.Run(prompt, lifetime.ApplicationStopping);
         await DisplayResponses(responses, lifetime.ApplicationStopping);
     }
-    
+
     private static async Task DisplayResponses(
         IAsyncEnumerable<AgentResponse> agentResponses, CancellationToken cancellationToken)
     {
@@ -35,6 +35,9 @@ public static class Command
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine(message.Content);
             }
+
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine($"StopReason: {message.StopReason}");
 
             foreach (var toolCall in message.ToolCalls)
             {

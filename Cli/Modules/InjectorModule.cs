@@ -52,7 +52,7 @@ public static class InjectorModule
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
                 httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey);
+                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey, settings.Mappings);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,
