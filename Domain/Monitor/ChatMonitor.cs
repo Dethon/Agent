@@ -38,7 +38,7 @@ public class ChatMonitor(
             {
                 var mainMessage = response.Content;
                 var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-                mainMessage = $"{mainMessage}\n<code>StopReason = {response.StopReason}</code>";
+                mainMessage = $"{mainMessage}\n<blockquote><code>StopReason={response.StopReason}</code></blockquote>";
 
                 var trimMainMessage = mainMessage.Left(2000);
                 var trimToolMessage = toolMessage.Left(2000);
