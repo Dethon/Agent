@@ -42,7 +42,7 @@ public class ChatMonitor(
 
                 var trimMainMessage = mainMessage.Left(2000);
                 var trimToolMessage = toolMessage.Left(2000);
-                var message = $"{trimMainMessage}<blockquote expandable><code>{trimToolMessage}</code></blockquote>";
+                var message = $"{trimMainMessage}\n<blockquote expandable><code>{trimToolMessage}</code></blockquote>";
                 var messageId = await chatClient
                     .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
 
