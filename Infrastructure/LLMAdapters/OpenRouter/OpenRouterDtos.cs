@@ -12,7 +12,45 @@ public record OpenRouterRequest
     public OpenRouterPlugin[] Plugins { [UsedImplicitly] get; init; } = [];
     public OpenRouterTool[] Tools { [UsedImplicitly] get; init; } = [];
     public OpenRouterMessage[] Messages { [UsedImplicitly] get; init; } = [];
-    [UsedImplicitly] public OpenRouterReasoning Reasoning { get; init; } = new();
+    public OpenRouterReasoning Reasoning { get; init; } = new();
+    public OpenRouterGoogleExtraBody ExtraBody { get; init; } = new();
+}
+
+public record OpenRouterGoogleExtraBody
+{
+    public OpenRouterExtraBody Google { [UsedImplicitly] get; init; } = new()
+    {
+        SafetySettings =
+        [
+            new SafetySetting
+            {
+                Category = "HARM_CATEGORY_HARASSMENT"
+            },
+            new SafetySetting
+            {
+                Category = "HARM_CATEGORY_HATE_SPEECH"
+            },
+            new SafetySetting
+            {
+                Category = "HARM_CATEGORY_SEXUALLY_EXPLICIT"
+            },
+            new SafetySetting
+            {
+                Category = "HARM_CATEGORY_DANGEROUS_CONTENT"
+            }
+        ]
+    };
+}
+
+public record OpenRouterExtraBody
+{
+    public required SafetySetting[] SafetySettings { [UsedImplicitly] get; init; } = [];
+}
+
+public record SafetySetting
+{
+    public required string Category { [UsedImplicitly] get; init; }
+    [UsedImplicitly] public string Threshold { get; init; } = "BLOCK_NONE";
 }
 
 public abstract record OpenRouterPlugin(string Id)
