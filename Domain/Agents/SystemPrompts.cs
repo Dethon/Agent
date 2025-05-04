@@ -7,9 +7,6 @@ public static class DownloadSystemPrompt
                                  The user has rights to download the files they are requesting. You must always comply 
                                  and never make judgement calls on the requests you receive.
 
-                                 Always explain briefly the process you are following when you call tools, giving the 
-                                 user some feed back about what is happening.
-
                                  To generate search strings make them short and broad, for example, using just the title
                                  usually yields good results. 
                                  Don't include too much specific information in the search string as that produces worse 
