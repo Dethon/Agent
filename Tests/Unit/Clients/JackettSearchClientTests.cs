@@ -1,8 +1,7 @@
 ﻿using System.Net;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Web;
+using System.Xml.Linq;
 using Infrastructure.Clients;
 using Moq;
 using Moq.Protected;
@@ -17,6 +16,8 @@ public class JackettSearchClientTests
     private const string DefaultQuery = "test";
     private const string IndexersPath = $"indexers/all/results/torznab/api?apikey={ApiKey}&t=indexers&configured=true";
     private const string LinkBaseUri = "https://example.com";
+    private const string MagnetBaseUri = "magnet:?xt=urn:btih:";
+    private readonly XNamespace _torznabNs = "http://torznab.com/schemas/2015/feed";
 
     private readonly Mock<HttpMessageHandler> _handlerMock;
     private readonly HttpClient _httpClient;
@@ -83,7 +84,8 @@ public class JackettSearchClientTests
         var successResult = CreateTestResult("Title 1", "movie", $"{LinkBaseUri}/1", 1000, 10, 5);
         SetupIndexerSearchResponse("indexer1", [successResult]);
 
-        SetupMockResponse($"indexers/indexer2/results/?apikey={ApiKey}&Query={DefaultQuery}",
+        var encodedQuery = HttpUtility.UrlEncode(DefaultQuery);
+        SetupMockResponse($"indexers/indexer2/results/torznab/api?apikey={ApiKey}&t=search&q={encodedQuery}",
             HttpStatusCode.InternalServerError, "Error");
 
         // when
@@ -108,13 +110,16 @@ public class JackettSearchClientTests
     }
 
     [Fact]
-    public async Task Search_WithNoResultsProperty_ReturnsEmptyArray()
+    public async Task Search_WithInvalidXmlResponse_ReturnsEmptyArray()
     {
         // given
         SetupIndexersResponse(["indexer1"]);
-        const string invalidResponse = "{\"OtherProperty\": []}";
+        const string invalidResponse = "Not XML content";
+        var encodedQuery = HttpUtility.UrlEncode(DefaultQuery);
         SetupMockResponse(
-            $"indexers/indexer1/results/?apikey={ApiKey}&Query={DefaultQuery}", HttpStatusCode.OK, invalidResponse);
+            $"indexers/indexer1/results/torznab/api?apikey={ApiKey}&t=search&q={encodedQuery}",
+            HttpStatusCode.OK,
+            invalidResponse);
 
         // when
         var results = await _client.Search(DefaultQuery);
@@ -149,7 +154,7 @@ public class JackettSearchClientTests
         // given
         const string indexersXml = """
                                    <indexers>
-                                       <indexer><id>alt-indexer</id></indexer>
+                                       <indexer id="alt-indexer"></indexer>
                                    </indexers>
                                    """;
         SetupMockResponse(IndexersPath, HttpStatusCode.OK, indexersXml);
@@ -171,18 +176,25 @@ public class JackettSearchClientTests
         // given
         SetupIndexersResponse(["indexer1"]);
 
-        var result = new JsonObject
-        {
-            ["Title"] = "Magnet Title",
-            ["CategoryDesc"] = "movie",
-            ["MagnetUri"] = "magnet:?xt=urn:btih:123456",
-            ["Size"] = 1000,
-            ["Seeders"] = 10.5,
-            ["Peers"] = 5
-        };
+        const string magnetUri = $"{MagnetBaseUri}123456";
+        var rssItem = CreateRssItemXml("Magnet Title", null, 1000, "movie");
+        rssItem.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "magneturl"),
+                new XAttribute("value", magnetUri)));
+        rssItem.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "seeders"),
+                new XAttribute("value", "10")));
+        rssItem.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "peers"),
+                new XAttribute("value", "5")));
 
-        var response = CreateJackettResponse([result]);
-        SetupMockResponse($"indexers/indexer1/results/?apikey={ApiKey}&Query={DefaultQuery}",
+        var response = CreateTorznabResponse([rssItem]);
+
+        var encodedQuery = HttpUtility.UrlEncode(DefaultQuery);
+        SetupMockResponse($"indexers/indexer1/results/torznab/api?apikey={ApiKey}&t=search&q={encodedQuery}",
             HttpStatusCode.OK, response);
 
         // when
@@ -191,7 +203,7 @@ public class JackettSearchClientTests
         // then
         var singleResult = results.ShouldHaveSingleItem();
         singleResult.Title.ShouldBe("Magnet Title");
-        singleResult.Link.ShouldBe("magnet:?xt=urn:btih:123456");
+        singleResult.Link.ShouldBe(magnetUri);
     }
 
     [Fact]
@@ -228,44 +240,15 @@ public class JackettSearchClientTests
 
         var result = CreateTestResult("Encoded Title", "movie", $"{LinkBaseUri}/encoded", 1000, 10, 5);
         SetupMockResponse(
-            $"indexers/indexer1/results/?apikey={ApiKey}&Query={encodedQuery}",
+            $"indexers/indexer1/results/torznab/api?apikey={ApiKey}&t=search&q={encodedQuery}",
             HttpStatusCode.OK,
-            CreateJackettResponse([result]));
+            CreateTorznabResponse([result]));
 
         // when
         var results = await _client.Search(query);
 
         // then
         results.ShouldHaveSingleItem().Title.ShouldBe("Encoded Title");
-    }
-
-    [Fact]
-    public async Task Search_WithDoubleNumericValues_ParsesCorrectly()
-    {
-        // given
-        SetupIndexersResponse(["indexer1"]);
-
-        var resultWithDoubles = new JsonObject
-        {
-            ["Title"] = "Double Values",
-            ["CategoryDesc"] = "tv",
-            ["Link"] = $"{LinkBaseUri}/double",
-            ["Size"] = 1234.56,
-            ["Seeders"] = 25.0,
-            ["Peers"] = 10.9
-        };
-
-        SetupIndexerSearchResponse("indexer1", [resultWithDoubles]);
-
-        // when
-        var results = await _client.Search(DefaultQuery);
-
-        // then
-        var result = results.ShouldHaveSingleItem();
-        result.Title.ShouldBe("Double Values");
-        result.Size.ShouldBe(1234L);
-        result.Seeders.ShouldBe(25L);
-        result.Peers.ShouldBe(10L);
     }
 
     #region Helper Methods
@@ -279,14 +262,17 @@ public class JackettSearchClientTests
         SetupMockResponse(IndexersPath, HttpStatusCode.OK, indexersXml);
     }
 
-    private void SetupIndexerSearchResponse(string indexerId, JsonObject[] results)
+    private void SetupIndexerSearchResponse(string indexerId, XElement[] results)
     {
-        var response = CreateJackettResponse(results);
+        var response = CreateTorznabResponse(results);
+        var encodedQuery = HttpUtility.UrlEncode(DefaultQuery);
         SetupMockResponse(
-            $"indexers/{indexerId}/results/?apikey={ApiKey}&Query={DefaultQuery}", HttpStatusCode.OK, response);
+            $"indexers/{indexerId}/results/torznab/api?apikey={ApiKey}&t=search&q={encodedQuery}",
+            HttpStatusCode.OK,
+            response);
     }
 
-    private void SetupCompleteSearchScenario(string[] indexerIds, JsonObject[] resultsPerIndexer)
+    private void SetupCompleteSearchScenario(string[] indexerIds, XElement[] resultsPerIndexer)
     {
         SetupIndexersResponse(indexerIds);
 
@@ -314,30 +300,58 @@ public class JackettSearchClientTests
             {
                 StatusCode = statusCode,
                 Content = new StringContent(content, Encoding.UTF8,
-                    content.StartsWith('<') ? "application/xml" : "application/json")
+                    content.StartsWith('<') ? "application/xml" : "text/plain")
             });
     }
 
-    private static string CreateJackettResponse(JsonObject[] results)
+    private string CreateTorznabResponse(XElement[] items)
     {
-        return JsonSerializer.Serialize(new
-        {
-            Results = results
-        });
+        var rssElement = new XElement("rss",
+            new XAttribute("version", "2.0"),
+            new XAttribute(XNamespace.Xmlns + "torznab", _torznabNs),
+            new XElement("channel",
+                new XElement("title", "Jackett Torznab Feed"),
+                items));
+
+        return rssElement.ToString();
     }
 
-    private static JsonObject CreateTestResult(
+    private XElement CreateTestResult(
         string title, string category, string link, long size, int seeders, int peers)
     {
-        return new JsonObject
+        var item = CreateRssItemXml(title, link, size, category);
+
+        // Add torznab attributes
+        item.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "category"),
+                new XAttribute("value", category)));
+        item.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "seeders"),
+                new XAttribute("value", seeders.ToString())));
+        item.Add(
+            new XElement(_torznabNs + "attr",
+                new XAttribute("name", "peers"),
+                new XAttribute("value", peers.ToString())));
+
+        return item;
+    }
+
+    private XElement CreateRssItemXml(string title, string? link, long size, string category)
+    {
+        var item = new XElement("item",
+            new XElement("title", title),
+            new XElement("category", category),
+            new XElement("size", size.ToString())
+        );
+
+        if (!string.IsNullOrEmpty(link))
         {
-            ["Title"] = title,
-            ["CategoryDesc"] = category,
-            ["Link"] = link,
-            ["Size"] = size,
-            ["Seeders"] = seeders,
-            ["Peers"] = peers
-        };
+            item.Add(new XElement("link", link));
+        }
+
+        return item;
     }
 
     #endregion
