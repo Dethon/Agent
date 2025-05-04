@@ -31,7 +31,7 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
         var mappedTools = tools.Select(t => t.ToOpenRouterTool()).ToArray();
 
         const int maxRetryAttempts = 5;
-        const int baseDelayMs = 1000;
+        const int baseDelayMs = 500;
         for (var attempt = 0; attempt < maxRetryAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
