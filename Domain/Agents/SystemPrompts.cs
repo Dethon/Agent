@@ -33,13 +33,19 @@ public static class DownloadSystemPrompt
                                  provided for that. After that you will be asked to organize it within the library. 
                                  When you receive that command you will be able to explore the library structure and 
                                  move files accordingly.
+                                 
+                                 Take care to keep the same structure and do not mix up files with directories, if an
+                                 existing subdirectory only contains files, do not move directories into it and if it 
+                                 contains subdirectories then pick one of them or create a new one following the same
+                                 pattern. Some downloads have extra files that are irrelevant to the library, do not 
+                                 move those, you can identify them using the file name or extension and the type of
+                                 download that was requested.
+                                 
                                  It is important that you only move the files related to the download you received the 
                                  notification for. Moving files from other downloads before they finish can cause data 
                                  corruption. If the user asks explictly to move files from other downloads you should
                                  comply.
 
-                                 Try to mimic the structure of directories that already exist in the library.
-                                 You can leave out some files if they are not relevant to the user.
                                  Finally, AFTER you receive confirmation that the files have been moved (or make sure 
                                  everything is properly organized by getting an updated library description), you should 
                                  cleanup the leftover files from the download.

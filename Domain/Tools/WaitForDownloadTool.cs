@@ -64,7 +64,7 @@ public class WaitForDownloadTool(IDownloadClient client) : BaseTool, ITool
                 return downloadItem;
             }
 
-            await Task.Delay(1000, cancellationToken);
+            await Task.Delay(500, cancellationToken);
         }
 
         return null;
