@@ -9,13 +9,9 @@ public class SearchHistory
 
     public void Add(IEnumerable<SearchResult> results)
     {
-        var resultDict = results
-            .ToLookup(x => x.Id, x => x)
-            .ToDictionary(x => x.Key, x => x.First());
-
-        foreach (var result in resultDict)
+        foreach (var result in results.GroupBy(x => x.Id))
         {
-            History[result.Key] = result.Value;
+            History[result.Key] = result.First();
         }
     }
 }
