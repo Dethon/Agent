@@ -20,8 +20,7 @@ public static class InjectorModule
     public static IServiceCollection AddAttachments(this IServiceCollection services)
     {
         return services
-            .AddScoped<SearchHistory>()
-            .AddScoped<DownloadMonitor>();
+            .AddScoped<SearchHistory>();
     }
 
     public static IServiceCollection AddTools(this IServiceCollection services, AgentConfiguration settings)
@@ -31,7 +30,6 @@ public static class InjectorModule
             .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
                 sp.GetRequiredService<IDownloadClient>(),
                 sp.GetRequiredService<SearchHistory>(),
-                sp.GetRequiredService<DownloadMonitor>(),
                 settings.DownloadLocation))
             .AddTransient<WaitForDownloadTool>()
             .AddTransient<LibraryDescriptionTool>(sp => new LibraryDescriptionTool(

@@ -45,30 +45,6 @@ public class QBittorrentDownloadClient(
         await CallApi(c => RemoveTorrent(hash, c), cancellationToken);
     }
 
-    public async Task<IEnumerable<DownloadItem>> RefreshDownloadItems(
-        IEnumerable<DownloadItem> items, CancellationToken cancellationToken = default)
-    {
-        var torrents = (await CallApi(GetAllTorrents, cancellationToken))
-            .ToLookup(x => x["name"]?.GetValue<string>() ?? string.Empty, x => x)
-            .ToDictionary(x => x.Key, x => x.First());
-
-        return items.Select(x =>
-            {
-                var torrent = torrents.GetValueOrDefault($"{x.Id}");
-                if (torrent is null)
-                {
-                    return null;
-                }
-
-                return x with
-                {
-                    Status = GetDownloadStatus(torrent)
-                };
-            })
-            .Where(x => x is not null)
-            .Cast<DownloadItem>();
-    }
-
     public async Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
     {
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
@@ -88,12 +64,6 @@ public class QBittorrentDownloadClient(
             SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
             Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty
         };
-    }
-
-    public async Task<bool> IsDownloadComplete(int id, CancellationToken cancellationToken = default)
-    {
-        var torrent = await GetSingleTorrent($"{id}", cancellationToken);
-        return GetDownloadStatus(torrent) == DownloadStatus.Completed;
     }
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)

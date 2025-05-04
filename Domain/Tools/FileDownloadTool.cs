@@ -15,7 +15,6 @@ public record FileDownloadParams
 public class FileDownloadTool(
     IDownloadClient client,
     SearchHistory history,
-    DownloadMonitor monitor,
     string baseDownloadLocation) : BaseTool, ITool
 {
     public string Name => "FileDownload";
@@ -32,7 +31,6 @@ public class FileDownloadTool(
             typedParams.SearchResultId,
             cancellationToken);
 
-        monitor.TryAdd(itemToDownload, savePath);
         return new JsonObject
         {
             ["status"] = "success",

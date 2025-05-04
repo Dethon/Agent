@@ -50,7 +50,6 @@ public class ProgramTests
         provider.GetService<MoveTool>().ShouldNotBeNull();
         provider.GetService<CleanupTool>().ShouldNotBeNull();
 
-        provider.GetService<DownloadMonitor>().ShouldNotBeNull();
         provider.GetService<SearchHistory>().ShouldNotBeNull();
     }
 

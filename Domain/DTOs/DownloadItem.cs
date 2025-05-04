@@ -8,7 +8,6 @@ public record DownloadItem : SearchResult
 
 public enum DownloadStatus
 {
-    Added,
     InProgress,
     Completed,
     Paused,

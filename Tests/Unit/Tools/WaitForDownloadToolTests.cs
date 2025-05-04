@@ -2,7 +2,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools;
-using Domain.Tools.Attachments;
 using Moq;
 using Shouldly;
 
@@ -16,8 +15,7 @@ public class WaitForDownloadToolTests
     public WaitForDownloadToolTests()
     {
         _mockClient = new Mock<IDownloadClient>();
-        var monitor = new DownloadMonitor(_mockClient.Object);
-        _tool = new WaitForDownloadTool(monitor);
+        _tool = new WaitForDownloadTool(_mockClient.Object);
     }
 
     [Fact]
@@ -41,7 +39,6 @@ public class WaitForDownloadToolTests
         // then
         AssertSuccessResult(result, downloadId);
         VerifyGetDownloadItemCalled(downloadId, Times.Once());
-        VerifyRefreshDownloadItemsCalled(Times.Exactly(2));
     }
 
     [Fact]
@@ -67,7 +64,6 @@ public class WaitForDownloadToolTests
 
         // then
         VerifyGetDownloadItemCalled(downloadId, Times.Once());
-        VerifyRefreshDownloadItemsCalled(Times.AtLeastOnce());
     }
 
     [Fact]
@@ -90,7 +86,6 @@ public class WaitForDownloadToolTests
         // then
         AssertSuccessResult(result, downloadId);
         VerifyGetDownloadItemCalled(downloadId, Times.Once());
-        VerifyRefreshDownloadItemsCalled(Times.Once());
     }
 
     [Fact]
@@ -137,21 +132,12 @@ public class WaitForDownloadToolTests
     {
         _mockClient.Setup(c => c.GetDownloadItem(downloadId, CancellationToken.None))
             .ReturnsAsync(inProgressItem);
-
-        _mockClient.SetupSequence(c =>
-                c.RefreshDownloadItems(It.IsAny<IEnumerable<DownloadItem>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([inProgressItem])
-            .ReturnsAsync([completedItem]);
     }
 
     private void SetupMockClientForCompletedDownload(int downloadId, DownloadItem completedItem)
     {
         _mockClient.Setup(c => c.GetDownloadItem(downloadId, CancellationToken.None))
             .ReturnsAsync(completedItem);
-
-        _mockClient.Setup(c =>
-                c.RefreshDownloadItems(It.IsAny<IEnumerable<DownloadItem>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([completedItem]);
     }
 
     private void SetupMockClientForCancellation(
@@ -159,11 +145,6 @@ public class WaitForDownloadToolTests
     {
         _mockClient.Setup(c => c.GetDownloadItem(downloadId, CancellationToken.None))
             .ReturnsAsync(inProgressItem);
-
-        _mockClient.Setup(c =>
-                c.RefreshDownloadItems(It.IsAny<IEnumerable<DownloadItem>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([inProgressItem])
-            .Callback(cancellationTokenSource.Cancel);
     }
 
     private static void AssertSuccessResult(JsonNode result, int downloadId)
@@ -177,13 +158,6 @@ public class WaitForDownloadToolTests
     private void VerifyGetDownloadItemCalled(int downloadId, Times times)
     {
         _mockClient.Verify(c => c.GetDownloadItem(downloadId, CancellationToken.None), times);
-    }
-
-    private void VerifyRefreshDownloadItemsCalled(Times times)
-    {
-        _mockClient.Verify(
-            c => c.RefreshDownloadItems(It.IsAny<IEnumerable<DownloadItem>>(), It.IsAny<CancellationToken>()),
-            times);
     }
 
     #endregion

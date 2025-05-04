@@ -12,7 +12,6 @@ public class FileDownloadToolTests
 {
     private readonly Mock<IDownloadClient> _mockClient;
     private readonly SearchHistory _searchHistory;
-    private readonly DownloadMonitor _downloadMonitor;
     private readonly string _baseDownloadLocation;
     private readonly FileDownloadTool _sut;
 
@@ -20,13 +19,11 @@ public class FileDownloadToolTests
     {
         _mockClient = new Mock<IDownloadClient>();
         _searchHistory = new SearchHistory();
-        _downloadMonitor = new DownloadMonitor(_mockClient.Object);
         _baseDownloadLocation = "/test/downloads";
 
         _sut = new FileDownloadTool(
             _mockClient.Object,
             _searchHistory,
-            _downloadMonitor,
             _baseDownloadLocation);
     }
 
@@ -50,7 +47,6 @@ public class FileDownloadToolTests
         // then
         VerifyDownloadWasCalled(searchResult.Link, expectedSavePath, searchResultId);
         VerifySuccessResult(result, searchResultId);
-        _downloadMonitor.Downloads.ShouldContainKey(searchResultId);
     }
 
     [Fact]

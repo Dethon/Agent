@@ -21,11 +21,9 @@ public class AgentTests
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
     private readonly Mock<ISearchClient> _mockSearchClient = new();
     private readonly SearchHistory _searchHistory = new();
-    private readonly DownloadMonitor _downloadMonitor;
 
     public AgentTests()
     {
-        _downloadMonitor = new DownloadMonitor(_mockDownloadClient.Object);
         _agent = CreateAgent(10);
     }
 
@@ -223,9 +221,9 @@ public class AgentTests
             _mockLargeLanguageModel.Object,
             [
                 new FileSearchTool(_mockSearchClient.Object, _searchHistory),
-                new FileDownloadTool(_mockDownloadClient.Object, _searchHistory, _downloadMonitor,
+                new FileDownloadTool(_mockDownloadClient.Object, _searchHistory,
                     DefaultDownloadLocation),
-                new WaitForDownloadTool(_downloadMonitor),
+                new WaitForDownloadTool(_mockDownloadClient.Object),
                 new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
                 new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
                 new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation)
