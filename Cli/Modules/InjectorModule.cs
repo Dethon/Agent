@@ -111,7 +111,7 @@ public static class InjectorModule
                 httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
                 httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
                 httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
-                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Model);
+                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Models);
             })
             .AddRetryWithExponentialWaitPolicy(
                 attempts: 3,

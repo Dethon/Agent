@@ -1,17 +1,18 @@
-﻿using Microsoft.Extensions.Configuration;
-using Cli.Settings;
+﻿using Cli.Settings;
+using Microsoft.Extensions.Configuration;
 
 namespace Cli.Modules;
 
 public static class ConfigModule
 {
-    public static AgentConfiguration GetSettings(this ConfigurationManager configuration)
+    public static AgentConfiguration GetSettings(this IConfigurationBuilder configBuilder)
     {
-        configuration
+        var config = configBuilder
             .AddEnvironmentVariables()
-            .AddUserSecrets<Program>();
+            .AddUserSecrets<Program>()
+            .Build();
 
-        var settings = configuration.Get<AgentConfiguration>();
+        var settings = config.Get<AgentConfiguration>();
         if (settings == null)
         {
             throw new InvalidOperationException("Settings not found");

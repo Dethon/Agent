@@ -6,8 +6,10 @@ using Domain.DTOs;
 
 namespace Infrastructure.LLMAdapters.OpenRouter;
 
-public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguageModel
+public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLanguageModel
 {
+    private string _selectedModel = models.FirstOrDefault() ?? throw new ArgumentException("No model provided");
+
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -27,7 +29,7 @@ public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguage
         var plugins = enableSearch ? new OpenRouterPlugin[] { new OpenRouterSearchPlugin() } : [];
         var request = new OpenRouterRequest
         {
-            Model = model,
+            Model = _selectedModel,
             Plugins = plugins,
             Temperature = temperature,
             Messages = messages.Select(m => m.ToOpenRouterMessage()).ToArray(),
@@ -59,17 +61,29 @@ public class OpenRouterAdapter(HttpClient client, string model) : ILargeLanguage
 
     private async Task<OpenRouterResponse?> SendPrompt(OpenRouterRequest request, CancellationToken cancellationToken)
     {
-        var response = await client
-            .PostAsJsonAsync("chat/completions", request, _jsonOptions, cancellationToken);
+        var response = await client.PostAsJsonAsync("chat/completions", request, _jsonOptions, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content
-            .ReadFromJsonAsync<OpenRouterResponse>(_jsonOptions, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<OpenRouterResponse>(_jsonOptions, cancellationToken);
     }
 
-    private static bool IsResponseSuccessful(OpenRouterResponse? response)
+    private bool IsResponseSuccessful(OpenRouterResponse? response)
     {
-        var result = response?.Choices
-            .All(x => x.FinishReason is not null && x.FinishReason != FinishReason.Error);
-        return response is not null && result == true;
+        var hasErrors = response?.Choices.Any(x => x.FinishReason is null or FinishReason.Error) ?? true;
+        var isCensored = response?.Choices.Any(x => x.FinishReason is null or FinishReason.Error) ?? false;
+
+        if (!isCensored)
+        {
+            return !hasErrors;
+        }
+
+        var modelList = models.ToList();
+        var nextModelIdx = modelList.FindIndex(x => x == _selectedModel) + 1;
+        if (nextModelIdx >= modelList.Count)
+        {
+            return !hasErrors;
+        }
+
+        _selectedModel = modelList[nextModelIdx];
+        return false;
     }
 }

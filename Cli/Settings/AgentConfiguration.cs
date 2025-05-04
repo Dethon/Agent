@@ -18,7 +18,7 @@ public record OpenRouterConfiguration
 {
     public required string ApiUrl { get; [UsedImplicitly] init; }
     public required string ApiKey { get; [UsedImplicitly] init; }
-    public required string Model { get; [UsedImplicitly] init; }
+    public required string[] Models { get; [UsedImplicitly] init; }
 }
 
 public record JackettConfiguration

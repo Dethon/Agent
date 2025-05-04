@@ -18,7 +18,8 @@ public class ProgramTests
     {
         // given
         var builder = Host.CreateApplicationBuilder([]);
-        var settings = builder.Configuration.GetSettings();
+        var settings = builder.Configuration
+            .GetSettings();
 
         // when
         builder.Services

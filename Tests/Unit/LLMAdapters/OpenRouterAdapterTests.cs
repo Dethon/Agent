@@ -28,7 +28,7 @@ public class OpenRouterAdapterTests
         {
             BaseAddress = new Uri(BaseUrl)
         };
-        _adapter = new OpenRouterAdapter(httpClient, ModelName);
+        _adapter = new OpenRouterAdapter(httpClient, [ModelName]);
 
         _jsonOptions = new JsonSerializerOptions
         {
