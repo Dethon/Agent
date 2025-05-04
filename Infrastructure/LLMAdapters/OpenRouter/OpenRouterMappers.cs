@@ -76,7 +76,7 @@ public static class ToolDefinitionExtensions
             {
                 Name = tool.Name,
                 Description = tool.Description,
-                Parameters = CreateParametersSchema(tool.ParamsType)
+                Parameters = tool.ParamsType is null ? null : CreateParametersSchema(tool.ParamsType)
             }
         };
     }

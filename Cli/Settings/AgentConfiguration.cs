@@ -11,7 +11,7 @@ public record AgentConfiguration
     public required TelegramConfiguration Telegram { get; init; }
     public required string DownloadLocation { get; init; }
     public required string BaseLibraryPath { get; init; }
-    public required Dictionary<string, string> Mappings { get; init; }
+    public required Dictionary<string, string> Mappings { get; init; } = [];
 }
 
 public record OpenRouterConfiguration

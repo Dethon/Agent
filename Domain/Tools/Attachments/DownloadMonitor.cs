@@ -7,7 +7,7 @@ namespace Domain.Tools.Attachments;
 
 public class DownloadMonitor(IDownloadClient client)
 {
-    public ConcurrentDictionary<int, DownloadItem> Downloads { get; private set; } = [];
+    public ConcurrentDictionary<int, DownloadItem> Downloads { get; } = [];
 
     public bool TryAdd(SearchResult info, string savePath)
     {
@@ -71,9 +71,10 @@ public class DownloadMonitor(IDownloadClient client)
             .Where(x => x.Status == DownloadStatus.Completed)
             .Select(x => x.Id)
             .ToArray();
-        Downloads = new ConcurrentDictionary<int, DownloadItem>(Downloads
-            .Where(x => x.Value.Status != DownloadStatus.Completed)
-            .ToDictionary(x => x.Key, x => x.Value));
+        foreach (var completedId in completedIds)
+        {
+            Downloads.Remove(completedId, out _);
+        }
 
         return completedIds;
     }
@@ -81,6 +82,10 @@ public class DownloadMonitor(IDownloadClient client)
     private async Task Refresh(CancellationToken cancellationToken = default)
     {
         var items = await client.RefreshDownloadItems(Downloads.Values, cancellationToken);
-        Downloads = new ConcurrentDictionary<int, DownloadItem>(items.ToDictionary(x => x.Id, x => x));
+        Downloads.Clear();
+        foreach (var item in items)
+        {
+            Downloads[item.Id] = item;
+        }
     }
 }

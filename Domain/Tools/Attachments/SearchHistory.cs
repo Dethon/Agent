@@ -5,7 +5,7 @@ namespace Domain.Tools.Attachments;
 
 public class SearchHistory
 {
-    public ConcurrentDictionary<int, SearchResult> History { get; private set; } = [];
+    public ConcurrentDictionary<int, SearchResult> History { get; } = [];
 
     public void Add(IEnumerable<SearchResult> results)
     {
@@ -13,9 +13,9 @@ public class SearchHistory
             .ToLookup(x => x.Id, x => x)
             .ToDictionary(x => x.Key, x => x.First());
 
-        History = new ConcurrentDictionary<int, SearchResult>(History
-            .Concat(resultDict)
-            .ToLookup(x => x.Key, x => x.Value)
-            .ToDictionary(x => x.Key, x => x.Last()));
+        foreach (var result in resultDict)
+        {
+            History[result.Key] = result.Value;
+        }
     }
 }

@@ -15,6 +15,7 @@ public class LibraryDescriptionToolTests
         { "folder1/subfolder", ["file1.txt"] },
         { "folder2", ["file2.txt"] },
     };
+
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
 
     [Fact]
@@ -31,11 +32,6 @@ public class LibraryDescriptionToolTests
         _mockFileSystemClient.Verify(c => c.DescribeDirectory(DefaultLibraryPath, CancellationToken.None), Times.Once);
     }
 
-    [Fact]
-    public async Task Run_ShouldReturnSerializedDirectoryDescription()
-    {
-        // givenS"file2.txt"]);
-    }
 
     [Fact]
     public void GetToolDefinition_ShouldReturnProperDefinition()
@@ -48,7 +44,7 @@ public class LibraryDescriptionToolTests
 
         // then
         definition.ShouldNotBeNull();
-        definition.ShouldBeOfType<ToolDefinition<LibraryDescriptionParams>>();
+        definition.ShouldBeOfType<ToolDefinition>();
         definition.Name.ShouldBe("LibraryDescription");
         definition.Description.ShouldBe(
             "Describes the library folder structure to be able to decide where to put downloaded files.");

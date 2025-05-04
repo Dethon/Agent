@@ -2,12 +2,8 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
-using JetBrains.Annotations;
 
 namespace Domain.Tools;
-
-[UsedImplicitly]
-public record LibraryDescriptionParams;
 
 public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath) : BaseTool, ITool
 {
@@ -22,7 +18,7 @@ public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath
 
     public ToolDefinition GetToolDefinition()
     {
-        return new ToolDefinition<LibraryDescriptionParams>
+        return new ToolDefinition
         {
             Name = Name,
             Description = "Describes the library folder structure to be able to decide where to put downloaded files."
