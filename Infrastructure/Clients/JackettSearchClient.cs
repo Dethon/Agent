@@ -138,6 +138,7 @@ public class JackettSearchClient(HttpClient client, string apiKey, Dictionary<st
         return sourceItems
             .Select(parser)
             .Where(x => x is not null && !string.IsNullOrEmpty(x.Link) && x.Seeders.GetValueOrDefault(0) > 1)
+            .Cast<SearchResult>()
             .OrderByDescending(x => x.Seeders.GetValueOrDefault(0))
             .Take(maxResults)
             .ToArray();
