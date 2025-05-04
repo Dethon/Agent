@@ -34,7 +34,7 @@ public static class DownloadSystemPrompt
                                  When you receive that command you will be able to explore the library structure and 
                                  move files accordingly.
                                  
-                                 Take care to keep the same structure and do not mix up files with directories, if an
+                                 You must keep the same structure and do not mix up files with directories, if an 
                                  existing subdirectory only contains files, do not move directories into it and if it 
                                  contains subdirectories then pick one of them or create a new one following the same
                                  pattern. Some downloads have extra files that are irrelevant to the library, do not 

@@ -21,7 +21,19 @@ public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath
         return new ToolDefinition
         {
             Name = Name,
-            Description = "Describes the library folder structure to be able to decide where to put downloaded files."
+            Description = """
+                          Describes the library folder structure to be able to decide where to put downloaded files.
+                          ay attention to the paths and filenames in the result.
+                          The format is a JSON object with the following structure:
+                          {
+                              "path/to/folder/with/files": [
+                                "filename1.ext",
+                                "filename2.ext",
+                                ...
+                              ],
+                              ...
+                          }
+                          """
         };
     }
 }
