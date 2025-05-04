@@ -44,7 +44,7 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
                 Tools = mappedTools
             };
             var openRouterResponse = await SendPrompt(request, cancellationToken);
-            if (IsResponseSuccessful(openRouterResponse))
+            if (IsResponseSuccessful(openRouterResponse, request))
             {
                 return openRouterResponse?.ToAgentResponses() ?? [];
             }
@@ -62,7 +62,7 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
         return await response.Content.ReadFromJsonAsync<OpenRouterResponse>(_jsonOptions, cancellationToken);
     }
 
-    private bool IsResponseSuccessful(OpenRouterResponse? response)
+    private bool IsResponseSuccessful(OpenRouterResponse? response, OpenRouterRequest request)
     {
         var hasErrors = response?.Choices.Any(x => x.FinishReason is null or FinishReason.Error) ?? true;
         var isCensored = response?.Choices.Any(x => x.FinishReason is FinishReason.ContentFilter) ?? false;
@@ -73,7 +73,7 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
         }
 
         var modelList = models.ToList();
-        var nextModelIdx = modelList.FindIndex(x => x == _selectedModel) + 1;
+        var nextModelIdx = modelList.FindIndex(x => x == request.Model) + 1;
         if (nextModelIdx >= modelList.Count)
         {
             return !hasErrors;
