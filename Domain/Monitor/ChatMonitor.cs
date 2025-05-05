@@ -69,7 +69,7 @@ public class ChatMonitor(
             $"{response.Content.Left(1900)}" + 
         "</blockquote>" + 
         "<blockquote expandable>" +
-            $"<code>{toolMessage.Left(1900)}</code>" +
+            $"<code class=\"language-javascript\">{toolMessage.Left(1900)}</code>" +
         "</blockquote>";
         return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }
