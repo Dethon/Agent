@@ -56,6 +56,8 @@ public static class DownloadSystemPrompt
                                  clean up the leftover files from the download. 
                                  The clean up process can only be called after successfully moving the relevant files 
                                  into the library. DO NOT clean up the download if the organiztion step fails.
+                                 
+                                 ALWAYS wrap the internal thinking process in <thought></thought> tags.
                                  """;
 
     public static string AfterDownloadPrompt(int id)
