@@ -51,9 +51,9 @@ public static class DownloadSystemPrompt
                                  everything is properly organized by getting an updated library description), you should 
                                  cleanup the leftover files from the download.
                                  
-                                 Tools called in the same response will be run concurrently. Keep that in mind, 
-                                 specially when calling the Move and Cleanup tools as it will be impossible to guarantee
-                                 the order in which tools are run if they run concurrently.
+                                 Tools called in the same response will be executed concurrently and it's therefore
+                                 impossible to guarantee the order in which they are actually run. Keep that in mind, 
+                                 specially when calling the Move and Cleanup as Cleanup needs to be called AFTER Move.
                                  """;
 
     public static string AfterDownloadPrompt(int id)
