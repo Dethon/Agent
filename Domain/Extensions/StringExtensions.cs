@@ -10,8 +10,9 @@ public static class StringExtensions
     public static string HtmlSanitize(this string str)
     {
         return str
+            .Replace("&", "&amp;")
             .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("&", "&amp;");
+            .Replace(">", "&gt;");
+
     }
 }
