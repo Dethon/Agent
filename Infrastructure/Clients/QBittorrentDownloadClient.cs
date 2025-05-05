@@ -16,7 +16,7 @@ public class QBittorrentDownloadClient(
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
         await CallApi(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
-        for (var i = 0; i < 20; i++)
+        for (var i = 0; i < 100; i++)
         {
             await Task.Delay(500, cancellationToken);
             if (await GetSingleTorrent($"{id}", cancellationToken) is not null)
