@@ -57,7 +57,7 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
         var message = await client.SendMessage(
             chatId,
             response,
-            parseMode: ParseMode.Html,
+            parseMode: ParseMode.MarkdownV2,
             replyParameters: replyId,
             cancellationToken: cancellationToken);
         return message.Id;
