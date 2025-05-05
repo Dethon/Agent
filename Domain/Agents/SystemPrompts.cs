@@ -52,9 +52,9 @@ public static class DownloadSystemPrompt
                                  corruption. If the user asks explictly to move files from other downloads you should
                                  comply.
 
-                                 Finally, AFTER you receive confirmation that the files have been moved (or make sure 
-                                 everything is properly organized by getting an updated library description), you should 
-                                 cleanup the leftover files from the download.
+                                 Finally, AFTER you receive confirmation that the files have been moved, you should 
+                                 cleanup the leftover files from the download. Cleanup can only be called after moving
+                                 the relevant files into the library. NEVER clean up while you move the files.
                                  """;
 
     public static string AfterDownloadPrompt(int id)
