@@ -40,6 +40,7 @@ public static class DownloadSystemPrompt
                                  pattern. Some downloads have extra files that are irrelevant to the library, do not 
                                  move those, you can identify them using the file name or extension and the type of
                                  download that was requested.
+                                 You are allowed to rename files and directories to match the library structure.
                                  
                                  It is important that you only move the files related to the download you received the 
                                  notification for. Moving files from other downloads before they finish can cause data 
