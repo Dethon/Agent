@@ -36,13 +36,18 @@ public class ChatMonitor(
 
             await foreach (var response in responses)
             {
-                var mainMessage = response.Content;
                 var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-                mainMessage = $"{mainMessage}\n<blockquote><code>StopReason={response.StopReason}</code></blockquote>";
-
-                var trimMainMessage = mainMessage.Left(2000);
-                var trimToolMessage = toolMessage.Left(2000);
-                var message = $"{trimMainMessage}\n<blockquote expandable><code>{trimToolMessage}</code></blockquote>";
+                var message = $"""
+                               <blockquote expandable>
+                                 {response.Content.Left(1900)}
+                               </blockquote>
+                               <blockquote>
+                                 <code>StopReason={response.StopReason}</code>
+                               </blockquote>
+                               <blockquote expandable>
+                                 <code>{toolMessage.Left(1900)}</code>
+                               </blockquote>
+                               """;
                 var messageId = await chatClient
                     .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
 

@@ -138,29 +138,6 @@ public class TelegramBotChatClientTests
     }
 
     [Fact]
-    public async Task SendResponse_WithLongMessage_TruncatesMessage()
-    {
-        // given
-        const int expectedMessageId = 42;
-        const long chatId = 123456789;
-        var longResponse = new string('A', 5000);
-        var expectedTruncatedMessage = $"{longResponse.Substring(0, 4050)} ... (truncated)";
-
-        SetupSendMessageResponse(chatId, expectedTruncatedMessage, null, expectedMessageId);
-
-        // when
-        var result = await _chatClient.SendResponse(chatId, longResponse);
-
-        // then
-        result.ShouldBe(expectedMessageId);
-        _botClientMock.Verify(c => c.SendRequest(
-            It.Is<SendMessageRequest>(x => x.ChatId == chatId &&
-                                           x.Text == expectedTruncatedMessage &&
-                                           x.ParseMode == ParseMode.Html),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
     public async Task SendResponse_WithReplyId_PassesReplyParameters()
     {
         // given

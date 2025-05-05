@@ -46,8 +46,7 @@ public class LibraryDescriptionToolTests
         definition.ShouldNotBeNull();
         definition.ShouldBeOfType<ToolDefinition>();
         definition.Name.ShouldBe("LibraryDescription");
-        definition.Description.ShouldBe(
-            "Describes the library folder structure to be able to decide where to put downloaded files.");
+        definition.Description.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]

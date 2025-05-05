@@ -54,12 +54,9 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
     public async Task<int> SendResponse(
         long chatId, string response, int? replyId = null, CancellationToken cancellationToken = default)
     {
-        var trimmedMessage = response.Length > 4050
-            ? $"{response[..4050]} ... (truncated)"
-            : response;
         var message = await client.SendMessage(
             chatId,
-            trimmedMessage,
+            response,
             parseMode: ParseMode.Html,
             replyParameters: replyId,
             cancellationToken: cancellationToken);

@@ -35,9 +35,9 @@ public static class DownloadSystemPrompt
                                  you find most appropriate. DO NOT ask the user to confirm the choice. 
 
                                  After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
-                                 provided for that. After that you will be asked to organize it within the library. 
-                                 When you receive that command you will be able to explore the library structure and 
-                                 move files accordingly.
+                                 provided for that. 
+                                 After the dowload finishes you will organize it within the library, to do that you 
+                                 should first explore the library structure and then move files accordingly.
                                  
                                  You must keep the same structure and do not mix up files with directories, if an 
                                  existing subdirectory only contains files, do not move directories into it and if it 
