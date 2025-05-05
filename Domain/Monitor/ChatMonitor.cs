@@ -64,11 +64,11 @@ public class ChatMonitor(
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
         var message = "<blockquote expandable>" +
-                        $"{response.Content.Left(1900)}" +
+                        $"{response.Content.Left(1900).HtmlSanitize()}" +
                       "</blockquote>" +
                       "<blockquote expandable>" +
                         $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
-                        $"<code class=\"language-json\">{toolMessage.Left(1900)}</code></pre>" +
+                        $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
                       "</blockquote>";
         return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }

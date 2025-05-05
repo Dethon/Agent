@@ -6,4 +6,12 @@ public static class StringExtensions
     {
         return str.Length <= count ? str : str[..count];
     }
+    
+    public static string HtmlSanitize(this string str)
+    {
+        return str
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;")
+            .Replace("&", "&amp;");
+    }
 }
