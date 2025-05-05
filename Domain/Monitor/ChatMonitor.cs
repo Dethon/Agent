@@ -64,9 +64,11 @@ public class ChatMonitor(
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
         var message = "" +
-                      $"`StopReason={response.StopReason}`" +
-                      $">{response.Content.Left(1900)}||" +
-                      $"```js{toolMessage.Left(1900)}```";
+                      $"<code>StopReason={response.StopReason}</code>" +
+                      "<blockquote expandable>" +
+                      $"{response.Content.Left(1900)}" +
+                      "</blockquote>" +
+                      $"<pre><code class=\"language-js\">{toolMessage.Left(1900)}</code></pre>";
         return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }
 }
