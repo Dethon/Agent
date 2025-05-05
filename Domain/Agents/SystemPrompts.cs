@@ -50,6 +50,9 @@ public static class DownloadSystemPrompt
                                  Finally, AFTER you receive confirmation that the files have been moved (or make sure 
                                  everything is properly organized by getting an updated library description), you should 
                                  cleanup the leftover files from the download.
+                                 
+                                 Tools called in the same response will be run concurrently. Keep that in mind, 
+                                 specially when calling the Move and Cleanup tools.
                                  """;
 
     public static string AfterDownloadPrompt(int id)

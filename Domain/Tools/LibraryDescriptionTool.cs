@@ -23,6 +23,7 @@ public class LibraryDescriptionTool(IFileSystemClient client, string libraryPath
             Name = Name,
             Description = """
                           Describes the library folder structure to be able to decide where to put downloaded files.
+                          Pay attention to the paths in the result and their contents.
                           The format is a JSON object with the following structure:
                           {
                               "path/to/folder/with/files": [
