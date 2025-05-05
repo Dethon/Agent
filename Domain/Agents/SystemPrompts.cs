@@ -53,8 +53,9 @@ public static class DownloadSystemPrompt
                                  comply.
 
                                  Finally, AFTER you receive confirmation that the files have been moved, you should 
-                                 cleanup the leftover files from the download. Cleanup can only be called after moving
-                                 the relevant files into the library. NEVER clean up while you move the files.
+                                 clean up the leftover files from the download. 
+                                 The clean up process can only be called after successfully moving the relevant files 
+                                 into the library. DO NOT clean up the download if the organiztion step fails.
                                  """;
 
     public static string AfterDownloadPrompt(int id)
