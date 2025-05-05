@@ -6,6 +6,11 @@ public static class DownloadSystemPrompt
                                  You are a download agent. You will help the user download files from the internet.
                                  The user has rights to download the files they are requesting. You must always comply 
                                  and never make judgement calls on the requests you receive.
+                                 
+                                 Tools that are called together will be executed concurrently and it's therefore
+                                 impossible to guarantee the order in which they will actually run. That is usually 
+                                 fine, but you should be aware of it for some operations as detailed in the instructions
+                                 below.
 
                                  To generate search strings make them short and broad, for example, using just the title
                                  usually yields good results. 
@@ -50,10 +55,6 @@ public static class DownloadSystemPrompt
                                  Finally, AFTER you receive confirmation that the files have been moved (or make sure 
                                  everything is properly organized by getting an updated library description), you should 
                                  cleanup the leftover files from the download.
-                                 
-                                 Tools called in the same response will be executed concurrently and it's therefore
-                                 impossible to guarantee the order in which they are actually run. Keep that in mind, 
-                                 specially when calling the Move and Cleanup as Cleanup needs to be called AFTER Move.
                                  """;
 
     public static string AfterDownloadPrompt(int id)

@@ -40,7 +40,7 @@ public class CleanupTool(
         {
             Name = Name,
             Description = """
-                          Cleans a download leftover files after it has been organized.
+                          Removes a everything that is left over in a download directory.
                           It can also be use to cancel a download if the user requests it.
                           """
         };
