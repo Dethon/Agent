@@ -15,10 +15,17 @@ public class ChatMonitor(
 {
     public async Task Monitor(CancellationToken cancellationToken = default)
     {
-        var prompts = chatClient.ReadPrompts(1000, cancellationToken);
-        await foreach (var prompt in prompts)
+        try
         {
-            await queue.QueueTask(c => AgentTask(prompt, c));
+            var prompts = chatClient.ReadPrompts(1000, cancellationToken);
+            await foreach (var prompt in prompts)
+            {
+                await queue.QueueTask(c => AgentTask(prompt, c));
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
         }
     }
 
@@ -36,27 +43,35 @@ public class ChatMonitor(
 
             await foreach (var response in responses)
             {
-                var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-                var message = $"""
-                               <blockquote expandable>
-                                 {response.Content.Left(1900)}
-                               </blockquote>
-                               <blockquote>
-                                 <code>StopReason={response.StopReason}</code>
-                               </blockquote>
-                               <blockquote expandable>
-                                 <code>{toolMessage.Left(1900)}</code>
-                               </blockquote>
-                               """;
-                var messageId = await chatClient
-                    .SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
-
-                agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
+                try
+                {
+                    var messageId = await ProcessResponse(prompt, response, cancellationToken);
+                    agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
+                }catch (Exception ex)
+                {
+                    logger.LogError(ex, "ProcessResponse exception: {exceptionMessage}", ex.Message);
+                }
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "AgentTask exception: {exceptionMessage}", ex.Message);
         }
+    }
+
+    private async Task<int> ProcessResponse(
+        ChatPrompt prompt, AgentResponse response, CancellationToken cancellationToken)
+    {
+        var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
+        var message = $"""
+                       <blockquote expandable>
+                         {response.Content.Left(1900)}
+                       </blockquote>
+                       <code>StopReason={response.StopReason}</code>
+                       <blockquote expandable>
+                         <code>{toolMessage.Left(1900)}</code>
+                       </blockquote>
+                       """.Replace(Environment.NewLine, "");
+        return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }
 }
