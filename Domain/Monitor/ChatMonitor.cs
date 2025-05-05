@@ -63,13 +63,12 @@ public class ChatMonitor(
         ChatPrompt prompt, AgentResponse response, CancellationToken cancellationToken)
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-        var message = "" +
-                      $"<code>StopReason={response.StopReason}</code>" +
-                      "<blockquote expandable>" +
+        var message = "<blockquote expandable>" +
                         $"{response.Content.Left(1900)}" +
                       "</blockquote>" +
                       "<blockquote expandable>" +
-                        $"<pre><code class=\"language-js\">{toolMessage.Left(1900)}</code></pre>" +
+                        $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
+                        $"<code class=\"language-json\">{toolMessage.Left(1900)}</code></pre>" +
                       "</blockquote>";
         return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }

@@ -28,7 +28,8 @@ public record OpenRouterSearchPlugin() : OpenRouterPlugin("web")
 
 public record OpenRouterReasoning
 {
-    [UsedImplicitly] public int MaxTokens { get; init; } = 200;
+    [UsedImplicitly] public int MaxTokens { get; init; } = 1000;
+    [UsedImplicitly] public bool Exclude { get; set; }
 }
 
 public record OpenRouterTool
