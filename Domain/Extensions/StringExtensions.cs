@@ -13,6 +13,5 @@ public static class StringExtensions
             .Replace("&", "&amp;")
             .Replace("<", "&lt;")
             .Replace(">", "&gt;");
-
     }
 }

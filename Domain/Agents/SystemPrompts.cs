@@ -65,7 +65,7 @@ public static class DownloadSystemPrompt
                 organize the files that were downloaded by download {id} into 
                 the current library structure. If there is no appropriate 
                 folder for the category you should create it. 
-                Afterwards cleanup the download leftovers.
+                Afterwards, if and only if the organization succeeded, clean up the download leftovers.
                 Hint: Use the LibraryDescription, Move and Cleanup tools.
                 """;
     }

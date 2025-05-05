@@ -46,10 +46,10 @@ public class MoveTool(IFileSystemClient client, string libraryPath) : BaseTool, 
         {
             Name = Name,
             Description = """
-                          Moves a file or directory to a different location both arguments have to be absolute paths 
-                          and must be derived from the LibraryDescription tool response.
+                          Moves and/or renames a file or directory. Both arguments have to be absolute paths and must be 
+                          derived from the LibraryDescription tool response.
                           Equivalent to 'mv -T {SourcePath} {DestinationPath}' bash command.
-                          The destination path must not exist, otherwise an exception will be thrown.
+                          The destination path MUST NOT exist, otherwise an exception will be thrown.
                           All necessary parent directories will be created automatically.
                           """
         };
