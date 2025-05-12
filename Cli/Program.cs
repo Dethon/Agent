@@ -34,7 +34,7 @@ builder.Services
     .AddChatMonitoring(settings)
     .AddAttachments()
     .AddTools(settings)
-    .AddSingleton<IAgentResolver, AgentResolver>();
+    .AddTransient<IAgentResolver, AgentResolver>();
 
 if (isDaemon)
 {
