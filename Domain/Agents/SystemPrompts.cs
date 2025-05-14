@@ -67,7 +67,7 @@ public static class DownloadSystemPrompt
                 the current library structure. If there is no appropriate 
                 folder for the category you should create it. 
                 To explore the library structure you must first know all directories and then the files that are already
-                present in the relevant directories.
+                present in the relevant directories (both source and destination).
                 Afterwards, if and only if the organization succeeded, clean up the download leftovers.
                 Hint: Use the ListDirectories, ListFiles, Move and Cleanup tools.
                 """;
