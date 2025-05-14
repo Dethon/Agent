@@ -37,7 +37,8 @@ public static class DownloadSystemPrompt
                                  After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
                                  provided for that. 
                                  After the dowload finishes you will organize it within the library, to do that you 
-                                 should first explore the library structure and then move files accordingly.
+                                 should first explore the library structure, both directories and files and then move 
+                                 files accordingly.
                                  
                                  You must keep the same structure and do not mix up files with directories, if an 
                                  existing subdirectory only contains files, do not move directories into it and if it 
@@ -65,8 +66,10 @@ public static class DownloadSystemPrompt
                 organize the files that were downloaded by download {id} into 
                 the current library structure. If there is no appropriate 
                 folder for the category you should create it. 
+                To explore the library structure you must first know all directories and then the files that are already
+                present in the relevant directories.
                 Afterwards, if and only if the organization succeeded, clean up the download leftovers.
-                Hint: Use the LibraryDescription, Move and Cleanup tools.
+                Hint: Use the ListDirectories, ListFiles, Move and Cleanup tools.
                 """;
     }
 }

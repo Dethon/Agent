@@ -22,6 +22,32 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
         });
     }
 
+    public Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default)
+    {
+        return ConnectionWrapper(() =>
+        {
+            if (!DoesFolderExist(path))
+            {
+                throw new DirectoryNotFoundException($"Library directory not found: {path}");
+            }
+
+            return Task.FromResult(GetAllPaths(path));
+        });
+    }
+
+    public Task<string[]> ListFilesIn(string path, CancellationToken cancellationToken = default)
+    {
+        return ConnectionWrapper(() =>
+        {
+            if (!DoesFolderExist(path))
+            {
+                throw new DirectoryNotFoundException($"Library directory not found: {path}");
+            }
+
+            return Task.FromResult(GetFiles(path));
+        });
+    }
+
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         return ConnectionWrapper(() =>
@@ -98,6 +124,22 @@ public class SshFileSystemClient(ISshClientWrapper client) : IFileSystemClient
                 x => Path.GetFileName(x))
             .Where(x => !string.IsNullOrEmpty(x.Key))
             .ToDictionary(x => x.Key, x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
+    }
+    
+    private string[] GetAllPaths(string basePath)
+    {
+        return client.RunCommand($"find \"{basePath}\" -type d").Result
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .ToArray();
+    }
+    
+    private string[] GetFiles(string basePath)
+    {
+        return client.RunCommand($"find \"{basePath}\" -type f -maxdepth 1").Result
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .ToArray();
     }
 
     private void CreateDestinationParentPath(string destinationPath)

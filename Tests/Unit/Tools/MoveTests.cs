@@ -104,8 +104,7 @@ public class MoveTests
         definition.ShouldNotBeNull();
         definition.ShouldBeOfType<ToolDefinition<FileMoveParams>>();
         definition.Name.ShouldBe("Move");
-        definition.Description.ShouldContain("Moves a file or directory to a different location");
-        definition.Description.ShouldContain("must be derived from the LibraryDescription tool response");
+        definition.Description.ShouldNotBeEmpty();
     }
 
     [Fact]

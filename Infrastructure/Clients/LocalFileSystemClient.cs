@@ -15,6 +15,22 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.FromResult(GetLibraryPaths(path));
     }
 
+    public Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Directory
+            .EnumerateDirectories(path, "*", SearchOption.AllDirectories)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .ToArray());
+    }
+
+    public Task<string[]> ListFilesIn(string path, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Directory
+            .EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
+            .Where(x => !string.IsNullOrEmpty(x))
+            .ToArray());
+    }
+
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(sourcePath) && !Directory.Exists(sourcePath))
