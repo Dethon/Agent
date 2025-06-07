@@ -15,6 +15,7 @@ public record WaitForDownloadParams
 public class WaitForDownloadTool(
     IDownloadClient client) : BaseTool<WaitForDownloadTool, WaitForDownloadParams>, IToolWithMetadata
 {
+    public static Type? ParamsType => typeof(WaitForDownloadParams);
     public static string Name => "WaitForDownload";
 
     public static string Description => """

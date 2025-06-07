@@ -14,6 +14,7 @@ public class ListFilesTool(
     IFileSystemClient client,
     string libraryPath) : BaseTool<ListFilesTool, ListFilesParams>, IToolWithMetadata
 {
+    public static Type? ParamsType => typeof(ListFilesParams);
     public static string Name => "ListFiles";
 
     public static string Description => """

@@ -1,7 +1,5 @@
-﻿using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.Schema;
-using Domain.DTOs;
+﻿using Domain.DTOs;
+using Infrastructure.Utils;
 
 namespace Infrastructure.LLMAdapters.OpenRouter;
 
@@ -76,16 +74,8 @@ public static class ToolDefinitionExtensions
             {
                 Name = tool.Name,
                 Description = tool.Description,
-                Parameters = tool.ParamsType is null ? null : CreateParametersSchema(tool.ParamsType)
+                Parameters = JsonSchema.CreateParametersSchema(tool.ParamsType)
             }
         };
-    }
-
-    private static JsonNode CreateParametersSchema(Type paramsType)
-    {
-        var options = JsonSerializerOptions.Default;
-        var schema = options.GetJsonSchemaAsNode(paramsType);
-        schema["type"] = "object";
-        return schema;
     }
 }

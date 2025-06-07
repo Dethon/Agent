@@ -6,8 +6,9 @@ namespace Domain.Agents;
 
 public class DownloaderPrompt : IPrompt
 {
-    public string Name => "DownloaderPrompt";
-    public string Description => "DownloaderPrompt";
+    public static string Name => "DownloaderPrompt";
+    public static string Description => "DownloaderPrompt";
+    public static Type? ParamsType => null;
 
     public Task<Message[]> Get(JsonNode? parameters, CancellationToken cancellationToken = default)
     {

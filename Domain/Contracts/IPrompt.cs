@@ -5,8 +5,9 @@ namespace Domain.Contracts;
 
 public interface IPrompt
 {
-    string Name { get; }
-    string Description { get; }
+    static abstract string Name { get; }
+    static abstract string Description { get; }
+    static abstract Type? ParamsType { get; }
     Task<Message[]> Get(JsonNode? parameters, CancellationToken cancellationToken = default);
     ToolDefinition GetToolDefinition();
 }
