@@ -129,7 +129,7 @@ public class WaitForDownloadToolTests
         var definition = _tool.GetToolDefinition();
 
         // then
-        definition.ShouldBeOfType<ToolDefinition<WaitForDownloadParams>>();
+        definition.ShouldBeOfType<ToolDefinition>();
         definition.Name.ShouldBe("WaitForDownload");
         definition.Description.ShouldContain("Monitors a download");
     }

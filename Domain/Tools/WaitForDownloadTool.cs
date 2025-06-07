@@ -12,13 +12,21 @@ public record WaitForDownloadParams
     public required int DownloadId { get; [UsedImplicitly] init; }
 }
 
-public class WaitForDownloadTool(IDownloadClient client) : BaseTool, ITool
+public class WaitForDownloadTool(
+    IDownloadClient client) : BaseTool<WaitForDownloadTool, WaitForDownloadParams>, IToolWithMetadata
 {
-    public string Name => "WaitForDownload";
+    public static string Name => "WaitForDownload";
+
+    public static string Description => """
+                                        Monitors a download until it ends and sends a notification with instructions 
+                                        when it does.
+                                        The DownloadId parameter is the id EXACTLY as it appears in the response of the
+                                        FileDownload tool.
+                                        """;
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams<WaitForDownloadParams>(parameters);
+        var typedParams = ParseParams(parameters);
 
         while (true)
         {
@@ -36,12 +44,15 @@ public class WaitForDownloadTool(IDownloadClient client) : BaseTool, ITool
                     ["status"] = "success",
                     ["message"] = $"""
                                    The download with id {typedParams.DownloadId} just finished. Now your task is to 
-                                   organize the files that were downloaded by download {typedParams.DownloadId} into 
-                                   the current library structure. 
+                                   organize the files that were downloaded by download {typedParams.DownloadId} into the 
+                                   current library structure. 
                                    If there is no appropriate folder for the category you should create it. 
-                                   Afterwards, if and only if the organization succeeded, clean up the download's
+                                   To explore the library structure you must first know all directories and then the 
+                                   files that are already present in the relevant directories (both source and 
+                                   destination).
+                                   Afterwards, if and only if the organization succeeded, clean up the download 
                                    leftovers.
-                                   Hint: Use the LibraryDescription, Move and Cleanup tools.
+                                   Hint: Use the ListDirectories, ListFiles, Move and Cleanup tools.
                                    """,
                     ["downloadId"] = typedParams.DownloadId
                 };
@@ -49,15 +60,6 @@ public class WaitForDownloadTool(IDownloadClient client) : BaseTool, ITool
 
             await Task.Delay(1000, cancellationToken);
         }
-    }
-
-    public ToolDefinition GetToolDefinition()
-    {
-        return new ToolDefinition<WaitForDownloadParams>
-        {
-            Name = Name,
-            Description = "Monitors a download until it ends and sends a notification with instructions when it does"
-        };
     }
 
     private async Task<DownloadItem?> GetDownloadItem(int downloadId, CancellationToken cancellationToken)

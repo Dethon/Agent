@@ -13,7 +13,7 @@ public record CleanupParams
 public class CleanupTool(
     IDownloadClient downloadClient,
     IFileSystemClient fileSystemClient,
-    string baseDownloadLocation) : BaseTool<CleanupTool, CleanupParams>, ITool
+    string baseDownloadLocation) : BaseTool<CleanupTool, CleanupParams>, IToolWithMetadata
 {
     public static string Name => "Cleanup";
 

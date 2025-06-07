@@ -5,8 +5,12 @@ namespace Domain.Contracts;
 
 public interface ITool
 {
-    static abstract string Name { get; }
-    static abstract string Description { get; }
     Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
     ToolDefinition GetToolDefinition();
+}
+
+public interface IToolWithMetadata : ITool
+{
+    static abstract string Name { get; }
+    static abstract string Description { get; }
 }

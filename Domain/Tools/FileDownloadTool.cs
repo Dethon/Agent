@@ -14,7 +14,7 @@ public record FileDownloadParams
 public class FileDownloadTool(
     IDownloadClient client,
     SearchHistory history,
-    string baseDownloadLocation) : BaseTool<FileDownloadTool, FileDownloadParams>, ITool
+    string baseDownloadLocation) : BaseTool<FileDownloadTool, FileDownloadParams>, IToolWithMetadata
 {
     public static string Name => "FileDownload";
 

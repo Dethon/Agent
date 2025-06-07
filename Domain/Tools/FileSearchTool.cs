@@ -35,7 +35,7 @@ public record SearchResultToSerialize
 
 public class FileSearchTool(
     ISearchClient client,
-    SearchHistory history) : BaseTool<FileSearchTool, FileSearchParams>, ITool
+    SearchHistory history) : BaseTool<FileSearchTool, FileSearchParams>, IToolWithMetadata
 {
     public static string Name => "FileSearch";
 

@@ -51,7 +51,8 @@ public class DownloaderPrompt : IPrompt
                               After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
                               provided for that. 
                               After the download finishes you will organize it within the library, to do that you should
-                              first explore the library structure and then move files accordingly.
+                              first explore the library structure, both directories and files, and then move files 
+                              accordingly.
 
                               You must keep the same structure and do not mix up files with directories, if an existing 
                               subdirectory only contains files, do not move directories into it and if it contains 

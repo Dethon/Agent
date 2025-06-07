@@ -102,7 +102,7 @@ public class MoveTests
 
         // then
         definition.ShouldNotBeNull();
-        definition.ShouldBeOfType<ToolDefinition<FileMoveParams>>();
+        definition.ShouldBeOfType<ToolDefinition>();
         definition.Name.ShouldBe("Move");
         definition.Description.ShouldNotBeEmpty();
     }

@@ -5,7 +5,7 @@ using Domain.DTOs;
 
 namespace Domain.Tools;
 
-public abstract class BaseTool<TSelf, TParams> where TSelf : ITool where TParams : class?
+public abstract class BaseTool<TSelf, TParams> where TSelf : IToolWithMetadata where TParams : class
 {
     public ToolDefinition GetToolDefinition()
     {
@@ -34,5 +34,17 @@ public abstract class BaseTool<TSelf, TParams> where TSelf : ITool where TParams
         {
             throw new ArgumentException($"Failed to deserialize parameters for {typeName}", nameof(parameters), ex);
         }
+    }
+}
+
+public abstract class BaseTool<TSelf> where TSelf : IToolWithMetadata
+{
+    public ToolDefinition GetToolDefinition()
+    {
+        return new ToolDefinition
+        {
+            Name = TSelf.Name,
+            Description = TSelf.Description
+        };
     }
 }

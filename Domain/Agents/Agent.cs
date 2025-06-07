@@ -17,7 +17,9 @@ public class Agent(
 {
     private CancellationTokenSource _childCancelTokenSource = new();
     private readonly Lock _messagesLock = new();
-    private readonly ConcurrentDictionary<string, BaseTool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
+
+    private readonly Dictionary<string, ITool> _tools =
+        new(tools.ToDictionary(x => x.GetToolDefinition().Name, x => x));
 
     private readonly List<Message> _messages = messages.ToList();
 
@@ -48,9 +50,9 @@ public class Agent(
             messageSnapshot = _messages.ToList();
         }
 
-        var toolDefinitions = Enumerable
-            .ToArray<ToolDefinition>(_tools.Values
-                .Select(x => x.GetToolDefinition()));
+        var toolDefinitions = _tools.Values
+            .Select(x => x.GetToolDefinition())
+            .ToArray();
 
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
@@ -86,12 +88,13 @@ public class Agent(
     private async Task<ToolMessage> ResolveToolRequest(
         ITool tool, ToolCall toolCall, CancellationToken cancellationToken)
     {
+        var definition = tool.GetToolDefinition();
         try
         {
             var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
             logger.LogInformation(
                 "Tool {ToolName} with {Params} : {toolResponse}",
-                tool.Name, toolCall.Parameters, toolResponse);
+                definition.Name, toolCall.Parameters, toolResponse);
             return new ToolMessage
             {
                 Role = Role.Tool,
@@ -104,7 +107,7 @@ public class Agent(
             logger.LogError(
                 ex,
                 "Tool {ToolName} with {Params} Error: {ExceptionMessage}",
-                tool.Name, toolCall.Parameters, ex.Message);
+                definition.Name, toolCall.Parameters, ex.Message);
 
             return new ToolMessage
             {
