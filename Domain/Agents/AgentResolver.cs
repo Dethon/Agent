@@ -46,7 +46,7 @@ public class AgentResolver(
     {
         cache.Set($"IAgent{messageId}", agent, new MemoryCacheEntryOptions
         {
-            AbsoluteExpiration = DateTimeOffset.UtcNow.AddDays(1)
+            AbsoluteExpiration = DateTimeOffset.UtcNow.AddMonths(2)
         });
     }
 
