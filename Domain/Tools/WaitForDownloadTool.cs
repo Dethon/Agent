@@ -1,5 +1,4 @@
 ﻿using System.Text.Json.Nodes;
-using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
@@ -35,7 +34,15 @@ public class WaitForDownloadTool(IDownloadClient client) : BaseTool, ITool
                 return new JsonObject
                 {
                     ["status"] = "success",
-                    ["message"] = DownloadSystemPrompt.AfterDownloadPrompt(typedParams.DownloadId),
+                    ["message"] = $"""
+                                   The download with id {typedParams.DownloadId} just finished. Now your task is to 
+                                   organize the files that were downloaded by download {typedParams.DownloadId} into 
+                                   the current library structure. 
+                                   If there is no appropriate folder for the category you should create it. 
+                                   Afterwards, if and only if the organization succeeded, clean up the download's
+                                   leftovers.
+                                   Hint: Use the LibraryDescription, Move and Cleanup tools.
+                                   """,
                     ["downloadId"] = typedParams.DownloadId
                 };
             }

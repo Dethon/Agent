@@ -38,7 +38,7 @@ public class ChatMonitor(
             var referencedMessageId = prompt.ReplyToMessageId is null
                 ? null
                 : prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
-            var agent = agentResolver.Resolve(AgentType.Download, referencedMessageId);
+            var agent = await agentResolver.Resolve(AgentType.Download, referencedMessageId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
 
             await foreach (var response in responses)
@@ -47,7 +47,8 @@ public class ChatMonitor(
                 {
                     var messageId = await ProcessResponse(prompt, response, cancellationToken);
                     agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
-                }catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     logger.LogError(ex, "ProcessResponse exception: {exceptionMessage}", ex.Message);
                 }
@@ -64,11 +65,11 @@ public class ChatMonitor(
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
         var message = "<blockquote expandable>" +
-                        $"{response.Content.Left(1900).HtmlSanitize()}" +
+                      $"{response.Content.Left(1900).HtmlSanitize()}" +
                       "</blockquote>" +
                       "<blockquote expandable>" +
-                        $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
-                        $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
+                      $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
+                      $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
                       "</blockquote>";
         return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
     }

@@ -1,6 +1,5 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Tools.Attachments;
 using JetBrains.Annotations;
 
@@ -15,13 +14,19 @@ public record FileDownloadParams
 public class FileDownloadTool(
     IDownloadClient client,
     SearchHistory history,
-    string baseDownloadLocation) : BaseTool, ITool
+    string baseDownloadLocation) : BaseTool<FileDownloadTool, FileDownloadParams>, ITool
 {
-    public string Name => "FileDownload";
+    public static string Name => "FileDownload";
+
+    public static string Description => """
+                                        Download a file from the internet using a file id that can be obtained from the FileSearch 
+                                        tool. The SearchResultId parameter is the id EXACTLY as it appears in the response of the
+                                        FileSearch tool
+                                        """;
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams<FileDownloadParams>(parameters);
+        var typedParams = ParseParams(parameters);
 
         var savePath = $"{baseDownloadLocation}/{typedParams.SearchResultId}";
         var itemToDownload = history.History[typedParams.SearchResultId];
@@ -36,19 +41,6 @@ public class FileDownloadTool(
             ["status"] = "success",
             ["message"] = "Torrent added to qBittorrent successfully",
             ["downloadId"] = typedParams.SearchResultId
-        };
-    }
-
-    public ToolDefinition GetToolDefinition()
-    {
-        return new ToolDefinition<FileDownloadParams>
-        {
-            Name = Name,
-            Description = """
-                          Download a file from the internet using a file id that can be obtained from the FileSearch 
-                          tool. The SearchResultId parameter is the id EXACTLY as it appears in the response of the
-                          FileSearch tool
-                          """
         };
     }
 }

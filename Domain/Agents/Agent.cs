@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -9,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Agents;
 
 public class Agent(
-    string systemPrompt,
+    Message[] messages,
     ILargeLanguageModel largeLanguageModel,
     ITool[] tools,
     int maxDepth,
@@ -18,16 +17,9 @@ public class Agent(
 {
     private CancellationTokenSource _childCancelTokenSource = new();
     private readonly Lock _messagesLock = new();
-    private readonly ConcurrentDictionary<string, ITool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
+    private readonly ConcurrentDictionary<string, BaseTool> _tools = new(tools.ToDictionary(x => x.Name, x => x));
 
-    private readonly List<Message> _messages =
-    [
-        new()
-        {
-            Role = Role.System,
-            Content = systemPrompt
-        }
-    ];
+    private readonly List<Message> _messages = messages.ToList();
 
     public IAsyncEnumerable<AgentResponse> Run(string prompt, CancellationToken cancellationToken = default)
     {
@@ -56,9 +48,9 @@ public class Agent(
             messageSnapshot = _messages.ToList();
         }
 
-        var toolDefinitions = _tools.Values
-            .Select(x => x.GetToolDefinition())
-            .ToArray();
+        var toolDefinitions = Enumerable
+            .ToArray<ToolDefinition>(_tools.Values
+                .Select(x => x.GetToolDefinition()));
 
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {

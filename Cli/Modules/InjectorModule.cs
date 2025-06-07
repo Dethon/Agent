@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using Cli.App;
 using Cli.Settings;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Domain.Tools;
@@ -26,6 +27,7 @@ public static class InjectorModule
     public static IServiceCollection AddTools(this IServiceCollection services, AgentConfiguration settings)
     {
         return services
+            .AddTransient<DownloaderPrompt>()
             .AddTransient<FileSearchTool>()
             .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
                 sp.GetRequiredService<IDownloadClient>(),

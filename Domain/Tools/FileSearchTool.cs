@@ -33,13 +33,20 @@ public record SearchResultToSerialize
     }
 }
 
-public class FileSearchTool(ISearchClient client, SearchHistory history) : BaseTool, ITool
+public class FileSearchTool(
+    ISearchClient client,
+    SearchHistory history) : BaseTool<FileSearchTool, FileSearchParams>, ITool
 {
-    public string Name => "FileSearch";
+    public static string Name => "FileSearch";
+
+    public static string Description => """
+                                        Search for a file in the internet using a search string. Search strings must be concise and
+                                        not include too many details.
+                                        """;
 
     public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams<FileSearchParams>(parameters);
+        var typedParams = ParseParams(parameters);
 
         var results = await client.Search(typedParams.SearchString, cancellationToken);
         history.Add(results);
@@ -49,18 +56,6 @@ public class FileSearchTool(ISearchClient client, SearchHistory history) : BaseT
             ["message"] = "File search completed successfully",
             ["totalResults"] = results.Length,
             ["results"] = JsonSerializer.SerializeToNode(results.Select(x => new SearchResultToSerialize(x)))
-        };
-    }
-
-    public ToolDefinition GetToolDefinition()
-    {
-        return new ToolDefinition<FileSearchParams>
-        {
-            Name = Name,
-            Description = """
-                          Search for a file in the internet using a search string. Search strings must be concise and
-                          not include too many details.
-                          """
         };
     }
 }

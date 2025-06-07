@@ -15,17 +15,11 @@ public class AgentTests
 {
     private const string DefaultLibraryPath = "test/library/path";
     private const string DefaultDownloadLocation = "test/library/downloads";
-    private readonly Agent _agent;
     private readonly Mock<ILargeLanguageModel> _mockLargeLanguageModel = new();
     private readonly Mock<IDownloadClient> _mockDownloadClient = new();
     private readonly Mock<IFileSystemClient> _mockFileSystemClient = new();
     private readonly Mock<ISearchClient> _mockSearchClient = new();
     private readonly SearchHistory _searchHistory = new();
-
-    public AgentTests()
-    {
-        _agent = CreateAgent(10);
-    }
 
     [Fact]
     public async Task RunAgent_ShouldReturnLlmResponse_WhenNoToolCalls()
@@ -34,9 +28,10 @@ public class AgentTests
         const string userPrompt = "test prompt";
         var expectedResponse = CreateAgentResponse("This is a test response", StopReason.Stop);
         SetupLlmResponses([[expectedResponse]]);
+        var agent = await CreateAgent(10);
 
         // when
-        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+        var responses = await agent.Run(userPrompt).ToArrayAsync();
 
         // then
         responses.Length.ShouldBe(1);
@@ -64,9 +59,10 @@ public class AgentTests
 
         SetupLlmResponses([[llmResponse], [finalResponse]]);
         SetupSearchClient("test query", "Test File", 1, "https://example.com/file");
+        var agent = await CreateAgent(10);
 
         // when
-        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+        var responses = await agent.Run(userPrompt).ToArrayAsync();
 
         // then
         responses.Length.ShouldBe(2);
@@ -106,9 +102,10 @@ public class AgentTests
         SetupLlmResponses([[searchToolResponse], [downloadToolResponse], [finalResponse]]);
         SetupSearchClient("test file", "Test File", 1, "https://example.com/file");
         SetupDownloadClient(1, "https://example.com/file", $"{DefaultDownloadLocation}/1");
+        var agent = await CreateAgent(10);
 
         // when
-        var responses = await _agent.Run(userPrompt).ToArrayAsync();
+        var responses = await agent.Run(userPrompt).ToArrayAsync();
 
         // then
         responses.Length.ShouldBe(3);
@@ -142,12 +139,13 @@ public class AgentTests
             await Task.Delay(5000, c);
             return [firstResponse];
         });
+        var agent = await CreateAgent(10);
 
         // when
-        var firstTask = _agent.Run(firstPrompt).ToArrayAsync();
+        var firstTask = agent.Run(firstPrompt).ToArrayAsync();
         await Task.Delay(500);
         setup.ReturnsAsync([secondResponse]);
-        var secondResponses = await _agent.Run(secondPrompt).ToArrayAsync();
+        var secondResponses = await agent.Run(secondPrompt).ToArrayAsync();
 
         // then
         await Should.ThrowAsync<TaskCanceledException>(async () => await firstTask);
@@ -160,7 +158,7 @@ public class AgentTests
     public async Task RunAgent_ShouldThrowAgentLoopException_WhenMaxDepthIsReached()
     {
         // given
-        var agent = CreateAgent(2);
+        var agent = await CreateAgent(2);
         const string userPrompt = "test prompt";
         var toolCallResponse = CreateToolCallResponse(
             "Calling tool",
@@ -214,10 +212,10 @@ public class AgentTests
             .ReturnsAsync(toolCallResponses);
     }
 
-    private Agent CreateAgent(int maxDepth)
+    private async Task<Agent> CreateAgent(int maxDepth)
     {
         return new Agent(
-            DownloadSystemPrompt.Prompt,
+            await new DownloaderPrompt().Get(null),
             _mockLargeLanguageModel.Object,
             [
                 new FileSearchTool(_mockSearchClient.Object, _searchHistory),

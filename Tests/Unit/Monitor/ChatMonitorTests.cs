@@ -185,7 +185,7 @@ public class ChatMonitorTests
     private void SetupAgentResolver(int? referenceId = null)
     {
         _agentResolverMock.Setup(x => x.Resolve(AgentType.Download, referenceId))
-            .Returns(_agentMock.Object);
+            .ReturnsAsync(_agentMock.Object);
     }
 
     private void SetupAgentRun(string promptText, AgentResponse response)

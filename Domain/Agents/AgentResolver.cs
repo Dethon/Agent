@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Agents;
 
 public class AgentResolver(
+    DownloaderPrompt downloaderPrompt,
     ILargeLanguageModel languageModel,
     FileDownloadTool fileDownloadTool,
     FileSearchTool fileSearchTool,
@@ -16,12 +17,12 @@ public class AgentResolver(
     IMemoryCache cache,
     ILoggerFactory loggerFactory) : IAgentResolver
 {
-    public IAgent Resolve(AgentType agentType, int? sourceMessageId = null)
+    public async Task<IAgent> Resolve(AgentType agentType, int? sourceMessageId = null)
     {
         return GetAgentFromCache(sourceMessageId) ?? agentType switch
         {
             AgentType.Download => new Agent(
-                systemPrompt: DownloadSystemPrompt.Prompt,
+                messages: await downloaderPrompt.Get(null),
                 largeLanguageModel: languageModel,
                 tools:
                 [
