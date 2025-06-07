@@ -13,7 +13,8 @@ public class AgentResolver(
     WaitForDownloadTool waitForDownloadTool,
     MoveTool moveTool,
     CleanupTool cleanupTool,
-    LibraryDescriptionTool libraryDescriptionTool,
+    ListDirectoriesTool listDirectoriesTool,
+    ListFilesTool listFilesTool,
     IMemoryCache cache,
     ILoggerFactory loggerFactory) : IAgentResolver
 {
@@ -29,7 +30,8 @@ public class AgentResolver(
                     fileSearchTool,
                     fileDownloadTool,
                     waitForDownloadTool,
-                    libraryDescriptionTool,
+                    listDirectoriesTool,
+                    listFilesTool,
                     moveTool,
                     cleanupTool
                 ],

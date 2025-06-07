@@ -222,7 +222,8 @@ public class AgentTests
                 new FileDownloadTool(_mockDownloadClient.Object, _searchHistory,
                     DefaultDownloadLocation),
                 new WaitForDownloadTool(_mockDownloadClient.Object),
-                new LibraryDescriptionTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new ListDirectoriesTool(_mockFileSystemClient.Object, DefaultLibraryPath),
+                new ListFilesTool(_mockFileSystemClient.Object, DefaultLibraryPath),
                 new MoveTool(_mockFileSystemClient.Object, DefaultLibraryPath),
                 new CleanupTool(_mockDownloadClient.Object, _mockFileSystemClient.Object, DefaultDownloadLocation)
             ],
