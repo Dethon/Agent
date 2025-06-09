@@ -15,7 +15,6 @@ public class MoveTool(
     IFileSystemClient client,
     string libraryPath) : BaseTool<MoveTool, FileMoveParams>, IToolWithMetadata
 {
-    public static Type? ParamsType => typeof(FileMoveParams);
     public static string Name => "Move";
 
     public static string Description => """

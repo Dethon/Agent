@@ -15,7 +15,6 @@ public class CleanupTool(
     IFileSystemClient fileSystemClient,
     string baseDownloadLocation) : BaseTool<CleanupTool, CleanupParams>, IToolWithMetadata
 {
-    public static Type? ParamsType => typeof(CleanupParams);
     public static string Name => "Cleanup";
 
     public static string Description => """

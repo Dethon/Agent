@@ -37,7 +37,6 @@ public class FileSearchTool(
     ISearchClient client,
     SearchHistory history) : BaseTool<FileSearchTool, FileSearchParams>, IToolWithMetadata
 {
-    public static Type? ParamsType => typeof(FileSearchParams);
     public static string Name => "FileSearch";
 
     public static string Description => """

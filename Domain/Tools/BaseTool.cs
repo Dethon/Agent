@@ -7,6 +7,8 @@ namespace Domain.Tools;
 
 public abstract class BaseTool<TSelf, TParams> where TSelf : IToolWithMetadata where TParams : class
 {
+    public static Type ParamsType => typeof(TParams);
+
     public ToolDefinition GetToolDefinition()
     {
         return new ToolDefinition
@@ -39,6 +41,8 @@ public abstract class BaseTool<TSelf, TParams> where TSelf : IToolWithMetadata w
 
 public abstract class BaseTool<TSelf> where TSelf : IToolWithMetadata
 {
+    public static Type? ParamsType => null;
+
     public ToolDefinition GetToolDefinition()
     {
         return new ToolDefinition

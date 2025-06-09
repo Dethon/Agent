@@ -8,7 +8,6 @@ public class ListDirectoriesTool(
     IFileSystemClient client,
     string libraryPath) : BaseTool<ListDirectoriesTool>, IToolWithMetadata
 {
-    public static Type? ParamsType => null; // No parameters needed for this tool
     public static string Name => "ListDirectories";
 
     public static string Description => """

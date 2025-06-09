@@ -16,7 +16,6 @@ public class FileDownloadTool(
     SearchHistory history,
     string baseDownloadLocation) : BaseTool<FileDownloadTool, FileDownloadParams>, IToolWithMetadata
 {
-    public static Type? ParamsType => typeof(FileDownloadParams);
     public static string Name => "FileDownload";
 
     public static string Description => """
