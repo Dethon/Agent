@@ -71,6 +71,10 @@ public class DownloaderPrompt : IPrompt
                               up the leftover files from the download. 
                               The clean up process can only be called after successfully moving the relevant files into 
                               the library. DO NOT clean up the download if the organization step fails.
+
+                              If the user requests to cancel then you will run the cleanup tool if there is a download 
+                              in progress (up to several times until it succeeds) and/or cease all further actions.
+                              You should not try to download anything else after the cancel request.
                               """
                 }
             });
