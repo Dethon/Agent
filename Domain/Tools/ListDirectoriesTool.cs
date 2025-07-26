@@ -16,7 +16,7 @@ public class ListDirectoriesTool(
                                         downloaded files should be stored.
                                         """;
 
-    public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var result = await client.ListDirectoriesIn(libraryPath, cancellationToken);
         var jsonResult = JsonSerializer.SerializeToNode(result);

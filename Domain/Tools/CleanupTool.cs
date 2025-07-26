@@ -22,7 +22,7 @@ public class CleanupTool(
                                         It can also be use to cancel a download if the user requests it.
                                         """;
 
-    public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(parameters);
         var downloadPath = $"{baseDownloadLocation}/{typedParams.DownloadId}";

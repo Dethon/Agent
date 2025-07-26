@@ -5,9 +5,11 @@ using Domain.DTOs;
 
 namespace Domain.Tools;
 
-public abstract class BaseTool<TSelf, TParams> where TSelf : IToolWithMetadata where TParams : class
+public abstract class BaseTool<TSelf, TParams> : ITool where TSelf : IToolWithMetadata where TParams : class
 {
     public static Type ParamsType => typeof(TParams);
+
+    public abstract Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
 
     public ToolDefinition GetToolDefinition()
     {
@@ -39,9 +41,11 @@ public abstract class BaseTool<TSelf, TParams> where TSelf : IToolWithMetadata w
     }
 }
 
-public abstract class BaseTool<TSelf> where TSelf : IToolWithMetadata
+public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
 {
     public static Type? ParamsType => null;
+
+    public abstract Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
 
     public ToolDefinition GetToolDefinition()
     {

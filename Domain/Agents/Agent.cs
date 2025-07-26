@@ -23,15 +23,26 @@ public class Agent(
 
     private readonly List<Message> _messages = messages.ToList();
 
-    public IAsyncEnumerable<AgentResponse> Run(string prompt, CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<AgentResponse> Run(string? prompt, CancellationToken cancellationToken = default)
+    {
+        if (prompt is null)
+        {
+            return Run([], cancellationToken);
+        }
+
+        var message = new Message
+        {
+            Role = Role.User,
+            Content = prompt
+        };
+        return Run([message], cancellationToken);
+    }
+
+    public IAsyncEnumerable<AgentResponse> Run(Message[] prompts, CancellationToken cancellationToken = default)
     {
         lock (_messagesLock)
         {
-            _messages.Add(new Message
-            {
-                Role = Role.User,
-                Content = prompt
-            });
+            _messages.AddRange(prompts);
             _childCancelTokenSource.Cancel();
             _childCancelTokenSource.Dispose();
             _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

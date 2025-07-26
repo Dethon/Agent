@@ -24,7 +24,7 @@ public class ListFilesTool(
                                         the correct place and name for the downloaded files.
                                         """;
 
-    public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(parameters);
         if (!typedParams.Path.StartsWith(libraryPath))

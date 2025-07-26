@@ -44,7 +44,7 @@ public class FileSearchTool(
                                         not include too many details.
                                         """;
 
-    public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(parameters);
 

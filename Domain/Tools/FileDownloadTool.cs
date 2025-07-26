@@ -24,7 +24,7 @@ public class FileDownloadTool(
                                         FileSearch tool
                                         """;
 
-    public async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(parameters);
 
