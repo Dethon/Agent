@@ -18,9 +18,25 @@ public class AgentResolver(
     IMemoryCache cache,
     ILoggerFactory loggerFactory) : IAgentResolver
 {
-    public async Task<IAgent> Resolve(AgentType agentType, int? sourceMessageId = null)
+    public async Task<IAgent> Resolve(AgentType agentType, int? threadId = null)
     {
-        return GetAgentFromCache(sourceMessageId) ?? agentType switch
+        if (threadId is null)
+        {
+            return await AgentFactory(agentType);
+        }
+
+        var agent = await GetAgentFromCache(agentType, threadId.Value, () => AgentFactory(agentType));
+        if (agent is null)
+        {
+            throw new InvalidOperationException($"{agentType} for thread {threadId} found in cache but was null.");
+        }
+
+        return agent;
+    }
+
+    private async Task<IAgent> AgentFactory(AgentType agentType)
+    {
+        return agentType switch
         {
             AgentType.Download => new Agent(
                 messages: await downloaderPrompt.Get(null),
@@ -42,21 +58,12 @@ public class AgentResolver(
         };
     }
 
-    public void AssociateMessageToAgent(int messageId, IAgent agent)
+    private async Task<IAgent?> GetAgentFromCache(AgentType agentType, int threadId, Func<Task<IAgent>> createAgent)
     {
-        cache.Set($"IAgent{messageId}", agent, new MemoryCacheEntryOptions
+        return await cache.GetOrCreateAsync($"IAgent-{agentType}-{threadId}", cacheEntry =>
         {
-            AbsoluteExpiration = DateTimeOffset.UtcNow.AddMonths(2)
+            cacheEntry.SetAbsoluteExpiration(DateTimeOffset.UtcNow.AddMonths(2));
+            return createAgent();
         });
-    }
-
-    private IAgent? GetAgentFromCache(int? sourceMessageId)
-    {
-        if (sourceMessageId.HasValue && cache.TryGetValue($"IAgent{sourceMessageId}", out IAgent? agent))
-        {
-            return agent;
-        }
-
-        return null;
     }
 }

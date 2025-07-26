@@ -35,18 +35,20 @@ public class ChatMonitor(
         {
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
-            var referencedMessageId = prompt.ReplyToMessageId is null
-                ? null
-                : prompt.ReplyToMessageId + prompt.Sender.GetHashCode();
-            var agent = await agentResolver.Resolve(AgentType.Download, referencedMessageId);
+            prompt = prompt with
+            {
+                ThreadId = prompt.ThreadId ?? await chatClient.CreateThread(
+                    prompt.ChatId, prompt.Prompt, cancellationToken)
+            };
+            var agent = await agentResolver.Resolve(AgentType.Download, prompt.ThreadId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
 
             await foreach (var response in responses)
             {
                 try
                 {
-                    var messageId = await ProcessResponse(prompt, response, cancellationToken);
-                    agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
+                    await ProcessResponse(prompt, response, cancellationToken);
+                    //agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
                 }
                 catch (Exception ex)
                 {
@@ -71,6 +73,6 @@ public class ChatMonitor(
                       $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
                       $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
                       "</blockquote>";
-        return await chatClient.SendResponse(prompt.ChatId, message, prompt.MessageId, cancellationToken);
+        return await chatClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
     }
 }

@@ -23,18 +23,24 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
                 offset = update.Id + 1;
                 if (update.Message?.Text is not null)
                 {
-                    if (allowedUserNames.Contains(update.Message.Chat.Username))
+                    if (allowedUserNames.Contains(update.Message.Chat.Username) ||
+                        allowedUserNames.Contains(update.Message.From?.Username))
                     {
-                        yield return new ChatPrompt
+                        if (update.Message.Text.StartsWith('/') || update.Message.MessageThreadId.HasValue)
                         {
-                            Prompt = update.Message.Text,
-                            ChatId = update.Message.Chat.Id,
-                            MessageId = update.Message.MessageId,
-                            Sender = update.Message.Chat.Username ??
-                                     update.Message.Chat.FirstName ??
-                                     $"{update.Message.Chat.Id}",
-                            ReplyToMessageId = update.Message.ReplyToMessage?.MessageId
-                        };
+                            yield return new ChatPrompt
+                            {
+                                Prompt = update.Message.Text.TrimStart('/'),
+                                ChatId = update.Message.Chat.Id,
+                                MessageId = update.Message.MessageId,
+                                Sender = update.Message.From?.Username ??
+                                         update.Message.Chat.Username ??
+                                         update.Message.Chat.FirstName ??
+                                         $"{update.Message.Chat.Id}",
+                                ReplyToMessageId = update.Message.ReplyToMessage?.MessageId,
+                                ThreadId = update.Message.MessageThreadId
+                            };
+                        }
                     }
                     else
                     {
@@ -52,14 +58,26 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
     }
 
     public async Task<int> SendResponse(
-        long chatId, string response, int? replyId = null, CancellationToken cancellationToken = default)
+        long chatId, string response, int? messageThreadId = null, CancellationToken cancellationToken = default)
     {
         var message = await client.SendMessage(
             chatId,
             response,
             parseMode: ParseMode.Html,
-            replyParameters: replyId,
+            messageThreadId: messageThreadId,
             cancellationToken: cancellationToken);
         return message.Id;
+    }
+
+    public async Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken = default)
+    {
+        var icons = await client.GetForumTopicIconStickers(cancellationToken);
+        var thread = await client.CreateForumTopic(
+            chatId,
+            name,
+            iconCustomEmojiId: icons.FirstOrDefault(x => x.Emoji == "🏴‍☠️")?.CustomEmojiId,
+            cancellationToken: cancellationToken
+        );
+        return thread.MessageThreadId;
     }
 }
