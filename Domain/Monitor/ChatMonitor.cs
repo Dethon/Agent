@@ -35,11 +35,7 @@ public class ChatMonitor(
         {
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
-            prompt = prompt with
-            {
-                ThreadId = prompt.ThreadId ?? await chatClient.CreateThread(
-                    prompt.ChatId, prompt.Prompt, cancellationToken)
-            };
+            prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
             var agent = await agentResolver.Resolve(AgentType.Download, prompt.ThreadId);
             var responses = agent.Run(prompt.Prompt, cancellationToken);
 
@@ -48,7 +44,6 @@ public class ChatMonitor(
                 try
                 {
                     await ProcessResponse(prompt, response, cancellationToken);
-                    //agentResolver.AssociateMessageToAgent(messageId + prompt.Sender.GetHashCode(), agent);
                 }
                 catch (Exception ex)
                 {
@@ -62,7 +57,23 @@ public class ChatMonitor(
         }
     }
 
-    private async Task<int> ProcessResponse(
+    private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
+    {
+        if(prompt.ThreadId is not null)
+        {
+            return prompt;
+        }
+
+        var threadId = await chatClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
+        await chatClient.SendResponse(prompt.ChatId, $"<b><i>{prompt.Prompt}</i></b>", threadId, cancellationToken);
+            
+        return prompt with
+        {
+            ThreadId = threadId 
+        };
+    }
+
+    private async Task ProcessResponse(
         ChatPrompt prompt, AgentResponse response, CancellationToken cancellationToken)
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
@@ -73,6 +84,6 @@ public class ChatMonitor(
                       $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
                       $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
                       "</blockquote>";
-        return await chatClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
+        await chatClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
     }
 }
