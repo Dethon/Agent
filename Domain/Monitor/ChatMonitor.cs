@@ -65,7 +65,7 @@ public class ChatMonitor(
         }
 
         var threadId = await chatClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
-        await chatClient.SendResponse(prompt.ChatId, $"<b><i>{prompt.Prompt}</i></b>", threadId, cancellationToken);
+        await chatClient.SendResponse(prompt.ChatId, $"<b><u>{prompt.Prompt}</u></b>", threadId, cancellationToken);
             
         return prompt with
         {
