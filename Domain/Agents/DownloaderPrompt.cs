@@ -50,7 +50,8 @@ public class DownloaderPrompt : IPrompt
                               find most appropriate. DO NOT ask the user to confirm the choice. 
 
                               After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
-                              provided for that. 
+                              provided for that. You should also let the user know about the files you chose to download
+                              and why.
                               After the download finishes you will organize it within the library, to do that you should
                               first explore the library structure, both directories and files, and then move files 
                               accordingly.
