@@ -77,7 +77,8 @@ public class DownloaderPrompt : IPrompt
                               You should not try to download anything else after the cancel request.
                               
                               If the user asks for the status of the download/s you must reply with the name, progress, 
-                              speed, size and ETA of all current downloads.
+                              speed, size and ETA of all current downloads. Do not wait call the wait for download tool 
+                              just because the user asks for the status.
                               """
                 }
             });
