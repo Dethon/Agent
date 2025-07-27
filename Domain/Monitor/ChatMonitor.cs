@@ -59,17 +59,17 @@ public class ChatMonitor(
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
     {
-        if(prompt.ThreadId is not null)
+        if (prompt.ThreadId is not null)
         {
             return prompt;
         }
 
         var threadId = await chatClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
         await chatClient.SendResponse(prompt.ChatId, $"<b>{prompt.Prompt}</b>", threadId, cancellationToken);
-            
+
         return prompt with
         {
-            ThreadId = threadId 
+            ThreadId = threadId
         };
     }
 
@@ -77,9 +77,7 @@ public class ChatMonitor(
         ChatPrompt prompt, AgentResponse response, CancellationToken cancellationToken)
     {
         var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-        var message = "<blockquote expandable>" +
-                      $"{response.Content.Left(1900).HtmlSanitize()}" +
-                      "</blockquote>" +
+        var message = $"{response.Content.Left(1900).HtmlSanitize()}" +
                       "<blockquote expandable>" +
                       $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
                       $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +

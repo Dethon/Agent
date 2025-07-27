@@ -7,6 +7,7 @@ public record DownloadItem : SearchResult
     public required double Progress { get; init; }
     public required long DownSpeed { get; init; }
     public required long UpSpeed { get; init; }
+    public required long Eta { get; init; }
 }
 
 public enum DownloadStatus
