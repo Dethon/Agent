@@ -36,8 +36,9 @@ public class ChatMonitor(
             await using var scope = services.CreateAsyncScope();
             var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
             prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
+            
             var agent = await agentResolver.Resolve(AgentType.Download, prompt.ThreadId);
-            var responses = agent.Run(prompt.Prompt, cancellationToken);
+            var responses = agent.Run(prompt.Prompt, prompt.IsCommand, cancellationToken);
 
             await foreach (var response in responses)
             {

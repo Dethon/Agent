@@ -99,6 +99,7 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
         return new ChatPrompt
         {
             Prompt = message.Text.TrimStart('/'),
+            IsCommand = message.Text.StartsWith('/'),
             ChatId = message.Chat.Id,
             MessageId = message.MessageId,
             Sender = message.From?.Username ??

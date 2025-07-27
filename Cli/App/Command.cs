@@ -15,7 +15,7 @@ public static class Command
         var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
 
         var agent = await agentResolver.Resolve(AgentType.Download);
-        var responses = agent.Run(prompt, lifetime.ApplicationStopping);
+        var responses = agent.Run(prompt, true, lifetime.ApplicationStopping);
         await DisplayResponses(responses, lifetime.ApplicationStopping);
     }
 

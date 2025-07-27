@@ -15,7 +15,7 @@ public class Agent(
     bool enableSearch,
     ILogger<Agent> logger) : IAgent
 {
-    private CancellationTokenSource _childCancelTokenSource = new();
+    private CancellationTokenSource? _childCancelTokenSource;
     private readonly Lock _messagesLock = new();
 
     private readonly Dictionary<string, ITool> _tools =
@@ -23,11 +23,12 @@ public class Agent(
 
     private readonly List<Message> _messages = messages.ToList();
 
-    public IAsyncEnumerable<AgentResponse> Run(string? prompt, CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<AgentResponse> Run(
+        string? prompt, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
     {
         if (prompt is null)
         {
-            return Run([], cancellationToken);
+            return Run([], cancelCurrentOperation, cancellationToken);
         }
 
         var message = new Message
@@ -35,20 +36,20 @@ public class Agent(
             Role = Role.User,
             Content = prompt
         };
-        return Run([message], cancellationToken);
+        return Run([message], cancelCurrentOperation, cancellationToken);
     }
 
-    public IAsyncEnumerable<AgentResponse> Run(Message[] prompts, CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<AgentResponse> Run(
+        Message[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
     {
+        CancellationToken childCancellationToken;
         lock (_messagesLock)
         {
             _messages.AddRange(prompts);
-            _childCancelTokenSource.Cancel();
-            _childCancelTokenSource.Dispose();
-            _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            childCancellationToken = GetChildCancellationToken(cancelCurrentOperation, cancellationToken);
         }
 
-        return ExecuteAgentLoop(0.5f, _childCancelTokenSource.Token);
+        return ExecuteAgentLoop(0.5f, childCancellationToken);
     }
 
     private async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
@@ -131,5 +132,24 @@ public class Agent(
                 ToolCallId = toolCall.Id
             };
         }
+    }
+
+    private CancellationToken GetChildCancellationToken(bool cancelCurrent, CancellationToken cancellationToken)
+    {
+        if (_childCancelTokenSource is null)
+        {
+            _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            return _childCancelTokenSource.Token;
+        }
+
+        if (!cancelCurrent)
+        {
+            return _childCancelTokenSource.Token;
+        }
+        
+        _childCancelTokenSource.Cancel();
+        _childCancelTokenSource.Dispose();
+        _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        return _childCancelTokenSource.Token;
     }
 }

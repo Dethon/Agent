@@ -31,7 +31,7 @@ public class AgentResolver(
         {
             throw new InvalidOperationException($"{agentType} for thread {threadId} found in cache but was null.");
         }
-
+        
         return agent;
     }
 
