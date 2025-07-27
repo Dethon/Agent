@@ -12,8 +12,8 @@ public record WaitForDownloadParams
     public required int DownloadId { get; [UsedImplicitly] init; }
 }
 
-public class WaitForDownloadTool(
-    IDownloadClient client) : BaseTool<WaitForDownloadTool, WaitForDownloadParams>, IToolWithMetadata
+public class WaitForDownloadTool(IDownloadClient client) :
+    BaseTool<WaitForDownloadTool, WaitForDownloadParams>, IToolWithMetadata
 {
     public static string Name => "WaitForDownload";
 

@@ -62,7 +62,8 @@ public class QBittorrentDownloadClient(
             Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
             SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
-            Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty
+            Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty,
+            Progress = torrent["progress"]?.GetValue<double>() ?? 0.0
         };
     }
 
