@@ -63,7 +63,9 @@ public class QBittorrentDownloadClient(
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
             SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
             Link = torrent["magnet_uri"]?.GetValue<string>() ?? string.Empty,
-            Progress = torrent["progress"]?.GetValue<double>() ?? 0.0
+            Progress = (torrent["progress"]?.GetValue<double>() ?? 0.0) * 100,
+            DownSpeed = (torrent["dlspeed"]?.GetValue<long>() ?? 0) / 1024 / 1024,
+            UpSpeed = (torrent["upspeed"]?.GetValue<long>() ?? 0) / 1024 / 1024
         };
     }
 
