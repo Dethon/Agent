@@ -2,7 +2,9 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Telegram.Bot;
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Message = Telegram.Bot.Types.Message;
 
 namespace Infrastructure.Clients;
 
@@ -18,41 +20,31 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
                 offset: offset,
                 timeout: timeout,
                 cancellationToken: cancellationToken);
-            foreach (var update in updates)
+
+            offset = GetNewOffset(updates) ?? offset;
+            var messageUpdates = updates
+                .Select(u => u.Message)
+                .Where(m => m is not null && m.Type == MessageType.Text && IsBotMessage(m))
+                .Cast<Message>();
+
+            foreach (var message in messageUpdates)
             {
-                offset = update.Id + 1;
-                if (update.Message?.Text is not null)
+                if (!IsAuthorized(message))
                 {
-                    if (allowedUserNames.Contains(update.Message.Chat.Username) ||
-                        allowedUserNames.Contains(update.Message.From?.Username))
-                    {
-                        if (update.Message.Text.StartsWith('/') || update.Message.MessageThreadId.HasValue)
-                        {
-                            yield return new ChatPrompt
-                            {
-                                Prompt = update.Message.Text.TrimStart('/'),
-                                ChatId = update.Message.Chat.Id,
-                                MessageId = update.Message.MessageId,
-                                Sender = update.Message.From?.Username ??
-                                         update.Message.Chat.Username ??
-                                         update.Message.Chat.FirstName ??
-                                         $"{update.Message.Chat.Id}",
-                                ReplyToMessageId = update.Message.ReplyToMessage?.MessageId,
-                                ThreadId = update.Message.MessageThreadId
-                            };
-                        }
-                    }
-                    else
-                    {
-                        await client.SendMessage(
-                            update.Message.Chat.Id,
-                            "You are not authorized to use this bot.",
-                            replyParameters: update.Message.Id,
-                            cancellationToken: cancellationToken);
-                    }
+                    await client.SendMessage(
+                        message.Chat.Id,
+                        "You are not authorized to use this bot.",
+                        replyParameters: message.Id,
+                        cancellationToken: cancellationToken);
+                    continue;
                 }
 
-                if (cancellationToken.IsCancellationRequested) break;
+                yield return GetPromptFromUpdate(message);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
     }
@@ -79,5 +71,42 @@ public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUs
             cancellationToken: cancellationToken
         );
         return thread.MessageThreadId;
+    }
+
+    private bool IsAuthorized(Message message)
+    {
+        return allowedUserNames.Contains(message.Chat.Username) ||
+               allowedUserNames.Contains(message.From?.Username);
+    }
+
+    private static bool IsBotMessage(Message message)
+    {
+        return message.Text is not null && (message.Text.StartsWith('/') || message.MessageThreadId.HasValue);
+    }
+
+    private static int? GetNewOffset(Update[] updates)
+    {
+        return updates.Select(u => u.Id + 1).Cast<int?>().DefaultIfEmpty(null).Max();
+    }
+
+    private static ChatPrompt GetPromptFromUpdate(Message message)
+    {
+        if (message.Text is null)
+        {
+            throw new ArgumentException(nameof(message.Text));
+        }
+
+        return new ChatPrompt
+        {
+            Prompt = message.Text.TrimStart('/'),
+            ChatId = message.Chat.Id,
+            MessageId = message.MessageId,
+            Sender = message.From?.Username ??
+                     message.Chat.Username ??
+                     message.Chat.FirstName ??
+                     $"{message.Chat.Id}",
+            ReplyToMessageId = message.ReplyToMessage?.MessageId,
+            ThreadId = message.MessageThreadId
+        };
     }
 }
