@@ -23,6 +23,7 @@ public class GetDownloadStatusTool(IDownloadClient client, SearchHistory history
                                         Returns the status of download process that is currently happening.
                                         Progress is a percentage from 0 to 100.
                                         DownSpeed and UpSpeed are in megabytes per second.
+                                        Size is the total size of the download in megabytes.
                                         Eta is the estimated time until the completion of the download on minutes.
                                         """;
 

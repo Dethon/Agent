@@ -75,6 +75,9 @@ public class DownloaderPrompt : IPrompt
                               If the user requests to cancel then you will run the cleanup tool if there is a download 
                               in progress (up to several times until it succeeds) and/or cease all further actions.
                               You should not try to download anything else after the cancel request.
+                              
+                              If the user asks for the status of the download/s you must reply with the name, progress, 
+                              speed, size and ETA of all current downloads.
                               """
                 }
             });

@@ -57,7 +57,7 @@ public class QBittorrentDownloadClient(
         {
             Id = id,
             Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
-            Size = torrent["total_size"]?.GetValue<long>() ?? 0,
+            Size = torrent["total_size"]?.GetValue<long>() ?? 0 / 1024 / 1024,
             Status = GetDownloadStatus(torrent),
             Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
@@ -66,7 +66,7 @@ public class QBittorrentDownloadClient(
             Progress = (torrent["progress"]?.GetValue<double>() ?? 0.0) * 100,
             DownSpeed = (torrent["dlspeed"]?.GetValue<long>() ?? 0) / 1024 / 1024,
             UpSpeed = (torrent["upspeed"]?.GetValue<long>() ?? 0) / 1024 / 1024,
-            Eta = (torrent["eta"]?.GetValue<long>() ?? 0) / 60
+            Eta = (torrent["eta"]?.GetValue<long>() ?? 0) / 60,
         };
     }
 
