@@ -79,7 +79,8 @@ public class DownloaderPrompt : IPrompt
                               
                               If the user asks for the status of the download/s you must reply with the name, progress, 
                               speed, size and ETA of all current downloads. To obtain this information you must use the 
-                              tool called GetDownloadStatus.
+                              tool called GetDownloadStatus. The user will probably just say "status" or "status?" you
+                              must understand that this means they want the status of the download/s.
                               
                               NEVER call the WaitForDownload tool multiple times for the same download id.
                               """
