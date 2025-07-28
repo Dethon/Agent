@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
@@ -15,6 +16,7 @@ public record WaitForDownloadParams
 public class WaitForDownloadTool(IDownloadClient client) :
     BaseTool<WaitForDownloadTool, WaitForDownloadParams>, IToolWithMetadata
 {
+    private readonly ConcurrentDictionary<int, byte> _downloadIds = [];
     public static string Name => "WaitForDownload";
 
     public static string Description => """
@@ -27,6 +29,15 @@ public class WaitForDownloadTool(IDownloadClient client) :
     public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(parameters);
+        if (!_downloadIds.TryAdd(typedParams.DownloadId, 0))
+        {
+            return new JsonObject
+            {
+                ["status"] = "without_effect",
+                ["message"] = "You are already waiting for this download to finish.",
+                ["downloadId"] = typedParams.DownloadId
+            };
+        }
 
         while (true)
         {
