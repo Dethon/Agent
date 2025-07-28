@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -15,7 +16,7 @@ public class Agent(
     bool enableSearch,
     ILogger<Agent> logger) : IAgent
 {
-    private CancellationTokenSource? _childCancelTokenSource;
+    private ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
     private readonly Lock _messagesLock = new();
 
     private readonly Dictionary<string, ITool> _tools =
@@ -134,22 +135,24 @@ public class Agent(
         }
     }
 
-    private CancellationToken GetChildCancellationToken(bool cancelCurrent, CancellationToken cancellationToken)
+    private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
     {
-        if (_childCancelTokenSource is null)
+        if (cancelPrevious)
         {
-            _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            return _childCancelTokenSource.Token;
+            foreach (var tokenSource in _cancelTokenSources.Values)
+            {
+                tokenSource.Cancel();
+                tokenSource.Dispose();
+            }
+            _cancelTokenSources.Clear();
         }
 
-        if (!cancelCurrent)
+        if (_cancelTokenSources.TryGetValue(cancellationToken, out var value))
         {
-            return _childCancelTokenSource.Token;
+            return value.Token;
         }
-        
-        _childCancelTokenSource.Cancel();
-        _childCancelTokenSource.Dispose();
-        _childCancelTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        return _childCancelTokenSource.Token;
+        var newSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _cancelTokenSources[cancellationToken] = newSource;
+        return newSource.Token;
     }
 }
