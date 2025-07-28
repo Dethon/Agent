@@ -58,8 +58,13 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
     private async Task<OpenRouterResponse?> SendPrompt(OpenRouterRequest request, CancellationToken cancellationToken)
     {
         var response = await client.PostAsJsonAsync("chat/completions", request, _jsonOptions, cancellationToken);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<OpenRouterResponse>(_jsonOptions, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<OpenRouterResponse>(_jsonOptions, cancellationToken);
+        }
+
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new HttpRequestException($"OpenRouter failed with code {response.StatusCode} and message: {content}");
     }
 
     private bool IsResponseSuccessful(OpenRouterResponse? response, OpenRouterRequest request)
