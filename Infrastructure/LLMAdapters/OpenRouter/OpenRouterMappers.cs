@@ -38,16 +38,19 @@ public static class MessageExtensions
             Role = message.Role.ToOpenRouterRoleString(),
             Content = message.Content,
             Reasoning = message.Reasoning,
-            ToolCalls = message.ToolCalls.Select(tc => new OpenRouterToolCall
-            {
-                Id = tc.Id,
-                Type = "function",
-                Function = new OpenRouterFunctionCall
-                {
-                    Name = tc.Name,
-                    Arguments = tc.Parameters?.ToJsonString()
-                }
-            }).ToArray()
+            ToolCalls = message.ToolCalls.Length == 0
+                ? null
+                : message.ToolCalls
+                    .Select(tc => new OpenRouterToolCall
+                    {
+                        Id = tc.Id,
+                        Type = "function",
+                        Function = new OpenRouterFunctionCall
+                        {
+                            Name = tc.Name,
+                            Arguments = tc.Parameters?.ToJsonString()
+                        }
+                    }).ToArray()
         };
     }
 
