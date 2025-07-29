@@ -52,7 +52,7 @@ if (isDaemon)
     await Monitoring.Start(host.Services);
     await host.StopAsync();
 }
-else
+if(prompt is not null)
 {
     using var host = builder.Build();
 
