@@ -1,0 +1,80 @@
+﻿services:
+  qbittorrent:
+    image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
+    container_name: qbittorrent
+    ports:
+      - "8001:8080"
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+    volumes:
+      - ./qbittorrent_config:/config
+      - ${DATA_PATH:-./data}/downloads:/downloads
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - QBT_LEGAL_NOTICE=confirm
+      - QBT_VERSION=5.1.2-2
+      - QBT_TORRENTING_PORT=6881
+      - QBT_WEBUI_PORT=8080
+      - TZ=UTC
+      - UMASK=002
+    stop_grace_period: 30m
+    restart: unless-stopped
+    networks:
+      - jackbot
+
+  filebrowser:
+    image: filebrowser/filebrowser:v2
+    container_name: filebrowser
+    ports:
+      - "8002:80"
+    volumes:
+      - ${DATA_PATH:-./data}:/srv
+      - ./filebrowser_database:/database
+      - ./filebrowser_config:/config
+    restart: unless-stopped
+    networks:
+      - jackbot
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:0.22.2207
+    container_name: jackett
+    ports:
+      - "8003:9117"
+    volumes:
+      - ./jackett_config:/config
+      - ./jackett_data/downloads:/downloads
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=UTC
+      - UMASK=022
+    restart: unless-stopped
+    networks:
+      - jackbot
+
+  plex:
+    image: lscr.io/linuxserver/plex:1.41.9
+    container_name: plex
+    network_mode: host
+    ports:
+      - "32400:32400"
+    volumes:
+      - ./plex_config:/config
+      - ${DATA_PATH:-./data}:/media
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=UTC
+      - VERSION=docker
+    restart: unless-stopped
+
+#  jack:
+#    image: cli
+#    build:
+#      context: .
+#      dockerfile: Cli/Dockerfile
+
+networks:
+  jackbot:
+  

@@ -4,8 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cli", "Cli\Cli.csproj", "{1
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{7788A812-0BCE-496B-8239-5DD459523096}"
 	ProjectSection(SolutionItems) = preProject
-		docker-compose.yml = docker-compose.yml
-		.env = .env
+		docker-compose.yml = DockerCompose/docker-compose.yml
+		.env = DockerCompose/.env
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Domain", "Domain\Domain.csproj", "{B9ADC0BE-BA3C-4801-8504-72AE7DD676D5}"
