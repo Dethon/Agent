@@ -1,6 +1,5 @@
 services:
   jack:
-    user: ""
     environment:
       - ASPNETCORE_ENVIRONMENT=DockerLocalDevelopment
     volumes:

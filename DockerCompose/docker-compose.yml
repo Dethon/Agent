@@ -71,11 +71,9 @@ services:
   jack:
     image: cli
     container_name: jack
-    user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/media/downloads
       - ${DATA_PATH:-./volumes/data}:/media
-      #- ./volumes/jack_config/appsettings.json:/app/appsettings.json
     build:
       context: ${JACK_CONTEXT}
       dockerfile: Cli/Dockerfile
