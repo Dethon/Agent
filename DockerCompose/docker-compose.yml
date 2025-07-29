@@ -76,7 +76,7 @@ services:
       - ${DATA_PATH:-./volumes/data}:/media
       - ./volumes/jack_config/appsettings.json:/app/appsettings.json
     build:
-      context: ..
+      context: ${JACK_CONTEXT}
       dockerfile: Cli/Dockerfile
 
 networks:
