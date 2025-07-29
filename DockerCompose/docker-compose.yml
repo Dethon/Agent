@@ -72,7 +72,7 @@ services:
     image: cli
     container_name: jack
     volumes:
-      - ${DATA_PATH:-./volumes/data}/downloads:/media/downloads
+      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
     build:
       context: ${JACK_CONTEXT}
