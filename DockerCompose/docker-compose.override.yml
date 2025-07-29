@@ -1,0 +1,7 @@
+services:
+  jack:
+    user: ""
+    environment:
+      - ASPNETCORE_ENVIRONMENT=DockerLocalDevelopment
+    volumes:
+      - ${APPDATA}/Microsoft/UserSecrets:/root/.microsoft/usersecrets:ro
