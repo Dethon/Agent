@@ -5,18 +5,25 @@ using Domain.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-if (args.Length == 0 || args.Any(x => x is "--help" or "-h"))
+if (args.Any(x => x is "--help" or "-h"))
 {
     Console.WriteLine("Usage: download-agent [options] [prompt]");
     Console.WriteLine("Options:");
     Console.WriteLine("-h, --help: Shows help information");
-    Console.WriteLine("-d: Runs in daemon mode listening to telegram messages");
+    Console.WriteLine("-p <prompt>: Runs a prompt in one shot mode");
     Console.WriteLine("--ssh: Uses ssh to access downloaded files");
     return;
 }
 
 var sshMode = args.Contains("--ssh");
-var isDaemon = args.Contains("-d");
+var promptIndex = Array.IndexOf(args, "-p");
+var prompt = promptIndex != -1 && promptIndex < args.Length - 1 ? args[promptIndex + 1] : null;
+var isDaemon = args.Length == 0 || promptIndex == -1;
+if (!isDaemon && prompt is null or "--ssh")
+{
+    Console.WriteLine($"Error: Prompt argument is invalid {prompt}");
+    return;
+}
 
 if (sshMode)
 {
@@ -50,7 +57,6 @@ else
     using var host = builder.Build();
 
     await host.StartAsync();
-    var prompt = args[^1];
     await Command.Start(host.Services, prompt);
     await host.StopAsync();
 }

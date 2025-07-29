@@ -1,21 +1,22 @@
-﻿services:
+﻿name: jackbot
+services:
   qbittorrent:
     image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
     container_name: qbittorrent
     ports:
-      - "8001:8080"
+      - "8001:8001"
       - "6881:6881/tcp"
       - "6881:6881/udp"
     volumes:
-      - ./qbittorrent_config:/config
-      - ${DATA_PATH:-./data}/downloads:/downloads
+      - ./volumes/qbittorrent_config:/config
+      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - QBT_LEGAL_NOTICE=confirm
       - QBT_VERSION=5.1.2-2
       - QBT_TORRENTING_PORT=6881
-      - QBT_WEBUI_PORT=8080
+      - QBT_WEBUI_PORT=8001
       - TZ=UTC
       - UMASK=002
     stop_grace_period: 30m
@@ -29,9 +30,9 @@
     ports:
       - "8002:80"
     volumes:
-      - ${DATA_PATH:-./data}:/srv
-      - ./filebrowser_database:/database
-      - ./filebrowser_config:/config
+      - ${DATA_PATH:-./volumes/data}:/srv
+      - ./volumes/filebrowser_database:/database
+      - ./volumes/filebrowser_config:/config
     restart: unless-stopped
     networks:
       - jackbot
@@ -42,8 +43,8 @@
     ports:
       - "8003:9117"
     volumes:
-      - ./jackett_config:/config
-      - ./jackett_data/downloads:/downloads
+      - ./volumes/jackett_config:/config
+      - ./volumes/jackett_data/downloads:/downloads
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -57,11 +58,9 @@
     image: lscr.io/linuxserver/plex:1.41.9
     container_name: plex
     network_mode: host
-    ports:
-      - "32400:32400"
     volumes:
-      - ./plex_config:/config
-      - ${DATA_PATH:-./data}:/media
+      - ./volumes/plex_config:/config
+      - ${DATA_PATH:-./volumes/data}:/media
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -69,11 +68,16 @@
       - VERSION=docker
     restart: unless-stopped
 
-#  jack:
-#    image: cli
-#    build:
-#      context: .
-#      dockerfile: Cli/Dockerfile
+  jack:
+    image: cli
+    container_name: jack
+    volumes:
+      - ${DATA_PATH:-./volumes/data}/downloads:/media/downloads
+      - ${DATA_PATH:-./volumes/data}:/media
+      - ./volumes/jack_config/appsettings.json:/app/appsettings.json
+    build:
+      context: ..
+      dockerfile: Cli/Dockerfile
 
 networks:
   jackbot:
