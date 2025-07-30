@@ -20,7 +20,7 @@ public class GetDownloadStatusTool(IDownloadClient client, SearchHistory history
     public static string Name => "GetDownloadStatus";
 
     public static string Description => """
-                                        Returns the status of download process that is currently happening.
+                                        Returns the status of download referenced by DownloadId.
                                         Progress is a percentage from 0 to 1, with 1 meaning 100%.
                                         DownSpeed and UpSpeed are in megabytes per second.
                                         Size is the total size of the download in megabytes.

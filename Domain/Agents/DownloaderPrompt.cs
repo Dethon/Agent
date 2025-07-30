@@ -77,10 +77,9 @@ public class DownloaderPrompt : IPrompt
                               in progress (up to several times until it succeeds) and/or cease all further actions.
                               You should not try to download anything else after the cancel request.
                               
-                              If the user asks for the status of the download/s you must reply with the name, progress, 
-                              speed, size and ETA of all current downloads. To obtain this information you must use the 
-                              tool called GetDownloadStatus. The user will probably just say "status" or "status?" you
-                              must understand that this means they want the status of the download/s.
+                              If the user says "status" or asks for the status of the download/s in any other way you 
+                              must reply with the name, progress, speed, size and ETA of all current downloads. 
+                              To obtain that information you must use the tool called GetDownloadStatus. 
                               
                               NEVER call the WaitForDownload tool multiple times for the same download id.
                               """
