@@ -1,0 +1,3 @@
+﻿services:
+  jack:
+    user: ${PUID:-1000}:${PGID:-1000}

@@ -13,5 +13,8 @@
         <Link>.dockerignore</Link>
       </Content>
       <Content Include=".env" />
+      <Content Include="docker-compose.override.prod.yml">
+        <DependentUpon>docker-compose.yml</DependentUpon>
+      </Content>
     </ItemGroup>
 </Project>
