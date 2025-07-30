@@ -1,5 +1,0 @@
-services:
-  jack:
-    user: "${PUID:-1000}:${PGID:-1000}"
-    volumes:
-      - ./volumes/jack_config/appsettings.json:/app/appsettings.json

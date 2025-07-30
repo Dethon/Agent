@@ -77,9 +77,11 @@ services:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
     build:
-      context: ${JACK_CONTEXT}
+      context: ${JACK_REPOSITORY_PATH}
       dockerfile: Cli/Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env
     networks:
       - jackbot
 
