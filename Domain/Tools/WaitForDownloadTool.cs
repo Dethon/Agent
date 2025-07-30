@@ -21,7 +21,10 @@ public class WaitForDownloadTool(IDownloadClient client) :
 
     public static string Description => """
                                         Monitors a download until it ends and sends a notification with instructions 
-                                        when it does.
+                                        when it does. 
+                                        This tool only returns when the download is completed.
+                                        From the moment this tool is called and until a value is returned the download 
+                                        is in progress.
                                         The DownloadId parameter is the id EXACTLY as it appears in the response of the
                                         FileDownload tool.
                                         """;

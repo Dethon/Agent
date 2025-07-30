@@ -22,11 +22,9 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
     public async Task<AgentResponse[]> Prompt(
         IEnumerable<Message> messages,
         IEnumerable<ToolDefinition> tools,
-        bool enableSearch = false,
         float? temperature = null,
         CancellationToken cancellationToken = default)
     {
-        var plugins = enableSearch ? new OpenRouterPlugin[] { new OpenRouterSearchPlugin() } : [];
         var mappedMessages = messages.Select(m => m.ToOpenRouterMessage()).ToArray();
         var mappedTools = tools.Select(t => t.ToOpenRouterTool()).ToArray();
 
@@ -38,7 +36,6 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
             var request = new OpenRouterRequest
             {
                 Model = _selectedModel,
-                Plugins = plugins,
                 Temperature = temperature,
                 Messages = mappedMessages,
                 Tools = mappedTools

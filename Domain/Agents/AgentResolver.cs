@@ -41,7 +41,7 @@ public class AgentResolver(
         {
             AgentType.Download => new Agent(
                 messages: await downloaderPrompt.Get(null),
-                largeLanguageModel: languageModel,
+                llm: languageModel,
                 tools:
                 [
                     fileSearchTool,
@@ -54,7 +54,6 @@ public class AgentResolver(
                     cleanupTool
                 ],
                 maxDepth: 10,
-                enableSearch: false,
                 logger: loggerFactory.CreateLogger<Agent>()),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };

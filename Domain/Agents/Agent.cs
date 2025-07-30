@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
@@ -10,17 +11,16 @@ namespace Domain.Agents;
 
 public class Agent(
     Message[] messages,
-    ILargeLanguageModel largeLanguageModel,
+    ILargeLanguageModel llm,
     ITool[] tools,
     int maxDepth,
-    bool enableSearch,
     ILogger<Agent> logger) : IAgent
 {
-    private ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
+    private readonly ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
     private readonly Lock _messagesLock = new();
 
-    private readonly Dictionary<string, ITool> _tools =
-        new(tools.ToDictionary(x => x.GetToolDefinition().Name, x => x));
+    private readonly Dictionary<string, ITool> _tools = tools.ToDictionary(x => x.GetToolDefinition().Name, x => x);
+    private readonly ToolDefinition[] _toolDefs = tools.Select(x => x.GetToolDefinition()).ToArray();
 
     private readonly List<Message> _messages = messages.ToList();
 
@@ -43,13 +43,8 @@ public class Agent(
     public IAsyncEnumerable<AgentResponse> Run(
         Message[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
     {
-        CancellationToken childCancellationToken;
-        lock (_messagesLock)
-        {
-            _messages.AddRange(prompts);
-            childCancellationToken = GetChildCancellationToken(cancelCurrentOperation, cancellationToken);
-        }
-
+        UpdateConversation(prompts);
+        var childCancellationToken = GetChildCancellationToken(cancelCurrentOperation, cancellationToken);
         return ExecuteAgentLoop(0.5f, childCancellationToken);
     }
 
@@ -57,45 +52,35 @@ public class Agent(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        List<Message> messageSnapshot;
-        lock (_messagesLock)
-        {
-            messageSnapshot = _messages.ToList();
-        }
-
-        var toolDefinitions = _tools.Values
-            .Select(x => x.GetToolDefinition())
-            .ToArray();
-
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
-            var responseMessages = await largeLanguageModel.Prompt(
-                messageSnapshot, toolDefinitions, enableSearch, temperature, cancellationToken);
-            foreach (var responseMessage in responseMessages)
+            var responses = await llm.Prompt(GetConversationSnapshot(), _toolDefs, temperature, cancellationToken);
+            foreach (var responseMessage in responses)
             {
                 yield return responseMessage;
             }
 
-            var toolTasks = responseMessages
-                .Where(x => x.StopReason == StopReason.ToolCalls)
-                .SelectMany(x => x.ToolCalls)
-                .Select(x => ResolveToolRequest(_tools[x.Name], x, cancellationToken))
-                .ToArray();
-            var toolResponseMessages = await Task.WhenAll(toolTasks);
-            lock (_messagesLock)
-            {
-                _messages.AddRange(responseMessages);
-                _messages.AddRange(toolResponseMessages);
-                messageSnapshot = _messages.ToList();
-            }
+            UpdateConversation(responses);
+            var toolResponses = await ProcessToolCalls(responses, cancellationToken);
+            UpdateConversation(toolResponses);
 
-            if (toolTasks.Length == 0)
+            if (toolResponses.Length == 0)
             {
                 yield break;
             }
         }
 
         throw new AgentLoopException($"Agent loop reached max depth ({maxDepth}). Anti-loop safeguard reached.");
+    }
+    
+    private async Task<ToolMessage[]> ProcessToolCalls(
+        IEnumerable<AgentResponse> responseMessages, CancellationToken cancellationToken)
+    {
+        var toolTasks = responseMessages
+            .Where(x => x.StopReason == StopReason.ToolCalls)
+            .SelectMany(x => x.ToolCalls)
+            .Select(x => ResolveToolRequest(_tools[x.Name], x, cancellationToken));
+        return await Task.WhenAll(toolTasks);
     }
 
     private async Task<ToolMessage> ResolveToolRequest(
@@ -154,5 +139,20 @@ public class Agent(
         var newSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancelTokenSources[cancellationToken] = newSource;
         return newSource.Token;
+    }
+
+    private ImmutableArray<Message> GetConversationSnapshot()
+    {
+        lock (_messagesLock)
+        {
+            return [.._messages];
+        }
+    }
+    private void UpdateConversation(IEnumerable<Message> messages)
+    {
+        lock (_messagesLock)
+        {
+            _messages.AddRange(messages);
+        }
     }
 }
