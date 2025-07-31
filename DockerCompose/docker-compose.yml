@@ -73,6 +73,7 @@ services:
   jack:
     image: cli
     container_name: jack
+    user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
