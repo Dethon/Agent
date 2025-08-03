@@ -8,6 +8,7 @@ using ModelContextProtocol.Server;
 
 namespace Infrastructure.MCP;
 
+// WIP
 public class McpTool<T> : McpServerTool where T : IToolWithMetadata
 {
     public override Tool ProtocolTool { get; } = new()

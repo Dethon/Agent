@@ -8,6 +8,7 @@ using Role = Domain.DTOs.Role;
 
 namespace Infrastructure.MCP;
 
+// WIP
 public class McpPrompt<T> : McpServerPrompt where T : IPrompt
 {
     public override Prompt ProtocolPrompt { get; } = new()
