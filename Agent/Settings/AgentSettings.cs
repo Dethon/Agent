@@ -2,7 +2,7 @@
 
 namespace Cli.Settings;
 
-public record AgentConfiguration
+public record AgentSettings
 {
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required JackettConfiguration Jackett { get; init; }

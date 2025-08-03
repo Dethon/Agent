@@ -24,7 +24,7 @@ public static class InjectorModule
             .AddScoped<SearchHistory>();
     }
 
-    public static IServiceCollection AddTools(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddTools(this IServiceCollection services, AgentSettings settings)
     {
         return services
             .AddTransient<DownloaderPrompt>()
@@ -52,7 +52,7 @@ public static class InjectorModule
                 settings.DownloadLocation));
     }
 
-    public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentSettings settings)
     {
         services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
             {
@@ -68,7 +68,7 @@ public static class InjectorModule
         return services;
     }
 
-    public static IServiceCollection AddQBittorrentClient(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddQBittorrentClient(this IServiceCollection services, AgentSettings settings)
     {
         var cookieContainer = new CookieContainer();
         services.AddHttpClient<IDownloadClient, QBittorrentDownloadClient>((httpClient, _) =>
@@ -96,7 +96,7 @@ public static class InjectorModule
     }
 
     public static IServiceCollection AddFileSystemClient(
-        this IServiceCollection services, AgentConfiguration settings, bool sshMode)
+        this IServiceCollection services, AgentSettings settings, bool sshMode)
     {
         if (!sshMode)
         {
@@ -110,7 +110,7 @@ public static class InjectorModule
             .AddTransient<IFileSystemClient, SshFileSystemClient>(_ => new SshFileSystemClient(sshClient));
     }
 
-    public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
     {
         services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
             {
@@ -127,7 +127,7 @@ public static class InjectorModule
         return services;
     }
 
-    public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentConfiguration settings)
+    public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentSettings settings)
     {
         return services
             .AddSingleton<TaskQueue>()

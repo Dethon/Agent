@@ -71,7 +71,7 @@ services:
     restart: unless-stopped
 
   jack:
-    image: cli
+    image: agent:latest
     container_name: jack
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
@@ -79,7 +79,7 @@ services:
       - ${DATA_PATH:-./volumes/data}:/media
     build:
       context: ${JACK_REPOSITORY_PATH}
-      dockerfile: Cli/Dockerfile
+      dockerfile: Agent/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
