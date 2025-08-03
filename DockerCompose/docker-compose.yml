@@ -53,6 +53,18 @@ services:
     restart: unless-stopped
     networks:
       - jackbot
+        
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=UTC
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
 
   plex:
     image: lscr.io/linuxserver/plex:1.41.9
