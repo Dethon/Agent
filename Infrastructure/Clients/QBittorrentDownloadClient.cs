@@ -66,7 +66,7 @@ public class QBittorrentDownloadClient(
             Progress = torrent["progress"]?.GetValue<double>() ?? 0.0,
             DownSpeed = (torrent["dlspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
             UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
-            Eta = (torrent["eta"]?.GetValue<long>() ?? 0) / 60,
+            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60,
         };
     }
 
