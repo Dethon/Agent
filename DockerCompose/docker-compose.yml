@@ -51,6 +51,8 @@ services:
       - TZ=UTC
       - UMASK=022
     restart: unless-stopped
+    depends_on:
+      - flaresolverr
     networks:
       - jackbot
         
@@ -64,6 +66,8 @@ services:
       - TZ=UTC
     ports:
       - "8191:8191"
+    networks:
+      - jackbot
     restart: unless-stopped
 
   plex:
@@ -97,6 +101,9 @@ services:
       - .env
     networks:
       - jackbot
+    depends_on:
+      - qbittorrent
+      - jackett
 
 networks:
   jackbot:
