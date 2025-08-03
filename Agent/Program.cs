@@ -1,5 +1,5 @@
-﻿using Cli.App;
-using Cli.Modules;
+﻿using Agent.App;
+using Agent.Modules;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);

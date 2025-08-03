@@ -4,7 +4,7 @@ using Domain.DTOs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Cli.App;
+namespace Agent.App;
 
 public static class Command
 {

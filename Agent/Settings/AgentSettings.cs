@@ -1,6 +1,6 @@
 ﻿using JetBrains.Annotations;
 
-namespace Cli.Settings;
+namespace Agent.Settings;
 
 public record AgentSettings
 {

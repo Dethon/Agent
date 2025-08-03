@@ -4,7 +4,7 @@ using Infrastructure.MCP;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Cli.Mcp;
+namespace Agent.Mcp;
 
 public class McpServers
 {

@@ -1,6 +1,6 @@
 ﻿using System.Net;
-using Cli.App;
-using Cli.Settings;
+using Agent.App;
+using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
@@ -14,7 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 
-namespace Cli.Modules;
+namespace Agent.Modules;
 
 public static class InjectorModule
 {

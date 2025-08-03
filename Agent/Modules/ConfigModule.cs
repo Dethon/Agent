@@ -1,11 +1,11 @@
-﻿using Cli.Settings;
+﻿using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.CommandLine;
 
-namespace Cli.Modules;
+namespace Agent.Modules;
 
 public static class ConfigModule
 {

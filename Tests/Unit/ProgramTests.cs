@@ -1,4 +1,4 @@
-using Cli.Modules;
+using Agent.Modules;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
