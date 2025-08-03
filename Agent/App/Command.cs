@@ -11,8 +11,8 @@ public static class Command
     public static async Task Start(IServiceProvider services, string prompt)
     {
         await using var scope = services.CreateAsyncScope();
-        var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
         var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
+        var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
 
         var agent = await agentResolver.Resolve(AgentType.Download);
         var responses = agent.Run(prompt, true, lifetime.ApplicationStopping);
