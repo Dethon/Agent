@@ -3,8 +3,7 @@ using Renci.SshNet;
 
 namespace Infrastructure.Wrappers;
 
-[ExcludeFromCodeCoverage]
-public class SshClientWrapper : ISshClientWrapper
+public sealed class SshClientWrapper : ISshClientWrapper
 {
     private readonly SshClient _sshClient;
     public bool IsConnected => _sshClient.IsConnected;
