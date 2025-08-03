@@ -28,6 +28,10 @@ public static class ConfigModule
     public static IServiceCollection ConfigureJack(
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
+        if (cmdParams.IsDaemon)
+        {
+            services = services.AddWorkers(cmdParams.WorkersCount);
+        }
         return services
             .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
