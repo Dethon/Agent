@@ -52,6 +52,7 @@ public class Agent(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        List<Task<Message?>> longRunningTasks = [];
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responses = await llm.Prompt(GetConversationSnapshot(), _toolDefs, temperature, cancellationToken);
@@ -60,11 +61,14 @@ public class Agent(
                 yield return responseMessage;
             }
 
-            UpdateConversation(responses);
             var toolResponses = await ProcessToolCalls(responses, cancellationToken);
-            UpdateConversation(toolResponses);
-
-            if (toolResponses.Length == 0)
+            UpdateConversation([..responses, ..toolResponses]);
+            longRunningTasks.AddRange(toolResponses
+                .Select(x => x.LongRunningTask)
+                .Where(x => x is not null)
+                .Cast<Task<Message?>>());
+            
+            if (toolResponses.Length == 0 && !(await TryProcessLongRunningTasks(longRunningTasks)))
             {
                 yield break;
             }
@@ -89,16 +93,11 @@ public class Agent(
         var definition = tool.GetToolDefinition();
         try
         {
-            var toolResponse = await tool.Run(toolCall.Parameters, cancellationToken);
+            var toolMessage = await tool.Run(toolCall, cancellationToken);
             logger.LogInformation(
                 "Tool {ToolName} with {Params} : {toolResponse}",
-                definition.Name, toolCall.Parameters, toolResponse);
-            return new ToolMessage
-            {
-                Role = Role.Tool,
-                Content = toolResponse.ToJsonString(),
-                ToolCallId = toolCall.Id
-            };
+                definition.Name, toolCall.Parameters, toolMessage.Content);
+            return toolMessage;
         }
         catch (Exception ex)
         {
@@ -118,6 +117,16 @@ public class Agent(
                 ToolCallId = toolCall.Id
             };
         }
+    }
+    
+    private async Task<bool> TryProcessLongRunningTasks(IEnumerable<Task<Message?>> longRunningTasks)
+    {
+        var messages = (await Task.WhenAll(longRunningTasks))
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .ToArray();
+        UpdateConversation(messages);
+        return messages.Length > 0;
     }
 
     private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)

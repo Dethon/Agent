@@ -13,6 +13,7 @@ public record Message
 public record ToolMessage : Message
 {
     public required string ToolCallId { get; init; }
+    public Task<Message?>? LongRunningTask { get; init; }
 }
 
 public record ToolRequestMessage : Message
@@ -34,5 +35,15 @@ public record ToolCall
     public override string ToString()
     {
         return $"{Name}({Parameters?.ToJsonString(_options)})";
+    }
+
+    public ToolMessage ToToolMessage(JsonNode jsonResponse)
+    {
+        return new ToolMessage
+        {
+            Role = Role.Tool,
+            Content = jsonResponse.ToJsonString(),
+            ToolCallId = Id
+        };
     }
 }

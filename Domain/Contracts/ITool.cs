@@ -5,7 +5,7 @@ namespace Domain.Contracts;
 
 public interface ITool
 {
-    Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
+    Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
     ToolDefinition GetToolDefinition();
 }
 

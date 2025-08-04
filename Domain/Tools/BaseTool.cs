@@ -9,7 +9,7 @@ public abstract class BaseTool<TSelf, TParams> : ITool where TSelf : IToolWithMe
 {
     public static Type ParamsType => typeof(TParams);
 
-    public abstract Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
+    public abstract Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
 
     public ToolDefinition GetToolDefinition()
     {
@@ -45,7 +45,7 @@ public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
 {
     public static Type? ParamsType => null;
 
-    public abstract Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default);
+    public abstract Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
 
     public ToolDefinition GetToolDefinition()
     {

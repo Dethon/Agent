@@ -1,5 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using JetBrains.Annotations;
 
 namespace Domain.Tools;
@@ -22,19 +23,19 @@ public class CleanupTool(
                                         It can also be use to cancel a download if the user requests it.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
         var downloadPath = $"{baseDownloadLocation}/{typedParams.DownloadId}";
 
         await downloadClient.Cleanup(typedParams.DownloadId, cancellationToken);
         await fileSystemClient.RemoveDirectory(downloadPath, cancellationToken);
 
-        return new JsonObject
+        return toolCall.ToToolMessage(new JsonObject
         {
             ["status"] = "success",
             ["message"] = "Download leftovers removed successfully",
             ["downloadId"] = typedParams.DownloadId
-        };
+        });
     }
 }

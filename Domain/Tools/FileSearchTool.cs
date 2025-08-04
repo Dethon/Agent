@@ -44,18 +44,18 @@ public class FileSearchTool(
                                         not include too many details.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
 
         var results = await client.Search(typedParams.SearchString, cancellationToken);
         history.Add(results);
-        return new JsonObject
+        return toolCall.ToToolMessage(new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File search completed successfully",
             ["totalResults"] = results.Length,
             ["results"] = JsonSerializer.SerializeToNode(results.Select(x => new SearchResultToSerialize(x)))
-        };
+        });
     }
 }

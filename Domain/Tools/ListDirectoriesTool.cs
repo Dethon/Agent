@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools;
 
@@ -16,10 +17,11 @@ public class ListDirectoriesTool(
                                         downloaded files should be stored.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
         var result = await client.ListDirectoriesIn(libraryPath, cancellationToken);
-        var jsonResult = JsonSerializer.SerializeToNode(result);
-        return jsonResult ?? throw new InvalidOperationException("Failed to serialize ListDirectories");
+        var jsonResult = JsonSerializer.SerializeToNode(result) ?? 
+                         throw new InvalidOperationException("Failed to serialize ListDirectories");
+        return toolCall.ToToolMessage(jsonResult);
     }
 }

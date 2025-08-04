@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using Infrastructure.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -21,10 +22,16 @@ public class McpTool<T> : McpServerTool where T : IToolWithMetadata
     public override async ValueTask<CallToolResponse> InvokeAsync(
         RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken = default)
     {
-        var jsonNode = request.Params?.Arguments != null
-            ? JsonNode.Parse(JsonSerializer.Serialize(request.Params.Arguments))
-            : null;
-        var result = await request.Services!.GetRequiredService<T>().Run(jsonNode, cancellationToken);
+        var toolCall = new ToolCall
+        {
+            Name = "",
+            Id = "",
+            Parameters = request.Params?.Arguments != null
+                ? JsonNode.Parse(JsonSerializer.Serialize(request.Params.Arguments))
+                : null
+        };
+            
+        var result = await request.Services!.GetRequiredService<T>().Run(toolCall, cancellationToken);
         return new CallToolResponse
         {
             IsError = false,
@@ -33,7 +40,7 @@ public class McpTool<T> : McpServerTool where T : IToolWithMetadata
                 new Content
                 {
                     Type = "text",
-                    Text = result.ToJsonString()
+                    Text = result.Content
                 }
             ]
         };

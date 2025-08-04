@@ -27,9 +27,9 @@ public class GetDownloadStatusTool(IDownloadClient client, SearchHistory history
                                         Eta is the estimated time until the completion of the download on minutes.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
 
         while (true)
         {
@@ -40,14 +40,14 @@ public class GetDownloadStatusTool(IDownloadClient client, SearchHistory history
                 throw new MissingDownloadException("The download is missing, it probably got removed externally");
             }
 
-            return new JsonObject
+            return toolCall.ToToolMessage(new JsonObject
             {
                 ["status"] = "success",
                 ["message"] = JsonSerializer.Serialize(downloadItem with
                 {
                     Title = history.History[downloadItem.Id].Title
                 })
-            };
+            });
         }
     }
 

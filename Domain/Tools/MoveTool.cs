@@ -1,5 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using JetBrains.Annotations;
 
 namespace Domain.Tools;
@@ -25,9 +26,9 @@ public class MoveTool(
                                         All necessary parent directories will be created automatically.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
 
         if (!typedParams.SourcePath.StartsWith(libraryPath) ||
             !typedParams.DestinationPath.StartsWith(libraryPath))
@@ -40,12 +41,12 @@ public class MoveTool(
         }
 
         await client.Move(typedParams.SourcePath, typedParams.DestinationPath, cancellationToken);
-        return new JsonObject
+        return toolCall.ToToolMessage(new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File moved successfully",
             ["source"] = typedParams.SourcePath,
             ["destination"] = typedParams.DestinationPath
-        };
+        });
     }
 }

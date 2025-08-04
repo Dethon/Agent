@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using JetBrains.Annotations;
 
 namespace Domain.Tools;
@@ -24,9 +25,9 @@ public class ListFilesTool(
                                         the correct place and name for the downloaded files.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
         if (!typedParams.Path.StartsWith(libraryPath))
         {
             throw new ArgumentException($"""
@@ -37,7 +38,8 @@ public class ListFilesTool(
         }
 
         var result = await client.ListFilesIn(typedParams.Path, cancellationToken);
-        var jsonResult = JsonSerializer.SerializeToNode(result);
-        return jsonResult ?? throw new InvalidOperationException("Failed to serialize ListFiles");
+        var jsonResult = JsonSerializer.SerializeToNode(result) ?? 
+                         throw new InvalidOperationException("Failed to serialize ListFiles");
+        return toolCall.ToToolMessage(jsonResult); 
     }
 }

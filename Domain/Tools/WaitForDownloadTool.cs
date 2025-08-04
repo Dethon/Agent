@@ -29,17 +29,17 @@ public class WaitForDownloadTool(IDownloadClient client) :
                                         FileDownload tool.
                                         """;
 
-    public override async Task<JsonNode> Run(JsonNode? parameters, CancellationToken cancellationToken = default)
+    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
-        var typedParams = ParseParams(parameters);
+        var typedParams = ParseParams(toolCall.Parameters);
         if (!_downloadIds.TryAdd(typedParams.DownloadId, 0))
         {
-            return new JsonObject
+            return toolCall.ToToolMessage(new JsonObject
             {
                 ["status"] = "without_effect",
                 ["message"] = "You are already waiting for this download to finish.",
                 ["downloadId"] = typedParams.DownloadId
-            };
+            });
         }
 
         while (true)
@@ -53,7 +53,7 @@ public class WaitForDownloadTool(IDownloadClient client) :
 
             if (downloadItem.Status == DownloadStatus.Completed)
             {
-                return new JsonObject
+                return toolCall.ToToolMessage(new JsonObject
                 {
                     ["status"] = "success",
                     ["message"] = $"""
@@ -69,7 +69,7 @@ public class WaitForDownloadTool(IDownloadClient client) :
                                    Hint: Use the ListDirectories, ListFiles, Move and Cleanup tools.
                                    """,
                     ["downloadId"] = typedParams.DownloadId
-                };
+                });
             }
 
             await Task.Delay(1000, cancellationToken);

@@ -16,16 +16,11 @@ public class QBittorrentDownloadClient(
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
         await CallApi(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
-        for (var i = 0; i < 100; i++)
+        var downloadItem = await GetDownloadItem(id, 100, 500, cancellationToken);
+        if (downloadItem is null)
         {
-            await Task.Delay(500, cancellationToken);
-            if (await GetSingleTorrent($"{id}", cancellationToken) is not null)
-            {
-                return;
-            }
+            throw new InvalidOperationException("Torrent cannot be added, try another link. Search again if necessary");
         }
-
-        throw new InvalidOperationException("Torrent cannot be added, try another link. Search again if necessary");
     }
 
     public async Task Cleanup(int id, CancellationToken cancellationToken = default)
@@ -68,6 +63,23 @@ public class QBittorrentDownloadClient(
             UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
             Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60,
         };
+    }
+    
+    public async Task<DownloadItem?> GetDownloadItem(
+        int id, int retries, int delay, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var downloadItem = await GetDownloadItem(id, cancellationToken);
+            if (downloadItem != null)
+            {
+                return downloadItem;
+            }
+
+            await Task.Delay(delay, cancellationToken);
+        }
+
+        return null;
     }
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
