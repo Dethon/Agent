@@ -49,12 +49,11 @@ public class DownloaderPrompt : IPrompt
                               You are allowed to automatically start the download of the selected file/s, the ones you 
                               find most appropriate. DO NOT ask the user to confirm the choice. 
 
-                              After starting the download you MUST ALWAYS wait for it to finish by calling the tool 
-                              provided for that. You should also let the user know about the files you chose to download
-                              and why.
-                              After the download finishes you will organize it within the library, to do that you should
-                              first explore the library structure, both directories and files, and then move files 
-                              accordingly.
+                              You should let the user know about the files you chose to download and why.
+                              After the download finishes you will receive a notification. Then you should organize the 
+                              download within the library.
+                              To do that you should first explore the library structure, both directories and files, and 
+                              then move files accordingly.
 
                               You must keep the same structure and do not mix up files with directories, if an existing 
                               subdirectory only contains files, do not move directories into it and if it contains 
@@ -80,8 +79,6 @@ public class DownloaderPrompt : IPrompt
                               If the user says "status" or asks for the status of the download/s in any other way you 
                               must reply with the name, progress, speed, size and ETA of all current downloads. 
                               To obtain that information you must use the tool called GetDownloadStatus. 
-                              
-                              NEVER call the WaitForDownload tool multiple times for the same download id.
                               """
                 }
             });

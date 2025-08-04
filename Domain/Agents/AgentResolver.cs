@@ -10,7 +10,6 @@ public class AgentResolver(
     ILargeLanguageModel languageModel,
     FileDownloadTool fileDownloadTool,
     FileSearchTool fileSearchTool,
-    WaitForDownloadTool waitForDownloadTool,
     GetDownloadStatusTool getDownloadStatusTool,
     MoveTool moveTool,
     CleanupTool cleanupTool,
@@ -46,7 +45,6 @@ public class AgentResolver(
                 [
                     fileSearchTool,
                     fileDownloadTool,
-                    waitForDownloadTool,
                     getDownloadStatusTool,
                     listDirectoriesTool,
                     listFilesTool,

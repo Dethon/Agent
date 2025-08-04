@@ -45,7 +45,6 @@ public class ProgramTests
 
         provider.GetService<FileSearchTool>().ShouldNotBeNull();
         provider.GetService<FileDownloadTool>().ShouldNotBeNull();
-        provider.GetService<WaitForDownloadTool>().ShouldNotBeNull();
         provider.GetService<ListDirectoriesTool>().ShouldNotBeNull();
         provider.GetService<ListFilesTool>().ShouldNotBeNull();
         provider.GetService<MoveTool>().ShouldNotBeNull();

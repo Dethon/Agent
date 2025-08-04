@@ -21,9 +21,10 @@ public class FileDownloadTool(
     public static string Name => "FileDownload";
 
     public static string Description => """
-                                        Download a file from the internet using a file id that can be obtained from the FileSearch 
-                                        tool. The SearchResultId parameter is the id EXACTLY as it appears in the response of the
-                                        FileSearch tool
+                                        Download a file from the internet using a file id that can be obtained from the 
+                                        FileSearch tool. 
+                                        The SearchResultId parameter is the id EXACTLY as it appears in the response of 
+                                        the FileSearch tool.
                                         """;
 
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)

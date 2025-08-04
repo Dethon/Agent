@@ -33,7 +33,6 @@ public static class InjectorModule
                 sp.GetRequiredService<IDownloadClient>(),
                 sp.GetRequiredService<SearchHistory>(),
                 settings.DownloadLocation))
-            .AddTransient<WaitForDownloadTool>()
             .AddTransient<GetDownloadStatusTool>(sp => new GetDownloadStatusTool(
                 sp.GetRequiredService<IDownloadClient>(),
                 sp.GetRequiredService<SearchHistory>()))

@@ -36,7 +36,7 @@ public class McpServers
                     new McpTool<ListDirectoriesTool>(),
                     new McpTool<ListFilesTool>(),
                     new McpTool<MoveTool>(),
-                    new McpTool<WaitForDownloadTool>()
+                    new McpTool<GetDownloadStatusTool>()
                 ]
             }
         }
