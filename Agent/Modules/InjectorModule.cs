@@ -10,6 +10,7 @@ using Infrastructure.Clients;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
 using Infrastructure.Wrappers;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
@@ -31,7 +32,7 @@ public static class InjectorModule
             .AddTransient<FileSearchTool>()
             .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
                 sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<SearchHistory>(),
+                sp.GetRequiredService<IMemoryCache>(),
                 settings.DownloadLocation))
             .AddTransient<GetDownloadStatusTool>(sp => new GetDownloadStatusTool(
                 sp.GetRequiredService<IDownloadClient>(),

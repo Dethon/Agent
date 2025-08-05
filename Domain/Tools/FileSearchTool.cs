@@ -1,61 +1,36 @@
-﻿using System.Text.Json;
+﻿using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
-using Domain.Tools.Attachments;
-using JetBrains.Annotations;
+using Microsoft.Extensions.Caching.Memory;
+using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
-[UsedImplicitly]
-public record FileSearchParams
+[McpServerToolType]
+public class FileSearchTool(ISearchClient client, IMemoryCache cache)
 {
-    public required string SearchString { get; [UsedImplicitly] init; }
-}
+    private const string Name = "FileSearch";
 
-public record SearchResultToSerialize
-{
-    public string Title { [UsedImplicitly] get; init; }
-    public string? Category { [UsedImplicitly] get; init; }
-    public int Id { [UsedImplicitly] get; init; }
-    public long? Size { [UsedImplicitly] get; init; }
-    public long? Seeders { [UsedImplicitly] get; init; }
-    public long? Peers { [UsedImplicitly] get; init; }
+    private const string Description = """
+                                       Search for a file in the internet using a search string. Search strings must be concise and
+                                       not include too many details.
+                                       """;
 
-    public SearchResultToSerialize(SearchResult result)
+    [McpServerTool(Name = Name), Description(Description)]
+    public async Task<string> Run(string searchString, CancellationToken cancellationToken)
     {
-        Title = result.Title;
-        Category = result.Category;
-        Id = result.Id;
-        Size = result.Size;
-        Seeders = result.Seeders;
-        Peers = result.Peers;
-    }
-}
-
-public class FileSearchTool(
-    ISearchClient client,
-    SearchHistory history) : BaseTool<FileSearchTool, FileSearchParams>, IToolWithMetadata
-{
-    public static string Name => "FileSearch";
-
-    public static string Description => """
-                                        Search for a file in the internet using a search string. Search strings must be concise and
-                                        not include too many details.
-                                        """;
-
-    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
-    {
-        var typedParams = ParseParams(toolCall.Parameters);
-
-        var results = await client.Search(typedParams.SearchString, cancellationToken);
-        history.Add(results);
-        return toolCall.ToToolMessage(new JsonObject
+        var results = await client.Search(searchString, cancellationToken);
+        foreach (var result in results)
+        {
+            cache.Set(result.Id, result, DateTimeOffset.UtcNow.AddMonths(2));
+        }
+        return new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File search completed successfully",
             ["totalResults"] = results.Length,
-            ["results"] = JsonSerializer.SerializeToNode(results.Select(x => new SearchResultToSerialize(x)))
-        });
+            ["results"] = JsonSerializer.SerializeToNode(results)
+        }.ToJsonString();
     }
 }

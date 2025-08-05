@@ -1,34 +1,27 @@
-﻿using System.Text.Json;
-using System.Text.Json.Nodes;
+﻿using System.ComponentModel;
+using System.Text.Json;
 using Domain.Contracts;
-using Domain.DTOs;
-using JetBrains.Annotations;
+using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
-public record ListFilesParams
+[McpServerToolType]
+public class ListFilesTool(IFileSystemClient client, string libraryPath)
 {
-    public required string Path { get; [UsedImplicitly] init; }
-}
+    private const string Name = "ListFiles";
 
-public class ListFilesTool(
-    IFileSystemClient client,
-    string libraryPath) : BaseTool<ListFilesTool, ListFilesParams>, IToolWithMetadata
-{
-    public static string Name => "ListFiles";
+    private const string Description = """
+                                       Lists all files in the specified directory. It only returns files, not 
+                                       directories.
+                                       The path must be absolute and derived from the ListDirectories tool.
+                                       Must be used to explore the relevant directories within the library and find 
+                                       the correct place and name for the downloaded files.
+                                       """;
 
-    public static string Description => """
-                                        Lists all files in the specified directory. It only returns files, not 
-                                        directories.
-                                        The path must be absolute and derived from the ListDirectories tool.
-                                        Must be used to explore the relevant directories within the library and find 
-                                        the correct place and name for the downloaded files.
-                                        """;
-
-    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
+    [McpServerTool(Name = Name), Description(Description)]
+    public async Task<string> Run(string path, CancellationToken cancellationToken)
     {
-        var typedParams = ParseParams(toolCall.Parameters);
-        if (!typedParams.Path.StartsWith(libraryPath))
+        if (path.StartsWith(libraryPath))
         {
             throw new ArgumentException($"""
                                          {typeof(ListFilesTool)} parameter must be absolute paths derived from the 
@@ -37,9 +30,9 @@ public class ListFilesTool(
                                          """);
         }
 
-        var result = await client.ListFilesIn(typedParams.Path, cancellationToken);
+        var result = await client.ListFilesIn(path, cancellationToken);
         var jsonResult = JsonSerializer.SerializeToNode(result) ?? 
                          throw new InvalidOperationException("Failed to serialize ListFiles");
-        return toolCall.ToToolMessage(jsonResult); 
+        return jsonResult.ToJsonString(); 
     }
 }
