@@ -22,24 +22,40 @@ public class McpTool<T> : McpServerTool where T : IToolWithMetadata
     public override async ValueTask<CallToolResult> InvokeAsync(
         RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken = default)
     {
-        var toolCall = new ToolCall
+        try
+        {
+            var toolCall = GetToolCall(request.Params?.Arguments);
+            var result = await request.Services!.GetRequiredService<T>().Run(toolCall, cancellationToken);
+            return GetToolResult(result.Content, false);
+        }
+        catch (Exception ex)
+        {
+            return GetToolResult(ex.Message, true);
+        }
+    }
+
+    private static ToolCall GetToolCall(IReadOnlyDictionary<string, JsonElement>? arguments)
+    {
+        return new ToolCall
         {
             Name = "",
             Id = "",
-            Parameters = request.Params?.Arguments != null
-                ? JsonNode.Parse(JsonSerializer.Serialize(request.Params.Arguments))
+            Parameters = arguments != null
+                ? JsonNode.Parse(JsonSerializer.Serialize(arguments))
                 : null
         };
+    }
 
-        var result = await request.Services!.GetRequiredService<T>().Run(toolCall, cancellationToken);
+    private static CallToolResult GetToolResult(string message, bool isError)
+    {
         return new CallToolResult
         {
-            IsError = false,
+            IsError = isError,
             Content =
             [
                 new TextContentBlock
                 {
-                    Text = result.Content
+                    Text = message
                 }
             ]
         };
