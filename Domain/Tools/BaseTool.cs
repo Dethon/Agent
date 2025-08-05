@@ -5,18 +5,30 @@ using Domain.DTOs;
 
 namespace Domain.Tools;
 
-public abstract class BaseTool<TSelf, TParams> : ITool where TSelf : IToolWithMetadata where TParams : class
+public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
 {
-    public static Type ParamsType => typeof(TParams);
+    public static Type? ParamsType => null;
 
     public abstract Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
 
-    public ToolDefinition GetToolDefinition()
+    public virtual ToolDefinition GetToolDefinition()
     {
         return new ToolDefinition
         {
             Name = TSelf.Name,
-            Description = TSelf.Description,
+            Description = TSelf.Description
+        };
+    }
+}
+
+public abstract class BaseTool<TSelf, TParams> : BaseTool<TSelf> where TSelf : IToolWithMetadata where TParams : class
+{
+    public static new Type ParamsType => typeof(TParams);
+
+    public override ToolDefinition GetToolDefinition()
+    {
+        return base.GetToolDefinition() with
+        {
             ParamsType = typeof(TParams)
         };
     }
@@ -38,21 +50,5 @@ public abstract class BaseTool<TSelf, TParams> : ITool where TSelf : IToolWithMe
         {
             throw new ArgumentException($"Failed to deserialize parameters for {typeName}", nameof(parameters), ex);
         }
-    }
-}
-
-public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
-{
-    public static Type? ParamsType => null;
-
-    public abstract Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
-
-    public ToolDefinition GetToolDefinition()
-    {
-        return new ToolDefinition
-        {
-            Name = TSelf.Name,
-            Description = TSelf.Description
-        };
     }
 }
