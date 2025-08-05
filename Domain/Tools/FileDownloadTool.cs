@@ -1,7 +1,6 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Exceptions;
 using Domain.Tools.Attachments;
 using JetBrains.Annotations;
 
@@ -31,7 +30,7 @@ public class FileDownloadTool(
     {
         var typedParams = ParseParams(toolCall.Parameters);
         await CheckDownloadNotAdded(typedParams.SearchResultId, cancellationToken);
-        
+
         var savePath = $"{baseDownloadLocation}/{typedParams.SearchResultId}";
         var itemToDownload = history.History[typedParams.SearchResultId];
         await client.Download(
@@ -62,8 +61,8 @@ public class FileDownloadTool(
             throw new InvalidOperationException("Download with this id already exists, try another id");
         }
     }
-    
-    private async Task<Message?> GetNotification(int downloadId, CancellationToken cancellationToken)
+
+    private async Task<Message> GetNotification(int downloadId, CancellationToken cancellationToken)
     {
         while (true)
         {
@@ -71,7 +70,11 @@ public class FileDownloadTool(
             var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
             if (downloadItem == null)
             {
-                throw new MissingDownloadException("The download is missing, it probably got removed externally");
+                return new Message
+                {
+                    Role = Role.User,
+                    Content = $"The download with id {downloadId} is missing, it probably got removed externally."
+                };
             }
 
             if (downloadItem.Status == DownloadStatus.Completed)
@@ -93,6 +96,7 @@ public class FileDownloadTool(
                                """
                 };
             }
+
             await Task.Delay(1000, cancellationToken);
         }
     }

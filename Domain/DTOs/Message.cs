@@ -13,7 +13,7 @@ public record Message
 public record ToolMessage : Message
 {
     public required string ToolCallId { get; init; }
-    public Task<Message?>? LongRunningTask { get; init; }
+    public Task<Message>? LongRunningTask { get; init; }
 }
 
 public record ToolRequestMessage : Message
@@ -28,6 +28,7 @@ public record ToolCall
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
+
     public required string Id { get; init; }
     public required string Name { get; init; }
     public JsonNode? Parameters { get; init; }

@@ -52,7 +52,7 @@ public class Agent(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        List<Task<Message?>> longRunningTasks = [];
+        List<Task<Message>> longRunningTasks = [];
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responses = await llm.Prompt(GetConversationSnapshot(), _toolDefs, temperature, cancellationToken);
@@ -66,17 +66,25 @@ public class Agent(
             longRunningTasks.AddRange(toolResponses
                 .Select(x => x.LongRunningTask)
                 .Where(x => x is not null)
-                .Cast<Task<Message?>>());
-            
-            if (toolResponses.Length == 0 && !(await TryProcessLongRunningTasks(longRunningTasks)))
+                .Cast<Task<Message>>());
+
+            switch (toolResponses.Length)
             {
-                yield break;
+                case 0 when longRunningTasks.Count == 0:
+                    yield break;
+                case 0 when longRunningTasks.Count > 0:
+                {
+                    var completedTask = await Task.WhenAny(longRunningTasks);
+                    longRunningTasks.Remove(completedTask);
+                    UpdateConversation([await completedTask]);
+                    break;
+                }
             }
         }
 
         throw new AgentLoopException($"Agent loop reached max depth ({maxDepth}). Anti-loop safeguard reached.");
     }
-    
+
     private async Task<ToolMessage[]> ProcessToolCalls(
         IEnumerable<AgentResponse> responseMessages, CancellationToken cancellationToken)
     {
@@ -118,16 +126,6 @@ public class Agent(
             };
         }
     }
-    
-    private async Task<bool> TryProcessLongRunningTasks(IEnumerable<Task<Message?>> longRunningTasks)
-    {
-        var messages = (await Task.WhenAll(longRunningTasks))
-            .Where(x => x is not null)
-            .Select(x => x!)
-            .ToArray();
-        UpdateConversation(messages);
-        return messages.Length > 0;
-    }
 
     private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
     {
@@ -138,6 +136,7 @@ public class Agent(
                 tokenSource.Cancel();
                 tokenSource.Dispose();
             }
+
             _cancelTokenSources.Clear();
         }
 
@@ -145,6 +144,7 @@ public class Agent(
         {
             return value.Token;
         }
+
         var newSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancelTokenSources[cancellationToken] = newSource;
         return newSource.Token;
@@ -157,6 +157,7 @@ public class Agent(
             return [.._messages];
         }
     }
+
     private void UpdateConversation(IEnumerable<Message> messages)
     {
         lock (_messagesLock)

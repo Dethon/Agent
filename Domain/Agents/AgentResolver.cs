@@ -18,6 +18,8 @@ public class AgentResolver(
     IMemoryCache cache,
     ILoggerFactory loggerFactory) : IAgentResolver
 {
+    private const int MaxDepth = 20;
+
     public async Task<IAgent> Resolve(AgentType agentType, int? threadId = null)
     {
         if (threadId is null)
@@ -30,7 +32,7 @@ public class AgentResolver(
         {
             throw new InvalidOperationException($"{agentType} for thread {threadId} found in cache but was null.");
         }
-        
+
         return agent;
     }
 
@@ -51,7 +53,7 @@ public class AgentResolver(
                     moveTool,
                     cleanupTool
                 ],
-                maxDepth: 10,
+                maxDepth: MaxDepth,
                 logger: loggerFactory.CreateLogger<Agent>()),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
