@@ -19,7 +19,7 @@ public class McpTool<T> : McpServerTool where T : IToolWithMetadata
         InputSchema = ConvertToJsonElement(JsonSchema.CreateParametersSchema(T.ParamsType))
     };
 
-    public override async ValueTask<CallToolResponse> InvokeAsync(
+    public override async ValueTask<CallToolResult> InvokeAsync(
         RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken = default)
     {
         var toolCall = new ToolCall
@@ -30,16 +30,15 @@ public class McpTool<T> : McpServerTool where T : IToolWithMetadata
                 ? JsonNode.Parse(JsonSerializer.Serialize(request.Params.Arguments))
                 : null
         };
-            
+
         var result = await request.Services!.GetRequiredService<T>().Run(toolCall, cancellationToken);
-        return new CallToolResponse
+        return new CallToolResult
         {
             IsError = false,
             Content =
             [
-                new Content
+                new TextContentBlock
                 {
-                    Type = "text",
                     Text = result.Content
                 }
             ]

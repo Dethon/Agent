@@ -38,9 +38,8 @@ public class McpPrompt<T> : McpServerPrompt where T : IPrompt
                     Role.Assistant => ModelContextProtocol.Protocol.Role.Assistant,
                     _ => ModelContextProtocol.Protocol.Role.User
                 },
-                Content = new Content
+                Content = new TextContentBlock
                 {
-                    Type = "text",
                     Text = x.Content
                 }
             }).ToList()
