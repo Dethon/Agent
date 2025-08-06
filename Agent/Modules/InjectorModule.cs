@@ -7,7 +7,7 @@ using Domain.Monitor;
 using Domain.Tools;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
-using Infrastructure.LLMAdapters.OpenRouter;
+using Infrastructure.LLMAdapters;
 using Infrastructure.Wrappers;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,19 +35,11 @@ public static class InjectorModule
 
     public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
     {
-        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
-                httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
-                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Models);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromMinutes(1));
-
-        return services;
+        return services.AddSingleton<ILargeLanguageModel, OpenAiAdapter>(_ =>
+            new OpenAiAdapter(
+                settings.OpenRouter.ApiUrl,
+                settings.OpenRouter.ApiKey,
+                settings.OpenRouter.Models[0]));
     }
 
     public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentSettings settings)
@@ -55,8 +47,8 @@ public static class InjectorModule
         return services
             .AddSingleton<TaskQueue>()
             .AddSingleton<ChatMonitor>()
-            .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
-                new TelegramBotChatClient(
+            .AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
+                new TelegramBotChatMessengerClient(
                     new TelegramBotClient(settings.Telegram.BotToken),
                     settings.Telegram.AllowedUserNames));
     }

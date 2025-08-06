@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -16,7 +17,7 @@ using Role = Domain.DTOs.Role;
 namespace Domain.Agents;
 
 public class Agent(
-    Message[] messages,
+    ChatMessage[] messages,
     ILargeLanguageModel llm,
     McpClientTool[] tools,
     int maxDepth,
@@ -24,9 +25,9 @@ public class Agent(
 {
     private readonly ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
     private readonly Lock _messagesLock = new();
-    private readonly List<Message> _messages = messages.ToList();
+    private readonly List<ChatMessage> _messages = messages.ToList();
 
-    public IAsyncEnumerable<AgentResponse> Run(
+    public IAsyncEnumerable<ChatMessage> Run(
         string? prompt, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
     {
         if (prompt is null)
@@ -34,53 +35,30 @@ public class Agent(
             return Run([], cancelCurrentOperation, cancellationToken);
         }
 
-        var message = new Message
-        {
-            Role = Role.User,
-            Content = prompt
-        };
+        var message = new ChatMessage(ChatRole.User, prompt);
         return Run([message], cancelCurrentOperation, cancellationToken);
     }
 
-    public IAsyncEnumerable<AgentResponse> Run(
-        Message[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
+    public IAsyncEnumerable<ChatMessage> Run(
+        ChatMessage[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
     {
         UpdateConversation(prompts);
         var childCancellationToken = GetChildCancellationToken(cancelCurrentOperation, cancellationToken);
         return ExecuteAgentLoop(0.5f, childCancellationToken);
     }
 
-    private async IAsyncEnumerable<AgentResponse> ExecuteAgentLoop(
+    private async IAsyncEnumerable<ChatMessage> ExecuteAgentLoop(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        List<Task<Message>> longRunningTasks = [];
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
-            var responses = await llm.Prompt(GetConversationSnapshot(), tools, temperature, cancellationToken);
-            foreach (var responseMessage in responses)
+            var updates = llm.Prompt(GetConversationSnapshot(), tools, temperature, cancellationToken);
+            var response = await updates.ToChatResponseAsync(cancellationToken);
+            UpdateConversation(response.Messages);
+            foreach (var message in response.Messages)
             {
-                yield return responseMessage;
-            }
-
-            var toolResponses = await ProcessToolCalls(responses, cancellationToken);
-            UpdateConversation([..responses, ..toolResponses]);
-            longRunningTasks.AddRange(toolResponses
-                .Select(x => x.LongRunningTask)
-                .Where(x => x is not null)
-                .Cast<Task<Message>>());
-
-            switch (toolResponses.Length)
-            {
-                case 0 when longRunningTasks.Count == 0:
-                    yield break;
-                case 0 when longRunningTasks.Count > 0:
-                {
-                    var completedTask = await Task.WhenAny(longRunningTasks);
-                    longRunningTasks.Remove(completedTask);
-                    UpdateConversation([await completedTask]);
-                    break;
-                }
+                yield return message;
             }
         }
 
@@ -158,7 +136,7 @@ public class Agent(
         return newSource.Token;
     }
 
-    private ImmutableArray<Message> GetConversationSnapshot()
+    private ImmutableArray<ChatMessage> GetConversationSnapshot()
     {
         lock (_messagesLock)
         {
@@ -166,7 +144,7 @@ public class Agent(
         }
     }
 
-    private void UpdateConversation(IEnumerable<Message> messages)
+    private void UpdateConversation(IEnumerable<ChatMessage> messages)
     {
         lock (_messagesLock)
         {

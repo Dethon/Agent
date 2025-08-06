@@ -1,12 +1,13 @@
 ﻿using Domain.DTOs;
+using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 
 namespace Domain.Contracts;
 
 public interface ILargeLanguageModel
 {
-    Task<AgentResponse[]> Prompt(
-        IEnumerable<Message> messages,
+    IAsyncEnumerable<ChatResponseUpdate> Prompt(
+        IEnumerable<ChatMessage> messages,
         IEnumerable<McpClientTool> tools,
         float? temperature = null,
         CancellationToken cancellationToken = default);

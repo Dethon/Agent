@@ -2,6 +2,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -10,14 +11,14 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     IServiceProvider services,
     TaskQueue queue,
-    IChatClient chatClient,
+    IChatMessengerClient chatMessengerClient,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken = default)
     {
         try
         {
-            var prompts = chatClient.ReadPrompts(1000, cancellationToken);
+            var prompts = chatMessengerClient.ReadPrompts(1000, cancellationToken);
             await foreach (var prompt in prompts)
             {
                 await queue.QueueTask(c => AgentTask(prompt, c));
@@ -65,8 +66,8 @@ public class ChatMonitor(
             return prompt;
         }
 
-        var threadId = await chatClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
-        await chatClient.SendResponse(prompt.ChatId, $"<b>{prompt.Prompt}</b>", threadId, cancellationToken);
+        var threadId = await chatMessengerClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
+        await chatMessengerClient.SendResponse(prompt.ChatId, $"<b>{prompt.Prompt}</b>", threadId, cancellationToken);
 
         return prompt with
         {
@@ -75,14 +76,14 @@ public class ChatMonitor(
     }
 
     private async Task ProcessResponse(
-        ChatPrompt prompt, AgentResponse response, CancellationToken cancellationToken)
+        ChatPrompt prompt, ChatMessage response, CancellationToken cancellationToken)
     {
-        var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-        var message = $"{response.Content.Left(1900).HtmlSanitize()}" +
-                      "<blockquote expandable>" +
-                      $"<pre><code>StopReason={response.StopReason}</code>\n\n" +
-                      $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
-                      "</blockquote>";
-        await chatClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
+        // var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
+        var message = $"{response.Text.Left(1900).HtmlSanitize()}";
+                      // "<blockquote expandable>" +
+                      // $"<pre><code>StopReason={response}</code>\n\n" +
+                      // $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
+                      // "</blockquote>";
+        await chatMessengerClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
     }
 }

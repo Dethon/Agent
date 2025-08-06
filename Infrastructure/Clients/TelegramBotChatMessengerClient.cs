@@ -8,7 +8,7 @@ using Message = Telegram.Bot.Types.Message;
 
 namespace Infrastructure.Clients;
 
-public class TelegramBotChatClient(ITelegramBotClient client, string[] allowedUserNames) : IChatClient
+public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] allowedUserNames) : IChatMessengerClient
 {
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken = default)

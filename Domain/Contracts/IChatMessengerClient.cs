@@ -2,7 +2,7 @@
 
 namespace Domain.Contracts;
 
-public interface IChatClient
+public interface IChatMessengerClient
 {
     IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken = default);
 

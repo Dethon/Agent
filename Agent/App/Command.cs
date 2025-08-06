@@ -1,6 +1,7 @@
 ﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -20,30 +21,31 @@ public static class Command
     }
 
     private static async Task DisplayResponses(
-        IAsyncEnumerable<AgentResponse> agentResponses, CancellationToken cancellationToken)
+        IAsyncEnumerable<ChatMessage> agentResponses, CancellationToken cancellationToken)
     {
         await foreach (var message in agentResponses.WithCancellation(cancellationToken))
         {
-            if (!string.IsNullOrEmpty(message.Reasoning))
-            {
-                Console.ForegroundColor = ConsoleColor.DarkBlue;
-                Console.WriteLine(message.Reasoning);
-            }
-
-            if (!string.IsNullOrEmpty(message.Content))
-            {
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine(message.Content);
-            }
-
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"StopReason: {message.StopReason}");
-
-            foreach (var toolCall in message.ToolCalls)
-            {
-                Console.ForegroundColor = ConsoleColor.DarkCyan;
-                Console.WriteLine(toolCall.ToString());
-            }
+            Console.WriteLine(message.Text);
+            // if (!string.IsNullOrEmpty(message.Reasoning))
+            // {
+            //     Console.ForegroundColor = ConsoleColor.DarkBlue;
+            //     Console.WriteLine(message.Reasoning);
+            // }
+            //
+            // if (!string.IsNullOrEmpty(message.Content))
+            // {
+            //     Console.ForegroundColor = ConsoleColor.White;
+            //     Console.WriteLine(message.Content);
+            // }
+            //
+            // Console.ForegroundColor = ConsoleColor.DarkGray;
+            // Console.WriteLine($"StopReason: {message.StopReason}");
+            //
+            // foreach (var toolCall in message.ToolCalls)
+            // {
+            //     Console.ForegroundColor = ConsoleColor.DarkCyan;
+            //     Console.WriteLine(toolCall.ToString());
+            // }
         }
 
         Console.ResetColor();
