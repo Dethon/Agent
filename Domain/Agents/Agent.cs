@@ -1,11 +1,14 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
 namespace Domain.Agents;
@@ -49,11 +52,10 @@ public class Agent(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        yield break;
-        /*List<Task<Message>> longRunningTasks = [];
+        List<Task<Message>> longRunningTasks = [];
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
-            var responses = await llm.Prompt(GetConversationSnapshot(), _toolDefs, temperature, cancellationToken);
+            var responses = await llm.Prompt(GetConversationSnapshot(), tools, temperature, cancellationToken);
             foreach (var responseMessage in responses)
             {
                 yield return responseMessage;
@@ -78,39 +80,44 @@ public class Agent(
                     break;
                 }
             }
-        }*/
+        }
 
         throw new AgentLoopException($"Agent loop reached max depth ({maxDepth}). Anti-loop safeguard reached.");
     }
 
-    /*private async Task<ToolMessage[]> ProcessToolCalls(
+    private async Task<ToolMessage[]> ProcessToolCalls(
         IEnumerable<AgentResponse> responseMessages, CancellationToken cancellationToken)
     {
         var toolTasks = responseMessages
             .Where(x => x.StopReason == StopReason.ToolCalls)
             .SelectMany(x => x.ToolCalls)
-            .Select(x => ResolveToolRequest(_tools[x.Name], x, cancellationToken));
+            .Select(x => ResolveToolRequest(x, cancellationToken));
         return await Task.WhenAll(toolTasks);
     }
 
-    private async Task<ToolMessage> ResolveToolRequest(
-        ITool tool, ToolCall toolCall, CancellationToken cancellationToken)
+    private async Task<ToolMessage> ResolveToolRequest(ToolCall toolCall, CancellationToken cancellationToken)
     {
-        var definition = tool.GetToolDefinition();
+        var tool = tools.Single(x => x.Name == toolCall.Name);
         try
         {
-            var toolMessage = await tool.Run(toolCall, cancellationToken);
+            var toolMessage = await tool.CallAsync(
+                toolCall.Parameters.Deserialize<Dictionary<string, object?>>(), cancellationToken: cancellationToken);
             logger.LogInformation(
                 "Tool {ToolName} with {Params} : {toolResponse}",
-                definition.Name, toolCall.Parameters, toolMessage.Content);
-            return toolMessage;
+                toolCall.Name, toolCall.Parameters, toolMessage.Content);
+            return new ToolMessage
+            {
+                Role = Role.Tool,
+                Content = toolMessage.ToChatMessage(toolCall.Id).Text,
+                ToolCallId = toolCall.Id
+            };
         }
         catch (Exception ex)
         {
             logger.LogError(
                 ex,
                 "Tool {ToolName} with {Params} Error: {ExceptionMessage}",
-                definition.Name, toolCall.Parameters, ex.Message);
+                toolCall.Name, toolCall.Parameters, ex.Message);
 
             return new ToolMessage
             {
@@ -123,7 +130,7 @@ public class Agent(
                 ToolCallId = toolCall.Id
             };
         }
-    }*/
+    }
 
     private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
     {

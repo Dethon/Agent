@@ -1,5 +1,8 @@
-﻿using Domain.DTOs;
+﻿using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Infrastructure.Utils;
+using Microsoft.Extensions.AI;
+using ModelContextProtocol.Client;
 
 namespace Infrastructure.LLMAdapters.OpenRouter;
 
@@ -69,7 +72,7 @@ public static class MessageExtensions
 
 public static class ToolDefinitionExtensions
 {
-    public static OpenRouterTool ToOpenRouterTool(this ToolDefinition tool)
+    public static OpenRouterTool ToOpenRouterTool(this McpClientTool tool)
     {
         return new OpenRouterTool
         {
@@ -77,7 +80,7 @@ public static class ToolDefinitionExtensions
             {
                 Name = tool.Name,
                 Description = tool.Description,
-                Parameters = JsonSchema.CreateParametersSchema(tool.ParamsType)
+                Parameters = tool.JsonSchema
             }
         };
     }

@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.DTOs;
 using JetBrains.Annotations;
@@ -20,12 +21,6 @@ public abstract record OpenRouterPlugin(string Id)
     public string Id { [UsedImplicitly] get; init; } = Id;
 }
 
-public record OpenRouterSearchPlugin() : OpenRouterPlugin("web")
-{
-    public int? MaxResults { get; init; }
-    public string? SearchPrompt { get; init; }
-}
-
 public record OpenRouterReasoning
 {
     [UsedImplicitly] public int MaxTokens { get; init; } = 1000;
@@ -42,7 +37,7 @@ public record OpenRouterFunction
 {
     public required string Name { [UsedImplicitly] get; init; }
     public required string Description { [UsedImplicitly] get; init; }
-    public JsonNode? Parameters { [UsedImplicitly] get; init; }
+    public JsonElement? Parameters { [UsedImplicitly] get; init; }
 }
 
 public record OpenRouterMessage

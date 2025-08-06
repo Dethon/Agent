@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
+using ModelContextProtocol.Client;
 
 namespace Infrastructure.LLMAdapters.OpenRouter;
 
@@ -21,7 +22,7 @@ public class OpenRouterAdapter(HttpClient client, string[] models) : ILargeLangu
 
     public async Task<AgentResponse[]> Prompt(
         IEnumerable<Message> messages,
-        IEnumerable<ToolDefinition> tools,
+        IEnumerable<McpClientTool> tools,
         float? temperature = null,
         CancellationToken cancellationToken = default)
     {
