@@ -30,41 +30,21 @@ public class GetDownloadStatusTool(IDownloadClient client, SearchHistory history
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
         var typedParams = ParseParams(toolCall.Parameters);
-
-        while (true)
+        
+        cancellationToken.ThrowIfCancellationRequested();
+        var downloadItem = await client.GetDownloadItem(typedParams.DownloadId, 3, 500, cancellationToken);
+        if (downloadItem == null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var downloadItem = await GetDownloadItem(typedParams.DownloadId, cancellationToken);
-            if (downloadItem == null)
-            {
-                throw new MissingDownloadException("The download is missing, it probably got removed externally");
-            }
-
-            return toolCall.ToToolMessage(new JsonObject
-            {
-                ["status"] = "success",
-                ["message"] = JsonSerializer.Serialize(downloadItem with
-                {
-                    Title = history.History[downloadItem.Id].Title
-                })
-            });
-        }
-    }
-
-    private async Task<DownloadItem?> GetDownloadItem(int downloadId, CancellationToken cancellationToken)
-    {
-        const int maxAttempts = 3;
-        for (var attempt = 0; attempt < maxAttempts; attempt++)
-        {
-            var downloadItem = await client.GetDownloadItem(downloadId, cancellationToken);
-            if (downloadItem != null)
-            {
-                return downloadItem;
-            }
-
-            await Task.Delay(500, cancellationToken);
+            throw new MissingDownloadException("The download is missing, it probably got removed externally");
         }
 
-        return null;
+        return toolCall.ToToolMessage(new JsonObject
+        {
+            ["status"] = "success",
+            ["message"] = JsonSerializer.Serialize(downloadItem with
+            {
+                Title = history.History[downloadItem.Id].Title
+            })
+        });
     }
 }

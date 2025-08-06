@@ -39,7 +39,6 @@ public static class ConfigModule
             .AddQBittorrentClient(settings)
             .AddFileSystemClient(settings, cmdParams.SshMode)
             .AddChatMonitoring(settings)
-            .AddAttachments()
             .AddTools(settings)
             .AddTransient<IAgentResolver, AgentResolver>();
     }

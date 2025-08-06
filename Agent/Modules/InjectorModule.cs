@@ -18,16 +18,11 @@ namespace Agent.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddAttachments(this IServiceCollection services)
-    {
-        return services
-            .AddScoped<SearchHistory>();
-    }
-
     public static IServiceCollection AddTools(this IServiceCollection services, AgentSettings settings)
     {
         return services
             .AddTransient<DownloaderPrompt>()
+            .AddTransient<SearchHistory>()
             .AddTransient<FileSearchTool>()
             .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
                 sp.GetRequiredService<IDownloadClient>(),
