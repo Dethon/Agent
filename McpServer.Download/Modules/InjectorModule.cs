@@ -11,19 +11,6 @@ namespace McpServer.Download.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddTools(this IServiceCollection services, McpSettings mcpSettings)
-    {
-        return services
-            .AddTransient<FileSearchTool>()
-            .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<IMemoryCache>(),
-                mcpSettings.DownloadLocation))
-            .AddTransient<GetDownloadStatusTool>(sp => new GetDownloadStatusTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<IMemoryCache>()));
-    }
-
     public static IServiceCollection AddJacketClient(this IServiceCollection services, McpSettings settings)
     {
         services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>

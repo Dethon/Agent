@@ -29,9 +29,9 @@ public static class ConfigModule
     {
         services
             .AddMemoryCache()
+            .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
-            .AddTools(settings)
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<FileSearchTool>()

@@ -8,8 +8,10 @@ using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
+public record DownloadPathConfig(string BaseDownloadLocation);
+
 [McpServerToolType]
-public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, string baseDownloadLocation)
+public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, DownloadPathConfig pathConfig)
 {
     private const string Name = "FileDownload";
 
@@ -29,7 +31,7 @@ public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, string
     {
         await CheckDownloadNotAdded(searchResultId, cancellationToken);
 
-        var savePath = $"{baseDownloadLocation}/{searchResultId}";
+        var savePath = $"{pathConfig.BaseDownloadLocation}/{searchResultId}";
         var itemToDownload = cache.Get<SearchResult>(searchResultId);
         if (itemToDownload == null)
         {
