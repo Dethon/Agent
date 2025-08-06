@@ -4,6 +4,8 @@ using Domain.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System.CommandLine;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 
 namespace Agent.Modules;
 
@@ -35,13 +37,14 @@ public static class ConfigModule
         return services
             .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
-            .AddJacketClient(settings)
-            .AddQBittorrentClient(settings)
-            .AddFileSystemClient(settings, cmdParams.SshMode)
             .AddChatMonitoring(settings)
-            .AddAttachments()
-            .AddTools(settings)
-            .AddTransient<IAgentResolver, AgentResolver>();
+            .AddTransient<DownloaderPrompt>()
+            .AddTransient<IAgentResolver, AgentResolver>(sp => new AgentResolver(
+                sp.GetRequiredService<DownloaderPrompt>(),
+                sp.GetRequiredService<ILargeLanguageModel>(),
+                settings.McpServers.Select(x=> x.Endpoint).ToArray(),
+                sp.GetRequiredService<IMemoryCache>(),
+                sp.GetRequiredService<ILoggerFactory>()));
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

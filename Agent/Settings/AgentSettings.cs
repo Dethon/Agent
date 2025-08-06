@@ -9,6 +9,7 @@ public record AgentSettings
     public required QBittorrentConfiguration QBittorrent { get; init; }
     public required SshConfiguration Ssh { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
+    public required Mcp[] McpServers { get; init; }
     public required string DownloadLocation { get; init; }
     public required string BaseLibraryPath { get; init; }
     public required Dictionary<string, string> Mappings { get; init; } = [];
@@ -46,4 +47,9 @@ public record TelegramConfiguration
 {
     public required string BotToken { get; [UsedImplicitly] init; }
     public required string[] AllowedUserNames { get; [UsedImplicitly] init; }
+}
+
+public record Mcp
+{
+    public required string Endpoint { get; [UsedImplicitly] init; }
 }

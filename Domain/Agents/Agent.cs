@@ -6,22 +6,19 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Client;
 
 namespace Domain.Agents;
 
 public class Agent(
     Message[] messages,
     ILargeLanguageModel llm,
-    ITool[] tools,
+    McpClientTool[] tools,
     int maxDepth,
     ILogger<Agent> logger) : IAgent
 {
     private readonly ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
     private readonly Lock _messagesLock = new();
-
-    private readonly Dictionary<string, ITool> _tools = tools.ToDictionary(x => x.GetToolDefinition().Name, x => x);
-    private readonly ToolDefinition[] _toolDefs = tools.Select(x => x.GetToolDefinition()).ToArray();
-
     private readonly List<Message> _messages = messages.ToList();
 
     public IAsyncEnumerable<AgentResponse> Run(

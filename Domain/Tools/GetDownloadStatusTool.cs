@@ -3,9 +3,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Exceptions;
-using Domain.Tools.Attachments;
-using JetBrains.Annotations;
 using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol.Server;
 

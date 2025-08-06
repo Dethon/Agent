@@ -1,20 +1,14 @@
 ﻿using Domain.Contracts;
-using Domain.Tools;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Client;
 
 namespace Domain.Agents;
 
 public class AgentResolver(
     DownloaderPrompt downloaderPrompt,
     ILargeLanguageModel languageModel,
-    FileDownloadTool fileDownloadTool,
-    FileSearchTool fileSearchTool,
-    GetDownloadStatusTool getDownloadStatusTool,
-    MoveTool moveTool,
-    CleanupTool cleanupTool,
-    ListDirectoriesTool listDirectoriesTool,
-    ListFilesTool listFilesTool,
+    string[] mcpServerEndpoints,
     IMemoryCache cache,
     ILoggerFactory loggerFactory) : IAgentResolver
 {
@@ -38,21 +32,13 @@ public class AgentResolver(
 
     private async Task<IAgent> AgentFactory(AgentType agentType)
     {
+        var tools = await GetMcpServers(mcpServerEndpoints);
         return agentType switch
         {
             AgentType.Download => new Agent(
                 messages: await downloaderPrompt.Get(null),
                 llm: languageModel,
-                tools:
-                [
-                    fileSearchTool,
-                    fileDownloadTool,
-                    getDownloadStatusTool,
-                    listDirectoriesTool,
-                    listFilesTool,
-                    moveTool,
-                    cleanupTool
-                ],
+                tools: tools,
                 maxDepth: MaxDepth,
                 logger: loggerFactory.CreateLogger<Agent>()),
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
@@ -66,5 +52,18 @@ public class AgentResolver(
             cacheEntry.SetAbsoluteExpiration(DateTimeOffset.UtcNow.AddMonths(2));
             return createAgent();
         });
+    }
+
+    private static async Task<McpClientTool[]> GetMcpServers(string[] endpoints)
+    {
+        var servers = await Task.WhenAll(endpoints.Select(x => McpClientFactory.CreateAsync(
+            new SseClientTransport(
+                new SseClientTransportOptions
+                {
+                    Endpoint = new Uri(x)
+                }))));
+        
+        var tools = await Task.WhenAll(servers.Select(x => x.ListToolsAsync().AsTask()));
+        return tools.SelectMany(x => x).ToArray();
     }
 }

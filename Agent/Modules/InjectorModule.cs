@@ -5,7 +5,6 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Domain.Tools;
-using Domain.Tools.Attachments;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters.OpenRouter;
@@ -19,82 +18,6 @@ namespace Agent.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddAttachments(this IServiceCollection services)
-    {
-        return services
-            .AddScoped<SearchHistory>();
-    }
-
-    public static IServiceCollection AddTools(this IServiceCollection services, AgentSettings settings)
-    {
-        return services
-            .AddTransient<DownloaderPrompt>()
-            .AddTransient<FileSearchTool>()
-            .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<IMemoryCache>(),
-                settings.DownloadLocation))
-            .AddTransient<GetDownloadStatusTool>(sp => new GetDownloadStatusTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<SearchHistory>()))
-            .AddTransient<ListDirectoriesTool>(sp => new ListDirectoriesTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<ListFilesTool>(sp => new ListFilesTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<MoveTool>(sp => new MoveTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<CleanupTool>(sp => new CleanupTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.DownloadLocation));
-    }
-
-    public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentSettings settings)
-    {
-        services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey, settings.Mappings);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(1),
-                attemptTimeout: TimeSpan.FromSeconds(20));
-
-        return services;
-    }
-
-    public static IServiceCollection AddQBittorrentClient(this IServiceCollection services, AgentSettings settings)
-    {
-        var cookieContainer = new CookieContainer();
-        services.AddHttpClient<IDownloadClient, QBittorrentDownloadClient>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.QBittorrent.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                return new QBittorrentDownloadClient(
-                    httpClient,
-                    cookieContainer,
-                    settings.QBittorrent.UserName,
-                    settings.QBittorrent.Password
-                );
-            })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-            {
-                CookieContainer = cookieContainer,
-                UseCookies = true
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromSeconds(10));
-
-        return services;
-    }
-
     public static IServiceCollection AddFileSystemClient(
         this IServiceCollection services, AgentSettings settings, bool sshMode)
     {
