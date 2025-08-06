@@ -49,7 +49,8 @@ public class Agent(
         float? temperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        List<Task<Message>> longRunningTasks = [];
+        yield break;
+        /*List<Task<Message>> longRunningTasks = [];
         for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
         {
             var responses = await llm.Prompt(GetConversationSnapshot(), _toolDefs, temperature, cancellationToken);
@@ -77,12 +78,12 @@ public class Agent(
                     break;
                 }
             }
-        }
+        }*/
 
         throw new AgentLoopException($"Agent loop reached max depth ({maxDepth}). Anti-loop safeguard reached.");
     }
 
-    private async Task<ToolMessage[]> ProcessToolCalls(
+    /*private async Task<ToolMessage[]> ProcessToolCalls(
         IEnumerable<AgentResponse> responseMessages, CancellationToken cancellationToken)
     {
         var toolTasks = responseMessages
@@ -122,7 +123,7 @@ public class Agent(
                 ToolCallId = toolCall.Id
             };
         }
-    }
+    }*/
 
     private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
     {

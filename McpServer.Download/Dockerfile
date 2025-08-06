@@ -1,10 +1,10 @@
-﻿FROM mcr.microsoft.com/dotnet/runtime:9.0 AS base
+﻿FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
 USER $APP_UID
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS dependencies
 WORKDIR /src
-COPY ["McpServer.Download/McpServer.Download.csproj", "Agent/"]
+COPY ["McpServer.Download/McpServer.Download.csproj", "McpServer.Download/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 RUN dotnet restore "McpServer.Download/McpServer.Download.csproj"

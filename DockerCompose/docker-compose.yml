@@ -85,7 +85,24 @@ services:
       - TZ=UTC
       - VERSION=docker
     restart: unless-stopped
-
+    
+  mcp-download:
+    image: mcp-download:latest
+    container_name: mcp-download
+    ports:
+      - "6001:8080"
+    build:
+      context: ${JACK_REPOSITORY_PATH}
+      dockerfile: McpServer.Download/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - qbittorrent
+      - jackett
+        
   jack:
     image: agent:latest
     container_name: jack
@@ -102,8 +119,7 @@ services:
     networks:
       - jackbot
     depends_on:
-      - qbittorrent
-      - jackett
+      - mcp-download
 
 networks:
   jackbot:
