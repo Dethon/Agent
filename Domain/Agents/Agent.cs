@@ -10,6 +10,8 @@ using Domain.Exceptions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+using Role = Domain.DTOs.Role;
 
 namespace Domain.Agents;
 
@@ -102,14 +104,14 @@ public class Agent(
         {
             var response = await tool.CallAsync(
                 toolCall.Parameters.Deserialize<Dictionary<string, object?>>(), cancellationToken: cancellationToken);
-            var toolMessage = response.ToChatMessage(toolCall.Id);
+            var textContent = (response.Content.First(c => c.Type == "text") as TextContentBlock)?.Text;
             logger.LogInformation(
                 "Tool {ToolName} with {Params} : {toolResponse}",
-                toolCall.Name, toolCall.Parameters, toolMessage.Text);
+                toolCall.Name, toolCall.Parameters, textContent);
             return new ToolMessage
             {
                 Role = Role.Tool,
-                Content = toolMessage.Text,
+                Content = textContent ?? "No text content returned from tool.",
                 ToolCallId = toolCall.Id
             };
         }

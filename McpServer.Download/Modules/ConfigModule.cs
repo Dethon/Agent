@@ -32,7 +32,6 @@ public static class ConfigModule
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddTools(settings)
-            .AddTransient<IAgentResolver, AgentResolver>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<FileSearchTool>()
