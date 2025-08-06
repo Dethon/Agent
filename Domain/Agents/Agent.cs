@@ -100,15 +100,16 @@ public class Agent(
         var tool = tools.Single(x => x.Name == toolCall.Name);
         try
         {
-            var toolMessage = await tool.CallAsync(
+            var response = await tool.CallAsync(
                 toolCall.Parameters.Deserialize<Dictionary<string, object?>>(), cancellationToken: cancellationToken);
+            var toolMessage = response.ToChatMessage(toolCall.Id);
             logger.LogInformation(
                 "Tool {ToolName} with {Params} : {toolResponse}",
-                toolCall.Name, toolCall.Parameters, toolMessage.Content);
+                toolCall.Name, toolCall.Parameters, toolMessage.Text);
             return new ToolMessage
             {
                 Role = Role.Tool,
-                Content = toolMessage.ToChatMessage(toolCall.Id).Text,
+                Content = toolMessage.Text,
                 ToolCallId = toolCall.Id
             };
         }
