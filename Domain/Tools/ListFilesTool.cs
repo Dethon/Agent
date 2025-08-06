@@ -13,17 +13,17 @@ public record ListFilesParams
 
 public class ListFilesTool(
     IFileSystemClient client,
-    string libraryPath) : BaseTool<ListFilesTool, ListFilesParams>, IToolWithMetadata
+    string libraryPath) : BaseTool<ListFilesParams>
 {
-    public static string Name => "ListFiles";
+    public override string Name => "ListFiles";
 
-    public static string Description => """
-                                        Lists all files in the specified directory. It only returns files, not 
-                                        directories.
-                                        The path must be absolute and derived from the ListDirectories tool.
-                                        Must be used to explore the relevant directories within the library and find 
-                                        the correct place and name for the downloaded files.
-                                        """;
+    public override string Description => """
+                                          Lists all files in the specified directory. It only returns files, not 
+                                          directories.
+                                          The path must be absolute and derived from the ListDirectories tool.
+                                          Must be used to explore the relevant directories within the library and find 
+                                          the correct place and name for the downloaded files.
+                                          """;
 
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {

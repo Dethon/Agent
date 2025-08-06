@@ -5,9 +5,11 @@ using Domain.DTOs;
 
 namespace Domain.Tools;
 
-public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
+public abstract class BaseTool : ITool
 {
-    public static Type? ParamsType => null;
+    public abstract string Name { get; }
+    public abstract string Description { get; }
+    public virtual Type? ParamsType => null;
 
     public abstract Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default);
 
@@ -15,16 +17,16 @@ public abstract class BaseTool<TSelf> : ITool where TSelf : IToolWithMetadata
     {
         return new ToolDefinition
         {
-            Name = TSelf.Name,
-            Description = TSelf.Description
+            Name = Name,
+            Description = Description,
         };
     }
 }
 
-public abstract class BaseTool<TSelf, TParams> : BaseTool<TSelf> where TSelf : IToolWithMetadata where TParams : class
+public abstract class BaseTool<TParams> : BaseTool where TParams : class
 {
-    public static new Type ParamsType => typeof(TParams);
-
+    public override Type ParamsType => typeof(TParams);
+    
     public override ToolDefinition GetToolDefinition()
     {
         return base.GetToolDefinition() with

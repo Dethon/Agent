@@ -14,14 +14,14 @@ public record CleanupParams
 public class CleanupTool(
     IDownloadClient downloadClient,
     IFileSystemClient fileSystemClient,
-    string baseDownloadLocation) : BaseTool<CleanupTool, CleanupParams>, IToolWithMetadata
+    string baseDownloadLocation) : BaseTool<CleanupParams>
 {
-    public static string Name => "Cleanup";
+    public override string Name => "Cleanup";
 
-    public static string Description => """
-                                        Removes a everything that is left over in a download directory.
-                                        It can also be use to cancel a download if the user requests it.
-                                        """;
+    public override string Description => """
+                                          Removes a everything that is left over in a download directory.
+                                          It can also be use to cancel a download if the user requests it.
+                                          """;
 
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {

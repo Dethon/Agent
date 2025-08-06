@@ -15,16 +15,16 @@ public record FileDownloadParams
 public class FileDownloadTool(
     IDownloadClient client,
     SearchHistory history,
-    string baseDownloadLocation) : BaseTool<FileDownloadTool, FileDownloadParams>, IToolWithMetadata
+    string baseDownloadLocation) : BaseTool<FileDownloadParams>
 {
-    public static string Name => "FileDownload";
+    public override string Name => "FileDownload";
 
-    public static string Description => """
-                                        Download a file from the internet using a file id that can be obtained from the 
-                                        FileSearch tool. 
-                                        The SearchResultId parameter is the id EXACTLY as it appears in the response of 
-                                        the FileSearch tool.
-                                        """;
+    public override string Description => """
+                                          Download a file from the internet using a file id that can be obtained from the 
+                                          FileSearch tool. 
+                                          The SearchResultId parameter is the id EXACTLY as it appears in the response of 
+                                          the FileSearch tool.
+                                          """;
 
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {

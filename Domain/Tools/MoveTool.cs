@@ -14,17 +14,17 @@ public record FileMoveParams
 
 public class MoveTool(
     IFileSystemClient client,
-    string libraryPath) : BaseTool<MoveTool, FileMoveParams>, IToolWithMetadata
+    string libraryPath) : BaseTool<FileMoveParams>
 {
-    public static string Name => "Move";
+    public override string Name => "Move";
 
-    public static string Description => """
-                                        Moves and/or renames a file or directory. Both arguments have to be absolute 
-                                        paths and must be derived from the LibraryDescription tool response.
-                                        Equivalent to 'mv -T {SourcePath} {DestinationPath}' bash command.
-                                        The destination path MUST NOT exist, otherwise an exception will be thrown.
-                                        All necessary parent directories will be created automatically.
-                                        """;
+    public override string Description => """
+                                          Moves and/or renames a file or directory. Both arguments have to be absolute 
+                                          paths and must be derived from the LibraryDescription tool response.
+                                          Equivalent to 'mv -T {SourcePath} {DestinationPath}' bash command.
+                                          The destination path MUST NOT exist, otherwise an exception will be thrown.
+                                          All necessary parent directories will be created automatically.
+                                          """;
 
     public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
     {
