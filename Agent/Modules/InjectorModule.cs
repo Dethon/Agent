@@ -22,7 +22,7 @@ public static class InjectorModule
     {
         return services
             .AddTransient<DownloaderPrompt>()
-            .AddTransient<SearchHistory>()
+            .AddScoped<SearchHistory>()
             .AddTransient<FileSearchTool>()
             .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
                 sp.GetRequiredService<IDownloadClient>(),
