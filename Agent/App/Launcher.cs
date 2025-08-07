@@ -15,14 +15,15 @@ public static class Launcher
 
     private static Func<IServiceProvider, Task> ResolveAction(CommandLineParams cmdParams)
     {
-        if (cmdParams.IsDaemon)
-        {
-            return Monitoring.Start;
-        } 
+        
         if(cmdParams.Prompt is not null)
         {
             return services => Command.Start(services, cmdParams.Prompt);
         }
+        if (cmdParams.IsDaemon)
+        {
+            return Monitoring.Start;
+        } 
         throw new ArgumentException("Invalid command line parameters. Please provide a prompt or run in daemon mode.");
     }
 }

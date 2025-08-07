@@ -2,14 +2,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
-using Microsoft.Extensions.Caching.Memory;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class GetDownloadStatusTool(IDownloadClient client, IMemoryCache cache)
+public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager)
 {
     private const string Name = "GetDownloadStatus";
 
@@ -22,8 +21,12 @@ public class GetDownloadStatusTool(IDownloadClient client, IMemoryCache cache)
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(int downloadId, CancellationToken cancellationToken)
+    public async Task<string> Run(
+        RequestContext<CallToolRequestParams> context, 
+        int downloadId, 
+        CancellationToken cancellationToken)
     {
+        var sessionId = context.Server.SessionId ?? "";
         var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
         if (downloadItem == null)
         {
@@ -35,7 +38,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IMemoryCache cache)
             ["status"] = "success",
             ["message"] = JsonSerializer.Serialize(downloadItem with
             {
-                Title = cache.Get<SearchResult>(downloadItem.Id)?.Title ?? "Missing Title",
+                Title = stateManager.GetSearchResult(sessionId, downloadItem.Id)?.Title ?? "Missing Title",
             })
         }.ToJsonString();
     }

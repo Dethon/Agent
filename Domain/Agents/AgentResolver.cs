@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
 namespace Domain.Agents;
@@ -54,16 +55,22 @@ public class AgentResolver(
         });
     }
 
-    private static async Task<McpClientTool[]> GetMcpServers(string[] endpoints)
+    private static async Task<McpClientTool[]> GetMcpServers(string[] endpoints, CancellationToken cancellationToken = default)
     {
-        var servers = await Task.WhenAll(endpoints.Select(x => McpClientFactory.CreateAsync(
+        var clients = await Task.WhenAll(endpoints.Select(x => McpClientFactory.CreateAsync(
             new SseClientTransport(
                 new SseClientTransportOptions
                 {
                     Endpoint = new Uri(x)
-                }))));
+                }), cancellationToken: cancellationToken)));
         
-        var tools = await Task.WhenAll(servers.Select(x => x.ListToolsAsync().AsTask()));
-        return tools.SelectMany(x => x).ToArray();
+        
+        
+        var tools = await Task.WhenAll(
+            clients.Select(x => x.ListToolsAsync(cancellationToken: cancellationToken).AsTask()));
+        return tools
+            .SelectMany(x => x)
+            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()))
+            .ToArray();
     }
 }

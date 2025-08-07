@@ -2,13 +2,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Microsoft.Extensions.Caching.Memory;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class FileSearchTool(ISearchClient client, IMemoryCache cache)
+public class FileSearchTool(ISearchClient client, IStateManager stateManager)
 {
     private const string Name = "FileSearch";
 
@@ -18,13 +18,15 @@ public class FileSearchTool(ISearchClient client, IMemoryCache cache)
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(string searchString, CancellationToken cancellationToken)
+    public async Task<string> Run(
+        RequestContext<CallToolRequestParams> context, 
+        string searchString, 
+        CancellationToken cancellationToken)
     {
+        var sessionId = context.Server.SessionId ?? "";
         var results = await client.Search(searchString, cancellationToken);
-        foreach (var result in results)
-        {
-            cache.Set(result.Id, result, DateTimeOffset.UtcNow.AddMonths(2));
-        }
+        stateManager.AddSearchResult(sessionId, results);
+        
         return new JsonObject
         {
             ["status"] = "success",

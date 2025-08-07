@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel;
 using Domain.Contracts;
 using Domain.DTOs;
-using Microsoft.Extensions.Caching.Memory;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -11,7 +10,7 @@ namespace Domain.Tools;
 public record DownloadPathConfig(string BaseDownloadLocation);
 
 [McpServerToolType]
-public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, DownloadPathConfig pathConfig)
+public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
 {
     private const string Name = "FileDownload";
 
@@ -24,15 +23,15 @@ public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, Downlo
 
     [McpServerTool(Name = Name), Description(Description)]
     public async Task<string> Run(
-        IMcpServer server, 
         RequestContext<CallToolRequestParams> context, 
         int searchResultId, 
         CancellationToken cancellationToken)
     {
+        var sessionId = context.Server.SessionId ?? "";
         await CheckDownloadNotAdded(searchResultId, cancellationToken);
 
         var savePath = $"{pathConfig.BaseDownloadLocation}/{searchResultId}";
-        var itemToDownload = cache.Get<SearchResult>(searchResultId);
+        var itemToDownload = stateManager.GetSearchResult(sessionId, searchResultId);
         if (itemToDownload == null)
         {
             throw new InvalidOperationException($"No search result found for id {searchResultId}.");
@@ -44,7 +43,7 @@ public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, Downlo
             searchResultId,
             cancellationToken);
 
-        return await TrackProgress(server, context, searchResultId, cancellationToken);
+        return await TrackProgress(context.Server, context, searchResultId, cancellationToken);
     }
 
     private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)
@@ -77,8 +76,8 @@ public class FileDownloadTool(IDownloadClient client, IMemoryCache cache, Downlo
             {
                 await server.SendNotificationAsync("notifications/progress", new
                 {
-                    Progress = downloadItem.Progress * 100, 
-                    Total = 100,
+                    downloadItem.Progress,
+                    Total = 1,
                     progressToken
                 }, cancellationToken: cancellationToken);
             }     

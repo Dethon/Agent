@@ -1,6 +1,8 @@
-﻿using Domain.Agents;
-using Domain.Contracts;
+﻿using Domain.Contracts;
+using Domain.Monitor;
 using Domain.Tools;
+using Infrastructure.StateManagers;
+using McpServer.Download.Handlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using McpServer.Download.Settings;
@@ -30,13 +32,19 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
+            .AddTransient<IStateManager, MemoryCacheStateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
+            .AddSingleton<TaskQueue>()
+            .AddHostedService<TaskRunner>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<FileSearchTool>()
             .WithTools<FileDownloadTool>()
-            .WithTools<GetDownloadStatusTool>();
+            .WithTools<GetDownloadStatusTool>()
+            .WithSubscribeToResourcesHandler(ResourceHandlers.SubscribeToResource)
+            .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource);
+
         return services;
     }
 }

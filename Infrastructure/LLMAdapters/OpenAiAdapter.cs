@@ -18,7 +18,10 @@ public class OpenAiAdapter(string endpoint, string apiKey, string model) : ILarg
         .GetChatClient(model)
         .AsIChatClient()
         .AsBuilder()
-        .UseFunctionInvocation()
+        .UseFunctionInvocation(configure: c =>
+        {
+            c.AllowConcurrentInvocation = true;
+        })
         .Build();
 
     public IAsyncEnumerable<ChatResponseUpdate> Prompt(
@@ -31,7 +34,8 @@ public class OpenAiAdapter(string endpoint, string apiKey, string model) : ILarg
             messages,
             new ChatOptions
             {
-                Tools = [.. tools]
+                Tools = [.. tools],
+                Temperature = temperature
             }, cancellationToken);
     }
 }
