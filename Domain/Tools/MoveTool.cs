@@ -1,12 +1,13 @@
 ﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools.Config;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class MoveTool(IFileSystemClient client, string libraryPath)
+public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
     private const string Name = "Move";
 
@@ -21,7 +22,8 @@ public class MoveTool(IFileSystemClient client, string libraryPath)
     [McpServerTool(Name = Name), Description(Description)]
     public async Task<string> Run(string sourcePath, string destinationPath, CancellationToken cancellationToken)
     {
-        if (!sourcePath.StartsWith(libraryPath) || !destinationPath.StartsWith(libraryPath))
+        if (!sourcePath.StartsWith(libraryPath.BaseLibraryPath) ||
+            !destinationPath.StartsWith(libraryPath.BaseLibraryPath))
         {
             throw new ArgumentException($"""
                                          {typeof(MoveTool)} parameters must be absolute paths derived from the 

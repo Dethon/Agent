@@ -1,12 +1,13 @@
 ﻿using System.ComponentModel;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Tools.Config;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class ListFilesTool(IFileSystemClient client, string libraryPath)
+public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
     private const string Name = "ListFiles";
 
@@ -21,7 +22,7 @@ public class ListFilesTool(IFileSystemClient client, string libraryPath)
     [McpServerTool(Name = Name), Description(Description)]
     public async Task<string> Run(string path, CancellationToken cancellationToken)
     {
-        if (path.StartsWith(libraryPath))
+        if (path.StartsWith(libraryPath.BaseLibraryPath))
         {
             throw new ArgumentException($"""
                                          {typeof(ListFilesTool)} parameter must be absolute paths derived from the 

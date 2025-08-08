@@ -1,12 +1,13 @@
 ﻿using System.ComponentModel;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Tools.Config;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class ListDirectoriesTool(IFileSystemClient client, string libraryPath)
+public class ListDirectoriesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
     private const string Name = "ListDirectories";
 
@@ -19,7 +20,7 @@ public class ListDirectoriesTool(IFileSystemClient client, string libraryPath)
     [McpServerTool(Name = Name), Description(Description)]
     public async Task<string> Run(CancellationToken cancellationToken)
     {
-        var result = await client.ListDirectoriesIn(libraryPath, cancellationToken);
+        var result = await client.ListDirectoriesIn(libraryPath.BaseLibraryPath, cancellationToken);
         var jsonResult = JsonSerializer.SerializeToNode(result) ?? 
                          throw new InvalidOperationException("Failed to serialize ListDirectories");
         return jsonResult.ToJsonString();

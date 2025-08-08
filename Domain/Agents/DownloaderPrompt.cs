@@ -52,13 +52,12 @@ public class DownloaderPrompt : IPrompt
                     You should let the user know about the files you chose to download and why.
                     After the download finishes you will receive a notification. Then you should organize the 
                     download within the library.
-                    """)
-                    /*To do that you should first explore the library structure, both directories and files, and 
+                    To do that, you should first explore the library structure, both directories and files, and 
                     then move files accordingly.
 
-                    You must keep the same structure and do not mix up files with directories, if an existing 
-                    subdirectory only contains files, do not move directories into it and if it contains 
-                    subdirectories then pick one of them or create a new one following the same pattern.
+                    You must keep the same structure and do not mix up files with directories. If an existing 
+                    subdirectory only contains files, do not move directories into it, and if it contains 
+                    subdirectories, then pick one of them or create a new one following the same pattern.
                     Some downloads have extra files that are irrelevant to the library, do not move those, you 
                     can identify them by file name, extension and type of download that was requested.
                     You are allowed to rename files and directories to match the library structure.
@@ -70,16 +69,16 @@ public class DownloaderPrompt : IPrompt
 
                     Finally, AFTER you receive confirmation that the files have been moved, you should clean
                     up the leftover files from the download. 
-                    The clean up process can only be called after successfully moving the relevant files into 
+                    The cleanup process can only be called after successfully moving the relevant files into 
                     the library. DO NOT clean up the download if the organization step fails.
 
-                    If the user requests to cancel then you will run the cleanup tool if there is a download 
+                    If the user requests to cancel, then, you will run the cleanup tool if there is a download 
                     in progress (up to several times until it succeeds) and/or cease all further actions.
                     You should not try to download anything else after the cancel request.
 
-                    If the user says "status" or asks for the status of the download/s in any other way you 
+                    If the user says "status" or asks for the status of the download/s in any other way, you 
                     must reply with the name, progress, speed, size and ETA of all current downloads. 
-                    """)*/
+                    """)
             });
     }
 

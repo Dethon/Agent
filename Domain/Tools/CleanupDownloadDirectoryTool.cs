@@ -1,15 +1,15 @@
 ﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools.Config;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class CleanupTool(
-    IDownloadClient downloadClient, IFileSystemClient fileSystemClient, string baseDownloadLocation)
+public class CleanupDownloadDirectoryTool(IFileSystemClient fileSystemClient, DownloadPathConfig downloadPath)
 {
-    private const string Name = "Cleanup";
+    private const string Name = "CleanupDownloadDirectory";
 
     private const string Description = """
                                        Removes a everything that is left over in a download directory.
@@ -19,15 +19,12 @@ public class CleanupTool(
     [McpServerTool(Name = Name), Description(Description)]
     public async Task<string> Run(int downloadId, CancellationToken cancellationToken)
     {
-        var downloadPath = $"{baseDownloadLocation}/{downloadId}";
-
-        await downloadClient.Cleanup(downloadId, cancellationToken);
-        await fileSystemClient.RemoveDirectory(downloadPath, cancellationToken);
-
+        var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
+        await fileSystemClient.RemoveDirectory(path, cancellationToken);
         return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = "Download leftovers removed successfully",
+            ["message"] = "Download leftover files removed successfully",
             ["downloadId"] = downloadId
         }.ToJsonString();
     }

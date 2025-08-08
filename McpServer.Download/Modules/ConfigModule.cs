@@ -2,11 +2,12 @@
 using Domain.Monitor;
 using Domain.Resources;
 using Domain.Tools;
+using Domain.Tools.Config;
 using Infrastructure.StateManagers;
 using McpServer.Download.Handlers;
+using McpServer.Download.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using McpServer.Download.Settings;
 using ModelContextProtocol.Protocol;
 
 namespace McpServer.Download.Modules;
@@ -44,6 +45,7 @@ public static class ConfigModule
             .WithTools<FileSearchTool>()
             .WithTools<FileDownloadTool>()
             .WithTools<GetDownloadStatusTool>()
+            .WithTools<CleanupDownloadTool>()
             .WithResources<DownloadResource>()
             .WithSubscribeToResourcesHandler(ResourceHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource)

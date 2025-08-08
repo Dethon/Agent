@@ -12,6 +12,8 @@ Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "DockerCom
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServer.Download", "McpServer.Download\McpServer.Download.csproj", "{36232CD3-6F30-4C22-BA67-CDF2C57928CF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServer.Origanize", "McpServer.Origanize\McpServer.Origanize.csproj", "{90556BBB-6524-4B98-932C-2EC2A52E73AA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -38,5 +40,9 @@ Global
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

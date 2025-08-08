@@ -102,14 +102,28 @@ services:
     depends_on:
       - qbittorrent
       - jackett
-        
-  jack:
-    image: agent:latest
-    container_name: jack
+  
+  mcp-organize:
+    image: mcp-organize:latest
+    container_name: mcp-organize
+    ports:
+      - "6001:8080"
+    build:
+      context: ${JACK_REPOSITORY_PATH}
+      dockerfile: McpServer.Organize/Dockerfile
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
       - ${DATA_PATH:-./volumes/data}:/media
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+        
+  jack:
+    image: agent:latest
+    container_name: jack
     build:
       context: ${JACK_REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
@@ -120,6 +134,7 @@ services:
       - jackbot
     depends_on:
       - mcp-download
+      - mcp-organize
 
 networks:
   jackbot:

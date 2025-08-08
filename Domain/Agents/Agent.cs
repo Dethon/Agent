@@ -1,17 +1,10 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
-using Domain.Exceptions;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
-using Role = Domain.DTOs.Role;
 
 namespace Domain.Agents;
 
@@ -21,7 +14,7 @@ public class Agent
     private readonly McpClientTool[] _mcpClientTools;
     private readonly McpClientResource[] _mcpClientResources;
     private readonly McpClientResourceTemplate[] _mcpClientResourceTemplates;
-    private Func<ChatMessage, CancellationToken, Task> _writeMessageCallback;
+    private readonly Func<ChatMessage, CancellationToken, Task> _writeMessageCallback;
     private readonly ILargeLanguageModel _llm;
     private readonly List<ChatMessage> _messages = [];
     private readonly Lock _messagesLock = new();

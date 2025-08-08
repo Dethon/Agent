@@ -1,15 +1,11 @@
 ﻿using System.ComponentModel;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
-using ModelContextProtocol;
+using Domain.Tools.Config;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
-
-public record DownloadPathConfig(string BaseDownloadLocation);
 
 [McpServerToolType]
 public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
@@ -32,7 +28,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
         var sessionId = context.Server.SessionId ?? "";
         await CheckDownloadNotAdded(searchResultId, cancellationToken);
 
-        var savePath = $"{pathConfig.BaseDownloadLocation}/{searchResultId}";
+        var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
         var itemToDownload = stateManager.GetSearchResult(sessionId, searchResultId);
         if (itemToDownload == null)
         {
