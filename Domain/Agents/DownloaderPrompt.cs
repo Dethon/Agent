@@ -42,9 +42,9 @@ public class DownloaderPrompt
                 find most appropriate. DO NOT ask the user to confirm the choice. 
 
                 You should let the user know about the files you chose to download and why.
-                After the download finishes you will receive a notification. Then you should organize the 
-                download within the library.
-                To do that, you should first explore the library structure, both directories and files, and 
+                After each download finishes you will receive a notification. Then you should organize that 
+                download within the library. You should NEVER try to organize a download that is still in progress.
+                To do the organization, you should first explore the library structure, both directories and files, and 
                 then move files accordingly.
 
                 You must keep the same structure and do not mix up files with directories. If an existing 
@@ -73,7 +73,9 @@ public class DownloaderPrompt
                 download task is cleaned up, it will fail and you will have to retry the cleanup process.
 
                 If the user says "status" or asks for the status of the download/s in any other way, you 
-                must reply with the name, progress, speed, size and ETA of all current downloads. 
+                must reply with the name, progress, speed, size and ETA of all current downloads.
+                
+                Don't prompt the user for acton or offer suggestions, just do what you are told.
                 """)
         ];
     }

@@ -166,10 +166,15 @@ public class Agent
         CancellationToken cancellationToken = default)
     {
         var updates = _llm.Prompt(GetConversationSnapshot(), _mcpClientTools, temperature, cancellationToken);
-        var response = await updates.ToChatResponseAsync(cancellationToken);
-        UpdateConversation(response.Messages);
-        foreach (var message in response.Messages.Where(x => !string.IsNullOrEmpty(x.Text)))
+        await foreach (var update in updates)
         {
+            if (update.Role is null)
+            {
+                continue;
+            }
+
+            var message = new ChatMessage(update.Role!.Value, update.Contents);
+            UpdateConversation([message]);
             await _writeMessageCallback(message, cancellationToken);
         }
     }
