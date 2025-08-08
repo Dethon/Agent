@@ -6,4 +6,3 @@ public record ToolDefinition(Type? ParamsType = null)
     public required string Description { get; init; }
 }
 
-public record ToolDefinition<TParams>() : ToolDefinition(typeof(TParams)) where TParams : class;

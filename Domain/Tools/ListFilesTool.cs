@@ -2,12 +2,13 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
+public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath) : BaseTool
 {
     private const string Name = "ListFiles";
 
@@ -20,20 +21,27 @@ public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(string path, CancellationToken cancellationToken)
+    public async Task<CallToolResult> Run(string path, CancellationToken cancellationToken)
     {
-        if (path.StartsWith(libraryPath.BaseLibraryPath))
+        try
         {
-            throw new ArgumentException($"""
-                                         {typeof(ListFilesTool)} parameter must be absolute paths derived from the 
-                                         ListDirectories tool response. 
-                                         They must start with the library path: {libraryPath}
-                                         """);
-        }
+            if (!path.StartsWith(libraryPath.BaseLibraryPath))
+            {
+                return CreateErrorResponse($"""
+                                            {typeof(ListFilesTool)} parameter must be absolute paths derived from the 
+                                            ListDirectories tool response. 
+                                            They must start with the library path: {libraryPath}
+                                            """);
+            }
 
-        var result = await client.ListFilesIn(path, cancellationToken);
-        var jsonResult = JsonSerializer.SerializeToNode(result) ?? 
-                         throw new InvalidOperationException("Failed to serialize ListFiles");
-        return jsonResult.ToJsonString(); 
+            var result = await client.ListFilesIn(path, cancellationToken);
+            var jsonResult = JsonSerializer.SerializeToNode(result) ??
+                             throw new InvalidOperationException("Failed to serialize ListFiles");
+            return CreateResponse(jsonResult.ToJsonString());
+        }
+        catch (Exception ex)
+        {
+            return CreateResponse(ex);
+        }
     }
 }

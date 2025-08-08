@@ -8,7 +8,7 @@ using ModelContextProtocol.Server;
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class FileSearchTool(ISearchClient client, IStateManager stateManager)
+public class FileSearchTool(ISearchClient client, IStateManager stateManager) : BaseTool
 {
     private const string Name = "FileSearch";
 
@@ -18,21 +18,28 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(
+    public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context, 
         string searchString, 
         CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.SessionId ?? "";
-        var results = await client.Search(searchString, cancellationToken);
-        stateManager.AddSearchResult(sessionId, results);
-        
-        return new JsonObject
+        try
         {
-            ["status"] = "success",
-            ["message"] = "File search completed successfully",
-            ["totalResults"] = results.Length,
-            ["results"] = JsonSerializer.SerializeToNode(results)
-        }.ToJsonString();
+            var sessionId = context.Server.SessionId ?? "";
+            var results = await client.Search(searchString, cancellationToken);
+            stateManager.AddSearchResult(sessionId, results);
+
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = "File search completed successfully",
+                ["totalResults"] = results.Length,
+                ["results"] = JsonSerializer.SerializeToNode(results)
+            });
+        }
+        catch (Exception ex)
+        {
+            return CreateResponse(ex);
+        }
     }
 }

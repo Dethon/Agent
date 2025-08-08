@@ -2,12 +2,13 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
+public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath) : BaseTool
 {
     private const string Name = "Move";
 
@@ -20,25 +21,33 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(string sourcePath, string destinationPath, CancellationToken cancellationToken)
+    public async Task<CallToolResult> Run(string sourcePath, string destinationPath,
+        CancellationToken cancellationToken)
     {
-        if (!sourcePath.StartsWith(libraryPath.BaseLibraryPath) ||
-            !destinationPath.StartsWith(libraryPath.BaseLibraryPath))
+        try
         {
-            throw new ArgumentException($"""
-                                         {typeof(MoveTool)} parameters must be absolute paths derived from the 
-                                         LibraryDescription tool response. 
-                                         They must start with the library path: {libraryPath}
-                                         """);
-        }
+            if (!sourcePath.StartsWith(libraryPath.BaseLibraryPath) ||
+                !destinationPath.StartsWith(libraryPath.BaseLibraryPath))
+            {
+                return CreateErrorResponse($"""
+                                            {typeof(MoveTool)} parameters must be absolute paths derived from the 
+                                            LibraryDescription tool response. 
+                                            They must start with the library path: {libraryPath}
+                                            """);
+            }
 
-        await client.Move(sourcePath, destinationPath, cancellationToken);
-        return new JsonObject
+            await client.Move(sourcePath, destinationPath, cancellationToken);
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = "File moved successfully",
+                ["source"] = sourcePath,
+                ["destination"] = destinationPath
+            });
+        }
+        catch (Exception ex)
         {
-            ["status"] = "success",
-            ["message"] = "File moved successfully",
-            ["source"] = sourcePath,
-            ["destination"] = destinationPath
-        }.ToJsonString();
+            return CreateResponse(ex);
+        }
     }
 }

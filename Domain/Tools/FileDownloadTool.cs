@@ -9,6 +9,7 @@ namespace Domain.Tools;
 
 [McpServerToolType]
 public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
+    : BaseTool
 {
     private const string Name = "FileDownload";
 
@@ -20,36 +21,43 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(
+    public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context, 
         int searchResultId, 
         CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.SessionId ?? "";
-        await CheckDownloadNotAdded(searchResultId, cancellationToken);
-
-        var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
-        var itemToDownload = stateManager.GetSearchResult(sessionId, searchResultId);
-        if (itemToDownload == null)
+        try
         {
-            throw new InvalidOperationException($"No search result found for id {searchResultId}.");
+            var sessionId = context.Server.SessionId ?? "";
+            await CheckDownloadNotAdded(searchResultId, cancellationToken);
+
+            var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
+            var itemToDownload = stateManager.GetSearchResult(sessionId, searchResultId);
+            if (itemToDownload == null)
+            {
+                return CreateErrorResponse($"No search result found for id {searchResultId}.");
+            }
+
+            await client.Download(
+                itemToDownload.Link,
+                savePath,
+                searchResultId,
+                cancellationToken);
+
+            stateManager.TrackDownload(sessionId, searchResultId);
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = $"""
+                               Download with id {searchResultId} started successfully. 
+                               User will notify yoy when it is completed."
+                               """
+            });
         }
-
-        await client.Download(
-            itemToDownload.Link,
-            savePath,
-            searchResultId,
-            cancellationToken);
-        
-        stateManager.TrackDownload(sessionId, searchResultId);
-        return new JsonObject
+        catch (Exception ex)
         {
-            ["status"] = "success",
-            ["message"] = $"""
-                           Download with id {searchResultId} started successfully. 
-                           User will notify yoy when it is completed."
-                           """
-        }.ToJsonString();
+            return CreateResponse(ex);
+        }
     }
 
     private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)

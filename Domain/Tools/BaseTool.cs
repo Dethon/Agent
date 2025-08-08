@@ -20,7 +20,7 @@ public class BaseTool
         };
     }
 
-    protected static CallToolResult CreateResponse(JsonObject json)
+    protected static CallToolResult CreateResponse(JsonNode json)
     {
         return new CallToolResult
         {
@@ -40,6 +40,21 @@ public class BaseTool
         return new CallToolResult
         {
             IsError = false,
+            Content =
+            [
+                new TextContentBlock
+                {
+                    Text = message
+                }
+            ]
+        };
+    }
+
+    protected static CallToolResult CreateErrorResponse(string message)
+    {
+        return new CallToolResult
+        {
+            IsError = true,
             Content =
             [
                 new TextContentBlock

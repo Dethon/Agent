@@ -1,10 +1,6 @@
-﻿using System.Collections.Concurrent;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
-using System.ComponentModel;
-using System.Text.Json;
+﻿using System.ComponentModel;
 using Domain.Contracts;
-using Microsoft.Extensions.Caching.Memory;
+using ModelContextProtocol.Server;
 
 namespace Domain.Resources;
 
@@ -19,8 +15,8 @@ public class DownloadResource(IDownloadClient downloadClient)
     public async Task<string> Get(int id, CancellationToken cancellationToken)
     {
         var downloadStatus = await downloadClient.GetDownloadItem(id, 3, 500, cancellationToken);
-        return downloadStatus == null
-            ? $"The download with ID {id} could not be found. It was probably removed externally"
-            : $"The status of the download with ID {id} is: {JsonSerializer.Serialize(downloadStatus)}";
+        return downloadStatus is null
+            ? $"The download with id {id} is missing, it probably got removed externally."
+            : $"The status of the download with id {id} is {downloadStatus.State}";
     }
 }

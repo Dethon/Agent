@@ -8,7 +8,7 @@ using ModelContextProtocol.Server;
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager)
+public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager) : BaseTool
 {
     private const string Name = "GetDownloadStatus";
 
@@ -21,25 +21,32 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
                                        """;
 
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(
+    public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context, 
         int downloadId, 
         CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.SessionId ?? "";
-        var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
-        if (downloadItem == null)
+        try
         {
-            return "The download is missing, it probably got removed externally";
-        }
-
-        return new JsonObject
-        {
-            ["status"] = "success",
-            ["message"] = JsonSerializer.Serialize(downloadItem with
+            var sessionId = context.Server.SessionId ?? "";
+            var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
+            if (downloadItem == null)
             {
-                Title = stateManager.GetSearchResult(sessionId, downloadItem.Id)?.Title ?? "Missing Title",
-            })
-        }.ToJsonString();
+                return CreateResponse("The download is missing, it probably got removed externally");
+            }
+
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = JsonSerializer.Serialize(downloadItem with
+                {
+                    Title = stateManager.GetSearchResult(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
+                })
+            });
+        }
+        catch (Exception ex)
+        {
+            return CreateResponse(ex);
+        }
     }
 }

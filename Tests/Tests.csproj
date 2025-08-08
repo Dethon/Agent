@@ -30,4 +30,8 @@
     <ProjectReference Include="..\Agent\Agent.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Unit\"/>
+  </ItemGroup>
+
 </Project>

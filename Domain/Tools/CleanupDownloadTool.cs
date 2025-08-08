@@ -7,9 +7,9 @@ using ModelContextProtocol.Server;
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class CleanupDownloadTool(IDownloadClient downloadClient) : BaseTool
+public class CleanupDownloadTool(IDownloadClient downloadClient, IStateManager stateManager) : BaseTool
 {
-    private const string Name = "CleanupDownload";
+    private const string Name = "CleanupDownloadTask";
 
     private const string Description = """
                                        Removes a download task from the download manager.
@@ -18,10 +18,15 @@ public class CleanupDownloadTool(IDownloadClient downloadClient) : BaseTool
 
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public async Task<CallToolResult> Run(int downloadId, CancellationToken cancellationToken)
+    public async Task<CallToolResult> Run(
+        RequestContext<CallToolRequestParams> context,
+        int downloadId,
+        CancellationToken cancellationToken)
     {
         try
         {
+            var sessionId = context.Server.SessionId ?? "";
+            stateManager.UntrackDownload(sessionId, downloadId);
             await downloadClient.Cleanup(downloadId, cancellationToken);
             return CreateResponse(new JsonObject
             {

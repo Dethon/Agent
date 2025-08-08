@@ -79,7 +79,7 @@ public static class ResourceHandlers
                 ));
             var downloads = await Task.WhenAll(downloadTasks);
             var filteredDownloads = downloads
-                .Where(x => x.DownloadItem == null || x.DownloadItem.Status is DownloadStatus.Completed);
+                .Where(x => x.DownloadItem == null || x.DownloadItem.State is DownloadState.Completed);
             
             foreach (var (id, _) in filteredDownloads)
             {

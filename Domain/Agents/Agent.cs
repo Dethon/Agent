@@ -54,7 +54,9 @@ public class Agent
                 "notifications/resources/updated",
                 async (notification, cancellationToken) =>
                 {
-                    var uri = notification.Params.Deserialize<Dictionary<string, string>>()?.GetValueOrDefault("uri");
+                    var uri = notification.Params
+                        .Deserialize<Dictionary<string, string>>()?
+                        .GetValueOrDefault("uri");
                     if (uri is null)
                     {
                         return;
@@ -69,13 +71,25 @@ public class Agent
 
     private static async Task<IMcpClient> CreateClient(string endpoint, CancellationToken cancellationToken)
     {
-        return await McpClientFactory.CreateAsync(
-            new SseClientTransport(
-                new SseClientTransportOptions
-                {
-                    Endpoint = new Uri(endpoint)
-                }),
-            cancellationToken: cancellationToken);
+        for (var i = 0; i < 3; i++)
+        {
+            try
+            {
+                return await McpClientFactory.CreateAsync(
+                    new SseClientTransport(
+                        new SseClientTransportOptions
+                        {
+                            Endpoint = new Uri(endpoint)
+                        }),
+                    cancellationToken: cancellationToken);
+            }
+            catch (HttpRequestException)
+            {
+                await Task.Delay(1000, cancellationToken);
+            }
+        }
+
+        throw new HttpRequestException($"Failed to connect to MCP server at {endpoint} after 3 attempts.");
     }
 
     private static async Task<McpClientTool[]> GetTools(IMcpClient[] clients, CancellationToken cancellationToken)

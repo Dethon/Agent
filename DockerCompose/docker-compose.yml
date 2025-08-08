@@ -11,8 +11,8 @@ services:
       - ./volumes/qbittorrent_config:/config
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
     environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - PUID=${PUID:-1654}
+      - PGID=${PGID:-1654}
       - QBT_LEGAL_NOTICE=confirm
       - QBT_VERSION=5.1.2-2
       - QBT_TORRENTING_PORT=6881
@@ -27,6 +27,7 @@ services:
   filebrowser:
     image: filebrowser/filebrowser:v2
     container_name: filebrowser
+    user: ${PUID:-1654}:${PGID:-1654}
     ports:
       - "8002:80"
     volumes:
@@ -46,8 +47,8 @@ services:
       - ./volumes/jackett_config:/config
       - ./volumes/jackett_data/downloads:/downloads
     environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - PUID=${PUID:-1654}
+      - PGID=${PGID:-1654}
       - TZ=UTC
       - UMASK=022
     restart: unless-stopped
@@ -80,8 +81,8 @@ services:
       - ./volumes/plex_config:/config
       - ${DATA_PATH:-./volumes/data}:/media
     environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - PUID=${PUID:-1654}
+      - PGID=${PGID:-1654}
       - TZ=UTC
       - VERSION=docker
     restart: unless-stopped

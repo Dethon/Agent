@@ -1,7 +1,6 @@
 ﻿using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
-using Domain.DTOs;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,11 +13,10 @@ public static class Command
     {
         await using var scope = services.CreateAsyncScope();
         var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
-        var downloadSysPrompt = new DownloaderPrompt();
-        
+       
         ChatMessage[] messages = [
-            ..(await downloadSysPrompt.Get(null, lifetime.ApplicationStopping)),
-            new ChatMessage(ChatRole.User, prompt)
+            ..DownloaderPrompt.Get(),
+            new(ChatRole.User, prompt)
         ];
         var agent = await Domain.Agents.Agent.CreateAsync(
             settings.McpServers.Select(x => x.Endpoint).ToArray(),

@@ -53,7 +53,7 @@ public class QBittorrentDownloadClient(
             Id = id,
             Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
             Size = torrent["total_size"]?.GetValue<long>() ?? 0 / 1024 / 1024,
-            Status = GetDownloadStatus(torrent),
+            State = GetDownloadStatus(torrent),
             Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
             SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
@@ -169,36 +169,36 @@ public class QBittorrentDownloadClient(
         return cookie is { Expired: false };
     }
 
-    private static DownloadStatus GetDownloadStatus(JsonNode? torrent)
+    private static DownloadState GetDownloadStatus(JsonNode? torrent)
     {
         var progress = torrent?["progress"]?.GetValue<double>() ?? 0;
         var stateString = torrent?["state"]?.GetValue<string>() ?? string.Empty;
         if (progress >= 1.0)
         {
-            return DownloadStatus.Completed;
+            return DownloadState.Completed;
         }
 
         return stateString switch
         {
-            "error" => DownloadStatus.Failed,
-            "missingFiles" => DownloadStatus.Failed,
-            "uploading" => DownloadStatus.Completed,
-            "pausedUP" => DownloadStatus.Completed,
-            "queuedUP" => DownloadStatus.Completed,
-            "stalledUP" => DownloadStatus.Completed,
-            "checkingUP" => DownloadStatus.InProgress,
-            "forcedUp" => DownloadStatus.Completed,
-            "allocating" => DownloadStatus.InProgress,
-            "downloading" => DownloadStatus.InProgress,
-            "metaDL" => DownloadStatus.InProgress,
-            "pausedDL" => DownloadStatus.Paused,
-            "queuedDL" => DownloadStatus.Paused,
-            "stalledDL" => DownloadStatus.Paused,
-            "checkingDL" => DownloadStatus.InProgress,
-            "forcedDL" => DownloadStatus.InProgress,
-            "checkingResumeData" => DownloadStatus.InProgress,
-            "moving" => DownloadStatus.InProgress,
-            _ => DownloadStatus.Failed
+            "error" => DownloadState.Failed,
+            "missingFiles" => DownloadState.Failed,
+            "uploading" => DownloadState.Completed,
+            "pausedUP" => DownloadState.Completed,
+            "queuedUP" => DownloadState.Completed,
+            "stalledUP" => DownloadState.Completed,
+            "checkingUP" => DownloadState.InProgress,
+            "forcedUp" => DownloadState.Completed,
+            "allocating" => DownloadState.InProgress,
+            "downloading" => DownloadState.InProgress,
+            "metaDL" => DownloadState.InProgress,
+            "pausedDL" => DownloadState.Paused,
+            "queuedDL" => DownloadState.Paused,
+            "stalledDL" => DownloadState.Paused,
+            "checkingDL" => DownloadState.InProgress,
+            "forcedDL" => DownloadState.InProgress,
+            "checkingResumeData" => DownloadState.InProgress,
+            "moving" => DownloadState.InProgress,
+            _ => DownloadState.Failed
         };
     }
 }
