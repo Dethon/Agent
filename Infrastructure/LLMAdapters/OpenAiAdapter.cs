@@ -1,6 +1,5 @@
 using System.ClientModel;
 using Domain.Contracts;
-using Domain.DTOs;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using OpenAI;
@@ -23,6 +22,8 @@ public class OpenAiAdapter(string endpoint, string apiKey, string model) : ILarg
             c.IncludeDetailedErrors = true;
             c.MaximumIterationsPerRequest = 50;
             c.AllowConcurrentInvocation = true;
+            c.IncludeDetailedErrors = true;
+            c.MaximumConsecutiveErrorsPerRequest = 3;
         })
         .Build();
 

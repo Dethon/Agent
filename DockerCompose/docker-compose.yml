@@ -107,7 +107,7 @@ services:
     image: mcp-organize:latest
     container_name: mcp-organize
     ports:
-      - "6001:8080"
+      - "6002:8080"
     build:
       context: ${JACK_REPOSITORY_PATH}
       dockerfile: McpServer.Organize/Dockerfile

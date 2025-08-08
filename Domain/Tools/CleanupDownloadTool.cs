@@ -1,12 +1,13 @@
 ﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class CleanupDownloadTool(IDownloadClient downloadClient)
+public class CleanupDownloadTool(IDownloadClient downloadClient) : BaseTool
 {
     private const string Name = "CleanupDownload";
 
@@ -17,14 +18,21 @@ public class CleanupDownloadTool(IDownloadClient downloadClient)
 
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public async Task<string> Run(int downloadId, CancellationToken cancellationToken)
+    public async Task<CallToolResult> Run(int downloadId, CancellationToken cancellationToken)
     {
-        await downloadClient.Cleanup(downloadId, cancellationToken);
-        return new JsonObject
+        try
         {
-            ["status"] = "success",
-            ["message"] = "Download task removed successfully",
-            ["downloadId"] = downloadId
-        }.ToJsonString();
+            await downloadClient.Cleanup(downloadId, cancellationToken);
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = "Download task removed successfully",
+                ["downloadId"] = downloadId
+            });
+        }
+        catch (Exception ex)
+        {
+            return CreateResponse(ex);
+        }
     }
 }

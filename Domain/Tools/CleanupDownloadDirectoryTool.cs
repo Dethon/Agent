@@ -2,12 +2,15 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
 [McpServerToolType]
-public class CleanupDownloadDirectoryTool(IFileSystemClient fileSystemClient, DownloadPathConfig downloadPath)
+public class CleanupDownloadDirectoryTool(
+    IFileSystemClient fileSystemClient,
+    DownloadPathConfig downloadPath) : BaseTool
 {
     private const string Name = "CleanupDownloadDirectory";
 
@@ -17,15 +20,22 @@ public class CleanupDownloadDirectoryTool(IFileSystemClient fileSystemClient, Do
                                        """;
     
     [McpServerTool(Name = Name), Description(Description)]
-    public async Task<string> Run(int downloadId, CancellationToken cancellationToken)
+    public async Task<CallToolResult> Run(int downloadId, CancellationToken cancellationToken)
     {
-        var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
-        await fileSystemClient.RemoveDirectory(path, cancellationToken);
-        return new JsonObject
+        try
         {
-            ["status"] = "success",
-            ["message"] = "Download leftover files removed successfully",
-            ["downloadId"] = downloadId
-        }.ToJsonString();
+            var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
+            await fileSystemClient.RemoveDirectory(path, cancellationToken);
+            return CreateResponse(new JsonObject
+            {
+                ["status"] = "success",
+                ["message"] = "Download leftover files removed successfully",
+                ["downloadId"] = downloadId
+            });
+        }
+        catch (Exception ex)
+        {
+            return CreateResponse(ex);
+        }
     }
 }
