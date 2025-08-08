@@ -12,7 +12,7 @@ Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "DockerCom
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServer.Download", "McpServer.Download\McpServer.Download.csproj", "{36232CD3-6F30-4C22-BA67-CDF2C57928CF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServer.Origanize", "McpServer.Origanize\McpServer.Origanize.csproj", "{90556BBB-6524-4B98-932C-2EC2A52E73AA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServer.Organize", "McpServer.Organize\McpServer.Organize.csproj", "{90556BBB-6524-4B98-932C-2EC2A52E73AA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
