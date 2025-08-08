@@ -23,8 +23,8 @@ public static class ResourceHandlers
         var taskQueue = context.Services.GetRequiredService<TaskQueue>();
         
         stateManager.SubscribeResource(sessionId, uri);
-        await taskQueue.QueueTask(ct => 
-            ResourceMonitoring(sessionId, uri, context.Server, stateManager, context.Services, ct));
+        var monitor = GetResourceMonitor(sessionId, uri, context.Server, stateManager, context.Services);
+        await taskQueue.QueueTask(monitor);
         
         return new EmptyResult();
     }
@@ -44,19 +44,19 @@ public static class ResourceHandlers
         return new ValueTask<EmptyResult>();
     }
     
-    private static async Task ResourceMonitoring(
+    private static Func<CancellationToken, Task> GetResourceMonitor(
         string sessionId, 
         string uri, 
         IMcpServer server, 
         IStateManager stateManager, 
-        IServiceProvider services,
-        CancellationToken cancellationToken)
+        IServiceProvider services)
     {
         if(uri.StartsWith("download://", StringComparison.OrdinalIgnoreCase))
         {
             var downloadClient = services.GetRequiredService<IDownloadClient>();
-            await DownloadMonitoring(sessionId, uri, server, stateManager, downloadClient, cancellationToken);
+            return ct => DownloadMonitoring(sessionId, uri, server, stateManager, downloadClient, ct);
         }
+        throw new NotImplementedException();
     }
 
     private static async Task DownloadMonitoring(
@@ -87,7 +87,7 @@ public static class ResourceHandlers
                 await server.SendNotificationAsync("notifications/resources/updated",
                     new
                     {
-                        Uri = $"{uri}/{id}/",
+                        Uri = uri.Replace("{id}", $"{id}")
                     }, cancellationToken: cancellationToken);
             }
             

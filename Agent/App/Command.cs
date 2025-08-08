@@ -1,4 +1,5 @@
-﻿using Domain.Agents;
+﻿using Agent.Settings;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.AI;
@@ -9,45 +10,53 @@ namespace Agent.App;
 
 public static class Command
 {
-    public static async Task Start(IServiceProvider services, string prompt)
+    public static async Task Start(IServiceProvider services, string prompt, AgentSettings settings)
     {
         await using var scope = services.CreateAsyncScope();
         var lifetime = scope.ServiceProvider.GetRequiredService<IHostApplicationLifetime>();
-        var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
-
-        var agent = await agentResolver.Resolve(AgentType.Download);
-        var responses = agent.Run(prompt, true, lifetime.ApplicationStopping);
-        await DisplayResponses(responses, lifetime.ApplicationStopping);
+        var downloadSysPrompt = new DownloaderPrompt();
+        
+        ChatMessage[] messages = [
+            ..(await downloadSysPrompt.Get(null, lifetime.ApplicationStopping)),
+            new ChatMessage(ChatRole.User, prompt)
+        ];
+        var agent = await Domain.Agents.Agent.CreateAsync(
+            settings.McpServers.Select(x => x.Endpoint).ToArray(),
+            (message, _) =>
+            {
+                DisplayResponses(message);
+                return Task.CompletedTask;
+            },
+            scope.ServiceProvider.GetRequiredService<ILargeLanguageModel>(),
+            lifetime.ApplicationStopping);
+        
+        await agent.Run(messages, lifetime.ApplicationStopping);
+        
+        await Task.Delay(Int32.MaxValue, lifetime.ApplicationStopping);
     }
 
-    private static async Task DisplayResponses(
-        IAsyncEnumerable<ChatMessage> agentResponses, CancellationToken cancellationToken)
+    private static void DisplayResponses(ChatMessage message)
     {
-        await foreach (var message in agentResponses.WithCancellation(cancellationToken))
-        {
-            Console.WriteLine(message.Text);
-            // if (!string.IsNullOrEmpty(message.Reasoning))
-            // {
-            //     Console.ForegroundColor = ConsoleColor.DarkBlue;
-            //     Console.WriteLine(message.Reasoning);
-            // }
-            //
-            // if (!string.IsNullOrEmpty(message.Content))
-            // {
-            //     Console.ForegroundColor = ConsoleColor.White;
-            //     Console.WriteLine(message.Content);
-            // }
-            //
-            // Console.ForegroundColor = ConsoleColor.DarkGray;
-            // Console.WriteLine($"StopReason: {message.StopReason}");
-            //
-            // foreach (var toolCall in message.ToolCalls)
-            // {
-            //     Console.ForegroundColor = ConsoleColor.DarkCyan;
-            //     Console.WriteLine(toolCall.ToString());
-            // }
-        }
-
-        Console.ResetColor();
+        Console.WriteLine(message.Text);
+        // if (!string.IsNullOrEmpty(message.Reasoning))
+        // {
+        //     Console.ForegroundColor = ConsoleColor.DarkBlue;
+        //     Console.WriteLine(message.Reasoning);
+        // }
+        //
+        // if (!string.IsNullOrEmpty(message.Content))
+        // {
+        //     Console.ForegroundColor = ConsoleColor.White;
+        //     Console.WriteLine(message.Content);
+        // }
+        //
+        // Console.ForegroundColor = ConsoleColor.DarkGray;
+        // Console.WriteLine($"StopReason: {message.StopReason}");
+        //
+        // foreach (var toolCall in message.ToolCalls)
+        // {
+        //     Console.ForegroundColor = ConsoleColor.DarkCyan;
+        //     Console.WriteLine(toolCall.ToString());
+        // }
     }
 }

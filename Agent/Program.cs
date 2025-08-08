@@ -12,9 +12,9 @@ if(builder.Environment.IsDevelopment())
     cmdParams = cmdParams with
     {
         IsDaemon = false,
-        Prompt = "squid game season 1 download all episodes"
+        Prompt = "oathbringer epub, download 2 different alternatives"
     };
 }
 
 using var host = builder.Build();
-await host.StartAgent(cmdParams);
+await host.StartAgent(settings, cmdParams);

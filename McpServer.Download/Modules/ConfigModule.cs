@@ -1,11 +1,13 @@
 ﻿using Domain.Contracts;
 using Domain.Monitor;
+using Domain.Resources;
 using Domain.Tools;
 using Infrastructure.StateManagers;
 using McpServer.Download.Handlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using McpServer.Download.Settings;
+using ModelContextProtocol.Protocol;
 
 namespace McpServer.Download.Modules;
 
@@ -32,7 +34,7 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
-            .AddTransient<IStateManager, MemoryCacheStateManager>()
+            .AddSingleton<IStateManager, MemoryCacheStateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddSingleton<TaskQueue>()
@@ -42,8 +44,13 @@ public static class ConfigModule
             .WithTools<FileSearchTool>()
             .WithTools<FileDownloadTool>()
             .WithTools<GetDownloadStatusTool>()
+            .WithResources<DownloadResource>()
             .WithSubscribeToResourcesHandler(ResourceHandlers.SubscribeToResource)
-            .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource);
+            .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource)
+            .WithListResourcesHandler((_, _) => new ValueTask<ListResourcesResult>(new ListResourcesResult
+            {
+                Resources = []
+            })); //TODO: Remove asap. workaround for bug (https://github.com/modelcontextprotocol/csharp-sdk/issues/656)
 
         return services;
     }

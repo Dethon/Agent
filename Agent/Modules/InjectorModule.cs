@@ -39,7 +39,7 @@ public static class InjectorModule
             new OpenAiAdapter(
                 settings.OpenRouter.ApiUrl,
                 settings.OpenRouter.ApiKey,
-                settings.OpenRouter.Models[0]));
+                settings.OpenRouter.Models[1]));
     }
 
     public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentSettings settings)

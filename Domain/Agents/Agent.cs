@@ -3,7 +3,6 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Exceptions;
@@ -16,104 +15,159 @@ using Role = Domain.DTOs.Role;
 
 namespace Domain.Agents;
 
-public class Agent(
-    ChatMessage[] messages,
-    ILargeLanguageModel llm,
-    McpClientTool[] tools,
-    int maxDepth,
-    ILogger<Agent> logger) : IAgent
+public class Agent
 {
-    private readonly ConcurrentDictionary<CancellationToken, CancellationTokenSource> _cancelTokenSources = [];
+    private readonly IMcpClient[] _mcpClients;
+    private readonly McpClientTool[] _mcpClientTools;
+    private readonly McpClientResource[] _mcpClientResources;
+    private readonly McpClientResourceTemplate[] _mcpClientResourceTemplates;
+    private Func<ChatMessage, CancellationToken, Task> _writeMessageCallback;
+    private readonly ILargeLanguageModel _llm;
+    private readonly List<ChatMessage> _messages = [];
     private readonly Lock _messagesLock = new();
-    private readonly List<ChatMessage> _messages = messages.ToList();
 
-    public IAsyncEnumerable<ChatMessage> Run(
-        string? prompt, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
+    private Agent(
+        IMcpClient[] mcpClients,
+        McpClientTool[] mcpClientTools,
+        McpClientResource[] mcpClientResources,
+        McpClientResourceTemplate[] mcpClientResourceTemplates,
+        Func<ChatMessage, CancellationToken, Task> writeMessageCallback,
+        ILargeLanguageModel llm)
+    {
+        _mcpClients = mcpClients;
+        _mcpClientTools = mcpClientTools;
+        _mcpClientResources = mcpClientResources;
+        _mcpClientResourceTemplates = mcpClientResourceTemplates;
+        _writeMessageCallback = writeMessageCallback;
+        _llm = llm;
+    }
+
+    public static async Task<Agent> CreateAsync(
+        string[] endpoints, 
+        Func<ChatMessage, CancellationToken, Task> writeMessageCallback,
+        ILargeLanguageModel llm,
+        CancellationToken ct)
+    {
+        var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, ct)));
+        var tools = await GetTools(mcpClients, ct);
+        var resources = await GetResources(mcpClients, ct).ToArrayAsync(ct);
+        var templatedResources = await GetTemplatedResources(mcpClients, ct).ToArrayAsync(ct);
+        
+        var agent = new Agent(mcpClients, tools, resources, templatedResources, writeMessageCallback, llm);
+
+        foreach (var client in mcpClients)
+        {
+            client.RegisterNotificationHandler(
+                "notifications/resources/updated",
+                async (notification, cancellationToken) =>
+                {
+                    var uri = notification.Params.Deserialize<Dictionary<string, string>>()?.GetValueOrDefault("uri");
+                    if (uri is null)
+                    {
+                        return;
+                    }
+                    var resource = await client.ReadResourceAsync(uri, cancellationToken);
+                    var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
+                    await agent.Run([message],cancellationToken);
+                });
+        }
+        return agent;
+    }
+
+    private static async Task<IMcpClient> CreateClient(string endpoint, CancellationToken cancellationToken)
+    {
+        return await McpClientFactory.CreateAsync(
+            new SseClientTransport(
+                new SseClientTransportOptions
+                {
+                    Endpoint = new Uri(endpoint)
+                }),
+            cancellationToken: cancellationToken);
+    }
+
+    private static async Task<McpClientTool[]> GetTools(IMcpClient[] clients, CancellationToken cancellationToken)
+    {
+        var tasks = clients
+            .Select(x => x
+                .EnumerateToolsAsync(cancellationToken: cancellationToken)
+                .ToArrayAsync(cancellationToken)
+                .AsTask());
+        var tools = await Task.WhenAll(tasks);
+        return tools
+            .SelectMany(x => x)
+            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()))
+            .ToArray();
+    }
+    
+    private static async IAsyncEnumerable<McpClientResource> GetResources(
+        IMcpClient[] clients, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var client in clients)
+        {
+            if (client.ServerCapabilities.Resources is null)
+            {
+                continue;
+            }
+            var resources = client.EnumerateResourcesAsync(cancellationToken: cancellationToken);
+            await foreach (var resource in resources)
+            {
+                await client.SubscribeToResourceAsync(resource.Uri, cancellationToken);
+                yield return resource;
+            }
+        }
+    }
+    
+    private static async IAsyncEnumerable<McpClientResourceTemplate> GetTemplatedResources(
+        IMcpClient[] clients, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var client in clients)
+        {
+            if (client.ServerCapabilities.Resources is null)
+            {
+                continue;
+            }
+            var resources = client.EnumerateResourceTemplatesAsync(cancellationToken: cancellationToken);
+            await foreach (var resource in resources)
+            {
+                await client.SubscribeToResourceAsync(resource.UriTemplate, cancellationToken);
+                yield return resource;
+            }
+        }
+    }
+    
+    public async Task Run(
+        string? prompt, CancellationToken cancellationToken)
     {
         if (prompt is null)
         {
-            return Run([], cancelCurrentOperation, cancellationToken);
+            await Run([], cancellationToken);
         }
 
         var message = new ChatMessage(ChatRole.User, prompt);
-        return Run([message], cancelCurrentOperation, cancellationToken);
+        await Run([message], cancellationToken);
     }
 
-    public IAsyncEnumerable<ChatMessage> Run(
-        ChatMessage[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default)
+    public async Task Run(
+        ChatMessage[] prompts, CancellationToken cancellationToken)
     {
         UpdateConversation(prompts);
-        var childCancellationToken = GetChildCancellationToken(cancelCurrentOperation, cancellationToken);
-        return ExecuteAgentLoop(0.5f, childCancellationToken);
+        await ExecuteAgentLoop(0.5f, cancellationToken);
     }
 
-    private async IAsyncEnumerable<ChatMessage> ExecuteAgentLoop(
+    private async Task ExecuteAgentLoop(
         float? temperature = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
-        for (var i = 0; i < maxDepth && !cancellationToken.IsCancellationRequested; i++)
+        var updates = _llm.Prompt(GetConversationSnapshot(), _mcpClientTools, temperature, cancellationToken);
+        var response = await updates.ToChatResponseAsync(cancellationToken);
+        UpdateConversation(response.Messages);
+        foreach (var message in response.Messages.Where(x => !string.IsNullOrEmpty(x.Text)))
         {
-            var updates = llm.Prompt(GetConversationSnapshot(), tools, temperature, cancellationToken);
-            var response = await updates.ToChatResponseAsync(cancellationToken);
-            UpdateConversation(response.Messages);
-            foreach (var message in response.Messages)
-            {
-                yield return message;
-            }
-        }
-
-        throw new AgentLoopException($"Agent loop reached max depth ({maxDepth}). Anti-loop safeguard reached.");
-    }
-
-    private async Task<ToolMessage[]> ProcessToolCalls(
-        IEnumerable<AgentResponse> responseMessages, CancellationToken cancellationToken)
-    {
-        var toolTasks = responseMessages
-            .Where(x => x.StopReason == StopReason.ToolCalls)
-            .SelectMany(x => x.ToolCalls)
-            .Select(x => ResolveToolRequest(x, cancellationToken));
-        return await Task.WhenAll(toolTasks);
-    }
-
-    private async Task<ToolMessage> ResolveToolRequest(ToolCall toolCall, CancellationToken cancellationToken)
-    {
-        var tool = tools.Single(x => x.Name == toolCall.Name);
-        try
-        {
-            var response = await tool.CallAsync(
-                toolCall.Parameters.Deserialize<Dictionary<string, object?>>(), cancellationToken: cancellationToken);
-            var textContent = (response.Content.First(c => c.Type == "text") as TextContentBlock)?.Text;
-            logger.LogInformation(
-                "Tool {ToolName} with {Params} : {toolResponse}",
-                toolCall.Name, toolCall.Parameters, textContent);
-            return new ToolMessage
-            {
-                Role = Role.Tool,
-                Content = textContent ?? "No text content returned from tool.",
-                ToolCallId = toolCall.Id
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "Tool {ToolName} with {Params} Error: {ExceptionMessage}",
-                toolCall.Name, toolCall.Parameters, ex.Message);
-
-            return new ToolMessage
-            {
-                Role = Role.Tool,
-                Content = new JsonObject
-                {
-                    ["status"] = "success",
-                    ["message"] = $"There was an error on tool call {toolCall.Id}: {ex.Message}"
-                }.ToJsonString(),
-                ToolCallId = toolCall.Id
-            };
+            await _writeMessageCallback(message, cancellationToken);
         }
     }
-
-    private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
+    
+    /*private CancellationToken GetChildCancellationToken(bool cancelPrevious, CancellationToken cancellationToken)
     {
         if (cancelPrevious)
         {
@@ -134,7 +188,7 @@ public class Agent(
         var newSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancelTokenSources[cancellationToken] = newSource;
         return newSource.Token;
-    }
+    }*/
 
     private ImmutableArray<ChatMessage> GetConversationSnapshot()
     {

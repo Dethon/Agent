@@ -36,12 +36,7 @@ public class AgentResolver(
         var tools = await GetMcpServers(mcpServerEndpoints);
         return agentType switch
         {
-            AgentType.Download => new Agent(
-                messages: await downloaderPrompt.Get(null),
-                llm: languageModel,
-                tools: tools,
-                maxDepth: MaxDepth,
-                logger: loggerFactory.CreateLogger<Agent>()),
+            AgentType.Download => null,
             _ => throw new ArgumentException($"Unknown agent type: {agentType}")
         };
     }
@@ -62,7 +57,8 @@ public class AgentResolver(
                 new SseClientTransportOptions
                 {
                     Endpoint = new Uri(x)
-                }), cancellationToken: cancellationToken)));
+                }),
+            cancellationToken: cancellationToken)));
         
         
         

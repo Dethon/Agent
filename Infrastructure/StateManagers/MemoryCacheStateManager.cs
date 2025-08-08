@@ -7,6 +7,7 @@ namespace Infrastructure.StateManagers;
 
 public class MemoryCacheStateManager(IMemoryCache cache): IStateManager
 {
+    private readonly Lock _cacheLock = new();
     private static string GetTrackedDownloadsKey(string sessionId) =>
         $"TrackedDownloads_{sessionId}";
     private static string GetTrackedSearchResultsKey(string sessionId, int resultId) =>
@@ -24,12 +25,15 @@ public class MemoryCacheStateManager(IMemoryCache cache): IStateManager
 
     public void TrackDownload(string sessionId, int downloadId)
     {
-        var dict = cache.GetOrCreate(GetTrackedDownloadsKey(sessionId), entry =>
+        lock (_cacheLock)
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
-            return new ConcurrentDictionary<int, byte>();
-        });
-        dict?.TryAdd(downloadId, 1);
+            var dict = cache.GetOrCreate(GetTrackedDownloadsKey(sessionId), entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
+                return new ConcurrentDictionary<int, byte>();
+            });
+            dict?.TryAdd(downloadId, 1);
+        }
     }
 
     public void UntrackDownload(string sessionId, int downloadId)
@@ -48,12 +52,15 @@ public class MemoryCacheStateManager(IMemoryCache cache): IStateManager
 
     public void SubscribeResource(string sessionId, string uri)
     {
-        var dict = cache.GetOrCreate(GetSubscribedResourceKey(sessionId), entry =>
+        lock (_cacheLock)
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
-            return new ConcurrentDictionary<string, byte>();
-        });
-        dict?.TryAdd(uri, 1);
+            var dict = cache.GetOrCreate(GetSubscribedResourceKey(sessionId), entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
+                return new ConcurrentDictionary<string, byte>();
+            });
+            dict?.TryAdd(uri, 1);
+        }
     }
 
     public void UnsubscribeResource(string sessionId, string uri)

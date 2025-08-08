@@ -9,7 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 namespace Domain.Resources;
 
 [McpServerResourceType]
-public class DownloadSummaryResource(IDownloadClient downloadClient)
+public class DownloadResource(IDownloadClient downloadClient)
 {
     [McpServerResource(
         UriTemplate = "download://{id}/", 

@@ -20,6 +20,8 @@ public class OpenAiAdapter(string endpoint, string apiKey, string model) : ILarg
         .AsBuilder()
         .UseFunctionInvocation(configure: c =>
         {
+            c.IncludeDetailedErrors = true;
+            c.MaximumIterationsPerRequest = 50;
             c.AllowConcurrentInvocation = true;
         })
         .Build();

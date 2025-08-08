@@ -5,20 +5,20 @@ namespace Agent.App;
 
 public static class Launcher
 {
-    public static async Task StartAgent(this IHost host, CommandLineParams cmdParams)
+    public static async Task StartAgent(this IHost host, AgentSettings settings, CommandLineParams cmdParams)
     {
-        var action = ResolveAction(cmdParams);
+        var action = ResolveAction(settings, cmdParams);
         await host.StartAsync();
         await action(host.Services);
         await host.StopAsync();
     }
 
-    private static Func<IServiceProvider, Task> ResolveAction(CommandLineParams cmdParams)
+    private static Func<IServiceProvider, Task> ResolveAction(AgentSettings settings, CommandLineParams cmdParams)
     {
         
         if(cmdParams.Prompt is not null)
         {
-            return services => Command.Start(services, cmdParams.Prompt);
+            return services => Command.Start(services, cmdParams.Prompt, settings);
         }
         if (cmdParams.IsDaemon)
         {
