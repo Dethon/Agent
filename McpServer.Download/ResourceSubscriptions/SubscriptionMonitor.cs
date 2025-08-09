@@ -5,18 +5,19 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
-namespace McpServer.Download.Modules;
+namespace McpServer.Download.ResourceSubscriptions;
 
-public class ResourceMonitor(
+public class SubscriptionMonitor(
     IStateManager stateManager,
+    SubscriptionTracker subscriptionsTracker,
     IDownloadClient downloadClient,
-    ILogger<ResourceMonitor> logger) : BackgroundService
+    ILogger<SubscriptionMonitor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var allSubscriptions = stateManager.SubscribedResources.Get();
+            var allSubscriptions = subscriptionsTracker.Get();
             foreach (var (sessionId, value) in allSubscriptions)
             {
                 foreach (var (uri, server) in value)

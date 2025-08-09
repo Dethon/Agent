@@ -1,9 +1,9 @@
 ﻿using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
-using McpServer.Download.Handlers;
 using McpServer.Download.McpResources;
 using McpServer.Download.McpTools;
+using McpServer.Download.ResourceSubscriptions;
 using McpServer.Download.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,13 +34,13 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
-            .AddSingleton<ISubscribedResourcesManager, SubscribedResourcesManager>()
+            .AddSingleton<SubscriptionTracker>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddTransient<IStateManager, StateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
-            .AddHostedService<ResourceMonitor>()
+            .AddHostedService<SubscriptionMonitor>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<McpFileSearchTool>()
@@ -48,8 +48,8 @@ public static class ConfigModule
             .WithTools<McpGetDownloadStatusTool>()
             .WithTools<McpCleanupDownloadTool>()
             .WithResources<McpDownloadResource>()
-            .WithSubscribeToResourcesHandler(ResourceHandlers.SubscribeToResource)
-            .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource)
+            .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
+            .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)
             .WithListResourcesHandler((_, _) => new ValueTask<ListResourcesResult>(new ListResourcesResult
             {
                 Resources = []

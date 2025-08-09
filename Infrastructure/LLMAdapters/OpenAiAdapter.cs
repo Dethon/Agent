@@ -1,12 +1,11 @@
 using System.ClientModel;
-using Domain.Contracts;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using OpenAI;
 
 namespace Infrastructure.LLMAdapters;
 
-public class OpenAiAdapter(string endpoint, string apiKey, string model) : ILargeLanguageModel
+public class OpenAiClient(string endpoint, string apiKey, string model)
 {
     private readonly IChatClient _openAiClient = new OpenAIClient(
             new ApiKeyCredential(apiKey),

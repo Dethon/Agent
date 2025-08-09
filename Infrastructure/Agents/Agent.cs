@@ -1,18 +1,22 @@
 ﻿using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs;
+using Infrastructure.Extensions;
+using Infrastructure.LLMAdapters;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
-namespace Domain.Agents;
+namespace Infrastructure.Agents;
 
 public class Agent : IAgent
 {
     private readonly IMcpClient[] _mcpClients;
     private readonly McpClientTool[] _mcpClientTools;
-    private readonly Func<ChatResponse, CancellationToken, Task> _writeMessageCallback;
-    private readonly ILargeLanguageModel _llm;
+    private readonly Func<AiPartialResponse, CancellationToken, Task> _writeMessageCallback;
+    private readonly OpenAiClient _llm;
     private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
     
@@ -20,8 +24,8 @@ public class Agent : IAgent
         IMcpClient[] mcpClients,
         McpClientTool[] mcpClientTools,
         ChatMessage[] initialMessages,
-        Func<ChatResponse, CancellationToken, Task> writeMessageCallback,
-        ILargeLanguageModel llm)
+        Func<AiPartialResponse, CancellationToken, Task> writeMessageCallback,
+        OpenAiClient llm)
     {
         _mcpClients = mcpClients;
         _mcpClientTools = mcpClientTools;
@@ -33,8 +37,8 @@ public class Agent : IAgent
     public static async Task<IAgent> CreateAsync(
         string[] endpoints,
         ChatMessage[] initialMessages,
-        Func<ChatResponse, CancellationToken, Task> writeMessageCallback,
-        ILargeLanguageModel llm,
+        Func<AiPartialResponse, CancellationToken, Task> writeMessageCallback,
+        OpenAiClient llm,
         CancellationToken ct)
     {
         var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, ct)));
@@ -107,19 +111,21 @@ public class Agent : IAgent
         }
     }
 
-    public async Task Run(string? prompt, CancellationToken ct)
+    public async Task Run(string[] prompts, CancellationToken ct)
     {
-        if (prompt is null)
-        {
-            await Run([], ct);
-        }
-
-        var message = new ChatMessage(ChatRole.User, prompt);
-        await Run([message], ct);
+        var messages = prompts
+            .Select(x => new ChatMessage(ChatRole.User, x))
+            .ToArray();
+        await Run(messages, ct);
     }
 
-    public async Task Run(
-        ChatMessage[] prompts, CancellationToken cancellationToken)
+    public async Task Run(Domain.DTOs.ChatMessage[] prompts, CancellationToken ct)
+    {
+        var messages = prompts.Select(x => x.ToChatMessage()).ToArray();
+        await Run(messages, ct);
+    }
+
+    public async Task Run(ChatMessage[] prompts, CancellationToken cancellationToken)
     {
         _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
@@ -136,9 +142,17 @@ public class Agent : IAgent
     private async Task ExecuteAgentLoop(float? temperature, CancellationToken ct)
     {
         var updates = _llm.Prompt(_messages.GetSnapshot(), _mcpClientTools, temperature, ct);
-        var response = await updates.ToChatResponseAsync(ct);
-        _messages.AddMessages(response);
-        await _writeMessageCallback(response, ct);
+        await foreach (var update in updates)
+        {
+            _messages.AddMessages(update);
+            await _writeMessageCallback(MapUpdate(update), ct);
+        }
+        
+    }
+
+    private AiPartialResponse MapUpdate(ChatResponseUpdate update)
+    {
+        throw new NotImplementedException();
     }
 
     private async ValueTask UpdatedResourceNotificationHandler(

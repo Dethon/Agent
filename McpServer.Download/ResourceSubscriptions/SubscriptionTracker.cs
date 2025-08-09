@@ -1,10 +1,9 @@
 ﻿using System.Collections.Concurrent;
-using Domain.Contracts;
 using ModelContextProtocol.Server;
 
-namespace Infrastructure.StateManagers;
+namespace McpServer.Download.ResourceSubscriptions;
 
-public class SubscribedResourcesManager : ISubscribedResourcesManager
+public class SubscriptionTracker
 {
     private readonly Lock _cacheLock = new();
 

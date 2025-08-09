@@ -1,7 +1,7 @@
 ﻿using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
 
-namespace Domain.Agents;
+namespace Infrastructure.Agents;
 
 public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
 {
@@ -25,6 +25,14 @@ public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
     }
 
     public void AddMessages(ChatResponse response)
+    {
+        lock (_lock)
+        {
+            _messages.AddMessages(response);
+        }
+    }
+
+    public void AddMessages(ChatResponseUpdate response)
     {
         lock (_lock)
         {

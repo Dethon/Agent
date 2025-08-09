@@ -1,10 +1,10 @@
-﻿using Microsoft.Extensions.AI;
+﻿using Domain.DTOs;
 
 namespace Domain.Contracts;
 
 public interface IAgent
 {
-    Task Run(string? prompt, CancellationToken ct);
+    Task Run(string[] prompts, CancellationToken ct);
     Task Run(ChatMessage[] prompts, CancellationToken ct);
     void CancelCurrentExecution(bool keepListening = false);
 }

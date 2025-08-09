@@ -1,10 +1,8 @@
 ﻿using System.Net;
 using Domain.Contracts;
-using Domain.Tools;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
 using McpServer.Download.Settings;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServer.Download.Modules;

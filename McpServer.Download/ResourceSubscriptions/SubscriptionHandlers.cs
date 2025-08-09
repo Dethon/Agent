@@ -1,11 +1,10 @@
-﻿using Domain.Contracts;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServer.Download.Handlers;
+namespace McpServer.Download.ResourceSubscriptions;
 
-public static class ResourceHandlers
+public static class SubscriptionHandlers
 {
     public static ValueTask<EmptyResult> SubscribeToResource(
         RequestContext<SubscribeRequestParams> context, CancellationToken cancellationToken)
@@ -16,8 +15,9 @@ public static class ResourceHandlers
         {
             throw new InvalidOperationException("Service injection fault or URI is not available.");
         }
-        var stateManager = context.Services.GetRequiredService<IStateManager>();
-        stateManager.SubscribedResources.Add(sessionId, uri, context.Server);
+
+        var subscriptionTracker = context.Services.GetRequiredService<SubscriptionTracker>();
+        subscriptionTracker.Add(sessionId, uri, context.Server);
         return ValueTask.FromResult(new EmptyResult());
     }
     
@@ -26,13 +26,13 @@ public static class ResourceHandlers
     {
         var sessionId = context.Server.SessionId ?? "";
         var uri = context.Params?.Uri;
-        var stateManager = context.Services?.GetRequiredService<IStateManager>();
-        if (stateManager is null || string.IsNullOrEmpty(uri))
+        var subscriptionTracker = context.Services?.GetRequiredService<SubscriptionTracker>();
+        if (subscriptionTracker is null || string.IsNullOrEmpty(uri))
         {
             throw new InvalidOperationException("State manager or URI is not available.");
         }
 
-        stateManager.SubscribedResources.Remove(sessionId, uri);
+        subscriptionTracker.Remove(sessionId, uri);
         return new ValueTask<EmptyResult>();
     }
 }

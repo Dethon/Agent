@@ -1,8 +1,5 @@
 ﻿using System.CommandLine;
 using Agent.Settings;
-using Domain.Agents;
-using Domain.Contracts;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -33,13 +30,8 @@ public static class ConfigModule
             .AddWorkers(cmdParams.WorkersCount)
             .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
-            .AddChatMonitoring(settings)
-            .AddTransient<DownloaderPrompt>()
-            .AddTransient<AgentResolver>(sp => new AgentResolver(
-                sp.GetRequiredService<DownloaderPrompt>(),
-                sp.GetRequiredService<ILargeLanguageModel>(),
-                settings.McpServers.Select(x=> x.Endpoint).ToArray(),
-                sp.GetRequiredService<IMemoryCache>()));
+            .AddAgentFactory(settings)
+            .AddChatMonitoring(settings);
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

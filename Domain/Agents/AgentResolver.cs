@@ -1,42 +1,27 @@
 ﻿using Domain.Contracts;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Domain.Agents;
 
-public class AgentResolver(
-    DownloaderPrompt downloaderPrompt,
-    ILargeLanguageModel languageModel,
-    string[] mcpServerEndpoints,
-    IMemoryCache cache)
+public class AgentResolver(IMemoryCache cache)
 {
     public async Task<IAgent> Resolve(
-        int? threadId,
-        Func<ChatResponse, CancellationToken, Task> writeMessageCallback,
+        int? chatId,
+        Func<CancellationToken, Task<IAgent>> agentFactory,
         CancellationToken ct)
     {
-        if (threadId is null)
+        if (chatId is null)
         {
-            return await CreateAgent(writeMessageCallback, ct);
+            return await agentFactory(ct);
         }
 
-        var agent = await GetAgentFromCache(
-            threadId.Value,
-            () => CreateAgent(writeMessageCallback, ct));
-        
+        var agent = await GetAgentFromCache(chatId.Value, () => agentFactory(ct));
         if (agent is null)
         {
-            throw new InvalidOperationException($"Agent for thread {threadId} found in cache but was null.");
+            throw new InvalidOperationException($"Agent for thread {chatId} found in cache but was null.");
         }
 
         return agent;
-    }
-
-    private Task<IAgent> CreateAgent(
-        Func<ChatResponse, CancellationToken, Task> writeMessageCallback, CancellationToken ct)
-    {
-        return Agent.CreateAsync(
-            mcpServerEndpoints, downloaderPrompt.Get(), writeMessageCallback, languageModel, ct);
     }
 
     private async Task<IAgent?> GetAgentFromCache(int threadId, Func<Task<IAgent>> createAgent)

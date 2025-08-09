@@ -3,16 +3,18 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
+using AgentFactory = Func<Func<AiPartialResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
+
 public class ChatMonitor(
     IServiceProvider services,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
+    AgentFactory agentFactory,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken = default)
@@ -41,7 +43,7 @@ public class ChatMonitor(
 
             var agent = await agentResolver.Resolve(
                 prompt.ThreadId,
-                (m, ct) => ProcessResponse(prompt, m, ct),
+                ct => agentFactory((r, ct2) => ProcessResponse(prompt, r, ct2), ct),
                 cancellationToken);
 
             if (prompt.IsCommand)
@@ -49,7 +51,7 @@ public class ChatMonitor(
                 agent.CancelCurrentExecution(true);
             }
 
-            await agent.Run(prompt.Prompt, cancellationToken);
+            await agent.Run([prompt.Prompt], cancellationToken);
         }
         catch (Exception ex)
         {
@@ -74,7 +76,7 @@ public class ChatMonitor(
         };
     }
 
-    private async Task ProcessResponse(ChatPrompt prompt, ChatResponse response, CancellationToken ct)
+    private async Task ProcessResponse(ChatPrompt prompt, AiPartialResponse response, CancellationToken ct)
     {
         var messages = response.Messages;
         foreach (var message in messages)
