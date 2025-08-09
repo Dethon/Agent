@@ -1,5 +1,5 @@
-﻿using Domain.Tools;
-using Domain.Tools.Config;
+﻿using Domain.Tools.Config;
+using McpServer.Download.McpTools;
 using McpServer.Download.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,10 +33,10 @@ public static class ConfigModule
             .AddFileSystemClient(settings, false)
             .AddMcpServer()
             .WithHttpTransport()
-            .WithTools<ListDirectoriesTool>()
-            .WithTools<ListFilesTool>()
-            .WithTools<MoveTool>()
-            .WithTools<CleanupDownloadDirectoryTool>();
+            .WithTools<McpListDirectoriesTool>()
+            .WithTools<McpListFilesTool>()
+            .WithTools<McpMoveTool>()
+            .WithTools<McpCleanupDownloadDirectoryTool>();
 
         return services;
     }

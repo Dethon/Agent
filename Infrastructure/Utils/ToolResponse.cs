@@ -1,11 +1,11 @@
 ﻿using System.Text.Json.Nodes;
 using ModelContextProtocol.Protocol;
 
-namespace Domain.Tools;
+namespace Infrastructure.Utils;
 
-public class BaseTool
+public static class ToolResponse
 {
-    protected static CallToolResult CreateResponse(Exception ex)
+    public static CallToolResult Create(Exception ex)
     {
         return new CallToolResult
         {
@@ -20,7 +20,7 @@ public class BaseTool
         };
     }
 
-    protected static CallToolResult CreateResponse(JsonNode json)
+    public static CallToolResult Create(JsonNode json)
     {
         return new CallToolResult
         {
@@ -35,26 +35,11 @@ public class BaseTool
         };
     }
 
-    protected static CallToolResult CreateResponse(string message)
+    public static CallToolResult Create(string message)
     {
         return new CallToolResult
         {
             IsError = false,
-            Content =
-            [
-                new TextContentBlock
-                {
-                    Text = message
-                }
-            ]
-        };
-    }
-
-    protected static CallToolResult CreateErrorResponse(string message)
-    {
-        return new CallToolResult
-        {
-            IsError = true,
             Content =
             [
                 new TextContentBlock

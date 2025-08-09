@@ -1,63 +1,44 @@
-﻿using System.ComponentModel;
-using System.Text.Json.Nodes;
+﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
-[McpServerToolType]
 public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
-    : BaseTool
 {
-    private const string Name = "FileDownload";
+    protected const string Name = "FileDownload";
 
-    private const string Description = """
-                                       Download a file from the internet using a file id that can be obtained from the 
-                                       FileSearch tool. 
-                                       The SearchResultId parameter is the id EXACTLY as it appears in the response of 
-                                       the FileSearch tool.
-                                       """;
+    protected const string Description = """
+                                         Download a file from the internet using a file id that can be obtained from the 
+                                         FileSearch tool. 
+                                         The SearchResultId parameter is the id EXACTLY as it appears in the response of 
+                                         the FileSearch tool.
+                                         """;
 
-    [McpServerTool(Name = Name), Description(Description)]
-    public async Task<CallToolResult> Run(
-        RequestContext<CallToolRequestParams> context, 
-        int searchResultId, 
-        CancellationToken cancellationToken)
+    public async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
     {
-        try
+        await CheckDownloadNotAdded(searchResultId, ct);
+
+        var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
+        var itemToDownload = stateManager.SearchResults.Get(sessionId, searchResultId);
+        if (itemToDownload == null)
         {
-            var sessionId = context.Server.SessionId ?? "";
-            await CheckDownloadNotAdded(searchResultId, cancellationToken);
-
-            var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
-            var itemToDownload = stateManager.SearchResults.Get(sessionId, searchResultId);
-            if (itemToDownload == null)
-            {
-                return CreateErrorResponse($"No search result found for id {searchResultId}.");
-            }
-
-            await client.Download(
-                itemToDownload.Link,
-                savePath,
-                searchResultId,
-                cancellationToken);
-
-            stateManager.TrackedDownloads.Add(sessionId, searchResultId);
-            return CreateResponse(new JsonObject
-            {
-                ["status"] = "success",
-                ["message"] = $"""
-                               Download with id {searchResultId} started successfully. 
-                               User will notify yoy when it is completed."
-                               """
-            });
+            throw new InvalidOperationException(
+                $"No search result found for id {searchResultId}. " +
+                "Make sure to run the FileSearch tool first and use the correct id.");
         }
-        catch (Exception ex)
+
+        await client.Download(itemToDownload.Link, savePath, searchResultId, ct);
+
+        stateManager.TrackedDownloads.Add(sessionId, searchResultId);
+        return new JsonObject
         {
-            return CreateResponse(ex);
-        }
+            ["status"] = "success",
+            ["message"] = $"""
+                           Download with id {searchResultId} started successfully. 
+                           User will notify yoy when it is completed."
+                           """
+        };
     }
 
     private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)

@@ -1,9 +1,9 @@
 ﻿using Domain.Contracts;
-using Domain.Resources;
-using Domain.Tools;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
 using McpServer.Download.Handlers;
+using McpServer.Download.McpResources;
+using McpServer.Download.McpTools;
 using McpServer.Download.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,11 +43,11 @@ public static class ConfigModule
             .AddHostedService<ResourceMonitor>()
             .AddMcpServer()
             .WithHttpTransport()
-            .WithTools<FileSearchTool>()
-            .WithTools<FileDownloadTool>()
-            .WithTools<GetDownloadStatusTool>()
-            .WithTools<CleanupDownloadTool>()
-            .WithResources<DownloadResource>()
+            .WithTools<McpFileSearchTool>()
+            .WithTools<McpFileDownloadTool>()
+            .WithTools<McpGetDownloadStatusTool>()
+            .WithTools<McpCleanupDownloadTool>()
+            .WithResources<McpDownloadResource>()
             .WithSubscribeToResourcesHandler(ResourceHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(ResourceHandlers.UnsubscribeToResource)
             .WithListResourcesHandler((_, _) => new ValueTask<ListResourcesResult>(new ListResourcesResult

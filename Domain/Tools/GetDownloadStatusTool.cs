@@ -1,52 +1,40 @@
-﻿using System.ComponentModel;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
 
 namespace Domain.Tools;
 
-[McpServerToolType]
-public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager) : BaseTool
+public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager)
 {
-    private const string Name = "GetDownloadStatus";
+    protected const string Name = "GetDownloadStatus";
 
-    private const string Description = """
-                                       Returns the status of download referenced by DownloadId.
-                                       Progress is a percentage from 0 to 1, with 1 meaning 100%.
-                                       DownSpeed and UpSpeed are in megabytes per second.
-                                       Size is the total size of the download in megabytes.
-                                       Eta is the estimated time until the completion of the download on minutes.
-                                       """;
+    protected const string Description = """
+                                         Returns the status of download referenced by DownloadId.
+                                         Progress is a percentage from 0 to 1, with 1 meaning 100%.
+                                         DownSpeed and UpSpeed are in megabytes per second.
+                                         Size is the total size of the download in megabytes.
+                                         Eta is the estimated time until the completion of the download on minutes.
+                                         """;
 
-    [McpServerTool(Name = Name), Description(Description)]
-    public async Task<CallToolResult> Run(
-        RequestContext<CallToolRequestParams> context, 
-        int downloadId, 
-        CancellationToken cancellationToken)
+    public async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
     {
-        try
+        var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, ct);
+        if (downloadItem == null)
         {
-            var sessionId = context.Server.SessionId ?? "";
-            var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
-            if (downloadItem == null)
+            return new JsonObject
             {
-                return CreateResponse("The download is missing, it probably got removed externally");
-            }
+                ["status"] = "mising",
+                ["message"] = "The download is missing, it probably got removed externally"
+            };
+        }
 
-            return CreateResponse(new JsonObject
-            {
-                ["status"] = "success",
-                ["message"] = JsonSerializer.Serialize(downloadItem with
-                {
-                    Title = stateManager.SearchResults.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
-                })
-            });
-        }
-        catch (Exception ex)
+        return new JsonObject
         {
-            return CreateResponse(ex);
-        }
+            ["status"] = "success",
+            ["message"] = JsonSerializer.Serialize(downloadItem with
+            {
+                Title = stateManager.SearchResults.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
+            })
+        };
     }
 }
