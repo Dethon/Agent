@@ -17,7 +17,7 @@ public static class ResourceHandlers
             throw new InvalidOperationException("Service injection fault or URI is not available.");
         }
         var stateManager = context.Services.GetRequiredService<IStateManager>();
-        stateManager.SubscribeResource(sessionId, uri, context.Server);
+        stateManager.SubscribedResources.Add(sessionId, uri, context.Server);
         return ValueTask.FromResult(new EmptyResult());
     }
     
@@ -32,7 +32,7 @@ public static class ResourceHandlers
             throw new InvalidOperationException("State manager or URI is not available.");
         }
 
-        stateManager.UnsubscribeResource(sessionId, uri);
+        stateManager.SubscribedResources.Remove(sessionId, uri);
         return new ValueTask<EmptyResult>();
     }
 }

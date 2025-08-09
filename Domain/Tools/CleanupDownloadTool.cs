@@ -26,7 +26,7 @@ public class CleanupDownloadTool(IDownloadClient downloadClient, IStateManager s
         try
         {
             var sessionId = context.Server.SessionId ?? "";
-            stateManager.UntrackDownload(sessionId, downloadId);
+            stateManager.TrackedDownloads.Remove(sessionId, downloadId);
             await downloadClient.Cleanup(downloadId, cancellationToken);
             return CreateResponse(new JsonObject
             {

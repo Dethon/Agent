@@ -32,7 +32,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
             await CheckDownloadNotAdded(searchResultId, cancellationToken);
 
             var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
-            var itemToDownload = stateManager.GetSearchResult(sessionId, searchResultId);
+            var itemToDownload = stateManager.SearchResults.Get(sessionId, searchResultId);
             if (itemToDownload == null)
             {
                 return CreateErrorResponse($"No search result found for id {searchResultId}.");
@@ -44,7 +44,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
                 searchResultId,
                 cancellationToken);
 
-            stateManager.TrackDownload(sessionId, searchResultId);
+            stateManager.TrackedDownloads.Add(sessionId, searchResultId);
             return CreateResponse(new JsonObject
             {
                 ["status"] = "success",

@@ -27,7 +27,7 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager) : 
         {
             var sessionId = context.Server.SessionId ?? "";
             var results = await client.Search(searchString, cancellationToken);
-            stateManager.AddSearchResult(sessionId, results);
+            stateManager.SearchResults.Add(sessionId, results);
 
             return CreateResponse(new JsonObject
             {

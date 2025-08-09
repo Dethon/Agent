@@ -34,7 +34,10 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
-            .AddSingleton<IStateManager, MemoryCacheStateManager>()
+            .AddSingleton<ISubscribedResourcesManager, SubscribedResourcesManager>()
+            .AddSingleton<ISearchResultsManager, SearchResultsManager>()
+            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
+            .AddTransient<IStateManager, StateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddHostedService<ResourceMonitor>()

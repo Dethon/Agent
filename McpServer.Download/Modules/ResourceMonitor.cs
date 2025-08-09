@@ -16,7 +16,7 @@ public class ResourceMonitor(
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var allSubscriptions = stateManager.GetSubscribedResources();
+            var allSubscriptions = stateManager.SubscribedResources.Get();
             foreach (var (sessionId, value) in allSubscriptions)
             {
                 foreach (var (uri, server) in value)
@@ -55,7 +55,7 @@ public class ResourceMonitor(
         IMcpServer server,
         CancellationToken cancellationToken)
     {
-        var downloadIds = stateManager.GetTrackedDownloads(sessionId) ?? [];
+        var downloadIds = stateManager.TrackedDownloads.Get(sessionId) ?? [];
 
         //TODO: Check all downloads in a single call
         var downloadTasks = downloadIds
@@ -69,7 +69,7 @@ public class ResourceMonitor(
 
         foreach (var (id, _) in filteredDownloads)
         {
-            stateManager.UntrackDownload(sessionId, id);
+            stateManager.TrackedDownloads.Remove(sessionId, id);
             await server.SendNotificationAsync("notifications/resources/updated",
                 new
                 {

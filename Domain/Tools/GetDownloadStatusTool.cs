@@ -40,7 +40,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
                 ["status"] = "success",
                 ["message"] = JsonSerializer.Serialize(downloadItem with
                 {
-                    Title = stateManager.GetSearchResult(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
+                    Title = stateManager.SearchResults.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
                 })
             });
         }
