@@ -1,5 +1,4 @@
-﻿using System.Collections.Immutable;
-using System.Text.Json;
+﻿using System.Text.Json;
 using Domain.Contracts;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
@@ -14,8 +13,7 @@ public class Agent : IAgent
     private readonly McpClientTool[] _mcpClientTools;
     private readonly Func<ChatResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly ILargeLanguageModel _llm;
-    private readonly List<ChatMessage> _messages;
-    private readonly Lock _messagesLock = new();
+    private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
     
     private Agent(
@@ -27,7 +25,7 @@ public class Agent : IAgent
     {
         _mcpClients = mcpClients;
         _mcpClientTools = mcpClientTools;
-        _messages = initialMessages.ToList();
+        _messages = new ConversationHistory(initialMessages);
         _writeMessageCallback = writeMessageCallback;
         _llm = llm;
     }
@@ -123,7 +121,7 @@ public class Agent : IAgent
     public async Task Run(
         ChatMessage[] prompts, CancellationToken cancellationToken)
     {
-        UpdateConversation(prompts);
+        _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
         await ExecuteAgentLoop(0.5f, jointCt);
@@ -137,34 +135,10 @@ public class Agent : IAgent
 
     private async Task ExecuteAgentLoop(float? temperature, CancellationToken ct)
     {
-        var updates = _llm.Prompt(GetConversationSnapshot(), _mcpClientTools, temperature, ct);
+        var updates = _llm.Prompt(_messages.GetSnapshot(), _mcpClientTools, temperature, ct);
         var response = await updates.ToChatResponseAsync(ct);
-        UpdateConversation(response);
+        _messages.AddMessages(response);
         await _writeMessageCallback(response, ct);
-    }
-    
-    private ImmutableArray<ChatMessage> GetConversationSnapshot()
-    {
-        lock (_messagesLock)
-        {
-            return [.._messages];
-        }
-    }
-    
-    private void UpdateConversation(IEnumerable<ChatMessage> messages)
-    {
-        lock (_messagesLock)
-        {
-            _messages.AddRange(messages);
-        }
-    }
-
-    private void UpdateConversation(ChatResponse message)
-    {
-        lock (_messagesLock)
-        {
-            _messages.AddMessages(message);
-        }
     }
 
     private async ValueTask UpdatedResourceNotificationHandler(
