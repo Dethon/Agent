@@ -4,7 +4,7 @@ namespace Domain.Agents;
 
 public class DownloaderPrompt
 {
-    public static ChatMessage[] Get()
+    public ChatMessage[] Get()
     {
         return
         [

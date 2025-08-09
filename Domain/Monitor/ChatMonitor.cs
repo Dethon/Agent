@@ -1,4 +1,5 @@
-﻿using Domain.Agents;
+﻿using System.Text.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -35,23 +36,20 @@ public class ChatMonitor(
         try
         {
             await using var scope = services.CreateAsyncScope();
-            var agentResolver = scope.ServiceProvider.GetRequiredService<IAgentResolver>();
+            var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
             prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-            
-            var agent = await agentResolver.Resolve(AgentType.Download, prompt.ThreadId);
-            var responses = agent.Run(prompt.Prompt, prompt.IsCommand, cancellationToken);
 
-            await foreach (var response in responses)
+            var agent = await agentResolver.Resolve(
+                prompt.ThreadId,
+                (m, ct) => ProcessResponse(prompt, m, ct),
+                cancellationToken);
+
+            if (prompt.IsCommand)
             {
-                try
-                {
-                    await ProcessResponse(prompt, response, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "ProcessResponse exception: {exceptionMessage}", ex.Message);
-                }
+                agent.CancelCurrentExecution(true);
             }
+
+            await agent.Run(prompt.Prompt, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -71,19 +69,39 @@ public class ChatMonitor(
 
         return prompt with
         {
-            ThreadId = threadId
+            ThreadId = threadId,
+            IsCommand = false
         };
     }
 
-    private async Task ProcessResponse(
-        ChatPrompt prompt, ChatMessage response, CancellationToken cancellationToken)
+    private async Task ProcessResponse(ChatPrompt prompt, ChatResponse response, CancellationToken ct)
     {
-        // var toolMessage = string.Join('\n', response.ToolCalls.Select(x => x.ToString()));
-        var message = $"{response.Text.Left(1900).HtmlSanitize()}";
-                      // "<blockquote expandable>" +
-                      // $"<pre><code>StopReason={response}</code>\n\n" +
-                      // $"<code class=\"language-json\">{toolMessage.Left(1900).HtmlSanitize()}</code></pre>" +
-                      // "</blockquote>";
-        await chatMessengerClient.SendResponse(prompt.ChatId, message, prompt.ThreadId, cancellationToken);
+        var messages = response.Messages;
+        foreach (var message in messages)
+        {
+            var contents = message.Contents;
+            var normalMessage = string.Join("", contents
+                .Where(x => x is TextContent)
+                .Cast<TextContent>()
+                .Select(x => x.Text.HtmlSanitize())).Left(3900);
+
+            var toolCallMessageContent = string.Join("\n", contents
+                .Where(x => x is FunctionCallContent)
+                .Cast<FunctionCallContent>()
+                .Select(x => $"{x.Name}(\n{JsonSerializer.Serialize(x.Arguments)}\n)")).Left(3800);
+
+            if (!string.IsNullOrWhiteSpace(normalMessage))
+            {
+                await chatMessengerClient.SendResponse(prompt.ChatId, normalMessage, prompt.ThreadId, ct);
+            }
+
+            if (!string.IsNullOrWhiteSpace(toolCallMessageContent))
+            {
+                var toolMessage = "<blockquote expandable>" +
+                                  $"<pre><code class=\"language-json\">{toolCallMessageContent}</code></pre>" +
+                                  "</blockquote>";
+                await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
+            }
+        }
     }
 }

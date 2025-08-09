@@ -2,18 +2,21 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.Caching.Memory;
+using ModelContextProtocol.Server;
 
 namespace Infrastructure.StateManagers;
 
 public class MemoryCacheStateManager(IMemoryCache cache): IStateManager
 {
     private readonly Lock _cacheLock = new();
+
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, IMcpServer>>
+        _subscribedResources = new();
+    
     private static string GetTrackedDownloadsKey(string sessionId) =>
         $"TrackedDownloads_{sessionId}";
     private static string GetTrackedSearchResultsKey(string sessionId, int resultId) =>
         $"TrackedSearchResults_{sessionId}_{resultId}";
-    private static string GetSubscribedResourceKey(string sessionId) =>
-        $"SubscribedResources_{sessionId}";
     
     public int[]? GetTrackedDownloads(string sessionId)
     {
@@ -42,30 +45,29 @@ public class MemoryCacheStateManager(IMemoryCache cache): IStateManager
         dict?.Remove(downloadId, out _);
     }
 
-    public string[]? GetSubscribedResources(string sessionId)
-    {
-        return cache
-            .Get<ConcurrentDictionary<string, byte>>(GetSubscribedResourceKey(sessionId))?.Keys
-            .Order()
-            .ToArray();
-    }
-
-    public void SubscribeResource(string sessionId, string uri)
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, IMcpServer>> GetSubscribedResources()
     {
         lock (_cacheLock)
         {
-            var dict = cache.GetOrCreate(GetSubscribedResourceKey(sessionId), entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
-                return new ConcurrentDictionary<string, byte>();
-            });
-            dict?.TryAdd(uri, 1);
+            return _subscribedResources.ToDictionary(
+                kvp => kvp.Key,
+                IReadOnlyDictionary<string, IMcpServer> (kvp) => kvp.Value.ToDictionary());
+        }
+    }
+
+    public void SubscribeResource(string sessionId, string uri, IMcpServer server)
+    {
+        lock (_cacheLock)
+        {
+            _subscribedResources
+                .GetOrAdd(sessionId, _ => new ConcurrentDictionary<string, IMcpServer>())
+                .TryAdd(uri, server);
         }
     }
 
     public void UnsubscribeResource(string sessionId, string uri)
     {
-        var dict = cache.Get<ConcurrentDictionary<string, byte>>(GetSubscribedResourceKey(sessionId));
+        var dict = _subscribedResources.GetValueOrDefault(sessionId);
         dict?.Remove(uri, out _);
     }
 

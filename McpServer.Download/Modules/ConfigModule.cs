@@ -1,5 +1,4 @@
 ﻿using Domain.Contracts;
-using Domain.Monitor;
 using Domain.Resources;
 using Domain.Tools;
 using Domain.Tools.Config;
@@ -38,8 +37,7 @@ public static class ConfigModule
             .AddSingleton<IStateManager, MemoryCacheStateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
-            .AddSingleton<TaskQueue>()
-            .AddHostedService<TaskRunner>()
+            .AddHostedService<ResourceMonitor>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<FileSearchTool>()

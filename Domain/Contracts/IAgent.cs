@@ -1,12 +1,10 @@
-﻿using Domain.DTOs;
-using Microsoft.Extensions.AI;
+﻿using Microsoft.Extensions.AI;
 
 namespace Domain.Contracts;
 
 public interface IAgent
 {
-    IAsyncEnumerable<ChatMessage> Run(
-        string? prompt, bool cancelCurrentOperation, CancellationToken cancellationToken = default);
-    IAsyncEnumerable<ChatMessage> Run(
-        ChatMessage[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default);
+    Task Run(string? prompt, CancellationToken ct);
+    Task Run(ChatMessage[] prompts, CancellationToken ct);
+    void CancelCurrentExecution(bool keepListening = false);
 }

@@ -1,11 +1,10 @@
-﻿using Agent.Settings;
+﻿using System.CommandLine;
+using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.CommandLine;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
 
 namespace Agent.Modules;
 
@@ -30,21 +29,17 @@ public static class ConfigModule
     public static IServiceCollection ConfigureJack(
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
-        if (cmdParams.IsDaemon)
-        {
-            services = services.AddWorkers(cmdParams.WorkersCount);
-        }
         return services
+            .AddWorkers(cmdParams.WorkersCount)
             .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
             .AddChatMonitoring(settings)
             .AddTransient<DownloaderPrompt>()
-            .AddTransient<IAgentResolver, AgentResolver>(sp => new AgentResolver(
+            .AddTransient<AgentResolver>(sp => new AgentResolver(
                 sp.GetRequiredService<DownloaderPrompt>(),
                 sp.GetRequiredService<ILargeLanguageModel>(),
                 settings.McpServers.Select(x=> x.Endpoint).ToArray(),
-                sp.GetRequiredService<IMemoryCache>(),
-                sp.GetRequiredService<ILoggerFactory>()));
+                sp.GetRequiredService<IMemoryCache>()));
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)
@@ -53,12 +48,6 @@ public static class ConfigModule
             Description = "Use SSH to access downloaded files",
             Required = false,
             DefaultValueFactory = _ => false
-        };
-        var promptOption = new Option<string?>(name: "--prompt", aliases: ["-p"])
-        {
-            Description = "Run a prompt in one shot mode",
-            Required = false,
-            DefaultValueFactory = _ => null
         };
         var workersOption = new Option<int>(name: "--workers", aliases: ["-w"])
         {
@@ -69,7 +58,6 @@ public static class ConfigModule
         var rootCommand = new RootCommand("Agent Application")
         {
             sshOption,
-            promptOption,
             workersOption
         };
         
@@ -79,9 +67,7 @@ public static class ConfigModule
         parseResult.ThrowIfSpecialOption();
         return new CommandLineParams
         {
-            IsDaemon = parseResult.GetValue(promptOption) is null,
             SshMode = parseResult.GetValue(sshOption),
-            Prompt = parseResult.GetValue(promptOption),
             WorkersCount = parseResult.GetValue(workersOption),
         };
     }
