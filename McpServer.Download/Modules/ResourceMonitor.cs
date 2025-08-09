@@ -41,7 +41,7 @@ public class ResourceMonitor(
 
     private Func<CancellationToken, Task> GetResourceCheck(string sessionId, string uri, IMcpServer server)
     {
-        if (!uri.StartsWith("download://", StringComparison.OrdinalIgnoreCase))
+        if (uri.StartsWith("download://", StringComparison.OrdinalIgnoreCase))
         {
             return ct => DownloadMonitoring(sessionId, uri, server, ct);
         }

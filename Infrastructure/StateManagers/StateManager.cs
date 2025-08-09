@@ -3,9 +3,9 @@
 namespace Infrastructure.StateManagers;
 
 public class StateManager(
-    TrackedDownloadsManager trackedDownloadsManager,
-    SearchResultsManager searchResultsManager,
-    SubscribedResourcesManager subscribedResourcesManager) : IStateManager
+    ITrackedDownloadsManager trackedDownloadsManager,
+    ISearchResultsManager searchResultsManager,
+    ISubscribedResourcesManager subscribedResourcesManager) : IStateManager
 {
     public ITrackedDownloadsManager TrackedDownloads { get; } = trackedDownloadsManager;
     public ISearchResultsManager SearchResults { get; } = searchResultsManager;
