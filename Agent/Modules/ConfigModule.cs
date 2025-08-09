@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using Agent.Settings;
+using Domain.Agents;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,7 +32,8 @@ public static class ConfigModule
             .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
             .AddAgentFactory(settings)
-            .AddChatMonitoring(settings);
+            .AddChatMonitoring(settings)
+            .AddTransient<AgentResolver>();
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

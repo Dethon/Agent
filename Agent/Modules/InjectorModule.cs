@@ -13,7 +13,7 @@ using Telegram.Bot;
 
 namespace Agent.Modules;
 
-using AgentFactory = Func<Func<AiPartialResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
+using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
 
 public static class InjectorModule
 {

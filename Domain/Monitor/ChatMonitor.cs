@@ -1,5 +1,4 @@
-﻿using System.Text.Json;
-using Domain.Agents;
+﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -8,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-using AgentFactory = Func<Func<AiPartialResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
+using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
 
 public class ChatMonitor(
     IServiceProvider services,
@@ -76,34 +75,21 @@ public class ChatMonitor(
         };
     }
 
-    private async Task ProcessResponse(ChatPrompt prompt, AiPartialResponse response, CancellationToken ct)
+    private async Task ProcessResponse(ChatPrompt prompt, AiResponse response, CancellationToken ct)
     {
-        var messages = response.Messages;
-        foreach (var message in messages)
+        var content = response.Content.HtmlSanitize().Left(4096);
+        var toolCalls = response.ToolCalls.HtmlSanitize().Left(3800);
+        if (!string.IsNullOrWhiteSpace(content))
         {
-            var contents = message.Contents;
-            var normalMessage = string.Join("", contents
-                .Where(x => x is TextContent)
-                .Cast<TextContent>()
-                .Select(x => x.Text.HtmlSanitize())).Left(3900);
+            await chatMessengerClient.SendResponse(prompt.ChatId, content, prompt.ThreadId, ct);
+        }
 
-            var toolCallMessageContent = string.Join("\n", contents
-                .Where(x => x is FunctionCallContent)
-                .Cast<FunctionCallContent>()
-                .Select(x => $"{x.Name}(\n{JsonSerializer.Serialize(x.Arguments)}\n)")).Left(3800);
-
-            if (!string.IsNullOrWhiteSpace(normalMessage))
-            {
-                await chatMessengerClient.SendResponse(prompt.ChatId, normalMessage, prompt.ThreadId, ct);
-            }
-
-            if (!string.IsNullOrWhiteSpace(toolCallMessageContent))
-            {
-                var toolMessage = "<blockquote expandable>" +
-                                  $"<pre><code class=\"language-json\">{toolCallMessageContent}</code></pre>" +
-                                  "</blockquote>";
-                await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
-            }
+        if (!string.IsNullOrWhiteSpace(toolCalls))
+        {
+            var toolMessage = "<blockquote expandable>" +
+                              $"<pre><code class=\"language-json\">{toolCalls}</code></pre>" +
+                              "</blockquote>";
+            await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
         }
     }
 }

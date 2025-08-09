@@ -15,7 +15,7 @@ public class Agent : IAgent
 {
     private readonly IMcpClient[] _mcpClients;
     private readonly McpClientTool[] _mcpClientTools;
-    private readonly Func<AiPartialResponse, CancellationToken, Task> _writeMessageCallback;
+    private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
     private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
@@ -24,7 +24,7 @@ public class Agent : IAgent
         IMcpClient[] mcpClients,
         McpClientTool[] mcpClientTools,
         ChatMessage[] initialMessages,
-        Func<AiPartialResponse, CancellationToken, Task> writeMessageCallback,
+        Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm)
     {
         _mcpClients = mcpClients;
@@ -37,7 +37,7 @@ public class Agent : IAgent
     public static async Task<IAgent> CreateAsync(
         string[] endpoints,
         ChatMessage[] initialMessages,
-        Func<AiPartialResponse, CancellationToken, Task> writeMessageCallback,
+        Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm,
         CancellationToken ct)
     {
@@ -142,17 +142,27 @@ public class Agent : IAgent
     private async Task ExecuteAgentLoop(float? temperature, CancellationToken ct)
     {
         var updates = _llm.Prompt(_messages.GetSnapshot(), _mcpClientTools, temperature, ct);
+
+        List<ChatResponseUpdate> processedUpdates = [];
+        Dictionary<string, List<ChatResponseUpdate>> updatesLookup = [];
         await foreach (var update in updates)
         {
-            _messages.AddMessages(update);
-            await _writeMessageCallback(MapUpdate(update), ct);
-        }
-        
-    }
+            processedUpdates.Add(update);
+            if (update.MessageId is null)
+            {
+                continue;
+            }
 
-    private AiPartialResponse MapUpdate(ChatResponseUpdate update)
-    {
-        throw new NotImplementedException();
+            updatesLookup.TryAdd(update.MessageId, []);
+            updatesLookup[update.MessageId].Add(update);
+            var messageUpdates = updatesLookup[update.MessageId];
+            if (messageUpdates.IsFinished())
+            {
+                await _writeMessageCallback(messageUpdates.ToAiResponse(), ct);
+            }
+        }
+
+        _messages.AddMessages(processedUpdates.ToChatResponse());
     }
 
     private async ValueTask UpdatedResourceNotificationHandler(

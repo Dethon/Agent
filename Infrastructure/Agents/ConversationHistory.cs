@@ -31,12 +31,4 @@ public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
             _messages.AddMessages(response);
         }
     }
-
-    public void AddMessages(ChatResponseUpdate response)
-    {
-        lock (_lock)
-        {
-            _messages.AddMessages(response);
-        }
-    }
 }
