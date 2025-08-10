@@ -7,6 +7,9 @@ public class ChatMonitoring(ChatMonitor monitor) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        await monitor.Monitor(cancellationToken);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await monitor.Monitor(cancellationToken);
+        }
     }
 }
