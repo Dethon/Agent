@@ -21,4 +21,4 @@ RUN dotnet publish "./McpServer.Organize.csproj" -c $BUILD_CONFIGURATION -o /app
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "McpServer.Download.dll"]
+ENTRYPOINT ["dotnet", "McpServer.Organize.dll"]

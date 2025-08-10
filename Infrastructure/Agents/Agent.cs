@@ -209,6 +209,6 @@ public sealed class Agent : IAgent
         _isDisposed = true;
         await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();
-        await UnSubscribeToResources(CancellationToken.None).ConfigureAwait(false);
+        await UnSubscribeToResources(CancellationToken.None);
     }
 }
