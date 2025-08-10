@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Polly;
 
 namespace Infrastructure.Clients;
 
@@ -16,7 +17,7 @@ public class QBittorrentDownloadClient(
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
         await CallApi(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
-        var downloadItem = await GetDownloadItem(id, 100, 500, cancellationToken);
+        var downloadItem = await GetDownloadItem(id, 100, 2000, cancellationToken);
         if (downloadItem is null)
         {
             throw new InvalidOperationException("Torrent cannot be added, try another link. Search again if necessary");
@@ -40,7 +41,25 @@ public class QBittorrentDownloadClient(
         await CallApi(c => RemoveTorrent(hash, c), cancellationToken);
     }
 
-    public async Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
+    public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken)
+    {
+        return GetDownloadItem(id, 3, 500, cancellationToken);
+    }
+
+    public async Task<DownloadItem?> GetDownloadItem(
+        int id, int retries, int delay, CancellationToken cancellationToken)
+    {
+        var retryPolicy = Policy
+            .HandleResult<DownloadItem?>(result => result == null)
+            .WaitAndRetryAsync(
+                retries,
+                _ => TimeSpan.FromMilliseconds(delay));
+
+        return await retryPolicy.ExecuteAsync(async () =>
+            await GetDownloadItemWithoutRetries(id, cancellationToken));
+    }
+
+    private async Task<DownloadItem?> GetDownloadItemWithoutRetries(int id, CancellationToken cancellationToken)
     {
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
         if (torrent is null)
@@ -53,7 +72,7 @@ public class QBittorrentDownloadClient(
             Id = id,
             Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
             Size = torrent["total_size"]?.GetValue<long>() ?? 0 / 1024 / 1024,
-            Status = GetDownloadStatus(torrent),
+            State = GetDownloadStatus(torrent),
             Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,
             SavePath = torrent["save_path"]?.GetValue<string>() ?? string.Empty,
@@ -61,25 +80,8 @@ public class QBittorrentDownloadClient(
             Progress = torrent["progress"]?.GetValue<double>() ?? 0.0,
             DownSpeed = (torrent["dlspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
             UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
-            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60,
+            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60
         };
-    }
-    
-    public async Task<DownloadItem?> GetDownloadItem(
-        int id, int retries, int delay, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var downloadItem = await GetDownloadItem(id, cancellationToken);
-            if (downloadItem != null)
-            {
-                return downloadItem;
-            }
-
-            await Task.Delay(delay, cancellationToken);
-        }
-
-        return null;
     }
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
@@ -169,36 +171,36 @@ public class QBittorrentDownloadClient(
         return cookie is { Expired: false };
     }
 
-    private static DownloadStatus GetDownloadStatus(JsonNode? torrent)
+    private static DownloadState GetDownloadStatus(JsonNode? torrent)
     {
         var progress = torrent?["progress"]?.GetValue<double>() ?? 0;
         var stateString = torrent?["state"]?.GetValue<string>() ?? string.Empty;
         if (progress >= 1.0)
         {
-            return DownloadStatus.Completed;
+            return DownloadState.Completed;
         }
 
         return stateString switch
         {
-            "error" => DownloadStatus.Failed,
-            "missingFiles" => DownloadStatus.Failed,
-            "uploading" => DownloadStatus.Completed,
-            "pausedUP" => DownloadStatus.Completed,
-            "queuedUP" => DownloadStatus.Completed,
-            "stalledUP" => DownloadStatus.Completed,
-            "checkingUP" => DownloadStatus.InProgress,
-            "forcedUp" => DownloadStatus.Completed,
-            "allocating" => DownloadStatus.InProgress,
-            "downloading" => DownloadStatus.InProgress,
-            "metaDL" => DownloadStatus.InProgress,
-            "pausedDL" => DownloadStatus.Paused,
-            "queuedDL" => DownloadStatus.Paused,
-            "stalledDL" => DownloadStatus.Paused,
-            "checkingDL" => DownloadStatus.InProgress,
-            "forcedDL" => DownloadStatus.InProgress,
-            "checkingResumeData" => DownloadStatus.InProgress,
-            "moving" => DownloadStatus.InProgress,
-            _ => DownloadStatus.Failed
+            "error" => DownloadState.Failed,
+            "missingFiles" => DownloadState.Failed,
+            "uploading" => DownloadState.Completed,
+            "pausedUP" => DownloadState.Completed,
+            "queuedUP" => DownloadState.Completed,
+            "stalledUP" => DownloadState.Completed,
+            "checkingUP" => DownloadState.InProgress,
+            "forcedUp" => DownloadState.Completed,
+            "allocating" => DownloadState.InProgress,
+            "downloading" => DownloadState.InProgress,
+            "metaDL" => DownloadState.InProgress,
+            "pausedDL" => DownloadState.Paused,
+            "queuedDL" => DownloadState.Paused,
+            "stalledDL" => DownloadState.Paused,
+            "checkingDL" => DownloadState.InProgress,
+            "forcedDL" => DownloadState.InProgress,
+            "checkingResumeData" => DownloadState.InProgress,
+            "moving" => DownloadState.InProgress,
+            _ => DownloadState.Failed
         };
     }
 }

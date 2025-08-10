@@ -1,9 +1,8 @@
-﻿using Agent.Settings;
+﻿using System.CommandLine;
+using Agent.Settings;
 using Domain.Agents;
-using Domain.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.CommandLine;
 
 namespace Agent.Modules;
 
@@ -28,19 +27,12 @@ public static class ConfigModule
     public static IServiceCollection ConfigureJack(
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
-        if (cmdParams.IsDaemon)
-        {
-            services = services.AddWorkers(cmdParams.WorkersCount);
-        }
         return services
-            .AddMemoryCache()
+            .AddWorkers(cmdParams.WorkersCount)
             .AddOpenRouterAdapter(settings)
-            .AddJacketClient(settings)
-            .AddQBittorrentClient(settings)
-            .AddFileSystemClient(settings, cmdParams.SshMode)
+            .AddAgentFactory(settings)
             .AddChatMonitoring(settings)
-            .AddTools(settings)
-            .AddTransient<IAgentResolver, AgentResolver>();
+            .AddSingleton<AgentResolver>();
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)
@@ -49,12 +41,6 @@ public static class ConfigModule
             Description = "Use SSH to access downloaded files",
             Required = false,
             DefaultValueFactory = _ => false
-        };
-        var promptOption = new Option<string?>(name: "--prompt", aliases: ["-p"])
-        {
-            Description = "Run a prompt in one shot mode",
-            Required = false,
-            DefaultValueFactory = _ => null
         };
         var workersOption = new Option<int>(name: "--workers", aliases: ["-w"])
         {
@@ -65,7 +51,6 @@ public static class ConfigModule
         var rootCommand = new RootCommand("Agent Application")
         {
             sshOption,
-            promptOption,
             workersOption
         };
         
@@ -75,9 +60,7 @@ public static class ConfigModule
         parseResult.ThrowIfSpecialOption();
         return new CommandLineParams
         {
-            IsDaemon = parseResult.GetValue(promptOption) is null,
             SshMode = parseResult.GetValue(sshOption),
-            Prompt = parseResult.GetValue(promptOption),
             WorkersCount = parseResult.GetValue(workersOption),
         };
     }

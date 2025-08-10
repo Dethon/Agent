@@ -2,10 +2,10 @@
 
 namespace Domain.Contracts;
 
-public interface IAgent
+public interface IAgent : IAsyncDisposable
 {
-    IAsyncEnumerable<AgentResponse> Run(
-        string? prompt, bool cancelCurrentOperation, CancellationToken cancellationToken = default);
-    IAsyncEnumerable<AgentResponse> Run(
-        Message[] prompts, bool cancelCurrentOperation, CancellationToken cancellationToken = default);
+    DateTime LastExecutionTime { get; }
+    Task Run(string[] prompts, CancellationToken ct);
+    Task Run(ChatMessage[] prompts, CancellationToken ct);
+    void CancelCurrentExecution();
 }

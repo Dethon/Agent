@@ -1,70 +1,76 @@
-﻿using Domain.Contracts;
-using Domain.Tools;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
+﻿using System.Collections.Concurrent;
+using Domain.Contracts;
 
 namespace Domain.Agents;
 
-public class AgentResolver(
-    DownloaderPrompt downloaderPrompt,
-    ILargeLanguageModel languageModel,
-    FileDownloadTool fileDownloadTool,
-    FileSearchTool fileSearchTool,
-    GetDownloadStatusTool getDownloadStatusTool,
-    MoveTool moveTool,
-    CleanupTool cleanupTool,
-    ListDirectoriesTool listDirectoriesTool,
-    ListFilesTool listFilesTool,
-    IMemoryCache cache,
-    ILoggerFactory loggerFactory) : IAgentResolver
+public class AgentResolver
 {
-    private const int MaxDepth = 20;
+    private readonly ConcurrentDictionary<string, IAgent> _cache = [];
+    private readonly SemaphoreSlim _lock = new(1, 1);
+    private const string Separator = "<--SEPARATOR-->";
 
-    public async Task<IAgent> Resolve(AgentType agentType, int? threadId = null)
-    {
-        if (threadId is null)
+    public (long ChatId, long ThreadId)[] Agents =>
+        _cache.Select(x =>
         {
-            return await AgentFactory(agentType);
+            var parts = x.Key.Split(Separator);
+            var chatId = long.Parse(parts[0]);
+            var threadId = long.Parse(parts[1]);
+            return (ChatId: chatId, ThreadId: threadId);
+        }).ToArray();
+
+    public async Task<IAgent> Resolve(
+        long? chatId,
+        long? threadId,
+        Func<CancellationToken, Task<IAgent>> agentFactory,
+        CancellationToken ct)
+    {
+        if (chatId is null || threadId is null)
+        {
+            return await agentFactory(ct);
         }
 
-        var agent = await GetAgentFromCache(agentType, threadId.Value, () => AgentFactory(agentType));
+        var agent = await GetAgentFromCache(GetCacheKey(chatId.Value, threadId.Value), agentFactory, ct);
         if (agent is null)
         {
-            throw new InvalidOperationException($"{agentType} for thread {threadId} found in cache but was null.");
+            throw new InvalidOperationException($"Agent for thread {chatId} found in cache but was null.");
         }
 
         return agent;
     }
 
-    private async Task<IAgent> AgentFactory(AgentType agentType)
+    public async Task Clean(long chatId, long threadId)
     {
-        return agentType switch
+        _cache.Remove(GetCacheKey(chatId, threadId), out var agent);
+        if (agent is not null)
         {
-            AgentType.Download => new Agent(
-                messages: await downloaderPrompt.Get(null),
-                llm: languageModel,
-                tools:
-                [
-                    fileSearchTool,
-                    fileDownloadTool,
-                    getDownloadStatusTool,
-                    listDirectoriesTool,
-                    listFilesTool,
-                    moveTool,
-                    cleanupTool
-                ],
-                maxDepth: MaxDepth,
-                logger: loggerFactory.CreateLogger<Agent>()),
-            _ => throw new ArgumentException($"Unknown agent type: {agentType}")
-        };
+            await agent.DisposeAsync();
+        }
     }
 
-    private async Task<IAgent?> GetAgentFromCache(AgentType agentType, int threadId, Func<Task<IAgent>> createAgent)
+    private static string GetCacheKey(long chatId, long threadId)
     {
-        return await cache.GetOrCreateAsync($"IAgent-{agentType}-{threadId}", cacheEntry =>
+        return $"{chatId}{Separator}{threadId}";
+    }
+
+    private async Task<IAgent?> GetAgentFromCache(
+        string key, Func<CancellationToken, Task<IAgent>> createAgent, CancellationToken ct)
+    {
+        await _lock.WaitAsync(ct);
+        try
         {
-            cacheEntry.SetAbsoluteExpiration(DateTimeOffset.UtcNow.AddMonths(2));
-            return createAgent();
-        });
+            var agent = _cache.GetValueOrDefault(key);
+            if (agent is not null)
+            {
+                return agent;
+            }
+
+            agent = await createAgent(ct);
+            _cache[key] = agent;
+            return agent;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 }

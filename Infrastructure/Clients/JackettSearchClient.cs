@@ -5,7 +5,7 @@ using Domain.DTOs;
 
 namespace Infrastructure.Clients;
 
-public class JackettSearchClient(HttpClient client, string apiKey, Dictionary<string, string> mappings) : ISearchClient
+public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClient
 {
     private readonly XNamespace _torznabNs = "http://torznab.com/schemas/2015/feed";
 
@@ -95,8 +95,8 @@ public class JackettSearchClient(HttpClient client, string apiKey, Dictionary<st
                 return null;
             }
 
-            var title = ApplyMappings(titleElement?.Value ?? string.Empty);
-            var category = ApplyMappings(torznabAttributes.GetValueOrDefault("category") ?? string.Empty);
+            var title = titleElement?.Value ?? string.Empty;
+            var category = torznabAttributes.GetValueOrDefault("category") ?? string.Empty;
             long? size = null;
             int? seeders = null;
             int? peers = null;
@@ -142,19 +142,5 @@ public class JackettSearchClient(HttpClient client, string apiKey, Dictionary<st
             .OrderByDescending(x => x.Seeders.GetValueOrDefault(0))
             .Take(maxResults)
             .ToArray();
-    }
-
-    private string ApplyMappings(string value)
-    {
-        foreach (var mapping in mappings)
-        {
-            const StringComparison comparisonType = StringComparison.InvariantCultureIgnoreCase;
-            if (value.Contains(mapping.Key, comparisonType))
-            {
-                value = value.Replace(mapping.Key, mapping.Value, comparisonType);
-            }
-        }
-
-        return value;
     }
 }

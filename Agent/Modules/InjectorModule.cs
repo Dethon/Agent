@@ -1,124 +1,37 @@
-﻿using System.Net;
-using Agent.App;
+﻿using Agent.App;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Monitor;
-using Domain.Tools;
-using Domain.Tools.Attachments;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
-using Infrastructure.LLMAdapters.OpenRouter;
-using Infrastructure.Wrappers;
+using Infrastructure.LLMAdapters;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 
 namespace Agent.Modules;
 
+using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
+
 public static class InjectorModule
 {
-    public static IServiceCollection AddTools(this IServiceCollection services, AgentSettings settings)
-    {
-        return services
-            .AddTransient<DownloaderPrompt>()
-            .AddScoped<SearchHistory>()
-            .AddTransient<FileSearchTool>()
-            .AddTransient<FileDownloadTool>(sp => new FileDownloadTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<SearchHistory>(),
-                settings.DownloadLocation))
-            .AddTransient<GetDownloadStatusTool>(sp => new GetDownloadStatusTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<SearchHistory>()))
-            .AddTransient<ListDirectoriesTool>(sp => new ListDirectoriesTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<ListFilesTool>(sp => new ListFilesTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<MoveTool>(sp => new MoveTool(
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.BaseLibraryPath))
-            .AddTransient<CleanupTool>(sp => new CleanupTool(
-                sp.GetRequiredService<IDownloadClient>(),
-                sp.GetRequiredService<IFileSystemClient>(),
-                settings.DownloadLocation));
-    }
-
-    public static IServiceCollection AddJacketClient(this IServiceCollection services, AgentSettings settings)
-    {
-        services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                return new JackettSearchClient(httpClient, settings.Jackett.ApiKey, settings.Mappings);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(1),
-                attemptTimeout: TimeSpan.FromSeconds(20));
-
-        return services;
-    }
-
-    public static IServiceCollection AddQBittorrentClient(this IServiceCollection services, AgentSettings settings)
-    {
-        var cookieContainer = new CookieContainer();
-        services.AddHttpClient<IDownloadClient, QBittorrentDownloadClient>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.QBittorrent.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
-                return new QBittorrentDownloadClient(
-                    httpClient,
-                    cookieContainer,
-                    settings.QBittorrent.UserName,
-                    settings.QBittorrent.Password
-                );
-            })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-            {
-                CookieContainer = cookieContainer,
-                UseCookies = true
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromSeconds(10));
-
-        return services;
-    }
-
-    public static IServiceCollection AddFileSystemClient(
-        this IServiceCollection services, AgentSettings settings, bool sshMode)
-    {
-        if (!sshMode)
-        {
-            return services.AddTransient<IFileSystemClient, LocalFileSystemClient>();
-        }
-
-        var sshClient = new SshClientWrapper(settings.Ssh.Host, settings.Ssh.UserName, settings.Ssh.KeyPath,
-            settings.Ssh.KeyPass);
-        return services
-            .AddSingleton(sshClient)
-            .AddTransient<IFileSystemClient, SshFileSystemClient>(_ => new SshFileSystemClient(sshClient));
-    }
-
     public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
     {
-        services.AddHttpClient<ILargeLanguageModel, OpenRouterAdapter>((httpClient, _) =>
-            {
-                httpClient.BaseAddress = new Uri(settings.OpenRouter.ApiUrl);
-                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.OpenRouter.ApiKey}");
-                httpClient.Timeout = TimeSpan.FromMinutes(5); // Timeout for all attempts combined.
-                return new OpenRouterAdapter(httpClient, settings.OpenRouter.Models);
-            })
-            .AddRetryWithExponentialWaitPolicy(
-                attempts: 3,
-                waitTime: TimeSpan.FromSeconds(2),
-                attemptTimeout: TimeSpan.FromMinutes(1));
+        return services.AddSingleton<OpenAiClient>(_ =>
+            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
+    }
 
-        return services;
+    public static IServiceCollection AddAgentFactory(this IServiceCollection services, AgentSettings settings)
+    {
+        return services.AddSingleton<AgentFactory>(sp =>
+            (callback, ct) => Infrastructure.Agents.Agent.CreateAsync(
+                settings.McpServers.Select(x => x.Endpoint).ToArray(),
+                DownloaderPrompt.Get().Select(x => x.ToChatMessage()).ToArray(),
+                callback,
+                sp.GetRequiredService<OpenAiClient>(),
+                ct));
     }
 
     public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentSettings settings)
@@ -126,10 +39,13 @@ public static class InjectorModule
         return services
             .AddSingleton<TaskQueue>()
             .AddSingleton<ChatMonitor>()
-            .AddSingleton<IChatClient, TelegramBotChatClient>(_ =>
-                new TelegramBotChatClient(
+            .AddSingleton<AgentCleanupMonitor>()
+            .AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
+                new TelegramBotChatMessengerClient(
                     new TelegramBotClient(settings.Telegram.BotToken),
-                    settings.Telegram.AllowedUserNames));
+                    settings.Telegram.AllowedUserNames))
+            .AddHostedService<ChatMonitoring>()
+            .AddHostedService<CleanupMonitoring>();
     }
 
     public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)

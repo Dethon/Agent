@@ -1,103 +1,52 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
-using Domain.Tools.Attachments;
-using JetBrains.Annotations;
+using Domain.Tools.Config;
 
 namespace Domain.Tools;
 
-[UsedImplicitly]
-public record FileDownloadParams
+public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
 {
-    public required int SearchResultId { get; [UsedImplicitly] init; }
-}
+    protected const string Name = "FileDownload";
 
-public class FileDownloadTool(
-    IDownloadClient client,
-    SearchHistory history,
-    string baseDownloadLocation) : BaseTool<FileDownloadParams>
-{
-    public override string Name => "FileDownload";
+    protected const string Description = """
+                                         Download a file from the internet using a file id that can be obtained from the 
+                                         FileSearch tool. 
+                                         The SearchResultId parameter is the id EXACTLY as it appears in the response of 
+                                         the FileSearch tool.
+                                         """;
 
-    public override string Description => """
-                                          Download a file from the internet using a file id that can be obtained from the 
-                                          FileSearch tool. 
-                                          The SearchResultId parameter is the id EXACTLY as it appears in the response of 
-                                          the FileSearch tool.
-                                          """;
-
-    public override async Task<ToolMessage> Run(ToolCall toolCall, CancellationToken cancellationToken = default)
+    public async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
     {
-        var typedParams = ParseParams(toolCall.Parameters);
-        await CheckDownloadNotAdded(typedParams.SearchResultId, cancellationToken);
+        await CheckDownloadNotAdded(searchResultId, ct);
 
-        var savePath = $"{baseDownloadLocation}/{typedParams.SearchResultId}";
-        var itemToDownload = history.History[typedParams.SearchResultId];
-        await client.Download(
-            itemToDownload.Link,
-            savePath,
-            typedParams.SearchResultId,
-            cancellationToken);
+        var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
+        var itemToDownload = stateManager.SearchResults.Get(sessionId, searchResultId);
+        if (itemToDownload == null)
+        {
+            throw new InvalidOperationException(
+                $"No search result found for id {searchResultId}. " +
+                "Make sure to run the FileSearch tool first and use the correct id.");
+        }
 
-        var toolMessage = toolCall.ToToolMessage(new JsonObject
+        await client.Download(itemToDownload.Link, savePath, searchResultId, ct);
+
+        stateManager.TrackedDownloads.Add(sessionId, searchResultId);
+        return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = "Torrent added to qBittorrent successfully. You will be notified by user when it finishes",
-            ["downloadPath"] = savePath,
-            ["downloadId"] = typedParams.SearchResultId
-        });
-
-        return toolMessage with
-        {
-            LongRunningTask = GetNotification(typedParams.SearchResultId, cancellationToken)
+            ["message"] = $"""
+                           Download with id {searchResultId} started successfully. 
+                           User will notify yoy when it is completed."
+                           """
         };
     }
 
     private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)
     {
-        var downloadItem = await client.GetDownloadItem(downloadId, 3, 350, cancellationToken);
+        var downloadItem = await client.GetDownloadItem(downloadId, cancellationToken);
         if (downloadItem != null)
         {
             throw new InvalidOperationException("Download with this id already exists, try another id");
-        }
-    }
-
-    private async Task<Message> GetNotification(int downloadId, CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, cancellationToken);
-            if (downloadItem == null)
-            {
-                return new Message
-                {
-                    Role = Role.User,
-                    Content = $"The download with id {downloadId} is missing, it probably got removed externally."
-                };
-            }
-
-            if (downloadItem.Status == DownloadStatus.Completed)
-            {
-                return new Message
-                {
-                    Role = Role.User,
-                    Content = $"""
-                               The download with id {downloadId} just finished. Now your task is to 
-                               organize the files that were downloaded by download {downloadId} into the 
-                               current library structure. 
-                               If there is no appropriate folder for the category you should create it. 
-                               To explore the library structure you must first know all directories and then the 
-                               files that are already present in the relevant directories (both source and 
-                               destination).
-                               Afterwards, if and only if the organization succeeded, clean up the download 
-                               leftovers.
-                               Hint: Use the ListDirectories, ListFiles, Move and Cleanup tools.
-                               """
-                };
-            }
-
-            await Task.Delay(1000, cancellationToken);
         }
     }
 }
