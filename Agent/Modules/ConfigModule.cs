@@ -36,12 +36,7 @@ public static class ConfigModule
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)
-    {var sshOption = new Option<bool>(name: "--ssh")
-        {
-            Description = "Use SSH to access downloaded files",
-            Required = false,
-            DefaultValueFactory = _ => false
-        };
+    {
         var workersOption = new Option<int>(name: "--workers", aliases: ["-w"])
         {
             Description = "Number of workers to run in daemon mode",
@@ -50,29 +45,27 @@ public static class ConfigModule
         };
         var rootCommand = new RootCommand("Agent Application")
         {
-            sshOption,
             workersOption
         };
-        
+
         var parseResult = rootCommand.Parse(args);
         parseResult.Invoke();
         parseResult.ThrowIfErrors();
         parseResult.ThrowIfSpecialOption();
         return new CommandLineParams
         {
-            SshMode = parseResult.GetValue(sshOption),
             WorkersCount = parseResult.GetValue(workersOption),
         };
     }
 
     private static void ThrowIfErrors(this ParseResult parseResult)
     {
-        if(parseResult.Errors.Count > 0)
+        if (parseResult.Errors.Count > 0)
         {
             throw new InvalidOperationException("Invalid command line arguments");
         }
     }
-    
+
     private static void ThrowIfSpecialOption(this ParseResult parseResult)
     {
         var helpOption = parseResult.GetValue<bool>("--help");

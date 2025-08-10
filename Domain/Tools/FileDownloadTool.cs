@@ -15,7 +15,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
                                          the FileSearch tool.
                                          """;
 
-    public async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
     {
         await CheckDownloadNotAdded(searchResultId, ct);
 

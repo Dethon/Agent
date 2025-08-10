@@ -13,7 +13,7 @@ public class CleanupDownloadDirectoryTool(IFileSystemClient fileSystemClient, Do
                                          It can also be use to cancel a download if the user requests it.
                                          """;
 
-    public async Task<JsonNode> Run(int downloadId, CancellationToken cancellationToken)
+    protected async Task<JsonNode> Run(int downloadId, CancellationToken cancellationToken)
     {
         var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
         await fileSystemClient.RemoveDirectory(path, cancellationToken);

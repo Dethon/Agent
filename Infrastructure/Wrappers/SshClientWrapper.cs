@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using Renci.SshNet;
 
 namespace Infrastructure.Wrappers;

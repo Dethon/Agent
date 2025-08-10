@@ -16,7 +16,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
                                          Eta is the estimated time until the completion of the download on minutes.
                                          """;
 
-    public async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
     {
         var downloadItem = await client.GetDownloadItem(downloadId, ct);
         if (downloadItem == null)

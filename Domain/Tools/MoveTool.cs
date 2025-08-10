@@ -16,7 +16,7 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
                                          All necessary parent directories will be created automatically.
                                          """;
 
-    public async Task<JsonNode> Run(string sourcePath, string destinationPath, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sourcePath, string destinationPath, CancellationToken ct)
     {
         if (!sourcePath.StartsWith(libraryPath.BaseLibraryPath) ||
             !destinationPath.StartsWith(libraryPath.BaseLibraryPath))

@@ -12,7 +12,7 @@ public class CleanupDownloadTool(IDownloadClient downloadClient, IStateManager s
                                          It can also be use to cancel a download if the user requests it.
                                          """;
 
-    public async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
     {
         stateManager.TrackedDownloads.Remove(sessionId, downloadId);
         await downloadClient.Cleanup(downloadId, ct);

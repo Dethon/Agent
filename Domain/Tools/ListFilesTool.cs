@@ -17,7 +17,7 @@ public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                          the correct place and name for the downloaded files.
                                          """;
 
-    public async Task<JsonNode> Run(string path, CancellationToken cancellationToken)
+    protected async Task<JsonNode> Run(string path, CancellationToken cancellationToken)
     {
         if (!path.StartsWith(libraryPath.BaseLibraryPath))
         {

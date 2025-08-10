@@ -15,7 +15,7 @@ public class ListDirectoriesTool(IFileSystemClient client, LibraryPathConfig lib
                                          downloaded files should be stored.
                                          """;
 
-    public async Task<JsonNode> Run(CancellationToken cancellationToken)
+    protected async Task<JsonNode> Run(CancellationToken cancellationToken)
     {
         var result = await client.ListDirectoriesIn(libraryPath.BaseLibraryPath, cancellationToken);
         var jsonResult = JsonSerializer.SerializeToNode(result);

@@ -13,7 +13,7 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
                                          concise and not include too many details.
                                          """;
 
-    public async Task<JsonNode> Run(string sessionId, string searchString, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sessionId, string searchString, CancellationToken ct)
     {
         var results = await client.Search(searchString, ct);
         stateManager.SearchResults.Add(sessionId, results);
