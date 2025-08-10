@@ -18,7 +18,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
 
     public async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
     {
-        var downloadItem = await client.GetDownloadItem(downloadId, 3, 500, ct);
+        var downloadItem = await client.GetDownloadItem(downloadId, ct);
         if (downloadItem == null)
         {
             return new JsonObject

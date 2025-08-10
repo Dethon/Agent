@@ -62,7 +62,7 @@ public class SubscriptionMonitor(
         var downloadTasks = downloadIds
             .Select(async x => (
                 DownloadId: x,
-                DownloadItem: await downloadClient.GetDownloadItem(x, 3, 500, cancellationToken)
+                DownloadItem: await downloadClient.GetDownloadItem(x, cancellationToken)
             ));
         var downloads = await Task.WhenAll(downloadTasks);
         var filteredDownloads = downloads

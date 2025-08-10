@@ -43,7 +43,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
 
     private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)
     {
-        var downloadItem = await client.GetDownloadItem(downloadId, 3, 350, cancellationToken);
+        var downloadItem = await client.GetDownloadItem(downloadId, cancellationToken);
         if (downloadItem != null)
         {
             throw new InvalidOperationException("Download with this id already exists, try another id");

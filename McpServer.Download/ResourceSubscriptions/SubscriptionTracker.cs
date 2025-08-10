@@ -35,7 +35,16 @@ public class SubscriptionTracker
         lock (_cacheLock)
         {
             var dict = _subscribedResources.GetValueOrDefault(sessionId);
-            dict?.Remove(uri, out _);
+            if (dict is null)
+            {
+                return;
+            }
+
+            dict.Remove(uri, out _);
+            if (dict.IsEmpty)
+            {
+                _subscribedResources.Remove(sessionId, out _);
+            }
         }
     }
 }

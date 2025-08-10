@@ -8,11 +8,12 @@ using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using Polly;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public class Agent : IAgent, IAsyncDisposable
+public sealed class Agent : IAgent
 {
     public DateTime LastExecutionTime { get; private set; }
     private readonly ImmutableList<IMcpClient> _mcpClients;
@@ -55,25 +56,19 @@ public class Agent : IAgent, IAsyncDisposable
     
     private static async Task<IMcpClient> CreateClient(string endpoint, CancellationToken cancellationToken)
     {
-        for (var i = 0; i < 3; i++)
-        {
-            try
-            {
-                return await McpClientFactory.CreateAsync(
-                    new SseClientTransport(
-                        new SseClientTransportOptions
-                        {
-                            Endpoint = new Uri(endpoint)
-                        }),
-                    cancellationToken: cancellationToken);
-            }
-            catch (HttpRequestException)
-            {
-                await Task.Delay(1000, cancellationToken);
-            }
-        }
+        var retryPolicy = Policy
+            .Handle<HttpRequestException>()
+            .WaitAndRetryAsync(
+                3,
+                retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
 
-        throw new HttpRequestException($"Failed to connect to MCP server at {endpoint} after 3 attempts.");
+        return await retryPolicy.ExecuteAsync(async () => await McpClientFactory.CreateAsync(
+            new SseClientTransport(
+                new SseClientTransportOptions
+                {
+                    Endpoint = new Uri(endpoint)
+                }),
+            cancellationToken: cancellationToken));
     }
 
     private static async Task<IEnumerable<McpClientTool>> GetTools(IMcpClient[] clients,
@@ -114,7 +109,7 @@ public class Agent : IAgent, IAsyncDisposable
         }
     }
 
-    protected virtual async Task UnSubscribeToResources(CancellationToken ct)
+    private async Task UnSubscribeToResources(CancellationToken ct)
     {
         foreach (var client in _mcpClients)
         {
@@ -215,6 +210,5 @@ public class Agent : IAgent, IAsyncDisposable
         await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();
         await UnSubscribeToResources(CancellationToken.None).ConfigureAwait(false);
-        GC.SuppressFinalize(this);
     }
 }

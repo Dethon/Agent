@@ -2,7 +2,7 @@
 
 namespace Domain.Contracts;
 
-public interface IAgent
+public interface IAgent : IAsyncDisposable
 {
     DateTime LastExecutionTime { get; }
     Task Run(string[] prompts, CancellationToken ct);

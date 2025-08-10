@@ -1,5 +1,4 @@
-﻿using Agent.App;
-using Agent.Modules;
+﻿using Agent.Modules;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -8,7 +7,4 @@ var settings = builder.Configuration.GetSettings();
 builder.Services.ConfigureJack(settings, cmdParams);
 
 using var host = builder.Build();
-
-await host.StartAsync();
-await Monitoring.Start(host.Services);
-await host.StopAsync();
+await host.RunAsync();

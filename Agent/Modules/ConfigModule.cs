@@ -29,11 +29,10 @@ public static class ConfigModule
     {
         return services
             .AddWorkers(cmdParams.WorkersCount)
-            .AddMemoryCache()
             .AddOpenRouterAdapter(settings)
             .AddAgentFactory(settings)
             .AddChatMonitoring(settings)
-            .AddTransient<AgentResolver>();
+            .AddSingleton<AgentResolver>();
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

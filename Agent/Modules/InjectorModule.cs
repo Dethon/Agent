@@ -39,10 +39,13 @@ public static class InjectorModule
         return services
             .AddSingleton<TaskQueue>()
             .AddSingleton<ChatMonitor>()
+            .AddSingleton<AgentCleanupMonitor>()
             .AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
                 new TelegramBotChatMessengerClient(
                     new TelegramBotClient(settings.Telegram.BotToken),
-                    settings.Telegram.AllowedUserNames));
+                    settings.Telegram.AllowedUserNames))
+            .AddHostedService<ChatMonitoring>()
+            .AddHostedService<CleanupMonitoring>();
     }
 
     public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)

@@ -2,7 +2,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -10,13 +9,13 @@ namespace Domain.Monitor;
 using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
 
 public class ChatMonitor(
-    IServiceProvider services,
+    AgentResolver agentResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
     AgentFactory agentFactory,
     ILogger<ChatMonitor> logger)
 {
-    public async Task Monitor(CancellationToken cancellationToken = default)
+    public async Task Monitor(CancellationToken cancellationToken)
     {
         try
         {
@@ -34,11 +33,9 @@ public class ChatMonitor(
 
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
-        await using var scope = services.CreateAsyncScope();
-        var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
         prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-
         var agent = await agentResolver.Resolve(
+            prompt.ChatId,
             prompt.ThreadId,
             ct => agentFactory((r, ct2) => ProcessResponse(prompt, r, ct2), ct),
             cancellationToken);

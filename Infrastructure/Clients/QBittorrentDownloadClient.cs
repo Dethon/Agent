@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Polly;
 
 namespace Infrastructure.Clients;
 
@@ -40,7 +41,25 @@ public class QBittorrentDownloadClient(
         await CallApi(c => RemoveTorrent(hash, c), cancellationToken);
     }
 
-    public async Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
+    public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken)
+    {
+        return GetDownloadItem(id, 3, 500, cancellationToken);
+    }
+
+    public async Task<DownloadItem?> GetDownloadItem(
+        int id, int retries, int delay, CancellationToken cancellationToken)
+    {
+        var retryPolicy = Policy
+            .HandleResult<DownloadItem?>(result => result == null)
+            .WaitAndRetryAsync(
+                retries,
+                _ => TimeSpan.FromMilliseconds(delay));
+
+        return await retryPolicy.ExecuteAsync(async () =>
+            await GetDownloadItemWithoutRetries(id, cancellationToken));
+    }
+
+    private async Task<DownloadItem?> GetDownloadItemWithoutRetries(int id, CancellationToken cancellationToken)
     {
         var torrent = await GetSingleTorrent($"{id}", cancellationToken);
         if (torrent is null)
@@ -61,25 +80,8 @@ public class QBittorrentDownloadClient(
             Progress = torrent["progress"]?.GetValue<double>() ?? 0.0,
             DownSpeed = (torrent["dlspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
             UpSpeed = (torrent["upspeed"]?.GetValue<double>() ?? 0.0) / 1024 / 1024,
-            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60,
+            Eta = (torrent["eta"]?.GetValue<double>() ?? 0.0) / 60
         };
-    }
-    
-    public async Task<DownloadItem?> GetDownloadItem(
-        int id, int retries, int delay, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var downloadItem = await GetDownloadItem(id, cancellationToken);
-            if (downloadItem != null)
-            {
-                return downloadItem;
-            }
-
-            await Task.Delay(delay, cancellationToken);
-        }
-
-        return null;
     }
 
     private async Task<JsonNode?> GetSingleTorrent(string id, CancellationToken cancellationToken)
