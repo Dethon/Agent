@@ -12,14 +12,16 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public class Agent : IAgent
+public class Agent : IAgent, IAsyncDisposable
 {
+    public DateTime LastExecutionTime { get; private set; }
     private readonly ImmutableList<IMcpClient> _mcpClients;
     private readonly ImmutableList<AITool> _mcpClientTools;
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
     private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
+    private bool _isDisposed;
     
     private Agent(
         IEnumerable<IMcpClient> mcpClients,
@@ -112,6 +114,25 @@ public class Agent : IAgent
         }
     }
 
+    protected virtual async Task UnSubscribeToResources(CancellationToken ct)
+    {
+        foreach (var client in _mcpClients)
+        {
+            if (client.ServerCapabilities.Resources is null)
+            {
+                continue;
+            }
+
+            var resourceUris = client.EnumerateResourcesAsync(ct).Select(x => x.Uri);
+            var templatedResourceUris = client.EnumerateResourceTemplatesAsync(ct).Select(x => x.UriTemplate);
+            var uris = resourceUris.Concat(templatedResourceUris);
+            await foreach (var uri in uris)
+            {
+                await client.UnsubscribeFromResourceAsync(uri, ct);
+            }
+        }
+    }
+
     public async Task Run(string[] prompts, CancellationToken ct)
     {
         var messages = prompts
@@ -128,6 +149,9 @@ public class Agent : IAgent
 
     private async Task Run(ChatMessage[] prompts, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, nameof(prompts));
+
+        LastExecutionTime = DateTime.UtcNow;
         _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
@@ -137,6 +161,7 @@ public class Agent : IAgent
     public void CancelCurrentExecution()
     {
         _cancellationTokenSource.Cancel();
+        _cancellationTokenSource.Dispose();
         _cancellationTokenSource = new CancellationTokenSource();
     }
 
@@ -182,5 +207,14 @@ public class Agent : IAgent
         var resource = await client.ReadResourceAsync(uri, ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
         await Run([message], jointCt);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _isDisposed = true;
+        await _cancellationTokenSource.CancelAsync();
+        _cancellationTokenSource.Dispose();
+        await UnSubscribeToResources(CancellationToken.None).ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 }
