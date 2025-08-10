@@ -206,6 +206,11 @@ public sealed class Agent : IAgent
 
     public async ValueTask DisposeAsync()
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+        
         _isDisposed = true;
         await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();
