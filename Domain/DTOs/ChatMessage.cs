@@ -2,8 +2,8 @@
 
 public record ChatMessage
 {
-    public ChatMessageRole Role { get; init; }
-    public string Content { get; init; }
+    public required ChatMessageRole Role { get; init; }
+    public required string Content { get; init; }
 }
 
 public enum ChatMessageRole
