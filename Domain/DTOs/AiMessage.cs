@@ -1,6 +1,6 @@
 ﻿namespace Domain.DTOs;
 
-public record ChatMessage
+public record AiMessage
 {
     public required ChatMessageRole Role { get; init; }
     public required string Content { get; init; }

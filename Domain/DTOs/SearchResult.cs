@@ -1,5 +1,8 @@
-﻿namespace Domain.DTOs;
+﻿using JetBrains.Annotations;
 
+namespace Domain.DTOs;
+
+[PublicAPI]
 public record SearchResult
 {
     public required string Title { get; init; }

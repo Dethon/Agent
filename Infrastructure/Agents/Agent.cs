@@ -23,7 +23,7 @@ public sealed class Agent : IAgent
     private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
-    
+
     private Agent(
         IEnumerable<IMcpClient> mcpClients,
         IEnumerable<AITool> mcpClientTools,
@@ -53,7 +53,7 @@ public sealed class Agent : IAgent
         await agent.SubscribeToResources(ct);
         return agent;
     }
-    
+
     private static async Task<IMcpClient> CreateClient(string endpoint, CancellationToken cancellationToken)
     {
         var retryPolicy = Policy
@@ -136,7 +136,7 @@ public sealed class Agent : IAgent
         await Run(messages, ct);
     }
 
-    public async Task Run(Domain.DTOs.ChatMessage[] prompts, CancellationToken ct)
+    public async Task Run(AiMessage[] prompts, CancellationToken ct)
     {
         var messages = prompts.Select(x => x.ToChatMessage()).ToArray();
         await Run(messages, ct);
@@ -210,7 +210,7 @@ public sealed class Agent : IAgent
         {
             return;
         }
-        
+
         _isDisposed = true;
         await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();

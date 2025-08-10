@@ -4,11 +4,11 @@ namespace Domain.Agents;
 
 public static class DownloaderPrompt
 {
-    public static ChatMessage[] Get()
+    public static AiMessage[] Get()
     {
         return
         [
-            new ChatMessage
+            new AiMessage
             {
                 Role = ChatMessageRole.System,
                 Content = """

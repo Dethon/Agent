@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools;
 
@@ -31,7 +32,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
         return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = JsonSerializer.Serialize(downloadItem with
+            ["message"] = JsonSerializer.Serialize(new DownloadStatus(downloadItem)
             {
                 Title = stateManager.SearchResults.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
             })

@@ -1,5 +1,8 @@
-﻿namespace Domain.DTOs;
+﻿using JetBrains.Annotations;
 
+namespace Domain.DTOs;
+
+[PublicAPI]
 public record ChatPrompt
 {
     public required string Prompt { get; init; }

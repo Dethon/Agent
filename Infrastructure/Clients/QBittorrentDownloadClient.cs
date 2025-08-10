@@ -46,7 +46,7 @@ public class QBittorrentDownloadClient(
         return GetDownloadItem(id, 3, 500, cancellationToken);
     }
 
-    public async Task<DownloadItem?> GetDownloadItem(
+    private async Task<DownloadItem?> GetDownloadItem(
         int id, int retries, int delay, CancellationToken cancellationToken)
     {
         var retryPolicy = Policy

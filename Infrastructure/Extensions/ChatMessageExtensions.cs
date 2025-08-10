@@ -1,13 +1,12 @@
 ﻿using Domain.DTOs;
 using Microsoft.Extensions.AI;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
-using DomainChatMessage = Domain.DTOs.ChatMessage;
 
 namespace Infrastructure.Extensions;
 
 public static class ChatMessageExtensions
 {
-    public static ChatMessage ToChatMessage(this DomainChatMessage message)
+    public static ChatMessage ToChatMessage(this AiMessage message)
     {
         var role = message.Role switch
         {
