@@ -52,24 +52,24 @@ services:
       - TZ=UTC
       - UMASK=022
     restart: unless-stopped
-    depends_on:
-      - flaresolverr
     networks:
       - jackbot
+#    depends_on:
+#      - flaresolverr
         
-  flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    container_name: flaresolverr
-    environment:
-      - LOG_LEVEL=info
-      - LOG_HTML=false
-      - CAPTCHA_SOLVER=none
-      - TZ=UTC
-    ports:
-      - "8191:8191"
-    networks:
-      - jackbot
-    restart: unless-stopped
+#  flaresolverr:
+#    image: ghcr.io/flaresolverr/flaresolverr:latest
+#    container_name: flaresolverr
+#    environment:
+#      - LOG_LEVEL=info
+#      - LOG_HTML=false
+#      - CAPTCHA_SOLVER=none
+#      - TZ=UTC
+#    ports:
+#      - "8191:8191"
+#    networks:
+#      - jackbot
+#    restart: unless-stopped
 
   plex:
     image: lscr.io/linuxserver/plex:1.41.9
