@@ -17,7 +17,7 @@ public class QBittorrentDownloadClient(
     public async Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
     {
         await CallApi(c => AddTorrent($"{id}", link, savePath, c), cancellationToken);
-        var downloadItem = await GetDownloadItem(id, 100, 500, cancellationToken);
+        var downloadItem = await GetDownloadItem(id, 100, 2000, cancellationToken);
         if (downloadItem is null)
         {
             throw new InvalidOperationException("Torrent cannot be added, try another link. Search again if necessary");

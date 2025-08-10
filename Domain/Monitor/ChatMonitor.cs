@@ -86,7 +86,9 @@ public class ChatMonitor(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error writing response: {exceptionMessage}", ex.Message);
+            logger.LogError(ex,
+                "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
+                prompt.ChatId, prompt.ThreadId, ex.Message);
         }
     }
 }
