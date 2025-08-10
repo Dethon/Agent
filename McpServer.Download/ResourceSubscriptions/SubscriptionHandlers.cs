@@ -33,6 +33,6 @@ public static class SubscriptionHandlers
         }
 
         subscriptionTracker.Remove(sessionId, uri);
-        return new ValueTask<EmptyResult>();
+        return ValueTask.FromResult(new EmptyResult());
     }
 }

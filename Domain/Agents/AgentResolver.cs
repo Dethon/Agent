@@ -9,14 +9,14 @@ public class AgentResolver
     private readonly SemaphoreSlim _lock = new(1, 1);
     private const string Separator = "<--SEPARATOR-->";
 
-    public IEnumerable<(long ChatId, long ThreadId)> Agents =>
+    public (long ChatId, long ThreadId)[] Agents =>
         _cache.Select(x =>
         {
             var parts = x.Key.Split(Separator);
             var chatId = long.Parse(parts[0]);
             var threadId = long.Parse(parts[1]);
             return (ChatId: chatId, ThreadId: threadId);
-        });
+        }).ToArray();
 
     public async Task<IAgent> Resolve(
         long? chatId,
