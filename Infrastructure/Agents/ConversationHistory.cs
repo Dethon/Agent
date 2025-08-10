@@ -8,7 +8,7 @@ public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
     private readonly List<ChatMessage> _messages = initialMessages.ToList();
     private readonly Lock _lock = new();
 
-    public ImmutableArray<ChatMessage> GetSnapshot()
+    public ImmutableList<ChatMessage> GetSnapshot()
     {
         lock (_lock)
         {

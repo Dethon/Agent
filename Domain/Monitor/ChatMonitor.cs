@@ -34,28 +34,21 @@ public class ChatMonitor(
 
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
-        try
+        await using var scope = services.CreateAsyncScope();
+        var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
+        prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
+
+        var agent = await agentResolver.Resolve(
+            prompt.ThreadId,
+            ct => agentFactory((r, ct2) => ProcessResponse(prompt, r, ct2), ct),
+            cancellationToken);
+
+        if (prompt.IsCommand)
         {
-            await using var scope = services.CreateAsyncScope();
-            var agentResolver = scope.ServiceProvider.GetRequiredService<AgentResolver>();
-            prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-
-            var agent = await agentResolver.Resolve(
-                prompt.ThreadId,
-                ct => agentFactory((r, ct2) => ProcessResponse(prompt, r, ct2), ct),
-                cancellationToken);
-
-            if (prompt.IsCommand)
-            {
-                agent.CancelCurrentExecution(true);
-            }
-
-            await agent.Run([prompt.Prompt], cancellationToken);
+            agent.CancelCurrentExecution();
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "AgentTask exception: {exceptionMessage}", ex.Message);
-        }
+
+        await agent.Run([prompt.Prompt], cancellationToken);
     }
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
@@ -77,19 +70,26 @@ public class ChatMonitor(
 
     private async Task ProcessResponse(ChatPrompt prompt, AiResponse response, CancellationToken ct)
     {
-        var content = response.Content.HtmlSanitize().Left(4096);
-        var toolCalls = response.ToolCalls.HtmlSanitize().Left(3800);
-        if (!string.IsNullOrWhiteSpace(content))
+        try
         {
-            await chatMessengerClient.SendResponse(prompt.ChatId, content, prompt.ThreadId, ct);
-        }
+            var content = response.Content.HtmlSanitize().Left(4096);
+            var toolCalls = response.ToolCalls.HtmlSanitize().Left(3800);
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                await chatMessengerClient.SendResponse(prompt.ChatId, content, prompt.ThreadId, ct);
+            }
 
-        if (!string.IsNullOrWhiteSpace(toolCalls))
+            if (!string.IsNullOrWhiteSpace(toolCalls))
+            {
+                var toolMessage = "<blockquote expandable>" +
+                                  $"<pre><code class=\"language-json\">{toolCalls}</code></pre>" +
+                                  "</blockquote>";
+                await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
+            }
+        }
+        catch (Exception ex)
         {
-            var toolMessage = "<blockquote expandable>" +
-                              $"<pre><code class=\"language-json\">{toolCalls}</code></pre>" +
-                              "</blockquote>";
-            await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
+            logger.LogError(ex, "Error writing response: {exceptionMessage}", ex.Message);
         }
     }
 }

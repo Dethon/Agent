@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Collections.Immutable;
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Extensions;
@@ -13,22 +14,22 @@ namespace Infrastructure.Agents;
 
 public class Agent : IAgent
 {
-    private readonly IMcpClient[] _mcpClients;
-    private readonly McpClientTool[] _mcpClientTools;
+    private readonly ImmutableList<IMcpClient> _mcpClients;
+    private readonly ImmutableList<AITool> _mcpClientTools;
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
     private readonly ConversationHistory _messages;
     private CancellationTokenSource _cancellationTokenSource = new();
     
     private Agent(
-        IMcpClient[] mcpClients,
-        McpClientTool[] mcpClientTools,
+        IEnumerable<IMcpClient> mcpClients,
+        IEnumerable<AITool> mcpClientTools,
         ChatMessage[] initialMessages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm)
     {
-        _mcpClients = mcpClients;
-        _mcpClientTools = mcpClientTools;
+        _mcpClients = mcpClients.ToImmutableList();
+        _mcpClientTools = mcpClientTools.ToImmutableList();
         _messages = new ConversationHistory(initialMessages);
         _writeMessageCallback = writeMessageCallback;
         _llm = llm;
@@ -73,7 +74,8 @@ public class Agent : IAgent
         throw new HttpRequestException($"Failed to connect to MCP server at {endpoint} after 3 attempts.");
     }
 
-    private static async Task<McpClientTool[]> GetTools(IMcpClient[] clients, CancellationToken cancellationToken)
+    private static async Task<IEnumerable<McpClientTool>> GetTools(IMcpClient[] clients,
+        CancellationToken cancellationToken)
     {
         var tasks = clients
             .Select(x => x
@@ -83,8 +85,7 @@ public class Agent : IAgent
         var tools = await Task.WhenAll(tasks);
         return tools
             .SelectMany(x => x)
-            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()))
-            .ToArray();
+            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()));
     }
 
     private async Task SubscribeToResources(CancellationToken ct)
@@ -125,7 +126,7 @@ public class Agent : IAgent
         await Run(messages, ct);
     }
 
-    public async Task Run(ChatMessage[] prompts, CancellationToken cancellationToken)
+    private async Task Run(ChatMessage[] prompts, CancellationToken cancellationToken)
     {
         _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
@@ -133,7 +134,7 @@ public class Agent : IAgent
         await ExecuteAgentLoop(0.5f, jointCt);
     }
 
-    public void CancelCurrentExecution(bool keepListening = false)
+    public void CancelCurrentExecution()
     {
         _cancellationTokenSource.Cancel();
         _cancellationTokenSource = new CancellationTokenSource();

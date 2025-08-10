@@ -41,6 +41,11 @@ public static class ChatResponseUpdateExtensions
             .Cast<FunctionCallContent>()
             .Select(x => $"{x.Name}(\n{JsonSerializer.Serialize(x.Arguments)}\n)"));
 
+        if (enumeratedUpdates.Any(x => x.FinishReason == ChatFinishReason.ContentFilter))
+        {
+            normalMessage += "\n\n[Content filtered by LLM.]\n";
+        }
+        
         return new AiResponse
         {
             Content = normalMessage,

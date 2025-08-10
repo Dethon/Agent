@@ -6,5 +6,5 @@ public interface IAgent
 {
     Task Run(string[] prompts, CancellationToken ct);
     Task Run(ChatMessage[] prompts, CancellationToken ct);
-    void CancelCurrentExecution(bool keepListening = false);
+    void CancelCurrentExecution();
 }

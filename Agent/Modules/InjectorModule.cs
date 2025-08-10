@@ -20,7 +20,7 @@ public static class InjectorModule
     public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
     {
         return services.AddSingleton<OpenAiClient>(_ =>
-            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Model));
+            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
     }
 
     public static IServiceCollection AddAgentFactory(this IServiceCollection services, AgentSettings settings)
