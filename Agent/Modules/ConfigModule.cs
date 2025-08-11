@@ -28,10 +28,9 @@ public static class ConfigModule
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
         return services
-            .AddWorkers(cmdParams.WorkersCount)
             .AddOpenRouterAdapter(settings)
             .AddAgentFactory(settings)
-            .AddChatMonitoring(settings)
+            .AddChatMonitoring(settings, cmdParams)
             .AddSingleton<AgentResolver>();
     }
 

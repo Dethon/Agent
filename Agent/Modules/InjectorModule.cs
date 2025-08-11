@@ -34,10 +34,11 @@ public static class InjectorModule
                 ct));
     }
 
-    public static IServiceCollection AddChatMonitoring(this IServiceCollection services, AgentSettings settings)
+    public static IServiceCollection AddChatMonitoring(
+        this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
         return services
-            .AddSingleton<TaskQueue>()
+            .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
             .AddSingleton<ChatMonitor>()
             .AddSingleton<AgentCleanupMonitor>()
             .AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
@@ -45,12 +46,13 @@ public static class InjectorModule
                     new TelegramBotClient(settings.Telegram.BotToken),
                     settings.Telegram.AllowedUserNames))
             .AddHostedService<ChatMonitoring>()
-            .AddHostedService<CleanupMonitoring>();
+            .AddHostedService<CleanupMonitoring>()
+            .AddWorkers(cmdParams);
     }
 
-    public static IServiceCollection AddWorkers(this IServiceCollection services, int amount)
+    private static IServiceCollection AddWorkers(this IServiceCollection services, CommandLineParams cmdParams)
     {
-        for (var i = 0; i < amount; i++)
+        for (var i = 0; i < cmdParams.WorkersCount; i++)
         {
             services.AddSingleton<IHostedService, TaskRunner>();
         }
