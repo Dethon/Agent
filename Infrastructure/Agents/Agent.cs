@@ -221,5 +221,9 @@ public sealed class Agent : IAgent
         await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();
         await UnSubscribeToResources(CancellationToken.None);
+        foreach (var client in _mcpClients)
+        {
+            await client.DisposeAsync();
+        }
     }
 }
