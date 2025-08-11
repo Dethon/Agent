@@ -1,6 +1,6 @@
 ﻿using JetBrains.Annotations;
 
-namespace McpServer.Download.Settings;
+namespace McpServer.Organize.Settings;
 
 public record McpSettings
 {

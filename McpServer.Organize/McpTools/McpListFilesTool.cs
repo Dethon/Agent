@@ -6,7 +6,7 @@ using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServer.Download.McpTools;
+namespace McpServer.Organize.McpTools;
 
 [McpServerToolType]
 public class McpListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath) :

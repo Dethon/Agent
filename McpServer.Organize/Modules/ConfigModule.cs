@@ -1,10 +1,10 @@
 ﻿using Domain.Tools.Config;
-using McpServer.Download.McpTools;
-using McpServer.Download.Settings;
+using McpServer.Organize.McpTools;
+using McpServer.Organize.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace McpServer.Download.Modules;
+namespace McpServer.Organize.Modules;
 
 public static class ConfigModule
 {

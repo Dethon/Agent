@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <RootNamespace>McpServer.Download</RootNamespace>
+    <RootNamespace>McpServer.Organize</RootNamespace>
     <UserSecretsId>c95bb52d-1996-4e02-8d95-32aad039e716</UserSecretsId>
   </PropertyGroup>
 

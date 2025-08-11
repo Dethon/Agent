@@ -1,10 +1,10 @@
 ﻿using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Wrappers;
-using McpServer.Download.Settings;
+using McpServer.Organize.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace McpServer.Download.Modules;
+namespace McpServer.Organize.Modules;
 
 public static class InjectorModule
 {
