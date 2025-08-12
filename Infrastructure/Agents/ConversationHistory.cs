@@ -1,5 +1,7 @@
 ﻿using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
@@ -29,6 +31,39 @@ public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
         lock (_lock)
         {
             _messages.AddMessages(response);
+        }
+    }
+
+    public void AddMessages(IEnumerable<SamplingMessage>? messages)
+    {
+        var chatMessages = from sm in messages ?? []
+            let aiContent = sm.Content.ToAIContent()
+            where aiContent is not null
+            select new ChatMessage(sm.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User, [aiContent]);
+        lock (_lock)
+        {
+            _messages.AddRange(chatMessages);
+        }
+    }
+
+    public void AddOrChangeSystemPrompt(string? prompt)
+    {
+        if (prompt is null)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            var systemMessage = _messages.FirstOrDefault(m => m.Role == ChatRole.System);
+            if (systemMessage != null)
+            {
+                systemMessage.Contents = [new TextContent(prompt)];
+            }
+            else
+            {
+                _messages.Insert(0, new ChatMessage(ChatRole.System, [new TextContent(prompt)]));
+            }
         }
     }
 }

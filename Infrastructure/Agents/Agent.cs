@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -15,31 +16,31 @@ namespace Infrastructure.Agents;
 
 public sealed class Agent : IAgent
 {
-    private readonly ImmutableList<IMcpClient> _mcpClients;
-    private readonly ImmutableList<AITool> _mcpClientTools;
+    private ImmutableList<IMcpClient> _mcpClients = [];
+    private ImmutableList<AITool> _mcpClientTools = [];
+
+    private ImmutableDictionary<IMcpClient, ImmutableHashSet<string>> _availableResources =
+        new Dictionary<IMcpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
+
+    private CancellationTokenSource _cancellationTokenSource = new();
+    private bool _isDisposed;
+
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
     private readonly ConversationHistory _messages;
-    private readonly ImmutableDictionary<IMcpClient, ImmutableArray<string>> _availableResources;
-    private CancellationTokenSource _cancellationTokenSource = new();
-    private bool _isDisposed;
+    private readonly ConcurrentDictionary<string, ConversationHistory> _coAgentConversations = [];
 
     public DateTime LastExecutionTime { get; private set; }
     
     private Agent(
-        IEnumerable<IMcpClient> mcpClients,
-        IEnumerable<AITool> mcpClientTools,
-        ChatMessage[] initialMessages,
-        Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm,
-        ImmutableDictionary<IMcpClient, ImmutableArray<string>> availableResources)
+        AiMessage[] initialMessages,
+        Func<AiResponse, CancellationToken, Task> writeMessageCallback)
     {
-        _mcpClients = mcpClients.ToImmutableList();
-        _mcpClientTools = mcpClientTools.ToImmutableList();
-        _messages = new ConversationHistory(initialMessages);
-        _writeMessageCallback = writeMessageCallback;
         _llm = llm;
-        _availableResources = availableResources;
+        _writeMessageCallback = writeMessageCallback;
+        _messages = new ConversationHistory(initialMessages
+            .Select(x => x.ToChatMessage()));
     }
 
     public static async Task<IAgent> CreateAsync(
@@ -49,103 +50,20 @@ public sealed class Agent : IAgent
         OpenAiClient llm,
         CancellationToken ct)
     {
-        var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, llm, ct)));
-        var tools = await GetTools(mcpClients, ct);
-        var resources = await GetResources(mcpClients, ct);
-        var initialChatMessages = initialMessages
-            .Select(x => x.ToChatMessage())
-            .ToArray();
-
-        var agent = new Agent(mcpClients, tools, initialChatMessages, writeMessageCallback, llm, resources);
-
-        await agent.SubscribeToResources(ct);
+        var agent = new Agent(llm, initialMessages, writeMessageCallback);
+        await agent.LoadMcps(endpoints, ct);
         return agent;
     }
 
-    private static async Task<IMcpClient> CreateClient(string endpoint, OpenAiClient llm, CancellationToken ct)
+    private async Task LoadMcps(string[] endpoints, CancellationToken ct)
     {
-        var retryPolicy = Policy
-            .Handle<HttpRequestException>()
-            .WaitAndRetryAsync(
-                3,
-                retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
-
-        return await retryPolicy.ExecuteAsync(async () => await McpClientFactory.CreateAsync(
-            new SseClientTransport(
-                new SseClientTransportOptions
-                {
-                    Endpoint = new Uri(endpoint)
-                }),
-            new McpClientOptions
-            {
-                Capabilities = new ClientCapabilities
-                {
-                    Sampling = new SamplingCapability
-                    {
-                        SamplingHandler = llm.GetSamplingHandlers()
-                    }
-                }
-            },
-            cancellationToken: ct));
+        _mcpClients = (await CreateClients(endpoints, ct)).ToImmutableList();
+        _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
+        _availableResources = (await GetResources(_mcpClients, ct))
+            .ToImmutableDictionary(x => x.Key, x => x.Value.ToImmutableHashSet());
+        await SubscribeToResources(ct);
     }
-
-    private static async Task<IEnumerable<McpClientTool>> GetTools(
-        IMcpClient[] clients, CancellationToken cancellationToken)
-    {
-        var tasks = clients
-            .Select(x => x
-                .EnumerateToolsAsync(cancellationToken: cancellationToken)
-                .ToArrayAsync(cancellationToken)
-                .AsTask());
-        var tools = await Task.WhenAll(tasks);
-        return tools
-            .SelectMany(x => x)
-            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()));
-    }
-
-    private static async Task<ImmutableDictionary<IMcpClient, ImmutableArray<string>>> GetResources(
-        IMcpClient[] clients, CancellationToken ct)
-    {
-        var tasks = clients
-            .Where(client => client.ServerCapabilities.Resources is not null)
-            .Select(async client =>
-            {
-                var resourceUris = client.EnumerateResourcesAsync(ct).Select(x => x.Uri);
-                var templatedResourceUris = client.EnumerateResourceTemplatesAsync(ct).Select(x => x.UriTemplate);
-                var uris = await resourceUris.Concat(templatedResourceUris).ToArrayAsync(ct);
-                return (client, uris);
-            });
-
-        var results = await Task.WhenAll(tasks);
-        return results.ToImmutableDictionary(x => x.client, x => x.uris.ToImmutableArray());
-    }
-
-    private async Task SubscribeToResources(CancellationToken ct)
-    {
-        foreach (var (client, uris) in _availableResources)
-        {
-            foreach (var uri in uris)
-            {
-                await client.SubscribeToResourceAsync(uri, ct);
-            }
-            client.RegisterNotificationHandler(
-                "notifications/resources/updated",
-                (notification, cancellationToken) =>
-                    UpdatedResourceNotificationHandler(client, notification, cancellationToken));
-        }
-    }
-
-    private async Task UnSubscribeToResources(CancellationToken ct)
-    {
-        foreach (var (client, uris) in _availableResources)
-        {
-            foreach (var uri in uris)
-            {
-                await client.UnsubscribeFromResourceAsync(uri, ct);
-            }
-        }
-    }
-
+    
     public async Task Run(string[] prompts, CancellationToken ct)
     {
         var messages = prompts
@@ -171,16 +89,14 @@ public sealed class Agent : IAgent
         await ExecuteAgentLoop(0.5f, jointCt);
     }
 
-    public void CancelCurrentExecution()
-    {
-        _cancellationTokenSource.Cancel();
-        _cancellationTokenSource.Dispose();
-        _cancellationTokenSource = new CancellationTokenSource();
-    }
-
     private async Task ExecuteAgentLoop(float? temperature, CancellationToken ct)
     {
-        var updates = _llm.Prompt(_messages.GetSnapshot(), _mcpClientTools, temperature, ct);
+        var options = new ChatOptions
+        {
+            Tools = _mcpClientTools,
+            Temperature = temperature
+        };
+        var updates = _llm.Prompt(_messages.GetSnapshot(), options, ct);
 
         List<ChatResponseUpdate> processedUpdates = [];
         Dictionary<string, List<ChatResponseUpdate>> updatesLookup = [];
@@ -204,6 +120,116 @@ public sealed class Agent : IAgent
         _messages.AddMessages(processedUpdates.ToChatResponse());
     }
 
+    public void CancelCurrentExecution()
+    {
+        _cancellationTokenSource.Cancel();
+        _cancellationTokenSource.Dispose();
+        _cancellationTokenSource = new CancellationTokenSource();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        await _cancellationTokenSource.CancelAsync();
+        _cancellationTokenSource.Dispose();
+        await UnSubscribeToResources(CancellationToken.None);
+        foreach (var client in _mcpClients)
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    private async Task<IMcpClient[]> CreateClients(string[] endpoints, CancellationToken ct)
+    {
+        var retryPolicy = Policy
+            .Handle<HttpRequestException>()
+            .WaitAndRetryAsync(
+                3,
+                retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+
+        return await Task.WhenAll(endpoints.Select(x =>
+            retryPolicy.ExecuteAsync(async () => await McpClientFactory.CreateAsync(
+                new SseClientTransport(
+                    new SseClientTransportOptions
+                    {
+                        Endpoint = new Uri(x)
+                    }),
+                new McpClientOptions
+                {
+                    Capabilities = new ClientCapabilities
+                    {
+                        Sampling = new SamplingCapability
+                        {
+                            SamplingHandler = SamplingHandler()
+                        }
+                    }
+                },
+                cancellationToken: ct))));
+    }
+
+    private static async Task<IEnumerable<AITool>> GetTools(
+        IEnumerable<IMcpClient> clients, CancellationToken cancellationToken)
+    {
+        var tasks = clients
+            .Select(x => x
+                .EnumerateToolsAsync(cancellationToken: cancellationToken)
+                .ToArrayAsync(cancellationToken)
+                .AsTask());
+        var tools = await Task.WhenAll(tasks);
+        return tools
+            .SelectMany(x => x)
+            .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()));
+    }
+
+    private static async Task<Dictionary<IMcpClient, HashSet<string>>> GetResources(
+        IEnumerable<IMcpClient> clients, CancellationToken ct)
+    {
+        var tasks = clients
+            .Where(client => client.ServerCapabilities.Resources is not null)
+            .Select(async client =>
+            {
+                var resourceUris = client.EnumerateResourcesAsync(ct).Select(x => x.Uri);
+                var templatedResourceUris = client.EnumerateResourceTemplatesAsync(ct).Select(x => x.UriTemplate);
+                var uris = await resourceUris.Concat(templatedResourceUris).ToArrayAsync(ct);
+                return (client, uris);
+            });
+
+        var results = await Task.WhenAll(tasks);
+        return results.ToDictionary(x => x.client, x => x.uris.ToHashSet());
+    }
+
+    private async Task SubscribeToResources(CancellationToken ct)
+    {
+        foreach (var (client, uris) in _availableResources)
+        {
+            foreach (var uri in uris)
+            {
+                await client.SubscribeToResourceAsync(uri, ct);
+            }
+
+            client.RegisterNotificationHandler(
+                "notifications/resources/updated",
+                (notification, cancellationToken) =>
+                    UpdatedResourceNotificationHandler(client, notification, cancellationToken));
+        }
+    }
+
+    private async Task UnSubscribeToResources(CancellationToken ct)
+    {
+        foreach (var (client, uris) in _availableResources)
+        {
+            foreach (var uri in uris)
+            {
+                await client.UnsubscribeFromResourceAsync(uri, ct);
+            }
+        }
+    }
+    
     private async ValueTask UpdatedResourceNotificationHandler(
         IMcpClient client, JsonRpcNotification notification, CancellationToken ct)
     {
@@ -222,20 +248,44 @@ public sealed class Agent : IAgent
         await Run([message], jointCt);
     }
 
-    public async ValueTask DisposeAsync()
+    private Func<
+            CreateMessageRequestParams?,
+            IProgress<ProgressNotificationValue>,
+            CancellationToken,
+            ValueTask<CreateMessageResult>>
+        SamplingHandler()
     {
-        if (_isDisposed)
+        return async (parameters, progress, ct) =>
         {
-            return;
-        }
+            var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
+            var conversation = tracker is null
+                ? new ConversationHistory([])
+                : _coAgentConversations.GetOrAdd(tracker, _ => new ConversationHistory([]));
+            conversation.AddMessages(parameters?.Messages);
+            conversation.AddOrChangeSystemPrompt(parameters?.SystemPrompt);
+            var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
+            var options = new ChatOptions
+            {
+                Tools = includeContext == ContextInclusion.None ? null : _mcpClientTools,
+                Temperature = parameters?.Temperature,
+                MaxOutputTokens = parameters?.MaxTokens,
+                StopSequences = parameters?.StopSequences?.ToArray()
+            };
 
-        _isDisposed = true;
-        await _cancellationTokenSource.CancelAsync();
-        _cancellationTokenSource.Dispose();
-        await UnSubscribeToResources(CancellationToken.None);
-        foreach (var client in _mcpClients)
-        {
-            await client.DisposeAsync();
-        }
+            var updates = _llm.Prompt(conversation.GetSnapshot(), options, ct);
+            List<ChatResponseUpdate> processedUpdates = [];
+            await foreach (var update in updates)
+            {
+                processedUpdates.Add(update);
+                progress?.Report(new ProgressNotificationValue
+                {
+                    Progress = processedUpdates.Count
+                });
+            }
+
+            var response = processedUpdates.ToChatResponse();
+            conversation.AddMessages(response);
+            return response.ToCreateMessageResult();
+        };
     }
 }

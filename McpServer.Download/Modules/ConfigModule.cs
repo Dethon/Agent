@@ -47,6 +47,7 @@ public static class ConfigModule
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpGetDownloadStatusTool>()
             .WithTools<McpCleanupDownloadTool>()
+            .WithTools<McpContentRecommendationTool>()
             .WithResources<McpDownloadResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)

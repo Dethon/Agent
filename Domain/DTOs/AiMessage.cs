@@ -2,13 +2,14 @@
 
 public record AiMessage
 {
-    public required ChatMessageRole Role { get; init; }
+    public required AiMessageRole Role { get; init; }
     public required string Content { get; init; }
 }
 
-public enum ChatMessageRole
+public enum AiMessageRole
 {
     User,
     Tool,
-    System
+    System,
+    Assistant
 }
