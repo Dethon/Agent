@@ -49,7 +49,7 @@ public sealed class Agent : IAgent
         OpenAiClient llm,
         CancellationToken ct)
     {
-        var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, ct)));
+        var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, llm, ct)));
         var tools = await GetTools(mcpClients, ct);
         var resources = await GetResources(mcpClients, ct);
         var initialChatMessages = initialMessages
@@ -62,7 +62,7 @@ public sealed class Agent : IAgent
         return agent;
     }
 
-    private static async Task<IMcpClient> CreateClient(string endpoint, CancellationToken cancellationToken)
+    private static async Task<IMcpClient> CreateClient(string endpoint, OpenAiClient llm, CancellationToken ct)
     {
         var retryPolicy = Policy
             .Handle<HttpRequestException>()
@@ -76,7 +76,17 @@ public sealed class Agent : IAgent
                 {
                     Endpoint = new Uri(endpoint)
                 }),
-            cancellationToken: cancellationToken));
+            new McpClientOptions
+            {
+                Capabilities = new ClientCapabilities
+                {
+                    Sampling = new SamplingCapability
+                    {
+                        SamplingHandler = llm.GetSamplingHandlers()
+                    }
+                }
+            },
+            cancellationToken: ct));
     }
 
     private static async Task<IEnumerable<McpClientTool>> GetTools(
