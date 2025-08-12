@@ -4,7 +4,6 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters;
-using JetBrains.Annotations;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -16,7 +15,7 @@ namespace Infrastructure.Agents;
 
 public sealed class Agent : IAgent
 {
-    [PublicAPI] private readonly ImmutableList<IMcpClient> _mcpClients;
+    private readonly ImmutableList<IMcpClient> _mcpClients;
     private readonly ImmutableList<AITool> _mcpClientTools;
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
@@ -45,7 +44,7 @@ public sealed class Agent : IAgent
 
     public static async Task<IAgent> CreateAsync(
         string[] endpoints,
-        ChatMessage[] initialMessages,
+        AiMessage[] initialMessages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm,
         CancellationToken ct)
@@ -53,8 +52,11 @@ public sealed class Agent : IAgent
         var mcpClients = await Task.WhenAll(endpoints.Select(x => CreateClient(x, ct)));
         var tools = await GetTools(mcpClients, ct);
         var resources = await GetResources(mcpClients, ct);
+        var initialChatMessages = initialMessages
+            .Select(x => x.ToChatMessage())
+            .ToArray();
 
-        var agent = new Agent(mcpClients, tools, initialMessages, writeMessageCallback, llm, resources);
+        var agent = new Agent(mcpClients, tools, initialChatMessages, writeMessageCallback, llm, resources);
 
         await agent.SubscribeToResources(ct);
         return agent;

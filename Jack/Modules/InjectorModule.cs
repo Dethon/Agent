@@ -18,7 +18,7 @@ public static class InjectorModule
         var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
         return services
             .AddSingleton<IAgentFactory>(sp =>
-                new DownloaderAgentFactory(sp.GetRequiredService<OpenAiClient>(), mcpEndpoints))
+                new DownloadAgentFactory(sp.GetRequiredService<OpenAiClient>(), mcpEndpoints))
             .AddSingleton<AgentResolver>()
             .AddOpenRouterAdapter(settings);
     }
