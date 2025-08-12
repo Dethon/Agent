@@ -33,6 +33,8 @@ public static class DownloaderPrompt
                           seeders you must try with slightly different search strings, for example in video or 
                           movies anything lower than 1080p is bad quality.
                           You should try to search with up to 20 different search strings before giving up.
+                          If the user wants you to change the download criteria you must obey. User wishes take priority 
+                          over the default behavior described here.
 
                           The search string will be used to search across a set of torrent trackers, so you can try 
                           to optimize them for this kind of search.
@@ -44,9 +46,9 @@ public static class DownloaderPrompt
 
                           You should let the user know about the files you chose to download and why.
                           After each download finishes you will receive a notification. Then you should organize that 
-                          download within the library. You should NEVER try to organize a download that is still in progress.
-                          To do the organization, you should first explore the library structure, both directories and files, and 
-                          then move files accordingly.
+                          download within the library. You should NEVER try to organize a download that is still in 
+                          progress. To do the organization, you should first explore the library structure, both
+                          directories and files, and then move files accordingly.
 
                           You must keep the same structure and do not mix up files with directories. If an existing 
                           subdirectory only contains files, do not move directories into it, and if it contains 
@@ -65,18 +67,20 @@ public static class DownloaderPrompt
                           The cleanup process can only be called after successfully moving the relevant files into 
                           the library. DO NOT clean up the download if the organization step fails.
 
-                          If the user requests to cancel, then, you will run the cleanup tools if there is a download 
-                          in progress (up to several times until it succeeds) and/or cease all further actions.
-                          You should not try to download anything else after the cancel request.
+                          If the user requests to cancel, then, you must perform a cleanup of the download/s in 
+                          progress. In this context cleaning up and cancelling are synonym. You might have to clean up 
+                          several times in case of an error.
+                          You should not try to download anything else after the cancel request unless the user
+                          explicitly tells you so.
 
-                          When doing a cleanup it is important to first clean up the download task and then the 
-                          leftover files from the download. If you try to clean up the leftover files before the 
-                          download task is cleaned up, it will fail and you will have to retry the cleanup process.
+                          When doing a cleanup it you MUST clean both the download task and the download directory.
+                          It is mandatory to clean the task first and the directory second.
 
                           If the user says "status" or asks for the status of the download/s in any other way, you 
                           must reply with the name, progress, speed, size and ETA of all current downloads.
 
-                          Don't prompt the user for acton or offer suggestions, just do what you are told.
+                          Don't prompt the user for acton, the whole process should be automatic unless the user 
+                          explicitly requests otherwise.
                           """
             }
         ];
