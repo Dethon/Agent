@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Agent.App;
+namespace Jack.App;
 
 public class TaskRunner(TaskQueue queue, ILogger<TaskRunner> logger) : BackgroundService
 {

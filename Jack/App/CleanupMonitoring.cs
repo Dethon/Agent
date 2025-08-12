@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Agent.App;
+namespace Jack.App;
 
 public class CleanupMonitoring(AgentCleanupMonitor monitor, ILogger<CleanupMonitoring> logger) : BackgroundService
 {

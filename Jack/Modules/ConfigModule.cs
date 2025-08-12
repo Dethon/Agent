@@ -1,10 +1,9 @@
 ﻿using System.CommandLine;
-using Agent.Settings;
-using Domain.Agents;
+using Jack.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Agent.Modules;
+namespace Jack.Modules;
 
 public static class ConfigModule
 {
@@ -28,10 +27,8 @@ public static class ConfigModule
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
         return services
-            .AddOpenRouterAdapter(settings)
-            .AddAgentFactory(settings)
-            .AddChatMonitoring(settings, cmdParams)
-            .AddSingleton<AgentResolver>();
+            .AddAgent(settings)
+            .AddChatMonitoring(settings, cmdParams);
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)
@@ -42,7 +39,7 @@ public static class ConfigModule
             Required = false,
             DefaultValueFactory = _ => 10
         };
-        var rootCommand = new RootCommand("Agent Application")
+        var rootCommand = new RootCommand("Jack Application")
         {
             workersOption
         };

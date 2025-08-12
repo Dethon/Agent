@@ -1,7 +1,7 @@
 ﻿using Domain.Monitor;
 using Microsoft.Extensions.Hosting;
 
-namespace Agent.App;
+namespace Jack.App;
 
 public class ChatMonitoring(ChatMonitor monitor) : BackgroundService
 {

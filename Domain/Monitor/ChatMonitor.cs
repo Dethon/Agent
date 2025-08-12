@@ -6,13 +6,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
-
 public class ChatMonitor(
     AgentResolver agentResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    AgentFactory agentFactory,
+    IAgentFactory agentFactory,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -34,10 +32,11 @@ public class ChatMonitor(
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
         prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
+        var responseCallback = (AiResponse r, CancellationToken ct) => ProcessResponse(prompt, r, ct);
         var agent = await agentResolver.Resolve(
             prompt.ChatId,
             prompt.ThreadId,
-            ct => agentFactory((r, ct2) => ProcessResponse(prompt, r, ct2), ct),
+            ct => agentFactory.Create(responseCallback, ct),
             cancellationToken);
 
         if (prompt.IsCommand)

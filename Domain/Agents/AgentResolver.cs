@@ -32,7 +32,7 @@ public class AgentResolver
         var agent = await GetAgentFromCache(GetCacheKey(chatId.Value, threadId.Value), agentFactory, ct);
         if (agent is null)
         {
-            throw new InvalidOperationException($"Agent for thread {chatId} found in cache but was null.");
+            throw new InvalidOperationException($"Jack for thread {chatId} found in cache but was null.");
         }
 
         return agent;

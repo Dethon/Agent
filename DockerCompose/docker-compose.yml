@@ -123,11 +123,11 @@ services:
       - jackbot
         
   jack:
-    image: agent:latest
+    image: jack:latest
     container_name: jack
     build:
       context: ${JACK_REPOSITORY_PATH}
-      dockerfile: Agent/Dockerfile
+      dockerfile: Jack/Dockerfile
     restart: unless-stopped
     env_file:
       - .env

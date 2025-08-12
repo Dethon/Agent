@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent", "Agent\Agent.csproj", "{118137BE-F6DB-4F58-9DB6-E6C58A1EF5F5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jack", "Jack\Jack.csproj", "{118137BE-F6DB-4F58-9DB6-E6C58A1EF5F5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Domain", "Domain\Domain.csproj", "{B9ADC0BE-BA3C-4801-8504-72AE7DD676D5}"
 EndProject

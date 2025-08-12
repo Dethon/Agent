@@ -1,37 +1,26 @@
-﻿using Agent.App;
-using Agent.Settings;
-using Domain.Agents;
+﻿using Domain.Agents;
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Monitor;
 using Infrastructure.Clients;
-using Infrastructure.Extensions;
 using Infrastructure.LLMAdapters;
+using Jack.App;
+using Jack.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 
-namespace Agent.Modules;
-
-using AgentFactory = Func<Func<AiResponse, CancellationToken, Task>, CancellationToken, Task<IAgent>>; 
+namespace Jack.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
+    public static IServiceCollection AddAgent(this IServiceCollection services, AgentSettings settings)
     {
-        return services.AddSingleton<OpenAiClient>(_ =>
-            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
-    }
-
-    public static IServiceCollection AddAgentFactory(this IServiceCollection services, AgentSettings settings)
-    {
-        return services.AddSingleton<AgentFactory>(sp =>
-            (callback, ct) => Infrastructure.Agents.Agent.CreateAsync(
-                settings.McpServers.Select(x => x.Endpoint).ToArray(),
-                DownloaderPrompt.Get().Select(x => x.ToChatMessage()).ToArray(),
-                callback,
-                sp.GetRequiredService<OpenAiClient>(),
-                ct));
+        var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
+        return services
+            .AddSingleton<IAgentFactory>(sp =>
+                new DownloaderAgentFactory(sp.GetRequiredService<OpenAiClient>(), mcpEndpoints))
+            .AddSingleton<AgentResolver>()
+            .AddOpenRouterAdapter(settings);
     }
 
     public static IServiceCollection AddChatMonitoring(
@@ -58,5 +47,11 @@ public static class InjectorModule
         }
 
         return services;
+    }
+
+    private static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
+    {
+        return services.AddSingleton<OpenAiClient>(_ =>
+            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
     }
 }
