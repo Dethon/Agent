@@ -15,13 +15,13 @@ public class McpFileSearchTool(ISearchClient client, IStateManager stateManager)
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        string searchString,
+        string[] searchStrings,
         CancellationToken cancellationToken)
     {
         try
         {
             var sessionId = context.Server.SessionId ?? "";
-            return ToolResponse.Create(await Run(sessionId, searchString, cancellationToken));
+            return ToolResponse.Create(await Run(sessionId, searchStrings, cancellationToken));
         }
         catch (Exception ex)
         {

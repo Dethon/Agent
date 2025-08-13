@@ -9,21 +9,34 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
     protected const string Name = "FileSearch";
 
     protected const string Description = """
-                                         Search for a file in the internet using a search string. Search strings must be 
-                                         concise and not include too many details.
+                                         Search for a file in the internet using a list of search strings. 
+                                         Search strings should be concise and not include too many details.
                                          """;
 
-    protected async Task<JsonNode> Run(string sessionId, string searchString, CancellationToken ct)
+    protected async Task<JsonNode> Run(string sessionId, string[] searchStrings, CancellationToken ct)
     {
-        var results = await client.Search(searchString, ct);
-        stateManager.SearchResults.Add(sessionId, results);
+        var results = await Task.WhenAll(searchStrings.Select(x => client.Search(x, ct)));
+        var summarizedResults = results
+            .SelectMany(x => x)
+            .GroupBy(x => x.Id)
+            .Select(x => x.First())
+            .ToArray();
+        stateManager.SearchResults.Add(sessionId, summarizedResults);
+        var output = summarizedResults
+            .Select(x => new
+            {
+                x.Id,
+                x.Title,
+                x.Size,
+                x.Seeders,
+                x.Category
+            });
 
         return new JsonObject
         {
             ["status"] = "success",
-            ["message"] = "File search completed successfully",
             ["totalResults"] = results.Length,
-            ["results"] = JsonSerializer.SerializeToNode(results)
+            ["results"] = JsonSerializer.SerializeToNode(output)
         };
     }
 }
