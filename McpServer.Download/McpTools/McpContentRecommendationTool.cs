@@ -46,8 +46,6 @@ public class McpContentRecommendationTool : ContentRecommendationTool
         {
             Messages = messages.Select(x => x.ToSamplingMessage()).ToArray(),
             SystemPrompt = SystemPrompt,
-            MaxTokens = 1000,
-            Temperature = 0.7f,
             IncludeContext = ContextInclusion.None,
             Metadata = JsonSerializer.Deserialize<JsonElement>(new JsonObject
             {

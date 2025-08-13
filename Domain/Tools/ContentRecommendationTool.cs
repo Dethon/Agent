@@ -21,10 +21,12 @@ public class ContentRecommendationTool
                                           books, audiobooks, movies, series, anime, music, magazines, video-games....
                                           The format of the recommendations must be a list of items that includes 
                                           release year, title, and a brief description.
-                                          Include at least 5 recommendations. The recommendations must be generated in 
-                                          one shot, do not ask the user for more information. If the user wants to 
-                                          refine the recommendations, they will provide additional context in the
-                                          subsequent prompt.
+                                          Include at least 5 recommendations. 
+                                          The recommendations must be generated in one shot, do not ask the user for 
+                                          more information. If the user wants to refine the recommendations, they will 
+                                          provide additional context in the subsequent prompt.
+                                          The output must JUST be recommendations, do not mention downloads, resolution,
+                                          etc. as you are not a download tool.
                                           """;
 
     protected static AiMessage[] GetFullPrompt(string userPrompt)

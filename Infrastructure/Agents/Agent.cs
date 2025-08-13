@@ -86,16 +86,12 @@ public sealed class Agent : IAgent
         _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
-        await ExecuteAgentLoop(0.5f, jointCt);
+        await ExecuteAgentLoop(jointCt);
     }
 
-    private async Task ExecuteAgentLoop(float? temperature, CancellationToken ct)
+    private async Task ExecuteAgentLoop(CancellationToken ct)
     {
-        var options = new ChatOptions
-        {
-            Tools = _mcpClientTools,
-            Temperature = temperature
-        };
+        var options = GetDefaultChatOptions();
         var updates = _llm.Prompt(_messages.GetSnapshot(), options, ct);
 
         List<ChatResponseUpdate> processedUpdates = [];
@@ -142,6 +138,30 @@ public sealed class Agent : IAgent
         {
             await client.DisposeAsync();
         }
+    }
+
+    private ChatOptions GetDefaultChatOptions(CreateMessageRequestParams? parameters = null)
+    {
+        var options = new ChatOptions
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                ["reasoning_effort"] = "low"
+            },
+            AllowMultipleToolCalls = true,
+            Tools = _mcpClientTools
+        };
+        if (parameters is null)
+        {
+            return options;
+        }
+
+        var includeContext = parameters.IncludeContext ?? ContextInclusion.None;
+        options.Tools = includeContext == ContextInclusion.None ? null : _mcpClientTools;
+        options.Temperature = parameters.Temperature;
+        options.MaxOutputTokens = parameters.MaxTokens;
+        options.StopSequences = parameters.StopSequences?.ToArray();
+        return options;
     }
 
     private async Task<IMcpClient[]> CreateClients(string[] endpoints, CancellationToken ct)
@@ -263,14 +283,7 @@ public sealed class Agent : IAgent
                 : _coAgentConversations.GetOrAdd(tracker, _ => new ConversationHistory([]));
             conversation.AddMessages(parameters?.Messages);
             conversation.AddOrChangeSystemPrompt(parameters?.SystemPrompt);
-            var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
-            var options = new ChatOptions
-            {
-                Tools = includeContext == ContextInclusion.None ? null : _mcpClientTools,
-                Temperature = parameters?.Temperature,
-                MaxOutputTokens = parameters?.MaxTokens,
-                StopSequences = parameters?.StopSequences?.ToArray()
-            };
+            var options = GetDefaultChatOptions(parameters);
 
             var updates = _llm.Prompt(conversation.GetSnapshot(), options, ct);
             List<ChatResponseUpdate> processedUpdates = [];
