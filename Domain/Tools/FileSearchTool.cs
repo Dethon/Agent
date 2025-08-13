@@ -31,13 +31,13 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
                 x.Title,
                 x.Size,
                 x.Seeders,
-                x.Category
-            });
+            })
+            .ToArray();
 
         return new JsonObject
         {
             ["status"] = "success",
-            ["totalResults"] = results.Length,
+            ["totalResults"] = output.Length,
             ["results"] = JsonSerializer.SerializeToNode(output)
         };
     }

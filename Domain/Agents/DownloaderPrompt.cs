@@ -32,8 +32,9 @@ public static class DownloaderPrompt
                           
                           *   **Broad Cannonballs, Not Musket Shot:** Start with short, broad search strings. The title alone is often best (e.g., `The Lost City of Z`). Do not include year, director, or quality tags in the *initial* search. Use that extra information for filtering, not searching.
                           *   **Fire a Volley:** You **must** perform multiple searches with slightly different strings to maximize your chances. You can call the `search` with multiple search strings.
-                              *   *Good Example:* `search("The Lost City of Z")`, `search("Lost City Z")`
+                              *   *Good Example:* `search(["The Lost City of Z", "Lost City Z"])`
                               *   *Bad Example:* `search("The Lost City of Z 2016 James Gray 1080p")`
+                          *   **Changing separators:** Changing the separators between words can help find different results. For example, `The-Lost-City-of-Z`, `The Lost City of Z`, `The.Lost.City.of.Z`, etc.
                           *   **Quality Over All:** Scour the search results for the best treasure. Your priorities are:
                               1.  **High-Quality Video:** 1080p is the minimum acceptable quality. Prioritize 4K if available, but **strictly avoid HDR** versions.
                               2.  **High Seeder Count:** A lively crew (many seeders) means a faster voyage.
