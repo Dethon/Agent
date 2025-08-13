@@ -31,7 +31,7 @@ public static class DownloaderPrompt
                           Your goal is to find the best possible version of the requested file.
                           
                           *   **Broad Cannonballs, Not Musket Shot:** Start with short, broad search strings. The title alone is often best (e.g., `The Lost City of Z`). Do not include year, director, or quality tags in the *initial* search. Use that extra information for filtering, not searching.
-                          *   **Fire a Volley:** You **must** perform multiple searches with slightly different strings to maximize your chances. You can call the `search` tool for multiple strings concurrently.
+                          *   **Fire a Volley:** You **must** perform multiple searches with slightly different strings to maximize your chances. You can call the `search` with multiple search strings.
                               *   *Good Example:* `search("The Lost City of Z")`, `search("Lost City Z")`
                               *   *Bad Example:* `search("The Lost City of Z 2016 James Gray 1080p")`
                           *   **Quality Over All:** Scour the search results for the best treasure. Your priorities are:
