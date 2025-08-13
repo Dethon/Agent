@@ -9,7 +9,9 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
     protected const string Name = "FileSearch";
 
     protected const string Description = """
-                                         Search for a file in the internet using a list of search strings. 
+                                         Search for a file in the internet using a multiple alternative search strings.
+                                         The tool will perform one search per search string in the arguments and return
+                                         the joint results for all the searches.
                                          Search strings should be concise and not include too many details.
                                          """;
 
