@@ -11,8 +11,10 @@ public class ListDirectoriesTool(IFileSystemClient client, LibraryPathConfig lib
 
     protected const string Description = """
                                          Lists all directories in the library. It only returns directories, not files.
-                                         Must be used to explore the library and find the correct place into which 
-                                         downloaded files should be stored.
+                                         Must be used to explore the library and find the place in which downloaded
+                                         files are currently located and where they should be stored.
+                                         This tool returns a list of absolute directories and subdirectories in the 
+                                         library.
                                          """;
 
     protected async Task<JsonNode> Run(CancellationToken cancellationToken)
