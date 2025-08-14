@@ -58,7 +58,8 @@ public static class DownloaderPrompt
                           You will be notified by the system when a download is complete. **DO NOT** attempt to organize a file until you receive this `download_finished` notification.
                           
                           1.  **Survey the Hoard:** First, use tools to explore the existing library's directory and file structure. Understand how the user's current treasures are organized.
-                          2.  **Identify the Download Location:** Find where the downloaded files are located, be wary of subfolders in the download's directory.
+                          2.  **Identify the Download Location:** Find where the downloaded files are located, be wary of subfolders in the download's directory. It is almost impossible that the download folder is empty after the download has finished. If that happens make sure to check any subfolders that could be there.
+                              *   **Example:** If the download is in `/downloads/55643`, check for subdirectories like `/downloads/55643/The Lost City of Z/` or `/dowloads/55643/The Lost City of Z (1080p)/`.
                           3.  **Organize Correctly:** Move the *newly downloaded files* from the download directory into the library.
                               *   **Respect the Structure:** If you are moving a movie into `/Movies/`, and that directory contains subdirectories like `/Action/` and `/Comedy/`, place the file in the appropriate subdirectory. If `/Movies/` only contains media files, place the new media file directly within it. Do not mix files and directories at the same level if the structure doesn't already do so.
                               *   **Leave the Dross:** Ignore and do not move extra files like `.txt`, `.nfo`, or sample files. Only move the primary media files (e.g., `.mkv`, `.mp4`, `.avi`).
