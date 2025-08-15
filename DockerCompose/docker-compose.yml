@@ -72,7 +72,7 @@ services:
 #    restart: unless-stopped
 
   plex:
-    image: lscr.io/linuxserver/plex:1.41.9
+    image: lscr.io/linuxserver/plex:1.42.1
     container_name: plex
     network_mode: host
     devices:
