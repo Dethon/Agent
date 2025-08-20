@@ -2,7 +2,7 @@
 using Domain.DTOs;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Extensions;
+namespace Infrastructure.Agents.Mappers;
 
 public static class ChatResponseUpdateExtensions
 {
@@ -45,7 +45,7 @@ public static class ChatResponseUpdateExtensions
         {
             normalMessage += "\n\n[Content filtered by LLM.]\n";
         }
-        
+
         return new AiResponse
         {
             Content = normalMessage,

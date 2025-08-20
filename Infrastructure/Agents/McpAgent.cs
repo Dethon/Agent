@@ -3,8 +3,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Extensions;
-using Infrastructure.LLMAdapters;
+using Infrastructure.Agents.Mappers;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -14,7 +13,7 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public sealed class Agent : IAgent
+public sealed class McpAgent : IAgent
 {
     private ImmutableList<IMcpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
@@ -31,8 +30,8 @@ public sealed class Agent : IAgent
     private readonly ConcurrentDictionary<string, ConversationHistory> _coAgentConversations = [];
 
     public DateTime LastExecutionTime { get; private set; }
-    
-    private Agent(
+
+    private McpAgent(
         OpenAiClient llm,
         AiMessage[] initialMessages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback)
@@ -50,7 +49,7 @@ public sealed class Agent : IAgent
         OpenAiClient llm,
         CancellationToken ct)
     {
-        var agent = new Agent(llm, initialMessages, writeMessageCallback);
+        var agent = new McpAgent(llm, initialMessages, writeMessageCallback);
         await agent.LoadMcps(endpoints, ct);
         return agent;
     }
@@ -63,7 +62,7 @@ public sealed class Agent : IAgent
             .ToImmutableDictionary(x => x.Key, x => x.Value.ToImmutableHashSet());
         await SubscribeToResources(ct);
     }
-    
+
     public async Task Run(string[] prompts, CancellationToken ct)
     {
         var messages = prompts
@@ -249,7 +248,7 @@ public sealed class Agent : IAgent
             }
         }
     }
-    
+
     private async ValueTask UpdatedResourceNotificationHandler(
         IMcpClient client, JsonRpcNotification notification, CancellationToken ct)
     {

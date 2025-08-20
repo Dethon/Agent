@@ -2,7 +2,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Tools;
-using Infrastructure.Extensions;
+using Infrastructure.Agents.Mappers;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;

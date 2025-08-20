@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
-namespace Infrastructure.Extensions;
+namespace Infrastructure.Agents.Mappers;
 
 public static class ChatMessageExtensions
 {

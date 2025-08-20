@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
-namespace Infrastructure.LLMAdapters;
+namespace Infrastructure.Agents;
 
 public class OpenAiClient(string endpoint, string apiKey, string[] models)
 {
