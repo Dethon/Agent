@@ -1,8 +1,8 @@
 ﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
+using Infrastructure.Agents;
 using Infrastructure.Clients;
-using Infrastructure.LLMAdapters;
 using Jack.App;
 using Jack.Settings;
 using Microsoft.Extensions.DependencyInjection;
