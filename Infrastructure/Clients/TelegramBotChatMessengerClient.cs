@@ -99,6 +99,16 @@ public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] 
         }
     }
 
+    public Task DisableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    public Task EnableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
     private async Task<string?> GetIcon(CancellationToken cancellationToken)
     {
         if (_topicIconId is not null)

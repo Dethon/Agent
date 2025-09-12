@@ -10,4 +10,8 @@ public interface IChatMessengerClient
 
     Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken);
     Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken);
+
+    Task DisableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken);
+
+    Task EnableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken);
 }

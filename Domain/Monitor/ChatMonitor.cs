@@ -44,7 +44,9 @@ public class ChatMonitor(
             agent.CancelCurrentExecution();
         }
 
+        await chatMessengerClient.DisableChat(prompt.ChatId, prompt.ThreadId, cancellationToken);
         await agent.Run([prompt.Prompt], cancellationToken);
+        await chatMessengerClient.EnableChat(prompt.ChatId, prompt.ThreadId, cancellationToken);
     }
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
