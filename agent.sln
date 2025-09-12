@@ -45,4 +45,8 @@ Global
 		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
+	GlobalSection(RiderSharedRunConfigurations) = postSolution
+		File = .run-agent\Agent.run.xml
+		File = .run-docker-compose\docker-compose.run.xml
+	EndGlobalSection
 EndGlobal

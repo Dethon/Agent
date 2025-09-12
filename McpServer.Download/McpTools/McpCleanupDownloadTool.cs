@@ -2,14 +2,17 @@
 using Domain.Contracts;
 using Domain.Tools;
 using Infrastructure.Utils;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServer.Download.McpTools;
 
 [McpServerToolType]
-public class McpCleanupDownloadTool(IDownloadClient downloadClient, IStateManager stateManager) :
-    CleanupDownloadTool(downloadClient, stateManager)
+public class McpCleanupDownloadTool(
+    IDownloadClient downloadClient,
+    IStateManager stateManager,
+    ILogger<McpCleanupDownloadTool> logger) : CleanupDownloadTool(downloadClient, stateManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -25,6 +28,7 @@ public class McpCleanupDownloadTool(IDownloadClient downloadClient, IStateManage
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error in {ToolName} tool", Name);
             return ToolResponse.Create(ex);
         }
     }

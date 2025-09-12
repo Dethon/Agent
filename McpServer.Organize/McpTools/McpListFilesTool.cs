@@ -3,14 +3,17 @@ using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Infrastructure.Utils;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServer.Organize.McpTools;
 
 [McpServerToolType]
-public class McpListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath) :
-    ListFilesTool(client, libraryPath)
+public class McpListFilesTool(
+    IFileSystemClient client,
+    LibraryPathConfig libraryPath,
+    ILogger<McpListFilesTool> logger) : ListFilesTool(client, libraryPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -22,6 +25,7 @@ public class McpListFilesTool(IFileSystemClient client, LibraryPathConfig librar
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error in {ToolName} tool", Name);
             return ToolResponse.Create(ex);
         }
     }

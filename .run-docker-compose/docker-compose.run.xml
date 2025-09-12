@@ -1,0 +1,28 @@
+﻿<component name="ProjectRunConfigurationManager">
+    <configuration default="false" name="docker-compose" type="docker-deploy" factoryName="docker-compose.yml"
+                   server-name="Docker">
+        <deployment type="docker-compose.yml">
+            <settings>
+                <option name="envFilePath" value=""/>
+                <option name="envFilePaths">
+                    <list>
+                        <option value=""/>
+                    </list>
+                </option>
+                <option name="commandLineOptions" value="--build"/>
+                <option name="services">
+                    <list>
+                        <option value="jack"/>
+                        <option value="mcp-download"/>
+                        <option value="mcp-organize"/>
+                        <option value="qbittorrent"/>
+                        <option value="jackett"/>
+                    </list>
+                </option>
+                <option name="sourceFilePath" value="DockerCompose/docker-compose.yml"/>
+            </settings>
+        </deployment>
+        <EXTENSION ID="com.jetbrains.rider.docker.debug" isFastModeEnabled="true" isSslEnabled="false"/>
+        <method v="2"/>
+    </configuration>
+</component>

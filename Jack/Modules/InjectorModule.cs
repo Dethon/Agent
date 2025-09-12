@@ -26,17 +26,24 @@ public static class InjectorModule
     public static IServiceCollection AddChatMonitoring(
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
-        return services
+        services = services
             .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
             .AddSingleton<ChatMonitor>()
             .AddSingleton<AgentCleanupMonitor>()
-            .AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
-                new TelegramBotChatMessengerClient(
-                    new TelegramBotClient(settings.Telegram.BotToken),
-                    settings.Telegram.AllowedUserNames))
             .AddHostedService<ChatMonitoring>()
             .AddHostedService<CleanupMonitoring>()
             .AddWorkers(cmdParams);
+
+        return cmdParams.ChatInterface switch
+        {
+            ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(),
+            ChatInterface.Telegram => services.AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
+            {
+                var botClient = new TelegramBotClient(settings.Telegram.BotToken);
+                return new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames);
+            }),
+            _ => throw new ArgumentOutOfRangeException(nameof(cmdParams.ChatInterface), "Unsupported chat interface")
+        };
     }
 
     private static IServiceCollection AddWorkers(this IServiceCollection services, CommandLineParams cmdParams)

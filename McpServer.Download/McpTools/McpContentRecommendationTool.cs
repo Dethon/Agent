@@ -4,17 +4,18 @@ using System.Text.Json.Nodes;
 using Domain.Tools;
 using Infrastructure.Agents.Mappers;
 using Infrastructure.Utils;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServer.Download.McpTools;
 
 [McpServerToolType]
-public class McpContentRecommendationTool : ContentRecommendationTool
+public class McpContentRecommendationTool(ILogger<McpContentRecommendationTool> logger) : ContentRecommendationTool
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public static async Task<CallToolResult> McpRun(
+    public async Task<CallToolResult> McpRun(
         RequestContext<CallToolRequestParams> context,
         string userPrompt,
         CancellationToken ct)
@@ -34,6 +35,7 @@ public class McpContentRecommendationTool : ContentRecommendationTool
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error in {ToolName} tool", Name);
             return ToolResponse.Create(ex);
         }
     }

@@ -2,14 +2,17 @@
 using Domain.Contracts;
 using Domain.Tools;
 using Infrastructure.Utils;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServer.Download.McpTools;
 
 [McpServerToolType]
-public class McpFileSearchTool(ISearchClient client, IStateManager stateManager) :
-    FileSearchTool(client, stateManager)
+public class McpFileSearchTool(
+    ISearchClient client,
+    IStateManager stateManager,
+    ILogger<McpFileSearchTool> logger) : FileSearchTool(client, stateManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -25,6 +28,7 @@ public class McpFileSearchTool(ISearchClient client, IStateManager stateManager)
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error in {ToolName} tool", Name);
             return ToolResponse.Create(ex);
         }
     }

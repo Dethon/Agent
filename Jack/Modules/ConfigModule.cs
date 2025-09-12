@@ -39,9 +39,16 @@ public static class ConfigModule
             Required = false,
             DefaultValueFactory = _ => 10
         };
+        var chatOption = new Option<ChatInterface>("--chat")
+        {
+            Description = "Chat interface to interact with the agent",
+            Required = false,
+            DefaultValueFactory = _ => ChatInterface.Telegram
+        };
         var rootCommand = new RootCommand("Jack Application")
         {
-            workersOption
+            workersOption,
+            chatOption
         };
 
         var parseResult = rootCommand.Parse(args);
@@ -51,6 +58,7 @@ public static class ConfigModule
         return new CommandLineParams
         {
             WorkersCount = parseResult.GetValue(workersOption),
+            ChatInterface = parseResult.GetValue(chatOption)
         };
     }
 
