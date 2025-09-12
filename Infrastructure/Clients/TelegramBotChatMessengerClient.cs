@@ -101,11 +101,13 @@ public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] 
 
     public Task DisableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
     {
+        // No-op for Telegram as there's no direct equivalent to disabling chat input
         return Task.CompletedTask;
     }
 
     public Task EnableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
     {
+        // No-op for Telegram as there's no direct equivalent to enabling chat input
         return Task.CompletedTask;
     }
 
