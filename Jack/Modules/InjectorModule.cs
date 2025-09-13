@@ -36,8 +36,8 @@ public static class InjectorModule
 
         return cmdParams.ChatInterface switch
         {
-            ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(),
-            ChatInterface.Telegram => services.AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
+            ChatInterface.Cli => services.AddSingleton<IChatMessengerClient>(_ => new CliChatMessengerClient("Jack")),
+            ChatInterface.Telegram => services.AddSingleton<IChatMessengerClient>(_ =>
             {
                 var botClient = new TelegramBotClient(settings.Telegram.BotToken);
                 return new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames);

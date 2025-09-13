@@ -9,8 +9,9 @@ using Message = Telegram.Bot.Types.Message;
 
 namespace Infrastructure.Clients;
 
-public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] allowedUserNames) :
-    IChatMessengerClient
+public class TelegramBotChatMessengerClient(
+    ITelegramBotClient client,
+    string[] allowedUserNames) : IChatMessengerClient
 {
     private string? _topicIconId;
     
@@ -53,16 +54,15 @@ public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] 
         }
     }
 
-    public async Task<int> SendResponse(
-        long chatId, string response, long? messageThreadId, CancellationToken cancellationToken)
+    public async Task SendResponse(
+        long chatId, string response, long? threadId, CancellationToken cancellationToken)
     {
-        var message = await client.SendMessage(
+        await client.SendMessage(
             chatId,
             response,
             parseMode: ParseMode.Html,
-            messageThreadId: Convert.ToInt32(messageThreadId),
+            messageThreadId: Convert.ToInt32(threadId),
             cancellationToken: cancellationToken);
-        return message.Id;
     }
 
     public async Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
@@ -99,18 +99,11 @@ public class TelegramBotChatMessengerClient(ITelegramBotClient client, string[] 
         }
     }
 
-    public Task DisableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
+    public Task BlockWhile(long chatId, long? threadId, Func<Task> task, CancellationToken cancellationToken)
     {
-        // No-op for Telegram as there's no direct equivalent to disabling chat input
-        return Task.CompletedTask;
+        return task();
     }
-
-    public Task EnableChat(long chatId, long? messageThreadId, CancellationToken cancellationToken)
-    {
-        // No-op for Telegram as there's no direct equivalent to enabling chat input
-        return Task.CompletedTask;
-    }
-
+    
     private async Task<string?> GetIcon(CancellationToken cancellationToken)
     {
         if (_topicIconId is not null)
