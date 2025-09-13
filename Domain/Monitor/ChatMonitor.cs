@@ -1,7 +1,6 @@
 ﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -59,7 +58,12 @@ public class ChatMonitor(
         }
 
         var threadId = await chatMessengerClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
-        await chatMessengerClient.SendResponse(prompt.ChatId, $"<b>{prompt.Prompt}</b>", threadId, cancellationToken);
+        var responseMessage = new ChatResponseMessage
+        {
+            Message = prompt.Prompt,
+            Bold = true
+        };
+        await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, threadId, cancellationToken);
 
         return prompt with
         {
@@ -72,20 +76,12 @@ public class ChatMonitor(
     {
         try
         {
-            var content = response.Content.HtmlSanitize().Left(4096);
-            var toolCalls = response.ToolCalls.HtmlSanitize().Left(3800);
-            if (!string.IsNullOrWhiteSpace(content))
+            var responseMessage = new ChatResponseMessage
             {
-                await chatMessengerClient.SendResponse(prompt.ChatId, content, prompt.ThreadId, ct);
-            }
-
-            if (!string.IsNullOrWhiteSpace(toolCalls))
-            {
-                var toolMessage = "<blockquote expandable>" +
-                                  $"<pre><code class=\"language-json\">{toolCalls}</code></pre>" +
-                                  "</blockquote>";
-                await chatMessengerClient.SendResponse(prompt.ChatId, toolMessage, prompt.ThreadId, ct);
-            }
+                Message = response.Content,
+                CalledTools = response.ToolCalls
+            };
+            await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, prompt.ThreadId, ct);
         }
         catch (Exception ex)
         {

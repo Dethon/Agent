@@ -22,19 +22,10 @@ public class CliChatMessengerClient(string agentName) : IChatMessengerClient
         AnsiConsole.Write(new Text("Ctrl + C to quit.\n", new Style(Color.Grey)).Centered());
         while (!cancellationToken.IsCancellationRequested)
         {
-            AnsiConsole.Write(new Rule
-            {
-                Style = "grey"
-            });
-
             await _askSemaphore.WaitAsync(cancellationToken);
-            var input = await AnsiConsole.AskAsync<string>("[blue]You:[/]", cancellationToken);
+            var input = await AnsiConsole.AskAsync<string>("\n[blue]You:[/]", cancellationToken);
+            AnsiConsole.WriteLine();
             _busySemaphore.Release();
-
-            AnsiConsole.Write(new Rule
-            {
-                Style = "grey dim"
-            });
 
             yield return new ChatPrompt
             {
@@ -47,16 +38,33 @@ public class CliChatMessengerClient(string agentName) : IChatMessengerClient
         }
     }
 
-    public Task SendResponse(long chatId, string response, long? threadId, CancellationToken cancellationToken)
+    public Task SendResponse(long chatId, ChatResponseMessage responseMessage, long? threadId,
+        CancellationToken cancellationToken)
     {
         if (chatId != CliChatId || threadId != _threadId)
         {
             return Task.CompletedTask;
         }
 
-        AnsiConsole.Markup("[green]ChatGPT:[/]\n");
-        Console.WriteLine(response.Trim());
+        AnsiConsole.MarkupLine($"[green]{agentName}:[/]");
+        if (!string.IsNullOrEmpty(responseMessage.Message))
+        {
+            if (responseMessage.Bold)
+            {
+                AnsiConsole.MarkupLineInterpolated($"[bold]{responseMessage.Message}[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine(responseMessage.Message);
+            }
+        }
 
+        if (!string.IsNullOrEmpty(responseMessage.CalledTools))
+        {
+            AnsiConsole.MarkupLineInterpolated($"[italic grey]{responseMessage.CalledTools}[/]");
+        }
+        
+        
         return Task.CompletedTask;
     }
 
@@ -77,3 +85,5 @@ public class CliChatMessengerClient(string agentName) : IChatMessengerClient
         _askSemaphore.Release();
     }
 }
+
+

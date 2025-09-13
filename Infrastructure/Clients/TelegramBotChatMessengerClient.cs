@@ -1,6 +1,7 @@
 ﻿using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
@@ -55,14 +56,33 @@ public class TelegramBotChatMessengerClient(
     }
 
     public async Task SendResponse(
-        long chatId, string response, long? threadId, CancellationToken cancellationToken)
+        long chatId, ChatResponseMessage responseMessage, long? threadId, CancellationToken cancellationToken)
     {
-        await client.SendMessage(
-            chatId,
-            response,
-            parseMode: ParseMode.Html,
-            messageThreadId: Convert.ToInt32(threadId),
-            cancellationToken: cancellationToken);
+        var toolCalls = responseMessage.CalledTools?.HtmlSanitize().Left(3800);
+        var content = responseMessage.Message?.HtmlSanitize().Left(4096);
+
+        if (!string.IsNullOrWhiteSpace(content))
+        {
+            await client.SendMessage(
+                chatId,
+                responseMessage.Bold ? $"<b>{content}</b>" : content,
+                ParseMode.Html,
+                messageThreadId: Convert.ToInt32(threadId),
+                cancellationToken: cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(toolCalls))
+        {
+            var toolMessage = "<blockquote expandable>" +
+                              $"<pre><code class=\"language-json\">{toolCalls}</code></pre>" +
+                              "</blockquote>";
+            await client.SendMessage(
+                chatId,
+                toolMessage,
+                ParseMode.Html,
+                messageThreadId: Convert.ToInt32(threadId),
+                cancellationToken: cancellationToken);
+        }
     }
 
     public async Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
