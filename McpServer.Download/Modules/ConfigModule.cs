@@ -21,12 +21,7 @@ public static class ConfigModule
             .Build();
 
         var settings = config.Get<McpSettings>();
-        if (settings == null)
-        {
-            throw new InvalidOperationException("Settings not found");
-        }
-
-        return settings;
+        return settings ?? throw new InvalidOperationException("Settings not found");
     }
 
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)

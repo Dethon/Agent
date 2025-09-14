@@ -3,7 +3,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools;
 
-public class RunCommand(ICommandRunner commandRunner)
+public class RunCommandTool(ICommandRunner commandRunner)
 {
     protected const string Name = "RunCommand";
 

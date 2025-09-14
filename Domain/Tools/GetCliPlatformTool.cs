@@ -3,7 +3,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools;
 
-public class GetCliPlatform(IAvailableShell shell)
+public class GetCliPlatformTool(IAvailableShell shell)
 {
     protected const string Name = "GetCliPlatform";
 

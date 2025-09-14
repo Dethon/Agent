@@ -7,7 +7,7 @@ public abstract class BaseCliRunner : ICommandRunner
 {
     public abstract Task<string> Run(string command, CancellationToken ct);
 
-    protected async Task<string> Run(string fileName, string args, CancellationToken ct)
+    protected static async Task<string> Run(string fileName, string args, CancellationToken ct)
     {
         var process = new Process
         {
