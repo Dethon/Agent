@@ -1,33 +1,34 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Domain.Contracts;
 using Microsoft.Win32;
 
-namespace Domain.Tools.Shared;
+namespace Infrastructure.Services;
 
-public static class SupportedShell
+public class AvailableShell : IAvailableShell
 {
-    public static async Task<(string shell, string commandOption)> GetShellAndCommandOption(CancellationToken ct)
+    public async Task<string> Get(CancellationToken ct)
     {
-        var shell = await GetShell(ct);
-        return shell switch
+        return await GetShell(ct) switch
         {
-            "pwsh" => (shell, "-Command"),
-            "cmd" => (shell, "/C"),
-            "bash" or "sh" => (shell, "-c"),
+            Shell.Bash => "bash",
+            Shell.Sh => "sh",
+            Shell.PowerShell => "pwsh",
+            Shell.Cmd => "cmd",
             _ => throw new PlatformNotSupportedException("Unsupported shell")
         };
     }
 
-    public static async Task<string> GetShell(CancellationToken ct)
+    public static async Task<Shell> GetShell(CancellationToken ct)
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return IsPowerShellInstalledOnWindows() ? "pwsh" : "cmd";
+            return IsPowerShellInstalledOnWindows() ? Shell.PowerShell : Shell.Cmd;
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            return await IsBashInstalledOnLinux(ct) ? "bash" : "sh";
+            return await IsBashInstalledOnLinux(ct) ? Shell.Bash : Shell.Sh;
         }
 
         throw new PlatformNotSupportedException("Unsupported OS");
@@ -70,4 +71,12 @@ public static class SupportedShell
         await process.WaitForExitAsync(ct);
         return !string.IsNullOrWhiteSpace(result);
     }
+}
+
+public enum Shell
+{
+    Bash,
+    Sh,
+    PowerShell,
+    Cmd
 }

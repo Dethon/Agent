@@ -1,11 +1,9 @@
 ﻿using System.Text.Json.Nodes;
-using Domain.Tools.Shared;
-using ProcessStartInfo = System.Diagnostics.ProcessStartInfo;
-using Process = System.Diagnostics.Process;
+using Domain.Contracts;
 
 namespace Domain.Tools;
 
-public class RunCommand
+public class RunCommand(ICommandRunner commandRunner)
 {
     protected const string Name = "RunCommand";
 
@@ -17,21 +15,10 @@ public class RunCommand
 
     protected async Task<JsonNode> Run(string command, CancellationToken ct)
     {
-        var (shell, commandOption) = await SupportedShell.GetShellAndCommandOption(ct);
-        var process = new Process
+        var output = await commandRunner.Run(command, ct);
+        return new JsonObject
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = shell,
-                Arguments = $"{commandOption} {command}",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
+            ["output"] = output
         };
-        process.Start();
-        var result = await process.StandardOutput.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        return result;
     }
 }

@@ -1,9 +1,9 @@
 ﻿using System.Text.Json.Nodes;
-using Domain.Tools.Shared;
+using Domain.Contracts;
 
 namespace Domain.Tools;
 
-public class GetCliPlatform
+public class GetCliPlatform(IAvailableShell shell)
 {
     protected const string Name = "GetCliPlatform";
 
@@ -18,7 +18,7 @@ public class GetCliPlatform
     {
         return new JsonObject
         {
-            ["platform"] = await SupportedShell.GetShell(ct)
+            ["platform"] = await shell.Get(ct)
         };
     }
 }
