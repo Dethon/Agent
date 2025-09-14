@@ -7,9 +7,15 @@ namespace Infrastructure.Services;
 
 public class AvailableShell : IAvailableShell
 {
+    private string? _cachedShell;
     public async Task<string> Get(CancellationToken ct)
     {
-        return await GetShell(ct) switch
+        if (_cachedShell is not null)
+        {
+            return _cachedShell;
+        }
+
+        _cachedShell = await GetShell(ct) switch
         {
             Shell.Bash => "bash",
             Shell.Sh => "sh",
@@ -17,6 +23,8 @@ public class AvailableShell : IAvailableShell
             Shell.Cmd => "cmd",
             _ => throw new PlatformNotSupportedException("Unsupported shell")
         };
+
+        return _cachedShell;
     }
 
     public static async Task<Shell> GetShell(CancellationToken ct)
