@@ -39,7 +39,7 @@ services:
       - jackbot
 
   jackett:
-    image: lscr.io/linuxserver/jackett:0.22.2207
+    image: lscr.io/linuxserver/jackett:0.24.306
     logging:
       driver: "json-file"
       options:
