@@ -40,6 +40,10 @@ services:
 
   jackett:
     image: lscr.io/linuxserver/jackett:0.22.2207
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
     container_name: jackett
     ports:
       - "8003:9117"
