@@ -15,11 +15,11 @@ namespace Infrastructure.Agents;
 
 public sealed class McpAgent : IAgent
 {
-    private ImmutableList<IMcpClient> _mcpClients = [];
+    private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
 
-    private ImmutableDictionary<IMcpClient, ImmutableHashSet<string>> _availableResources =
-        new Dictionary<IMcpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
+    private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
+        new Dictionary<McpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
 
     private CancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
@@ -163,7 +163,7 @@ public sealed class McpAgent : IAgent
         return options;
     }
 
-    private async Task<IMcpClient[]> CreateClients(string[] endpoints, CancellationToken ct)
+    private async Task<McpClient[]> CreateClients(string[] endpoints, CancellationToken ct)
     {
         var retryPolicy = Policy
             .Handle<HttpRequestException>()
@@ -172,27 +172,24 @@ public sealed class McpAgent : IAgent
                 retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
 
         return await Task.WhenAll(endpoints.Select(x =>
-            retryPolicy.ExecuteAsync(async () => await McpClientFactory.CreateAsync(
-                new SseClientTransport(
-                    new SseClientTransportOptions
+            retryPolicy.ExecuteAsync(async () => await McpClient.CreateAsync(
+                new HttpClientTransport(
+                    new HttpClientTransportOptions
                     {
                         Endpoint = new Uri(x)
                     }),
                 new McpClientOptions
                 {
-                    Capabilities = new ClientCapabilities
+                    Handlers = new McpClientHandlers
                     {
-                        Sampling = new SamplingCapability
-                        {
-                            SamplingHandler = SamplingHandler()
-                        }
+                        SamplingHandler = SamplingHandler()
                     }
                 },
                 cancellationToken: ct))));
     }
 
     private static async Task<IEnumerable<AITool>> GetTools(
-        IEnumerable<IMcpClient> clients, CancellationToken cancellationToken)
+        IEnumerable<McpClient> clients, CancellationToken cancellationToken)
     {
         var tasks = clients
             .Select(x => x
@@ -205,8 +202,8 @@ public sealed class McpAgent : IAgent
             .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()));
     }
 
-    private static async Task<Dictionary<IMcpClient, HashSet<string>>> GetResources(
-        IEnumerable<IMcpClient> clients, CancellationToken ct)
+    private static async Task<Dictionary<McpClient, HashSet<string>>> GetResources(
+        IEnumerable<McpClient> clients, CancellationToken ct)
     {
         var tasks = clients
             .Where(client => client.ServerCapabilities.Resources is not null)
@@ -250,7 +247,7 @@ public sealed class McpAgent : IAgent
     }
 
     private async ValueTask UpdatedResourceNotificationHandler(
-        IMcpClient client, JsonRpcNotification notification, CancellationToken ct)
+        McpClient client, JsonRpcNotification notification, CancellationToken ct)
     {
         var uri = notification.Params
             .Deserialize<Dictionary<string, string>>()?
