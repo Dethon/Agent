@@ -98,7 +98,7 @@ services:
       - "6001:8080"
     build:
       context: ${JACK_REPOSITORY_PATH}
-      dockerfile: McpServer.Download/Dockerfile
+      dockerfile: McpServerDownload/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
@@ -115,7 +115,7 @@ services:
       - "6002:8080"
     build:
       context: ${JACK_REPOSITORY_PATH}
-      dockerfile: McpServer.Organize/Dockerfile
+      dockerfile: McpServerOrganize/Dockerfile
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads

@@ -7,35 +7,41 @@ namespace Infrastructure.Agents.Mappers;
 
 public static class ChatMessageExtensions
 {
-    public static ChatMessage ToChatMessage(this AiMessage message)
+    extension(AiMessage message)
     {
-        var role = message.Role switch
+        public ChatMessage ToChatMessage()
         {
-            AiMessageRole.User => ChatRole.User,
-            AiMessageRole.System => ChatRole.System,
-            AiMessageRole.Tool => ChatRole.Tool,
-            _ => throw new NotSupportedException($"{message.Role} is not supported.")
-        };
-        return new ChatMessage(role, message.Content);
-    }
-
-    public static SamplingMessage ToSamplingMessage(this AiMessage message)
-    {
-        var role = message.Role switch
-        {
-            AiMessageRole.User => Role.User,
-            AiMessageRole.System => Role.User,
-            AiMessageRole.Assistant => Role.Assistant,
-            _ => throw new NotSupportedException($"{message.Role} is not supported.")
-        };
-        return new SamplingMessage
-        {
-            Role = role,
-            Content = new TextContentBlock
+            var role = message.Role switch
             {
-                Text = message.Content
-            }
-        };
+                AiMessageRole.User => ChatRole.User,
+                AiMessageRole.System => ChatRole.System,
+                AiMessageRole.Tool => ChatRole.Tool,
+                _ => throw new NotSupportedException($"{message.Role} is not supported.")
+            };
+            return new ChatMessage(role, message.Content);
+        }
+
+        public SamplingMessage ToSamplingMessage()
+        {
+            var role = message.Role switch
+            {
+                AiMessageRole.User => Role.User,
+                AiMessageRole.System => Role.User,
+                AiMessageRole.Assistant => Role.Assistant,
+                _ => throw new NotSupportedException($"{message.Role} is not supported.")
+            };
+            return new SamplingMessage
+            {
+                Role = role,
+                Content =
+                [
+                    new TextContentBlock
+                    {
+                        Text = message.Content
+                    }
+                ]
+            };
+        }
     }
 
     internal static CreateMessageResult ToCreateMessageResult(this ChatResponse chatResponse)
@@ -43,10 +49,13 @@ public static class ChatMessageExtensions
         var lastMessage = chatResponse.Messages.LastOrDefault();
         return new CreateMessageResult
         {
-            Content = new TextContentBlock
-            {
-                Text = lastMessage?.Text ?? string.Empty
-            },
+            Content =
+            [
+                new TextContentBlock
+                {
+                    Text = lastMessage?.Text ?? string.Empty
+                }
+            ],
             Model = chatResponse.ModelId ?? "unknown",
             Role = lastMessage?.Role == ChatRole.User ? Role.User : Role.Assistant,
             StopReason = chatResponse.FinishReason == ChatFinishReason.Length ? "maxTokens" : "endTurn"

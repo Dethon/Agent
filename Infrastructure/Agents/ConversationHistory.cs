@@ -36,13 +36,13 @@ public class ConversationHistory(IEnumerable<ChatMessage> initialMessages)
 
     public void AddMessages(IEnumerable<SamplingMessage>? messages)
     {
-        var chatMessages = from sm in messages ?? []
-            let aiContent = sm.Content.ToAIContent()
-            where aiContent is not null
-            select new ChatMessage(sm.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User, [aiContent]);
+        var chatMessages = messages?
+            .Select(x => new ChatMessage(
+                x.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User,
+                x.Content.ToAIContents()));
         lock (_lock)
         {
-            _messages.AddRange(chatMessages);
+            _messages.AddRange(chatMessages ?? []);
         }
     }
 
