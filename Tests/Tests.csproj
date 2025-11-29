@@ -36,6 +36,7 @@
     <ProjectReference Include="..\Jack\Jack.csproj"/>
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj"/>
     <ProjectReference Include="..\McpServerOrganize\McpServerOrganize.csproj"/>
+    <ProjectReference Include="..\McpServerDownload\McpServerDownload.csproj"/>
   </ItemGroup>
 
   <ItemGroup>
