@@ -16,18 +16,19 @@ public class AgentResolverTests
         var mockAgent = CreateMockAgent();
         var factoryCalled = false;
 
-        Task<IAgent> Factory(CancellationToken _)
-        {
-            factoryCalled = true;
-            return Task.FromResult(mockAgent.Object);
-        }
-
         // Act
-        var result = await _resolver.Resolve(1, 1, Factory, CancellationToken.None);
+        var result = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
 
         // Assert
         result.ShouldBe(mockAgent.Object);
         factoryCalled.ShouldBeTrue();
+        return;
+
+        Task<IAgent> factory(CancellationToken _)
+        {
+            factoryCalled = true;
+            return Task.FromResult(mockAgent.Object);
+        }
     }
 
     [Fact]
@@ -37,19 +38,20 @@ public class AgentResolverTests
         var mockAgent = CreateMockAgent();
         var factoryCallCount = 0;
 
-        Task<IAgent> Factory(CancellationToken _)
-        {
-            factoryCallCount++;
-            return Task.FromResult(mockAgent.Object);
-        }
-
         // Act
-        await _resolver.Resolve(1, 1, Factory, CancellationToken.None);
-        var result = await _resolver.Resolve(1, 1, Factory, CancellationToken.None);
+        await _resolver.Resolve(1, 1, factory, CancellationToken.None);
+        var result = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
 
         // Assert
         result.ShouldBe(mockAgent.Object);
         factoryCallCount.ShouldBe(1);
+        return;
+
+        Task<IAgent> factory(CancellationToken _)
+        {
+            factoryCallCount++;
+            return Task.FromResult(mockAgent.Object);
+        }
     }
 
     [Fact]
@@ -60,20 +62,21 @@ public class AgentResolverTests
         var mockAgent2 = CreateMockAgent();
         var callCount = 0;
 
-        Task<IAgent> Factory(CancellationToken _)
-        {
-            callCount++;
-            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
-        }
-
         // Act
-        var result1 = await _resolver.Resolve(null, 1, Factory, CancellationToken.None);
-        var result2 = await _resolver.Resolve(null, 1, Factory, CancellationToken.None);
+        var result1 = await _resolver.Resolve(null, 1, factory, CancellationToken.None);
+        var result2 = await _resolver.Resolve(null, 1, factory, CancellationToken.None);
 
         // Assert
         callCount.ShouldBe(2);
         result1.ShouldBe(mockAgent1.Object);
         result2.ShouldBe(mockAgent2.Object);
+        return;
+
+        Task<IAgent> factory(CancellationToken _)
+        {
+            callCount++;
+            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
+        }
     }
 
     [Fact]
@@ -124,20 +127,21 @@ public class AgentResolverTests
         var mockAgent2 = CreateMockAgent();
         var callCount = 0;
 
-        Task<IAgent> Factory(CancellationToken _)
-        {
-            callCount++;
-            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
-        }
-
         // Act
-        var result1 = await _resolver.Resolve(1, 1, Factory, CancellationToken.None);
-        var result2 = await _resolver.Resolve(1, 2, Factory, CancellationToken.None);
+        var result1 = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
+        var result2 = await _resolver.Resolve(1, 2, factory, CancellationToken.None);
 
         // Assert
         callCount.ShouldBe(2);
         result1.ShouldBe(mockAgent1.Object);
         result2.ShouldBe(mockAgent2.Object);
+        return;
+
+        Task<IAgent> factory(CancellationToken _)
+        {
+            callCount++;
+            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
+        }
     }
 
     private static Mock<IAgent> CreateMockAgent()

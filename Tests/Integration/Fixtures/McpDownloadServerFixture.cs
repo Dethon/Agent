@@ -17,12 +17,12 @@ public class McpDownloadServerFixture : IAsyncLifetime
     private IHost _host = null!;
     private int _port;
 
-    public JackettFixture Jackett { get; } = new();
-    public QBittorrentFixture QBittorrent { get; } = new();
+    private JackettFixture Jackett { get; } = new();
+    private QBittorrentFixture QBittorrent { get; } = new();
 
     public string McpEndpoint { get; private set; } = null!;
-    public string DownloadPath { get; private set; } = null!;
-    public IMemoryCache Cache { get; private set; } = null!;
+    private string DownloadPath { get; set; } = null!;
+    private IMemoryCache Cache { get; set; } = null!;
 
     public async Task InitializeAsync()
     {

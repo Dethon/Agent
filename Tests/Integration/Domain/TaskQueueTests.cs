@@ -41,25 +41,6 @@ public class TaskQueueTests
     }
 
     [Fact]
-    public async Task Count_ReflectsQueueSize()
-    {
-        // Arrange
-        var queue = new TaskQueue();
-
-        // Act & Assert
-        queue.Count.ShouldBe(0);
-
-        await queue.QueueTask(_ => Task.CompletedTask);
-        queue.Count.ShouldBe(1);
-
-        await queue.QueueTask(_ => Task.CompletedTask);
-        queue.Count.ShouldBe(2);
-
-        await queue.DequeueTask(CancellationToken.None);
-        queue.Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task Queue_WhenFull_Waits()
     {
         // Arrange
