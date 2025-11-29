@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <LangVersion>14</LangVersion>
+    <UserSecretsId>bae64127-c00e-4499-8325-0fb6b452133c</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,6 +14,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.0"/>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1"/>
     <PackageReference Include="Moq" Version="4.20.72"/>
     <PackageReference Include="Shouldly" Version="4.3.0"/>
@@ -23,6 +25,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -32,6 +35,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Jack\Jack.csproj"/>
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj"/>
+    <ProjectReference Include="..\McpServerOrganize\McpServerOrganize.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0-preview.4.25258.110"/>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.4.1-preview.1"/>
   </ItemGroup>
 
 </Project>
