@@ -13,6 +13,7 @@ public class RedisFixture : IAsyncLifetime
     private IConnectionMultiplexer _connection = null!;
 
     public RedisConversationHistoryStore Store { get; private set; } = null!;
+    public string ConnectionString { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
@@ -27,9 +28,9 @@ public class RedisFixture : IAsyncLifetime
 
         var host = _container.Hostname;
         var port = _container.GetMappedPublicPort(RedisPort);
-        var connectionString = $"{host}:{port}";
+        ConnectionString = $"{host}:{port}";
 
-        _connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
+        _connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
         Store = new RedisConversationHistoryStore(_connection, TimeSpan.FromMinutes(5));
     }
 

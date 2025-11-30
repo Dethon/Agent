@@ -7,12 +7,13 @@ using Jack.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Shouldly;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Jack;
 
-public class DependencyInjectionTests
+public class DependencyInjectionTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private static AgentSettings CreateTestSettings()
+    private AgentSettings CreateTestSettings()
     {
         return new AgentSettings
         {
@@ -36,7 +37,7 @@ public class DependencyInjectionTests
             ],
             Redis = new RedisConfiguration
             {
-                ConnectionString = "localhost:6379"
+                ConnectionString = redisFixture.ConnectionString
             }
         };
     }
