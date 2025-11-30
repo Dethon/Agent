@@ -26,7 +26,7 @@ public class QBittorrentFixture : IAsyncLifetime
             .WithEnvironment("QBT_WEBUI_PORT", WebUiPort.ToString())
             .WithEnvironment("QBT_TORRENTING_PORT", "6881")
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilPortIsAvailable(WebUiPort))
+                .UntilExternalTcpPortIsAvailable(WebUiPort))
             .Build();
 
         await _container.StartAsync();
