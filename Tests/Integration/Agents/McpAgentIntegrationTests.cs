@@ -1,14 +1,13 @@
 using Domain.DTOs;
 using Infrastructure.Agents;
-using Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
-    : IClassFixture<McpOrganizeServerFixture>
+public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture, RedisFixture redisFixture)
+    : IClassFixture<McpOrganizeServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentIntegrationTests>()
@@ -43,7 +42,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -80,7 +79,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
@@ -116,7 +115,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -151,7 +150,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 await Task.Delay(100, ct);
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -206,7 +205,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -235,7 +234,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             [],
             (_, _) => Task.CompletedTask,
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         var beforeRun = DateTime.UtcNow;
@@ -273,7 +272,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
-            new InMemoryConversationHistoryStore(),
+            redisFixture.Store,
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
