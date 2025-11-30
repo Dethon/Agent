@@ -26,30 +26,36 @@ public sealed class McpAgent : IAgent
 
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly OpenAiClient _llm;
-    private readonly ConversationHistory _messages;
+    private readonly PersistentConversationHistory _messages;
     private readonly ConcurrentDictionary<string, ConversationHistory> _coAgentConversations = [];
 
     public DateTime LastExecutionTime { get; private set; }
 
     private McpAgent(
         OpenAiClient llm,
-        AiMessage[] initialMessages,
+        PersistentConversationHistory messages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback)
     {
         _llm = llm;
         _writeMessageCallback = writeMessageCallback;
-        _messages = new ConversationHistory(initialMessages
-            .Select(x => x.ToChatMessage()));
+        _messages = messages;
     }
 
     public static async Task<IAgent> CreateAsync(
         string[] endpoints,
-        AiMessage[] initialMessages,
+        string conversationId,
+        AiMessage[] defaultMessages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm,
+        IConversationHistoryStore conversationStore,
         CancellationToken ct)
     {
-        var agent = new McpAgent(llm, initialMessages, writeMessageCallback);
+        var messages = await PersistentConversationHistory.LoadOrCreateAsync(
+            conversationId,
+            defaultMessages.Select(x => x.ToChatMessage()),
+            conversationStore,
+            ct);
+        var agent = new McpAgent(llm, messages, writeMessageCallback);
         await agent.LoadMcps(endpoints, ct);
         return agent;
     }
@@ -82,9 +88,9 @@ public sealed class McpAgent : IAgent
         ObjectDisposedException.ThrowIf(_isDisposed, nameof(prompts));
 
         LastExecutionTime = DateTime.UtcNow;
-        _messages.AddMessages(prompts);
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
+        await _messages.AddMessagesAsync(prompts, jointCt);
         await ExecuteAgentLoop(jointCt);
     }
 
@@ -112,7 +118,7 @@ public sealed class McpAgent : IAgent
             }
         }
 
-        _messages.AddMessages(processedUpdates.ToChatResponse());
+        await _messages.AddMessagesAsync(processedUpdates.ToChatResponse(), ct);
     }
 
     public void CancelCurrentExecution()

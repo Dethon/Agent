@@ -1,5 +1,17 @@
 ﻿name: jackbot
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./volumes/redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - jackbot
+
   qbittorrent:
     image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
     container_name: qbittorrent

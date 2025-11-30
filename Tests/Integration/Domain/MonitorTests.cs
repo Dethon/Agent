@@ -54,7 +54,10 @@ internal static class MonitorTestMocks
     public static Mock<IAgentFactory> CreateAgentFactory(Mock<IAgent> agent)
     {
         var mock = new Mock<IAgentFactory>();
-        mock.Setup(f => f.Create(It.IsAny<Func<AiResponse, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+        mock.Setup(f => f.Create(
+                It.IsAny<string>(),
+                It.IsAny<Func<AiResponse, CancellationToken, Task>>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(agent.Object);
         return mock;
     }

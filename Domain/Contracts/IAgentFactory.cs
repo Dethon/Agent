@@ -6,5 +6,8 @@ using ResponseCallback = Func<AiResponse, CancellationToken, Task>;
 
 public interface IAgentFactory
 {
-    Task<IAgent> Create(ResponseCallback responseCallback, CancellationToken cancellationToken);
+    Task<IAgent> Create(
+        string conversationId,
+        ResponseCallback responseCallback,
+        CancellationToken cancellationToken);
 }

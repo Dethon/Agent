@@ -32,10 +32,11 @@ public class ChatMonitor(
     {
         prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
         var responseCallback = (AiResponse r, CancellationToken ct) => ProcessResponse(prompt, r, ct);
+        var conversationId = $"{prompt.ChatId}:{prompt.ThreadId}";
         var agent = await agentResolver.Resolve(
             prompt.ChatId,
             prompt.ThreadId,
-            ct => agentFactory.Create(responseCallback, ct),
+            ct => agentFactory.Create(conversationId, responseCallback, ct),
             cancellationToken);
 
         if (prompt.IsCommand)

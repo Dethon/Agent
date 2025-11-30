@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Infrastructure.Agents;
+using Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -34,6 +35,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-1",
             [],
             (response, _) =>
             {
@@ -41,6 +43,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -69,6 +72,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-2",
             [],
             (response, _) =>
             {
@@ -76,11 +80,10 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-
-        // Act
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
         await agent.Run(
@@ -105,6 +108,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-3",
             [],
             (response, _) =>
             {
@@ -112,6 +116,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -139,12 +144,14 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-4",
             [],
             async (_, ct) =>
             {
                 await Task.Delay(100, ct);
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -191,6 +198,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-5",
             initialMessages,
             (response, _) =>
             {
@@ -198,6 +206,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -222,9 +231,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-6",
             [],
             (_, _) => Task.CompletedTask,
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         var beforeRun = DateTime.UtcNow;
@@ -254,6 +265,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
+            "test-conversation-7",
             [],
             (response, _) =>
             {
@@ -261,6 +273,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            new InMemoryConversationHistoryStore(),
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));

@@ -33,7 +33,11 @@ public class DependencyInjectionTests
                 {
                     Endpoint = "http://localhost:5000"
                 }
-            ]
+            ],
+            Redis = new RedisConfiguration
+            {
+                ConnectionString = "localhost:6379"
+            }
         };
     }
 
