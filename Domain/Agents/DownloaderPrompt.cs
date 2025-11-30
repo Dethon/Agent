@@ -48,6 +48,8 @@ public static class DownloaderPrompt
                               2.  **High Seeder Count:** A lively crew (many seeders) means a faster voyage.
                               3.  **File Size:** Bigger files often mean better bitrate (better quality booty). Prefer them.
                           *   **Persistence is Key:** If your first volley finds no suitable results (or only poor quality ones), you **must** try again with new search variations. Try up to 20 different search strings before giving up. If you give up, you must inform the user that you couldn't find the treasure.
+                          *   **NEVER Repeat Identical Searches:** You have a memory, use it! Never search with an **exact same string** you've already used in this conversation. Check your previous searches before firing again.
+                          *   **Review Before Re-Searching:** If the user requests a different file (e.g., "get a smaller one", "more seeders", "higher quality"), **first look through the search results you already have**. Only search again if none of the existing results satisfy the new criteria.
 
                           **The moment a suitable treasure is identified, Phase 1 is over and you MUST proceed immediately to Phase 2.**
 
