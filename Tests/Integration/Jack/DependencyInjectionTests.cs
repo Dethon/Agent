@@ -1,4 +1,3 @@
-using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
@@ -60,10 +59,8 @@ public class DependencyInjectionTests(RedisFixture redisFixture) : IClassFixture
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
-        provider.GetService<AgentResolver>().ShouldNotBeNull();
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
-        provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
         provider.GetService<IAgentFactory>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         provider.GetService<OpenAiClient>().ShouldNotBeNull();
@@ -87,7 +84,7 @@ public class DependencyInjectionTests(RedisFixture redisFixture) : IClassFixture
         var provider = services.BuildServiceProvider();
 
         // Assert
-        provider.GetService<AgentResolver>().ShouldNotBeNull();
+        provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
     }
 
@@ -108,9 +105,9 @@ public class DependencyInjectionTests(RedisFixture redisFixture) : IClassFixture
         services.ConfigureJack(settings, cmdParams);
         var provider = services.BuildServiceProvider();
 
-        // Assert - should have 3 TaskRunner hosted services + 2 monitoring services
+        // Assert - should have 3 TaskRunner hosted services + 1 monitoring service
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Length.ShouldBe(5); // 3 TaskRunners + ChatMonitoring + CleanupMonitoring
+        hostedServices.Length.ShouldBe(4); // 3 TaskRunners + ChatMonitoring
     }
 
     [Fact]

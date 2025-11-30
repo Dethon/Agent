@@ -1,13 +1,12 @@
-﻿using Domain.Agents;
-using Domain.Contracts;
+﻿using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
 public class ChatMonitor(
-    AgentResolver agentResolver,
     TaskQueue queue,
+    RunningAgentTracker runningAgentTracker,
     IChatMessengerClient chatMessengerClient,
     IAgentFactory agentFactory,
     ILogger<ChatMonitor> logger)
@@ -31,24 +30,33 @@ public class ChatMonitor(
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
         prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-        var responseCallback = (AiResponse r, CancellationToken ct) => ProcessResponse(prompt, r, ct);
         var conversationId = $"{prompt.ChatId}:{prompt.ThreadId}";
-        var agent = await agentResolver.Resolve(
-            prompt.ChatId,
-            prompt.ThreadId,
-            ct => agentFactory.Create(conversationId, responseCallback, ct),
-            cancellationToken);
 
         if (prompt.IsCommand)
         {
-            agent.CancelCurrentExecution();
+            runningAgentTracker.Cancel(conversationId);
+            return;
         }
 
-        await chatMessengerClient.BlockWhile(
-            prompt.ChatId,
-            prompt.ThreadId,
-            () => agent.Run([prompt.Prompt], cancellationToken),
-            cancellationToken);
+        var responseCallback = (AiResponse r, CancellationToken ct) => ProcessResponse(prompt, r, ct);
+        await using var agent = await agentFactory.Create(conversationId, responseCallback, cancellationToken);
+
+        var agentCt = runningAgentTracker.Track(conversationId);
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, agentCt);
+
+        try
+        {
+            await chatMessengerClient.BlockWhile(
+                prompt.ChatId,
+                prompt.ThreadId,
+                () => agent.Run([prompt.Prompt], linkedCts.Token),
+                linkedCts.Token);
+        }
+        finally
+        {
+            runningAgentTracker.Untrack(conversationId);
+            linkedCts.Dispose();
+        }
     }
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

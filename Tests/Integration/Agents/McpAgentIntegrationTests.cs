@@ -135,51 +135,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture, Redis
     }
 
     [SkippableFact]
-    public async Task Agent_CancelCurrentExecution_StopsProcessing()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        mcpFixture.CreateLibraryStructure("AgentCancelTest");
-
-        var agent = await McpAgent.CreateAsync(
-            [mcpFixture.McpEndpoint],
-            "test-conversation-4",
-            [],
-            async (_, ct) =>
-            {
-                await Task.Delay(100, ct);
-            },
-            llmClient,
-            redisFixture.Store,
-            CancellationToken.None);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var runTask = agent.Run(
-            [$"List all directories in '{mcpFixture.LibraryPath}'."],
-            cts.Token);
-
-        await Task.Delay(500, cts.Token);
-        agent.CancelCurrentExecution();
-
-        // Assert - should not throw, task should complete gracefully
-        await Should.NotThrowAsync(async () =>
-        {
-            try
-            {
-                await runTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-        });
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
     public async Task Agent_WithSystemPrompt_UsesPromptInResponses()
     {
         // Arrange
@@ -222,35 +177,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture, Redis
 
         await agent.DisposeAsync();
     }
-
-    [SkippableFact]
-    public async Task Agent_LastExecutionTime_IsUpdatedAfterRun()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        var agent = await McpAgent.CreateAsync(
-            [mcpFixture.McpEndpoint],
-            "test-conversation-6",
-            [],
-            (_, _) => Task.CompletedTask,
-            llmClient,
-            redisFixture.Store,
-            CancellationToken.None);
-
-        var beforeRun = DateTime.UtcNow;
-        await Task.Delay(10);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        await agent.Run(["Hello"], cts.Token);
-
-        // Assert
-        agent.LastExecutionTime.ShouldBeGreaterThan(beforeRun);
-
-        await agent.DisposeAsync();
-    }
-
+    
     [SkippableFact]
     public async Task Agent_WithCleanupTool_CanCleanupDownloadDirectory()
     {

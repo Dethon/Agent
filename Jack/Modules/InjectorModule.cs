@@ -1,5 +1,4 @@
-﻿using Domain.Agents;
-using Domain.Contracts;
+﻿using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Clients;
@@ -26,7 +25,6 @@ public static class InjectorModule
                         sp.GetRequiredService<OpenAiClient>(),
                         mcpEndpoints,
                         sp.GetRequiredService<IConversationHistoryStore>()))
-                .AddSingleton<AgentResolver>()
                 .AddConversationHistoryStore(settings)
                 .AddOpenRouterAdapter(settings);
         }
@@ -35,10 +33,9 @@ public static class InjectorModule
         {
             services = services
                 .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
+                .AddSingleton<RunningAgentTracker>()
                 .AddSingleton<ChatMonitor>()
-                .AddSingleton<AgentCleanupMonitor>()
                 .AddHostedService<ChatMonitoring>()
-                .AddHostedService<CleanupMonitoring>()
                 .AddWorkers(cmdParams);
 
             return cmdParams.ChatInterface switch

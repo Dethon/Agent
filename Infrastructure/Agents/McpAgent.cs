@@ -29,8 +29,6 @@ public sealed class McpAgent : IAgent
     private readonly PersistentConversationHistory _messages;
     private readonly ConcurrentDictionary<string, ConversationHistory> _coAgentConversations = [];
 
-    public DateTime LastExecutionTime { get; private set; }
-
     private McpAgent(
         OpenAiClient llm,
         PersistentConversationHistory messages,
@@ -87,7 +85,6 @@ public sealed class McpAgent : IAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, nameof(prompts));
 
-        LastExecutionTime = DateTime.UtcNow;
         var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
         await _messages.AddMessagesAsync(prompts, jointCt);
@@ -119,13 +116,6 @@ public sealed class McpAgent : IAgent
         }
 
         await _messages.AddMessagesAsync(processedUpdates.ToChatResponse(), ct);
-    }
-
-    public void CancelCurrentExecution()
-    {
-        _cancellationTokenSource.Cancel();
-        _cancellationTokenSource.Dispose();
-        _cancellationTokenSource = new CancellationTokenSource();
     }
 
     public async ValueTask DisposeAsync()
