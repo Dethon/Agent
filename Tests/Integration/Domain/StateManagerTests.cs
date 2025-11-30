@@ -1,20 +1,18 @@
 using Domain.DTOs;
 using Infrastructure.StateManagers;
-using Microsoft.Extensions.Caching.Memory;
 using Shouldly;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Domain;
 
-public class StateManagerTests
+public class StateManagerTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
 {
-    private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
-
     [Fact]
     public void SearchResultsManager_AddAndGet_Works()
     {
         // Arrange
-        var manager = new SearchResultsManager(_cache);
-        var sessionId = "session-1";
+        var manager = new SearchResultsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var sessionId = $"session-{Guid.NewGuid()}";
         var results = new[] { CreateSearchResult(1, "Result 1"), CreateSearchResult(2, "Result 2") };
 
         // Act
@@ -33,7 +31,7 @@ public class StateManagerTests
     public void SearchResultsManager_GetNonExistent_ReturnsNull()
     {
         // Arrange
-        var manager = new SearchResultsManager(_cache);
+        var manager = new SearchResultsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
 
         // Act
         var result = manager.Get("non-existent-session", 999);
@@ -46,25 +44,27 @@ public class StateManagerTests
     public void SearchResultsManager_WithDifferentSessions_KeepsResultsSeparate()
     {
         // Arrange
-        var manager = new SearchResultsManager(_cache);
+        var manager = new SearchResultsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var session1 = $"session-1-{Guid.NewGuid()}";
+        var session2 = $"session-2-{Guid.NewGuid()}";
         var session1Results = new[] { CreateSearchResult(1, "Session 1 Result") };
         var session2Results = new[] { CreateSearchResult(1, "Session 2 Result") };
 
         // Act
-        manager.Add("session-1", session1Results);
-        manager.Add("session-2", session2Results);
+        manager.Add(session1, session1Results);
+        manager.Add(session2, session2Results);
 
         // Assert
-        manager.Get("session-1", 1)?.Title.ShouldBe("Session 1 Result");
-        manager.Get("session-2", 1)?.Title.ShouldBe("Session 2 Result");
+        manager.Get(session1, 1)?.Title.ShouldBe("Session 1 Result");
+        manager.Get(session2, 1)?.Title.ShouldBe("Session 2 Result");
     }
 
     [Fact]
     public void TrackedDownloadsManager_Add_TracksDownload()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var sessionId = $"session-{Guid.NewGuid()}";
 
         // Act
         manager.Add(sessionId, 100);
@@ -81,8 +81,8 @@ public class StateManagerTests
     public void TrackedDownloadsManager_Remove_UntracksDownload()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var sessionId = $"session-{Guid.NewGuid()}";
         manager.Add(sessionId, 100);
         manager.Add(sessionId, 200);
 
@@ -100,8 +100,8 @@ public class StateManagerTests
     public void TrackedDownloadsManager_Get_ReturnsOrderedIds()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var sessionId = $"session-{Guid.NewGuid()}";
         manager.Add(sessionId, 300);
         manager.Add(sessionId, 100);
         manager.Add(sessionId, 200);
@@ -118,7 +118,7 @@ public class StateManagerTests
     public void TrackedDownloadsManager_GetNonExistent_ReturnsNull()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
 
         // Act
         var result = manager.Get("non-existent-session");
@@ -131,7 +131,7 @@ public class StateManagerTests
     public void TrackedDownloadsManager_RemoveFromNonExistent_DoesNotThrow()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
 
         // Act & Assert
         Should.NotThrow(() => manager.Remove("non-existent-session", 123));
@@ -141,8 +141,8 @@ public class StateManagerTests
     public void TrackedDownloadsManager_AddDuplicate_DoesNotDuplicate()
     {
         // Arrange
-        var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        var manager = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var sessionId = $"session-{Guid.NewGuid()}";
 
         // Act
         manager.Add(sessionId, 100);
@@ -158,8 +158,8 @@ public class StateManagerTests
     public void StateManager_ExposesTrackedDownloadsAndSearchResults()
     {
         // Arrange
-        var trackedDownloads = new TrackedDownloadsManager(_cache);
-        var searchResults = new SearchResultsManager(_cache);
+        var trackedDownloads = new TrackedDownloadsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
+        var searchResults = new SearchResultsManager(redisFixture.Connection, TimeSpan.FromMinutes(5));
         var stateManager = new StateManager(trackedDownloads, searchResults);
 
         // Act & Assert

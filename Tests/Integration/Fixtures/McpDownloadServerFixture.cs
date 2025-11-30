@@ -6,9 +6,9 @@ using Infrastructure.StateManagers;
 using McpServerDownload.McpTools;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using StackExchange.Redis;
 
 namespace Tests.Integration.Fixtures;
 
@@ -19,20 +19,19 @@ public class McpDownloadServerFixture : IAsyncLifetime
 
     private JackettFixture Jackett { get; } = new();
     private QBittorrentFixture QBittorrent { get; } = new();
+    private RedisFixture Redis { get; } = new();
 
     public string McpEndpoint { get; private set; } = null!;
     private string DownloadPath { get; set; } = null!;
-    private IMemoryCache Cache { get; set; } = null!;
 
     public async Task InitializeAsync()
     {
         // Start Docker containers
-        await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync());
+        await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync(), Redis.InitializeAsync());
 
         DownloadPath = Path.Combine(Path.GetTempPath(), $"mcp-download-{Guid.NewGuid()}");
         Directory.CreateDirectory(DownloadPath);
 
-        Cache = new MemoryCache(new MemoryCacheOptions());
         _port = GetAvailablePort();
 
         var builder = WebApplication.CreateBuilder();
@@ -43,9 +42,11 @@ public class McpDownloadServerFixture : IAsyncLifetime
 
         builder.Services
             .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
-            .AddSingleton(Cache)
-            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
-            .AddSingleton<ISearchResultsManager, SearchResultsManager>()
+            .AddSingleton<IConnectionMultiplexer>(Redis.Connection)
+            .AddSingleton<ITrackedDownloadsManager>(sp =>
+                new TrackedDownloadsManager(sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromMinutes(5)))
+            .AddSingleton<ISearchResultsManager>(sp =>
+                new SearchResultsManager(sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromMinutes(5)))
             .AddSingleton<IStateManager, StateManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
@@ -78,8 +79,8 @@ public class McpDownloadServerFixture : IAsyncLifetime
     {
         await _host.StopAsync();
         _host.Dispose();
-        Cache.Dispose();
 
+        await Redis.DisposeAsync();
         await Jackett.DisposeAsync();
         await QBittorrent.DisposeAsync();
 

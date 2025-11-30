@@ -42,7 +42,7 @@ public class JackettFixture : IAsyncLifetime
             .WithEnvironment("TZ", "UTC")
             .WithBindMount(_configDir, "/config/Jackett")
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilPortIsAvailable(JackettPort))
+                .UntilExternalTcpPortIsAvailable(JackettPort))
             .Build();
 
         await _container.StartAsync();

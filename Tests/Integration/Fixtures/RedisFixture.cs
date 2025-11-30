@@ -10,8 +10,8 @@ public class RedisFixture : IAsyncLifetime
     private const int RedisPort = 6379;
 
     private IContainer _container = null!;
-    private IConnectionMultiplexer _connection = null!;
 
+    public IConnectionMultiplexer Connection { get; private set; } = null!;
     public RedisConversationHistoryStore Store { get; private set; } = null!;
     public string ConnectionString { get; private set; } = null!;
 
@@ -21,7 +21,7 @@ public class RedisFixture : IAsyncLifetime
             .WithImage("redis:7-alpine")
             .WithPortBinding(RedisPort, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilPortIsAvailable(RedisPort))
+                .UntilExternalTcpPortIsAvailable(RedisPort))
             .Build();
 
         await _container.StartAsync();
@@ -30,13 +30,13 @@ public class RedisFixture : IAsyncLifetime
         var port = _container.GetMappedPublicPort(RedisPort);
         ConnectionString = $"{host}:{port}";
 
-        _connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
-        Store = new RedisConversationHistoryStore(_connection, TimeSpan.FromMinutes(5));
+        Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
+        Store = new RedisConversationHistoryStore(Connection, TimeSpan.FromMinutes(5));
     }
 
     public async Task DisposeAsync()
     {
-        await _connection.DisposeAsync();
+        await Connection.DisposeAsync();
         await _container.DisposeAsync();
     }
 }

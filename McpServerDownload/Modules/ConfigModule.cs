@@ -8,6 +8,7 @@ using McpServerDownload.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
+using StackExchange.Redis;
 
 namespace McpServerDownload.Modules;
 
@@ -27,11 +28,17 @@ public static class ConfigModule
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
         services
-            .AddMemoryCache()
+            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.Redis.ConnectionString))
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddSingleton<SubscriptionTracker>()
-            .AddSingleton<ISearchResultsManager, SearchResultsManager>()
-            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
+            .AddSingleton<ISearchResultsManager>(sp =>
+                new SearchResultsManager(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    TimeSpan.FromDays(settings.Redis.SearchResultsExpiryDays)))
+            .AddSingleton<ITrackedDownloadsManager>(sp =>
+                new TrackedDownloadsManager(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    TimeSpan.FromDays(settings.Redis.TrackedDownloadsExpiryDays)))
             .AddTransient<IStateManager, StateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)

@@ -1,31 +1,31 @@
-﻿using Domain.Contracts;
+﻿using System.Text.Json;
+using Domain.Contracts;
 using Domain.DTOs;
-using Microsoft.Extensions.Caching.Memory;
+using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public class SearchResultsManager(IMemoryCache cache) : ISearchResultsManager
+public class SearchResultsManager(IConnectionMultiplexer redis, TimeSpan expiry) : ISearchResultsManager
 {
-    private readonly Lock _cacheLock = new();
+    private readonly IDatabase _db = redis.GetDatabase();
 
-    private static string GetTrackedSearchResultsKey(string sessionId, int resultId)
+    private static string GetKey(string sessionId, int resultId)
     {
-        return $"TrackedSearchResults_{sessionId}_{resultId}";
+        return $"search:{sessionId}:{resultId}";
     }
 
     public SearchResult? Get(string sessionId, int downloadId)
     {
-        return cache.Get<SearchResult>(GetTrackedSearchResultsKey(sessionId, downloadId));
+        var value = _db.StringGet(GetKey(sessionId, downloadId));
+        return value.IsNullOrEmpty ? null : JsonSerializer.Deserialize<SearchResult>((string)value!);
     }
 
     public void Add(string sessionId, SearchResult[] searchResults)
     {
-        lock (_cacheLock)
+        foreach (var result in searchResults)
         {
-            foreach (var result in searchResults)
-            {
-                cache.Set(GetTrackedSearchResultsKey(sessionId, result.Id), result, TimeSpan.FromDays(60));
-            }
+            var json = JsonSerializer.Serialize(result);
+            _db.StringSet(GetKey(sessionId, result.Id), json, expiry);
         }
     }
 }

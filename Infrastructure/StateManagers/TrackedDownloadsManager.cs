@@ -1,42 +1,41 @@
-﻿using System.Collections.Concurrent;
-using Domain.Contracts;
-using Microsoft.Extensions.Caching.Memory;
+﻿using Domain.Contracts;
+using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public class TrackedDownloadsManager(IMemoryCache cache) : ITrackedDownloadsManager
+public class TrackedDownloadsManager(IConnectionMultiplexer redis, TimeSpan expiry)
+    : ITrackedDownloadsManager
 {
-    private readonly Lock _cacheLock = new();
+    private readonly IDatabase _db = redis.GetDatabase();
 
-    private static string GetTrackedDownloadsKey(string sessionId)
+    private static string GetKey(string sessionId)
     {
-        return $"TrackedDownloads_{sessionId}";
+        return $"tracked:{sessionId}";
     }
 
     public int[]? Get(string sessionId)
     {
-        return cache
-            .Get<ConcurrentDictionary<int, byte>>(GetTrackedDownloadsKey(sessionId))?.Keys
+        var members = _db.SetMembers(GetKey(sessionId));
+        if (members.Length == 0)
+        {
+            return null;
+        }
+
+        return members
+            .Select(m => (int)m)
             .Order()
             .ToArray();
     }
 
     public void Add(string sessionId, int downloadId)
     {
-        lock (_cacheLock)
-        {
-            var dict = cache.GetOrCreate(GetTrackedDownloadsKey(sessionId), entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(60);
-                return new ConcurrentDictionary<int, byte>();
-            });
-            dict?.TryAdd(downloadId, 1);
-        }
+        var key = GetKey(sessionId);
+        _db.SetAdd(key, downloadId);
+        _db.KeyExpire(key, expiry);
     }
 
     public void Remove(string sessionId, int downloadId)
     {
-        var dict = cache.Get<ConcurrentDictionary<int, byte>>(GetTrackedDownloadsKey(sessionId));
-        dict?.Remove(downloadId, out _);
+        _db.SetRemove(GetKey(sessionId), downloadId);
     }
 }
