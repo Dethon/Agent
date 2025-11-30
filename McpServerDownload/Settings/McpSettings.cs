@@ -26,6 +26,6 @@ public record QBittorrentConfiguration
 public record RedisConfiguration
 {
     public required string ConnectionString { get; [UsedImplicitly] init; }
-    public int SearchResultsExpiryDays { get; [UsedImplicitly] init; } = 7;
-    public int TrackedDownloadsExpiryDays { get; [UsedImplicitly] init; } = 7;
+    public int SearchResultsExpiryDays { get; [UsedImplicitly] init; }
+    public int TrackedDownloadsExpiryDays { get; [UsedImplicitly] init; }
 }

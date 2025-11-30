@@ -31,5 +31,5 @@ public record Mcp
 public record RedisConfiguration
 {
     public required string ConnectionString { get; [UsedImplicitly] init; }
-    public int ConversationExpiryDays { get; [UsedImplicitly] init; } = 7;
+    public int ConversationExpiryDays { get; [UsedImplicitly] init; }
 }
