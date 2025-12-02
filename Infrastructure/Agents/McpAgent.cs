@@ -134,6 +134,7 @@ public sealed class McpAgent : CancellableAiAgent
             if (hasUsage || hasToolCall)
             {
                 await _writeMessageCallback(messageUpdates.ToAiResponse(), linkedCt);
+                messageUpdates.Clear();
             }
 
             yield return update;
