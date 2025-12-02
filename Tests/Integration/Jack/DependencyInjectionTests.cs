@@ -1,9 +1,9 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
-using Infrastructure.Agents;
 using Jack.Modules;
 using Jack.Settings;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Shouldly;
@@ -61,7 +61,7 @@ public class DependencyInjectionTests
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
         provider.GetService<IAgentFactory>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
-        provider.GetService<OpenAiClient>().ShouldNotBeNull();
+        provider.GetService<IChatClient>().ShouldNotBeNull();
     }
 
     [Fact]

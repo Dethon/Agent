@@ -1,31 +1,23 @@
 ﻿using System.Text.Json;
 using Domain.DTOs;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents.Mappers;
 
 public static class ChatResponseUpdateExtensions
 {
-    extension(IEnumerable<ChatResponseUpdate> updates)
+    extension(IEnumerable<AgentRunResponseUpdate> updates)
     {
         public bool IsFinished()
         {
-            var enumeratedUpdates = updates.ToArray();
-            var finishReason = enumeratedUpdates.LastOrDefault()?.FinishReason;
-            if (finishReason == null)
-            {
-                return false;
-            }
-
-            var allContents = enumeratedUpdates
+            var allContents = updates
                 .SelectMany(x => x.Contents)
                 .ToArray();
-            if (!allContents.Any(x => x is UsageContent))
-            {
-                return false;
-            }
 
-            return finishReason != ChatFinishReason.ToolCalls || allContents.Any(x => x is FunctionCallContent);
+            // Message is finished when we have usage content indicating completion
+            return allContents.Any(x => x is UsageContent);
         }
 
         public AiResponse ToAiResponse()
@@ -43,15 +35,35 @@ public static class ChatResponseUpdateExtensions
                 .Cast<FunctionCallContent>()
                 .Select(x => $"{x.Name}(\n{JsonSerializer.Serialize(x.Arguments)}\n)"));
 
-            if (enumeratedUpdates.Any(x => x.FinishReason == ChatFinishReason.ContentFilter))
-            {
-                normalMessage += "\n\n[Content filtered by LLM.]\n";
-            }
-
             return new AiResponse
             {
                 Content = normalMessage,
                 ToolCalls = toolCallMessageContent
+            };
+        }
+
+        public CreateMessageResult ToCreateMessageResult()
+        {
+            var enumeratedUpdates = updates.ToArray();
+            var lastUpdate = enumeratedUpdates.LastOrDefault();
+            var textContent = string.Join("", enumeratedUpdates
+                .SelectMany(x => x.Contents)
+                .Where(x => x is TextContent)
+                .Cast<TextContent>()
+                .Select(x => x.Text));
+
+            return new CreateMessageResult
+            {
+                Content =
+                [
+                    new TextContentBlock
+                    {
+                        Text = textContent
+                    }
+                ],
+                Model = "unknown",
+                Role = lastUpdate?.Role == ChatRole.User ? Role.User : Role.Assistant,
+                StopReason = "endTurn"
             };
         }
     }

@@ -1,12 +1,11 @@
 using System.ClientModel;
-using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
 namespace Infrastructure.Agents;
 
-public class OpenAiClient(string endpoint, string apiKey, string[] models)
+public class OpenAiClient(string endpoint, string apiKey, string[] models) : IChatClient
 {
     private readonly IChatClient[] _openAiClients = models.Select(x =>
     {
@@ -29,9 +28,29 @@ public class OpenAiClient(string endpoint, string apiKey, string[] models)
             .Build();
     }).ToArray();
 
-    public async IAsyncEnumerable<ChatResponseUpdate> Prompt(
-        ImmutableList<ChatMessage> messages,
-        ChatOptions options,
+    public async Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var processedMessages = messages.ToList();
+        foreach (var client in _openAiClients)
+        {
+            var response = await client.GetResponseAsync(processedMessages, options, cancellationToken);
+            if (response.FinishReason != ChatFinishReason.ContentFilter)
+            {
+                return response;
+            }
+
+            processedMessages.AddRange(response.Messages);
+        }
+
+        return await _openAiClients[^1].GetResponseAsync(processedMessages, options, cancellationToken);
+    }
+
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var processedMessages = messages.ToList();
@@ -51,6 +70,19 @@ public class OpenAiClient(string endpoint, string apiKey, string[] models)
             }
 
             processedMessages.AddMessages(processedUpdates);
+        }
+    }
+
+    public object? GetService(Type serviceType, object? serviceKey = null)
+    {
+        return _openAiClients[0].GetService(serviceType, serviceKey);
+    }
+
+    public void Dispose()
+    {
+        foreach (var client in _openAiClients)
+        {
+            client.Dispose();
         }
     }
 }

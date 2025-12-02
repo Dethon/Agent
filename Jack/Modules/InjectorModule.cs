@@ -5,6 +5,7 @@ using Infrastructure.Agents;
 using Infrastructure.Clients;
 using Jack.App;
 using Jack.Settings;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
@@ -18,7 +19,7 @@ public static class InjectorModule
         var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
         return services
             .AddSingleton<IAgentFactory>(sp =>
-                new DownloadAgentFactory(sp.GetRequiredService<OpenAiClient>(), mcpEndpoints))
+                new DownloadAgentFactory(sp.GetRequiredService<IChatClient>(), mcpEndpoints))
             .AddSingleton<AgentResolver>()
             .AddOpenRouterAdapter(settings);
     }
@@ -58,7 +59,7 @@ public static class InjectorModule
 
     private static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
     {
-        return services.AddSingleton<OpenAiClient>(_ =>
+        return services.AddSingleton<IChatClient>(_ =>
             new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
     }
 }

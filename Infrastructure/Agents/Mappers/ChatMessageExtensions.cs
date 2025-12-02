@@ -43,22 +43,4 @@ public static class ChatMessageExtensions
             };
         }
     }
-
-    internal static CreateMessageResult ToCreateMessageResult(this ChatResponse chatResponse)
-    {
-        var lastMessage = chatResponse.Messages.LastOrDefault();
-        return new CreateMessageResult
-        {
-            Content =
-            [
-                new TextContentBlock
-                {
-                    Text = lastMessage?.Text ?? string.Empty
-                }
-            ],
-            Model = chatResponse.ModelId ?? "unknown",
-            Role = lastMessage?.Role == ChatRole.User ? Role.User : Role.Assistant,
-            StopReason = chatResponse.FinishReason == ChatFinishReason.Length ? "maxTokens" : "endTurn"
-        };
-    }
 }
