@@ -71,7 +71,7 @@ public class QBittorrentDownloadClient(
         {
             Id = id,
             Title = torrent["name"]?.GetValue<string>() ?? string.Empty,
-            Size = torrent["total_size"]?.GetValue<long>() ?? 0 / 1024 / 1024,
+            Size = (torrent["total_size"]?.GetValue<long>() ?? 0) / 1024 / 1024,
             State = GetDownloadStatus(torrent),
             Seeders = torrent["num_seeds"]?.GetValue<int>() ?? 0,
             Peers = torrent["num_leechs"]?.GetValue<int>() ?? 0,

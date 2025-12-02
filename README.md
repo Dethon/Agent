@@ -37,8 +37,8 @@ Context Protocol (MCP).
 
 | Server                | Tools                                                   | Purpose                                             |
 |-----------------------|---------------------------------------------------------|-----------------------------------------------------|
-| **mcp-library**       | File search, download, status, cleanup, recommendations, list files/directories, move, cleanup downloads | Search and download content via Jackett/qBittorrent, organize media files into library structure |
-| **mcp-commandrunner** | Run CLI commands, platform detection                    | Execute system commands (In development)            |
+| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownloadTask, CleanupDownloadDirectory, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
+| **mcp-commandrunner** | RunCommand, GetCliPlatform                              | Execute system commands (Not included in Docker Compose) |
 
 ## Projects
 
@@ -70,24 +70,26 @@ cd agent
 
 ### 2. Set Environment Variables
 
-Copy and configure the environment file:
+Edit the environment file:
 
 ```bash
 cd DockerCompose
-cp .env.example .env  # or edit .env directly
+# Edit .env with your configuration
 ```
 
 Required variables:
 
 ```env
+JACK_REPOSITORY_PATH=..
+DATA_PATH=./volumes/data
+PUID=1000
+PGID=1000
 OPENROUTER__APIKEY=your_openrouter_api_key
 TELEGRAM__BOTTOKEN=your_telegram_bot_token
 TELEGRAM__ALLOWEDUSERNAMES__0=your_telegram_username
 JACKETT__APIKEY=your_jackett_api_key
 QBITTORRENT__USERNAME=admin
 QBITTORRENT__PASSWORD=your_password
-PUID=1000
-PGID=1000
 ```
 
 ### 3. Run with Docker Compose

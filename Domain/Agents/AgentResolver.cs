@@ -3,20 +3,15 @@ using Domain.Contracts;
 
 namespace Domain.Agents;
 
+public readonly record struct AgentKey(long ChatId, long ThreadId);
+
 public class AgentResolver
 {
-    private readonly ConcurrentDictionary<string, IAgent> _cache = [];
+    private readonly ConcurrentDictionary<AgentKey, IAgent> _cache = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private const string Separator = "<--SEPARATOR-->";
 
     public (long ChatId, long ThreadId)[] Agents =>
-        _cache.Select(x =>
-        {
-            var parts = x.Key.Split(Separator);
-            var chatId = long.Parse(parts[0]);
-            var threadId = long.Parse(parts[1]);
-            return (ChatId: chatId, ThreadId: threadId);
-        }).ToArray();
+        _cache.Select(x => (x.Key.ChatId, x.Key.ThreadId)).ToArray();
 
     public async Task<IAgent> Resolve(
         long? chatId,
@@ -29,31 +24,22 @@ public class AgentResolver
             return await agentFactory(ct);
         }
 
-        var agent = await GetAgentFromCache(GetCacheKey(chatId.Value, threadId.Value), agentFactory, ct);
-        if (agent is null)
-        {
-            throw new InvalidOperationException($"Jack for thread {chatId} found in cache but was null.");
-        }
-
-        return agent;
+        var key = new AgentKey(chatId.Value, threadId.Value);
+        var agent = await GetAgentFromCache(key, agentFactory, ct);
+        return agent ?? throw new InvalidOperationException($"Jack for thread {chatId} found in cache but was null.");
     }
 
     public async Task Clean(long chatId, long threadId)
     {
-        _cache.Remove(GetCacheKey(chatId, threadId), out var agent);
+        _cache.Remove(new AgentKey(chatId, threadId), out var agent);
         if (agent is not null)
         {
             await agent.DisposeAsync();
         }
     }
 
-    private static string GetCacheKey(long chatId, long threadId)
-    {
-        return $"{chatId}{Separator}{threadId}";
-    }
-
     private async Task<IAgent?> GetAgentFromCache(
-        string key, Func<CancellationToken, Task<IAgent>> createAgent, CancellationToken ct)
+        AgentKey key, Func<CancellationToken, Task<IAgent>> createAgent, CancellationToken ct)
     {
         await _lock.WaitAsync(ct);
         try
