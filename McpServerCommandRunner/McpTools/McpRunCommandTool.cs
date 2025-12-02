@@ -23,7 +23,11 @@ public class McpRunCommandTool(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error in {ToolName} tool", Name);
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                logger.LogError(ex, "Error in {ToolName} tool", Name);
+            }
+
             return ToolResponse.Create(ex);
         }
     }

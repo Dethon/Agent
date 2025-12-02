@@ -13,9 +13,7 @@ public static class ChatResponseUpdateExtensions
         public AiResponse ToAiResponse()
         {
             var contents = updates.SelectMany(x => x.Contents).ToArray();
-
             var text = string.Join("", contents.OfType<TextContent>().Select(x => x.Text));
-
             var toolCalls = string.Join("\n", contents.OfType<FunctionCallContent>()
                 .Select(x => $"{x.Name}({JsonSerializer.Serialize(x.Arguments)})"));
 
@@ -28,11 +26,9 @@ public static class ChatResponseUpdateExtensions
 
         public CreateMessageResult ToCreateMessageResult()
         {
-            var lastUpdate = updates.LastOrDefault();
-            var text = string.Join("", updates
-                .SelectMany(x => x.Contents)
-                .OfType<TextContent>()
-                .Select(x => x.Text));
+            var enumerated = updates.ToArray();
+            var response = enumerated.ToAiResponse();
+            var role = enumerated.LastOrDefault()?.Role == ChatRole.User ? Role.User : Role.Assistant;
 
             return new CreateMessageResult
             {
@@ -40,11 +36,11 @@ public static class ChatResponseUpdateExtensions
                 [
                     new TextContentBlock
                     {
-                        Text = text
+                        Text = response.Content
                     }
                 ],
                 Model = "unknown",
-                Role = lastUpdate?.Role == ChatRole.User ? Role.User : Role.Assistant,
+                Role = role,
                 StopReason = "endTurn"
             };
         }

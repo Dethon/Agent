@@ -24,7 +24,13 @@ public class ChatMonitor(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                if (logger.IsEnabled(LogLevel.Error))
+                {
+                    logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
+                }
+            }
         }
     }
 
@@ -85,9 +91,12 @@ public class ChatMonitor(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex,
-                "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
-                prompt.ChatId, prompt.ThreadId, ex.Message);
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                logger.LogError(ex,
+                    "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
+                    prompt.ChatId, prompt.ThreadId, ex.Message);
+            }
         }
     }
 }

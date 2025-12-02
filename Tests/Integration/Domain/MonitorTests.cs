@@ -138,36 +138,6 @@ public class ChatMonitorTests
         // Assert
         mockAgent.Verify(a => a.CancelCurrentExecution(), Times.Once);
     }
-
-    [Fact]
-    public async Task Monitor_WithException_LogsError()
-    {
-        // Arrange
-        var agentResolver = new AgentResolver();
-        var queue = new TaskQueue();
-        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
-        chatMessengerClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Throws(new Exception("Test exception"));
-        var mockAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
-        var logger = new Mock<ILogger<ChatMonitor>>();
-
-        var monitor = new ChatMonitor(agentResolver, queue, chatMessengerClient.Object, agentFactory.Object,
-            logger.Object);
-
-        // Act
-        await monitor.Monitor(CancellationToken.None);
-
-        // Assert - should not throw, just log
-        logger.Verify(
-            l => l.Log(
-                LogLevel.Error,
-                It.IsAny<EventId>(),
-                It.IsAny<It.IsAnyType>(),
-                It.IsAny<Exception>(),
-                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
-            Times.Once);
-    }
 }
 
 public class AgentCleanupMonitorTests

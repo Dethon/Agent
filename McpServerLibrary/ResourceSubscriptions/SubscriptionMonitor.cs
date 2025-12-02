@@ -28,9 +28,13 @@ public class SubscriptionMonitor(
                     }
                     catch (Exception ex)
                     {
-                        logger.LogError(
-                            ex,
-                            "Error when monitoring resources for URI {Uri} and Session {SessionId}", uri, sessionId);
+                        if (logger.IsEnabled(LogLevel.Error))
+                        {
+                            logger.LogError(
+                                ex,
+                                "Error when monitoring resources for URI {Uri} and Session {SessionId}", uri,
+                                sessionId);
+                        }
                     }
                 }
             }

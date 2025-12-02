@@ -17,7 +17,10 @@ public class TaskRunner(TaskQueue queue, ILogger<TaskRunner> logger) : Backgroun
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error occurred executing {WorkItem}.", nameof(workItem));
+                if (logger.IsEnabled(LogLevel.Error))
+                {
+                    logger.LogError(ex, "Error occurred executing {WorkItem}.", nameof(workItem));
+                }
             }
         }
     }

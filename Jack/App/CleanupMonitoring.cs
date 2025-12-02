@@ -18,7 +18,10 @@ public class CleanupMonitoring(AgentCleanupMonitor monitor, ILogger<CleanupMonit
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Cleanup monitor exception: {exceptionMessage}", ex.Message);
+                if (logger.IsEnabled(LogLevel.Error))
+                {
+                    logger.LogError(ex, "Cleanup monitor exception: {exceptionMessage}", ex.Message);
+                }
             }
         }
     }
