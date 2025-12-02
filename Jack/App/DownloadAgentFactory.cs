@@ -1,5 +1,4 @@
-﻿using Domain.Agents;
-using Domain.Contracts;
+﻿using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
 
@@ -11,6 +10,6 @@ public class DownloadAgentFactory(OpenAiClient llmClient, string[] mcpEndpoints)
 {
     public Task<IAgent> Create(ResponseCallback responseCallback, CancellationToken ct)
     {
-        return McpAgent.CreateAsync(mcpEndpoints, DownloaderPrompt.Get(), responseCallback, llmClient, ct);
+        return McpAgent.CreateAsync(mcpEndpoints, responseCallback, llmClient, ct);
     }
 }

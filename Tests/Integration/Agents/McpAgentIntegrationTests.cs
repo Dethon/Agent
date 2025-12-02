@@ -34,7 +34,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             (response, _) =>
             {
                 responses.Add(response);
@@ -69,7 +68,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             (response, _) =>
             {
                 responses.Add(response);
@@ -105,7 +103,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             (response, _) =>
             {
                 responses.Add(response);
@@ -139,7 +136,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             async (_, ct) =>
             {
                 await Task.Delay(100, ct);
@@ -178,20 +174,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
     {
         // Arrange
         var llmClient = CreateLlmClient();
-        var initialMessages = new AiMessage[]
-        {
-            new()
-            {
-                Role = AiMessageRole.System,
-                Content =
-                    "You are a helpful file organizer assistant. Always respond with 'Aye aye!' before any action."
-            }
-        };
+        // Note: System prompt is now fetched from the MCP server, not passed here
 
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            initialMessages,
             (response, _) =>
             {
                 responses.Add(response);
@@ -222,7 +209,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             (_, _) => Task.CompletedTask,
             llmClient,
             CancellationToken.None);
@@ -254,7 +240,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            [],
             (response, _) =>
             {
                 responses.Add(response);

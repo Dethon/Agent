@@ -44,12 +44,11 @@ public sealed class McpAgent : IAgent
 
     public static async Task<IAgent> CreateAsync(
         string[] endpoints,
-        AiMessage[] initialMessages,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         OpenAiClient llm,
         CancellationToken ct)
     {
-        var agent = new McpAgent(llm, initialMessages, writeMessageCallback);
+        var agent = new McpAgent(llm, [], writeMessageCallback);
         await agent.LoadMcps(endpoints, ct);
         return agent;
     }
@@ -58,6 +57,8 @@ public sealed class McpAgent : IAgent
     {
         _mcpClients = (await CreateClients(endpoints, ct)).ToImmutableList();
         _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
+        var prompts = await GetPrompts(_mcpClients, ct);
+        _messages.AddOrChangeSystemPrompt(prompts);
         _availableResources = (await GetResources(_mcpClients, ct))
             .ToImmutableDictionary(x => x.Key, x => x.Value.ToImmutableHashSet());
         await SubscribeToResources(ct);
@@ -217,6 +218,29 @@ public sealed class McpAgent : IAgent
 
         var results = await Task.WhenAll(tasks);
         return results.ToDictionary(x => x.client, x => x.uris.ToHashSet());
+    }
+
+    private static async Task<string?> GetPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
+    {
+        var tasks = clients
+            .Where(client => client.ServerCapabilities.Prompts is not null)
+            .Select(async client =>
+            {
+                var prompts = await client.EnumeratePromptsAsync(ct).ToArrayAsync(ct);
+                var promptContents = await Task.WhenAll(prompts.Select(async p =>
+                {
+                    var result = await client.GetPromptAsync(p.Name, cancellationToken: ct);
+                    return string.Join("\n", result.Messages
+                        .Select(m => m.Content)
+                        .OfType<TextContentBlock>()
+                        .Select(t => t.Text));
+                }));
+                return string.Join("\n\n", promptContents);
+            });
+
+        var results = await Task.WhenAll(tasks);
+        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)));
+        return string.IsNullOrEmpty(combined) ? null : combined;
     }
 
     private async Task SubscribeToResources(CancellationToken ct)

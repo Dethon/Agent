@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
+using McpServerLibrary.McpPrompts;
 using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
 using McpServerLibrary.ResourceSubscriptions;
@@ -51,6 +52,8 @@ public static class ConfigModule
             .WithTools<McpListFilesTool>()
             .WithTools<McpMoveTool>()
             .WithTools<McpCleanupDownloadDirectoryTool>()
+            // Prompts
+            .WithPrompts<McpSystemPrompt>()
             // Resources
             .WithResources<McpDownloadResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
