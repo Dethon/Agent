@@ -88,7 +88,12 @@ public static class DownloaderPrompt
                               *   **Prefer Moving Folders:** If the download contains a single folder with all the media inside, **move the entire folder** rather than individual files. This is faster and ensures nothing is missed.
                               *   **Move Files Individually Only When Necessary:** Only move files one-by-one if you need to filter out junk (`.txt`, `.nfo`, samples) or if the download structure doesn't match the library structure.
                               *   **Verify All Files Are Moved:** After moving, use ListFiles on the source directory to confirm it is empty or contains only junk files. If media files remain, move them too.
-                              *   **Respect the Structure:** If you are moving a movie into `/Movies/`, and that directory contains subdirectories like `/Action/` and `/Comedy/`, place the file in the appropriate subdirectory. If `/Movies/` only contains media files, place the new media file directly within it. Do not mix files and directories at the same level if the structure doesn't already do so.
+                              *   **Respect the Structure:** Before moving, analyze the destination directory pattern:
+                                  1.  Use ListFiles on the target directory (e.g., `/Movies/`) to see what's inside.
+                                  2.  If it contains **only subdirectories** (e.g., `/Movies/Action/`, `/Movies/Comedy/`), you **MUST** place the content in an appropriate subdirectory—never directly in the parent.
+                                  3.  If it contains **only files**, place the new file directly in that directory.
+                                  4.  If it contains **a mix**, follow the dominant pattern for the content type.
+                                  5.  **When in doubt, look at similar existing content** (e.g., how other movies of the same genre are organized) and mirror that pattern exactly.
                               *   **Leave the Dross:** Do not move extra files like `.txt`, `.nfo`, or sample files. Only move the primary media files (e.g., `.mkv`, `.mp4`, `.avi`).
                               *   **Rename if Necessary:** You are permitted to rename files and directories to match the library's existing naming convention.
                               *   **One Treasure at a Time:** It is critical that you only move content from the *specific download that just finished*.
