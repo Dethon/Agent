@@ -23,6 +23,14 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         return new OpenAiClient(apiUrl, apiKey, models);
     }
 
+    private static async Task RunAgent(McpAgent agent, string prompt, CancellationToken ct)
+    {
+        await foreach (var _ in agent.RunStreamingAsync(prompt, cancellationToken: ct))
+        {
+            // Consume all updates
+        }
+    }
+
     [SkippableFact]
     public async Task Agent_WithListDirectoriesTool_CanListLibraryDirectories()
     {
@@ -40,13 +48,15 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.Run(
-            [$"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool."],
+        await RunAgent(agent,
+            $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
             cts.Token);
 
         // Assert - LLM responses are non-deterministic, verify agent processed the request
@@ -74,6 +84,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
@@ -81,8 +93,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         // Act
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
-        await agent.Run(
-            [$"Move the file from '{sourcePath}' to '{destPath}' using the Move tool."],
+        await RunAgent(agent,
+            $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool.",
             cts.Token);
 
         // Assert
@@ -109,14 +121,16 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
         var moviesPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoviesFiles");
-        await agent.Run(
-            [$"List all files in '{moviesPath}' using the ListFiles tool."],
+        await RunAgent(agent,
+            $"List all files in '{moviesPath}' using the ListFiles tool.",
             cts.Token);
 
         // Assert - LLM responses are non-deterministic, verify agent processed the request
@@ -141,13 +155,15 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 await Task.Delay(100, ct);
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
-        var runTask = agent.Run(
-            [$"List all directories in '{mcpFixture.LibraryPath}'."],
+        var runTask = RunAgent(agent,
+            $"List all directories in '{mcpFixture.LibraryPath}'.",
             cts.Token);
 
         await Task.Delay(500, cts.Token);
@@ -185,44 +201,21 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.Run(
-            ["Say hello and confirm you understand your role."],
+        await RunAgent(agent,
+            "Say hello and confirm you understand your role.",
             cts.Token);
 
         // Assert
         responses.ShouldNotBeEmpty();
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
         combinedResponse.ShouldNotBeNullOrEmpty();
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_LastExecutionTime_IsUpdatedAfterRun()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        var agent = await McpAgent.CreateAsync(
-            [mcpFixture.McpEndpoint],
-            (_, _) => Task.CompletedTask,
-            llmClient,
-            CancellationToken.None);
-
-        var beforeRun = DateTime.UtcNow;
-        await Task.Delay(10);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        await agent.Run(["Hello"], cts.Token);
-
-        // Assert
-        agent.LastExecutionTime.ShouldBeGreaterThan(beforeRun);
 
         await agent.DisposeAsync();
     }
@@ -246,13 +239,15 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
                 return Task.CompletedTask;
             },
             llmClient,
+            "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.Run(
-            [$"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool."],
+        await RunAgent(agent,
+            $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
             cts.Token);
 
         // Assert

@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -43,17 +44,22 @@ internal static class MonitorTestMocks
         return mock;
     }
 
-    public static Mock<IAgent> CreateAgent()
+    public static Mock<CancellableAiAgent> CreateAgent()
     {
-        var mock = new Mock<IAgent>();
-        mock.Setup(a => a.Run(It.IsAny<string[]>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var mock = new Mock<CancellableAiAgent>();
+        mock.Setup(a => a.RunStreamingAsync(
+                It.IsAny<string>(),
+                It.IsAny<AgentThread?>(),
+                It.IsAny<AgentRunOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerable.Empty<AgentRunResponseUpdate>());
         mock.Setup(a => a.DisposeAsync()).Returns(ValueTask.CompletedTask);
         return mock;
     }
 
-    public static Mock<IAgentFactory> CreateAgentFactory(Mock<IAgent> agent)
+    public static Mock<IMcpAgentFactory> CreateAgentFactory(Mock<CancellableAiAgent> agent)
     {
-        var mock = new Mock<IAgentFactory>();
+        var mock = new Mock<IMcpAgentFactory>();
         mock.Setup(f => f.Create(It.IsAny<Func<AiResponse, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agent.Object);
         return mock;

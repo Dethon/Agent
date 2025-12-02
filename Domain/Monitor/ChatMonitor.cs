@@ -5,11 +5,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
+public interface IMcpAgentFactory
+{
+    Task<CancellableAiAgent> Create(Func<AiResponse, CancellationToken, Task> responseCallback, CancellationToken ct);
+}
+
 public class ChatMonitor(
     AgentResolver agentResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    IAgentFactory agentFactory,
+    IMcpAgentFactory agentFactory,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -52,7 +57,13 @@ public class ChatMonitor(
         await chatMessengerClient.BlockWhile(
             prompt.ChatId,
             prompt.ThreadId,
-            () => agent.Run([prompt.Prompt], cancellationToken),
+            async () =>
+            {
+                await foreach (var _ in agent.RunStreamingAsync(prompt.Prompt, cancellationToken: cancellationToken))
+                {
+                    // Response callback handles the output
+                }
+            },
             cancellationToken);
     }
 

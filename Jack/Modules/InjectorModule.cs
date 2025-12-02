@@ -14,52 +14,64 @@ namespace Jack.Modules;
 
 public static class InjectorModule
 {
-    public static IServiceCollection AddAgent(this IServiceCollection services, AgentSettings settings)
-    {
-        var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
-        return services
-            .AddSingleton<IAgentFactory>(sp =>
-                new DownloadAgentFactory(sp.GetRequiredService<IChatClient>(), mcpEndpoints))
-            .AddSingleton<AgentResolver>()
-            .AddOpenRouterAdapter(settings);
-    }
+    private const string AgentName = "";
+    private const string AgentDescription = "";
 
-    public static IServiceCollection AddChatMonitoring(
-        this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
+    extension(IServiceCollection services)
     {
-        services = services
-            .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
-            .AddSingleton<ChatMonitor>()
-            .AddSingleton<AgentCleanupMonitor>()
-            .AddHostedService<ChatMonitoring>()
-            .AddHostedService<CleanupMonitoring>()
-            .AddWorkers(cmdParams);
-
-        return cmdParams.ChatInterface switch
+        public IServiceCollection AddAgent(AgentSettings settings)
         {
-            ChatInterface.Cli => services.AddSingleton<IChatMessengerClient>(_ => new CliChatMessengerClient("Jack")),
-            ChatInterface.Telegram => services.AddSingleton<IChatMessengerClient>(_ =>
-            {
-                var botClient = new TelegramBotClient(settings.Telegram.BotToken);
-                return new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames);
-            }),
-            _ => throw new ArgumentOutOfRangeException(nameof(cmdParams.ChatInterface), "Unsupported chat interface")
-        };
-    }
-
-    private static IServiceCollection AddWorkers(this IServiceCollection services, CommandLineParams cmdParams)
-    {
-        for (var i = 0; i < cmdParams.WorkersCount; i++)
-        {
-            services.AddSingleton<IHostedService, TaskRunner>();
+            var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
+            return services
+                .AddSingleton<IMcpAgentFactory>(sp =>
+                    new McpAgentFactory(
+                        sp.GetRequiredService<IChatClient>(),
+                        mcpEndpoints,
+                        AgentName,
+                        AgentDescription))
+                .AddSingleton<AgentResolver>()
+                .AddOpenRouterAdapter(settings);
         }
 
-        return services;
-    }
+        public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
+        {
+            services = services
+                .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
+                .AddSingleton<ChatMonitor>()
+                .AddSingleton<AgentCleanupMonitor>()
+                .AddHostedService<ChatMonitoring>()
+                .AddHostedService<CleanupMonitoring>()
+                .AddWorkers(cmdParams);
 
-    private static IServiceCollection AddOpenRouterAdapter(this IServiceCollection services, AgentSettings settings)
-    {
-        return services.AddSingleton<IChatClient>(_ =>
-            new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
+            return cmdParams.ChatInterface switch
+            {
+                ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(_ =>
+                    new CliChatMessengerClient("Jack")),
+                ChatInterface.Telegram =>
+                    services.AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
+                    {
+                        var botClient = new TelegramBotClient(settings.Telegram.BotToken);
+                        return new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames);
+                    }),
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(cmdParams.ChatInterface), "Unsupported chat interface")
+            };
+        }
+
+        private IServiceCollection AddWorkers(CommandLineParams cmdParams)
+        {
+            for (var i = 0; i < cmdParams.WorkersCount; i++)
+            {
+                services.AddSingleton<IHostedService, TaskRunner>();
+            }
+
+            return services;
+        }
+
+        private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)
+        {
+            return services.AddSingleton<IChatClient>(_ =>
+                new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
+        }
     }
 }

@@ -5,16 +5,26 @@ using OpenAI;
 
 namespace Infrastructure.Agents;
 
-public class OpenAiClient(string endpoint, string apiKey, string[] models) : IChatClient
+public class OpenAiClient : DelegatingChatClient
 {
-    private readonly IChatClient[] _openAiClients = models.Select(x =>
+    private readonly IChatClient[] _fallbackClients;
+
+    public OpenAiClient(string endpoint, string apiKey, string[] models)
+        : base(CreateClient(endpoint, apiKey, models[0]))
+    {
+        _fallbackClients = models.Skip(1)
+            .Select(model => CreateClient(endpoint, apiKey, model))
+            .ToArray();
+    }
+
+    private static IChatClient CreateClient(string endpoint, string apiKey, string model)
     {
         var options = new OpenAIClientOptions
         {
             Endpoint = new Uri(endpoint)
         };
         return new OpenAIClient(new ApiKeyCredential(apiKey), options)
-            .GetChatClient(x)
+            .GetChatClient(model)
             .AsIChatClient()
             .AsBuilder()
             .UseFunctionInvocation(configure: c =>
@@ -22,67 +32,71 @@ public class OpenAiClient(string endpoint, string apiKey, string[] models) : ICh
                 c.IncludeDetailedErrors = true;
                 c.MaximumIterationsPerRequest = 50;
                 c.AllowConcurrentInvocation = true;
-                c.IncludeDetailedErrors = true;
                 c.MaximumConsecutiveErrorsPerRequest = 3;
             })
             .Build();
-    }).ToArray();
+    }
 
-    public async Task<ChatResponse> GetResponseAsync(
+    public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         var processedMessages = messages.ToList();
-        foreach (var client in _openAiClients)
+        var response = await base.GetResponseAsync(processedMessages, options, cancellationToken);
+
+        if (response.FinishReason != ChatFinishReason.ContentFilter)
+            return response;
+
+        processedMessages.AddRange(response.Messages);
+
+        foreach (var client in _fallbackClients)
         {
-            var response = await client.GetResponseAsync(processedMessages, options, cancellationToken);
+            response = await client.GetResponseAsync(processedMessages, options, cancellationToken);
             if (response.FinishReason != ChatFinishReason.ContentFilter)
-            {
                 return response;
-            }
 
             processedMessages.AddRange(response.Messages);
         }
 
-        return await _openAiClients[^1].GetResponseAsync(processedMessages, options, cancellationToken);
+        return response;
     }
 
-    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var processedMessages = messages.ToList();
-        foreach (var client in _openAiClients)
+        var allClients = new[] { InnerClient }.Concat(_fallbackClients);
+
+        foreach (var client in allClients)
         {
-            var updates = client.GetStreamingResponseAsync(processedMessages, options, cancellationToken);
-            List<ChatResponseUpdate> processedUpdates = [];
-            await foreach (var update in updates)
+            List<ChatResponseUpdate> updates = [];
+            await foreach (var update in
+                           client.GetStreamingResponseAsync(processedMessages, options, cancellationToken))
             {
-                processedUpdates.Add(update);
+                updates.Add(update);
                 yield return update;
             }
 
-            if (processedUpdates.All(x => x.FinishReason != ChatFinishReason.ContentFilter))
-            {
+            if (updates.All(x => x.FinishReason != ChatFinishReason.ContentFilter))
                 yield break;
-            }
 
-            processedMessages.AddMessages(processedUpdates);
+            processedMessages.AddMessages(updates);
         }
     }
 
-    public object? GetService(Type serviceType, object? serviceKey = null)
+    protected override void Dispose(bool disposing)
     {
-        return _openAiClients[0].GetService(serviceType, serviceKey);
-    }
-
-    public void Dispose()
-    {
-        foreach (var client in _openAiClients)
+        if (disposing)
         {
-            client.Dispose();
+            foreach (var client in _fallbackClients)
+            {
+                client.Dispose();
+            }
         }
+
+        base.Dispose(disposing);
     }
 }

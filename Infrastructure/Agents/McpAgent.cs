@@ -2,7 +2,7 @@
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using Domain.Contracts;
+using Domain.Agents;
 using Domain.DTOs;
 using Infrastructure.Agents.Mappers;
 using Microsoft.Agents.AI;
@@ -15,7 +15,7 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public sealed class McpAgent : IAgent
+public sealed class McpAgent : CancellableAiAgent
 {
     private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
@@ -28,13 +28,14 @@ public sealed class McpAgent : IAgent
 
     private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
     private readonly IChatClient _chatClient;
-    private ChatClientAgent _agent = null!;
+    private ChatClientAgent _innerAgent = null!;
     private ChatClientAgentThread _thread = null!;
 
     private readonly ConcurrentDictionary<string, (ChatClientAgent Agent, ChatClientAgentThread Thread)>
         _coAgentConversations = [];
 
-    public DateTime LastExecutionTime { get; private set; }
+    public override string? Name => _innerAgent.Name;
+    public override string? Description => _innerAgent.Description;
 
     private McpAgent(
         IChatClient chatClient,
@@ -44,18 +45,20 @@ public sealed class McpAgent : IAgent
         _writeMessageCallback = writeMessageCallback;
     }
 
-    public static async Task<IAgent> CreateAsync(
+    public static async Task<McpAgent> CreateAsync(
         string[] endpoints,
         Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         IChatClient chatClient,
+        string name,
+        string description,
         CancellationToken ct)
     {
         var agent = new McpAgent(chatClient, writeMessageCallback);
-        await agent.LoadMcps(endpoints, ct);
+        await agent.LoadMcps(endpoints, name, description, ct);
         return agent;
     }
 
-    private async Task LoadMcps(string[] endpoints, CancellationToken ct)
+    private async Task LoadMcps(string[] endpoints, string name, string description, CancellationToken ct)
     {
         _mcpClients = (await CreateClients(endpoints, ct)).ToImmutableList();
         _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
@@ -64,54 +67,54 @@ public sealed class McpAgent : IAgent
             .ToImmutableDictionary(x => x.Key, x => x.Value.ToImmutableHashSet());
         await SubscribeToResources(ct);
 
-        _agent = CreateAgent(systemPrompt, _mcpClientTools);
-        _thread = (ChatClientAgentThread)_agent.GetNewThread();
+        _innerAgent = CreateInnerAgent(systemPrompt, name, description);
+        _thread = (ChatClientAgentThread)_innerAgent.GetNewThread();
     }
 
-    public async Task Run(string[] prompts, CancellationToken ct)
+    public override AgentThread GetNewThread()
     {
-        var messages = prompts
-            .Select(x => new ChatMessage(ChatRole.User, x))
-            .ToArray();
-        await Run(messages, ct);
+        return _innerAgent.GetNewThread();
     }
 
-    public async Task Run(AiMessage[] prompts, CancellationToken ct)
+    public override AgentThread DeserializeThread(
+        JsonElement serializedThread,
+        JsonSerializerOptions? jsonSerializerOptions = null
+    )
     {
-        var messages = prompts.Select(x => x.ToChatMessage()).ToArray();
-        await Run(messages, ct);
+        return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
     }
 
-    private async Task Run(ChatMessage[] prompts, CancellationToken cancellationToken)
-    {
-        ObjectDisposedException.ThrowIf(_isDisposed, nameof(prompts));
-
-        LastExecutionTime = DateTime.UtcNow;
-        var jointCt = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, _cancellationTokenSource.Token).Token;
-        await ExecuteAgentLoop(prompts, jointCt);
-    }
-
-    private async Task ExecuteAgentLoop(ChatMessage[] prompts, CancellationToken ct)
-    {
-        var options = GetDefaultAgentRunOptions();
-
-        await foreach (var update in RunStreamingWithCallback(_agent, prompts, _thread, options, ct))
-        {
-            await _writeMessageCallback(update, ct);
-        }
-    }
-
-    private static async IAsyncEnumerable<AiResponse> RunStreamingWithCallback(
-        ChatClientAgent agent,
+    public override async Task<AgentRunResponse> RunAsync(
         IEnumerable<ChatMessage> messages,
-        ChatClientAgentThread thread,
-        ChatClientAgentRunOptions options,
-        [EnumeratorCancellation] CancellationToken ct)
+        AgentThread? thread = null,
+        AgentRunOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        Dictionary<string, List<AgentRunResponseUpdate>> updatesByMessage = [];
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        await foreach (var update in agent.RunStreamingAsync(messages, thread, options, ct))
+        var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _cancellationTokenSource.Token).Token;
+
+        options ??= GetDefaultAgentRunOptions();
+        var result = await _innerAgent.RunAsync(messages, thread ?? _thread, options, linkedCt);
+        await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), linkedCt);
+        return result;
+    }
+
+    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentThread? thread = null,
+        AgentRunOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+        var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _cancellationTokenSource.Token).Token;
+
+        Dictionary<string, List<AgentRunResponseUpdate>> updatesByMessage = [];
+        options ??= GetDefaultAgentRunOptions();
+        await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread ?? _thread, options, linkedCt))
         {
             if (update.MessageId is not { } messageId)
             {
@@ -126,24 +129,25 @@ public sealed class McpAgent : IAgent
 
             messageUpdates.Add(update);
 
-            // Message is complete when we receive UsageContent or a tool call
             var hasUsage = update.Contents.Any(c => c is UsageContent);
             var hasToolCall = update.Contents.Any(c => c is FunctionCallContent);
             if (hasUsage || hasToolCall)
             {
-                yield return messageUpdates.ToAiResponse();
+                await _writeMessageCallback(messageUpdates.ToAiResponse(), linkedCt);
             }
+
+            yield return update;
         }
     }
 
-    public void CancelCurrentExecution()
+    public override void CancelCurrentExecution()
     {
         _cancellationTokenSource.Cancel();
         _cancellationTokenSource.Dispose();
         _cancellationTokenSource = new CancellationTokenSource();
     }
 
-    public async ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
         if (_isDisposed)
         {
@@ -160,11 +164,10 @@ public sealed class McpAgent : IAgent
         }
     }
 
-    private ChatClientAgent CreateAgent(string? systemPrompt, IEnumerable<AITool> tools)
+    private ChatClientAgent CreateInnerAgent(string? systemPrompt, string? name = null, string? description = null)
     {
         var chatOptions = new ChatOptions
         {
-            Tools = tools.ToList(),
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 ["reasoning_effort"] = "low"
@@ -173,28 +176,32 @@ public sealed class McpAgent : IAgent
 
         return _chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
-            Name = "McpAgent",
+            Name = name,
             Instructions = systemPrompt,
-            ChatOptions = chatOptions
+            ChatOptions = chatOptions,
+            Description = description
         });
     }
 
-    private static ChatClientAgentRunOptions GetDefaultAgentRunOptions(CreateMessageRequestParams? parameters = null)
+    private ChatClientAgentRunOptions GetDefaultAgentRunOptions(CreateMessageRequestParams? parameters = null)
     {
         var chatOptions = new ChatOptions
         {
+            Tools = _mcpClientTools,
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 ["reasoning_effort"] = "low"
             }
         };
 
-        if (parameters is not null)
+        if (parameters is null)
         {
-            chatOptions.Temperature = parameters.Temperature;
-            chatOptions.MaxOutputTokens = parameters.MaxTokens;
-            chatOptions.StopSequences = parameters.StopSequences?.ToArray();
+            return new ChatClientAgentRunOptions(chatOptions);
         }
+
+        chatOptions.Temperature = parameters.Temperature;
+        chatOptions.MaxOutputTokens = parameters.MaxTokens;
+        chatOptions.StopSequences = parameters.StopSequences?.ToArray();
 
         return new ChatClientAgentRunOptions(chatOptions);
     }
@@ -320,7 +327,11 @@ public sealed class McpAgent : IAgent
             .CreateLinkedTokenSource(ct, _cancellationTokenSource.Token).Token;
         var resource = await client.ReadResourceAsync(uri, ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
-        await Run([message], jointCt);
+
+        await foreach (var _ in RunStreamingAsync([message], cancellationToken: jointCt))
+        {
+            // Process updates through RunStreamingAsync which handles callbacks
+        }
     }
 
     private Func<
@@ -334,16 +345,15 @@ public sealed class McpAgent : IAgent
         {
             var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
             var (_, coThread) = tracker is null
-                ? (CreateAgent(parameters?.SystemPrompt, _mcpClientTools), (ChatClientAgentThread)_agent.GetNewThread())
+                ? (CreateInnerAgent(parameters?.SystemPrompt), (ChatClientAgentThread)_innerAgent.GetNewThread())
                 : _coAgentConversations.GetOrAdd(tracker, _ =>
                 {
-                    var agent = CreateAgent(parameters?.SystemPrompt, _mcpClientTools);
+                    var agent = CreateInnerAgent(parameters?.SystemPrompt);
                     return (agent, (ChatClientAgentThread)agent.GetNewThread());
                 });
 
             var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
-            var tools = includeContext == ContextInclusion.None ? [] : _mcpClientTools;
-            var coAgentWithTools = CreateAgent(parameters?.SystemPrompt, tools);
+            var coAgentWithTools = CreateInnerAgent(parameters?.SystemPrompt);
 
             var messages = parameters?.Messages
                 .Select(x => new ChatMessage(
@@ -352,6 +362,10 @@ public sealed class McpAgent : IAgent
                 .ToArray() ?? [];
 
             var options = GetDefaultAgentRunOptions(parameters);
+            options.ChatOptions?.Tools = includeContext == ContextInclusion.None
+                ? []
+                : options.ChatOptions?.Tools;
+
             var updates = coAgentWithTools.RunStreamingAsync(messages, coThread, options, ct);
             List<AgentRunResponseUpdate> processedUpdates = [];
             await foreach (var update in updates)

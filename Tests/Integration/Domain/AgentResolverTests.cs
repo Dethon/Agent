@@ -1,5 +1,4 @@
 using Domain.Agents;
-using Domain.Contracts;
 using Moq;
 using Shouldly;
 
@@ -24,7 +23,7 @@ public class AgentResolverTests
         factoryCalled.ShouldBeTrue();
         return;
 
-        Task<IAgent> factory(CancellationToken _)
+        Task<CancellableAiAgent> factory(CancellationToken _)
         {
             factoryCalled = true;
             return Task.FromResult(mockAgent.Object);
@@ -47,7 +46,7 @@ public class AgentResolverTests
         factoryCallCount.ShouldBe(1);
         return;
 
-        Task<IAgent> factory(CancellationToken _)
+        Task<CancellableAiAgent> factory(CancellationToken _)
         {
             factoryCallCount++;
             return Task.FromResult(mockAgent.Object);
@@ -72,7 +71,7 @@ public class AgentResolverTests
         result2.ShouldBe(mockAgent2.Object);
         return;
 
-        Task<IAgent> factory(CancellationToken _)
+        Task<CancellableAiAgent> factory(CancellationToken _)
         {
             callCount++;
             return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
@@ -137,16 +136,16 @@ public class AgentResolverTests
         result2.ShouldBe(mockAgent2.Object);
         return;
 
-        Task<IAgent> factory(CancellationToken _)
+        Task<CancellableAiAgent> factory(CancellationToken _)
         {
             callCount++;
             return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
         }
     }
 
-    private static Mock<IAgent> CreateMockAgent()
+    private static Mock<CancellableAiAgent> CreateMockAgent()
     {
-        var mock = new Mock<IAgent>();
+        var mock = new Mock<CancellableAiAgent>();
         mock.Setup(a => a.DisposeAsync()).Returns(ValueTask.CompletedTask);
         return mock;
     }

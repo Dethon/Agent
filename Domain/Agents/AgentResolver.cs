@@ -1,22 +1,28 @@
 ﻿using System.Collections.Concurrent;
-using Domain.Contracts;
+using Microsoft.Agents.AI;
 
 namespace Domain.Agents;
 
 public readonly record struct AgentKey(long ChatId, long ThreadId);
 
+public abstract class CancellableAiAgent : AIAgent, IAsyncDisposable
+{
+    public abstract void CancelCurrentExecution();
+    public abstract ValueTask DisposeAsync();
+}
+
 public class AgentResolver
 {
-    private readonly ConcurrentDictionary<AgentKey, IAgent> _cache = [];
+    private readonly ConcurrentDictionary<AgentKey, CancellableAiAgent> _cache = [];
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public (long ChatId, long ThreadId)[] Agents =>
         _cache.Select(x => (x.Key.ChatId, x.Key.ThreadId)).ToArray();
 
-    public async Task<IAgent> Resolve(
+    public async Task<CancellableAiAgent> Resolve(
         long? chatId,
         long? threadId,
-        Func<CancellationToken, Task<IAgent>> agentFactory,
+        Func<CancellationToken, Task<CancellableAiAgent>> agentFactory,
         CancellationToken ct)
     {
         if (chatId is null || threadId is null)
@@ -38,8 +44,8 @@ public class AgentResolver
         }
     }
 
-    private async Task<IAgent?> GetAgentFromCache(
-        AgentKey key, Func<CancellationToken, Task<IAgent>> createAgent, CancellationToken ct)
+    private async Task<CancellableAiAgent?> GetAgentFromCache(
+        AgentKey key, Func<CancellationToken, Task<CancellableAiAgent>> createAgent, CancellationToken ct)
     {
         await _lock.WaitAsync(ct);
         try

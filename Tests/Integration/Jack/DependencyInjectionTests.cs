@@ -59,7 +59,7 @@ public class DependencyInjectionTests
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
-        provider.GetService<IAgentFactory>().ShouldNotBeNull();
+        provider.GetService<IMcpAgentFactory>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         provider.GetService<IChatClient>().ShouldNotBeNull();
     }
