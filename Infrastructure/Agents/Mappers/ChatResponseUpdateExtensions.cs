@@ -10,46 +10,28 @@ public static class ChatResponseUpdateExtensions
 {
     extension(IEnumerable<AgentRunResponseUpdate> updates)
     {
-        public bool IsFinished()
-        {
-            var allContents = updates
-                .SelectMany(x => x.Contents)
-                .ToArray();
-
-            // Message is finished when we have usage content indicating completion
-            return allContents.Any(x => x is UsageContent);
-        }
-
         public AiResponse ToAiResponse()
         {
-            var enumeratedUpdates = updates.ToArray();
-            var normalMessage = string.Join("", enumeratedUpdates
-                .SelectMany(x => x.Contents)
-                .Where(x => x is TextContent)
-                .Cast<TextContent>()
-                .Select(x => x.Text));
+            var contents = updates.SelectMany(x => x.Contents).ToArray();
 
-            var toolCallMessageContent = string.Join("\n", enumeratedUpdates
-                .SelectMany(x => x.Contents)
-                .Where(x => x is FunctionCallContent)
-                .Cast<FunctionCallContent>()
-                .Select(x => $"{x.Name}(\n{JsonSerializer.Serialize(x.Arguments)}\n)"));
+            var text = string.Join("", contents.OfType<TextContent>().Select(x => x.Text));
+
+            var toolCalls = string.Join("\n", contents.OfType<FunctionCallContent>()
+                .Select(x => $"{x.Name}({JsonSerializer.Serialize(x.Arguments)})"));
 
             return new AiResponse
             {
-                Content = normalMessage,
-                ToolCalls = toolCallMessageContent
+                Content = text,
+                ToolCalls = toolCalls
             };
         }
 
         public CreateMessageResult ToCreateMessageResult()
         {
-            var enumeratedUpdates = updates.ToArray();
-            var lastUpdate = enumeratedUpdates.LastOrDefault();
-            var textContent = string.Join("", enumeratedUpdates
+            var lastUpdate = updates.LastOrDefault();
+            var text = string.Join("", updates
                 .SelectMany(x => x.Contents)
-                .Where(x => x is TextContent)
-                .Cast<TextContent>()
+                .OfType<TextContent>()
                 .Select(x => x.Text));
 
             return new CreateMessageResult
@@ -58,7 +40,7 @@ public static class ChatResponseUpdateExtensions
                 [
                     new TextContentBlock
                     {
-                        Text = textContent
+                        Text = text
                     }
                 ],
                 Model = "unknown",

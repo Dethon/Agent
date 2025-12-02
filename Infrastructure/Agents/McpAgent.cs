@@ -109,23 +109,25 @@ public sealed class McpAgent : IAgent
         ChatClientAgentRunOptions options,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var updates = agent.RunStreamingAsync(messages, thread, options, ct);
-        List<AgentRunResponseUpdate> processedUpdates = [];
-        Dictionary<string, List<AgentRunResponseUpdate>> updatesLookup = [];
+        Dictionary<string, List<AgentRunResponseUpdate>> updatesByMessage = [];
 
-        await foreach (var update in updates)
+        await foreach (var update in agent.RunStreamingAsync(messages, thread, options, ct))
         {
-            processedUpdates.Add(update);
-            var messageId = update.MessageId;
-            if (messageId is null)
+            if (update.MessageId is not { } messageId)
             {
                 continue;
             }
 
-            updatesLookup.TryAdd(messageId, []);
-            updatesLookup[messageId].Add(update);
-            var messageUpdates = updatesLookup[messageId];
-            if (messageUpdates.IsFinished())
+            if (!updatesByMessage.TryGetValue(messageId, out var messageUpdates))
+            {
+                messageUpdates = [];
+                updatesByMessage[messageId] = messageUpdates;
+            }
+
+            messageUpdates.Add(update);
+
+            // Message is complete when we receive UsageContent
+            if (update.Contents.Any(c => c is UsageContent))
             {
                 yield return messageUpdates.ToAiResponse();
             }
@@ -329,7 +331,7 @@ public sealed class McpAgent : IAgent
         return async (parameters, progress, ct) =>
         {
             var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
-            var (coAgent, coThread) = tracker is null
+            var (_, coThread) = tracker is null
                 ? (CreateAgent(parameters?.SystemPrompt, _mcpClientTools), (ChatClientAgentThread)_agent.GetNewThread())
                 : _coAgentConversations.GetOrAdd(tracker, _ =>
                 {
@@ -341,7 +343,7 @@ public sealed class McpAgent : IAgent
             var tools = includeContext == ContextInclusion.None ? [] : _mcpClientTools;
             var coAgentWithTools = CreateAgent(parameters?.SystemPrompt, tools);
 
-            var messages = parameters?.Messages?
+            var messages = parameters?.Messages
                 .Select(x => new ChatMessage(
                     x.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User,
                     x.Content.ToAIContents()))
