@@ -4,21 +4,21 @@ WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
 WORKDIR /src
-COPY ["McpServerDownload/McpServerDownload.csproj", "McpServerDownload/"]
+COPY ["McpServerLibrary/McpServerLibrary.csproj", "McpServerLibrary/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerDownload/McpServerDownload.csproj"
+RUN dotnet restore "McpServerLibrary/McpServerLibrary.csproj"
 
 FROM dependencies AS build
 ARG BUILD_CONFIGURATION=Release
 COPY . .
-WORKDIR "/src/McpServerDownload"
-RUN dotnet build "./McpServerDownload.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/McpServerLibrary"
+RUN dotnet build "./McpServerLibrary.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "./McpServerDownload.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./McpServerLibrary.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "McpServerDownload.dll"]
+ENTRYPOINT ["dotnet", "McpServerLibrary.dll"]

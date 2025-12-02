@@ -10,9 +10,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj
 EndProject
 Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "DockerCompose\docker-compose.dcproj", "{26C686D5-2D38-43DC-BD8E-1EC4C99E6FD4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerDownload", "McpServerDownload\McpServerDownload.csproj", "{36232CD3-6F30-4C22-BA67-CDF2C57928CF}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerOrganize", "McpServerOrganize\McpServerOrganize.csproj", "{90556BBB-6524-4B98-932C-2EC2A52E73AA}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerLibrary", "McpServerLibrary\McpServerLibrary.csproj", "{36232CD3-6F30-4C22-BA67-CDF2C57928CF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerCommandRunner", "McpServerCommandRunner\McpServerCommandRunner.csproj", "{B5966AD0-2CE8-4D27-94AD-A16992A2651F}"
 EndProject
@@ -42,10 +40,6 @@ Global
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{36232CD3-6F30-4C22-BA67-CDF2C57928CF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{90556BBB-6524-4B98-932C-2EC2A52E73AA}.Release|Any CPU.Build.0 = Release|Any CPU
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Release|Any CPU.ActiveCfg = Release|Any CPU

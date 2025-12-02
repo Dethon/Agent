@@ -91,31 +91,14 @@ services:
       - VERSION=docker
     restart: unless-stopped
     
-  mcp-download:
-    image: mcp-download:latest
-    container_name: mcp-download
+  mcp-library:
+    image: mcp-library:latest
+    container_name: mcp-library
     ports:
       - "6001:8080"
     build:
       context: ${JACK_REPOSITORY_PATH}
-      dockerfile: McpServerDownload/Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    networks:
-      - jackbot
-    depends_on:
-      - qbittorrent
-      - jackett
-  
-  mcp-organize:
-    image: mcp-organize:latest
-    container_name: mcp-organize
-    ports:
-      - "6002:8080"
-    build:
-      context: ${JACK_REPOSITORY_PATH}
-      dockerfile: McpServerOrganize/Dockerfile
+      dockerfile: McpServerLibrary/Dockerfile
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
@@ -125,6 +108,9 @@ services:
       - .env
     networks:
       - jackbot
+    depends_on:
+      - qbittorrent
+      - jackett
         
   jack:
     image: jack:latest
@@ -138,8 +124,7 @@ services:
     networks:
       - jackbot
     depends_on:
-      - mcp-download
-      - mcp-organize
+      - mcp-library
 
 networks:
   jackbot:

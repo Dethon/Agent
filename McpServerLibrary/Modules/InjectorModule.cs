@@ -2,10 +2,10 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
-using McpServerDownload.Settings;
+using McpServerLibrary.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace McpServerDownload.Modules;
+namespace McpServerLibrary.Modules;
 
 public static class InjectorModule
 {
@@ -14,7 +14,7 @@ public static class InjectorModule
         services.AddHttpClient<ISearchClient, JackettSearchClient>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.Jackett.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
+                httpClient.Timeout = TimeSpan.FromSeconds(60);
                 return new JackettSearchClient(httpClient, settings.Jackett.ApiKey);
             })
             .AddRetryWithExponentialWaitPolicy(
@@ -31,7 +31,7 @@ public static class InjectorModule
         services.AddHttpClient<IDownloadClient, QBittorrentDownloadClient>((httpClient, _) =>
             {
                 httpClient.BaseAddress = new Uri(settings.QBittorrent.ApiUrl);
-                httpClient.Timeout = TimeSpan.FromSeconds(60); // Timeout for all attempts combined.
+                httpClient.Timeout = TimeSpan.FromSeconds(60);
                 return new QBittorrentDownloadClient(
                     httpClient,
                     cookieContainer,
@@ -50,5 +50,10 @@ public static class InjectorModule
                 attemptTimeout: TimeSpan.FromSeconds(10));
 
         return services;
+    }
+
+    public static IServiceCollection AddFileSystemClient(this IServiceCollection services)
+    {
+        return services.AddTransient<IFileSystemClient, LocalFileSystemClient>();
     }
 }

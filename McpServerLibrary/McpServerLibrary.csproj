@@ -6,10 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <RootNamespace>McpServerDownload</RootNamespace>
+    <RootNamespace>McpServerLibrary</RootNamespace>
     <UserSecretsId>75983515-6b41-4913-a021-553345dc21ba</UserSecretsId>
     <LangVersion>14</LangVersion>
-    <AssemblyName>McpServerDownload</AssemblyName>
+    <AssemblyName>McpServerLibrary</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

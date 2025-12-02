@@ -7,21 +7,21 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerOrganize.McpTools;
+namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class McpListDirectoriesTool(
+public class McpListFilesTool(
     IFileSystemClient client,
     LibraryPathConfig libraryPath,
-    ILogger<McpListDirectoriesTool> logger) : ListDirectoriesTool(client, libraryPath)
+    ILogger<McpListFilesTool> logger) : ListFilesTool(client, libraryPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public async Task<CallToolResult> McpRun(CancellationToken cancellationToken)
+    public async Task<CallToolResult> McpRun(string path, CancellationToken cancellationToken)
     {
         try
         {
-            return ToolResponse.Create(await Run(cancellationToken));
+            return ToolResponse.Create(await Run(path, cancellationToken));
         }
         catch (Exception ex)
         {

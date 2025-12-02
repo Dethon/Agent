@@ -1,12 +1,13 @@
 ﻿using JetBrains.Annotations;
 
-namespace McpServerDownload.Settings;
+namespace McpServerLibrary.Settings;
 
 public record McpSettings
 {
     public required JackettConfiguration Jackett { get; init; }
     public required QBittorrentConfiguration QBittorrent { get; init; }
     public required string DownloadLocation { get; init; }
+    public required string BaseLibraryPath { get; init; }
 }
 
 public record JackettConfiguration

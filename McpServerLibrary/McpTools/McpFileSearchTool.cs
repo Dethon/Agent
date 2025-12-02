@@ -6,25 +6,25 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.McpTools;
+namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class McpCleanupDownloadTool(
-    IDownloadClient downloadClient,
+public class McpFileSearchTool(
+    ISearchClient client,
     IStateManager stateManager,
-    ILogger<McpCleanupDownloadTool> logger) : CleanupDownloadTool(downloadClient, stateManager)
+    ILogger<McpFileSearchTool> logger) : FileSearchTool(client, stateManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public async Task<CallToolResult> McpRun(
+    public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        int downloadId,
+        string[] searchStrings,
         CancellationToken cancellationToken)
     {
         try
         {
             var sessionId = context.Server.SessionId ?? "";
-            return ToolResponse.Create(await Run(sessionId, downloadId, cancellationToken));
+            return ToolResponse.Create(await Run(sessionId, searchStrings, cancellationToken));
         }
         catch (Exception ex)
         {

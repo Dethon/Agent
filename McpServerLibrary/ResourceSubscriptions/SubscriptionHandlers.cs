@@ -2,7 +2,7 @@
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.ResourceSubscriptions;
+namespace McpServerLibrary.ResourceSubscriptions;
 
 public static class SubscriptionHandlers
 {
@@ -20,7 +20,7 @@ public static class SubscriptionHandlers
         subscriptionTracker.Add(sessionId, uri, context.Server);
         return ValueTask.FromResult(new EmptyResult());
     }
-    
+
     public static ValueTask<EmptyResult> UnsubscribeToResource(
         RequestContext<UnsubscribeRequestParams> context, CancellationToken _)
     {

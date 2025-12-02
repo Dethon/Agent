@@ -1,9 +1,5 @@
 ﻿services:
-  mcp-download:
-    volumes:
-      - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
-  
-  mcp-organize:
+  mcp-library:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
   

@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
-using McpServerOrganize.McpTools;
+using McpServerLibrary.McpTools;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;

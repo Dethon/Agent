@@ -3,7 +3,7 @@ using Domain.Contracts;
 using Domain.Resources;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.McpResources;
+namespace McpServerLibrary.McpResources;
 
 [McpServerResourceType]
 public class McpDownloadResource(IDownloadClient downloadClient) : DownloadResource(downloadClient)

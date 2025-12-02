@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.McpTools;
+namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
 public class McpContentRecommendationTool(ILogger<McpContentRecommendationTool> logger) : ContentRecommendationTool

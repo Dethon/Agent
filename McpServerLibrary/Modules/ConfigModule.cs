@@ -1,15 +1,15 @@
 ﻿using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
-using McpServerDownload.McpResources;
-using McpServerDownload.McpTools;
-using McpServerDownload.ResourceSubscriptions;
-using McpServerDownload.Settings;
+using McpServerLibrary.McpResources;
+using McpServerLibrary.McpTools;
+using McpServerLibrary.ResourceSubscriptions;
+using McpServerLibrary.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 
-namespace McpServerDownload.Modules;
+namespace McpServerLibrary.Modules;
 
 public static class ConfigModule
 {
@@ -29,20 +29,29 @@ public static class ConfigModule
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
+            .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton<SubscriptionTracker>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddTransient<IStateManager, StateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
+            .AddFileSystemClient()
             .AddHostedService<SubscriptionMonitor>()
             .AddMcpServer()
             .WithHttpTransport()
+            // Download tools
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpGetDownloadStatusTool>()
             .WithTools<McpCleanupDownloadTool>()
             .WithTools<McpContentRecommendationTool>()
+            // Organize tools
+            .WithTools<McpListDirectoriesTool>()
+            .WithTools<McpListFilesTool>()
+            .WithTools<McpMoveTool>()
+            .WithTools<McpCleanupDownloadDirectoryTool>()
+            // Resources
             .WithResources<McpDownloadResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)

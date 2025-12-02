@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.ResourceSubscriptions;
+namespace McpServerLibrary.ResourceSubscriptions;
 
 public class SubscriptionMonitor(
     IStateManager stateManager,

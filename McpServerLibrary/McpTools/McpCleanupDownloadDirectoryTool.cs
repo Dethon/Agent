@@ -7,21 +7,21 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerOrganize.McpTools;
+namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class McpListFilesTool(
-    IFileSystemClient client,
-    LibraryPathConfig libraryPath,
-    ILogger<McpListFilesTool> logger) : ListFilesTool(client, libraryPath)
+public class McpCleanupDownloadDirectoryTool(
+    IFileSystemClient fileSystemClient,
+    DownloadPathConfig downloadPath,
+    ILogger<McpCleanupDownloadDirectoryTool> logger) : CleanupDownloadDirectoryTool(fileSystemClient, downloadPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
-    public async Task<CallToolResult> McpRun(string path, CancellationToken cancellationToken)
+    public async Task<CallToolResult> McpRun(int downloadId, CancellationToken cancellationToken)
     {
         try
         {
-            return ToolResponse.Create(await Run(path, cancellationToken));
+            return ToolResponse.Create(await Run(downloadId, cancellationToken));
         }
         catch (Exception ex)
         {

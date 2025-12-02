@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.ResourceSubscriptions;
+namespace McpServerLibrary.ResourceSubscriptions;
 
 public class SubscriptionTracker
 {

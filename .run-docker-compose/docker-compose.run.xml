@@ -13,8 +13,7 @@
                 <option name="services">
                     <list>
                         <option value="jack"/>
-                        <option value="mcp-download"/>
-                        <option value="mcp-organize"/>
+                        <option value="mcp-library"/>
                         <option value="qbittorrent"/>
                         <option value="jackett"/>
                     </list>

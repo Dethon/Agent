@@ -6,13 +6,13 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerDownload.McpTools;
+namespace McpServerLibrary.McpTools;
 
 [McpServerToolType]
-public class McpGetDownloadStatusTool(
-    IDownloadClient client,
+public class McpCleanupDownloadTool(
+    IDownloadClient downloadClient,
     IStateManager stateManager,
-    ILogger<McpGetDownloadStatusTool> logger) : GetDownloadStatusTool(client, stateManager)
+    ILogger<McpCleanupDownloadTool> logger) : CleanupDownloadTool(downloadClient, stateManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
