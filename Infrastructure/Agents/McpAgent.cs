@@ -126,8 +126,10 @@ public sealed class McpAgent : IAgent
 
             messageUpdates.Add(update);
 
-            // Message is complete when we receive UsageContent
-            if (update.Contents.Any(c => c is UsageContent))
+            // Message is complete when we receive UsageContent or a tool call
+            var hasUsage = update.Contents.Any(c => c is UsageContent);
+            var hasToolCall = update.Contents.Any(c => c is FunctionCallContent);
+            if (hasUsage || hasToolCall)
             {
                 yield return messageUpdates.ToAiResponse();
             }
