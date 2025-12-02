@@ -18,25 +18,26 @@ Context Protocol (MCP).
 └─────────────────┘     │   (AI Agent)    │
                         └────────┬────────┘
                                  │
-              ┌──────────────────┼──────────────────┐
-              ▼                  ▼                  ▼
-     ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-     │  MCP Download  │ │  MCP Organize  │ │ MCP CommandRun │
-     │    Server      │ │    Server      │ │    Server      │
-     └───────┬────────┘ └───────┬────────┘ └────────────────┘
-             │                  │
-     ┌───────┴───────┐  ┌───────┴───────┐
-     │  qBittorrent  │  │     Plex      │
-     │   Jackett     │  │  FileBrowser  │
-     └───────────────┘  └───────────────┘
+               ┌─────────────────┴─────────────────┐
+               ▼                                   ▼
+      ┌────────────────┐                  ┌────────────────┐
+      │  MCP Library   │                  │ MCP CommandRun │
+      │    Server      │                  │    Server      │
+      └───────┬────────┘                  └────────────────┘
+              │
+      ┌───────┴───────┐
+      │  qBittorrent  │
+      │   Jackett     │
+      │     Plex      │
+      │  FileBrowser  │
+      └───────────────┘
 ```
 
 ### MCP Servers
 
 | Server                | Tools                                                   | Purpose                                             |
 |-----------------------|---------------------------------------------------------|-----------------------------------------------------|
-| **mcp-download**      | File search, download, status, cleanup, recommendations | Search and download content via Jackett/qBittorrent |
-| **mcp-organize**      | List files/directories, move, cleanup downloads         | Organize media files into library structure         |
+| **mcp-library**       | File search, download, status, cleanup, recommendations, list files/directories, move, cleanup downloads | Search and download content via Jackett/qBittorrent, organize media files into library structure |
 | **mcp-commandrunner** | Run CLI commands, platform detection                    | Execute system commands (In development)            |
 
 ## Projects
@@ -46,8 +47,7 @@ Context Protocol (MCP).
 | `Jack`                   | Main agent application with Telegram bot integration |
 | `Domain`                 | Core domain logic, agent contracts, and services     |
 | `Infrastructure`         | External service clients (Telegram, MCP, OpenRouter) |
-| `McpServerDownload`      | MCP server for torrent search and downloads          |
-| `McpServerOrganize`      | MCP server for file organization                     |
+| `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
 | `McpServerCommandRunner` | MCP server for CLI command execution                 |
 | `DockerCompose`          | Docker Compose configuration for the full stack      |
 | `Tests`                  | Unit and integration tests                           |
@@ -105,8 +105,7 @@ docker compose up -d
 | FileBrowser  | 8002  | File management WebUI |
 | Jackett      | 8003  | Torrent indexer proxy |
 | Plex         | 32400 | Media server          |
-| MCP Download | 6001  | Download MCP server   |
-| MCP Organize | 6002  | Organize MCP server   |
+| MCP Library  | 6001  | Library MCP server    |
 
 ## Usage
 

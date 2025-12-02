@@ -15,6 +15,8 @@ public class ListDirectoriesTool(IFileSystemClient client, LibraryPathConfig lib
                                          files are currently located and where they should be stored.
                                          This tool returns a list of absolute directories and subdirectories in the 
                                          library.
+                                         IMPORTANT: The directory structure rarely changes. Call this tool only once 
+                                         per conversation and reuse the result for subsequent operations.
                                          """;
 
     protected async Task<JsonNode> Run(CancellationToken cancellationToken)
