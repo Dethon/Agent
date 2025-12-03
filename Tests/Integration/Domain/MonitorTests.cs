@@ -31,7 +31,9 @@ internal sealed class FakeCancellableAiAgent : CancellableAiAgent
 
     public override ChannelReader<AgentRunResponseUpdate> Subscribe(bool switchSubscription)
     {
-        return Channel.CreateUnbounded<AgentRunResponseUpdate>().Reader;
+        var channel = Channel.CreateUnbounded<AgentRunResponseUpdate>();
+        channel.Writer.Complete();
+        return channel.Reader;
     }
 
     public override AgentThread GetNewThread()
