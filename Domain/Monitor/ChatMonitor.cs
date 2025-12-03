@@ -78,11 +78,8 @@ public class ChatMonitor(
                 {
                     await ProcessResponse(prompt, aiResponse, ct);
                 }
-
-                Console.WriteLine("AAA");
             },
             cancellationToken);
-        Console.WriteLine("BBB");
     }
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
