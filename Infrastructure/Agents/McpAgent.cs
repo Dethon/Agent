@@ -6,6 +6,7 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.Extensions;
 using Infrastructure.Agents.Mappers;
+using Infrastructure.Utils;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
@@ -24,7 +25,7 @@ public sealed class McpAgent : CancellableAiAgent
     private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
         new Dictionary<McpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
 
-    private CancellationTokenSource _cancellationTokenSource = new();
+    private readonly ResettableCancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
 
     private readonly Func<AiResponse, CancellationToken, Task>? _writeMessageCallback;
@@ -93,14 +94,14 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, _cancellationTokenSource.Token).Token;
+        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var ct = linkedCts.Token;
 
         options ??= GetDefaultAgentRunOptions();
-        var result = await _innerAgent.RunAsync(messages, thread ?? _thread, options, linkedCt);
+        var result = await _innerAgent.RunAsync(messages, thread ?? _thread, options, ct);
         if (_writeMessageCallback is not null)
         {
-            await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), linkedCt);
+            await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), ct);
         }
 
         return result;
@@ -114,27 +115,25 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken, _cancellationTokenSource.Token).Token;
+        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var ct = linkedCts.Token;
 
         options ??= GetDefaultAgentRunOptions();
         thread ??= _thread;
-        var updates = _innerAgent.RunStreamingAsync(messages, thread, options, linkedCt);
-        await foreach (var (update, response) in updates.ToUpdateAiResponsePairs().WithCancellation(linkedCt))
+        var updates = _innerAgent.RunStreamingAsync(messages, thread, options, ct);
+        await foreach (var (update, response) in updates.ToUpdateAiResponsePairs().WithCancellation(ct))
         {
             yield return update;
             if (response is not null && _writeMessageCallback is not null)
             {
-                await _writeMessageCallback(response, linkedCt);
+                await _writeMessageCallback(response, ct);
             }
         }
     }
 
     public override void CancelCurrentExecution()
     {
-        _cancellationTokenSource.Cancel();
-        _cancellationTokenSource.Dispose();
-        _cancellationTokenSource = new CancellationTokenSource();
+        _cancellationTokenSource.CancelAndReset();
     }
 
     public override async ValueTask DisposeAsync()
@@ -145,7 +144,6 @@ public sealed class McpAgent : CancellableAiAgent
         }
 
         _isDisposed = true;
-        await _cancellationTokenSource.CancelAsync();
         _cancellationTokenSource.Dispose();
         await UnSubscribeToResources(CancellationToken.None);
         foreach (var client in _mcpClients)
@@ -313,12 +311,12 @@ public sealed class McpAgent : CancellableAiAgent
             return;
         }
 
-        var jointCt = CancellationTokenSource
-            .CreateLinkedTokenSource(ct, _cancellationTokenSource.Token).Token;
-        var resource = await client.ReadResourceAsync(uri, ct);
+        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(ct);
+        var linkedCt = linkedCts.Token;
+        var resource = await client.ReadResourceAsync(uri, linkedCt);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
-        await foreach (var _ in RunStreamingAsync([message], cancellationToken: jointCt))
+        await foreach (var _ in RunStreamingAsync([message], cancellationToken: linkedCt))
         {
             // Process updates through RunStreamingAsync which handles callbacks
         }
