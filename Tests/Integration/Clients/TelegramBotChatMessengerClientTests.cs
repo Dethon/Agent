@@ -276,7 +276,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         var taskExecuted = false;
 
         // Act
-        await client.BlockWhile(chatId, null, () =>
+        await client.BlockWhile(chatId, null, _ =>
         {
             taskExecuted = true;
             return Task.CompletedTask;

@@ -49,17 +49,19 @@ public class ChatMonitor(
             ct => agentFactory.Create(responseCallback, ct),
             cancellationToken);
 
-        if (prompt.IsCommand)
+        if (prompt.IsCommand && prompt.Prompt.Equals("cancel", StringComparison.OrdinalIgnoreCase))
         {
             agent.CancelCurrentExecution();
+            return;
         }
 
         await chatMessengerClient.BlockWhile(
             prompt.ChatId,
             prompt.ThreadId,
-            async () =>
+            async ct =>
             {
-                await foreach (var _ in agent.RunStreamingAsync(prompt.Prompt, cancellationToken: cancellationToken))
+                var aiResponses = agent.RunStreamingAsync(prompt.Prompt, cancellationToken: ct);
+                await foreach (var _ in aiResponses)
                 {
                     // Response callback handles the output
                 }

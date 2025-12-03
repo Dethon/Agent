@@ -63,8 +63,8 @@ public class CliChatMessengerClient(string agentName) : IChatMessengerClient
         {
             AnsiConsole.MarkupLineInterpolated($"[italic grey]{responseMessage.CalledTools}[/]");
         }
-        
-        
+
+
         return Task.CompletedTask;
     }
 
@@ -78,12 +78,10 @@ public class CliChatMessengerClient(string agentName) : IChatMessengerClient
         return Task.FromResult(threadId == _threadId);
     }
 
-    public async Task BlockWhile(long chatId, long? threadId, Func<Task> task, CancellationToken cancellationToken)
+    public async Task BlockWhile(long chatId, long? threadId, Func<CancellationToken, Task> task, CancellationToken ct)
     {
-        await _busySemaphore.WaitAsync(cancellationToken);
-        await AnsiConsole.Status().StartAsync($"{agentName} is thinking...", _ => task());
+        await _busySemaphore.WaitAsync(ct);
+        await AnsiConsole.Status().StartAsync($"{agentName} is thinking...", _ => task(ct));
         _askSemaphore.Release();
     }
 }
-
-

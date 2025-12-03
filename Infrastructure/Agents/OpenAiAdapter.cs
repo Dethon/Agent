@@ -65,7 +65,7 @@ public class OpenAiClient : DelegatingChatClient
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         var processedMessages = messages.ToList();
         var allClients = new[] { InnerClient }.Concat(_fallbackClients);
@@ -73,15 +73,16 @@ public class OpenAiClient : DelegatingChatClient
         foreach (var client in allClients)
         {
             List<ChatResponseUpdate> updates = [];
-            await foreach (var update in
-                           client.GetStreamingResponseAsync(processedMessages, options, cancellationToken))
+            await foreach (var update in client.GetStreamingResponseAsync(processedMessages, options, ct))
             {
                 updates.Add(update);
                 yield return update;
             }
 
             if (updates.All(x => x.FinishReason != ChatFinishReason.ContentFilter))
+            {
                 yield break;
+            }
 
             processedMessages.AddMessages(updates);
         }

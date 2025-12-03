@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.Extensions;
 using Infrastructure.Agents.Mappers;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -26,7 +27,7 @@ public sealed class McpAgent : CancellableAiAgent
     private CancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
 
-    private readonly Func<AiResponse, CancellationToken, Task> _writeMessageCallback;
+    private readonly Func<AiResponse, CancellationToken, Task>? _writeMessageCallback;
     private readonly IChatClient _chatClient;
     private ChatClientAgent _innerAgent = null!;
     private ChatClientAgentThread _thread = null!;
@@ -39,7 +40,7 @@ public sealed class McpAgent : CancellableAiAgent
 
     private McpAgent(
         IChatClient chatClient,
-        Func<AiResponse, CancellationToken, Task> writeMessageCallback)
+        Func<AiResponse, CancellationToken, Task>? writeMessageCallback)
     {
         _chatClient = chatClient;
         _writeMessageCallback = writeMessageCallback;
@@ -97,7 +98,11 @@ public sealed class McpAgent : CancellableAiAgent
 
         options ??= GetDefaultAgentRunOptions();
         var result = await _innerAgent.RunAsync(messages, thread ?? _thread, options, linkedCt);
-        await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), linkedCt);
+        if (_writeMessageCallback is not null)
+        {
+            await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), linkedCt);
+        }
+
         return result;
     }
 
@@ -112,32 +117,16 @@ public sealed class McpAgent : CancellableAiAgent
         var linkedCt = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cancellationTokenSource.Token).Token;
 
-        Dictionary<string, List<AgentRunResponseUpdate>> updatesByMessage = [];
         options ??= GetDefaultAgentRunOptions();
-        await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread ?? _thread, options, linkedCt))
+        thread ??= _thread;
+        var updates = _innerAgent.RunStreamingAsync(messages, thread, options, linkedCt);
+        await foreach (var (update, response) in updates.ToUpdateAiResponsePairs().WithCancellation(linkedCt))
         {
-            if (update.MessageId is not { } messageId)
-            {
-                continue;
-            }
-
-            if (!updatesByMessage.TryGetValue(messageId, out var messageUpdates))
-            {
-                messageUpdates = [];
-                updatesByMessage[messageId] = messageUpdates;
-            }
-
-            messageUpdates.Add(update);
-
-            var hasUsage = update.Contents.Any(c => c is UsageContent);
-            var hasToolCall = update.Contents.Any(c => c is FunctionCallContent);
-            if (hasUsage || hasToolCall)
-            {
-                await _writeMessageCallback(messageUpdates.ToAiResponse(), linkedCt);
-                messageUpdates.Clear();
-            }
-
             yield return update;
+            if (response is not null && _writeMessageCallback is not null)
+            {
+                await _writeMessageCallback(response, linkedCt);
+            }
         }
     }
 

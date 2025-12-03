@@ -87,9 +87,9 @@ internal static class MonitorTestMocks
         }
 
         mock.Setup(c =>
-                c.BlockWhile(It.IsAny<long>(), It.IsAny<long?>(), It.IsAny<Func<Task>>(),
+                c.BlockWhile(It.IsAny<long>(), It.IsAny<long?>(), It.IsAny<Func<CancellationToken, Task>>(),
                     It.IsAny<CancellationToken>()))
-            .Returns<long, long?, Func<Task>, CancellationToken>((_, _, task, _) => task());
+            .Returns<long, long?, Func<CancellationToken, Task>, CancellationToken>((_, _, task, ct) => task(ct));
         mock.Setup(c => c.SendResponse(It.IsAny<long>(), It.IsAny<ChatResponseMessage>(), It.IsAny<long?>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -169,14 +169,14 @@ public class ChatMonitorTests
         // Arrange
         var agentResolver = new AgentResolver();
         var queue = new TaskQueue();
-        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel", isCommand: true) };
+        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "cancel", isCommand: true) };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(agentResolver, queue, chatMessengerClient.Object, agentFactory.Object,
-            logger.Object);
+        var monitor = new ChatMonitor(
+            agentResolver, queue, chatMessengerClient.Object, agentFactory.Object, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
