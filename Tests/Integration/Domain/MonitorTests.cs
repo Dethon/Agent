@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -26,6 +27,11 @@ internal sealed class FakeCancellableAiAgent : CancellableAiAgent
     {
         DisposeCallCount++;
         return ValueTask.CompletedTask;
+    }
+
+    public override ChannelReader<AgentRunResponseUpdate> Subscribe(bool switchSubscription)
+    {
+        return Channel.CreateUnbounded<AgentRunResponseUpdate>().Reader;
     }
 
     public override AgentThread GetNewThread()
@@ -104,8 +110,7 @@ internal static class MonitorTestMocks
     public static Mock<IMcpAgentFactory> CreateAgentFactory(FakeCancellableAiAgent agent)
     {
         var mock = new Mock<IMcpAgentFactory>();
-        mock.Setup(f => f.Create(It.IsAny<Func<AiResponse, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agent);
+        mock.Setup(f => f.Create(It.IsAny<CancellationToken>())).ReturnsAsync(agent);
         return mock;
     }
 }

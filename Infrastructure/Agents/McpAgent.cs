@@ -1,10 +1,8 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using Domain.Agents;
-using Domain.DTOs;
-using Domain.Extensions;
 using Infrastructure.Agents.Mappers;
 using Infrastructure.Utils;
 using Microsoft.Agents.AI;
@@ -28,34 +26,29 @@ public sealed class McpAgent : CancellableAiAgent
     private readonly ResettableCancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
 
-    private readonly Func<AiResponse, CancellationToken, Task>? _writeMessageCallback;
     private readonly IChatClient _chatClient;
     private ChatClientAgent _innerAgent = null!;
-    private ChatClientAgentThread _thread = null!;
+    private AgentThread _thread = null!;
 
-    private readonly ConcurrentDictionary<string, (ChatClientAgent Agent, ChatClientAgentThread Thread)>
-        _coAgentConversations = [];
+    private readonly ConcurrentQueue<ChannelWriter<AgentRunResponseUpdate>> _subscriptionWriters = [];
+    private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    private McpAgent(
-        IChatClient chatClient,
-        Func<AiResponse, CancellationToken, Task>? writeMessageCallback)
+    private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
-        _writeMessageCallback = writeMessageCallback;
     }
 
     public static async Task<McpAgent> CreateAsync(
         string[] endpoints,
-        Func<AiResponse, CancellationToken, Task> writeMessageCallback,
         IChatClient chatClient,
         string name,
         string description,
         CancellationToken ct)
     {
-        var agent = new McpAgent(chatClient, writeMessageCallback);
+        var agent = new McpAgent(chatClient);
         await agent.LoadMcps(endpoints, name, description, ct);
         return agent;
     }
@@ -86,7 +79,7 @@ public sealed class McpAgent : CancellableAiAgent
         return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
     }
 
-    public override async Task<AgentRunResponse> RunAsync(
+    public override Task<AgentRunResponse> RunAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -98,20 +91,14 @@ public sealed class McpAgent : CancellableAiAgent
         var ct = linkedCts.Token;
 
         options ??= GetDefaultAgentRunOptions();
-        var result = await _innerAgent.RunAsync(messages, thread ?? _thread, options, ct);
-        if (_writeMessageCallback is not null)
-        {
-            await _writeMessageCallback(result.ToAgentRunResponseUpdates().ToAiResponse(), ct);
-        }
-
-        return result;
+        return _innerAgent.RunAsync(messages, thread ?? _thread, options, ct);
     }
 
-    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+    public override IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
@@ -120,20 +107,34 @@ public sealed class McpAgent : CancellableAiAgent
 
         options ??= GetDefaultAgentRunOptions();
         thread ??= _thread;
-        var updates = _innerAgent.RunStreamingAsync(messages, thread, options, ct);
-        await foreach (var (update, response) in updates.ToUpdateAiResponsePairs().WithCancellation(ct))
-        {
-            yield return update;
-            if (response is not null && _writeMessageCallback is not null)
-            {
-                await _writeMessageCallback(response, ct);
-            }
-        }
+        return _innerAgent.RunStreamingAsync(messages, thread, options, ct);
     }
 
     public override void CancelCurrentExecution()
     {
         _cancellationTokenSource.CancelAndReset();
+        while (_subscriptionWriters.TryDequeue(out var oldWriter))
+        {
+            oldWriter.Complete();
+        }
+    }
+
+    public override ChannelReader<AgentRunResponseUpdate> Subscribe(bool switchSubscription)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
+        var subscription = Channel.CreateBounded<AgentRunResponseUpdate>(options);
+        if (switchSubscription)
+        {
+            while (_subscriptionWriters.TryDequeue(out var oldWriter))
+            {
+                oldWriter.Complete();
+            }
+        }
+
+        _subscriptionWriters.Enqueue(subscription.Writer);
+
+        return subscription.Reader;
     }
 
     public override async ValueTask DisposeAsync()
@@ -316,9 +317,12 @@ public sealed class McpAgent : CancellableAiAgent
         var resource = await client.ReadResourceAsync(uri, linkedCt);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
-        await foreach (var _ in RunStreamingAsync([message], cancellationToken: linkedCt))
+        await foreach (var update in RunStreamingAsync([message], cancellationToken: linkedCt))
         {
-            // Process updates through RunStreamingAsync which handles callbacks
+            foreach (var writer in _subscriptionWriters)
+            {
+                writer.TryWrite(update);
+            }
         }
     }
 
@@ -332,13 +336,9 @@ public sealed class McpAgent : CancellableAiAgent
         return async (parameters, progress, ct) =>
         {
             var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
-            var (_, coThread) = tracker is null
-                ? (CreateInnerAgent(parameters?.SystemPrompt), (ChatClientAgentThread)_innerAgent.GetNewThread())
-                : _coAgentConversations.GetOrAdd(tracker, _ =>
-                {
-                    var agent = CreateInnerAgent(parameters?.SystemPrompt);
-                    return (agent, (ChatClientAgentThread)agent.GetNewThread());
-                });
+            var coThread = tracker is null
+                ? GetNewThread()
+                : _coAgentConversations.GetOrAdd(tracker, static (_, ctx) => ctx.GetNewThread(), this);
 
             var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
             var coAgentWithTools = CreateInnerAgent(parameters?.SystemPrompt);

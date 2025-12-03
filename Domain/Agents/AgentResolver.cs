@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Microsoft.Agents.AI;
 
 namespace Domain.Agents;
@@ -9,6 +10,7 @@ public abstract class CancellableAiAgent : AIAgent, IAsyncDisposable
 {
     public abstract void CancelCurrentExecution();
     public abstract ValueTask DisposeAsync();
+    public abstract ChannelReader<AgentRunResponseUpdate> Subscribe(bool switchSubscription);
 }
 
 public class AgentResolver

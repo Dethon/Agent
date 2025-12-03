@@ -1,4 +1,4 @@
-using Domain.DTOs;
+using Domain.Extensions;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
@@ -31,14 +31,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMovies");
         mcpFixture.CreateLibraryStructure("AgentSeries");
 
-        var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            (response, _) =>
-            {
-                responses.Add(response);
-                return Task.CompletedTask;
-            },
             llmClient,
             "",
             "",
@@ -47,9 +41,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.RunStreamingAsync(
-            $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
+        var responses = await agent.RunStreamingAsync(
+                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
 
         // Assert - LLM responses are non-deterministic, verify agent processed the request
         responses.ShouldNotBeEmpty();
@@ -67,14 +65,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMoveDestination");
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoveSource", "agent-test-file.mkv"), "fake content");
 
-        var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            (response, _) =>
-            {
-                responses.Add(response);
-                return Task.CompletedTask;
-            },
             llmClient,
             "",
             "",
@@ -85,9 +77,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         // Act
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
-        await agent.RunStreamingAsync(
-            $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
+        var responses = await agent.RunStreamingAsync(
+                $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool.",
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
 
         // Assert
         responses.ShouldNotBeEmpty();
@@ -104,14 +100,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoviesFiles", "agent-existing-movie.mkv"));
 
-        var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            (response, _) =>
-            {
-                responses.Add(response);
-                return Task.CompletedTask;
-            },
             llmClient,
             "",
             "",
@@ -121,9 +111,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         // Act
         var moviesPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoviesFiles");
-        await agent.RunStreamingAsync(
-            $"List all files in '{moviesPath}' using the ListFiles tool.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
+        var responses = await agent.RunStreamingAsync(
+                $"List all files in '{moviesPath}' using the ListFiles tool.",
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
 
         // Assert - LLM responses are non-deterministic, verify agent processed the request
         responses.ShouldNotBeEmpty();
@@ -142,10 +136,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            async (_, ct) =>
-            {
-                await Task.Delay(100, ct);
-            },
             llmClient,
             "",
             "",
@@ -184,14 +174,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         // Note: System prompt is now fetched from the MCP server, not passed here
 
-        var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            (response, _) =>
-            {
-                responses.Add(response);
-                return Task.CompletedTask;
-            },
             llmClient,
             "",
             "",
@@ -200,9 +184,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.RunStreamingAsync(
-            "Say hello and confirm you understand your role.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
+        var responses = await agent.RunStreamingAsync(
+                "Say hello and confirm you understand your role.",
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
 
         // Assert
         responses.ShouldNotBeEmpty();
@@ -222,14 +210,8 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         Directory.CreateDirectory(downloadSubDir);
         await File.WriteAllTextAsync(Path.Combine(downloadSubDir, "leftover.nfo"), "info file");
 
-        var responses = new List<AiResponse>();
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
-            (response, _) =>
-            {
-                responses.Add(response);
-                return Task.CompletedTask;
-            },
             llmClient,
             "",
             "",
@@ -238,9 +220,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         // Act
-        await agent.RunStreamingAsync(
-            $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
+        var responses = await agent.RunStreamingAsync(
+                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
 
         // Assert
         responses.ShouldNotBeEmpty();

@@ -1,13 +1,14 @@
 ﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
 public interface IMcpAgentFactory
 {
-    Task<CancellableAiAgent> Create(Func<AiResponse, CancellationToken, Task> responseCallback, CancellationToken ct);
+    Task<CancellableAiAgent> Create(CancellationToken ct);
 }
 
 public class ChatMonitor(
@@ -42,11 +43,10 @@ public class ChatMonitor(
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
         prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-        var responseCallback = (AiResponse r, CancellationToken ct) => ProcessResponse(prompt, r, ct);
         var agent = await agentResolver.Resolve(
             prompt.ChatId,
             prompt.ThreadId,
-            ct => agentFactory.Create(responseCallback, ct),
+            agentFactory.Create,
             cancellationToken);
 
         if (prompt.IsCommand && prompt.Prompt.Equals("cancel", StringComparison.OrdinalIgnoreCase))
@@ -55,18 +55,34 @@ public class ChatMonitor(
             return;
         }
 
+        var channelReader = agent.Subscribe(true);
         await chatMessengerClient.BlockWhile(
             prompt.ChatId,
             prompt.ThreadId,
             async ct =>
             {
-                var aiResponses = agent.RunStreamingAsync(prompt.Prompt, cancellationToken: ct);
-                await foreach (var _ in aiResponses)
+                var mainAiResponses = agent
+                    .RunStreamingAsync(prompt.Prompt, cancellationToken: ct)
+                    .ToUpdateAiResponsePairs();
+                var notificationAiResponses = channelReader
+                    .ReadAllAsync(ct)
+                    .ToUpdateAiResponsePairs();
+                var aiResponses = mainAiResponses
+                    .Concat(notificationAiResponses)
+                    .Where(x => x.Item2 is not null)
+                    .Select(x => x.Item2)
+                    .Cast<AiResponse>()
+                    .WithCancellation(ct);
+
+                await foreach (var aiResponse in aiResponses)
                 {
-                    // Response callback handles the output
+                    await ProcessResponse(prompt, aiResponse, ct);
                 }
+
+                Console.WriteLine("AAA");
             },
             cancellationToken);
+        Console.WriteLine("BBB");
     }
 
     private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

@@ -166,7 +166,6 @@ csharp_default_private_modifier = explicit
 braces_for_ifelse = not_required
 resharper_wrap_object_and_collection_initializer_style = chop_always
 
-
 # JetBrains Rider custom properties for code inspections
 resharper_possible_null_reference_exception_highlighting = error
 resharper_replace_with_string_is_null_or_empty_highlighting = none
@@ -179,7 +178,7 @@ csharp_new_line_before_open_brace = all
 csharp_new_line_before_else = true
 csharp_new_line_before_catch = true
 csharp_new_line_before_finally = true
-csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_before_members_in_object_initializers = false
 csharp_new_line_before_members_in_anonymous_types = true
 csharp_new_line_between_query_expression_clauses = true
 # Indentation preferences
