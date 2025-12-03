@@ -6,4 +6,3 @@ riderModule.iml
 *.DotSettings.user
 DockerCompose/volumes
 .idea
-.github/agents
