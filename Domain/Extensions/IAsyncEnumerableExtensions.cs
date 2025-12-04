@@ -14,7 +14,17 @@ public static class IAsyncEnumerableExtensions
         var writer = channel.Writer;
 
         _ = Task.WhenAll(pump(left), pump(right))
-            .ContinueWith(_ => writer.Complete(), TaskScheduler.Default);
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted)
+                {
+                    writer.TryComplete(t.Exception);
+                }
+                else
+                {
+                    writer.TryComplete();
+                }
+            }, TaskScheduler.Default);
 
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
         {
@@ -25,9 +35,16 @@ public static class IAsyncEnumerableExtensions
 
         async Task pump(IAsyncEnumerable<T> source)
         {
-            await foreach (var item in source.WithCancellation(ct))
+            try
             {
-                await writer.WriteAsync(item, ct);
+                await foreach (var item in source.WithCancellation(ct))
+                {
+                    await writer.WriteAsync(item, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                writer.TryComplete(ex);
             }
         }
     }
