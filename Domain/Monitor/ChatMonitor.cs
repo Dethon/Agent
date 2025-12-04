@@ -55,20 +55,14 @@ public class ChatMonitor(
             return;
         }
 
-        var channelReader = agent.Subscribe(true);
         await chatMessengerClient.BlockWhile(
             prompt.ChatId,
             prompt.ThreadId,
             async ct =>
             {
-                var mainAiResponses = agent
-                    .RunStreamingAsync(prompt.Prompt, cancellationToken: ct)
-                    .ToUpdateAiResponsePairs();
-                var notificationAiResponses = channelReader
-                    .ReadAllAsync(ct)
-                    .ToUpdateAiResponsePairs();
-                var aiResponses = mainAiResponses
-                    .Concat(notificationAiResponses)
+                var aiResponses = agent
+                    .RunStreamingWithNotificationsAsync(prompt.Prompt, cancellationToken: ct)
+                    .ToUpdateAiResponsePairs()
                     .Where(x => x.Item2 is not null)
                     .Select(x => x.Item2)
                     .Cast<AiResponse>()

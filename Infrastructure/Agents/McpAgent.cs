@@ -25,6 +25,7 @@ public sealed class McpAgent : CancellableAiAgent
 
     private readonly ResettableCancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
+    private bool _isCancelled;
 
     private readonly IChatClient _chatClient;
     private ChatClientAgent _innerAgent = null!;
@@ -87,6 +88,7 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
+        _isCancelled = false;
         using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var ct = linkedCts.Token;
 
@@ -102,6 +104,7 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
+        _isCancelled = false;
         using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var ct = linkedCts.Token;
 
@@ -112,6 +115,7 @@ public sealed class McpAgent : CancellableAiAgent
 
     public override void CancelCurrentExecution()
     {
+        _isCancelled = true;
         _cancellationTokenSource.CancelAndReset();
         while (_subscriptionWriters.TryDequeue(out var oldWriter))
         {
@@ -307,7 +311,7 @@ public sealed class McpAgent : CancellableAiAgent
         var uri = notification.Params
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
-        if (uri is null)
+        if (uri is null || _isCancelled)
         {
             return;
         }
