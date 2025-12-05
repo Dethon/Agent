@@ -5,6 +5,7 @@ namespace Domain.Monitor;
 
 public class AgentCleanupMonitor(
     ThreadResolver threadResolver,
+    CancellationResolver cancellationResolver,
     IChatMessengerClient chatMessengerClient)
 {
     public async Task Check(CancellationToken ct)
@@ -14,6 +15,7 @@ public class AgentCleanupMonitor(
             if (!await chatMessengerClient.DoesThreadExist(chatId, threadId, ct))
             {
                 threadResolver.Clean(chatId, threadId);
+                cancellationResolver.Clean(chatId, threadId);
             }
         }
     }

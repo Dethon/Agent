@@ -57,6 +57,7 @@ public static class InjectorModule
                         AgentDescription,
                         ct))
                 .AddSingleton<ThreadResolver>()
+                .AddSingleton<CancellationResolver>()
                 .AddOpenRouterAdapter(settings);
         }
 

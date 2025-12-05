@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using Domain.Agents;
+﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -10,13 +9,12 @@ namespace Domain.Monitor;
 
 public class ChatMonitor(
     ThreadResolver threadResolver,
+    CancellationResolver cancellationResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
     Func<CancellationToken, Task<AIAgent>> agentFactory,
     ILogger<ChatMonitor> logger)
 {
-    private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _cancellationSources = new();
-
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
@@ -42,7 +40,7 @@ public class ChatMonitor(
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
         var agentKey = await CreateTopicIfNeeded(prompt, cancellationToken);
-        var cts = _cancellationSources.GetOrAdd(agentKey, _ => new CancellationTokenSource());
+        var cts = cancellationResolver.GetOrCreate(agentKey);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
         var ct = linkedCts.Token;
 
@@ -51,8 +49,7 @@ public class ChatMonitor(
 
         if (prompt.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
         {
-            _cancellationSources.TryRemove(agentKey, out _);
-            await cts.CancelAsync();
+            await cancellationResolver.CancelAndRemove(agentKey);
             return;
         }
 
