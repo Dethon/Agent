@@ -162,8 +162,7 @@ public class TelegramBotChatMessengerClient(
 
         return new ChatPrompt
         {
-            Prompt = message.Text.TrimStart('/'),
-            IsCommand = message.Text.StartsWith('/'),
+            Prompt = message.Text,
             ChatId = message.Chat.Id,
             MessageId = message.MessageId,
             Sender = message.From?.Username ??

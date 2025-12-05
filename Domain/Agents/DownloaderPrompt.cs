@@ -102,6 +102,13 @@ public static class DownloaderPrompt
                    2.  **Second:** Call the **tool to clean up the directory**.
                *   **Failure to Organize:** If the organization step (Phase 3) fails for any reason, **DO NOT** proceed to cleanup. Report the error to the user and await orders.
 
+               ---
+
+               **Phase 5: Signal that everything is done**
+
+               When you have no more tasks to do you must communicate you are done by calling appropriate tools if they are available.
+               You must only call this AFTER you are sure you have performed all pending tasks.
+
                ### **3. Special Orders & Contingencies**
 
                *   **Interpreting Requests - Act, Don't Ask:**

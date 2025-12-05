@@ -55,11 +55,11 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
-        provider.GetService<AgentResolver>().ShouldNotBeNull();
+        provider.GetService<Func<Task<CancellableAiAgent>>>().ShouldNotBeNull();
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
-        provider.GetService<IMcpAgentFactory>().ShouldNotBeNull();
+        provider.GetService<ThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         provider.GetService<IChatClient>().ShouldNotBeNull();
     }
@@ -82,7 +82,7 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        provider.GetService<AgentResolver>().ShouldNotBeNull();
+        provider.GetService<ThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
     }
 

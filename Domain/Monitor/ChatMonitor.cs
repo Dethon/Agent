@@ -1,23 +1,22 @@
-﻿using Domain.Agents;
+﻿using System.Collections.Concurrent;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-public interface IMcpAgentFactory
-{
-    Task<CancellableAiAgent> Create(CancellationToken ct);
-}
-
 public class ChatMonitor(
-    AgentResolver agentResolver,
+    ThreadResolver threadResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    IMcpAgentFactory agentFactory,
+    Func<CancellationToken, Task<AIAgent>> agentFactory,
     ILogger<ChatMonitor> logger)
 {
+    private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _cancellationSources = new();
+
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
@@ -42,45 +41,50 @@ public class ChatMonitor(
 
     private async Task AgentTask(ChatPrompt prompt, CancellationToken cancellationToken)
     {
-        prompt = await CreateTopicIfNeeded(prompt, cancellationToken);
-        var agent = await agentResolver.Resolve(
-            prompt.ChatId,
-            prompt.ThreadId,
-            agentFactory.Create,
-            cancellationToken);
+        var agentKey = await CreateTopicIfNeeded(prompt, cancellationToken);
+        var cts = _cancellationSources.GetOrAdd(agentKey, _ => new CancellationTokenSource());
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
+        var ct = linkedCts.Token;
 
-        if (prompt.IsCommand && prompt.Prompt.Equals("cancel", StringComparison.OrdinalIgnoreCase))
+        var agent = await agentFactory(ct);
+        var thread = await threadResolver.Resolve(agentKey, () => agent.GetNewThread(), ct);
+
+        if (prompt.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
         {
-            agent.CancelCurrentExecution();
+            _cancellationSources.TryRemove(agentKey, out _);
+            await cts.CancelAsync();
             return;
         }
 
-        await chatMessengerClient.BlockWhile(
-            prompt.ChatId,
-            prompt.ThreadId,
-            async ct =>
-            {
-                var aiResponses = agent
-                    .RunStreamingWithNotificationsAsync(prompt.Prompt, cancellationToken: ct)
-                    .ToUpdateAiResponsePairs()
-                    .Where(x => x.Item2 is not null)
-                    .Select(x => x.Item2)
-                    .Cast<AiResponse>()
-                    .WithCancellation(ct);
+        var aiResponses = agent
+            .RunStreamingAsync(prompt.Prompt, thread, cancellationToken: ct)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2)
+            .Cast<AiResponse>()
+            .WithCancellation(ct);
 
+        await chatMessengerClient.BlockWhile(
+            agentKey.ChatId,
+            agentKey.ThreadId,
+            async c =>
+            {
                 await foreach (var aiResponse in aiResponses)
                 {
-                    await ProcessResponse(prompt, aiResponse, ct);
+                    await ProcessResponse(agentKey, aiResponse, c);
                 }
+
+                Console.WriteLine($"{agentKey.ChatId}: {prompt.Prompt}");
             },
-            cancellationToken);
+            ct);
+        Console.WriteLine($"{agentKey.ChatId}: {prompt.Prompt}");
     }
 
-    private async Task<ChatPrompt> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
+    private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
     {
         if (prompt.ThreadId is not null)
         {
-            return prompt;
+            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value);
         }
 
         var threadId = await chatMessengerClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
@@ -91,14 +95,10 @@ public class ChatMonitor(
         };
         await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, threadId, cancellationToken);
 
-        return prompt with
-        {
-            ThreadId = threadId,
-            IsCommand = false
-        };
+        return new AgentKey(prompt.ChatId, threadId);
     }
 
-    private async Task ProcessResponse(ChatPrompt prompt, AiResponse response, CancellationToken ct)
+    private async Task ProcessResponse(AgentKey agentKey, AiResponse response, CancellationToken ct)
     {
         try
         {
@@ -107,7 +107,7 @@ public class ChatMonitor(
                 Message = response.Content,
                 CalledTools = response.ToolCalls
             };
-            await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, prompt.ThreadId, ct);
+            await chatMessengerClient.SendResponse(agentKey.ChatId, responseMessage, agentKey.ThreadId, ct);
         }
         catch (Exception ex)
         {
@@ -115,7 +115,7 @@ public class ChatMonitor(
             {
                 logger.LogError(ex,
                     "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
-                    prompt.ChatId, prompt.ThreadId, ex.Message);
+                    agentKey.ChatId, agentKey.ThreadId, ex.Message);
             }
         }
     }

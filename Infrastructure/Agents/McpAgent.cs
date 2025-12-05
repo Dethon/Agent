@@ -2,9 +2,8 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Threading.Channels;
-using Domain.Agents;
+using Domain.Extensions;
 using Infrastructure.Agents.Mappers;
-using Infrastructure.Utils;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
@@ -15,23 +14,22 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public sealed class McpAgent : CancellableAiAgent
+public sealed class McpAgent : AIAgent, IAsyncDisposable
 {
     private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
+    private readonly ImmutableList<AITool> _internalTools;
 
     private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
         new Dictionary<McpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
 
-    private readonly ResettableCancellationTokenSource _cancellationTokenSource = new();
     private bool _isDisposed;
-    private bool _isCancelled;
 
     private readonly IChatClient _chatClient;
     private ChatClientAgent _innerAgent = null!;
-    private AgentThread _thread = null!;
+    private AgentThread? _innerThread;
 
-    private readonly ConcurrentQueue<ChannelWriter<AgentRunResponseUpdate>> _subscriptionWriters = [];
+    private Channel<AgentRunResponseUpdate>? _subscriptionChannel;
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
 
     public override string? Name => _innerAgent.Name;
@@ -40,9 +38,10 @@ public sealed class McpAgent : CancellableAiAgent
     private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
+        _internalTools = CreateInternalTools();
     }
 
-    public static async Task<McpAgent> CreateAsync(
+    public static async Task<AIAgent> CreateAsync(
         string[] endpoints,
         IChatClient chatClient,
         string name,
@@ -64,12 +63,12 @@ public sealed class McpAgent : CancellableAiAgent
         await SubscribeToResources(ct);
 
         _innerAgent = CreateInnerAgent(systemPrompt, name, description);
-        _thread = (ChatClientAgentThread)_innerAgent.GetNewThread();
     }
 
     public override AgentThread GetNewThread()
     {
-        return _innerAgent.GetNewThread();
+        var thread = _innerAgent.GetNewThread();
+        return thread;
     }
 
     public override AgentThread DeserializeThread(
@@ -80,7 +79,7 @@ public sealed class McpAgent : CancellableAiAgent
         return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
     }
 
-    public override Task<AgentRunResponse> RunAsync(
+    public override async Task<AgentRunResponse> RunAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -88,12 +87,16 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        _isCancelled = false;
-        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var ct = linkedCts.Token;
-
         options ??= GetDefaultAgentRunOptions();
-        return _innerAgent.RunAsync(messages, thread ?? _thread, options, ct);
+        _innerThread = thread ?? GetNewThread();
+        var mainResponse = await _innerAgent.RunAsync(messages, _innerThread, options, cancellationToken);
+        var channelReader = Subscribe();
+        var notificationResponses = channelReader.ReadAllAsync(cancellationToken);
+
+        return mainResponse
+            .ToAgentRunResponseUpdates()
+            .Concat(notificationResponses.ToBlockingEnumerable(cancellationToken))
+            .ToAgentRunResponse();
     }
 
     public override IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
@@ -104,44 +107,26 @@ public sealed class McpAgent : CancellableAiAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        _isCancelled = false;
-        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var ct = linkedCts.Token;
+        var mainResponses = RunStreamingPrivateAsync(messages, thread, options, cancellationToken);
 
-        options ??= GetDefaultAgentRunOptions();
-        thread ??= _thread;
-        return _innerAgent.RunStreamingAsync(messages, thread, options, ct);
+        var channelReader = Subscribe();
+        var notificationResponses = channelReader.ReadAllAsync(cancellationToken);
+        return mainResponses.Merge(notificationResponses, cancellationToken);
     }
 
-    public override void CancelCurrentExecution()
-    {
-        _isCancelled = true;
-        _cancellationTokenSource.CancelAndReset();
-        while (_subscriptionWriters.TryDequeue(out var oldWriter))
-        {
-            oldWriter.Complete();
-        }
-    }
-
-    public override ChannelReader<AgentRunResponseUpdate> Subscribe(bool switchSubscription)
+    private IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingPrivateAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentThread? thread = null,
+        AgentRunOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
-        var subscription = Channel.CreateBounded<AgentRunResponseUpdate>(options);
-        if (switchSubscription)
-        {
-            while (_subscriptionWriters.TryDequeue(out var oldWriter))
-            {
-                oldWriter.Complete();
-            }
-        }
-
-        _subscriptionWriters.Enqueue(subscription.Writer);
-
-        return subscription.Reader;
+        options ??= GetDefaultAgentRunOptions();
+        _innerThread = thread ?? GetNewThread();
+        return _innerAgent.RunStreamingAsync(messages, _innerThread, options, cancellationToken);
     }
 
-    public override async ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (_isDisposed)
         {
@@ -149,12 +134,23 @@ public sealed class McpAgent : CancellableAiAgent
         }
 
         _isDisposed = true;
-        _cancellationTokenSource.Dispose();
+        _subscriptionChannel?.Writer.Complete();
         await UnSubscribeToResources(CancellationToken.None);
         foreach (var client in _mcpClients)
         {
             await client.DisposeAsync();
         }
+    }
+
+    private ChannelReader<AgentRunResponseUpdate> Subscribe()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
+        var channel = Channel.CreateBounded<AgentRunResponseUpdate>(options);
+        _subscriptionChannel?.Writer.Complete();
+        _subscriptionChannel = channel;
+
+        return channel.Reader;
     }
 
     private ChatClientAgent CreateInnerAgent(string? systemPrompt, string? name = null, string? description = null)
@@ -178,9 +174,10 @@ public sealed class McpAgent : CancellableAiAgent
 
     private ChatClientAgentRunOptions GetDefaultAgentRunOptions(CreateMessageRequestParams? parameters = null)
     {
+        var allTools = _mcpClientTools.AddRange(_internalTools);
         var chatOptions = new ChatOptions
         {
-            Tools = _mcpClientTools,
+            Tools = allTools,
             AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 ["reasoning_effort"] = "low"
@@ -308,25 +305,22 @@ public sealed class McpAgent : CancellableAiAgent
     private async ValueTask UpdatedResourceNotificationHandler(
         McpClient client, JsonRpcNotification notification, CancellationToken ct)
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+
         var uri = notification.Params
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
-        if (uri is null || _isCancelled)
+        if (uri is null || _subscriptionChannel is null || _subscriptionChannel.Reader.Completion.IsCompleted)
         {
             return;
         }
 
-        using var linkedCts = _cancellationTokenSource.CreateLinkedTokenSource(ct);
-        var linkedCt = linkedCts.Token;
-        var resource = await client.ReadResourceAsync(uri, linkedCt);
+        var resource = await client.ReadResourceAsync(uri, ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
-        await foreach (var update in RunStreamingAsync([message], cancellationToken: linkedCt))
+        await foreach (var update in RunStreamingPrivateAsync([message], _innerThread, cancellationToken: ct))
         {
-            foreach (var writer in _subscriptionWriters)
-            {
-                writer.TryWrite(update);
-            }
+            _subscriptionChannel?.Writer.TryWrite(update);
         }
     }
 
@@ -339,6 +333,7 @@ public sealed class McpAgent : CancellableAiAgent
     {
         return async (parameters, progress, ct) =>
         {
+            ObjectDisposedException.ThrowIf(_isDisposed, this);
             var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
             var coThread = tracker is null
                 ? GetNewThread()
@@ -371,5 +366,33 @@ public sealed class McpAgent : CancellableAiAgent
 
             return processedUpdates.ToCreateMessageResult();
         };
+    }
+
+    private ImmutableList<AITool> CreateInternalTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(
+                CompleteWorkflow,
+                new AIFunctionFactoryOptions
+                {
+                    Name = "complete_workflow",
+                    Description = "Signals the completion of an async workflow. " +
+                                  "Call this when all async operations are done and the user has been notified of final status. " +
+                                  "This gracefully ends the notification channel."
+                })
+        ];
+    }
+
+    private string CompleteWorkflow()
+    {
+        if (_subscriptionChannel?.Reader.Completion.IsCompleted == true)
+        {
+            return "Workflow was already completed.";
+        }
+
+        _subscriptionChannel?.Writer.TryComplete();
+
+        return "Workflow completed successfully.";
     }
 }

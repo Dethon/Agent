@@ -5,6 +5,7 @@ using Infrastructure.Agents;
 using Infrastructure.Clients;
 using Jack.App;
 using Jack.Settings;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -48,13 +49,14 @@ public static class InjectorModule
         {
             var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
             return services
-                .AddSingleton<IMcpAgentFactory>(sp =>
-                    new McpAgentFactory(
-                        sp.GetRequiredService<IChatClient>(),
+                .AddSingleton<Func<CancellationToken, Task<AIAgent>>>(sp => ct =>
+                    McpAgent.CreateAsync(
                         mcpEndpoints,
+                        sp.GetRequiredService<IChatClient>(),
                         AgentName,
-                        AgentDescription))
-                .AddSingleton<AgentResolver>()
+                        AgentDescription,
+                        ct))
+                .AddSingleton<ThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }
 
