@@ -9,7 +9,7 @@ public static class SubscriptionHandlers
     public static ValueTask<EmptyResult> SubscribeToResource(
         RequestContext<SubscribeRequestParams> context, CancellationToken cancellationToken)
     {
-        var sessionId = context.Server.SessionId ?? "";
+        var sessionId = context.Server.ClientInfo?.Name ?? "";
         var uri = context.Params?.Uri;
         if (context.Services is null || string.IsNullOrEmpty(uri))
         {
@@ -24,7 +24,7 @@ public static class SubscriptionHandlers
     public static ValueTask<EmptyResult> UnsubscribeToResource(
         RequestContext<UnsubscribeRequestParams> context, CancellationToken _)
     {
-        var sessionId = context.Server.SessionId ?? "";
+        var sessionId = context.Server.ClientInfo?.Name ?? "";
         var uri = context.Params?.Uri;
         var subscriptionTracker = context.Services?.GetRequiredService<SubscriptionTracker>();
         if (subscriptionTracker is null || string.IsNullOrEmpty(uri))

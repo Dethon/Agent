@@ -25,7 +25,7 @@ public class McpFileDownloadTool(
     {
         try
         {
-            var sessionId = context.Server.SessionId ?? "";
+            var sessionId = context.Server.ClientInfo?.Name ?? "";
             return ToolResponse.Create(await Run(sessionId, searchResultId, cancellationToken));
         }
         catch (Exception ex)

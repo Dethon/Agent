@@ -45,17 +45,19 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         string[] endpoints,
         IChatClient chatClient,
         string name,
+        string sessionId,
         string description,
         CancellationToken ct)
     {
         var agent = new McpAgent(chatClient);
-        await agent.LoadMcps(endpoints, name, description, ct);
+        await agent.LoadMcps(endpoints, name, sessionId, description, ct);
         return agent;
     }
 
-    private async Task LoadMcps(string[] endpoints, string name, string description, CancellationToken ct)
+    private async Task LoadMcps(
+        string[] endpoints, string name, string sessionId, string description, CancellationToken ct)
     {
-        _mcpClients = (await CreateClients(endpoints, ct)).ToImmutableList();
+        _mcpClients = (await CreateClients(name, sessionId, endpoints, ct)).ToImmutableList();
         _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
         var systemPrompt = await GetPrompts(_mcpClients, ct);
         _availableResources = (await GetResources(_mcpClients, ct))
@@ -90,8 +92,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         options ??= GetDefaultAgentRunOptions();
         _innerThread = thread ?? GetNewThread();
         var mainResponse = await _innerAgent.RunAsync(messages, _innerThread, options, cancellationToken);
-        var channelReader = Subscribe();
-        var notificationResponses = channelReader.ReadAllAsync(cancellationToken);
+        var notificationResponses = Subscribe().ReadAllAsync(cancellationToken);
 
         return mainResponse
             .ToAgentRunResponseUpdates()
@@ -109,8 +110,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
 
         var mainResponses = RunStreamingPrivateAsync(messages, thread, options, cancellationToken);
 
-        var channelReader = Subscribe();
-        var notificationResponses = channelReader.ReadAllAsync(cancellationToken);
+        var notificationResponses = Subscribe().ReadAllAsync(cancellationToken);
         return mainResponses.Merge(notificationResponses, cancellationToken);
     }
 
@@ -147,7 +147,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
         var channel = Channel.CreateBounded<AgentRunResponseUpdate>(options);
-        _subscriptionChannel?.Writer.TryComplete();
+        var a = _subscriptionChannel?.Writer.TryComplete();
         _subscriptionChannel = channel;
 
         return channel.Reader;
@@ -196,7 +196,8 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         return new ChatClientAgentRunOptions(chatOptions);
     }
 
-    private async Task<McpClient[]> CreateClients(string[] endpoints, CancellationToken ct)
+    private async Task<McpClient[]> CreateClients(string name, string sessionId, string[] endpoints,
+        CancellationToken ct)
     {
         var retryPolicy = Policy
             .Handle<HttpRequestException>()
@@ -213,6 +214,11 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
                     }),
                 new McpClientOptions
                 {
+                    ClientInfo = new Implementation
+                    {
+                        Name = $"{name}-{sessionId}",
+                        Version = "1.0.0"
+                    },
                     Handlers = new McpClientHandlers
                     {
                         SamplingHandler = SamplingHandler()

@@ -86,9 +86,9 @@ internal static class MonitorTestMocks
         return new FakeAiAgent();
     }
 
-    public static Func<CancellationToken, Task<AIAgent>> CreateAgentFactory(FakeAiAgent agent)
+    public static Func<string, CancellationToken, Task<AIAgent>> CreateAgentFactory(FakeAiAgent agent)
     {
-        return _ => Task.FromResult<AIAgent>(agent);
+        return (_, _) => Task.FromResult<AIAgent>(agent);
     }
 }
 
@@ -160,7 +160,7 @@ public class ChatMonitorTests
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        // First create a CTS for the agent key so we can verify it gets cancelled
+        // First create a CTS for the agent key so we can verify it gets canceled
         var agentKey = new AgentKey(1, 1);
         var cts = cancellationResolver.GetOrCreate(agentKey);
 

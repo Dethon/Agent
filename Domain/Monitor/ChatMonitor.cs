@@ -12,7 +12,7 @@ public class ChatMonitor(
     CancellationResolver cancellationResolver,
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    Func<CancellationToken, Task<AIAgent>> agentFactory,
+    Func<string, CancellationToken, Task<AIAgent>> agentFactory,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -44,7 +44,7 @@ public class ChatMonitor(
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
         var ct = linkedCts.Token;
 
-        var agent = await agentFactory(ct);
+        var agent = await agentFactory($"{agentKey.ChatId}-{agentKey.ThreadId}", ct);
         var thread = await threadResolver.Resolve(agentKey, () => agent.GetNewThread(), ct);
 
         if (prompt.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))

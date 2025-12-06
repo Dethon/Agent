@@ -23,7 +23,7 @@ public class McpGetDownloadStatusTool(
     {
         try
         {
-            var sessionId = context.Server.SessionId ?? "";
+            var sessionId = context.Server.ClientInfo?.Name ?? "";
             return ToolResponse.Create(await Run(sessionId, downloadId, cancellationToken));
         }
         catch (Exception ex)

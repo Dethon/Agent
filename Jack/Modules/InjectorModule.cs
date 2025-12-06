@@ -49,11 +49,12 @@ public static class InjectorModule
         {
             var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
             return services
-                .AddSingleton<Func<CancellationToken, Task<AIAgent>>>(sp => ct =>
+                .AddSingleton<Func<string, CancellationToken, Task<AIAgent>>>(sp => (sessionId, ct) =>
                     McpAgent.CreateAsync(
                         mcpEndpoints,
                         sp.GetRequiredService<IChatClient>(),
                         AgentName,
+                        sessionId,
                         AgentDescription,
                         ct))
                 .AddSingleton<ThreadResolver>()

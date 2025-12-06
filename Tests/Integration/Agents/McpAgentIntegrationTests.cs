@@ -36,6 +36,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -68,6 +69,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
             llmClient,
+            "",
             "",
             "",
             CancellationToken.None);
@@ -105,6 +107,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
+            "",
             CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -137,6 +140,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
             llmClient,
+            "",
             "",
             "",
             CancellationToken.None);
@@ -173,6 +177,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var agent = await McpAgent.CreateAsync(
             [mcpFixture.McpEndpoint],
             llmClient,
+            "",
             "",
             "",
             CancellationToken.None);

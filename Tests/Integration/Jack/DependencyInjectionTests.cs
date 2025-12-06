@@ -56,7 +56,7 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
-        provider.GetService<Func<CancellationToken, Task<AIAgent>>>().ShouldNotBeNull();
+        provider.GetService<Func<string, CancellationToken, Task<AIAgent>>>().ShouldNotBeNull();
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
