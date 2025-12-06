@@ -30,9 +30,8 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Assert
         prompts.ShouldHaveSingleItem();
-        prompts[0].Prompt.ShouldBe("test command");
+        prompts[0].Prompt.ShouldBe("/test command");
         prompts[0].ChatId.ShouldBe(chatId);
-        prompts[0].IsCommand.ShouldBeTrue();
         prompts[0].Sender.ShouldBe(username);
     }
 
@@ -64,7 +63,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Assert - Only the authorized user's prompt was yielded
         prompts.ShouldHaveSingleItem();
-        prompts[0].Prompt.ShouldBe("stop");
+        prompts[0].Prompt.ShouldBe("/stop");
     }
 
     [Fact]
@@ -93,7 +92,6 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         // Assert
         prompts.ShouldHaveSingleItem();
         prompts[0].ThreadId.ShouldBe(threadId);
-        prompts[0].IsCommand.ShouldBeFalse();
     }
 
     [Fact]
@@ -121,8 +119,8 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Assert
         prompts.Count.ShouldBe(2);
-        prompts[0].Prompt.ShouldBe("first");
-        prompts[1].Prompt.ShouldBe("second");
+        prompts[0].Prompt.ShouldBe("/first");
+        prompts[1].Prompt.ShouldBe("/second");
     }
 
     [Fact]

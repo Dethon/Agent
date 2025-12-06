@@ -42,7 +42,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
+                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool. And then complete the workflow",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -54,7 +54,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
-        await agent.DisposeAsync();
+        await ((IAsyncDisposable)agent).DisposeAsync();
     }
 
     [SkippableFact]
@@ -78,7 +78,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
         var responses = await agent.RunStreamingAsync(
-                $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool.",
+                $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool. And then complete the workflow",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -90,7 +90,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveDestination", "agent-test-file.mkv")).ShouldBeTrue();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveSource", "agent-test-file.mkv")).ShouldBeFalse();
 
-        await agent.DisposeAsync();
+        await ((IAsyncDisposable)agent).DisposeAsync();
     }
 
     [SkippableFact]
@@ -112,7 +112,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         // Act
         var moviesPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoviesFiles");
         var responses = await agent.RunStreamingAsync(
-                $"List all files in '{moviesPath}' using the ListFiles tool.",
+                $"List all files in '{moviesPath}' using the ListFiles tool. And then complete the workflow",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -124,47 +124,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_CancelCurrentExecution_StopsProcessing()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        mcpFixture.CreateLibraryStructure("AgentCancelTest");
-
-        var agent = await McpAgent.CreateAsync(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "",
-            CancellationToken.None);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var runTask = agent.RunStreamingAsync(
-            $"List all directories in '{mcpFixture.LibraryPath}'.",
-            cancellationToken: cts.Token).ToListAsync(cts.Token);
-
-        await Task.Delay(500, cts.Token);
-        agent.CancelCurrentExecution();
-
-        // Assert - should not throw, task should complete gracefully
-        await Should.NotThrowAsync(async () =>
-        {
-            try
-            {
-                await runTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-        });
-
-        await agent.DisposeAsync();
+        await ((IAsyncDisposable)agent).DisposeAsync();
     }
 
     [SkippableFact]
@@ -185,7 +145,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Say hello and confirm you understand your role.",
+                "Say hello and confirm you understand your role. And then complete the workflow",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -197,7 +157,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
         combinedResponse.ShouldNotBeNullOrEmpty();
 
-        await agent.DisposeAsync();
+        await ((IAsyncDisposable)agent).DisposeAsync();
     }
 
     [SkippableFact]
@@ -221,7 +181,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
+                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool. And then complete the workflow",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -232,6 +192,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         responses.ShouldNotBeEmpty();
         Directory.Exists(downloadSubDir).ShouldBeFalse();
 
-        await agent.DisposeAsync();
+        await ((IAsyncDisposable)agent).DisposeAsync();
     }
 }

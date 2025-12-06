@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.Monitor;
 using Jack.Modules;
 using Jack.Settings;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -55,7 +56,7 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
-        provider.GetService<Func<Task<CancellableAiAgent>>>().ShouldNotBeNull();
+        provider.GetService<Func<CancellationToken, Task<AIAgent>>>().ShouldNotBeNull();
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();

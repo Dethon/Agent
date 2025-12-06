@@ -1,152 +1,197 @@
 using Domain.Agents;
-using Moq;
+using Microsoft.Agents.AI;
 using Shouldly;
 
 namespace Tests.Integration.Domain;
 
-public class AgentResolverTests
+public class ThreadResolverTests
 {
-    private readonly AgentResolver _resolver = new();
+    private readonly ThreadResolver _resolver = new();
 
     [Fact]
-    public async Task Resolve_WithNewChat_CreatesAgent()
+    public async Task Resolve_WithNewChat_CreatesThread()
     {
         // Arrange
-        var mockAgent = CreateMockAgent();
+        var key = new AgentKey(1, 1);
         var factoryCalled = false;
+        var mockThread = new FakeAgentThread();
 
         // Act
-        var result = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
+        var result = await _resolver.Resolve(key, factory, CancellationToken.None);
 
         // Assert
-        result.ShouldBe(mockAgent.Object);
+        result.ShouldBe(mockThread);
         factoryCalled.ShouldBeTrue();
         return;
 
-        Task<CancellableAiAgent> factory(CancellationToken _)
+        AgentThread factory()
         {
             factoryCalled = true;
-            return Task.FromResult(mockAgent.Object);
+            return mockThread;
         }
     }
 
     [Fact]
-    public async Task Resolve_WithExistingChat_ReturnsCachedAgent()
+    public async Task Resolve_WithExistingChat_ReturnsCachedThread()
     {
         // Arrange
-        var mockAgent = CreateMockAgent();
+        var key = new AgentKey(1, 1);
         var factoryCallCount = 0;
+        var mockThread = new FakeAgentThread();
 
         // Act
-        await _resolver.Resolve(1, 1, factory, CancellationToken.None);
-        var result = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
+        await _resolver.Resolve(key, factory, CancellationToken.None);
+        var result = await _resolver.Resolve(key, factory, CancellationToken.None);
 
         // Assert
-        result.ShouldBe(mockAgent.Object);
+        result.ShouldBe(mockThread);
         factoryCallCount.ShouldBe(1);
         return;
 
-        Task<CancellableAiAgent> factory(CancellationToken _)
+        AgentThread factory()
         {
             factoryCallCount++;
-            return Task.FromResult(mockAgent.Object);
+            return mockThread;
         }
     }
 
     [Fact]
-    public async Task Resolve_WithNullChatId_AlwaysCreatesNewAgent()
+    public async Task Clean_RemovesThread()
     {
         // Arrange
-        var mockAgent1 = CreateMockAgent();
-        var mockAgent2 = CreateMockAgent();
-        var callCount = 0;
+        var key = new AgentKey(1, 1);
+        var mockThread = new FakeAgentThread();
+        await _resolver.Resolve(key, () => mockThread, CancellationToken.None);
 
         // Act
-        var result1 = await _resolver.Resolve(null, 1, factory, CancellationToken.None);
-        var result2 = await _resolver.Resolve(null, 1, factory, CancellationToken.None);
+        _resolver.Clean(1, 1);
 
         // Assert
-        callCount.ShouldBe(2);
-        result1.ShouldBe(mockAgent1.Object);
-        result2.ShouldBe(mockAgent2.Object);
-        return;
-
-        Task<CancellableAiAgent> factory(CancellationToken _)
-        {
-            callCount++;
-            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
-        }
+        _resolver.Threads.ShouldNotContain(x => x.ChatId == 1 && x.ThreadId == 1);
     }
 
     [Fact]
-    public async Task Clean_DisposesAndRemovesAgent()
+    public async Task Threads_ReturnsAllCachedThreads()
     {
         // Arrange
-        var mockAgent = CreateMockAgent();
-        await _resolver.Resolve(1, 1, _ => Task.FromResult(mockAgent.Object), CancellationToken.None);
+        var mockThread1 = new FakeAgentThread();
+        var mockThread2 = new FakeAgentThread();
+        await _resolver.Resolve(new AgentKey(1, 10), () => mockThread1, CancellationToken.None);
+        await _resolver.Resolve(new AgentKey(2, 20), () => mockThread2, CancellationToken.None);
 
         // Act
-        await _resolver.Clean(1, 1);
+        var threads = _resolver.Threads;
 
         // Assert
-        mockAgent.Verify(a => a.DisposeAsync(), Times.Once);
-        _resolver.Agents.ShouldNotContain(x => x.ChatId == 1 && x.ThreadId == 1);
+        threads.Length.ShouldBe(2);
+        threads.ShouldContain(x => x.ChatId == 1 && x.ThreadId == 10);
+        threads.ShouldContain(x => x.ChatId == 2 && x.ThreadId == 20);
     }
 
     [Fact]
-    public async Task Agents_ReturnsAllCachedAgents()
-    {
-        // Arrange
-        var mockAgent1 = CreateMockAgent();
-        var mockAgent2 = CreateMockAgent();
-        await _resolver.Resolve(1, 10, _ => Task.FromResult(mockAgent1.Object), CancellationToken.None);
-        await _resolver.Resolve(2, 20, _ => Task.FromResult(mockAgent2.Object), CancellationToken.None);
-
-        // Act
-        var agents = _resolver.Agents;
-
-        // Assert
-        agents.Length.ShouldBe(2);
-        agents.ShouldContain(x => x.ChatId == 1 && x.ThreadId == 10);
-        agents.ShouldContain(x => x.ChatId == 2 && x.ThreadId == 20);
-    }
-
-    [Fact]
-    public async Task Clean_WithNonExistentAgent_DoesNotThrow()
+    public void Clean_WithNonExistentThread_DoesNotThrow()
     {
         // Act & Assert
-        await Should.NotThrowAsync(async () => await _resolver.Clean(999, 999));
+        Should.NotThrow(() => _resolver.Clean(999, 999));
     }
 
     [Fact]
-    public async Task Resolve_WithDifferentThreads_CreatesSeparateAgents()
+    public async Task Resolve_WithDifferentThreads_CreatesSeparateThreads()
     {
         // Arrange
-        var mockAgent1 = CreateMockAgent();
-        var mockAgent2 = CreateMockAgent();
+        var mockThread1 = new FakeAgentThread();
+        var mockThread2 = new FakeAgentThread();
         var callCount = 0;
 
         // Act
-        var result1 = await _resolver.Resolve(1, 1, factory, CancellationToken.None);
-        var result2 = await _resolver.Resolve(1, 2, factory, CancellationToken.None);
+        var result1 = await _resolver.Resolve(new AgentKey(1, 1), factory, CancellationToken.None);
+        var result2 = await _resolver.Resolve(new AgentKey(1, 2), factory, CancellationToken.None);
 
         // Assert
         callCount.ShouldBe(2);
-        result1.ShouldBe(mockAgent1.Object);
-        result2.ShouldBe(mockAgent2.Object);
+        result1.ShouldBe(mockThread1);
+        result2.ShouldBe(mockThread2);
         return;
 
-        Task<CancellableAiAgent> factory(CancellationToken _)
+        AgentThread factory()
         {
             callCount++;
-            return Task.FromResult(callCount == 1 ? mockAgent1.Object : mockAgent2.Object);
+            return callCount == 1 ? mockThread1 : mockThread2;
         }
     }
 
-    private static Mock<CancellableAiAgent> CreateMockAgent()
+    private sealed class FakeAgentThread : AgentThread;
+}
+
+public class CancellationResolverTests
+{
+    private readonly CancellationResolver _resolver = new();
+
+    [Fact]
+    public void GetOrCreate_WithNewKey_CreatesCts()
     {
-        var mock = new Mock<CancellableAiAgent>();
-        mock.Setup(a => a.DisposeAsync()).Returns(ValueTask.CompletedTask);
-        return mock;
+        // Arrange
+        var key = new AgentKey(1, 1);
+
+        // Act
+        var cts = _resolver.GetOrCreate(key);
+
+        // Assert
+        cts.ShouldNotBeNull();
+        cts.IsCancellationRequested.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetOrCreate_WithExistingKey_ReturnsSameCts()
+    {
+        // Arrange
+        var key = new AgentKey(1, 1);
+
+        // Act
+        var cts1 = _resolver.GetOrCreate(key);
+        var cts2 = _resolver.GetOrCreate(key);
+
+        // Assert
+        cts1.ShouldBeSameAs(cts2);
+    }
+
+    [Fact]
+    public async Task CancelAndRemove_CancelsAndRemovesCts()
+    {
+        // Arrange
+        var key = new AgentKey(1, 1);
+        var cts = _resolver.GetOrCreate(key);
+
+        // Act
+        await _resolver.CancelAndRemove(key);
+
+        // Assert
+        cts.IsCancellationRequested.ShouldBeTrue();
+
+        // Getting again should create a new CTS
+        var newCts = _resolver.GetOrCreate(key);
+        newCts.ShouldNotBeSameAs(cts);
+    }
+
+    [Fact]
+    public void Clean_DisposesCts()
+    {
+        // Arrange
+        var key = new AgentKey(1, 1);
+        var cts = _resolver.GetOrCreate(key);
+
+        // Act
+        _resolver.Clean(1, 1);
+
+        // Assert - Getting again should create a new CTS
+        var newCts = _resolver.GetOrCreate(key);
+        newCts.ShouldNotBeSameAs(cts);
+    }
+
+    [Fact]
+    public async Task CancelAndRemove_WithNonExistentKey_DoesNotThrow()
+    {
+        // Act & Assert
+        await Should.NotThrowAsync(async () => await _resolver.CancelAndRemove(new AgentKey(999, 999)));
     }
 }

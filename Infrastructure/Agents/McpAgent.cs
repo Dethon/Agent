@@ -134,7 +134,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         }
 
         _isDisposed = true;
-        _subscriptionChannel?.Writer.Complete();
+        _subscriptionChannel?.Writer.TryComplete();
         await UnSubscribeToResources(CancellationToken.None);
         foreach (var client in _mcpClients)
         {
@@ -147,7 +147,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
         var channel = Channel.CreateBounded<AgentRunResponseUpdate>(options);
-        _subscriptionChannel?.Writer.Complete();
+        _subscriptionChannel?.Writer.TryComplete();
         _subscriptionChannel = channel;
 
         return channel.Reader;
