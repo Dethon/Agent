@@ -17,6 +17,17 @@ namespace Infrastructure.Agents;
 
 public sealed class McpAgent : DisposableAgent
 {
+    private const string PromptInjection = """
+                                           ## Workflow Completion
+
+                                           When you have finished ALL requested tasks and there are no more pending operations:
+                                           1. Confirm to the user that everything is complete
+                                           2. Call the `complete_workflow` tool to signal you are done
+
+                                           IMPORTANT: Only call `complete_workflow` after you have verified all tasks are fully completed.
+                                           Do NOT call it prematurely while operations are still in progress.
+                                           """;
+
     private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
     private readonly ImmutableList<AITool> _internalTools;
@@ -278,7 +289,7 @@ public sealed class McpAgent : DisposableAgent
             });
 
         var results = await Task.WhenAll(tasks);
-        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)));
+        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)).Append(PromptInjection));
         return string.IsNullOrEmpty(combined) ? null : combined;
     }
 
@@ -384,9 +395,11 @@ public sealed class McpAgent : DisposableAgent
                 new AIFunctionFactoryOptions
                 {
                     Name = "complete_workflow",
-                    Description = "Signals the completion of an async workflow. " +
-                                  "Call this when all async operations are done and the user has been notified of final status. " +
-                                  "This gracefully ends the notification channel."
+                    Description = """
+                                  Signals the completion of an async workflow.
+                                  Call this when all async operations are done and the user has been notified of final status. 
+                                  This gracefully ends the notification channel, so no more notifications will be processed after calling this.
+                                  """
                 })
         ];
     }

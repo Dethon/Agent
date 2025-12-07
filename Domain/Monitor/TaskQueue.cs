@@ -16,9 +16,9 @@ public class TaskQueue
         _queue = Channel.CreateBounded<Func<CancellationToken, Task>>(options);
     }
 
-    public ValueTask QueueTask(Func<CancellationToken, Task> workItem)
+    public ValueTask QueueTask(Func<CancellationToken, Task> workItem, CancellationToken cancellationToken)
     {
-        return _queue.Writer.WriteAsync(workItem);
+        return _queue.Writer.WriteAsync(workItem, cancellationToken);
     }
 
     public ValueTask<Func<CancellationToken, Task>> DequeueTask(CancellationToken cancellationToken)

@@ -3,7 +3,10 @@ using Domain.Contracts;
 
 namespace Domain.Monitor;
 
-public class AgentCleanupMonitor(ChannelResolver channelResolver, IChatMessengerClient chatMessengerClient)
+public class AgentCleanupMonitor(
+    ChannelResolver channelResolver,
+    CancellationResolver cancellationResolver,
+    IChatMessengerClient chatMessengerClient)
 {
     public async Task Check(CancellationToken ct)
     {
@@ -14,6 +17,7 @@ public class AgentCleanupMonitor(ChannelResolver channelResolver, IChatMessenger
             if (!await chatMessengerClient.DoesThreadExist(chatId, threadId, ct))
             {
                 channelResolver.Clean(agentKey);
+                cancellationResolver.Clean(agentKey);
             }
         }
     }

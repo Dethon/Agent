@@ -2,6 +2,7 @@
 using Domain.Contracts;
 using Domain.Tools;
 using Infrastructure.Utils;
+using McpServerLibrary.Extensions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -23,7 +24,7 @@ public class McpFileSearchTool(
     {
         try
         {
-            var sessionId = context.Server.ClientInfo?.Name ?? "";
+            var sessionId = context.Server.StateKey;
             return ToolResponse.Create(await Run(sessionId, searchStrings, cancellationToken));
         }
         catch (Exception ex)

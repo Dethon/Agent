@@ -12,6 +12,7 @@ public class ChatMonitor(
     IChatMessengerClient chatMessengerClient,
     Func<string, CancellationToken, Task<DisposableAgent>> agentFactory,
     ChannelResolver channelResolver,
+    CancellationResolver cancellationResolver,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -28,13 +29,15 @@ public class ChatMonitor(
                 {
                     channel.Writer.TryComplete();
                     channelResolver.Clean(agentKey);
+                    cancellationResolver.Clean(agentKey);
                     continue;
                 }
 
                 await channel.Writer.WriteAsync(prompt, cancellationToken);
+
                 if (isNew)
                 {
-                    await queue.QueueTask(ct => AgentTask(agentKey, channel.Reader, ct));
+                    await queue.QueueTask(ct => ProcessChatThread(agentKey, channel.Reader, ct), cancellationToken);
                 }
             }
         }
@@ -50,20 +53,23 @@ public class ChatMonitor(
         }
     }
 
-    private async Task AgentTask(AgentKey agentKey, ChannelReader<ChatPrompt> reader, CancellationToken ct)
+    private async Task ProcessChatThread(AgentKey agentKey, ChannelReader<ChatPrompt> reader, CancellationToken ct)
     {
         await using var agent = await agentFactory($"{agentKey.ChatId}-{agentKey.ThreadId}", ct);
         var thread = agent.GetNewThread();
+        var linkedCts = cancellationResolver.GetLinkedTokenSource(agentKey, ct);
+        var linkedCt = linkedCts.Token;
+
         var aiResponses = reader
-            .ReadAllAsync(ct)
+            .ReadAllAsync(linkedCt)
             .Select(x => agent
-                .RunStreamingAsync(x.Prompt, thread, cancellationToken: ct)
+                .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
                 .ToUpdateAiResponsePairs()
                 .Where(y => y.Item2 is not null)
                 .Select(y => y.Item2)
                 .Cast<AiResponse>()
             )
-            .Merge(ct);
+            .Merge(linkedCt);
 
         await chatMessengerClient.BlockWhile(agentKey.ChatId, agentKey.ThreadId, async c =>
         {
@@ -71,7 +77,8 @@ public class ChatMonitor(
             {
                 await SendResponse(agentKey, aiResponse, c);
             }
-        }, ct);
+        }, linkedCt);
+        Console.WriteLine($"ChatId: {agentKey.ChatId}, ThreadId: {agentKey.ThreadId}");
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

@@ -7,44 +7,35 @@ public class CancellationResolver
     private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _sources = [];
     private readonly Lock _lock = new();
 
-    public CancellationTokenSource CancelAndGet(AgentKey key)
+    public CancellationTokenSource Resolve(AgentKey key)
     {
         lock (_lock)
         {
-            var cts = new CancellationTokenSource();
-            if (_sources.TryRemove(key, out var existing))
+            var cts = _sources.GetValueOrDefault(key);
+            if (cts is not null)
             {
-                existing.Cancel();
-                existing.Dispose();
+                return cts;
             }
 
+            cts = new CancellationTokenSource();
             _sources[key] = cts;
             return cts;
         }
     }
 
-    public async Task CancelAndRemove(AgentKey key)
+    public CancellationTokenSource GetLinkedTokenSource(AgentKey key, CancellationToken externalToken)
     {
-        CancellationTokenSource? cts;
-        lock (_lock)
-        {
-            _sources.Remove(key, out cts);
-        }
-
-        if (cts is not null)
-        {
-            await cts.CancelAsync();
-            cts.Dispose();
-        }
+        var cts = Resolve(key);
+        return CancellationTokenSource.CreateLinkedTokenSource(cts.Token, externalToken);
     }
 
-    public void Clean(long chatId, long threadId)
+    public void Clean(AgentKey key)
     {
-        var key = new AgentKey(chatId, threadId);
         lock (_lock)
         {
             if (_sources.Remove(key, out var cts))
             {
+                cts.Cancel();
                 cts.Dispose();
             }
         }

@@ -57,6 +57,7 @@ public static class InjectorModule
                         AgentDescription,
                         ct))
                 .AddSingleton<ChannelResolver>()
+                .AddSingleton<CancellationResolver>()
                 .AddOpenRouterAdapter(settings);
         }
 
