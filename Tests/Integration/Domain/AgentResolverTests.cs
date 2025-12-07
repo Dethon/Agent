@@ -134,7 +134,7 @@ public class CancellationResolverTests
         var key = new AgentKey(1, 1);
 
         // Act
-        var cts = _resolver.GetOrCreate(key);
+        var cts = _resolver.CancelAndGet(key);
 
         // Assert
         cts.ShouldNotBeNull();
@@ -142,25 +142,11 @@ public class CancellationResolverTests
     }
 
     [Fact]
-    public void GetOrCreate_WithExistingKey_ReturnsSameCts()
-    {
-        // Arrange
-        var key = new AgentKey(1, 1);
-
-        // Act
-        var cts1 = _resolver.GetOrCreate(key);
-        var cts2 = _resolver.GetOrCreate(key);
-
-        // Assert
-        cts1.ShouldBeSameAs(cts2);
-    }
-
-    [Fact]
     public async Task CancelAndRemove_CancelsAndRemovesCts()
     {
         // Arrange
         var key = new AgentKey(1, 1);
-        var cts = _resolver.GetOrCreate(key);
+        var cts = _resolver.CancelAndGet(key);
 
         // Act
         await _resolver.CancelAndRemove(key);
@@ -169,7 +155,7 @@ public class CancellationResolverTests
         cts.IsCancellationRequested.ShouldBeTrue();
 
         // Getting again should create a new CTS
-        var newCts = _resolver.GetOrCreate(key);
+        var newCts = _resolver.CancelAndGet(key);
         newCts.ShouldNotBeSameAs(cts);
     }
 
@@ -178,13 +164,13 @@ public class CancellationResolverTests
     {
         // Arrange
         var key = new AgentKey(1, 1);
-        var cts = _resolver.GetOrCreate(key);
+        var cts = _resolver.CancelAndGet(key);
 
         // Act
         _resolver.Clean(1, 1);
 
         // Assert - Getting again should create a new CTS
-        var newCts = _resolver.GetOrCreate(key);
+        var newCts = _resolver.CancelAndGet(key);
         newCts.ShouldNotBeSameAs(cts);
     }
 

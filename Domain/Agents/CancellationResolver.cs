@@ -7,16 +7,17 @@ public class CancellationResolver
     private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _sources = [];
     private readonly Lock _lock = new();
 
-    public CancellationTokenSource GetOrCreate(AgentKey key)
+    public CancellationTokenSource CancelAndGet(AgentKey key)
     {
         lock (_lock)
         {
-            if (_sources.TryGetValue(key, out var existing))
+            var cts = new CancellationTokenSource();
+            if (_sources.TryRemove(key, out var existing))
             {
-                return existing;
+                existing.Cancel();
+                existing.Dispose();
             }
 
-            var cts = new CancellationTokenSource();
             _sources[key] = cts;
             return cts;
         }

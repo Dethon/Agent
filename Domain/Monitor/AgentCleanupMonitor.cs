@@ -3,19 +3,17 @@ using Domain.Contracts;
 
 namespace Domain.Monitor;
 
-public class AgentCleanupMonitor(
-    ThreadResolver threadResolver,
-    CancellationResolver cancellationResolver,
-    IChatMessengerClient chatMessengerClient)
+public class AgentCleanupMonitor(ChannelResolver channelResolver, IChatMessengerClient chatMessengerClient)
 {
     public async Task Check(CancellationToken ct)
     {
-        foreach (var (chatId, threadId) in threadResolver.Threads)
+        foreach (var agentKey in channelResolver.Channels)
         {
+            var chatId = agentKey.ChatId;
+            var threadId = agentKey.ThreadId;
             if (!await chatMessengerClient.DoesThreadExist(chatId, threadId, ct))
             {
-                threadResolver.Clean(chatId, threadId);
-                cancellationResolver.Clean(chatId, threadId);
+                channelResolver.Clean(agentKey);
             }
         }
     }

@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Threading.Channels;
+using Domain.Agents;
 using Domain.Extensions;
 using Infrastructure.Agents.Mappers;
 using Microsoft.Agents.AI;
@@ -14,7 +15,7 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
-public sealed class McpAgent : AIAgent, IAsyncDisposable
+public sealed class McpAgent : DisposableAgent
 {
     private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
@@ -41,7 +42,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         _internalTools = CreateInternalTools();
     }
 
-    public static async Task<AIAgent> CreateAsync(
+    public static async Task<DisposableAgent> CreateAsync(
         string[] endpoints,
         IChatClient chatClient,
         string name,
@@ -126,7 +127,7 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
         return _innerAgent.RunStreamingAsync(messages, _innerThread, options, cancellationToken);
     }
 
-    public async ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
         if (_isDisposed)
         {
@@ -145,9 +146,9 @@ public sealed class McpAgent : AIAgent, IAsyncDisposable
     private ChannelReader<AgentRunResponseUpdate> Subscribe()
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        var options = new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.DropOldest };
+        var options = new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.DropOldest };
         var channel = Channel.CreateBounded<AgentRunResponseUpdate>(options);
-        var a = _subscriptionChannel?.Writer.TryComplete();
+        _subscriptionChannel?.Writer.TryComplete();
         _subscriptionChannel = channel;
 
         return channel.Reader;

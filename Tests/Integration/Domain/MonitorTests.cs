@@ -12,7 +12,7 @@ using Shouldly;
 
 namespace Tests.Integration.Domain;
 
-internal sealed class FakeAiAgent : AIAgent
+internal sealed class FakeAiAgent : DisposableAgent
 {
     public override AgentThread GetNewThread()
     {
@@ -42,6 +42,11 @@ internal sealed class FakeAiAgent : AIAgent
     {
         await Task.CompletedTask;
         yield break;
+    }
+
+    public override ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
     }
 
     private sealed class FakeAgentThread : AgentThread;
@@ -86,9 +91,9 @@ internal static class MonitorTestMocks
         return new FakeAiAgent();
     }
 
-    public static Func<string, CancellationToken, Task<AIAgent>> CreateAgentFactory(FakeAiAgent agent)
+    public static Func<string, CancellationToken, Task<DisposableAgent>> CreateAgentFactory(FakeAiAgent agent)
     {
-        return (_, _) => Task.FromResult<AIAgent>(agent);
+        return (_, _) => Task.FromResult<DisposableAgent>(agent);
     }
 }
 
@@ -162,7 +167,7 @@ public class ChatMonitorTests
 
         // First create a CTS for the agent key so we can verify it gets canceled
         var agentKey = new AgentKey(1, 1);
-        var cts = cancellationResolver.GetOrCreate(agentKey);
+        var cts = cancellationResolver.CancelAndGet(agentKey);
 
         var monitor = new ChatMonitor(
             threadResolver, cancellationResolver, queue, chatMessengerClient.Object, agentFactory, logger.Object);
