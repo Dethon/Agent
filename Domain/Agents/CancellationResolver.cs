@@ -4,21 +4,23 @@ namespace Domain.Agents;
 
 public class CancellationResolver
 {
-    private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _sources = [];
+    private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _cache = [];
     private readonly Lock _lock = new();
+
+    public IEnumerable<AgentKey> AgentKeys => _cache.Keys;
 
     public CancellationTokenSource Resolve(AgentKey key)
     {
         lock (_lock)
         {
-            var cts = _sources.GetValueOrDefault(key);
+            var cts = _cache.GetValueOrDefault(key);
             if (cts is not null)
             {
                 return cts;
             }
 
             cts = new CancellationTokenSource();
-            _sources[key] = cts;
+            _cache[key] = cts;
             return cts;
         }
     }
@@ -33,7 +35,7 @@ public class CancellationResolver
     {
         lock (_lock)
         {
-            if (_sources.Remove(key, out var cts))
+            if (_cache.Remove(key, out var cts))
             {
                 cts.Cancel();
                 cts.Dispose();

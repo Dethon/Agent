@@ -9,7 +9,7 @@ public class ChannelResolver
     private readonly ConcurrentDictionary<AgentKey, Channel<ChatPrompt>> _cache = [];
     private readonly Lock _lock = new();
 
-    public AgentKey[] Channels => _cache.Keys.ToArray();
+    public IEnumerable<AgentKey> AgentKeys => _cache.Keys;
 
     public (Channel<ChatPrompt> channel, bool isNew) Resolve(AgentKey key)
     {

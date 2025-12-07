@@ -10,7 +10,7 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    Func<string, CancellationToken, Task<DisposableAgent>> agentFactory,
+    Func<AgentKey, CancellationToken, Task<DisposableAgent>> agentFactory,
     ChannelResolver channelResolver,
     CancellationResolver cancellationResolver,
     ILogger<ChatMonitor> logger)
@@ -55,11 +55,12 @@ public class ChatMonitor(
 
     private async Task ProcessChatThread(AgentKey agentKey, ChannelReader<ChatPrompt> reader, CancellationToken ct)
     {
-        await using var agent = await agentFactory($"{agentKey.ChatId}-{agentKey.ThreadId}", ct);
+        await using var agent = await agentFactory(agentKey, ct);
+        using var linkedCts = cancellationResolver.GetLinkedTokenSource(agentKey, ct);
         var thread = agent.GetNewThread();
-        var linkedCts = cancellationResolver.GetLinkedTokenSource(agentKey, ct);
         var linkedCt = linkedCts.Token;
 
+        // ReSharper disable once AccessToDisposedClosure - agent is disposed after BlockWhile completes
         var aiResponses = reader
             .ReadAllAsync(linkedCt)
             .Select(x => agent

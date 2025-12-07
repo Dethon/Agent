@@ -57,19 +57,18 @@ public sealed class McpAgent : DisposableAgent
         string[] endpoints,
         IChatClient chatClient,
         string name,
-        string sessionId,
         string description,
         CancellationToken ct)
     {
         var agent = new McpAgent(chatClient);
-        await agent.LoadMcps(endpoints, name, sessionId, description, ct);
+        await agent.LoadMcps(endpoints, name, description, ct);
         return agent;
     }
 
     private async Task LoadMcps(
-        string[] endpoints, string name, string sessionId, string description, CancellationToken ct)
+        string[] endpoints, string name, string description, CancellationToken ct)
     {
-        _mcpClients = (await CreateClients(name, sessionId, endpoints, ct)).ToImmutableList();
+        _mcpClients = (await CreateClients(name, description, endpoints, ct)).ToImmutableList();
         _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
         var systemPrompt = await GetPrompts(_mcpClients, ct);
         _availableResources = (await GetResources(_mcpClients, ct))
@@ -208,8 +207,8 @@ public sealed class McpAgent : DisposableAgent
         return new ChatClientAgentRunOptions(chatOptions);
     }
 
-    private async Task<McpClient[]> CreateClients(string name, string sessionId, string[] endpoints,
-        CancellationToken ct)
+    private async Task<McpClient[]> CreateClients(
+        string name, string description, string[] endpoints, CancellationToken ct)
     {
         var retryPolicy = Policy
             .Handle<HttpRequestException>()
@@ -228,7 +227,8 @@ public sealed class McpAgent : DisposableAgent
                 {
                     ClientInfo = new Implementation
                     {
-                        Name = $"{name}-{sessionId}",
+                        Name = name,
+                        Description = description,
                         Version = "1.0.0"
                     },
                     Handlers = new McpClientHandlers

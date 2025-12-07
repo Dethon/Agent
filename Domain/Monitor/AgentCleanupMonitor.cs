@@ -10,7 +10,8 @@ public class AgentCleanupMonitor(
 {
     public async Task Check(CancellationToken ct)
     {
-        foreach (var agentKey in channelResolver.Channels)
+        var agentKeys = channelResolver.AgentKeys.Concat(cancellationResolver.AgentKeys).Distinct();
+        foreach (var agentKey in agentKeys)
         {
             var chatId = agentKey.ChatId;
             var threadId = agentKey.ThreadId;

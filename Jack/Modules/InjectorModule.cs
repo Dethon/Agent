@@ -48,12 +48,11 @@ public static class InjectorModule
         {
             var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
             return services
-                .AddSingleton<Func<string, CancellationToken, Task<DisposableAgent>>>(sp => (sessionId, ct) =>
+                .AddSingleton<Func<AgentKey, CancellationToken, Task<DisposableAgent>>>(sp => (agentKey, ct) =>
                     McpAgent.CreateAsync(
                         mcpEndpoints,
                         sp.GetRequiredService<IChatClient>(),
-                        AgentName,
-                        sessionId,
+                        $"{AgentName}-{agentKey.ChatId}-{agentKey.ThreadId}",
                         AgentDescription,
                         ct))
                 .AddSingleton<ChannelResolver>()
