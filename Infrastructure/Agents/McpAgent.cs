@@ -17,20 +17,8 @@ namespace Infrastructure.Agents;
 
 public sealed class McpAgent : DisposableAgent
 {
-    private const string PromptInjection = """
-                                           ## Workflow Completion
-
-                                           When you have finished ALL requested tasks and there are no more pending operations:
-                                           1. Confirm to the user that everything is complete
-                                           2. Call the `complete_workflow` tool to signal you are done
-
-                                           IMPORTANT: Only call `complete_workflow` after you have verified all tasks are fully completed.
-                                           Do NOT call it prematurely while operations are still in progress.
-                                           """;
-
     private ImmutableList<McpClient> _mcpClients = [];
     private ImmutableList<AITool> _mcpClientTools = [];
-    private readonly ImmutableList<AITool> _internalTools;
 
     private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
         new Dictionary<McpClient, ImmutableHashSet<string>>().ToImmutableDictionary();
@@ -50,7 +38,6 @@ public sealed class McpAgent : DisposableAgent
     private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
-        _internalTools = CreateInternalTools();
     }
 
     public static async Task<DisposableAgent> CreateAsync(
@@ -185,7 +172,7 @@ public sealed class McpAgent : DisposableAgent
 
     private ChatClientAgentRunOptions GetDefaultAgentRunOptions(CreateMessageRequestParams? parameters = null)
     {
-        var allTools = _mcpClientTools.AddRange(_internalTools);
+        var allTools = _mcpClientTools;
         var chatOptions = new ChatOptions
         {
             Tools = allTools,
@@ -289,7 +276,7 @@ public sealed class McpAgent : DisposableAgent
             });
 
         var results = await Task.WhenAll(tasks);
-        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)).Append(PromptInjection));
+        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)));
         return string.IsNullOrEmpty(combined) ? null : combined;
     }
 
@@ -384,35 +371,5 @@ public sealed class McpAgent : DisposableAgent
 
             return processedUpdates.ToCreateMessageResult();
         };
-    }
-
-    private ImmutableList<AITool> CreateInternalTools()
-    {
-        return
-        [
-            AIFunctionFactory.Create(
-                CompleteWorkflow,
-                new AIFunctionFactoryOptions
-                {
-                    Name = "complete_workflow",
-                    Description = """
-                                  Signals the completion of an async workflow.
-                                  Call this when all async operations are done and the user has been notified of final status. 
-                                  This gracefully ends the notification channel, so no more notifications will be processed after calling this.
-                                  """
-                })
-        ];
-    }
-
-    private string CompleteWorkflow()
-    {
-        if (_subscriptionChannel?.Reader.Completion.IsCompleted == true)
-        {
-            return "Workflow was already completed.";
-        }
-
-        _subscriptionChannel?.Writer.TryComplete();
-
-        return "Workflow completed successfully.";
     }
 }
