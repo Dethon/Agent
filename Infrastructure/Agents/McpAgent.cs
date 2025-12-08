@@ -5,8 +5,6 @@ using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
-using ModelContextProtocol.Protocol;
-using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Agents;
 
@@ -92,10 +90,7 @@ public sealed class McpAgent : DisposableAgent
     private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
-        _samplingHandler = new McpSamplingHandler(
-            GetNewThread,
-            systemPrompt => CreateInnerAgent(systemPrompt),
-            CreateRunOptions);
+        _samplingHandler = new McpSamplingHandler(_chatClient, _clientManager?.Tools ?? []);
         _clientManager = new McpClientManager(new McpClientHandlers
         {
             SamplingHandler = _samplingHandler.HandleAsync
@@ -167,22 +162,13 @@ public sealed class McpAgent : DisposableAgent
             : new ConcurrentChatMessageStore();
     }
 
-    private ChatClientAgentRunOptions CreateRunOptions(CreateMessageRequestParams? parameters = null)
+    private ChatClientAgentRunOptions CreateRunOptions()
     {
         var chatOptions = new ChatOptions
         {
             Tools = [.. _clientManager.Tools],
             AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
         };
-
-        if (parameters is null)
-        {
-            return new ChatClientAgentRunOptions(chatOptions);
-        }
-
-        chatOptions.Temperature = parameters.Temperature;
-        chatOptions.MaxOutputTokens = parameters.MaxTokens;
-        chatOptions.StopSequences = parameters.StopSequences?.ToArray();
 
         return new ChatClientAgentRunOptions(chatOptions);
     }

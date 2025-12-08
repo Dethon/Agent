@@ -7,10 +7,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(
-    Func<AgentThread> getNewThread,
-    Func<string?, ChatClientAgent> createInnerAgent,
-    Func<CreateMessageRequestParams?, ChatClientAgentRunOptions> getRunOptions) : IDisposable
+internal sealed class McpSamplingHandler(IChatClient chatClient, IReadOnlyList<AITool> tools) : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
     private bool _isDisposed;
@@ -27,20 +24,20 @@ internal sealed class McpSamplingHandler(
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        var thread = GetOrCreateThread(parameters);
-        var coAgent = createInnerAgent(parameters?.SystemPrompt);
+        var coAgent = CreateInnerAgent(parameters?.SystemPrompt);
+        var thread = GetOrCreateThread(parameters, coAgent);
         var messages = MapMessages(parameters);
         var options = ConfigureOptions(parameters);
 
         return await RunAndCollectUpdates(coAgent, messages, thread, options, progress, ct);
     }
 
-    private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters)
+    private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters, ChatClientAgent agent)
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
         return tracker is null
-            ? getNewThread()
-            : _coAgentConversations.GetOrAdd(tracker, _ => getNewThread());
+            ? agent.GetNewThread()
+            : _coAgentConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), agent);
     }
 
     private static ChatMessage[] MapMessages(CreateMessageRequestParams? parameters)
@@ -54,7 +51,7 @@ internal sealed class McpSamplingHandler(
 
     private ChatClientAgentRunOptions ConfigureOptions(CreateMessageRequestParams? parameters)
     {
-        var options = getRunOptions(parameters);
+        var options = CreateRunOptions(parameters);
         var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
 
         if (includeContext == ContextInclusion.None && options.ChatOptions is not null)
@@ -81,5 +78,40 @@ internal sealed class McpSamplingHandler(
         }
 
         return updates.ToCreateMessageResult();
+    }
+
+    private ChatClientAgent CreateInnerAgent(string? systemPrompt)
+    {
+        var chatOptions = new ChatOptions
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+        };
+
+        return chatClient.CreateAIAgent(new ChatClientAgentOptions
+        {
+            Name = "jack-sampling",
+            Instructions = systemPrompt,
+            ChatOptions = chatOptions
+        });
+    }
+
+    private ChatClientAgentRunOptions CreateRunOptions(CreateMessageRequestParams? parameters = null)
+    {
+        var chatOptions = new ChatOptions
+        {
+            Tools = [..tools],
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+        };
+
+        if (parameters is null)
+        {
+            return new ChatClientAgentRunOptions(chatOptions);
+        }
+
+        chatOptions.Temperature = parameters.Temperature;
+        chatOptions.MaxOutputTokens = parameters.MaxTokens;
+        chatOptions.StopSequences = parameters.StopSequences?.ToArray();
+
+        return new ChatClientAgentRunOptions(chatOptions);
     }
 }
