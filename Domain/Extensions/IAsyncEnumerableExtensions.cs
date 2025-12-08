@@ -39,7 +39,7 @@ public static class IAsyncEnumerableExtensions
 
         async Task startPumps(IAsyncEnumerable<IAsyncEnumerable<T>> streams)
         {
-            await Task.WhenAll(streams.Select(pump).ToBlockingEnumerable(ct));
+            await Task.WhenAll(await streams.Select(pump).ToArrayAsync(ct));
         }
 
         async Task pump(IAsyncEnumerable<T> source)

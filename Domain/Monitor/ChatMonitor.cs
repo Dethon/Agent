@@ -45,10 +45,7 @@ public class ChatMonitor(
         {
             if (logger.IsEnabled(LogLevel.Error))
             {
-                if (logger.IsEnabled(LogLevel.Error))
-                {
-                    logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
-                }
+                logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
             }
         }
     }
