@@ -15,6 +15,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IChatClient _chatClient;
     private readonly McpClientManager _clientManager;
     private readonly McpResourceManager _resourceManager;
+    private readonly McpSamplingHandler _samplingHandler;
 
     private ChatClientAgent _innerAgent = null!;
     private AgentThread? _innerThread;
@@ -37,9 +38,13 @@ public sealed class McpAgent : DisposableAgent
 
     public override async ValueTask DisposeAsync()
     {
-        if (_isDisposed) return;
+        if (_isDisposed)
+        {
+            return;
+        }
 
         _isDisposed = true;
+        _samplingHandler.Dispose();
         await _resourceManager.DisposeAsync();
         await _clientManager.DisposeAsync();
     }
@@ -87,13 +92,13 @@ public sealed class McpAgent : DisposableAgent
     private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
-        var samplingHandler = new McpSamplingHandler(
+        _samplingHandler = new McpSamplingHandler(
             GetNewThread,
             systemPrompt => CreateInnerAgent(systemPrompt),
             CreateRunOptions);
         _clientManager = new McpClientManager(new McpClientHandlers
         {
-            SamplingHandler = samplingHandler.CreateHandler(() => _isDisposed)
+            SamplingHandler = _samplingHandler.HandleAsync
         });
         _resourceManager = new McpResourceManager(RunStreamingForResource);
     }

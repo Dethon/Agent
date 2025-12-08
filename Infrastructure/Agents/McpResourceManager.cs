@@ -46,7 +46,10 @@ internal sealed class McpResourceManager(
 
         foreach (var client in clients)
         {
-            if (client.ServerCapabilities.Resources is null) continue;
+            if (client.ServerCapabilities.Resources is null)
+            {
+                continue;
+            }
 
             var currentResources = await client.EnumerateResourcesAsync(ct)
                 .Select(x => x.Uri)
@@ -82,9 +85,12 @@ internal sealed class McpResourceManager(
 
     public async ValueTask DisposeAsync()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
+        if (_isDisposed)
+        {
+            return;
+        }
 
+        _isDisposed = true;
         SubscriptionChannel.Writer.TryComplete();
         _syncLock.Dispose();
         await UnsubscribeFromAllResources(CancellationToken.None);
@@ -107,7 +113,10 @@ internal sealed class McpResourceManager(
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
 
-        if (uri is null || SubscriptionChannel.Reader.Completion.IsCompleted) return;
+        if (uri is null || SubscriptionChannel.Reader.Completion.IsCompleted)
+        {
+            return;
+        }
 
         var resource = await client.ReadResourceAsync(uri, ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
@@ -132,9 +141,13 @@ internal sealed class McpResourceManager(
         try
         {
             if (!hasAnyResources)
+            {
                 SubscriptionChannel.Writer.TryComplete();
+            }
             else if (SubscriptionChannel.Reader.Completion.IsCompleted)
+            {
                 SubscriptionChannel = CreateChannel();
+            }
         }
         finally
         {

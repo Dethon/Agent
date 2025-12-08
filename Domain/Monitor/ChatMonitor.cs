@@ -79,7 +79,6 @@ public class ChatMonitor(
                 await SendResponse(agentKey, aiResponse, c);
             }
         }, linkedCt);
-        Console.WriteLine($"ChatId: {agentKey.ChatId}, ThreadId: {agentKey.ThreadId}");
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

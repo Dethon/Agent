@@ -10,28 +10,29 @@ namespace Infrastructure.Agents;
 internal sealed class McpSamplingHandler(
     Func<AgentThread> getNewThread,
     Func<string?, ChatClientAgent> createInnerAgent,
-    Func<CreateMessageRequestParams?, ChatClientAgentRunOptions> getRunOptions)
+    Func<CreateMessageRequestParams?, ChatClientAgentRunOptions> getRunOptions) : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
+    private bool _isDisposed;
 
-    public Func<
-            CreateMessageRequestParams?,
-            IProgress<ProgressNotificationValue>,
-            CancellationToken,
-            ValueTask<CreateMessageResult>>
-        CreateHandler(Func<bool> isDisposed)
+    public void Dispose()
     {
-        return async (parameters, progress, ct) =>
-        {
-            ObjectDisposedException.ThrowIf(isDisposed(), this);
+        _isDisposed = true;
+    }
 
-            var thread = GetOrCreateThread(parameters);
-            var coAgent = createInnerAgent(parameters?.SystemPrompt);
-            var messages = MapMessages(parameters);
-            var options = ConfigureOptions(parameters);
+    public async ValueTask<CreateMessageResult> HandleAsync(
+        CreateMessageRequestParams? parameters,
+        IProgress<ProgressNotificationValue> progress,
+        CancellationToken ct)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-            return await RunAndCollectUpdates(coAgent, messages, thread, options, progress, ct);
-        };
+        var thread = GetOrCreateThread(parameters);
+        var coAgent = createInnerAgent(parameters?.SystemPrompt);
+        var messages = MapMessages(parameters);
+        var options = ConfigureOptions(parameters);
+
+        return await RunAndCollectUpdates(coAgent, messages, thread, options, progress, ct);
     }
 
     private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters)
@@ -57,7 +58,9 @@ internal sealed class McpSamplingHandler(
         var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
 
         if (includeContext == ContextInclusion.None && options.ChatOptions is not null)
+        {
             options.ChatOptions.Tools = [];
+        }
 
         return options;
     }

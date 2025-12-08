@@ -51,9 +51,12 @@ internal sealed class McpClientManager(McpClientHandlers handlers) : IAsyncDispo
 
     public async ValueTask DisposeAsync()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
+        if (_isDisposed)
+        {
+            return;
+        }
 
+        _isDisposed = true;
         foreach (var client in _clients)
         {
             await client.DisposeAsync();
