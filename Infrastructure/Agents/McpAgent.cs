@@ -30,7 +30,7 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgent _innerAgent = null!;
     private AgentThread? _innerThread;
 
-    private readonly SemaphoreSlim _chanelCompletionLock = new(1, 1);
+    private readonly ReaderWriterLockSlim _resourceSyncLock = new(LockRecursionPolicy.SupportsRecursion);
 
     private Channel<AgentRunResponseUpdate> _subscriptionChannel;
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
@@ -58,7 +58,7 @@ public sealed class McpAgent : DisposableAgent
         }
 
         _isDisposed = true;
-        _chanelCompletionLock.Dispose();
+        _resourceSyncLock.Dispose();
         _subscriptionChannel.Writer.TryComplete();
         await UnSubscribeToResources(CancellationToken.None);
         foreach (var client in _mcpClients)
@@ -125,7 +125,7 @@ public sealed class McpAgent : DisposableAgent
 
         try
         {
-            await _chanelCompletionLock.WaitAsync(ct);
+            _resourceSyncLock.EnterReadLock();
             await foreach (var update in _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct))
             {
                 yield return update;
@@ -133,7 +133,7 @@ public sealed class McpAgent : DisposableAgent
         }
         finally
         {
-            _chanelCompletionLock.Release();
+            _resourceSyncLock.ExitReadLock();
         }
 
         await SyncResources(_mcpClients, ct);
@@ -350,8 +350,9 @@ public sealed class McpAgent : DisposableAgent
 
             _availableResources = _availableResources.SetItem(client, currentResources.ToImmutableHashSet());
 
-            await _chanelCompletionLock.WaitAsync(() =>
+            try
             {
+                _resourceSyncLock.EnterWriteLock();
                 if (currentResources.Length == 0)
                 {
                     _subscriptionChannel.Writer.TryComplete();
@@ -360,7 +361,11 @@ public sealed class McpAgent : DisposableAgent
                 {
                     _subscriptionChannel = CreateSubscriptionChannel();
                 }
-            }, cancellationToken);
+            }
+            finally
+            {
+                _resourceSyncLock.ExitWriteLock();
+            }
         }
     }
 

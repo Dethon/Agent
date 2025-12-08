@@ -46,7 +46,9 @@ public class OpenAiClient : DelegatingChatClient
         var response = await base.GetResponseAsync(processedMessages, options, cancellationToken);
 
         if (response.FinishReason != ChatFinishReason.ContentFilter)
+        {
             return response;
+        }
 
         processedMessages.AddRange(response.Messages);
 
@@ -54,7 +56,9 @@ public class OpenAiClient : DelegatingChatClient
         {
             response = await client.GetResponseAsync(processedMessages, options, cancellationToken);
             if (response.FinishReason != ChatFinishReason.ContentFilter)
+            {
                 return response;
+            }
 
             processedMessages.AddRange(response.Messages);
         }
