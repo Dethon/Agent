@@ -29,7 +29,7 @@ public class ChatMonitor(
                 {
                     channel.Writer.TryComplete();
                     channelResolver.Clean(agentKey);
-                    cancellationResolver.Clean(agentKey);
+                    //cancellationResolver.Clean(agentKey);
                     continue;
                 }
 

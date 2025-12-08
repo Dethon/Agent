@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Agents;
@@ -29,16 +30,13 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgent _innerAgent = null!;
     private AgentThread? _innerThread;
 
-    private Channel<AgentRunResponseUpdate>? _subscriptionChannel;
+    private readonly SemaphoreSlim _chanelCompletionLock = new(1, 1);
+
+    private Channel<AgentRunResponseUpdate> _subscriptionChannel;
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
-
-    private McpAgent(IChatClient chatClient)
-    {
-        _chatClient = chatClient;
-    }
 
     public static async Task<DisposableAgent> CreateAsync(
         string[] endpoints,
@@ -52,17 +50,21 @@ public sealed class McpAgent : DisposableAgent
         return agent;
     }
 
-    private async Task LoadMcps(
-        string[] endpoints, string name, string description, CancellationToken ct)
+    public override async ValueTask DisposeAsync()
     {
-        _mcpClients = (await CreateClients(name, description, endpoints, ct)).ToImmutableList();
-        _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
-        var systemPrompt = await GetPrompts(_mcpClients, ct);
-        _availableResources = (await GetResources(_mcpClients, ct))
-            .ToImmutableDictionary(x => x.Key, x => x.Value.ToImmutableHashSet());
-        await SubscribeToResources(ct);
+        if (_isDisposed)
+        {
+            return;
+        }
 
-        _innerAgent = CreateInnerAgent(systemPrompt, name, description);
+        _isDisposed = true;
+        _chanelCompletionLock.Dispose();
+        _subscriptionChannel.Writer.TryComplete();
+        await UnSubscribeToResources(CancellationToken.None);
+        foreach (var client in _mcpClients)
+        {
+            await client.DisposeAsync();
+        }
     }
 
     public override AgentThread GetNewThread()
@@ -89,13 +91,8 @@ public sealed class McpAgent : DisposableAgent
 
         options ??= GetDefaultAgentRunOptions();
         _innerThread = thread ?? GetNewThread();
-        var mainResponse = await _innerAgent.RunAsync(messages, _innerThread, options, cancellationToken);
-        var notificationResponses = Subscribe().ReadAllAsync(cancellationToken);
-
-        return mainResponse
-            .ToAgentRunResponseUpdates()
-            .Concat(notificationResponses.ToBlockingEnumerable(cancellationToken))
-            .ToAgentRunResponse();
+        var mainResponse = RunStreamingAsync(messages, _innerThread, options, cancellationToken);
+        return (await mainResponse.ToArrayAsync(cancellationToken)).ToAgentRunResponse();
     }
 
     public override IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
@@ -106,49 +103,64 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        var mainResponses = RunStreamingPrivateAsync(messages, thread, options, cancellationToken);
+        if (_subscriptionChannel.Reader.Completion.IsCompleted)
+        {
+            _subscriptionChannel = CreateSubscriptionChannel();
+        }
 
-        var notificationResponses = Subscribe().ReadAllAsync(cancellationToken);
+        var mainResponses = RunStreamingPrivateAsync(messages, thread, options, cancellationToken);
+        var notificationResponses = _subscriptionChannel.Reader.ReadAllAsync(cancellationToken);
         return mainResponses.Merge(notificationResponses, cancellationToken);
     }
 
-    private IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingPrivateAsync(
+    private async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingPrivateAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         options ??= GetDefaultAgentRunOptions();
         _innerThread = thread ?? GetNewThread();
-        return _innerAgent.RunStreamingAsync(messages, _innerThread, options, cancellationToken);
-    }
 
-    public override async ValueTask DisposeAsync()
-    {
-        if (_isDisposed)
+        try
         {
-            return;
+            await _chanelCompletionLock.WaitAsync(ct);
+            await foreach (var update in _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct))
+            {
+                yield return update;
+            }
+        }
+        finally
+        {
+            _chanelCompletionLock.Release();
         }
 
-        _isDisposed = true;
-        _subscriptionChannel?.Writer.TryComplete();
-        await UnSubscribeToResources(CancellationToken.None);
-        foreach (var client in _mcpClients)
-        {
-            await client.DisposeAsync();
-        }
+        await SyncResources(_mcpClients, ct);
     }
 
-    private ChannelReader<AgentRunResponseUpdate> Subscribe()
+    private McpAgent(IChatClient chatClient)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        _subscriptionChannel = CreateSubscriptionChannel();
+        _chatClient = chatClient;
+    }
+
+    private static Channel<AgentRunResponseUpdate> CreateSubscriptionChannel()
+    {
         var options = new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.DropOldest };
-        var channel = Channel.CreateBounded<AgentRunResponseUpdate>(options);
-        _subscriptionChannel?.Writer.TryComplete();
-        _subscriptionChannel = channel;
+        return Channel.CreateBounded<AgentRunResponseUpdate>(options);
+    }
 
-        return channel.Reader;
+    private async Task LoadMcps(
+        string[] endpoints, string name, string description, CancellationToken ct)
+    {
+        _mcpClients = (await CreateClients(name, description, endpoints, ct)).ToImmutableList();
+        _mcpClientTools = (await GetTools(_mcpClients, ct)).ToImmutableList();
+        var systemPrompt = await GetPrompts(_mcpClients, ct);
+        await SyncResources(_mcpClients, ct);
+        SubscribeToNotifications();
+
+        _innerAgent = CreateInnerAgent(systemPrompt, name, description);
     }
 
     private ChatClientAgent CreateInnerAgent(string? systemPrompt, string? name = null, string? description = null)
@@ -240,23 +252,6 @@ public sealed class McpAgent : DisposableAgent
             .Select(x => x.WithProgress(new Progress<ProgressNotificationValue>()));
     }
 
-    private static async Task<Dictionary<McpClient, HashSet<string>>> GetResources(
-        IEnumerable<McpClient> clients, CancellationToken ct)
-    {
-        var tasks = clients
-            .Where(client => client.ServerCapabilities.Resources is not null)
-            .Select(async client =>
-            {
-                var resourceUris = client.EnumerateResourcesAsync(ct).Select(x => x.Uri);
-                var templatedResourceUris = client.EnumerateResourceTemplatesAsync(ct).Select(x => x.UriTemplate);
-                var uris = await resourceUris.Concat(templatedResourceUris).ToArrayAsync(ct);
-                return (client, uris);
-            });
-
-        var results = await Task.WhenAll(tasks);
-        return results.ToDictionary(x => x.client, x => x.uris.ToHashSet());
-    }
-
     private static async Task<string?> GetPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
     {
         var tasks = clients
@@ -280,19 +275,19 @@ public sealed class McpAgent : DisposableAgent
         return string.IsNullOrEmpty(combined) ? null : combined;
     }
 
-    private async Task SubscribeToResources(CancellationToken ct)
+    private void SubscribeToNotifications()
     {
-        foreach (var (client, uris) in _availableResources)
+        foreach (var client in _mcpClients)
         {
-            foreach (var uri in uris)
-            {
-                await client.SubscribeToResourceAsync(uri, ct);
-            }
-
             client.RegisterNotificationHandler(
                 "notifications/resources/updated",
                 (notification, cancellationToken) =>
                     UpdatedResourceNotificationHandler(client, notification, cancellationToken));
+
+            client.RegisterNotificationHandler(
+                "notifications/resources/list_changed",
+                (_, cancellationToken) =>
+                    SyncResources([client], cancellationToken));
         }
     }
 
@@ -308,24 +303,64 @@ public sealed class McpAgent : DisposableAgent
     }
 
     private async ValueTask UpdatedResourceNotificationHandler(
-        McpClient client, JsonRpcNotification notification, CancellationToken ct)
+        McpClient client, JsonRpcNotification notification, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
         var uri = notification.Params
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
-        if (uri is null || _subscriptionChannel is null || _subscriptionChannel.Reader.Completion.IsCompleted)
+        if (uri is null || _subscriptionChannel.Reader.Completion.IsCompleted)
         {
             return;
         }
 
-        var resource = await client.ReadResourceAsync(uri, ct);
+        var resource = await client.ReadResourceAsync(uri, cancellationToken);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
-        await foreach (var update in RunStreamingPrivateAsync([message], _innerThread, cancellationToken: ct))
+        await foreach (var update in RunStreamingPrivateAsync([message], _innerThread, ct: cancellationToken))
         {
             _subscriptionChannel?.Writer.TryWrite(update);
+        }
+    }
+
+    private async ValueTask SyncResources(
+        IEnumerable<McpClient> clients, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+        foreach (var client in clients)
+        {
+            var currentResources = await client.EnumerateResourcesAsync(cancellationToken)
+                .Select(x => x.Uri)
+                .ToArrayAsync(cancellationToken);
+            var previousResources = _availableResources.GetValueOrDefault(client) ?? [];
+            var newResources = currentResources.Except(previousResources);
+            var removedResources = previousResources.Except(currentResources);
+
+            foreach (var uri in newResources)
+            {
+                await client.SubscribeToResourceAsync(uri, cancellationToken);
+            }
+
+            foreach (var uri in removedResources)
+            {
+                await client.UnsubscribeFromResourceAsync(uri, cancellationToken);
+            }
+
+            _availableResources = _availableResources.SetItem(client, currentResources.ToImmutableHashSet());
+
+            await _chanelCompletionLock.WaitAsync(() =>
+            {
+                if (currentResources.Length == 0)
+                {
+                    _subscriptionChannel.Writer.TryComplete();
+                }
+                else if (_subscriptionChannel.Reader.Completion.IsCompleted)
+                {
+                    _subscriptionChannel = CreateSubscriptionChannel();
+                }
+            }, cancellationToken);
         }
     }
 

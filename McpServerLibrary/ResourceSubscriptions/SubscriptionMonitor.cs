@@ -69,15 +69,24 @@ public class SubscriptionMonitor(
             ));
         var downloads = await Task.WhenAll(downloadTasks);
         var filteredDownloads = downloads
-            .Where(x => x.DownloadItem == null || x.DownloadItem.State is DownloadState.Completed);
+            .Where(x => x.DownloadItem == null || x.DownloadItem.State is DownloadState.Completed)
+            .ToArray();
 
         foreach (var (id, _) in filteredDownloads)
         {
+            stateManager.TrackedDownloads.Remove(sessionId, id);
             await server.SendNotificationAsync("notifications/resources/updated",
                 new
                 {
                     Uri = uri.Replace("{id}", $"{id}")
                 }, cancellationToken: cancellationToken);
+        }
+
+        if (filteredDownloads.Any(x => x.DownloadItem == null))
+        {
+            await server.SendNotificationAsync(
+                "notifications/resources/list_changed",
+                cancellationToken: cancellationToken);
         }
     }
 }
