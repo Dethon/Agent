@@ -73,7 +73,6 @@ public class SubscriptionMonitor(
 
         foreach (var (id, _) in filteredDownloads)
         {
-            stateManager.TrackedDownloads.Remove(sessionId, id);
             await server.SendNotificationAsync("notifications/resources/updated",
                 new
                 {

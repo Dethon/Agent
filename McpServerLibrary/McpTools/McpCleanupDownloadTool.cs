@@ -25,7 +25,11 @@ public class McpCleanupDownloadTool(
         try
         {
             var sessionId = context.Server.StateKey;
-            return ToolResponse.Create(await Run(sessionId, downloadId, cancellationToken));
+            var result = await Run(sessionId, downloadId, cancellationToken);
+            await context.Server.SendNotificationAsync(
+                "notifications/resources/list_changed",
+                cancellationToken: cancellationToken);
+            return ToolResponse.Create(result);
         }
         catch (Exception ex)
         {

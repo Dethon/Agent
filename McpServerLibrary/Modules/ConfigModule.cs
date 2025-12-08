@@ -8,7 +8,6 @@ using McpServerLibrary.ResourceSubscriptions;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Protocol;
 
 namespace McpServerLibrary.Modules;
 
@@ -58,10 +57,7 @@ public static class ConfigModule
             .WithResources<McpDownloadResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)
-            .WithListResourcesHandler((_, _) => new ValueTask<ListResourcesResult>(new ListResourcesResult
-            {
-                Resources = []
-            })); //TODO: Remove asap. workaround for bug (https://github.com/modelcontextprotocol/csharp-sdk/issues/656)
+            .WithListResourcesHandler(SubscriptionHandlers.ListResources);
 
         return services;
     }

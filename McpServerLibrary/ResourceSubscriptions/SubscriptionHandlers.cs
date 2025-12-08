@@ -1,4 +1,5 @@
-﻿using McpServerLibrary.Extensions;
+﻿using Domain.Contracts;
+using McpServerLibrary.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -35,5 +36,28 @@ public static class SubscriptionHandlers
 
         subscriptionTracker.Remove(sessionId, uri);
         return ValueTask.FromResult(new EmptyResult());
+    }
+
+    public static ValueTask<ListResourcesResult> ListResources(
+        RequestContext<ListResourcesRequestParams> context, CancellationToken _)
+    {
+        if (context.Services is null)
+        {
+            throw new InvalidOperationException("Services are not available.");
+        }
+
+        var stateManager = context.Services.GetRequiredService<IStateManager>();
+        var stateKey = context.Server.StateKey;
+
+        var downloadIds = stateManager.TrackedDownloads.Get(stateKey) ?? [];
+        var resources = downloadIds.Select(id => new Resource
+        {
+            Uri = $"download://{id}/",
+            Name = $"Download {id}",
+            Description = $"Status of download with ID {id}",
+            MimeType = "text/plain"
+        }).ToList();
+
+        return ValueTask.FromResult(new ListResourcesResult { Resources = resources });
     }
 }

@@ -27,7 +27,11 @@ public class McpFileDownloadTool(
         try
         {
             var sessionId = context.Server.StateKey;
-            return ToolResponse.Create(await Run(sessionId, searchResultId, cancellationToken));
+            var result = await Run(sessionId, searchResultId, cancellationToken);
+            await context.Server.SendNotificationAsync(
+                "notifications/resources/list_changed",
+                cancellationToken: cancellationToken);
+            return ToolResponse.Create(result);
         }
         catch (Exception ex)
         {
