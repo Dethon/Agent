@@ -30,7 +30,7 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgent _innerAgent = null!;
     private AgentThread? _innerThread;
 
-    private readonly ReaderWriterLockSlim _resourceSyncLock = new(LockRecursionPolicy.SupportsRecursion);
+    private readonly SemaphoreSlim _resourceSyncLock = new(1, 1);
 
     private Channel<AgentRunResponseUpdate> _subscriptionChannel;
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
@@ -108,7 +108,7 @@ public sealed class McpAgent : DisposableAgent
             _subscriptionChannel = CreateSubscriptionChannel();
         }
 
-        var mainResponses = RunStreamingPrivateAsync(messages, thread, options, cancellationToken);
+        var mainResponses = RunStreamingPrivateAsync(messages, thread, options, ct: cancellationToken);
         var notificationResponses = _subscriptionChannel.Reader.ReadAllAsync(cancellationToken);
         return mainResponses.Merge(notificationResponses, cancellationToken);
     }
@@ -123,17 +123,9 @@ public sealed class McpAgent : DisposableAgent
         options ??= GetDefaultAgentRunOptions();
         _innerThread = thread ?? GetNewThread();
 
-        try
+        await foreach (var update in _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct))
         {
-            _resourceSyncLock.EnterReadLock();
-            await foreach (var update in _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct))
-            {
-                yield return update;
-            }
-        }
-        finally
-        {
-            _resourceSyncLock.ExitReadLock();
+            yield return update;
         }
 
         await SyncResources(_mcpClients, ct);
@@ -318,9 +310,19 @@ public sealed class McpAgent : DisposableAgent
         var resource = await client.ReadResourceAsync(uri, cancellationToken);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
-        await foreach (var update in RunStreamingPrivateAsync([message], _innerThread, ct: cancellationToken))
+        await _resourceSyncLock.WaitAsync(cancellationToken);
+        try
         {
-            _subscriptionChannel?.Writer.TryWrite(update);
+            var options = GetDefaultAgentRunOptions();
+            var updates = _innerAgent.RunStreamingAsync([message], _innerThread, options, cancellationToken);
+            await foreach (var update in updates)
+            {
+                _subscriptionChannel.Writer.TryWrite(update);
+            }
+        }
+        finally
+        {
+            _resourceSyncLock.Release();
         }
     }
 
@@ -350,9 +352,9 @@ public sealed class McpAgent : DisposableAgent
 
             _availableResources = _availableResources.SetItem(client, currentResources.ToImmutableHashSet());
 
+            await _resourceSyncLock.WaitAsync(cancellationToken);
             try
             {
-                _resourceSyncLock.EnterWriteLock();
                 if (currentResources.Length == 0)
                 {
                     _subscriptionChannel.Writer.TryComplete();
@@ -364,7 +366,7 @@ public sealed class McpAgent : DisposableAgent
             }
             finally
             {
-                _resourceSyncLock.ExitWriteLock();
+                _resourceSyncLock.Release();
             }
         }
     }

@@ -13,6 +13,11 @@ public static class IAsyncEnumerableExtensions
         return new[] { left, right }.ToAsyncEnumerable().Merge(ct);
     }
 
+    public static IAsyncEnumerable<T> Merge<T>(this IEnumerable<IAsyncEnumerable<T>> sources, CancellationToken ct)
+    {
+        return sources.ToAsyncEnumerable().Merge(ct);
+    }
+
     public static async IAsyncEnumerable<T> Merge<T>(
         this IAsyncEnumerable<IAsyncEnumerable<T>> sources,
         [EnumeratorCancellation] CancellationToken ct)

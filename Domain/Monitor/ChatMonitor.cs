@@ -63,6 +63,7 @@ public class ChatMonitor(
         // ReSharper disable once AccessToDisposedClosure - agent is disposed after BlockWhile completes
         var aiResponses = reader
             .ReadAllAsync(linkedCt)
+            .ToBlockingEnumerable(linkedCt)
             .Select(x => agent
                 .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
                 .ToUpdateAiResponsePairs()
@@ -79,9 +80,7 @@ public class ChatMonitor(
                 await SendResponse(agentKey, aiResponse, c);
             }
         }, linkedCt);
-        {
-            Console.WriteLine($"ChatId: {agentKey.ChatId}, ThreadId: {agentKey.ThreadId}");
-        }
+        Console.WriteLine($"ChatId: {agentKey.ChatId}, ThreadId: {agentKey.ThreadId}");
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
