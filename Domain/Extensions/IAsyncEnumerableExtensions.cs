@@ -5,48 +5,12 @@ namespace Domain.Extensions;
 
 public static class IAsyncEnumerableExtensions
 {
-    public static async IAsyncEnumerable<T> Merge<T>(
+    public static IAsyncEnumerable<T> Merge<T>(
         this IAsyncEnumerable<T> left,
         IAsyncEnumerable<T> right,
-        [EnumeratorCancellation] CancellationToken ct)
+        CancellationToken ct)
     {
-        var channel = Channel.CreateUnbounded<T>();
-        var writer = channel.Writer;
-
-        _ = Task.WhenAll(pump(left), pump(right))
-            .ContinueWith(t =>
-            {
-                if (t.IsFaulted)
-                {
-                    writer.TryComplete(t.Exception);
-                }
-                else
-                {
-                    writer.TryComplete();
-                }
-            }, TaskScheduler.Default);
-
-        await foreach (var item in channel.Reader.ReadAllAsync(ct))
-        {
-            yield return item;
-        }
-
-        yield break;
-
-        async Task pump(IAsyncEnumerable<T> source)
-        {
-            try
-            {
-                await foreach (var item in source.WithCancellation(ct))
-                {
-                    await writer.WriteAsync(item, ct);
-                }
-            }
-            catch (Exception ex)
-            {
-                writer.TryComplete(ex);
-            }
-        }
+        return new[] { left, right }.ToAsyncEnumerable().Merge(ct);
     }
 
     public static async IAsyncEnumerable<T> Merge<T>(
@@ -56,7 +20,10 @@ public static class IAsyncEnumerableExtensions
         var channel = Channel.CreateUnbounded<T>();
         var writer = channel.Writer;
 
-        _ = startPumps();
+        _ = Task.Run(() => startPumps(sources), ct)
+            .ContinueWith(
+                t => t.IsFaulted ? writer.TryComplete(t.Exception) : writer.TryComplete(),
+                TaskScheduler.Default);
 
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
         {
@@ -65,23 +32,9 @@ public static class IAsyncEnumerableExtensions
 
         yield break;
 
-        async Task startPumps()
+        async Task startPumps(IAsyncEnumerable<IAsyncEnumerable<T>> streams)
         {
-            var tasks = new List<Task>();
-            await foreach (var source in sources.WithCancellation(ct))
-            {
-                tasks.Add(pump(source));
-            }
-
-            try
-            {
-                await Task.WhenAll(tasks);
-                writer.TryComplete();
-            }
-            catch (Exception ex)
-            {
-                writer.TryComplete(ex);
-            }
+            await Task.WhenAll(streams.Select(pump).ToBlockingEnumerable(ct));
         }
 
         async Task pump(IAsyncEnumerable<T> source)
