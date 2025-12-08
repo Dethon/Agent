@@ -170,8 +170,17 @@ public sealed class McpAgent : DisposableAgent
             Name = name,
             Instructions = systemPrompt,
             ChatOptions = chatOptions,
-            Description = description
+            Description = description,
+            ChatMessageStoreFactory = CreateConcurrentMessageStore
         });
+    }
+
+    private static ConcurrentChatMessageStore CreateConcurrentMessageStore(
+        ChatClientAgentOptions.ChatMessageStoreFactoryContext context)
+    {
+        return context.SerializedState.ValueKind is JsonValueKind.Object
+            ? new ConcurrentChatMessageStore(context.SerializedState, context.JsonSerializerOptions)
+            : new ConcurrentChatMessageStore();
     }
 
     private ChatClientAgentRunOptions GetDefaultAgentRunOptions(CreateMessageRequestParams? parameters = null)

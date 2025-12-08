@@ -29,7 +29,7 @@ public class ChatMonitor(
                 {
                     channel.Writer.TryComplete();
                     channelResolver.Clean(agentKey);
-                    //cancellationResolver.Clean(agentKey);
+                    cancellationResolver.Clean(agentKey);
                     continue;
                 }
 
@@ -63,7 +63,6 @@ public class ChatMonitor(
         // ReSharper disable once AccessToDisposedClosure - agent is disposed after BlockWhile completes
         var aiResponses = reader
             .ReadAllAsync(linkedCt)
-            .ToBlockingEnumerable(linkedCt)
             .Select(x => agent
                 .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
                 .ToUpdateAiResponsePairs()
