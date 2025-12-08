@@ -4,21 +4,18 @@ using Domain.Contracts;
 namespace Domain.Monitor;
 
 public class AgentCleanupMonitor(
-    ChannelResolver channelResolver,
-    CancellationResolver cancellationResolver,
+    ChatThreadResolver threadResolver,
     IChatMessengerClient chatMessengerClient)
 {
     public async Task Check(CancellationToken ct)
     {
-        var agentKeys = channelResolver.AgentKeys.Concat(cancellationResolver.AgentKeys).Distinct();
-        foreach (var agentKey in agentKeys)
+        foreach (var agentKey in threadResolver.AgentKeys)
         {
             var chatId = agentKey.ChatId;
             var threadId = agentKey.ThreadId;
             if (!await chatMessengerClient.DoesThreadExist(chatId, threadId, ct))
             {
-                channelResolver.Clean(agentKey);
-                cancellationResolver.Clean(agentKey);
+                threadResolver.Clean(agentKey);
             }
         }
     }

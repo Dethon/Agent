@@ -59,8 +59,7 @@ public class DependencyInjectionTests
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
-        provider.GetService<ChannelResolver>().ShouldNotBeNull();
-        provider.GetService<CancellationResolver>().ShouldNotBeNull();
+        provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         provider.GetService<IChatClient>().ShouldNotBeNull();
     }
@@ -83,8 +82,7 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        provider.GetService<ChannelResolver>().ShouldNotBeNull();
-        provider.GetService<CancellationResolver>().ShouldNotBeNull();
+        provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
     }
 

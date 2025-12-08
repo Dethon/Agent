@@ -55,8 +55,7 @@ public static class InjectorModule
                         $"{AgentName}-{agentKey.ChatId}-{agentKey.ThreadId}",
                         AgentDescription,
                         ct))
-                .AddSingleton<ChannelResolver>()
-                .AddSingleton<CancellationResolver>()
+                .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }
 

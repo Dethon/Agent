@@ -1,5 +1,4 @@
-﻿using System.Threading.Channels;
-using Domain.Agents;
+﻿using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -11,8 +10,7 @@ public class ChatMonitor(
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
     Func<AgentKey, CancellationToken, Task<DisposableAgent>> agentFactory,
-    ChannelResolver channelResolver,
-    CancellationResolver cancellationResolver,
+    ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -23,21 +21,19 @@ public class ChatMonitor(
             await foreach (var prompt in prompts)
             {
                 var agentKey = await CreateTopicIfNeeded(prompt, cancellationToken);
-                var (channel, isNew) = channelResolver.Resolve(agentKey);
+                var (context, isNew) = threadResolver.Resolve(agentKey);
 
                 if (prompt.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
                 {
-                    channel.Writer.TryComplete();
-                    channelResolver.Clean(agentKey);
-                    cancellationResolver.Clean(agentKey);
+                    threadResolver.Clean(agentKey);
                     continue;
                 }
 
-                await channel.Writer.WriteAsync(prompt, cancellationToken);
+                await context.PromptChannel.Writer.WriteAsync(prompt, cancellationToken);
 
                 if (isNew)
                 {
-                    await queue.QueueTask(ct => ProcessChatThread(agentKey, channel.Reader, ct), cancellationToken);
+                    await queue.QueueTask(ct => ProcessChatThread(agentKey, context, ct), cancellationToken);
                 }
             }
         }
@@ -50,15 +46,15 @@ public class ChatMonitor(
         }
     }
 
-    private async Task ProcessChatThread(AgentKey agentKey, ChannelReader<ChatPrompt> reader, CancellationToken ct)
+    private async Task ProcessChatThread(AgentKey agentKey, ChatThreadContext context, CancellationToken ct)
     {
         await using var agent = await agentFactory(agentKey, ct);
-        using var linkedCts = cancellationResolver.GetLinkedTokenSource(agentKey, ct);
+        using var linkedCts = context.GetLinkedTokenSource(ct);
         var thread = agent.GetNewThread();
         var linkedCt = linkedCts.Token;
 
         // ReSharper disable once AccessToDisposedClosure - agent is disposed after BlockWhile completes
-        var aiResponses = reader
+        var aiResponses = context.PromptChannel.Reader
             .ReadAllAsync(linkedCt)
             .Select(x => agent
                 .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
