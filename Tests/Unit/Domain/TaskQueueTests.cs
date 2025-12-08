@@ -1,7 +1,7 @@
 using Domain.Monitor;
 using Shouldly;
 
-namespace Tests.Integration.Domain;
+namespace Tests.Unit.Domain;
 
 public class TaskQueueTests
 {
@@ -12,7 +12,7 @@ public class TaskQueueTests
         var queue = new TaskQueue();
 
         // Act
-        await queue.QueueTask(_ => Task.CompletedTask);
+        await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
 
         // Assert
         queue.Count.ShouldBe(1);
@@ -29,7 +29,7 @@ public class TaskQueueTests
             executed = true;
             return Task.CompletedTask;
         };
-        await queue.QueueTask(expectedTask);
+        await queue.QueueTask(expectedTask, CancellationToken.None);
 
         // Act
         var dequeuedTask = await queue.DequeueTask(CancellationToken.None);
@@ -45,12 +45,12 @@ public class TaskQueueTests
     {
         // Arrange
         var queue = new TaskQueue(2);
-        await queue.QueueTask(_ => Task.CompletedTask);
-        await queue.QueueTask(_ => Task.CompletedTask);
+        await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
+        await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
 
         // Act
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var queueTask = queue.QueueTask(_ => Task.CompletedTask);
+        var queueTask = queue.QueueTask(_ => Task.CompletedTask, cts.Token);
 
         // Assert - the queue should be blocked
         var completedBeforeTimeout = queueTask.IsCompleted;
@@ -62,14 +62,14 @@ public class TaskQueueTests
     {
         // Arrange
         var queue = new TaskQueue(2);
-        await queue.QueueTask(_ => Task.CompletedTask);
-        await queue.QueueTask(_ => Task.CompletedTask);
+        await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
+        await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
 
         // Act - start the blocking queue operation
         var queueCompleted = false;
         var queueTask = Task.Run(async () =>
         {
-            await queue.QueueTask(_ => Task.CompletedTask);
+            await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
             queueCompleted = true;
         });
 
@@ -110,17 +110,17 @@ public class TaskQueueTests
         {
             order.Add(1);
             return Task.CompletedTask;
-        });
+        }, CancellationToken.None);
         await queue.QueueTask(_ =>
         {
             order.Add(2);
             return Task.CompletedTask;
-        });
+        }, CancellationToken.None);
         await queue.QueueTask(_ =>
         {
             order.Add(3);
             return Task.CompletedTask;
-        });
+        }, CancellationToken.None);
 
         // Act
         var task1 = await queue.DequeueTask(CancellationToken.None);

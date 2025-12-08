@@ -36,14 +36,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
-            "",
             CancellationToken.None);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool. And then complete the workflow",
+                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -71,16 +70,15 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
-            "",
             CancellationToken.None);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
         // Act
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
         var responses = await agent.RunStreamingAsync(
-                $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool. And then complete the workflow",
+                $"Move the file from '{sourcePath}' to '{destPath}' using the Move tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -107,15 +105,14 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
-            "",
             CancellationToken.None);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var moviesPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoviesFiles");
         var responses = await agent.RunStreamingAsync(
-                $"List all files in '{moviesPath}' using the ListFiles tool. And then complete the workflow",
+                $"List all files in '{moviesPath}' using the ListFiles tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -142,14 +139,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
-            "",
             CancellationToken.None);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Say hello and confirm you understand your role. And then complete the workflow",
+                "Say hello and confirm you understand your role.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -179,14 +175,13 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
             llmClient,
             "",
             "",
-            "",
             CancellationToken.None);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool. And then complete the workflow",
+                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

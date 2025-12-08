@@ -14,7 +14,7 @@ public class StateManagerTests
     {
         // Arrange
         var manager = new SearchResultsManager(_cache);
-        var sessionId = "session-1";
+        const string sessionId = "session-1";
         var results = new[] { CreateSearchResult(1, "Result 1"), CreateSearchResult(2, "Result 2") };
 
         // Act
@@ -64,7 +64,7 @@ public class StateManagerTests
     {
         // Arrange
         var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        const string sessionId = "session-1";
 
         // Act
         manager.Add(sessionId, 100);
@@ -82,7 +82,7 @@ public class StateManagerTests
     {
         // Arrange
         var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        const string sessionId = "session-1";
         manager.Add(sessionId, 100);
         manager.Add(sessionId, 200);
 
@@ -101,7 +101,7 @@ public class StateManagerTests
     {
         // Arrange
         var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        const string sessionId = "session-1";
         manager.Add(sessionId, 300);
         manager.Add(sessionId, 100);
         manager.Add(sessionId, 200);
@@ -142,7 +142,7 @@ public class StateManagerTests
     {
         // Arrange
         var manager = new TrackedDownloadsManager(_cache);
-        var sessionId = "session-1";
+        const string sessionId = "session-1";
 
         // Act
         manager.Add(sessionId, 100);

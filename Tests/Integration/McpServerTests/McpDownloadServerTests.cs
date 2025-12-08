@@ -3,7 +3,7 @@ using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
-namespace Tests.Integration.McpServerDownload;
+namespace Tests.Integration.McpServerTests;
 
 public class McpDownloadServerTests(McpDownloadServerFixture fixture) : IClassFixture<McpDownloadServerFixture>
 {

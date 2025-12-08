@@ -3,7 +3,7 @@ using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
-namespace Tests.Integration.Agents;
+namespace Tests.Integration.McpServerTests;
 
 public class McpOrganizeServerTests(McpOrganizeServerFixture fixture) : IClassFixture<McpOrganizeServerFixture>
 {

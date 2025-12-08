@@ -340,8 +340,16 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
+        var hasAnyResources = false;
+
         foreach (var client in clients)
         {
+            // Skip clients that don't support resources
+            if (client.ServerCapabilities.Resources is null)
+            {
+                continue;
+            }
+
             var currentResources = await client.EnumerateResourcesAsync(cancellationToken)
                 .Select(x => x.Uri)
                 .ToArrayAsync(cancellationToken);
@@ -361,22 +369,27 @@ public sealed class McpAgent : DisposableAgent
 
             _availableResources = _availableResources.SetItem(client, currentResources.ToImmutableHashSet());
 
-            await _resourceSyncLock.WaitAsync(cancellationToken);
-            try
+            if (currentResources.Length > 0)
             {
-                if (currentResources.Length == 0)
-                {
-                    _subscriptionChannel.Writer.TryComplete();
-                }
-                else if (_subscriptionChannel.Reader.Completion.IsCompleted)
-                {
-                    _subscriptionChannel = CreateSubscriptionChannel();
-                }
+                hasAnyResources = true;
             }
-            finally
+        }
+
+        await _resourceSyncLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!hasAnyResources)
             {
-                _resourceSyncLock.Release();
+                _subscriptionChannel.Writer.TryComplete();
             }
+            else if (_subscriptionChannel.Reader.Completion.IsCompleted)
+            {
+                _subscriptionChannel = CreateSubscriptionChannel();
+            }
+        }
+        finally
+        {
+            _resourceSyncLock.Release();
         }
     }
 

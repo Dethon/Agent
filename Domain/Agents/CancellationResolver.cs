@@ -4,25 +4,13 @@ namespace Domain.Agents;
 
 public class CancellationResolver
 {
-    private readonly ConcurrentDictionary<AgentKey, CancellationTokenSource> _cache = [];
-    private readonly Lock _lock = new();
+    private readonly ConcurrentDictionary<AgentKey, Lazy<CancellationTokenSource>> _cache = [];
 
     public IEnumerable<AgentKey> AgentKeys => _cache.Keys;
 
     public CancellationTokenSource Resolve(AgentKey key)
     {
-        lock (_lock)
-        {
-            var cts = _cache.GetValueOrDefault(key);
-            if (cts is not null)
-            {
-                return cts;
-            }
-
-            cts = new CancellationTokenSource();
-            _cache[key] = cts;
-            return cts;
-        }
+        return _cache.GetOrAdd(key, _ => new Lazy<CancellationTokenSource>(() => new CancellationTokenSource())).Value;
     }
 
     public CancellationTokenSource GetLinkedTokenSource(AgentKey key, CancellationToken externalToken)
@@ -33,13 +21,12 @@ public class CancellationResolver
 
     public void Clean(AgentKey key)
     {
-        lock (_lock)
+        if (!_cache.Remove(key, out var lazy) || !lazy.IsValueCreated)
         {
-            if (_cache.Remove(key, out var cts))
-            {
-                cts.Cancel();
-                cts.Dispose();
-            }
+            return;
         }
+
+        lazy.Value.Cancel();
+        lazy.Value.Dispose();
     }
 }

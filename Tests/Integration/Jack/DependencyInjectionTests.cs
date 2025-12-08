@@ -55,11 +55,12 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
-        provider.GetService<Func<string, CancellationToken, Task<DisposableAgent>>>().ShouldNotBeNull();
+        provider.GetService<Func<AgentKey, CancellationToken, Task<DisposableAgent>>>().ShouldNotBeNull();
         provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
-        provider.GetService<ThreadResolver>().ShouldNotBeNull();
+        provider.GetService<ChannelResolver>().ShouldNotBeNull();
+        provider.GetService<CancellationResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         provider.GetService<IChatClient>().ShouldNotBeNull();
     }
@@ -82,7 +83,8 @@ public class DependencyInjectionTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        provider.GetService<ThreadResolver>().ShouldNotBeNull();
+        provider.GetService<ChannelResolver>().ShouldNotBeNull();
+        provider.GetService<CancellationResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
     }
 
@@ -131,11 +133,11 @@ public class DependencyInjectionTests
         // Fill the queue to test capacity
         for (var i = 0; i < 10; i++)
         {
-            await queue.QueueTask(_ => Task.CompletedTask);
+            await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
         }
 
         // 11th item should block (not complete immediately)
-        var eleventhTask = queue.QueueTask(_ => Task.CompletedTask);
+        var eleventhTask = queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
         eleventhTask.IsCompleted.ShouldBeFalse();
     }
 
