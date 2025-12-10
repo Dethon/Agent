@@ -13,6 +13,6 @@ public class McpSystemPrompt
     [Description("The system prompt that defines the agent's persona and behavior")]
     public static string GetSystemPrompt()
     {
-        return DownloaderPrompt.Get();
+        return DownloaderPrompt.AgentSystemPrompt;
     }
 }
