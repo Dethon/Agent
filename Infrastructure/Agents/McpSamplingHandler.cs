@@ -7,7 +7,8 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(IChatClient chatClient, IReadOnlyList<AITool> tools) : IDisposable
+internal sealed class McpSamplingHandler(IChatClient chatClient, Func<IReadOnlyList<AITool>> toolsProvider)
+    : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
     private bool _isDisposed;
@@ -99,7 +100,7 @@ internal sealed class McpSamplingHandler(IChatClient chatClient, IReadOnlyList<A
     {
         var chatOptions = new ChatOptions
         {
-            Tools = [..tools],
+            Tools = [..toolsProvider()],
             AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
         };
 

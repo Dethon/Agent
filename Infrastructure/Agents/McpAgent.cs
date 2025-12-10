@@ -94,7 +94,7 @@ public sealed class McpAgent : DisposableAgent
     private McpAgent(IChatClient chatClient)
     {
         _chatClient = chatClient;
-        _samplingHandler = new McpSamplingHandler(_chatClient, _clientManager?.Tools ?? []);
+        _samplingHandler = new McpSamplingHandler(_chatClient, () => _clientManager?.Tools ?? []);
         _clientManager = new McpClientManager(new McpClientHandlers
         {
             SamplingHandler = _samplingHandler.HandleAsync
