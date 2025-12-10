@@ -16,7 +16,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly McpSamplingHandler _samplingHandler;
 
     private ChatClientAgent _innerAgent = null!;
-    private AgentThread? _innerThread;
+    private AgentThread? _conversationThread;
     private bool _isDisposed;
 
     public override string? Name => _innerAgent.Name;
@@ -68,8 +68,9 @@ public sealed class McpAgent : DisposableAgent
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
         options ??= CreateRunOptions();
-        _innerThread = thread ?? GetNewThread();
-        var response = RunStreamingAsync(messages, _innerThread, options, cancellationToken);
+        _conversationThread = thread ?? _conversationThread ?? GetNewThread();
+
+        var response = RunStreamingAsync(messages, _conversationThread, options, cancellationToken);
         return (await response.ToArrayAsync(cancellationToken)).ToAgentRunResponse();
     }
 
@@ -82,7 +83,10 @@ public sealed class McpAgent : DisposableAgent
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
         _resourceManager.EnsureChannelActive();
-        var mainResponses = RunStreamingCoreAsync(messages, thread, options, cancellationToken);
+        options ??= CreateRunOptions();
+        _conversationThread = thread ?? _conversationThread ?? GetNewThread();
+
+        var mainResponses = RunStreamingCoreAsync(messages, _conversationThread, options, cancellationToken);
         var notificationResponses = _resourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
         return mainResponses.Merge(notificationResponses, cancellationToken);
     }
@@ -113,16 +117,12 @@ public sealed class McpAgent : DisposableAgent
 
     private async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingCoreAsync(
         IEnumerable<ChatMessage> messages,
-        AgentThread? thread = null,
-        AgentRunOptions? options = null,
+        AgentThread thread,
+        AgentRunOptions options,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-
-        options ??= CreateRunOptions();
-        _innerThread = thread ?? GetNewThread();
-
-        await foreach (var update in _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct))
+        await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, ct))
         {
             yield return update;
         }
@@ -134,7 +134,7 @@ public sealed class McpAgent : DisposableAgent
         IEnumerable<ChatMessage> messages, CancellationToken ct)
     {
         var options = CreateRunOptions();
-        return _innerAgent.RunStreamingAsync(messages, _innerThread, options, ct);
+        return _innerAgent.RunStreamingAsync(messages, _conversationThread, options, ct);
     }
 
     private ChatClientAgent CreateInnerAgent(string? systemPrompt, string? name = null, string? description = null)
