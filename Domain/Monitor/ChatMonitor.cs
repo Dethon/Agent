@@ -9,7 +9,7 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
-    Func<AgentKey, CancellationToken, Task<DisposableAgent>> agentFactory,
+    IAgentFactory agentFactory,
     ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
@@ -48,7 +48,7 @@ public class ChatMonitor(
 
     private async Task ProcessChatThread(AgentKey agentKey, ChatThreadContext context, CancellationToken ct)
     {
-        await using var agent = await agentFactory(agentKey, ct);
+        await using var agent = await agentFactory.CreateAsync(agentKey, ct);
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var thread = agent.GetNewThread();
         var linkedCt = linkedCts.Token;

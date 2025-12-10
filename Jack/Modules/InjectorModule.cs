@@ -48,13 +48,12 @@ public static class InjectorModule
         {
             var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
             return services
-                .AddSingleton<Func<AgentKey, CancellationToken, Task<DisposableAgent>>>(sp => (agentKey, ct) =>
-                    McpAgent.CreateAsync(
-                        mcpEndpoints,
+                .AddSingleton<IAgentFactory>(sp =>
+                    new McpAgentFactory(
                         sp.GetRequiredService<IChatClient>(),
-                        $"{AgentName}-{agentKey.ChatId}-{agentKey.ThreadId}",
-                        AgentDescription,
-                        ct))
+                        mcpEndpoints,
+                        AgentName,
+                        AgentDescription))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }

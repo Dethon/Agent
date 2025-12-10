@@ -52,6 +52,14 @@ internal sealed class FakeAiAgent : DisposableAgent
     private sealed class FakeAgentThread : AgentThread;
 }
 
+internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
+{
+    public Task<DisposableAgent> CreateAsync(AgentKey agentKey, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(agent);
+    }
+}
+
 internal static class MonitorTestMocks
 {
     public static ChatPrompt CreatePrompt(long chatId = 1, int? threadId = 1, string prompt = "Hello",
@@ -91,9 +99,9 @@ internal static class MonitorTestMocks
         return new FakeAiAgent();
     }
 
-    public static Func<AgentKey, CancellationToken, Task<DisposableAgent>> CreateAgentFactory(FakeAiAgent agent)
+    public static IAgentFactory CreateAgentFactory(FakeAiAgent agent)
     {
-        return (_, _) => Task.FromResult<DisposableAgent>(agent);
+        return new FakeAgentFactory(agent);
     }
 }
 
