@@ -51,21 +51,21 @@ internal sealed class McpResourceManager(
                 continue;
             }
 
-            var currentResources = await client.EnumerateResourcesAsync(ct)
+            var currentResources = (await client.ListResourcesAsync(cancellationToken: ct))
                 .Select(x => x.Uri)
-                .ToArrayAsync(ct);
+                .ToArray();
             var previousResources = _availableResources.GetValueOrDefault(client) ?? [];
             var newResources = currentResources.Except(previousResources);
             var removedResources = previousResources.Except(currentResources);
 
             foreach (var uri in newResources)
             {
-                await client.SubscribeToResourceAsync(uri, ct);
+                await client.SubscribeToResourceAsync(uri, cancellationToken: ct);
             }
 
             foreach (var uri in removedResources)
             {
-                await client.UnsubscribeFromResourceAsync(uri, ct);
+                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
 
             _availableResources = _availableResources.SetItem(client, [.. currentResources]);
@@ -118,7 +118,7 @@ internal sealed class McpResourceManager(
             return;
         }
 
-        var resource = await client.ReadResourceAsync(uri, ct);
+        var resource = await client.ReadResourceAsync(uri, cancellationToken: ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
 
         await _syncLock.WaitAsync(ct);
@@ -161,7 +161,7 @@ internal sealed class McpResourceManager(
         {
             foreach (var uri in uris)
             {
-                await client.UnsubscribeFromResourceAsync(uri, ct);
+                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
         }
     }

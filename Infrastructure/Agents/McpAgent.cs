@@ -141,13 +141,13 @@ public sealed class McpAgent : DisposableAgent
     {
         var chatOptions = new ChatOptions
         {
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" },
+            Instructions = systemPrompt
         };
 
         return _chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
             Name = name,
-            Instructions = systemPrompt,
             ChatOptions = chatOptions,
             Description = description,
             ChatMessageStoreFactory = CreateConcurrentMessageStore

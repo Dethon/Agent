@@ -32,7 +32,7 @@ internal sealed class McpClientManager(McpClientHandlers handlers) : IAsyncDispo
             .Where(client => client.ServerCapabilities.Prompts is not null)
             .Select(async client =>
             {
-                var prompts = await client.EnumeratePromptsAsync(ct).ToArrayAsync(ct);
+                var prompts = await client.ListPromptsAsync(cancellationToken: ct);
                 var promptContents = await Task.WhenAll(prompts.Select(async p =>
                 {
                     var result = await client.GetPromptAsync(p.Name, cancellationToken: ct);
@@ -93,8 +93,7 @@ internal sealed class McpClientManager(McpClientHandlers handlers) : IAsyncDispo
         IEnumerable<McpClient> clients,
         CancellationToken ct)
     {
-        var tasks = clients
-            .Select(x => x.EnumerateToolsAsync(cancellationToken: ct).ToArrayAsync(ct).AsTask());
+        var tasks = clients.Select(x => x.ListToolsAsync(cancellationToken: ct).AsTask());
         var tools = await Task.WhenAll(tasks);
         return tools
             .SelectMany(x => x)

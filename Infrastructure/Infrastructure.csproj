@@ -8,16 +8,16 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251125.1"/>
-      <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.1-preview.1.25571.5"/>
-      <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0"/>
-      <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="10.0.0"/>
-      <PackageReference Include="ModelContextProtocol" Version="0.4.1-preview.1"/>
+      <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251204.1"/>
+      <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.1.0-preview.1.25608.1"/>
+      <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1"/>
+      <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="10.0.1"/>
+      <PackageReference Include="ModelContextProtocol" Version="0.5.0-preview.1"/>
       <PackageReference Include="Polly" Version="8.6.5"/>
       <PackageReference Include="Polly.Extensions.Http" Version="3.0.0" />
       <PackageReference Include="Spectre.Console" Version="0.54.0"/>
       <PackageReference Include="SSH.NET" Version="2025.1.0"/>
-      <PackageReference Include="Telegram.Bot" Version="22.7.5"/>
+      <PackageReference Include="Telegram.Bot" Version="22.7.6"/>
     </ItemGroup>
 
     <ItemGroup>

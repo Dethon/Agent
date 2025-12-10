@@ -26,7 +26,7 @@ public class McpDownloadServerTests(McpDownloadServerFixture fixture) : IClassFi
             }),
             cancellationToken: CancellationToken.None);
 
-        var tools = await client.EnumerateToolsAsync().ToArrayAsync();
+        var tools = await client.ListToolsAsync();
 
         // Assert
         tools.ShouldNotBeEmpty();

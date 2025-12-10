@@ -84,13 +84,13 @@ internal sealed class McpSamplingHandler(IChatClient chatClient, IReadOnlyList<A
     {
         var chatOptions = new ChatOptions
         {
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" },
+            Instructions = systemPrompt
         };
 
         return chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
             Name = "jack-sampling",
-            Instructions = systemPrompt,
             ChatOptions = chatOptions
         });
     }
