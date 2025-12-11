@@ -12,6 +12,7 @@ internal sealed record ThreadSessionData(
 internal sealed class ThreadSession : IAsyncDisposable
 {
     private readonly ThreadSessionData _data;
+    private bool _isDisposed;
 
     public McpClientManager ClientManager => _data.ClientManager;
     public McpResourceManager ResourceManager => _data.ResourceManager;
@@ -19,6 +20,14 @@ internal sealed class ThreadSession : IAsyncDisposable
     private ThreadSession(ThreadSessionData data)
     {
         _data = data;
+    }
+
+    ~ThreadSession()
+    {
+        if (!_isDisposed)
+        {
+            _ = Task.Run(async () => await DisposeAsyncCore());
+        }
     }
 
     public static async Task<ThreadSession> CreateAsync(
@@ -36,6 +45,18 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        await DisposeAsyncCore();
+        GC.SuppressFinalize(this);
+    }
+
+    private async ValueTask DisposeAsyncCore()
+    {
+        _isDisposed = true;
         _data.SamplingHandler.Dispose();
         await _data.ResourceManager.DisposeAsync();
         await _data.ClientManager.DisposeAsync();
