@@ -54,7 +54,7 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public DisposableAgent CreateAsync(AgentKey agentKey)
+    public DisposableAgent Create(AgentKey agentKey)
     {
         return agent;
     }

@@ -10,7 +10,7 @@ public sealed class McpAgentFactory(
     string agentName,
     string agentDescription) : IAgentFactory
 {
-    public DisposableAgent CreateAsync(AgentKey agentKey)
+    public DisposableAgent Create(AgentKey agentKey)
     {
         var name = $"{agentName}-{agentKey.ChatId}-{agentKey.ThreadId}";
         return new McpAgent(mcpEndpoints, chatClient, name, agentDescription);

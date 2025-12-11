@@ -63,12 +63,20 @@ public sealed class McpAgent : DisposableAgent
         return _innerAgent.GetNewThread();
     }
 
-    public async Task CleanupThreadAsync(AgentThread thread)
+    public async Task CleanupThreadAsync(AgentThread thread, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        if (_threadSessions.Remove(thread, out var session))
+        await _syncLock.WaitAsync(cancellationToken);
+        try
         {
-            await session.DisposeAsync();
+            if (_threadSessions.Remove(thread, out var session))
+            {
+                await session.DisposeAsync();
+            }
+        }
+        finally
+        {
+            _syncLock.Release();
         }
     }
 
@@ -142,7 +150,9 @@ public sealed class McpAgent : DisposableAgent
         try
         {
             if (_threadSessions.TryGetValue(thread, out var session))
+            {
                 return session;
+            }
 
             session = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
             _threadSessions.AddOrUpdate(thread, session);
