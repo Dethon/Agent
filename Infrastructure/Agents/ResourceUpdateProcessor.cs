@@ -88,6 +88,11 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 
     public async Task EnsureChannelActive(CancellationToken ct)
     {
+        if (!OutputChannel.Reader.Completion.IsCompleted)
+        {
+            return;
+        }
+
         await _syncLock.WaitAsync(ct);
         try
         {
