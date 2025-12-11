@@ -9,13 +9,11 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpResourceManager(
-    Func<
-        IEnumerable<ChatMessage>,
-        CancellationToken,
-        IAsyncEnumerable<AgentRunResponseUpdate>> runStreamingFunc)
-    : IAsyncDisposable
+internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IAsyncDisposable
 {
+    public string? Instructions { get; set; }
+    public IReadOnlyList<AITool> Tools { get; set; } = [];
+
     private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
         ImmutableDictionary<McpClient, ImmutableHashSet<string>>.Empty;
 
@@ -120,11 +118,16 @@ internal sealed class McpResourceManager(
 
         var resource = await client.ReadResourceAsync(uri, cancellationToken: ct);
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
+        var options = new ChatClientAgentRunOptions(new ChatOptions
+        {
+            Tools = [..Tools],
+            Instructions = Instructions
+        });
 
         await _syncLock.WaitAsync(ct);
         try
         {
-            await foreach (var update in runStreamingFunc([message], ct))
+            await foreach (var update in agent.RunStreamingAsync([message], thread, options, ct))
             {
                 SubscriptionChannel.Writer.TryWrite(update);
             }

@@ -54,9 +54,9 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public Task<DisposableAgent> CreateAsync(AgentKey agentKey, CancellationToken cancellationToken)
+    public DisposableAgent CreateAsync(AgentKey agentKey)
     {
-        return Task.FromResult(agent);
+        return agent;
     }
 }
 

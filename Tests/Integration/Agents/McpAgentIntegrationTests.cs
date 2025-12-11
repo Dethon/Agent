@@ -31,12 +31,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMovies");
         mcpFixture.CreateLibraryStructure("AgentSeries");
 
-        var agent = await McpAgent.CreateAsync(
+        var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "",
-            "",
-            CancellationToken.None);
+            "");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -54,7 +53,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
-        await ((IAsyncDisposable)agent).DisposeAsync();
+        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -65,12 +64,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMoveDestination");
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoveSource", "agent-test-file.mkv"), "fake content");
 
-        var agent = await McpAgent.CreateAsync(
+        var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "",
-            "",
-            CancellationToken.None);
+            "");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
@@ -90,7 +88,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveDestination", "agent-test-file.mkv")).ShouldBeTrue();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveSource", "agent-test-file.mkv")).ShouldBeFalse();
 
-        await ((IAsyncDisposable)agent).DisposeAsync();
+        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -100,12 +98,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoviesFiles", "agent-existing-movie.mkv"));
 
-        var agent = await McpAgent.CreateAsync(
+        var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "",
-            "",
-            CancellationToken.None);
+            "");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -124,7 +121,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
-        await ((IAsyncDisposable)agent).DisposeAsync();
+        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -134,12 +131,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         // Note: System prompt is now fetched from the MCP server, not passed here
 
-        var agent = await McpAgent.CreateAsync(
+        var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "",
-            "",
-            CancellationToken.None);
+            "");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -157,7 +153,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content));
         combinedResponse.ShouldNotBeNullOrEmpty();
 
-        await ((IAsyncDisposable)agent).DisposeAsync();
+        await agent.DisposeAsync();
     }
 
     [SkippableFact]
@@ -170,12 +166,11 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         Directory.CreateDirectory(downloadSubDir);
         await File.WriteAllTextAsync(Path.Combine(downloadSubDir, "leftover.nfo"), "info file");
 
-        var agent = await McpAgent.CreateAsync(
+        var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "",
-            "",
-            CancellationToken.None);
+            "");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -192,6 +187,6 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
         responses.ShouldNotBeEmpty();
         Directory.Exists(downloadSubDir).ShouldBeFalse();
 
-        await ((IAsyncDisposable)agent).DisposeAsync();
+        await agent.DisposeAsync();
     }
 }

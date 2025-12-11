@@ -7,7 +7,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(IChatClient chatClient, Func<IReadOnlyList<AITool>> toolsProvider)
+internal sealed class McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyList<AITool>> toolsProvider)
     : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
@@ -25,15 +25,14 @@ internal sealed class McpSamplingHandler(IChatClient chatClient, Func<IReadOnlyL
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-        var coAgent = CreateInnerAgent(parameters?.SystemPrompt);
-        var thread = GetOrCreateThread(parameters, coAgent);
+        var thread = GetOrCreateThread(parameters);
         var messages = MapMessages(parameters);
         var options = ConfigureOptions(parameters);
 
-        return await RunAndCollectUpdates(coAgent, messages, thread, options, progress, ct);
+        return await RunAndCollectUpdates(agent, messages, thread, options, progress, ct);
     }
 
-    private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters, ChatClientAgent agent)
+    private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters)
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
         return tracker is null
@@ -81,34 +80,16 @@ internal sealed class McpSamplingHandler(IChatClient chatClient, Func<IReadOnlyL
         return updates.ToCreateMessageResult();
     }
 
-    private ChatClientAgent CreateInnerAgent(string? systemPrompt)
-    {
-        var chatOptions = new ChatOptions
-        {
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" },
-            Instructions = systemPrompt
-        };
-
-        return chatClient.CreateAIAgent(new ChatClientAgentOptions
-        {
-            Name = "jack-sampling",
-            ChatOptions = chatOptions
-        });
-    }
-
     private ChatClientAgentRunOptions CreateRunOptions(CreateMessageRequestParams? parameters = null)
     {
-        var chatOptions = new ChatOptions
-        {
-            Tools = [..toolsProvider()],
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
-        };
+        var chatOptions = new ChatOptions { Tools = [..toolsProvider()] };
 
         if (parameters is null)
         {
             return new ChatClientAgentRunOptions(chatOptions);
         }
 
+        chatOptions.Instructions = parameters.SystemPrompt;
         chatOptions.Temperature = parameters.Temperature;
         chatOptions.MaxOutputTokens = parameters.MaxTokens;
         chatOptions.StopSequences = parameters.StopSequences?.ToArray();

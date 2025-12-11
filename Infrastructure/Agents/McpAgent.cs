@@ -1,37 +1,44 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using ModelContextProtocol.Client;
 
 namespace Infrastructure.Agents;
 
 public sealed class McpAgent : DisposableAgent
 {
-    private readonly IChatClient _chatClient;
-    private readonly McpClientManager _clientManager;
-    private readonly McpResourceManager _resourceManager;
-    private readonly McpSamplingHandler _samplingHandler;
+    private readonly string[] _endpoints;
+    private readonly string _name;
+    private readonly string _description;
 
-    private ChatClientAgent _innerAgent = null!;
-    private AgentThread? _conversationThread;
+    private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
+    private readonly ChatClientAgent _innerAgent;
     private bool _isDisposed;
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    public static async Task<DisposableAgent> CreateAsync(
-        string[] endpoints,
-        IChatClient chatClient,
-        string name,
-        string description,
-        CancellationToken ct)
+    public McpAgent(string[] endpoints, IChatClient chatClient, string name, string description)
     {
-        var agent = new McpAgent(chatClient);
-        await agent.InitializeAsync(endpoints, name, description, ct);
-        return agent;
+        _endpoints = endpoints;
+        _name = name;
+        _description = description;
+        _innerAgent = chatClient.CreateAIAgent(new ChatClientAgentOptions
+        {
+            Name = name,
+            ChatOptions = new ChatOptions
+            {
+                AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+            },
+            Description = description,
+            ChatMessageStoreFactory = ctx => ctx.SerializedState.ValueKind is JsonValueKind.Object
+                ? new ConcurrentChatMessageStore(ctx.SerializedState, ctx.JsonSerializerOptions)
+                : new ConcurrentChatMessageStore()
+        });
     }
 
     public override async ValueTask DisposeAsync()
@@ -42,13 +49,17 @@ public sealed class McpAgent : DisposableAgent
         }
 
         _isDisposed = true;
-        _samplingHandler.Dispose();
-        await _resourceManager.DisposeAsync();
-        await _clientManager.DisposeAsync();
+        foreach (var session in _threadSessions.Values)
+        {
+            await session.DisposeAsync();
+        }
+
+        _threadSessions.Clear();
     }
 
     public override AgentThread GetNewThread()
     {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
         return _innerAgent.GetNewThread();
     }
 
@@ -66,58 +77,35 @@ public sealed class McpAgent : DisposableAgent
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-
-        options ??= CreateRunOptions();
-        _conversationThread = thread ?? _conversationThread ?? GetNewThread();
-
-        var response = RunStreamingAsync(messages, _conversationThread, options, cancellationToken);
+        var response = RunStreamingAsync(messages, thread, options, cancellationToken);
         return (await response.ToArrayAsync(cancellationToken)).ToAgentRunResponse();
     }
 
-    public override IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
+        thread ??= GetNewThread();
+        var session = await GetOrCreateSessionAsync(thread, cancellationToken);
+        session.ResourceManager.EnsureChannelActive();
+        options ??= CreateRunOptions(session);
 
-        _resourceManager.EnsureChannelActive();
-        options ??= CreateRunOptions();
-        _conversationThread = thread ?? _conversationThread ?? GetNewThread();
+        var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
+        var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
 
-        var mainResponses = RunStreamingCoreAsync(messages, _conversationThread, options, cancellationToken);
-        var notificationResponses = _resourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
-        return mainResponses.Merge(notificationResponses, cancellationToken);
-    }
-
-    private McpAgent(IChatClient chatClient)
-    {
-        _chatClient = chatClient;
-        _samplingHandler = new McpSamplingHandler(_chatClient, () => _clientManager?.Tools ?? []);
-        _clientManager = new McpClientManager(new McpClientHandlers
+        await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
         {
-            SamplingHandler = _samplingHandler.HandleAsync
-        });
-        _resourceManager = new McpResourceManager(RunStreamingForResource);
-    }
-
-    private async Task InitializeAsync(
-        string[] endpoints,
-        string name,
-        string description,
-        CancellationToken ct)
-    {
-        await _clientManager.InitializeAsync(name, description, endpoints, ct);
-        var systemPrompt = await _clientManager.GetPromptsAsync(ct);
-        await _resourceManager.SyncResourcesAsync(_clientManager.Clients, ct);
-        _resourceManager.SubscribeToNotifications(_clientManager.Clients);
-        _innerAgent = CreateInnerAgent(systemPrompt, name, description);
+            yield return update;
+        }
     }
 
     private async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingCoreAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread thread,
+        ThreadSession session,
         AgentRunOptions options,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -127,49 +115,35 @@ public sealed class McpAgent : DisposableAgent
             yield return update;
         }
 
-        await _resourceManager.SyncResourcesAsync(_clientManager.Clients, ct);
+        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, ct);
     }
 
-    private IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingForResource(
-        IEnumerable<ChatMessage> messages, CancellationToken ct)
+    private static ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
-        var options = CreateRunOptions();
-        return _innerAgent.RunStreamingAsync(messages, _conversationThread, options, ct);
-    }
-
-    private ChatClientAgent CreateInnerAgent(string? systemPrompt, string? name = null, string? description = null)
-    {
-        var chatOptions = new ChatOptions
+        return new ChatClientAgentRunOptions(new ChatOptions
         {
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" },
-            Instructions = systemPrompt
-        };
-
-        return _chatClient.CreateAIAgent(new ChatClientAgentOptions
-        {
-            Name = name,
-            ChatOptions = chatOptions,
-            Description = description,
-            ChatMessageStoreFactory = CreateConcurrentMessageStore
+            Tools = [.. session.ClientManager.Tools],
+            Instructions = string.Join("\n\n", session.ClientManager.Prompts)
         });
     }
 
-    private static ConcurrentChatMessageStore CreateConcurrentMessageStore(
-        ChatClientAgentOptions.ChatMessageStoreFactoryContext context)
+    private async Task<ThreadSession> GetOrCreateSessionAsync(AgentThread thread, CancellationToken ct)
     {
-        return context.SerializedState.ValueKind is JsonValueKind.Object
-            ? new ConcurrentChatMessageStore(context.SerializedState, context.JsonSerializerOptions)
-            : new ConcurrentChatMessageStore();
-    }
-
-    private ChatClientAgentRunOptions CreateRunOptions()
-    {
-        var chatOptions = new ChatOptions
+        try
         {
-            Tools = [.. _clientManager.Tools],
-            AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
-        };
+            await _syncLock.WaitAsync(ct);
+            if (_threadSessions.TryGetValue(thread, out var session))
+            {
+                return session;
+            }
 
-        return new ChatClientAgentRunOptions(chatOptions);
+            session = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
+            _threadSessions[thread] = session;
+            return session;
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
     }
 }

@@ -7,46 +7,45 @@ using Polly;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpClientManager(McpClientHandlers handlers) : IAsyncDisposable
+internal sealed class McpClientManager : IAsyncDisposable
 {
-    private ImmutableList<McpClient> _clients = [];
-    private ImmutableList<AITool> _tools = [];
     private bool _isDisposed;
 
-    public IReadOnlyList<McpClient> Clients => _clients;
-    public IReadOnlyList<AITool> Tools => _tools;
+    public IReadOnlyList<McpClient> Clients { get; private set; } = [];
+    public IReadOnlyList<AITool> Tools { get; private set; } = [];
+    public IReadOnlyList<string> Prompts { get; private set; } = [];
 
     public async Task InitializeAsync(
         string name,
         string description,
         string[] endpoints,
+        McpClientHandlers handlers,
         CancellationToken ct)
     {
-        _clients = (await CreateClients(name, description, endpoints, ct)).ToImmutableList();
-        _tools = (await GetTools(_clients, ct)).ToImmutableList();
+        Clients = (await CreateClients(name, description, endpoints, handlers, ct)).ToImmutableList();
+        Tools = (await GetTools(Clients, ct)).ToImmutableList();
+        Prompts = await GetPromptsAsync(ct);
     }
 
-    public async Task<string?> GetPromptsAsync(CancellationToken ct)
+    public async Task<string[]> GetPromptsAsync(CancellationToken ct)
     {
-        var tasks = _clients
+        return await Clients
             .Where(client => client.ServerCapabilities.Prompts is not null)
-            .Select(async client =>
+            .ToAsyncEnumerable()
+            .SelectMany<McpClient, string>(async (client, _, c) =>
             {
-                var prompts = await client.ListPromptsAsync(cancellationToken: ct);
-                var promptContents = await Task.WhenAll(prompts.Select(async p =>
+                var prompts = await client.ListPromptsAsync(cancellationToken: c);
+                return await Task.WhenAll(prompts.Select(async p =>
                 {
-                    var result = await client.GetPromptAsync(p.Name, cancellationToken: ct);
+                    var result = await client.GetPromptAsync(p.Name, cancellationToken: c);
                     return string.Join("\n", result.Messages
                         .Select(m => m.Content)
                         .OfType<TextContentBlock>()
                         .Select(t => t.Text));
                 }));
-                return string.Join("\n\n", promptContents);
-            });
-
-        var results = await Task.WhenAll(tasks);
-        var combined = string.Join("\n\n", results.Where(r => !string.IsNullOrEmpty(r)));
-        return string.IsNullOrEmpty(combined) ? null : combined;
+            })
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .ToArrayAsync(ct);
     }
 
     public async ValueTask DisposeAsync()
@@ -57,16 +56,17 @@ internal sealed class McpClientManager(McpClientHandlers handlers) : IAsyncDispo
         }
 
         _isDisposed = true;
-        foreach (var client in _clients)
+        foreach (var client in Clients)
         {
             await client.DisposeAsync();
         }
     }
 
-    private async Task<McpClient[]> CreateClients(
+    private static async Task<McpClient[]> CreateClients(
         string name,
         string description,
         string[] endpoints,
+        McpClientHandlers handlers,
         CancellationToken ct)
     {
         var retryPolicy = Policy
