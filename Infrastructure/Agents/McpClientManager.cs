@@ -46,7 +46,6 @@ internal sealed class McpClientManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-
         foreach (var client in Clients)
         {
             await client.DisposeAsync();

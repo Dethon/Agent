@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
@@ -14,10 +13,10 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _name;
     private readonly string _description;
 
-    private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
+    private readonly ConditionalWeakTable<AgentThread, ThreadSession> _threadSessions = [];
     private readonly ChatClientAgent _innerAgent;
-    private bool _isDisposed;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private bool _isDisposed;
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
@@ -50,7 +49,7 @@ public sealed class McpAgent : DisposableAgent
 
         _isDisposed = true;
         _syncLock.Dispose();
-        foreach (var session in _threadSessions.Values)
+        foreach (var (_, session) in _threadSessions)
         {
             await session.DisposeAsync();
         }
@@ -62,6 +61,15 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         return _innerAgent.GetNewThread();
+    }
+
+    public async Task CleanupThreadAsync(AgentThread thread)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        if (_threadSessions.Remove(thread, out var session))
+        {
+            await session.DisposeAsync();
+        }
     }
 
     public override AgentThread DeserializeThread(
@@ -130,16 +138,14 @@ public sealed class McpAgent : DisposableAgent
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentThread thread, CancellationToken ct)
     {
+        await _syncLock.WaitAsync(ct);
         try
         {
-            await _syncLock.WaitAsync(ct);
             if (_threadSessions.TryGetValue(thread, out var session))
-            {
                 return session;
-            }
 
             session = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
-            _threadSessions[thread] = session;
+            _threadSessions.AddOrUpdate(thread, session);
             return session;
         }
         finally

@@ -55,10 +55,13 @@ internal sealed class McpResourceManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_isDisposed) return;
-        _isDisposed = true;
+        if (_isDisposed)
+        {
+            return;
+        }
 
-        await _updateProcessor.DisposeAsync();
+        _isDisposed = true;
+        _updateProcessor.Dispose();
         await _subscriptionManager.DisposeAsync();
     }
 }

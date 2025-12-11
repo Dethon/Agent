@@ -14,7 +14,7 @@ internal sealed record ResourceProcessorConfig(
     string? Instructions,
     IReadOnlyList<AITool> Tools);
 
-internal sealed class ResourceUpdateProcessor : IAsyncDisposable
+internal sealed class ResourceUpdateProcessor : IDisposable
 {
     private readonly ResourceProcessorConfig _config;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
@@ -94,7 +94,7 @@ internal sealed class ResourceUpdateProcessor : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
         if (_isDisposed)
         {
@@ -102,10 +102,8 @@ internal sealed class ResourceUpdateProcessor : IAsyncDisposable
         }
 
         _isDisposed = true;
-
         OutputChannel.Writer.TryComplete();
         _syncLock.Dispose();
-        await ValueTask.CompletedTask;
     }
 
     private static Channel<AgentRunResponseUpdate> CreateChannel()
