@@ -86,11 +86,19 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         }
     }
 
-    public void EnsureChannelActive()
+    public async Task EnsureChannelActive(CancellationToken ct)
     {
-        if (OutputChannel.Reader.Completion.IsCompleted)
+        await _syncLock.WaitAsync(ct);
+        try
         {
-            OutputChannel = CreateChannel();
+            if (OutputChannel.Reader.Completion.IsCompleted)
+            {
+                OutputChannel = CreateChannel();
+            }
+        }
+        finally
+        {
+            _syncLock.Release();
         }
     }
 

@@ -107,7 +107,7 @@ public sealed class McpAgent : DisposableAgent
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         thread ??= GetNewThread();
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
-        session.ResourceManager.EnsureChannelActive();
+        await session.ResourceManager.EnsureChannelActive(cancellationToken);
         options ??= CreateRunOptions(session);
 
         var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);

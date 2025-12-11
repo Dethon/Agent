@@ -48,9 +48,9 @@ internal sealed class McpResourceManager : IAsyncDisposable
         return _subscriptionManager.SyncResourcesAsync(clients, ct);
     }
 
-    public void EnsureChannelActive()
+    public Task EnsureChannelActive(CancellationToken ct)
     {
-        _updateProcessor.EnsureChannelActive();
+        return _updateProcessor.EnsureChannelActive(ct);
     }
 
     public async ValueTask DisposeAsync()
