@@ -10,43 +10,47 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     private readonly McpSamplingHandler _samplingHandler;
 
-    public async ValueTask DisposeAsync()
+    private ThreadSession(
+        McpClientManager clientManager,
+        McpResourceManager resourceManager,
+        McpSamplingHandler samplingHandler)
     {
-        _samplingHandler.Dispose();
-        await ResourceManager.DisposeAsync();
-        await ClientManager.DisposeAsync();
+        ClientManager = clientManager;
+        ResourceManager = resourceManager;
+        _samplingHandler = samplingHandler;
     }
 
     public static async Task<ThreadSession> CreateAsync(
         string[] endpoints,
         string name,
         string description,
-        ChatClientAgent chatClient,
+        ChatClientAgent agent,
         AgentThread thread,
         CancellationToken ct)
     {
-        var session = new ThreadSession(chatClient, thread);
-        await session.Initialize(endpoints, name, description, ct);
-        return session;
+        // Create sampling handler first (needs reference to tools, resolved lazily)
+        McpClientManager? clientManager = null;
+        var samplingHandler = new McpSamplingHandler(agent, () => clientManager!.Tools);
+
+        // Create clients with sampling handler wired up
+        var handlers = new McpClientHandlers { SamplingHandler = samplingHandler.HandleAsync };
+        clientManager = await McpClientManager.CreateAsync(name, description, endpoints, handlers, ct);
+
+        // Create resource manager with immutable config from client manager
+        var instructions = string.Join("\n\n", clientManager.Prompts);
+        var resourceManager = new McpResourceManager(agent, thread, instructions, clientManager.Tools);
+
+        // Initialize resource subscriptions
+        await resourceManager.SyncResourcesAsync(clientManager.Clients, ct);
+        resourceManager.SubscribeToNotifications(clientManager.Clients);
+
+        return new ThreadSession(clientManager, resourceManager, samplingHandler);
     }
 
-    private ThreadSession(ChatClientAgent agent, AgentThread thread)
+    public async ValueTask DisposeAsync()
     {
-        ClientManager = new McpClientManager();
-        ResourceManager = new McpResourceManager(agent, thread);
-        _samplingHandler = new McpSamplingHandler(agent, () => ClientManager.Tools);
-    }
-
-    private async Task Initialize(string[] endpoints, string name, string description, CancellationToken ct)
-    {
-        var handlers = new McpClientHandlers
-        {
-            SamplingHandler = _samplingHandler.HandleAsync
-        };
-        await ClientManager.InitializeAsync(name, description, endpoints, handlers, ct);
-        ResourceManager.Instructions = string.Join("\n\n", ClientManager.Prompts);
-        ResourceManager.Tools = ClientManager.Tools;
-        await ResourceManager.SyncResourcesAsync(ClientManager.Clients, ct);
-        ResourceManager.SubscribeToNotifications(ClientManager.Clients);
+        _samplingHandler.Dispose();
+        await ResourceManager.DisposeAsync();
+        await ClientManager.DisposeAsync();
     }
 }

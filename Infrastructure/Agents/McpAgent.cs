@@ -49,6 +49,7 @@ public sealed class McpAgent : DisposableAgent
         }
 
         _isDisposed = true;
+        _syncLock.Dispose();
         foreach (var session in _threadSessions.Values)
         {
             await session.DisposeAsync();

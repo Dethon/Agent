@@ -9,15 +9,17 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IAsyncDisposable
+internal sealed class McpResourceManager(
+    AIAgent agent,
+    AgentThread thread,
+    string? instructions,
+    IReadOnlyList<AITool> tools) : IAsyncDisposable
 {
-    public string? Instructions { get; set; }
-    public IReadOnlyList<AITool> Tools { get; set; } = [];
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
 
-    private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _availableResources =
+    private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _subscribedResources =
         ImmutableDictionary<McpClient, ImmutableHashSet<string>>.Empty;
 
-    private readonly SemaphoreSlim _syncLock = new(1, 1);
     private bool _isDisposed;
 
     public Channel<AgentRunResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
@@ -49,25 +51,23 @@ internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IA
                 continue;
             }
 
-            var currentResources = (await client.ListResourcesAsync(cancellationToken: ct))
-                .Select(x => x.Uri)
+            var current = (await client.ListResourcesAsync(cancellationToken: ct))
+                .Select(r => r.Uri)
                 .ToArray();
-            var previousResources = _availableResources.GetValueOrDefault(client) ?? [];
-            var newResources = currentResources.Except(previousResources);
-            var removedResources = previousResources.Except(currentResources);
+            var previous = _subscribedResources.GetValueOrDefault(client) ?? [];
 
-            foreach (var uri in newResources)
+            foreach (var uri in current.Except(previous))
             {
                 await client.SubscribeToResourceAsync(uri, cancellationToken: ct);
             }
 
-            foreach (var uri in removedResources)
+            foreach (var uri in previous.Except(current))
             {
                 await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
 
-            _availableResources = _availableResources.SetItem(client, [.. currentResources]);
-            hasAnyResources |= currentResources.Length > 0;
+            _subscribedResources = _subscribedResources.SetItem(client, [..current]);
+            hasAnyResources |= current.Length > 0;
         }
 
         await UpdateChannelState(hasAnyResources, ct);
@@ -89,15 +89,16 @@ internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IA
         }
 
         _isDisposed = true;
+
         SubscriptionChannel.Writer.TryComplete();
         _syncLock.Dispose();
-        await UnsubscribeFromAllResources(CancellationToken.None);
+        await UnsubscribeFromAllResources();
     }
 
     private static Channel<AgentRunResponseUpdate> CreateChannel()
     {
-        var options = new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.DropOldest };
-        return Channel.CreateBounded<AgentRunResponseUpdate>(options);
+        return Channel.CreateBounded<AgentRunResponseUpdate>(
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.DropOldest });
     }
 
     private async ValueTask HandleResourceUpdated(
@@ -120,8 +121,8 @@ internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IA
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
         var options = new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = [..Tools],
-            Instructions = Instructions
+            Tools = [..tools],
+            Instructions = instructions
         });
 
         await _syncLock.WaitAsync(ct);
@@ -158,13 +159,13 @@ internal sealed class McpResourceManager(AIAgent agent, AgentThread thread) : IA
         }
     }
 
-    private async Task UnsubscribeFromAllResources(CancellationToken ct)
+    private async Task UnsubscribeFromAllResources()
     {
-        foreach (var (client, uris) in _availableResources)
+        foreach (var (client, uris) in _subscribedResources)
         {
             foreach (var uri in uris)
             {
-                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
+                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: CancellationToken.None);
             }
         }
     }

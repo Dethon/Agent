@@ -7,10 +7,11 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyList<AITool>> toolsProvider)
-    : IDisposable
+internal sealed class McpSamplingHandler(
+    ChatClientAgent agent,
+    Func<IReadOnlyList<AITool>> toolsProvider) : IDisposable
 {
-    private readonly ConcurrentDictionary<string, AgentThread> _coAgentConversations = [];
+    private readonly ConcurrentDictionary<string, AgentThread> _trackedConversations = [];
     private bool _isDisposed;
 
     public void Dispose()
@@ -27,9 +28,9 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyLi
 
         var thread = GetOrCreateThread(parameters);
         var messages = MapMessages(parameters);
-        var options = ConfigureOptions(parameters);
+        var options = CreateOptions(parameters);
 
-        return await RunAndCollectUpdates(agent, messages, thread, options, progress, ct);
+        return await ExecuteAndReport(messages, thread, options, progress, ct);
     }
 
     private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters)
@@ -37,33 +38,37 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyLi
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
         return tracker is null
             ? agent.GetNewThread()
-            : _coAgentConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), agent);
+            : _trackedConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), agent);
     }
 
     private static ChatMessage[] MapMessages(CreateMessageRequestParams? parameters)
     {
         return parameters?.Messages
-            .Select(x => new ChatMessage(
-                x.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User,
-                x.Content.ToAIContents()))
+            .Select(m => new ChatMessage(
+                m.Role == Role.Assistant ? ChatRole.Assistant : ChatRole.User,
+                m.Content.ToAIContents()))
             .ToArray() ?? [];
     }
 
-    private ChatClientAgentRunOptions ConfigureOptions(CreateMessageRequestParams? parameters)
+    private ChatClientAgentRunOptions CreateOptions(CreateMessageRequestParams? parameters)
     {
-        var options = CreateRunOptions(parameters);
-        var includeContext = parameters?.IncludeContext ?? ContextInclusion.None;
+        IList<AITool> tools = (parameters?.IncludeContext ?? ContextInclusion.None) == ContextInclusion.None
+            ? []
+            : [..toolsProvider()];
 
-        if (includeContext == ContextInclusion.None && options.ChatOptions is not null)
+        var chatOptions = new ChatOptions
         {
-            options.ChatOptions.Tools = [];
-        }
+            Tools = tools,
+            Instructions = parameters?.SystemPrompt,
+            Temperature = parameters?.Temperature,
+            MaxOutputTokens = parameters?.MaxTokens,
+            StopSequences = parameters?.StopSequences?.ToArray()
+        };
 
-        return options;
+        return new ChatClientAgentRunOptions(chatOptions);
     }
 
-    private static async Task<CreateMessageResult> RunAndCollectUpdates(
-        ChatClientAgent agent,
+    private async Task<CreateMessageResult> ExecuteAndReport(
         ChatMessage[] messages,
         AgentThread thread,
         ChatClientAgentRunOptions options,
@@ -78,22 +83,5 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyLi
         }
 
         return updates.ToCreateMessageResult();
-    }
-
-    private ChatClientAgentRunOptions CreateRunOptions(CreateMessageRequestParams? parameters = null)
-    {
-        var chatOptions = new ChatOptions { Tools = [..toolsProvider()] };
-
-        if (parameters is null)
-        {
-            return new ChatClientAgentRunOptions(chatOptions);
-        }
-
-        chatOptions.Instructions = parameters.SystemPrompt;
-        chatOptions.Temperature = parameters.Temperature;
-        chatOptions.MaxOutputTokens = parameters.MaxTokens;
-        chatOptions.StopSequences = parameters.StopSequences?.ToArray();
-
-        return new ChatClientAgentRunOptions(chatOptions);
     }
 }
