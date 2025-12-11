@@ -61,6 +61,8 @@ internal sealed class McpResourceManager : IAsyncDisposable
         }
 
         _isDisposed = true;
+        _subscriptionManager.ResourceUpdated -= _updateProcessor.HandleResourceUpdatedAsync;
+        _subscriptionManager.ResourcesSynced -= _updateProcessor.HandleResourcesSyncedAsync;
         _updateProcessor.Dispose();
         await _subscriptionManager.DisposeAsync();
     }
