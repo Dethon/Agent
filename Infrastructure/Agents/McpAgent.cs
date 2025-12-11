@@ -111,7 +111,7 @@ public sealed class McpAgent : DisposableAgent
         options ??= CreateRunOptions(session);
 
         var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
-        var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
+        var notificationResponses = session.ResourceManager.SubscriptionChannel.ReadAllAsync(cancellationToken);
 
         await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
         {

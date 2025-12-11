@@ -18,9 +18,10 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 {
     private readonly ResourceProcessorConfig _config;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private Channel<AgentRunResponseUpdate> _channel = CreateChannel();
     private bool _isDisposed;
 
-    public Channel<AgentRunResponseUpdate> OutputChannel { get; private set; } = CreateChannel();
+    public ChannelReader<AgentRunResponseUpdate> Reader => _channel.Reader;
 
     public ResourceUpdateProcessor(ResourceProcessorConfig config)
     {
@@ -39,7 +40,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
 
-        if (uri is null || OutputChannel.Reader.Completion.IsCompleted)
+        if (uri is null || _channel.Reader.Completion.IsCompleted)
         {
             return;
         }
@@ -57,7 +58,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         {
             await foreach (var update in _config.Agent.RunStreamingAsync([message], _config.Thread, options, ct))
             {
-                OutputChannel.Writer.TryWrite(update);
+                _channel.Writer.TryWrite(update);
             }
         }
         finally
@@ -73,11 +74,11 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         {
             if (!hasAnyResources)
             {
-                OutputChannel.Writer.TryComplete();
+                _channel.Writer.TryComplete();
             }
-            else if (OutputChannel.Reader.Completion.IsCompleted)
+            else if (_channel.Reader.Completion.IsCompleted)
             {
-                OutputChannel = CreateChannel();
+                _channel = CreateChannel();
             }
         }
         finally
@@ -88,7 +89,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 
     public async Task EnsureChannelActive(CancellationToken ct)
     {
-        if (!OutputChannel.Reader.Completion.IsCompleted)
+        if (!_channel.Reader.Completion.IsCompleted)
         {
             return;
         }
@@ -96,9 +97,9 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         await _syncLock.WaitAsync(ct);
         try
         {
-            if (OutputChannel.Reader.Completion.IsCompleted)
+            if (_channel.Reader.Completion.IsCompleted)
             {
-                OutputChannel = CreateChannel();
+                _channel = CreateChannel();
             }
         }
         finally
@@ -115,7 +116,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         }
 
         _isDisposed = true;
-        OutputChannel.Writer.TryComplete();
+        _channel.Writer.TryComplete();
         _syncLock.Dispose();
     }
 

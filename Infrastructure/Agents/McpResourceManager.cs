@@ -11,7 +11,7 @@ internal sealed class McpResourceManager : IAsyncDisposable
     private readonly ResourceUpdateProcessor _updateProcessor;
     private bool _isDisposed;
 
-    public Channel<AgentRunResponseUpdate> SubscriptionChannel => _updateProcessor.OutputChannel;
+    public ChannelReader<AgentRunResponseUpdate> SubscriptionChannel => _updateProcessor.Reader;
 
     private McpResourceManager(
         McpSubscriptionManager subscriptionManager,
