@@ -1,4 +1,4 @@
-﻿using Jack.Modules;
+using Jack.Modules;
 using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);

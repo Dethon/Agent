@@ -1,4 +1,4 @@
-﻿name: jackbot
+name: jackbot
 services:
   qbittorrent:
     image: qbittorrentofficial/qbittorrent-nox:5.1.2-2

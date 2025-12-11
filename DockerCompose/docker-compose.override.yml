@@ -1,4 +1,4 @@
-﻿services:
+services:
   mcp-library:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
