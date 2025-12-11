@@ -7,12 +7,16 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(
-    ChatClientAgent agent,
-    Func<IReadOnlyList<AITool>> toolsProvider) : IDisposable
+internal sealed class McpSamplingHandler(ChatClientAgent agent) : IDisposable
 {
     private readonly ConcurrentDictionary<string, AgentThread> _trackedConversations = [];
+    private IReadOnlyList<AITool> _tools = [];
     private bool _isDisposed;
+
+    public void SetTools(IReadOnlyList<AITool> tools)
+    {
+        _tools = tools;
+    }
 
     public void Dispose()
     {
@@ -52,20 +56,16 @@ internal sealed class McpSamplingHandler(
 
     private ChatClientAgentRunOptions CreateOptions(CreateMessageRequestParams? parameters)
     {
-        IList<AITool> tools = (parameters?.IncludeContext ?? ContextInclusion.None) == ContextInclusion.None
-            ? []
-            : [..toolsProvider()];
+        var includeTools = (parameters?.IncludeContext ?? ContextInclusion.None) != ContextInclusion.None;
 
-        var chatOptions = new ChatOptions
+        return new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = tools,
+            Tools = includeTools ? [.._tools] : [],
             Instructions = parameters?.SystemPrompt,
             Temperature = parameters?.Temperature,
             MaxOutputTokens = parameters?.MaxTokens,
             StopSequences = parameters?.StopSequences?.ToArray()
-        };
-
-        return new ChatClientAgentRunOptions(chatOptions);
+        });
     }
 
     private async Task<CreateMessageResult> ExecuteAndReport(

@@ -28,19 +28,14 @@ internal sealed class ThreadSession : IAsyncDisposable
         AgentThread thread,
         CancellationToken ct)
     {
-        // Create sampling handler first (needs reference to tools, resolved lazily)
-        McpClientManager? clientManager = null;
-        var samplingHandler = new McpSamplingHandler(agent, () => clientManager!.Tools);
-
-        // Create clients with sampling handler wired up
+        var samplingHandler = new McpSamplingHandler(agent);
         var handlers = new McpClientHandlers { SamplingHandler = samplingHandler.HandleAsync };
-        clientManager = await McpClientManager.CreateAsync(name, description, endpoints, handlers, ct);
 
-        // Create resource manager with immutable config from client manager
+        var clientManager = await McpClientManager.CreateAsync(name, description, endpoints, handlers, ct);
+        samplingHandler.SetTools(clientManager.Tools);
+
         var instructions = string.Join("\n\n", clientManager.Prompts);
         var resourceManager = new McpResourceManager(agent, thread, instructions, clientManager.Tools);
-
-        // Initialize resource subscriptions
         await resourceManager.SyncResourcesAsync(clientManager.Clients, ct);
         resourceManager.SubscribeToNotifications(clientManager.Clients);
 
