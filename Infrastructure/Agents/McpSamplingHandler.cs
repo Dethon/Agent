@@ -7,15 +7,20 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler(ChatClientAgent agent) : IDisposable
+internal sealed class McpSamplingHandler : IDisposable
 {
+    private readonly ChatClientAgent _agent;
+    private readonly Func<IReadOnlyList<AITool>> _toolsProvider;
     private readonly ConcurrentDictionary<string, AgentThread> _trackedConversations = [];
-    private IReadOnlyList<AITool> _tools = [];
     private bool _isDisposed;
 
-    public void SetTools(IReadOnlyList<AITool> tools)
+    public McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyList<AITool>> toolsProvider)
     {
-        _tools = tools;
+        ArgumentNullException.ThrowIfNull(agent);
+        ArgumentNullException.ThrowIfNull(toolsProvider);
+
+        _agent = agent;
+        _toolsProvider = toolsProvider;
     }
 
     public void Dispose()
@@ -41,8 +46,8 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent) : IDisposable
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
         return tracker is null
-            ? agent.GetNewThread()
-            : _trackedConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), agent);
+            ? _agent.GetNewThread()
+            : _trackedConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), _agent);
     }
 
     private static ChatMessage[] MapMessages(CreateMessageRequestParams? parameters)
@@ -57,10 +62,11 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent) : IDisposable
     private ChatClientAgentRunOptions CreateOptions(CreateMessageRequestParams? parameters)
     {
         var includeTools = (parameters?.IncludeContext ?? ContextInclusion.None) != ContextInclusion.None;
+        var tools = includeTools ? _toolsProvider() : [];
 
         return new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = includeTools ? [.._tools] : [],
+            Tools = [..tools],
             Instructions = parameters?.SystemPrompt,
             Temperature = parameters?.Temperature,
             MaxOutputTokens = parameters?.MaxTokens,
@@ -76,7 +82,7 @@ internal sealed class McpSamplingHandler(ChatClientAgent agent) : IDisposable
         CancellationToken ct)
     {
         List<AgentRunResponseUpdate> updates = [];
-        await foreach (var update in agent.RunStreamingAsync(messages, thread, options, ct))
+        await foreach (var update in _agent.RunStreamingAsync(messages, thread, options, ct))
         {
             updates.Add(update);
             progress.Report(new ProgressNotificationValue { Progress = updates.Count });
