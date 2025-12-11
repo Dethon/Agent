@@ -146,10 +146,15 @@ public sealed class McpAgent : DisposableAgent
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentThread thread, CancellationToken ct)
     {
+        if (_threadSessions.TryGetValue(thread, out var session))
+        {
+            return session;
+        }
+
         await _syncLock.WaitAsync(ct);
         try
         {
-            if (_threadSessions.TryGetValue(thread, out var session))
+            if (_threadSessions.TryGetValue(thread, out session))
             {
                 return session;
             }

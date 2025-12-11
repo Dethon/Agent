@@ -1,4 +1,4 @@
-﻿using Domain.Agents;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
