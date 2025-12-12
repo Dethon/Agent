@@ -66,7 +66,8 @@ public sealed class McpAgent : DisposableAgent
         return _innerAgent.GetNewThread();
     }
 
-    public async Task CleanupThreadAsync(AgentThread thread, CancellationToken cancellationToken = default)
+    public override async ValueTask DisposeThreadAsync(
+        AgentThread thread, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
         await _syncLock.WaitAsync(cancellationToken);

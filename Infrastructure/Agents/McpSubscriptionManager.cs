@@ -79,7 +79,6 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-
         await UnsubscribeFromAllResources();
     }
 

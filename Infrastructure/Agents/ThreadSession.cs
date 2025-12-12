@@ -6,13 +6,12 @@ namespace Infrastructure.Agents;
 
 internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
-    McpResourceManager ResourceManager,
-    McpSamplingHandler SamplingHandler);
+    McpResourceManager ResourceManager);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
     private readonly ThreadSessionData _data;
-    private int _isDisposed;
+    private bool _isDisposed;
 
     public McpClientManager ClientManager => _data.ClientManager;
     public McpResourceManager ResourceManager => _data.ResourceManager;
@@ -20,14 +19,6 @@ internal sealed class ThreadSession : IAsyncDisposable
     private ThreadSession(ThreadSessionData data)
     {
         _data = data;
-    }
-
-    ~ThreadSession()
-    {
-        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) == 0)
-        {
-            _ = Task.Run(async () => await DisposeAsyncCore());
-        }
     }
 
     public static async Task<ThreadSession> CreateAsync(
@@ -45,18 +36,13 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
+        if (_isDisposed)
         {
             return;
         }
 
-        await DisposeAsyncCore();
-        GC.SuppressFinalize(this);
-    }
+        _isDisposed = true;
 
-    private async ValueTask DisposeAsyncCore()
-    {
-        _data.SamplingHandler.Dispose();
         await _data.ResourceManager.DisposeAsync();
         await _data.ClientManager.DisposeAsync();
     }
@@ -84,7 +70,7 @@ internal sealed class ThreadSessionBuilder(
         // Step 3: Setup resource management
         var resourceManager = await CreateResourceManagerAsync(clientManager, ct);
 
-        return new ThreadSessionData(clientManager, resourceManager, samplingHandler);
+        return new ThreadSessionData(clientManager, resourceManager);
     }
 
     private async Task<McpResourceManager> CreateResourceManagerAsync(

@@ -7,12 +7,11 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents;
 
-internal sealed class McpSamplingHandler : IDisposable
+internal sealed class McpSamplingHandler
 {
     private readonly ChatClientAgent _agent;
     private readonly Func<IReadOnlyList<AITool>> _toolsProvider;
     private readonly ConcurrentDictionary<string, AgentThread> _trackedConversations = [];
-    private bool _isDisposed;
 
     public McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyList<AITool>> toolsProvider)
     {
@@ -23,18 +22,11 @@ internal sealed class McpSamplingHandler : IDisposable
         _toolsProvider = toolsProvider;
     }
 
-    public void Dispose()
-    {
-        _isDisposed = true;
-    }
-
     public async ValueTask<CreateMessageResult> HandleAsync(
         CreateMessageRequestParams? parameters,
         IProgress<ProgressNotificationValue> progress,
         CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
-
         var thread = GetOrCreateThread(parameters);
         var messages = MapMessages(parameters);
         var options = CreateOptions(parameters);

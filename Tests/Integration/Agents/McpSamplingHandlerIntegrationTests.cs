@@ -58,8 +58,6 @@ public class McpSamplingHandlerIntegrationTests
         result.ShouldNotBeNull();
         result.Content.ShouldNotBeNull();
         result.Role.ShouldBe(Role.Assistant);
-
-        samplingHandler.Dispose();
     }
 
     [SkippableFact]
@@ -105,8 +103,6 @@ public class McpSamplingHandlerIntegrationTests
         // Assert
         result.ShouldNotBeNull();
         result.Content.ShouldNotBeNull();
-
-        samplingHandler.Dispose();
     }
 
     [SkippableFact]
@@ -135,8 +131,6 @@ public class McpSamplingHandlerIntegrationTests
         // Assert
         result.ShouldNotBeNull();
         result.Content.ShouldNotBeNull();
-
-        samplingHandler.Dispose();
     }
 
     [SkippableFact]
@@ -169,8 +163,6 @@ public class McpSamplingHandlerIntegrationTests
         // Assert
         result.ShouldNotBeNull();
         result.Content.ShouldNotBeNull();
-
-        samplingHandler.Dispose();
     }
 
     [SkippableFact]
@@ -200,8 +192,6 @@ public class McpSamplingHandlerIntegrationTests
 
         // Assert
         progressReports.ShouldNotBeEmpty("Progress should have been reported");
-
-        samplingHandler.Dispose();
     }
 
     [SkippableFact]
@@ -241,32 +231,5 @@ public class McpSamplingHandlerIntegrationTests
         // Assert
         result1.ShouldNotBeNull();
         result2.ShouldNotBeNull();
-
-        samplingHandler.Dispose();
-    }
-
-    [SkippableFact]
-    public void Dispose_PreventsSubsequentCalls()
-    {
-        // Arrange
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "DisposeAgent" });
-        var samplingHandler = new McpSamplingHandler(agent, () => []);
-
-        // Act
-        samplingHandler.Dispose();
-
-        // Assert
-        var parameters = new CreateMessageRequestParams
-        {
-            Messages = [CreateUserMessage("Test")],
-            MaxTokens = 10
-        };
-
-        Should.ThrowAsync<ObjectDisposedException>(async () =>
-            await samplingHandler.HandleAsync(
-                parameters,
-                new Progress<ProgressNotificationValue>(),
-                CancellationToken.None));
     }
 }
