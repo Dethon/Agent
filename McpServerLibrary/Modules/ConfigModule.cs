@@ -1,6 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
+using McpServerLibrary.Extensions;
 using McpServerLibrary.McpPrompts;
 using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;
@@ -26,11 +27,13 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureMcp(this IServiceCollection services, McpSettings settings)
     {
+        var subscriptionTracker = new SubscriptionTracker();
+
         services
             .AddMemoryCache()
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
-            .AddSingleton<SubscriptionTracker>()
+            .AddSingleton(subscriptionTracker)
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddTransient<IStateManager, StateManager>()
@@ -39,7 +42,24 @@ public static class ConfigModule
             .AddFileSystemClient()
             .AddHostedService<SubscriptionMonitor>()
             .AddMcpServer()
-            .WithHttpTransport()
+            .WithHttpTransport(options =>
+            {
+                options.RunSessionHandler = async (_, server, ct) =>
+                {
+                    try
+                    {
+                        await server.RunAsync(ct);
+                    }
+                    finally
+                    {
+                        var sessionId = server.StateKey;
+                        if (!string.IsNullOrEmpty(sessionId))
+                        {
+                            subscriptionTracker.RemoveSession(sessionId);
+                        }
+                    }
+                };
+            })
             // Download tools
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()

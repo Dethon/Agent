@@ -8,7 +8,7 @@ public class SubscriptionTracker
     private readonly Lock _cacheLock = new();
 
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, McpServer>>
-        _subscribedResources = new();
+        _subscribedResources = [];
 
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, McpServer>> Get()
     {
@@ -46,5 +46,13 @@ public class SubscriptionTracker
                 _subscribedResources.Remove(sessionId, out _);
             }
         }
+    }
+
+    public void RemoveSession(string sessionId)
+    {
+        // Lock is not needed here as ConcurrentDictionary handles thread safety.
+        // In other methods, we lock to ensure atomic operations across multiple steps.
+        // ReSharper disable once InconsistentlySynchronizedField
+        _subscribedResources.Remove(sessionId, out _);
     }
 }
