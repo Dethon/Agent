@@ -49,7 +49,10 @@ public sealed class McpAgent : DisposableAgent
 
         _isDisposed = true;
         _syncLock.Dispose();
-        foreach (var (_, session) in _threadSessions)
+
+        // Take a snapshot to avoid enumeration issues if GC runs during disposal
+        var sessions = _threadSessions.Select(kvp => kvp.Value).ToList();
+        foreach (var session in sessions)
         {
             await session.DisposeAsync();
         }
