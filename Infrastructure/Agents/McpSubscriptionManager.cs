@@ -6,10 +6,25 @@ namespace Infrastructure.Agents;
 
 internal sealed class McpSubscriptionManager : IAsyncDisposable
 {
-    private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
     private readonly CancellationTokenSource _disposalCts = new();
+    private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
 
     private int _isDisposed;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+        {
+            return;
+        }
+
+        await _disposalCts.CancelAsync();
+
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await UnsubscribeFromAllResources(timeoutCts.Token);
+
+        _disposalCts.Dispose();
+    }
 
     public event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
     public event Func<bool, CancellationToken, Task>? ResourcesSynced;
@@ -70,21 +85,6 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         {
             await InvokeResourcesSyncedAsync(hasAnyResources, ct);
         }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
-        {
-            return;
-        }
-
-        await _disposalCts.CancelAsync();
-
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await UnsubscribeFromAllResources(timeoutCts.Token);
-
-        _disposalCts.Dispose();
     }
 
     private async Task UnsubscribeFromAllResources(CancellationToken ct)
