@@ -14,11 +14,8 @@ internal sealed class McpResourceManager : IAsyncDisposable
     public McpResourceManager(AIAgent agent, AgentThread thread, string? instructions, IReadOnlyList<AITool> tools)
     {
         var config = new ResourceProcessorConfig(agent, thread, instructions, tools);
-        _subscriptionManager = new McpSubscriptionManager();
         _updateProcessor = new ResourceUpdateProcessor(config);
-
-        _subscriptionManager.ResourceUpdated += _updateProcessor.HandleResourceUpdatedAsync;
-        _subscriptionManager.ResourcesSynced += _updateProcessor.HandleResourcesSyncedAsync;
+        _subscriptionManager = new McpSubscriptionManager(_updateProcessor);
     }
 
     public Channel<AgentRunResponseUpdate> SubscriptionChannel => _updateProcessor.SubscriptionChannel;
@@ -31,8 +28,6 @@ internal sealed class McpResourceManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-        _subscriptionManager.ResourceUpdated -= _updateProcessor.HandleResourceUpdatedAsync;
-        _subscriptionManager.ResourcesSynced -= _updateProcessor.HandleResourcesSyncedAsync;
         await _subscriptionManager.DisposeAsync();
         _updateProcessor.Dispose();
     }

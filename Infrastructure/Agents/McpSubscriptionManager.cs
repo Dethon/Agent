@@ -11,12 +11,24 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
     private int _isDisposed;
 
+    private event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
+    private event Func<bool, CancellationToken, Task>? ResourcesSynced;
+
+    public McpSubscriptionManager(ResourceUpdateProcessor processor)
+    {
+        ResourceUpdated += processor.HandleResourceUpdatedAsync;
+        ResourcesSynced += processor.HandleResourcesSyncedAsync;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
             return;
         }
+
+        ResourceUpdated = null;
+        ResourcesSynced = null;
 
         await _disposalCts.CancelAsync();
 
@@ -25,9 +37,6 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
         _disposalCts.Dispose();
     }
-
-    public event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
-    public event Func<bool, CancellationToken, Task>? ResourcesSynced;
 
     public void SubscribeToNotifications(IEnumerable<McpClient> clients)
     {
@@ -38,7 +47,10 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
                 async (notification, ct) =>
                 {
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposalCts.Token);
-                    await InvokeResourceUpdatedAsync(client, notification, linkedCts.Token);
+                    if (ResourceUpdated != null)
+                    {
+                        await ResourceUpdated(client, notification, linkedCts.Token);
+                    }
                 });
 
             client.RegisterNotificationHandler(
@@ -83,9 +95,9 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
             hasAnyResources |= current.Count > 0;
         }
 
-        if (ResourcesSynced is not null)
+        if (ResourcesSynced != null)
         {
-            await InvokeResourcesSyncedAsync(hasAnyResources, ct);
+            await ResourcesSynced(hasAnyResources, ct);
         }
     }
 
@@ -98,35 +110,5 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
                 await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
         }
-    }
-
-    private Task InvokeResourceUpdatedAsync(McpClient client, JsonRpcNotification notification, CancellationToken ct)
-    {
-        var handlers = ResourceUpdated?.GetInvocationList();
-        if (handlers is null or { Length: 0 })
-        {
-            return Task.CompletedTask;
-        }
-
-        var tasks = handlers
-            .Cast<Func<McpClient, JsonRpcNotification, CancellationToken, Task>>()
-            .Select(handler => handler(client, notification, ct));
-
-        return Task.WhenAll(tasks);
-    }
-
-    private Task InvokeResourcesSyncedAsync(bool hasAnyResources, CancellationToken ct)
-    {
-        var handlers = ResourcesSynced?.GetInvocationList();
-        if (handlers is null or { Length: 0 })
-        {
-            return Task.CompletedTask;
-        }
-
-        var tasks = handlers
-            .Cast<Func<bool, CancellationToken, Task>>()
-            .Select(handler => handler(hasAnyResources, ct));
-
-        return Task.WhenAll(tasks);
     }
 }
