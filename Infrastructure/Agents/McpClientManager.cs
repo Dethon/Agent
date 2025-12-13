@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -52,7 +51,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         }
     }
 
-    private static async Task<ImmutableList<McpClient>> CreateClientsWithRetry(
+    private static async Task<McpClient[]> CreateClientsWithRetry(
         string name,
         string description,
         string[] endpoints,
@@ -73,19 +72,22 @@ internal sealed class McpClientManager : IAsyncDisposable
                 },
                 cancellationToken: ct))));
 
-        return [..clients];
+        return clients;
     }
 
-    private static async Task<ImmutableList<AITool>> LoadTools(IEnumerable<McpClient> clients, CancellationToken ct)
+    private static async Task<AITool[]> LoadTools(IEnumerable<McpClient> clients, CancellationToken ct)
     {
         var tasks = clients.Select(c => c.ListToolsAsync(cancellationToken: ct).AsTask());
         var results = await Task.WhenAll(tasks);
-        return [..results.SelectMany(t => t).Select(t => t.WithProgress(new Progress<ProgressNotificationValue>()))];
+        return results
+            .SelectMany(t => t)
+            .Select(t => t.WithProgress(new Progress<ProgressNotificationValue>()))
+            .ToArray<AITool>();
     }
 
-    private static async Task<ImmutableList<string>> LoadPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
+    private static async Task<string[]> LoadPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
     {
-        var prompts = await clients
+        return await clients
             .Where(c => c.ServerCapabilities.Prompts is not null)
             .ToAsyncEnumerable()
             .SelectMany<McpClient, string>(async (client, _, c) =>
@@ -102,7 +104,5 @@ internal sealed class McpClientManager : IAsyncDisposable
             })
             .Where(r => !string.IsNullOrWhiteSpace(r))
             .ToArrayAsync(ct);
-
-        return [..prompts];
     }
 }
