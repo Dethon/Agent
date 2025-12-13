@@ -48,16 +48,27 @@ public sealed class McpAgent : DisposableAgent
             return;
         }
 
-        _isDisposed = true;
-        _syncLock.Dispose();
-
-        var sessions = _threadSessions.Select(kvp => kvp.Value).ToList();
-        foreach (var session in sessions)
+        await _syncLock.WaitAsync();
+        try
         {
-            await session.DisposeAsync();
-        }
+            if (_isDisposed)
+            {
+                return;
+            }
 
-        _threadSessions.Clear();
+            _isDisposed = true;
+            foreach (var session in _threadSessions.Values)
+            {
+                await session.DisposeAsync();
+            }
+
+            _threadSessions.Clear();
+        }
+        finally
+        {
+            _syncLock.Release();
+            _syncLock.Dispose();
+        }
     }
 
     public override AgentThread GetNewThread()
@@ -69,9 +80,17 @@ public sealed class McpAgent : DisposableAgent
     public override async ValueTask DisposeThreadSessionAsync(AgentThread thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        if (_threadSessions.Remove(thread, out var session))
+        await _syncLock.WaitAsync();
+        try
         {
-            await session.DisposeAsync();
+            if (_threadSessions.Remove(thread, out var session))
+            {
+                await session.DisposeAsync();
+            }
+        }
+        finally
+        {
+            _syncLock.Release();
         }
     }
 
