@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+using System.Collections.Concurrent;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -6,7 +6,7 @@ namespace Infrastructure.Agents;
 
 internal sealed class McpSubscriptionManager : IAsyncDisposable
 {
-    private ImmutableDictionary<McpClient, ImmutableHashSet<string>> _subscribedResources = [];
+    private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
 
     private bool _isDisposed;
 
@@ -48,7 +48,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
             var current = (await client.ListResourcesAsync(cancellationToken: ct))
                 .Select(r => r.Uri)
-                .ToArray();
+                .ToHashSet();
             var previous = _subscribedResources.GetValueOrDefault(client) ?? [];
 
             foreach (var uri in current.Except(previous))
@@ -61,8 +61,8 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
                 await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
 
-            _subscribedResources = _subscribedResources.SetItem(client, [..current]);
-            hasAnyResources |= current.Length > 0;
+            _subscribedResources[client] = current;
+            hasAnyResources |= current.Count > 0;
         }
 
         if (ResourcesSynced is not null)
