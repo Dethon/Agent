@@ -13,28 +13,14 @@ internal sealed class McpResourceManager : IAsyncDisposable
 
     public ChannelReader<AgentRunResponseUpdate> SubscriptionChannel => _updateProcessor.Reader;
 
-    private McpResourceManager(
-        McpSubscriptionManager subscriptionManager,
-        ResourceUpdateProcessor updateProcessor)
+    public McpResourceManager(AIAgent agent, AgentThread thread, string? instructions, IReadOnlyList<AITool> tools)
     {
-        _subscriptionManager = subscriptionManager;
-        _updateProcessor = updateProcessor;
+        var config = new ResourceProcessorConfig(agent, thread, instructions, tools);
+        _subscriptionManager = new McpSubscriptionManager();
+        _updateProcessor = new ResourceUpdateProcessor(config);
 
         _subscriptionManager.ResourceUpdated += _updateProcessor.HandleResourceUpdatedAsync;
         _subscriptionManager.ResourcesSynced += _updateProcessor.HandleResourcesSyncedAsync;
-    }
-
-    public static McpResourceManager Create(
-        AIAgent agent,
-        AgentThread thread,
-        string? instructions,
-        IReadOnlyList<AITool> tools)
-    {
-        var config = new ResourceProcessorConfig(agent, thread, instructions, tools);
-        var subscriptionManager = new McpSubscriptionManager();
-        var updateProcessor = new ResourceUpdateProcessor(config);
-
-        return new McpResourceManager(subscriptionManager, updateProcessor);
     }
 
     public void SubscribeToNotifications(IEnumerable<McpClient> clients)
@@ -61,9 +47,7 @@ internal sealed class McpResourceManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-        _subscriptionManager.ResourceUpdated -= _updateProcessor.HandleResourceUpdatedAsync;
-        _subscriptionManager.ResourcesSynced -= _updateProcessor.HandleResourcesSyncedAsync;
-        _updateProcessor.Dispose();
         await _subscriptionManager.DisposeAsync();
+        _updateProcessor.Dispose();
     }
 }

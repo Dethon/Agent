@@ -7,6 +7,7 @@ namespace Infrastructure.Agents;
 internal sealed class McpSubscriptionManager : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
+    private readonly CancellationTokenSource _disposalCts = new();
 
     private bool _isDisposed;
 
@@ -19,11 +20,19 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         {
             client.RegisterNotificationHandler(
                 "notifications/resources/updated",
-                async (notification, ct) => await InvokeResourceUpdatedAsync(client, notification, ct));
+                async (notification, ct) =>
+                {
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposalCts.Token);
+                    await InvokeResourceUpdatedAsync(client, notification, linkedCts.Token);
+                });
 
             client.RegisterNotificationHandler(
                 "notifications/resources/list_changed",
-                async (_, ct) => await SyncResourcesAsync([client], ct));
+                async (_, ct) =>
+                {
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _disposalCts.Token);
+                    await SyncResourcesAsync([client], linkedCts.Token);
+                });
         }
     }
 
@@ -73,9 +82,12 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        await UnsubscribeFromAllResources(cts.Token);
-        cts.Dispose();
+        await _disposalCts.CancelAsync();
+
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await UnsubscribeFromAllResources(timeoutCts.Token);
+
+        _disposalCts.Dispose();
     }
 
     private async Task UnsubscribeFromAllResources(CancellationToken ct)

@@ -78,7 +78,7 @@ internal sealed class ThreadSessionBuilder(
         CancellationToken ct)
     {
         var instructions = string.Join("\n\n", clientManager.Prompts);
-        var resourceManager = McpResourceManager.Create(agent, thread, instructions, clientManager.Tools);
+        var resourceManager = new McpResourceManager(agent, thread, instructions, clientManager.Tools);
 
         await resourceManager.SyncResourcesAsync(clientManager.Clients, ct);
         resourceManager.SubscribeToNotifications(clientManager.Clients);
