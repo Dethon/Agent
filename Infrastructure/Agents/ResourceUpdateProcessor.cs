@@ -21,13 +21,13 @@ internal sealed class ResourceUpdateProcessor : IDisposable
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private int _isDisposed;
 
+    public Channel<AgentRunResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
+
     public ResourceUpdateProcessor(ResourceProcessorConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
     }
-
-    public Channel<AgentRunResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
 
     public void Dispose()
     {
