@@ -2,35 +2,34 @@ namespace Domain.Extensions;
 
 public static class SemaphoreSlimExtensions
 {
-    public static async Task<T> WithLockAsync<T>(
-        this SemaphoreSlim semaphore,
-        Func<Task<T>> action,
-        CancellationToken ct = default)
+    extension(SemaphoreSlim semaphore)
     {
-        await semaphore.WaitAsync(ct);
-        try
+        public async Task<T> WithLockAsync<T>(Func<Task<T>> action,
+            CancellationToken ct = default)
         {
-            return await action();
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                return await action();
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         }
-        finally
-        {
-            semaphore.Release();
-        }
-    }
 
-    public static async Task WithLockAsync(
-        this SemaphoreSlim semaphore,
-        Func<Task> action,
-        CancellationToken ct = default)
-    {
-        await semaphore.WaitAsync(ct);
-        try
+        public async Task WithLockAsync(Func<Task> action,
+            CancellationToken ct = default)
         {
-            await action();
-        }
-        finally
-        {
-            semaphore.Release();
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                await action();
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         }
     }
 }
