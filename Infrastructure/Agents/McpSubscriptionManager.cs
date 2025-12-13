@@ -79,16 +79,18 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         }
 
         _isDisposed = true;
-        await UnsubscribeFromAllResources();
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await UnsubscribeFromAllResources(cts.Token);
+        cts.Dispose();
     }
 
-    private async Task UnsubscribeFromAllResources()
+    private async Task UnsubscribeFromAllResources(CancellationToken ct)
     {
         foreach (var (client, uris) in _subscribedResources)
         {
             foreach (var uri in uris)
             {
-                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: CancellationToken.None);
+                await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
         }
     }
