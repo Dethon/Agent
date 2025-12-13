@@ -45,9 +45,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         foreach (var client in clients)
         {
             if (client.ServerCapabilities.Resources is null)
-            {
                 continue;
-            }
 
             var current = (await client.ListResourcesAsync(cancellationToken: ct))
                 .Select(r => r.Uri)

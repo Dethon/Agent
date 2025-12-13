@@ -152,7 +152,7 @@ csharp_style_conditional_delegate_call = true:suggestion
 # Modifier preferences
 csharp_preferred_modifier_order = public,private,protected,internal,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,volatile,async:suggestion
 # Expression-level preferences
-csharp_prefer_braces = true:suggestion
+csharp_prefer_braces = true:warning
 csharp_style_deconstructed_variable_declaration = true:suggestion
 csharp_prefer_simple_default_expression = true:suggestion
 csharp_style_prefer_local_over_anonymous_function = true:suggestion
@@ -163,7 +163,13 @@ resharper_csharp_blank_lines_around_invocable = 1
 
 # JetBrains Rider custom properties for code syntax styles
 csharp_default_private_modifier = explicit
-braces_for_ifelse = not_required
+braces_for_ifelse = required
+braces_for_for = required
+braces_for_foreach = required
+braces_for_while = required
+braces_for_using = required
+braces_for_lock = required
+braces_for_fixed = required
 resharper_wrap_object_and_collection_initializer_style = chop_always
 
 # JetBrains Rider custom properties for code inspections
