@@ -19,13 +19,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
         {
             client.RegisterNotificationHandler(
                 "notifications/resources/updated",
-                async (notification, ct) =>
-                {
-                    if (ResourceUpdated is not null)
-                    {
-                        await ResourceUpdated(client, notification, ct);
-                    }
-                });
+                async (notification, ct) => await InvokeResourceUpdatedAsync(client, notification, ct));
 
             client.RegisterNotificationHandler(
                 "notifications/resources/list_changed",
@@ -67,7 +61,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
         if (ResourcesSynced is not null)
         {
-            await ResourcesSynced(hasAnyResources, ct);
+            await InvokeResourcesSyncedAsync(hasAnyResources, ct);
         }
     }
 
@@ -93,5 +87,35 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
                 await client.UnsubscribeFromResourceAsync(uri, cancellationToken: ct);
             }
         }
+    }
+
+    private Task InvokeResourceUpdatedAsync(McpClient client, JsonRpcNotification notification, CancellationToken ct)
+    {
+        var handlers = ResourceUpdated?.GetInvocationList();
+        if (handlers is null or { Length: 0 })
+        {
+            return Task.CompletedTask;
+        }
+
+        var tasks = handlers
+            .Cast<Func<McpClient, JsonRpcNotification, CancellationToken, Task>>()
+            .Select(handler => handler(client, notification, ct));
+
+        return Task.WhenAll(tasks);
+    }
+
+    private Task InvokeResourcesSyncedAsync(bool hasAnyResources, CancellationToken ct)
+    {
+        var handlers = ResourcesSynced?.GetInvocationList();
+        if (handlers is null or { Length: 0 })
+        {
+            return Task.CompletedTask;
+        }
+
+        var tasks = handlers
+            .Cast<Func<bool, CancellationToken, Task>>()
+            .Select(handler => handler(hasAnyResources, ct));
+
+        return Task.WhenAll(tasks);
     }
 }
