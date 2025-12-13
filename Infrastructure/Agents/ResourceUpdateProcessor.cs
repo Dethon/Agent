@@ -19,7 +19,6 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 {
     private readonly ResourceProcessorConfig _config;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
-    private Channel<AgentRunResponseUpdate> _channel = CreateChannel();
     private int _isDisposed;
 
     public ResourceUpdateProcessor(ResourceProcessorConfig config)
@@ -28,7 +27,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         _config = config;
     }
 
-    public ChannelReader<AgentRunResponseUpdate> Reader => _channel.Reader;
+    public Channel<AgentRunResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
 
     public void Dispose()
     {
@@ -37,7 +36,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             return;
         }
 
-        _channel.Writer.TryComplete();
+        SubscriptionChannel.Writer.TryComplete();
         _syncLock.Dispose();
     }
 
@@ -69,7 +68,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         {
             await foreach (var update in _config.Agent.RunStreamingAsync([message], _config.Thread, options, ct))
             {
-                _channel.Writer.TryWrite(update);
+                SubscriptionChannel.Writer.TryWrite(update);
             }
         }, ct);
     }
@@ -80,11 +79,11 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         {
             if (!hasAnyResources)
             {
-                _channel.Writer.TryComplete();
+                SubscriptionChannel.Writer.TryComplete();
             }
-            else if (_channel.Reader.Completion.IsCompleted)
+            else if (SubscriptionChannel.Reader.Completion.IsCompleted)
             {
-                _channel = CreateChannel();
+                SubscriptionChannel = CreateChannel();
             }
 
             return Task.CompletedTask;
@@ -93,16 +92,16 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 
     public async Task EnsureChannelActive(CancellationToken ct)
     {
-        if (!_channel.Reader.Completion.IsCompleted)
+        if (!SubscriptionChannel.Reader.Completion.IsCompleted)
         {
             return;
         }
 
         await _syncLock.WithLockAsync(() =>
         {
-            if (_channel.Reader.Completion.IsCompleted)
+            if (SubscriptionChannel.Reader.Completion.IsCompleted)
             {
-                _channel = CreateChannel();
+                SubscriptionChannel = CreateChannel();
             }
 
             return Task.CompletedTask;

@@ -10,17 +10,14 @@ namespace Infrastructure.Agents;
 
 public sealed class McpAgent : DisposableAgent
 {
-    private readonly string[] _endpoints;
-    private readonly string _name;
     private readonly string _description;
+    private readonly string[] _endpoints;
+    private readonly ChatClientAgent _innerAgent;
+    private readonly string _name;
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
-    private readonly ChatClientAgent _innerAgent;
-    private readonly SemaphoreSlim _syncLock = new(1, 1);
     private bool _isDisposed;
-
-    public override string? Name => _innerAgent.Name;
-    public override string? Description => _innerAgent.Description;
 
     public McpAgent(string[] endpoints, IChatClient chatClient, string name, string description)
     {
@@ -40,6 +37,9 @@ public sealed class McpAgent : DisposableAgent
                 : new ConcurrentChatMessageStore()
         });
     }
+
+    public override string? Name => _innerAgent.Name;
+    public override string? Description => _innerAgent.Description;
 
     public override async ValueTask DisposeAsync()
     {
@@ -120,7 +120,7 @@ public sealed class McpAgent : DisposableAgent
         options ??= CreateRunOptions(session);
 
         var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
-        var notificationResponses = session.ResourceManager.SubscriptionChannel.ReadAllAsync(cancellationToken);
+        var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
 
         await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
         {

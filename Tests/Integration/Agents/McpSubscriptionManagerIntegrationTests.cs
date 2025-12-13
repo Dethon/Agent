@@ -142,7 +142,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         await session.ResourceManager.EnsureChannelActive(cts.Token);
 
         // Assert
-        session.ResourceManager.SubscriptionChannel.Completion.IsCompleted.ShouldBeFalse();
+        session.ResourceManager.SubscriptionChannel.Reader.Completion.IsCompleted.ShouldBeFalse();
 
         await session.DisposeAsync();
     }
