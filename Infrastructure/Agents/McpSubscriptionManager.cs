@@ -9,7 +9,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
     private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
     private readonly CancellationTokenSource _disposalCts = new();
 
-    private bool _isDisposed;
+    private int _isDisposed;
 
     public event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
     public event Func<bool, CancellationToken, Task>? ResourcesSynced;
@@ -38,7 +38,7 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
     public async Task SyncResourcesAsync(IEnumerable<McpClient> clients, CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
         var hasAnyResources = false;
 
@@ -76,12 +76,11 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_isDisposed)
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
             return;
         }
 
-        _isDisposed = true;
         await _disposalCts.CancelAsync();
 
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));

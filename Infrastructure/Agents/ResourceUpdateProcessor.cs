@@ -20,7 +20,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
     private readonly ResourceProcessorConfig _config;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private Channel<AgentRunResponseUpdate> _channel = CreateChannel();
-    private bool _isDisposed;
+    private int _isDisposed;
 
     public ChannelReader<AgentRunResponseUpdate> Reader => _channel.Reader;
 
@@ -35,7 +35,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         JsonRpcNotification notification,
         CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
 
         var uri = notification.Params
             .Deserialize<Dictionary<string, string>>()?
@@ -100,12 +100,11 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 
     public void Dispose()
     {
-        if (_isDisposed)
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
             return;
         }
 
-        _isDisposed = true;
         _channel.Writer.TryComplete();
         _syncLock.Dispose();
     }
