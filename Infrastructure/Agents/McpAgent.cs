@@ -19,6 +19,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
     private bool _isDisposed;
 
+    public override string? Name => _innerAgent.Name;
+    public override string? Description => _innerAgent.Description;
+
     public McpAgent(string[] endpoints, IChatClient chatClient, string name, string description)
     {
         _endpoints = endpoints;
@@ -37,9 +40,6 @@ public sealed class McpAgent : DisposableAgent
                 : new ConcurrentChatMessageStore()
         });
     }
-
-    public override string? Name => _innerAgent.Name;
-    public override string? Description => _innerAgent.Description;
 
     public override async ValueTask DisposeAsync()
     {
