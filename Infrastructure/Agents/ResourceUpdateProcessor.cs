@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Threading.Channels;
+using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
@@ -53,24 +54,18 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             Instructions = _config.Instructions
         });
 
-        await _syncLock.WaitAsync(ct);
-        try
+        await _syncLock.WithLockAsync(async () =>
         {
             await foreach (var update in _config.Agent.RunStreamingAsync([message], _config.Thread, options, ct))
             {
                 _channel.Writer.TryWrite(update);
             }
-        }
-        finally
-        {
-            _syncLock.Release();
-        }
+        }, ct);
     }
 
     public async Task HandleResourcesSyncedAsync(bool hasAnyResources, CancellationToken ct)
     {
-        await _syncLock.WaitAsync(ct);
-        try
+        await _syncLock.WithLockAsync(() =>
         {
             if (!hasAnyResources)
             {
@@ -80,11 +75,9 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             {
                 _channel = CreateChannel();
             }
-        }
-        finally
-        {
-            _syncLock.Release();
-        }
+
+            return Task.CompletedTask;
+        }, ct);
     }
 
     public async Task EnsureChannelActive(CancellationToken ct)
@@ -94,18 +87,15 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             return;
         }
 
-        await _syncLock.WaitAsync(ct);
-        try
+        await _syncLock.WithLockAsync(() =>
         {
             if (_channel.Reader.Completion.IsCompleted)
             {
                 _channel = CreateChannel();
             }
-        }
-        finally
-        {
-            _syncLock.Release();
-        }
+
+            return Task.CompletedTask;
+        }, ct);
     }
 
     public void Dispose()

@@ -80,18 +80,13 @@ public sealed class McpAgent : DisposableAgent
     public override async ValueTask DisposeThreadSessionAsync(AgentThread thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        await _syncLock.WaitAsync();
-        try
+        await _syncLock.WithLockAsync(async () =>
         {
             if (_threadSessions.Remove(thread, out var session))
             {
                 await session.DisposeAsync();
             }
-        }
-        finally
-        {
-            _syncLock.Release();
-        }
+        });
     }
 
     public override AgentThread DeserializeThread(
@@ -165,21 +160,16 @@ public sealed class McpAgent : DisposableAgent
             return session;
         }
 
-        await _syncLock.WaitAsync(ct);
-        try
+        return await _syncLock.WithLockAsync(async () =>
         {
-            if (_threadSessions.TryGetValue(thread, out session))
+            if (_threadSessions.TryGetValue(thread, out var existing))
             {
-                return session;
+                return existing;
             }
 
-            session = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
-            _threadSessions[thread] = session;
-            return session;
-        }
-        finally
-        {
-            _syncLock.Release();
-        }
+            var newSession = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
+            _threadSessions[thread] = newSession;
+            return newSession;
+        }, ct);
     }
 }
