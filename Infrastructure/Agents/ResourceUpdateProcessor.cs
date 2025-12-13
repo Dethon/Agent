@@ -22,12 +22,23 @@ internal sealed class ResourceUpdateProcessor : IDisposable
     private Channel<AgentRunResponseUpdate> _channel = CreateChannel();
     private int _isDisposed;
 
-    public ChannelReader<AgentRunResponseUpdate> Reader => _channel.Reader;
-
     public ResourceUpdateProcessor(ResourceProcessorConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
+    }
+
+    public ChannelReader<AgentRunResponseUpdate> Reader => _channel.Reader;
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+        {
+            return;
+        }
+
+        _channel.Writer.TryComplete();
+        _syncLock.Dispose();
     }
 
     public async Task HandleResourceUpdatedAsync(
@@ -41,7 +52,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
             .Deserialize<Dictionary<string, string>>()?
             .GetValueOrDefault("uri");
 
-        if (uri is null || _channel.Reader.Completion.IsCompleted)
+        if (uri is null)
         {
             return;
         }
@@ -96,17 +107,6 @@ internal sealed class ResourceUpdateProcessor : IDisposable
 
             return Task.CompletedTask;
         }, ct);
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
-        {
-            return;
-        }
-
-        _channel.Writer.TryComplete();
-        _syncLock.Dispose();
     }
 
     private static Channel<AgentRunResponseUpdate> CreateChannel()
