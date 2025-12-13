@@ -17,7 +17,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
-    private bool _isDisposed;
+    private int _isDisposed;
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
@@ -43,43 +43,32 @@ public sealed class McpAgent : DisposableAgent
 
     public override async ValueTask DisposeAsync()
     {
-        if (_isDisposed)
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
         {
             return;
         }
 
-        await _syncLock.WaitAsync();
-        try
+        await _syncLock.WithLockAsync(async () =>
         {
-            if (_isDisposed)
-            {
-                return;
-            }
-
-            _isDisposed = true;
             foreach (var session in _threadSessions.Values)
             {
                 await session.DisposeAsync();
             }
 
             _threadSessions.Clear();
-        }
-        finally
-        {
-            _syncLock.Release();
-            _syncLock.Dispose();
-        }
+        });
+        _syncLock.Dispose();
     }
 
     public override AgentThread GetNewThread()
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         return _innerAgent.GetNewThread();
     }
 
     public override async ValueTask DisposeThreadSessionAsync(AgentThread thread)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         await _syncLock.WithLockAsync(async () =>
         {
             if (_threadSessions.Remove(thread, out var session))
@@ -102,7 +91,7 @@ public sealed class McpAgent : DisposableAgent
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         var response = RunStreamingAsync(messages, thread, options, cancellationToken);
         return (await response.ToArrayAsync(cancellationToken)).ToAgentRunResponse();
     }
@@ -113,7 +102,7 @@ public sealed class McpAgent : DisposableAgent
         AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= GetNewThread();
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
         await session.ResourceManager.EnsureChannelActive(cancellationToken);
@@ -142,7 +131,7 @@ public sealed class McpAgent : DisposableAgent
         AgentRunOptions options,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(_isDisposed, this);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, ct))
         {
             yield return update;
@@ -162,11 +151,6 @@ public sealed class McpAgent : DisposableAgent
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentThread thread, CancellationToken ct)
     {
-        if (_threadSessions.TryGetValue(thread, out var session))
-        {
-            return session;
-        }
-
         return await _syncLock.WithLockAsync(async () =>
         {
             if (_threadSessions.TryGetValue(thread, out var existing))
