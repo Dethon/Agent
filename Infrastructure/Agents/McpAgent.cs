@@ -118,10 +118,10 @@ public sealed class McpAgent : DisposableAgent
 
         // If channel was replaced during execution, drain the new one.
         // If it is the old one it will be completed already
-        // await foreach (var update in session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken))
-        // {
-        //     yield return update;
-        // }
+        await foreach (var update in session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken))
+        {
+            yield return update;
+        }
     }
 
     private async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingCoreAsync(
