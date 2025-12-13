@@ -49,7 +49,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         return ValueTask.CompletedTask;
     }
 
-    public override ValueTask DisposeThreadAsync(AgentThread thread, CancellationToken cancellationToken = default)
+    public override ValueTask DisposeThreadSessionAsync(AgentThread thread)
     {
         return ValueTask.CompletedTask;
     }

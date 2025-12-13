@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
@@ -13,7 +14,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _name;
     private readonly string _description;
 
-    private readonly ConditionalWeakTable<AgentThread, ThreadSession> _threadSessions = [];
+    private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
     private readonly ChatClientAgent _innerAgent;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private bool _isDisposed;
@@ -50,7 +51,6 @@ public sealed class McpAgent : DisposableAgent
         _isDisposed = true;
         _syncLock.Dispose();
 
-        // Take a snapshot to avoid enumeration issues if GC runs during disposal
         var sessions = _threadSessions.Select(kvp => kvp.Value).ToList();
         foreach (var session in sessions)
         {
@@ -66,21 +66,12 @@ public sealed class McpAgent : DisposableAgent
         return _innerAgent.GetNewThread();
     }
 
-    public override async ValueTask DisposeThreadAsync(
-        AgentThread thread, CancellationToken cancellationToken = default)
+    public override async ValueTask DisposeThreadSessionAsync(AgentThread thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed, this);
-        await _syncLock.WaitAsync(cancellationToken);
-        try
+        if (_threadSessions.Remove(thread, out var session))
         {
-            if (_threadSessions.Remove(thread, out var session))
-            {
-                await session.DisposeAsync();
-            }
-        }
-        finally
-        {
-            _syncLock.Release();
+            await session.DisposeAsync();
         }
     }
 
@@ -164,7 +155,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             session = await ThreadSession.CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct);
-            _threadSessions.AddOrUpdate(thread, session);
+            _threadSessions[thread] = session;
             return session;
         }
         finally
