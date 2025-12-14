@@ -28,7 +28,7 @@ public class ChatThreadResolver
     {
         if (_contexts.Remove(key, out var context))
         {
-            context.Complete();
+            context.Dispose();
         }
     }
 }

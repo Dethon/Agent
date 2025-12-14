@@ -1,8 +1,9 @@
 namespace Domain.Agents;
 
-public sealed class ChatThreadContext
+public sealed class ChatThreadContext : IDisposable
 {
     private Action? _onComplete;
+    private int _disposed;
     
     public CancellationTokenSource Cts { get; } = new();
 
@@ -16,9 +17,19 @@ public sealed class ChatThreadContext
         return CancellationTokenSource.CreateLinkedTokenSource(Cts.Token, externalToken);
     }
 
-    public void Complete()
+    public void Dispose()
     {
-        _onComplete?.Invoke();
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
+        {
+            return;
+        }
+
+        if (_onComplete != null)
+        {
+            _onComplete.Invoke();
+            _onComplete = null;
+        }
+
         Cts.Cancel();
         Cts.Dispose();
     }

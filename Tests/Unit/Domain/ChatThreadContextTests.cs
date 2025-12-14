@@ -62,20 +62,20 @@ public class ChatThreadContextTests
     }
 
     [Fact]
-    public void Complete_CancelsCts()
+    public void Dispose_CancelsCts()
     {
         // Arrange
         var context = new ChatThreadContext();
 
         // Act
-        context.Complete();
+        context.Dispose();
 
         // Assert
         context.Cts.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
-    public void Complete_InvokesRegisteredCallback()
+    public void Dispose_InvokesRegisteredCallback()
     {
         // Arrange
         var context = new ChatThreadContext();
@@ -83,19 +83,19 @@ public class ChatThreadContextTests
         context.RegisterCompletionCallback(() => callbackInvoked = true);
 
         // Act
-        context.Complete();
+        context.Dispose();
 
         // Assert
         callbackInvoked.ShouldBeTrue();
     }
 
     [Fact]
-    public void Complete_WithNoCallback_DoesNotThrow()
+    public void Dispose_WithNoCallback_DoesNotThrow()
     {
         // Arrange
         var context = new ChatThreadContext();
 
         // Act & Assert
-        Should.NotThrow(() => context.Complete());
+        Should.NotThrow(() => context.Dispose());
     }
 }

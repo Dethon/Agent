@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+﻿using System.IO;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using FluentResults;
@@ -77,7 +78,10 @@ public class CleanupDownloadTool(
     {
         try
         {
-            var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
+            var basePath = downloadPath.BaseDownloadPath;
+            var path = basePath.Contains('/')
+                ? $"{basePath.TrimEnd('/', '\\')}/{downloadId}"
+                : Path.Combine(basePath, downloadId.ToString());
             await fileSystemClient.RemoveDirectory(path, ct);
             return Result.Ok();
         }
