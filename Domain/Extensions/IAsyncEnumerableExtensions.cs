@@ -7,6 +7,8 @@ namespace Domain.Extensions;
 public interface IAsyncGrouping<out TKey, out TElement> : IAsyncEnumerable<TElement>
 {
     TKey Key { get; }
+    
+    void Complete();
 }
 
 public static class IAsyncEnumerableExtensions
@@ -21,7 +23,10 @@ public static class IAsyncEnumerableExtensions
         await foreach (var item in source.WithCancellation(ct))
         {
             var key = await keySelector(item, ct);
-            var newGroup = new AsyncGrouping<TKey, TSource>(key);
+            var newGroup = new AsyncGrouping<TKey, TSource>(key, () =>
+            {
+                groups.TryRemove(key, out _);
+            });
             var group = groups.GetOrAdd(key, newGroup);
             if (ReferenceEquals(group, newGroup))
             {
@@ -37,10 +42,11 @@ public static class IAsyncEnumerableExtensions
         }
     }
 
-    private sealed class AsyncGrouping<TKey, TElement>(TKey key) : IAsyncGrouping<TKey, TElement>
+    private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
     {
         private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
-
+        private int _completed;
+        
         public TKey Key => key;
 
         public ValueTask WriteAsync(TElement item, CancellationToken ct)
@@ -50,7 +56,13 @@ public static class IAsyncEnumerableExtensions
 
         public void Complete()
         {
+            if (Interlocked.CompareExchange(ref _completed, 1, 0) != 0)
+            {
+                return;
+            }
+
             _channel.Writer.TryComplete();
+            onComplete();
         }
 
         public IAsyncEnumerator<TElement> GetAsyncEnumerator(CancellationToken ct = default)

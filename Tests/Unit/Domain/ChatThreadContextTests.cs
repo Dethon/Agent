@@ -73,4 +73,29 @@ public class ChatThreadContextTests
         // Assert
         context.Cts.IsCancellationRequested.ShouldBeTrue();
     }
+
+    [Fact]
+    public void Complete_InvokesRegisteredCallback()
+    {
+        // Arrange
+        var context = new ChatThreadContext();
+        var callbackInvoked = false;
+        context.RegisterCompletionCallback(() => callbackInvoked = true);
+
+        // Act
+        context.Complete();
+
+        // Assert
+        callbackInvoked.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Complete_WithNoCallback_DoesNotThrow()
+    {
+        // Arrange
+        var context = new ChatThreadContext();
+
+        // Act & Assert
+        Should.NotThrow(() => context.Complete());
+    }
 }

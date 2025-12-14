@@ -18,7 +18,7 @@ public class ChatMonitor(
         try
         {
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
-                .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), ct: cancellationToken)
+                .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
@@ -37,17 +37,19 @@ public class ChatMonitor(
     }
 
     private async IAsyncEnumerable<(AgentKey, AiResponse)> ProcessChatThread(
-        AgentKey agentKey, IAsyncEnumerable<ChatPrompt> prompts, [EnumeratorCancellation] CancellationToken ct)
+        AgentKey agentKey, IAsyncGrouping<AgentKey, ChatPrompt> group, [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.Create(agentKey);
         var thread = agent.GetNewThread();
 
         var context = threadResolver.Resolve(agentKey);
+        context.RegisterCompletionCallback(group.Complete);
+        
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
         // ReSharper disable once AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
-        var aiResponses = prompts
+        var aiResponses = group
             .Select(x =>
             {
                 if (!x.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
