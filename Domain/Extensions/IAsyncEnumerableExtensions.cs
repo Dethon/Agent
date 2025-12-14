@@ -20,27 +20,42 @@ public static class IAsyncEnumerableExtensions
     {
         var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
 
-        await foreach (var item in source.WithCancellation(ct))
+        try
         {
-            var key = await keySelector(item, ct);
-            var newGroup = new AsyncGrouping<TKey, TSource>(key, () =>
+            await foreach (var item in source.WithCancellation(ct))
             {
-                groups.TryRemove(key, out _);
-            });
-            var group = groups.GetOrAdd(key, newGroup);
-            if (ReferenceEquals(group, newGroup))
+                var key = await keySelector(item, ct);
+
+                if (!groups.TryGetValue(key, out var group))
+                {
+                    var newGroup = new AsyncGrouping<TKey, TSource>(key, () =>
+                    {
+                        groups.TryRemove(key, out _);
+                    });
+
+                    if (groups.TryAdd(key, newGroup))
+                    {
+                        group = newGroup;
+                        yield return newGroup;
+                    }
+                    else
+                    {
+                        group = groups[key];
+                    }
+                }
+
+                await group.WriteAsync(item, ct);
+            }
+        }
+        finally
+        {
+            foreach (var group in groups.Values.ToArray())
             {
-                yield return newGroup;
+                group.Complete();
             }
 
-            await group.WriteAsync(item, ct);
+            groups.Clear();
         }
-
-        foreach (var group in groups.Values)
-        {
-            group.Complete();
-        }
-        groups.Clear();
     }
 
     private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
