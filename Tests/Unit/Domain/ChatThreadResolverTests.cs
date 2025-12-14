@@ -6,34 +6,32 @@ namespace Tests.Unit.Domain;
 public class ChatThreadResolverTests
 {
     [Fact]
-    public void Resolve_WithNewKey_ReturnsNewContextAndIsNewTrue()
+    public void Resolve_WithNewKey_ReturnsNewContext()
     {
         // Arrange
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
 
         // Act
-        var (context, isNew) = resolver.Resolve(key);
+        var context = resolver.Resolve(key);
 
         // Assert
         context.ShouldNotBeNull();
-        isNew.ShouldBeTrue();
     }
 
     [Fact]
-    public void Resolve_WithExistingKey_ReturnsSameContextAndIsNewFalse()
+    public void Resolve_WithExistingKey_ReturnsSameContext()
     {
         // Arrange
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
-        var (firstContext, _) = resolver.Resolve(key);
+        var firstContext = resolver.Resolve(key);
 
         // Act
-        var (secondContext, isNew) = resolver.Resolve(key);
+        var secondContext = resolver.Resolve(key);
 
         // Assert
         secondContext.ShouldBeSameAs(firstContext);
-        isNew.ShouldBeFalse();
     }
 
     [Fact]
@@ -45,13 +43,11 @@ public class ChatThreadResolverTests
         var key2 = new AgentKey(2, 2);
 
         // Act
-        var (context1, isNew1) = resolver.Resolve(key1);
-        var (context2, isNew2) = resolver.Resolve(key2);
+        var context1 = resolver.Resolve(key1);
+        var context2 = resolver.Resolve(key2);
 
         // Assert
         context1.ShouldNotBeSameAs(context2);
-        isNew1.ShouldBeTrue();
-        isNew2.ShouldBeTrue();
     }
 
     [Fact]
@@ -79,7 +75,7 @@ public class ChatThreadResolverTests
         // Arrange
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
-        var (context, _) = resolver.Resolve(key);
+        var context = resolver.Resolve(key);
 
         // Act
         resolver.Clean(key);
@@ -106,15 +102,14 @@ public class ChatThreadResolverTests
         // Arrange
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
-        var (firstContext, _) = resolver.Resolve(key);
+        var firstContext = resolver.Resolve(key);
         resolver.Clean(key);
 
         // Act
-        var (secondContext, isNew) = resolver.Resolve(key);
+        var secondContext = resolver.Resolve(key);
 
         // Assert
         secondContext.ShouldNotBeSameAs(firstContext);
-        isNew.ShouldBeTrue();
     }
 
     [Fact]
@@ -123,7 +118,7 @@ public class ChatThreadResolverTests
         // Arrange
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
-        var results = new List<(ChatThreadContext context, bool isNew)>();
+        var results = new List<ChatThreadContext>();
         var lockObj = new object();
 
         // Act - simulate concurrent access
@@ -138,8 +133,7 @@ public class ChatThreadResolverTests
         await Task.WhenAll(tasks);
 
         // Assert - only one should be new, all should reference same context
-        results.Count(r => r.isNew).ShouldBe(1);
-        var firstContext = results.First().context;
-        results.ShouldAllBe(r => ReferenceEquals(r.context, firstContext));
+        var firstContext = results.First();
+        results.ShouldAllBe(r => ReferenceEquals(r, firstContext));
     }
 }

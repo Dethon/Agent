@@ -116,6 +116,7 @@ public class ChatMonitorTests
     public async Task Monitor_WithNullThreadId_CallsCreateThread()
     {
         // Arrange
+        var threadResolver = new ChatThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt(threadId: null) };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
@@ -125,7 +126,7 @@ public class ChatMonitorTests
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, logger.Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -134,29 +135,29 @@ public class ChatMonitorTests
         chatMessengerClient.Verify(c => c.CreateThread(1, "Hello", It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // [Fact]
-    // public async Task Monitor_WithCancelCommand_CleansUpResources()
-    // {
-    //     // Arrange
-    //     var threadResolver = new ChatThreadResolver();
-    //     var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
-    //     var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-    //     var fakeAgent = MonitorTestMocks.CreateAgent();
-    //     var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
-    //     var logger = new Mock<ILogger<ChatMonitor>>();
-    //
-    //     // First resolve a context for the agent key so we can verify it gets cleaned
-    //     var agentKey = new AgentKey(1, 1);
-    //     var (context, _) = threadResolver.Resolve(agentKey);
-    //
-    //     var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, logger.Object);
-    //
-    //     // Act
-    //     await monitor.Monitor(CancellationToken.None);
-    //
-    //     // Assert - the resources should be cleaned up (CTS gets cancelled and disposed when Clean is called)
-    //     context.Cts.IsCancellationRequested.ShouldBeTrue();
-    // }
+    [Fact]
+    public async Task Monitor_WithCancelCommand_CleansUpResources()
+    {
+        // Arrange
+        var threadResolver = new ChatThreadResolver();
+        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
+        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        // First resolve a context for the agent key so we can verify it gets cleaned
+        var agentKey = new AgentKey(1, 1);
+        var context = threadResolver.Resolve(agentKey);
+
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - the resources should be cleaned up (CTS gets cancelled and disposed when Clean is called)
+        context.Cts.IsCancellationRequested.ShouldBeTrue();
+    }
 }
 
 public class AgentCleanupMonitorTests

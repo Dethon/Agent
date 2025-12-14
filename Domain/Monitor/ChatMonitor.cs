@@ -10,6 +10,7 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     IChatMessengerClient chatMessengerClient,
     IAgentFactory agentFactory,
+    ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -40,8 +41,9 @@ public class ChatMonitor(
     {
         await using var agent = agentFactory.Create(agentKey);
         var thread = agent.GetNewThread();
-        using var threadCts = new CancellationTokenSource();
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(threadCts.Token, ct);
+
+        var context = threadResolver.Resolve(agentKey);
+        using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
         // ReSharper disable AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
@@ -58,7 +60,7 @@ public class ChatMonitor(
                         .Cast<AiResponse>();
                 }
 
-                threadCts.Cancel();
+                context.Complete();
                 return AsyncEnumerable.Empty<AiResponse>();
             })
             .Merge(linkedCt);

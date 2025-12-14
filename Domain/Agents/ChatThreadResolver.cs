@@ -9,18 +9,18 @@ public class ChatThreadResolver
 
     public IEnumerable<AgentKey> AgentKeys => _contexts.Keys;
 
-    public (ChatThreadContext context, bool isNew) Resolve(AgentKey key)
+    public ChatThreadContext Resolve(AgentKey key)
     {
         lock (_lock)
         {
             if (_contexts.TryGetValue(key, out var existing))
             {
-                return (existing, false);
+                return existing;
             }
 
             var context = new ChatThreadContext();
             _contexts[key] = context;
-            return (context, true);
+            return context;
         }
     }
 

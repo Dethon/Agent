@@ -7,12 +7,6 @@ public sealed class ChatThreadContext
 {
     public CancellationTokenSource Cts { get; } = new();
 
-    public Channel<ChatPrompt> PromptChannel { get; } = Channel
-        .CreateBounded<ChatPrompt>(new BoundedChannelOptions(500)
-        {
-            FullMode = BoundedChannelFullMode.Wait
-        });
-
     public CancellationTokenSource GetLinkedTokenSource(CancellationToken externalToken)
     {
         return CancellationTokenSource.CreateLinkedTokenSource(Cts.Token, externalToken);
@@ -20,7 +14,6 @@ public sealed class ChatThreadContext
 
     public void Complete()
     {
-        PromptChannel.Writer.TryComplete();
         Cts.Cancel();
         Cts.Dispose();
     }
