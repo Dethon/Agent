@@ -166,7 +166,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         // Assert
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
-        content.ShouldContain("mising"); // Note: typo exists in original code
+        content.ShouldContain("missing");
 
         await client.DisposeAsync();
     }

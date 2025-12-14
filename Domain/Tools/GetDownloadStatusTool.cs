@@ -24,7 +24,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
         {
             return new JsonObject
             {
-                ["status"] = "mising",
+                ["status"] = "missing",
                 ["message"] = "The download is missing, it probably got removed externally"
             };
         }
