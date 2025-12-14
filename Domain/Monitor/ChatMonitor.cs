@@ -46,7 +46,7 @@ public class ChatMonitor(
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
-        // ReSharper disable AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
+        // ReSharper disable once AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
         var aiResponses = prompts
             .Select(x =>
             {
@@ -60,7 +60,7 @@ public class ChatMonitor(
                         .Cast<AiResponse>();
                 }
 
-                context.Complete();
+                threadResolver.Clean(agentKey);
                 return AsyncEnumerable.Empty<AiResponse>();
             })
             .Merge(linkedCt);
