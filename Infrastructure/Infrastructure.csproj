@@ -13,7 +13,7 @@
 
   <ItemGroup>
       <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251204.1"/>
-      <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.1.0-preview.1.25608.1"/>
+      <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.1.1-preview.1.25612.2" />
       <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1"/>
       <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="10.0.1"/>
       <PackageReference Include="ModelContextProtocol" Version="0.5.0-preview.1"/>
