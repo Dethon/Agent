@@ -40,6 +40,7 @@ public static class IAsyncEnumerableExtensions
         {
             group.Complete();
         }
+        groups.Clear();
     }
 
     private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
