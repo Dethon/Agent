@@ -78,10 +78,7 @@ public class CleanupDownloadTool(
     {
         try
         {
-            var basePath = downloadPath.BaseDownloadPath;
-            var path = basePath.Contains('/')
-                ? $"{basePath.TrimEnd('/', '\\')}/{downloadId}"
-                : Path.Combine(basePath, downloadId.ToString());
+            var path = Path.Combine(downloadPath.BaseDownloadPath, downloadId.ToString());
             await fileSystemClient.RemoveDirectory(path, ct);
             return Result.Ok();
         }
