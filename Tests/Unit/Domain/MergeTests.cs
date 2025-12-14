@@ -1,4 +1,5 @@
-﻿using Domain.Extensions;
+﻿using System.Runtime.CompilerServices;
+using Domain.Extensions;
 using Shouldly;
 
 namespace Tests.Unit.Domain;
@@ -62,7 +63,8 @@ public class MergeTests
     {
         // Arrange
         var sources = new[]
-        { _sourceArray0.ToAsyncEnumerable(),
+        {
+            _sourceArray0.ToAsyncEnumerable(),
             _sourceArray1.ToAsyncEnumerable(),
             _sourceArray2.ToAsyncEnumerable()
         };
@@ -93,6 +95,7 @@ public class MergeTests
                     await cts.CancelAsync();
                 }
             }
+
             return items;
         }, cts.Token);
 
@@ -127,6 +130,44 @@ public class MergeTests
             yield return _sourceArray0.ToAsyncEnumerable();
             await Task.Yield();
             yield return _sourceArray3.ToAsyncEnumerable();
+        }
+    }
+
+    [Fact]
+    public async Task Merge_AsyncEnumerableOfAsyncEnumerables_DoesNotBufferOuterStream()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var readTask = Task.Run(async () =>
+        {
+            // ReSharper disable AccessToDisposedClosure
+            await foreach (var item in outer(cts.Token).Merge(cts.Token))
+            {
+                await cts.CancelAsync();
+                return item;
+            }
+
+            throw new InvalidOperationException("No items were produced.");
+        }, cts.Token);
+
+        var completed = await Task.WhenAny(readTask, Task.Delay(1000, CancellationToken.None));
+        completed.ShouldBe(readTask);
+
+        (await readTask).ShouldBe(1);
+        return;
+
+        async IAsyncEnumerable<IAsyncEnumerable<int>> outer([EnumeratorCancellation] CancellationToken ct)
+        {
+            yield return first(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+        }
+
+        static async IAsyncEnumerable<int> first([EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.Yield();
+            yield return 1;
+            await Task.Delay(10, ct);
+            yield return 2;
         }
     }
 }
