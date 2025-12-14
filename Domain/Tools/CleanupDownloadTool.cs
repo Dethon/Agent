@@ -20,13 +20,40 @@ public class CleanupDownloadTool(
 
     protected async Task<JsonNode> Run(string sessionId, int downloadId, CancellationToken ct)
     {
-        // First cleanup the download task
-        stateManager.TrackedDownloads.Remove(sessionId, downloadId);
-        await downloadClient.Cleanup(downloadId, ct);
+        var errors = new List<string>();
 
-        // Then cleanup the download directory
-        var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
-        await fileSystemClient.RemoveDirectory(path, ct);
+        // First cleanup the download task
+        try
+        {
+            stateManager.TrackedDownloads.Remove(sessionId, downloadId);
+            await downloadClient.Cleanup(downloadId, ct);
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Failed to cleanup download task: {ex.Message}");
+        }
+
+        // Then cleanup the download directory (even if the first operation failed)
+        try
+        {
+            var path = $"{downloadPath.BaseDownloadPath}/{downloadId}";
+            await fileSystemClient.RemoveDirectory(path, ct);
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Failed to remove download directory: {ex.Message}");
+        }
+
+        if (errors.Count > 0)
+        {
+            return new JsonObject
+            {
+                ["status"] = "partial_success",
+                ["message"] = "Cleanup completed with errors",
+                ["errors"] = new JsonArray(errors.Select(e => JsonValue.Create(e)).ToArray()),
+                ["downloadId"] = downloadId
+            };
+        }
 
         return new JsonObject
         {

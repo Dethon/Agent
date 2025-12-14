@@ -6,8 +6,8 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
-    : IClassFixture<McpOrganizeServerFixture>
+public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
+    : IClassFixture<McpLibraryServerFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentIntegrationTests>()
@@ -159,7 +159,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
     [SkippableFact]
     public async Task Agent_WithCleanupTool_CanCleanupDownloadDirectory()
     {
-        // Arrange - CleanupDownloadDirectory expects downloadId as integer
+        // Arrange - CleanupDownload expects downloadId as integer
         var llmClient = CreateLlmClient();
         const int downloadId = 99999;
         var downloadSubDir = Path.Combine(mcpFixture.DownloadPath, downloadId.ToString());
@@ -176,7 +176,7 @@ public class McpAgentIntegrationTests(McpOrganizeServerFixture mcpFixture)
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"Clean up the download with ID {downloadId} using the CleanupDownloadDirectory tool.",
+                $"Clean up the download with ID {downloadId} using the CleanupDownload tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

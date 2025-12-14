@@ -3,31 +3,40 @@ using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
+using Infrastructure.StateManagers;
 using McpServerLibrary.McpTools;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Integration.Fixtures;
 
-public class McpOrganizeServerFixture : IAsyncLifetime
+public class McpLibraryServerFixture : IAsyncLifetime
 {
     private IHost _host = null!;
     private int _port;
+    private IMemoryCache _cache = null!;
+
+    private JackettFixture Jackett { get; } = new();
+    private QBittorrentFixture QBittorrent { get; } = new();
 
     public string McpEndpoint { get; private set; } = null!;
     public string LibraryPath { get; private set; } = null!;
-
     public string DownloadPath { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
+        // Start Docker containers
+        await Task.WhenAll(Jackett.InitializeAsync(), QBittorrent.InitializeAsync());
+
         LibraryPath = Path.Combine(Path.GetTempPath(), $"mcp-library-{Guid.NewGuid()}");
         DownloadPath = Path.Combine(Path.GetTempPath(), $"mcp-downloads-{Guid.NewGuid()}");
         Directory.CreateDirectory(LibraryPath);
         Directory.CreateDirectory(DownloadPath);
 
+        _cache = new MemoryCache(new MemoryCacheOptions());
         _port = GetAvailablePort();
 
         var builder = WebApplication.CreateBuilder();
@@ -37,11 +46,21 @@ public class McpOrganizeServerFixture : IAsyncLifetime
         });
 
         builder.Services
-            .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
-            .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
-            .AddTransient<IFileSystemClient, LocalFileSystemClient>()
+            .AddSingleton<DownloadPathConfig>(_ => new DownloadPathConfig(DownloadPath))
+            .AddSingleton<LibraryPathConfig>(_ => new LibraryPathConfig(LibraryPath))
+            .AddSingleton(_cache)
+            .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
+            .AddSingleton<ISearchResultsManager, SearchResultsManager>()
+            .AddSingleton<IStateManager, StateManager>()
+            .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
+            .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
+            .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
+            .WithTools<McpFileSearchTool>()
+            .WithTools<McpFileDownloadTool>()
+            .WithTools<McpGetDownloadStatusTool>()
+            .WithTools<McpCleanupDownloadTool>()
             .WithTools<McpListDirectoriesTool>()
             .WithTools<McpListFilesTool>()
             .WithTools<McpMoveTool>();
@@ -62,14 +81,6 @@ public class McpOrganizeServerFixture : IAsyncLifetime
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
-    }
-
-    public HttpClient CreateHttpClient()
-    {
-        return new HttpClient
-        {
-            BaseAddress = new Uri($"http://localhost:{_port}/")
-        };
     }
 
     public void CreateLibraryStructure(string relativePath)
@@ -116,6 +127,10 @@ public class McpOrganizeServerFixture : IAsyncLifetime
     {
         await _host.StopAsync();
         _host.Dispose();
+        _cache.Dispose();
+
+        await Jackett.DisposeAsync();
+        await QBittorrent.DisposeAsync();
 
         try
         {
