@@ -46,7 +46,6 @@ public class DependencyInjectionTests
         var settings = CreateTestSettings();
         var cmdParams = new CommandLineParams
         {
-            WorkersCount = 2,
             ChatInterface = ChatInterface.Cli
         };
 
@@ -72,7 +71,6 @@ public class DependencyInjectionTests
         var settings = CreateTestSettings();
         var cmdParams = new CommandLineParams
         {
-            WorkersCount = 2,
             ChatInterface = ChatInterface.Telegram
         };
 
@@ -83,59 +81,8 @@ public class DependencyInjectionTests
         // Assert
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void ConfigureJack_WithWorkersCount_RegistersCorrectNumberOfTaskRunners()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            WorkersCount = 3,
-            ChatInterface = ChatInterface.Cli
-        };
-
-        // Act
-        services.ConfigureJack(settings, cmdParams);
-        var provider = services.BuildServiceProvider();
-
-        // Assert - should have 3 TaskRunner hosted services + 2 monitoring services
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Length.ShouldBe(5); // 3 TaskRunners + ChatMonitoring + CleanupMonitoring
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithDefaultArgs_ReturnsDefaults()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams([]);
-
-        // Assert
-        result.WorkersCount.ShouldBe(10);
-        result.ChatInterface.ShouldBe(ChatInterface.Telegram);
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithWorkerOption_ParsesCorrectly()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["--workers", "5"]);
-
-        // Assert
-        result.WorkersCount.ShouldBe(5);
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithShortWorkerOption_ParsesCorrectly()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["-w", "3"]);
-
-        // Assert
-        result.WorkersCount.ShouldBe(3);
+        hostedServices.Length.ShouldBe(2);
     }
 
     [Fact]
@@ -145,17 +92,6 @@ public class DependencyInjectionTests
         var result = ConfigModule.GetCommandLineParams(["--chat", "Cli"]);
 
         // Assert
-        result.ChatInterface.ShouldBe(ChatInterface.Cli);
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithAllOptions_ParsesCorrectly()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["-w", "7", "--chat", "Cli"]);
-
-        // Assert
-        result.WorkersCount.ShouldBe(7);
         result.ChatInterface.ShouldBe(ChatInterface.Cli);
     }
 }

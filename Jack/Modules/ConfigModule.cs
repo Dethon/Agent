@@ -33,12 +33,6 @@ public static class ConfigModule
 
     public static CommandLineParams GetCommandLineParams(string[] args)
     {
-        var workersOption = new Option<int>(name: "--workers", aliases: ["-w"])
-        {
-            Description = "Number of workers to run in daemon mode",
-            Required = false,
-            DefaultValueFactory = _ => 10
-        };
         var chatOption = new Option<ChatInterface>("--chat")
         {
             Description = "Chat interface to interact with the agent",
@@ -47,7 +41,6 @@ public static class ConfigModule
         };
         var rootCommand = new RootCommand("Jack Application")
         {
-            workersOption,
             chatOption
         };
 
@@ -57,26 +50,28 @@ public static class ConfigModule
         parseResult.ThrowIfSpecialOption();
         return new CommandLineParams
         {
-            WorkersCount = parseResult.GetValue(workersOption),
             ChatInterface = parseResult.GetValue(chatOption)
         };
     }
 
-    private static void ThrowIfErrors(this ParseResult parseResult)
+    extension(ParseResult parseResult)
     {
-        if (parseResult.Errors.Count > 0)
+        private void ThrowIfErrors()
         {
-            throw new InvalidOperationException("Invalid command line arguments");
+            if (parseResult.Errors.Count > 0)
+            {
+                throw new InvalidOperationException("Invalid command line arguments");
+            }
         }
-    }
 
-    private static void ThrowIfSpecialOption(this ParseResult parseResult)
-    {
-        var helpOption = parseResult.GetValue<bool>("--help");
-        var versionOption = parseResult.GetValue<bool>("--version");
-        if (helpOption || versionOption)
+        private void ThrowIfSpecialOption()
         {
-            throw new InvalidOperationException("Invalid command line arguments");
+            var helpOption = parseResult.GetValue<bool>("--help");
+            var versionOption = parseResult.GetValue<bool>("--version");
+            if (helpOption || versionOption)
+            {
+                throw new InvalidOperationException("Invalid command line arguments");
+            }
         }
     }
 }
