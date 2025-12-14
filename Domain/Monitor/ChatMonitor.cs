@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -7,34 +8,22 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Monitor;
 
 public class ChatMonitor(
-    TaskQueue queue,
     IChatMessengerClient chatMessengerClient,
     IAgentFactory agentFactory,
-    ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
         {
-            var prompts = chatMessengerClient.ReadPrompts(1000, cancellationToken);
-            await foreach (var prompt in prompts)
+            var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
+                .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), ct: cancellationToken)
+                .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
+                .Merge(cancellationToken);
+
+            await foreach (var (key, aiResponse) in responses)
             {
-                var agentKey = await CreateTopicIfNeeded(prompt, cancellationToken);
-                var (context, isNew) = threadResolver.Resolve(agentKey);
-
-                if (prompt.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
-                {
-                    threadResolver.Clean(agentKey);
-                    continue;
-                }
-
-                await context.PromptChannel.Writer.WriteAsync(prompt, cancellationToken);
-
-                if (isNew)
-                {
-                    await queue.QueueTask(ct => ProcessChatThread(agentKey, context, ct), cancellationToken);
-                }
+                await SendResponse(key, aiResponse, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -46,32 +35,38 @@ public class ChatMonitor(
         }
     }
 
-    private async Task ProcessChatThread(AgentKey agentKey, ChatThreadContext context, CancellationToken ct)
+    private async IAsyncEnumerable<(AgentKey, AiResponse)> ProcessChatThread(
+        AgentKey agentKey, IAsyncEnumerable<ChatPrompt> prompts, [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.Create(agentKey);
-        using var linkedCts = context.GetLinkedTokenSource(ct);
         var thread = agent.GetNewThread();
+        using var threadCts = new CancellationTokenSource();
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(threadCts.Token, ct);
         var linkedCt = linkedCts.Token;
 
-        // ReSharper disable once AccessToDisposedClosure - agent is disposed after BlockWhile completes
-        var aiResponses = context.PromptChannel.Reader
-            .ReadAllAsync(linkedCt)
-            .Select(x => agent
-                .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                .ToUpdateAiResponsePairs()
-                .Where(y => y.Item2 is not null)
-                .Select(y => y.Item2)
-                .Cast<AiResponse>()
-            )
+        // ReSharper disable AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
+        var aiResponses = prompts
+            .Select(x =>
+            {
+                if (!x.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
+                {
+                    return agent
+                        .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
+                        .ToUpdateAiResponsePairs()
+                        .Where(y => y.Item2 is not null)
+                        .Select(y => y.Item2)
+                        .Cast<AiResponse>();
+                }
+
+                threadCts.Cancel();
+                return AsyncEnumerable.Empty<AiResponse>();
+            })
             .Merge(linkedCt);
 
-        await chatMessengerClient.BlockWhile(agentKey.ChatId, agentKey.ThreadId, async c =>
+        await foreach (var aiResponse in aiResponses)
         {
-            await foreach (var aiResponse in aiResponses)
-            {
-                await SendResponse(agentKey, aiResponse, c);
-            }
-        }, linkedCt);
+            yield return (agentKey, aiResponse);
+        }
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

@@ -7,7 +7,6 @@ using Jack.App;
 using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 
 namespace Jack.Modules;
@@ -33,12 +32,10 @@ public static class InjectorModule
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
             services = services
-                .AddSingleton<TaskQueue>(_ => new TaskQueue(cmdParams.WorkersCount * 2))
                 .AddSingleton<ChatMonitor>()
                 .AddSingleton<AgentCleanupMonitor>()
                 .AddHostedService<ChatMonitoring>()
-                .AddHostedService<CleanupMonitoring>()
-                .AddWorkers(cmdParams);
+                .AddHostedService<CleanupMonitoring>();
 
             return cmdParams.ChatInterface switch
             {
@@ -53,16 +50,6 @@ public static class InjectorModule
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
-        }
-
-        private IServiceCollection AddWorkers(CommandLineParams cmdParams)
-        {
-            for (var i = 0; i < cmdParams.WorkersCount; i++)
-            {
-                services.AddSingleton<IHostedService, TaskRunner>();
-            }
-
-            return services;
         }
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)

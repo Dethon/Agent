@@ -1,10 +1,64 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
 namespace Domain.Extensions;
 
+public interface IAsyncGrouping<out TKey, out TElement> : IAsyncEnumerable<TElement>
+{
+    TKey Key { get; }
+}
+
 public static class IAsyncEnumerableExtensions
 {
+    public static async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TSource, TKey>(
+        this IAsyncEnumerable<TSource> source,
+        Func<TSource, CancellationToken, ValueTask<TKey>> keySelector,
+        [EnumeratorCancellation] CancellationToken ct = default) where TKey : notnull
+    {
+        var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
+
+        await foreach (var item in source.WithCancellation(ct))
+        {
+            var key = await keySelector(item, ct);
+            var newGroup = new AsyncGrouping<TKey, TSource>(key);
+            var group = groups.GetOrAdd(key, newGroup);
+            if (ReferenceEquals(group, newGroup))
+            {
+                yield return newGroup;
+            }
+
+            await group.WriteAsync(item, ct);
+        }
+
+        foreach (var group in groups.Values)
+        {
+            group.Complete();
+        }
+    }
+
+    private sealed class AsyncGrouping<TKey, TElement>(TKey key) : IAsyncGrouping<TKey, TElement>
+    {
+        private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
+
+        public TKey Key => key;
+
+        public ValueTask WriteAsync(TElement item, CancellationToken ct)
+        {
+            return _channel.Writer.WriteAsync(item, ct);
+        }
+
+        public void Complete()
+        {
+            _channel.Writer.TryComplete();
+        }
+
+        public IAsyncEnumerator<TElement> GetAsyncEnumerator(CancellationToken ct = default)
+        {
+            return _channel.Reader.ReadAllAsync(ct).GetAsyncEnumerator(ct);
+        }
+    }
+
     public static IAsyncEnumerable<T> Merge<T>(
         this IAsyncEnumerable<T> left,
         IAsyncEnumerable<T> right,

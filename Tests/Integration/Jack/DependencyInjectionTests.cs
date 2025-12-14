@@ -56,7 +56,6 @@ public class DependencyInjectionTests
 
         // Assert - core services
         provider.GetService<IAgentFactory>().ShouldNotBeNull();
-        provider.GetService<TaskQueue>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
@@ -106,37 +105,6 @@ public class DependencyInjectionTests
         // Assert - should have 3 TaskRunner hosted services + 2 monitoring services
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
         hostedServices.Length.ShouldBe(5); // 3 TaskRunners + ChatMonitoring + CleanupMonitoring
-    }
-
-    [Fact]
-    public async Task ConfigureJack_TaskQueueCapacity_IsDoubleWorkersCount()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            WorkersCount = 5,
-            ChatInterface = ChatInterface.Cli
-        };
-
-        // Act
-        services.ConfigureJack(settings, cmdParams);
-        var provider = services.BuildServiceProvider();
-
-        // Assert - TaskQueue capacity should be workers * 2 = 10
-        var queue = provider.GetRequiredService<TaskQueue>();
-
-        // Fill the queue to test capacity
-        for (var i = 0; i < 10; i++)
-        {
-            await queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
-        }
-
-        // 11th item should block (not complete immediately)
-        var eleventhTask = queue.QueueTask(_ => Task.CompletedTask, CancellationToken.None);
-        eleventhTask.IsCompleted.ShouldBeFalse();
     }
 
     [Fact]
