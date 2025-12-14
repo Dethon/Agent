@@ -7,67 +7,31 @@ namespace Domain.Extensions;
 public interface IAsyncGrouping<out TKey, out TElement> : IAsyncEnumerable<TElement>
 {
     TKey Key { get; }
-    
+
     void Complete();
 }
 
 public static class IAsyncEnumerableExtensions
 {
-    public static async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TSource, TKey>(
-        this IAsyncEnumerable<TSource> source,
-        Func<TSource, CancellationToken, ValueTask<TKey>> keySelector,
-        [EnumeratorCancellation] CancellationToken ct = default) where TKey : notnull
-    {
-        var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
-
-        try
-        {
-            await foreach (var item in source.WithCancellation(ct))
-            {
-                var key = await keySelector(item, ct);
-
-                if (!groups.TryGetValue(key, out var group))
-                {
-                    var newGroup = new AsyncGrouping<TKey, TSource>(key, () =>
-                    {
-                        groups.TryRemove(key, out _);
-                    });
-
-                    if (groups.TryAdd(key, newGroup))
-                    {
-                        group = newGroup;
-                        yield return newGroup;
-                    }
-                    else
-                    {
-                        group = groups[key];
-                    }
-                }
-
-                await group.WriteAsync(item, ct);
-            }
-        }
-        finally
-        {
-            foreach (var group in groups.Values.ToArray())
-            {
-                group.Complete();
-            }
-
-            groups.Clear();
-        }
-    }
-
     private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete) : IAsyncGrouping<TKey, TElement>
     {
         private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
         private int _completed;
-        
+
         public TKey Key => key;
 
-        public ValueTask WriteAsync(TElement item, CancellationToken ct)
+        internal async ValueTask WriteAsync(TElement item, CancellationToken ct)
         {
-            return _channel.Writer.WriteAsync(item, ct);
+            if (_completed != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                await _channel.Writer.WriteAsync(item, ct);
+            }
+            catch (ChannelClosedException) { } // Group was completed concurrently, ignore
         }
 
         public void Complete()
@@ -87,12 +51,43 @@ public static class IAsyncEnumerableExtensions
         }
     }
 
-    public static IAsyncEnumerable<T> Merge<T>(
-        this IAsyncEnumerable<T> left,
-        IAsyncEnumerable<T> right,
-        CancellationToken ct)
+    extension<TSource>(IAsyncEnumerable<TSource> source)
     {
-        return new[] { left, right }.ToAsyncEnumerable().Merge(ct);
+        public async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TKey>(
+            Func<TSource, CancellationToken, ValueTask<TKey>> keySelector,
+            [EnumeratorCancellation] CancellationToken ct = default) where TKey : notnull
+        {
+            var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
+            try
+            {
+                await foreach (var item in source.WithCancellation(ct))
+                {
+                    var key = await keySelector(item, ct);
+                    if (!groups.TryGetValue(key, out var group))
+                    {
+                        group = new AsyncGrouping<TKey, TSource>(key, () => groups.TryRemove(key, out _));
+                        groups[key] = group;
+                        yield return group;
+                    }
+
+                    await group.WriteAsync(item, ct);
+                }
+            }
+            finally
+            {
+                foreach (var group in groups.Values)
+                {
+                    group.Complete();
+                }
+
+                groups.Clear();
+            }
+        }
+
+        public IAsyncEnumerable<TSource> Merge(IAsyncEnumerable<TSource> right, CancellationToken ct)
+        {
+            return new[] { source, right }.ToAsyncEnumerable().Merge(ct);
+        }
     }
 
     public static IAsyncEnumerable<T> Merge<T>(this IEnumerable<IAsyncEnumerable<T>> sources, CancellationToken ct)
@@ -119,9 +114,9 @@ public static class IAsyncEnumerableExtensions
 
         yield break;
 
-        async Task startPumps(IAsyncEnumerable<IAsyncEnumerable<T>> streams)
+        Task startPumps(IAsyncEnumerable<IAsyncEnumerable<T>> streams)
         {
-            await Task.WhenAll(await streams.Select(pump).ToArrayAsync(ct));
+            return Task.WhenAll(streams.Select(pump).ToBlockingEnumerable(ct));
         }
 
         async Task pump(IAsyncEnumerable<T> source)
