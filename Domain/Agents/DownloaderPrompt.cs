@@ -125,9 +125,7 @@ public static class DownloaderPrompt
 
         Cleanup can only begin **AFTER** you have received confirmation that the files from Phase 3 were moved successfully (`move_successful` notification).
 
-        *   **Strict Order of Operations:** You **MUST** clean up in this exact order to avoid leaving zombie tasks.
-            1.  **First:** Call the **tool to clean up the task**.
-            2.  **Second:** Call the **tool to clean up the directory**.
+        *   **Clean Up:** Call the **cleanup tool** to remove the download task and clean up the download directory.
         *   **Failure to Organize:** If the organization step (Phase 3) fails for any reason, **DO NOT** proceed to cleanup. Report the error to the user and await orders.
 
         ---

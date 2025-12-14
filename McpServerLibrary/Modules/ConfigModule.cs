@@ -70,7 +70,6 @@ public static class ConfigModule
             .WithTools<McpListDirectoriesTool>()
             .WithTools<McpListFilesTool>()
             .WithTools<McpMoveTool>()
-            .WithTools<McpCleanupDownloadDirectoryTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>()
             // Resources

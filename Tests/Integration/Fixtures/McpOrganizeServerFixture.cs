@@ -44,8 +44,7 @@ public class McpOrganizeServerFixture : IAsyncLifetime
             .WithHttpTransport()
             .WithTools<McpListDirectoriesTool>()
             .WithTools<McpListFilesTool>()
-            .WithTools<McpMoveTool>()
-            .WithTools<McpCleanupDownloadDirectoryTool>();
+            .WithTools<McpMoveTool>();
 
         var app = builder.Build();
         app.MapMcp();

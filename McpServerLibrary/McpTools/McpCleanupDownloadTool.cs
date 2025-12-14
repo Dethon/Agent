@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools;
+using Domain.Tools.Config;
 using Infrastructure.Utils;
 using McpServerLibrary.Extensions;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,10 @@ namespace McpServerLibrary.McpTools;
 public class McpCleanupDownloadTool(
     IDownloadClient downloadClient,
     IStateManager stateManager,
-    ILogger<McpCleanupDownloadTool> logger) : CleanupDownloadTool(downloadClient, stateManager)
+    IFileSystemClient fileSystemClient,
+    DownloadPathConfig downloadPath,
+    ILogger<McpCleanupDownloadTool> logger)
+    : CleanupDownloadTool(downloadClient, stateManager, fileSystemClient, downloadPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
