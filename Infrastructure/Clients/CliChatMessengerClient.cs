@@ -1,10 +1,9 @@
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Clients.Cli;
 using Terminal.Gui;
-using Attribute = Terminal.Gui.Attribute;
 
 namespace Infrastructure.Clients;
 
@@ -12,18 +11,17 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {
     private const long DefaultChatId = 1;
     private const int DefaultThreadId = 1;
-    private static readonly TimeSpan CtrlCTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan _ctrlCTimeout = TimeSpan.FromSeconds(2);
 
     private readonly string _agentName;
     private readonly Action? _onShutdownRequested;
-    private readonly List<ChatMessage> _chatHistory = [];
-    private readonly List<ChatLine> _displayLines = [];
-    private readonly object _historyLock = new();
+    private readonly CliCommandHandler _commandHandler;
+
+    private ConcurrentQueue<ChatLine> _displayLines = new();
 
     private BlockingCollection<string> _inputQueue = new();
     private ListView? _chatListView;
     private TextField? _inputField;
-    private Window? _mainWindow;
     private int _messageCounter;
     private bool _isRunning;
     private bool _headerDisplayed;
@@ -33,6 +31,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     {
         _agentName = agentName;
         _onShutdownRequested = onShutdownRequested;
+        _commandHandler = new CliCommandHandler(ClearChatHistory, AddToHistory);
     }
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
@@ -52,7 +51,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
         while (!cancellationToken.IsCancellationRequested && _isRunning)
         {
-            string? input = null;
+            string? input;
             try
             {
                 if (_inputQueue.IsCompleted)
@@ -127,115 +126,43 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         {
             Application.Init();
 
-            var baseScheme = new ColorScheme
-            {
-                Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
-                Focus = Application.Driver.MakeAttribute(Color.White, Color.Black),
-                HotNormal = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black),
-                HotFocus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
-            };
-
-            _mainWindow = new Window
-            {
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                Height = Dim.Fill(),
-                Border = new Border { BorderStyle = BorderStyle.None },
-                ColorScheme = baseScheme
-            };
-
-            var titleBar = new Label($" ◆ {_agentName}")
-            {
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                ColorScheme = new ColorScheme
-                {
-                    Normal = Application.Driver.MakeAttribute(Color.Black, Color.BrightCyan)
-                }
-            };
-
-            var statusBar = new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  ↑↓ scroll")
-            {
-                X = 0,
-                Y = 1,
-                Width = Dim.Fill(),
-                ColorScheme = new ColorScheme
-                {
-                    Normal = Application.Driver.MakeAttribute(Color.Gray, Color.DarkGray)
-                }
-            };
-
-            _chatListView = new ListView(new ChatListDataSource(_displayLines))
-            {
-                X = 1,
-                Y = 3,
-                Width = Dim.Fill() - 2,
-                Height = Dim.Fill() - 6,
-                AllowsMarking = false,
-                CanFocus = false,
-                ColorScheme = new ColorScheme
-                {
-                    Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
-                    Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
-                }
-            };
-
-            var inputFrame = new FrameView
-            {
-                X = 1,
-                Y = Pos.Bottom(_chatListView) + 1,
-                Width = Dim.Fill() - 2,
-                Height = 3,
-                ColorScheme = new ColorScheme
-                {
-                    Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
-                    Focus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
-                }
-            };
-
-            _inputField = new TextField("")
-            {
-                X = 0,
-                Y = 0,
-                Width = Dim.Fill(),
-                ColorScheme = new ColorScheme
-                {
-                    Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
-                    Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
-                }
-            };
+            var baseScheme = CliUiFactory.CreateBaseScheme();
+            var mainWindow = CliUiFactory.CreateMainWindow(baseScheme);
+            var titleBar = CliUiFactory.CreateTitleBar(_agentName);
+            var statusBar = CliUiFactory.CreateStatusBar();
+            _chatListView = CliUiFactory.CreateChatListView(_displayLines.ToArray());
+            var (inputFrame, inputField) = CliUiFactory.CreateInputArea(_chatListView);
+            _inputField = inputField;
 
             _inputField.KeyPress += args =>
             {
-                if (args.KeyEvent.Key == Key.Enter)
+                switch (args.KeyEvent.Key)
                 {
-                    var input = _inputField.Text?.ToString()?.Trim();
-                    if (!string.IsNullOrEmpty(input))
+                    case Key.Enter:
                     {
-                        ProcessInput(input);
-                        _inputField.Text = "";
-                    }
+                        var input = _inputField.Text?.ToString()?.Trim();
+                        if (!string.IsNullOrEmpty(input))
+                        {
+                            ProcessInput(input);
+                            _inputField.Text = "";
+                        }
 
-                    args.Handled = true;
-                }
-                else if (args.KeyEvent.Key == (Key.C | Key.CtrlMask))
-                {
-                    HandleCtrlC();
-                    args.Handled = true;
+                        args.Handled = true;
+                        break;
+                    }
+                    case Key.C | Key.CtrlMask:
+                        HandleCtrlC();
+                        args.Handled = true;
+                        break;
                 }
             };
 
-            inputFrame.Add(_inputField);
-
-            _mainWindow.Add(titleBar, statusBar, _chatListView, inputFrame);
-
-            Application.Top.Add(_mainWindow);
+            mainWindow.Add(titleBar, statusBar, _chatListView, inputFrame);
+            Application.Top.Add(mainWindow);
             Application.Top.Loaded += () => _inputField.SetFocus();
             _inputField.SetFocus();
 
-            AddToHistory("[System]", "Welcome! Type a message to start chatting.", isUser: false, isSystem: true);
+            AddToHistory("[System]", "Welcome! Type a message to start chatting.", false, false, true);
 
             Application.Run();
             Application.Shutdown();
@@ -245,31 +172,14 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         };
 
         guiThread.Start();
-
         Thread.Sleep(500);
     }
 
     private void ProcessInput(string input)
     {
-        switch (input.ToLowerInvariant())
+        if (!_commandHandler.TryHandleCommand(input))
         {
-            case "/clear":
-            case "/cls":
-                ClearChatHistory();
-                break;
-
-            case "/help":
-            case "/?":
-                AddToHistory("[Help]", "Available commands:", isUser: false, isSystem: true);
-                AddToHistory("[Help]", "  /help, /?     - Show this help", isUser: false, isSystem: true);
-                AddToHistory("[Help]", "  /clear, /cls  - Clear conversation and start fresh", isUser: false,
-                    isSystem: true);
-                AddToHistory("[Help]", "  Ctrl+C twice  - Exit application", isUser: false, isSystem: true);
-                break;
-
-            default:
-                _inputQueue.Add(input);
-                break;
+            _inputQueue.Add(input);
         }
     }
 
@@ -277,7 +187,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     {
         var now = DateTime.UtcNow;
 
-        if (_lastCtrlC.HasValue && now - _lastCtrlC.Value < CtrlCTimeout)
+        if (_lastCtrlC.HasValue && now - _lastCtrlC.Value < _ctrlCTimeout)
         {
             RequestShutdown();
         }
@@ -308,10 +218,9 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     {
         var chatMessage = new ChatMessage(sender, message, isUser, isToolCall, isSystem, DateTime.Now);
 
-        lock (_historyLock)
+        foreach (var line in ChatMessageFormatter.FormatMessage(chatMessage))
         {
-            _chatHistory.Add(chatMessage);
-            AddDisplayLines(chatMessage);
+            _displayLines.Enqueue(line);
         }
 
         UpdateChatView();
@@ -319,56 +228,13 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
     private void ClearChatHistory()
     {
-        lock (_historyLock)
-        {
-            _chatHistory.Clear();
-            _displayLines.Clear();
-        }
+        _displayLines = new ConcurrentQueue<ChatLine>();
 
         UpdateChatView();
 
         var oldQueue = _inputQueue;
         _inputQueue = new BlockingCollection<string>();
         oldQueue.CompleteAdding();
-    }
-
-    private void AddDisplayLines(ChatMessage msg)
-    {
-        var timestamp = msg.Timestamp.ToString("HH:mm");
-        var messageLines = msg.Message.Split('\n');
-
-        if (msg.IsSystem)
-        {
-            _displayLines.Add(new ChatLine($"  ○ {msg.Message}", LineType.System));
-        }
-        else if (msg.IsToolCall)
-        {
-            _displayLines.Add(new ChatLine("  ┌─ ⚡ Tools ─────────────────", LineType.ToolHeader));
-            foreach (var line in messageLines)
-            {
-                _displayLines.Add(new ChatLine($"  │  {line}", LineType.ToolContent));
-            }
-
-            _displayLines.Add(new ChatLine("  └──────────────────────────────", LineType.ToolHeader));
-        }
-        else if (msg.IsUser)
-        {
-            _displayLines.Add(new ChatLine($"  ▶ You · {timestamp}", LineType.UserHeader));
-            foreach (var line in messageLines)
-            {
-                _displayLines.Add(new ChatLine($"    {line}", LineType.UserContent));
-            }
-        }
-        else
-        {
-            _displayLines.Add(new ChatLine($"  ◀ {msg.Sender} · {timestamp}", LineType.AgentHeader));
-            foreach (var line in messageLines)
-            {
-                _displayLines.Add(new ChatLine($"    {line}", LineType.AgentContent));
-            }
-        }
-
-        _displayLines.Add(new ChatLine("", LineType.Blank));
     }
 
     private void UpdateChatView()
@@ -378,14 +244,16 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
             return;
         }
 
+        var snapshot = _displayLines.ToArray();
+
         Application.MainLoop?.Invoke(() =>
         {
-            _chatListView.Source = new ChatListDataSource(_displayLines);
+            _chatListView.Source = new ChatListDataSource(snapshot);
 
-            if (_displayLines.Count > 0)
+            if (snapshot.Length > 0)
             {
-                _chatListView.SelectedItem = _displayLines.Count - 1;
-                _chatListView.TopItem = Math.Max(0, _displayLines.Count - _chatListView.Bounds.Height);
+                _chatListView.SelectedItem = snapshot.Length - 1;
+                _chatListView.TopItem = Math.Max(0, snapshot.Length - _chatListView.Bounds.Height);
             }
 
             _inputField?.SetFocus();
@@ -397,76 +265,5 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _isRunning = false;
         _inputQueue.Dispose();
         GC.SuppressFinalize(this);
-    }
-
-    private sealed record ChatMessage(
-        string Sender,
-        string Message,
-        bool IsUser,
-        bool IsToolCall,
-        bool IsSystem,
-        DateTime Timestamp);
-
-    private sealed record ChatLine(string Text, LineType Type);
-
-    private enum LineType
-    {
-        Blank,
-        System,
-        UserHeader,
-        UserContent,
-        AgentHeader,
-        AgentContent,
-        ToolHeader,
-        ToolContent
-    }
-
-    private sealed class ChatListDataSource(IList<ChatLine> lines) : IListDataSource
-    {
-        public int Count => lines.Count;
-        public int Length => lines.Count;
-
-        public bool IsMarked(int item)
-        {
-            return false;
-        }
-
-        public void Render(ListView container, ConsoleDriver driver, bool selected, int item, int col, int row,
-            int width, int start = 0)
-        {
-            if (item < 0 || item >= lines.Count)
-            {
-                return;
-            }
-
-            var line = lines[item];
-            driver.SetAttribute(GetAttributeForLineType(line.Type, driver));
-
-            var text = line.Text.Length > width ? line.Text[..width] : line.Text.PadRight(width);
-            container.Move(col, row);
-            driver.AddStr(text);
-        }
-
-        public void SetMark(int item, bool value) { }
-
-        public IList ToList()
-        {
-            return lines.Select(l => l.Text).ToList();
-        }
-
-        private static Attribute GetAttributeForLineType(LineType type, ConsoleDriver driver)
-        {
-            return type switch
-            {
-                LineType.System => driver.MakeAttribute(Color.BrightYellow, Color.Black),
-                LineType.UserHeader => driver.MakeAttribute(Color.BrightGreen, Color.Black),
-                LineType.UserContent => driver.MakeAttribute(Color.Green, Color.Black),
-                LineType.AgentHeader => driver.MakeAttribute(Color.BrightCyan, Color.Black),
-                LineType.AgentContent => driver.MakeAttribute(Color.Cyan, Color.Black),
-                LineType.ToolHeader => driver.MakeAttribute(Color.BrightMagenta, Color.Black),
-                LineType.ToolContent => driver.MakeAttribute(Color.Magenta, Color.Black),
-                _ => driver.MakeAttribute(Color.White, Color.Black)
-            };
-        }
     }
 }
