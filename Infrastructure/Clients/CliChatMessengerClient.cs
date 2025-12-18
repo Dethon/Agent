@@ -7,81 +7,79 @@ namespace Infrastructure.Clients;
 
 public class CliChatMessengerClient(string agentName) : IChatMessengerClient
 {
-    private const string UserName = "You";
-    private const long CliChatId = 1;
-    private int _threadId = 1;
-    private int _messageId = 1;
-
-    private readonly SemaphoreSlim _askSemaphore = new(1, 1);
-    private readonly SemaphoreSlim _busySemaphore = new(0, 1);
+    private const long DefaultChatId = 1;
+    private const int DefaultThreadId = 1;
+    private int _messageCounter;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        AnsiConsole.Write(new FigletText(agentName).Centered().Color(Color.Yellow));
-        AnsiConsole.Write(new Text("Ctrl + C to quit.\n", new Style(Color.Grey)).Centered());
+        AnsiConsole.Write(new Rule($"[bold blue]{agentName}[/]").RuleStyle("blue"));
+        AnsiConsole.MarkupLine("[dim]Type your message and press Enter. Type 'exit' to quit.[/]");
+        AnsiConsole.WriteLine();
+
         while (!cancellationToken.IsCancellationRequested)
         {
-            await _askSemaphore.WaitAsync(cancellationToken);
-            var input = await AnsiConsole.AskAsync<string>("\n[blue]You:[/]", cancellationToken);
-            AnsiConsole.WriteLine();
-            _busySemaphore.Release();
+            var prompt = AnsiConsole.Prompt(
+                new TextPrompt<string>("[green]You:[/]")
+                    .AllowEmpty());
+
+            if (string.IsNullOrWhiteSpace(prompt))
+            {
+                continue;
+            }
+
+            if (prompt.Equals("exit", StringComparison.OrdinalIgnoreCase))
+            {
+                AnsiConsole.MarkupLine("[yellow]Goodbye![/]");
+                yield break;
+            }
 
             yield return new ChatPrompt
             {
-                Prompt = input,
-                ChatId = CliChatId,
-                MessageId = Interlocked.Increment(ref _messageId),
-                ThreadId = _threadId,
-                Sender = UserName
+                Prompt = prompt,
+                ChatId = DefaultChatId,
+                MessageId = Interlocked.Increment(ref _messageCounter),
+                Sender = Environment.UserName,
+                ThreadId = DefaultThreadId
             };
+
+            await Task.CompletedTask;
         }
     }
 
-    public Task SendResponse(long chatId, ChatResponseMessage responseMessage, long? threadId,
-        CancellationToken cancellationToken)
+    public Task SendResponse(
+        long chatId, ChatResponseMessage responseMessage, long? threadId, CancellationToken cancellationToken)
     {
-        if (chatId != CliChatId || threadId != _threadId)
+        if (!string.IsNullOrWhiteSpace(responseMessage.CalledTools))
         {
-            return Task.CompletedTask;
+            var toolPanel = new Panel(
+                    new Text(responseMessage.CalledTools, new Style(Color.Grey)))
+                .Header("[dim]Tools Called[/]")
+                .Border(BoxBorder.Rounded)
+                .BorderStyle(Style.Parse("grey"))
+                .Expand();
+            AnsiConsole.Write(toolPanel);
         }
 
-        AnsiConsole.MarkupLine($"[green]{agentName}:[/]");
-        if (!string.IsNullOrEmpty(responseMessage.Message))
+        if (!string.IsNullOrWhiteSpace(responseMessage.Message))
         {
-            if (responseMessage.Bold)
-            {
-                AnsiConsole.MarkupLineInterpolated($"[bold]{responseMessage.Message}[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine(responseMessage.Message);
-            }
+            var style = responseMessage.Bold ? "bold cyan" : "cyan";
+            AnsiConsole.MarkupLine($"[blue]{agentName}:[/] [{style}]{Markup.Escape(responseMessage.Message)}[/]");
         }
 
-        if (!string.IsNullOrEmpty(responseMessage.CalledTools))
-        {
-            AnsiConsole.MarkupLineInterpolated($"[italic grey]{responseMessage.CalledTools}[/]");
-        }
-
-
+        AnsiConsole.WriteLine();
         return Task.CompletedTask;
     }
 
     public Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
     {
-        return Task.FromResult(Interlocked.Increment(ref _threadId));
+        AnsiConsole.Write(new Rule($"[bold yellow]{Markup.Escape(name)}[/]").RuleStyle("yellow"));
+        return Task.FromResult(DefaultThreadId);
     }
 
     public Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken)
     {
-        return Task.FromResult(threadId == _threadId);
-    }
-
-    public async Task BlockWhile(long chatId, long? threadId, Func<CancellationToken, Task> task, CancellationToken ct)
-    {
-        await _busySemaphore.WaitAsync(ct);
-        await AnsiConsole.Status().StartAsync($"{agentName} is thinking...", _ => task(ct));
-        _askSemaphore.Release();
+        return Task.FromResult(true);
     }
 }

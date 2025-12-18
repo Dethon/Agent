@@ -114,7 +114,10 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         await foreach (var prompt in client.ReadPrompts(0, cts.Token))
         {
             prompts.Add(prompt);
-            if (prompts.Count >= 2) break;
+            if (prompts.Count >= 2)
+            {
+                break;
+            }
         }
 
         // Assert
@@ -262,25 +265,5 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Assert
         exists.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task BlockWhile_ExecutesTask()
-    {
-        // Arrange
-        fixture.Reset();
-        var client = fixture.CreateClient();
-        const long chatId = 12345L;
-        var taskExecuted = false;
-
-        // Act
-        await client.BlockWhile(chatId, null, _ =>
-        {
-            taskExecuted = true;
-            return Task.CompletedTask;
-        }, CancellationToken.None);
-
-        // Assert
-        taskExecuted.ShouldBeTrue();
     }
 }

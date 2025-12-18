@@ -90,12 +90,12 @@ internal static class MonitorTestMocks
         }
 
         mock.Setup(c =>
-                c.BlockWhile(It.IsAny<long>(), It.IsAny<long?>(), It.IsAny<Func<CancellationToken, Task>>(),
-                    It.IsAny<CancellationToken>()))
-            .Returns<long, long?, Func<CancellationToken, Task>, CancellationToken>((_, _, task, ct) => task(ct));
-        mock.Setup(c => c.SendResponse(It.IsAny<long>(), It.IsAny<ChatResponseMessage>(), It.IsAny<long?>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            c.SendResponse(
+                It.IsAny<long>(),
+                It.IsAny<ChatResponseMessage>(),
+                It.IsAny<long?>(),
+                It.IsAny<CancellationToken>()
+            )).Returns(Task.CompletedTask);
         return mock;
     }
 

@@ -119,11 +119,6 @@ public class TelegramBotChatMessengerClient(
         }
     }
 
-    public Task BlockWhile(long chatId, long? threadId, Func<CancellationToken, Task> task, CancellationToken ct)
-    {
-        return task(ct);
-    }
-
     private async Task<string?> GetIcon(CancellationToken cancellationToken)
     {
         if (_topicIconId is not null)
