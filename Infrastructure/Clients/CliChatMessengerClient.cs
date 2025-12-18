@@ -232,6 +232,9 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
         UpdateChatView();
 
+        // Send /cancel to trigger agent cancellation before clearing the queue
+        _inputQueue.Add("/cancel");
+
         var oldQueue = _inputQueue;
         _inputQueue = new BlockingCollection<string>();
         oldQueue.CompleteAdding();
