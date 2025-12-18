@@ -17,13 +17,15 @@ public class McpContentRecommendationTool(ILogger<McpContentRecommendationTool> 
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
         RequestContext<CallToolRequestParams> context,
-        string userPrompt,
+        [Description(
+            "The user's content request including type, genre, mood, or criteria. Examples: 'sci-fi movies like Interstellar', 'upbeat pop songs for running', 'mystery novels set in Japan'")]
+        string query,
         CancellationToken ct)
     {
         try
         {
             var server = context.Server;
-            var parameters = CreateRequestSamplingParams(userPrompt);
+            var parameters = CreateRequestSamplingParams(query);
             var result = await server.SampleAsync(parameters, ct);
             var contents = result.Content
                 .Where(x => x is TextContentBlock)

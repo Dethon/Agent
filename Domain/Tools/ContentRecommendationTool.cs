@@ -4,14 +4,27 @@ namespace Domain.Tools;
 
 public class ContentRecommendationTool
 {
-    protected const string Name = "ContentRemmendationTool";
+    protected const string Name = "ContentRecommendationTool";
 
     protected const string Description = """
-                                         Given a user prompt, this tool generates a set of recommendations for 
-                                         downloadable content that satisifies the user's requierements.
-                                         This tool has the caability of remembering previous context, so only the last 
-                                         user prompt needs to be sent as a parameter. 
-                                         For subsequent calls it is important to include the user's remarks, if any.
+                                         Generates personalized content recommendations (movies, series, books, music, games, etc.) 
+                                         based on user preferences, mood, or specific criteria.
+
+                                         WHEN TO USE: Call this tool when the user asks for suggestions, recommendations, or ideas 
+                                         about what to watch, read, listen to, or play. Also use when user describes a mood, genre, 
+                                         or theme they're interested in exploring.
+
+                                         QUERY PARAMETER: Pass the user's complete request as the query. Include:
+                                         - Content type if specified (movie, series, book, anime, music, game)
+                                         - Genre, mood, or theme preferences
+                                         - Any specific criteria (era, language, similar to X, etc.)
+                                         - User feedback from previous recommendations if refining results
+
+                                         EXAMPLES:
+                                         - "sci-fi movies similar to Blade Runner"
+                                         - "relaxing jazz albums for working"
+                                         - "fantasy book series with strong female protagonists"
+                                         - "horror anime from the 90s"
                                          """;
 
     protected const string SystemPrompt = """
