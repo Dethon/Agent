@@ -6,6 +6,7 @@ using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Moq;
 using Shouldly;
 
 namespace Tests.Integration.Jack;
@@ -43,6 +44,7 @@ public class DependencyInjectionTests
         // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
         var settings = CreateTestSettings();
         var cmdParams = new CommandLineParams
         {
