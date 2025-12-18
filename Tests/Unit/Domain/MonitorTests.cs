@@ -155,7 +155,7 @@ public class ChatMonitorTests
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - the resources should be cleaned up (CTS gets cancelled and disposed when Clean is called)
+        // Assert - the resources should be cleaned up (CTS gets canceled and disposed when Clean is called)
         context.Cts.IsCancellationRequested.ShouldBeTrue();
     }
 }
