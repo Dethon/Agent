@@ -7,6 +7,7 @@ using Jack.App;
 using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Telegram.Bot;
 
 namespace Jack.Modules;
@@ -39,8 +40,11 @@ public static class InjectorModule
 
             return cmdParams.ChatInterface switch
             {
-                ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(_ =>
-                    new CliChatMessengerClient("Jack")),
+                ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(sp =>
+                {
+                    var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+                    return new CliChatMessengerClient("Jack", lifetime.StopApplication);
+                }),
                 ChatInterface.Telegram =>
                     services.AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
                     {
