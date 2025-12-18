@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Text;
 using Terminal.Gui;
 using Attribute = Terminal.Gui.Attribute;
 
@@ -6,8 +7,11 @@ namespace Infrastructure.Clients.Cli;
 
 internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListDataSource
 {
-    public int Count => lines.Count;
-    public int Length => lines.Count;
+    private List<(string Text, ChatLineType Type)>? _wrappedLines;
+    private int _lastWidth;
+
+    public int Count => GetWrappedLines().Count;
+    public int Length => GetWrappedLines().Count;
 
     public bool IsMarked(int item)
     {
@@ -17,24 +21,112 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
     public void Render(ListView container, ConsoleDriver driver, bool selected, int item, int col, int row,
         int width, int start = 0)
     {
-        if (item < 0 || item >= lines.Count)
+        var wrapped = GetWrappedLines(width);
+        if (item < 0 || item >= wrapped.Count)
         {
             return;
         }
 
-        var line = lines[item];
-        driver.SetAttribute(GetAttributeForLineType(line.Type, driver));
+        var (text, type) = wrapped[item];
+        driver.SetAttribute(GetAttributeForLineType(type, driver));
 
-        var text = line.Text.Length > width ? line.Text[..width] : line.Text.PadRight(width);
+        var displayText = text.Length > width ? text[..width] : text.PadRight(width);
         container.Move(col, row);
-        driver.AddStr(text);
+        driver.AddStr(displayText);
     }
 
     public void SetMark(int item, bool value) { }
 
     public IList ToList()
     {
-        return lines.Select(l => l.Text).ToList();
+        return GetWrappedLines().Select(l => l.Text).ToList();
+    }
+
+    private List<(string Text, ChatLineType Type)> GetWrappedLines(int width = 80)
+    {
+        if (_wrappedLines is not null && _lastWidth == width)
+        {
+            return _wrappedLines;
+        }
+
+        _lastWidth = width;
+        _wrappedLines = [];
+
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrEmpty(line.Text) || line.Text.Length <= width)
+            {
+                _wrappedLines.Add((line.Text, line.Type));
+                continue;
+            }
+
+            var indent = GetIndent(line.Text);
+            var wrappedTextLines = WordWrap(line.Text, width, indent);
+            foreach (var wrappedLine in wrappedTextLines)
+            {
+                _wrappedLines.Add((wrappedLine, line.Type));
+            }
+        }
+
+        return _wrappedLines;
+    }
+
+    private static string GetIndent(string text)
+    {
+        var indent = new StringBuilder();
+        foreach (var c in text)
+        {
+            if (c is ' ' or '│')
+            {
+                indent.Append(c);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return indent.ToString();
+    }
+
+    private static List<string> WordWrap(string text, int maxWidth, string indent)
+    {
+        var result = new List<string>();
+        var currentLine = new StringBuilder();
+        var words = text.Split(' ');
+
+        foreach (var word in words)
+        {
+            var testLength = currentLine.Length + (currentLine.Length > 0 ? 1 : 0) + word.Length;
+
+            if (testLength <= maxWidth)
+            {
+                if (currentLine.Length > 0)
+                {
+                    currentLine.Append(' ');
+                }
+
+                currentLine.Append(word);
+            }
+            else
+            {
+                if (currentLine.Length > 0)
+                {
+                    result.Add(currentLine.ToString());
+                }
+
+                currentLine.Clear();
+                currentLine.Append(indent);
+                currentLine.Append(word);
+            }
+        }
+
+        if (currentLine.Length > 0)
+        {
+            result.Add(currentLine.ToString());
+        }
+
+        return result;
     }
 
     private static Attribute GetAttributeForLineType(ChatLineType type, ConsoleDriver driver)

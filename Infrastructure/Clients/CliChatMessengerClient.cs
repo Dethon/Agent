@@ -250,10 +250,10 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         {
             _chatListView.Source = new ChatListDataSource(snapshot);
 
-            if (snapshot.Length > 0)
+            if (_chatListView.Source.Count > 0)
             {
-                _chatListView.SelectedItem = snapshot.Length - 1;
-                _chatListView.TopItem = Math.Max(0, snapshot.Length - _chatListView.Bounds.Height);
+                _chatListView.SelectedItem = _chatListView.Source.Count - 1;
+                _chatListView.TopItem = Math.Max(0, _chatListView.Source.Count - _chatListView.Bounds.Height);
             }
 
             _inputField?.SetFocus();
