@@ -9,32 +9,37 @@ public class OpenAiClient : DelegatingChatClient
 {
     private readonly IChatClient[] _fallbackClients;
 
-    public OpenAiClient(string endpoint, string apiKey, string[] models)
-        : base(CreateClient(endpoint, apiKey, models[0]))
+    public OpenAiClient(string endpoint, string apiKey, string[] models, bool useFunctionInvocation = true)
+        : base(CreateClient(endpoint, apiKey, models[0], useFunctionInvocation))
     {
         _fallbackClients = models.Skip(1)
-            .Select(model => CreateClient(endpoint, apiKey, model))
+            .Select(model => CreateClient(endpoint, apiKey, model, useFunctionInvocation))
             .ToArray();
     }
 
-    private static IChatClient CreateClient(string endpoint, string apiKey, string model)
+    private static IChatClient CreateClient(string endpoint, string apiKey, string model, bool useFunctionInvocation)
     {
         var options = new OpenAIClientOptions
         {
             Endpoint = new Uri(endpoint)
         };
-        return new OpenAIClient(new ApiKeyCredential(apiKey), options)
+        var builder = new OpenAIClient(new ApiKeyCredential(apiKey), options)
             .GetChatClient(model)
             .AsIChatClient()
-            .AsBuilder()
-            // .UseFunctionInvocation(configure: c =>
-            // {
-            //     c.IncludeDetailedErrors = true;
-            //     c.MaximumIterationsPerRequest = 50;
-            //     c.AllowConcurrentInvocation = true;
-            //     c.MaximumConsecutiveErrorsPerRequest = 3;
-            // })
-            .Build();
+            .AsBuilder();
+
+        if (useFunctionInvocation)
+        {
+            builder = builder.UseFunctionInvocation(configure: c =>
+            {
+                c.IncludeDetailedErrors = true;
+                c.MaximumIterationsPerRequest = 50;
+                c.AllowConcurrentInvocation = true;
+                c.MaximumConsecutiveErrorsPerRequest = 3;
+            });
+        }
+
+        return builder.Build();
     }
 
     public override async Task<ChatResponse> GetResponseAsync(

@@ -66,8 +66,11 @@ public static class InjectorModule
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)
         {
-            return services.AddSingleton<IChatClient>(_ =>
-                new OpenAiClient(settings.OpenRouter.ApiUrl, settings.OpenRouter.ApiKey, settings.OpenRouter.Models));
+            return services.AddSingleton<IChatClient>(_ => new OpenAiClient(
+                settings.OpenRouter.ApiUrl,
+                settings.OpenRouter.ApiKey,
+                settings.OpenRouter.Models,
+                false));
         }
     }
 }
