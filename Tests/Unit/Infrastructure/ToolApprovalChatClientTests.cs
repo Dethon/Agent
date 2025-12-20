@@ -56,8 +56,10 @@ public class ToolApprovalChatClientTests
         // Act
         await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
 
-        // Assert - whitelisted tool should not request approval
+        // Assert - whitelisted tool should not request approval but should notify
         handler.RequestedApprovals.ShouldBeEmpty();
+        handler.AutoApprovedNotifications.ShouldHaveSingleItem();
+        handler.AutoApprovedNotifications[0][0].ToolName.ShouldBe("TestTool");
         invoked.ShouldBeTrue("Whitelisted tool should be invoked without approval");
     }
 
@@ -153,6 +155,7 @@ public class ToolApprovalChatClientTests
     private sealed class TestApprovalHandler(bool approved) : IToolApprovalHandler
     {
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
+        public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
 
         public Task<bool> RequestApprovalAsync(
             IReadOnlyList<ToolApprovalRequest> requests,
@@ -160,6 +163,14 @@ public class ToolApprovalChatClientTests
         {
             RequestedApprovals.Add(requests);
             return Task.FromResult(approved);
+        }
+
+        public Task NotifyAutoApprovedAsync(
+            IReadOnlyList<ToolApprovalRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            AutoApprovedNotifications.Add(requests);
+            return Task.CompletedTask;
         }
     }
 

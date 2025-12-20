@@ -32,15 +32,15 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         CancellationToken cancellationToken)
     {
         var toolName = context.Function.Name;
-
-        if (_whitelistedTools.Contains(toolName))
-        {
-            return await base.InvokeFunctionAsync(context, cancellationToken);
-        }
-
         var request = new ToolApprovalRequest(
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
+
+        if (_whitelistedTools.Contains(toolName))
+        {
+            await _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
+            return await base.InvokeFunctionAsync(context, cancellationToken);
+        }
 
         var approved = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
         if (!approved)

@@ -44,7 +44,7 @@ public class ChatMonitor(
 
         var context = threadResolver.Resolve(agentKey);
         context.RegisterCompletionCallback(group.Complete);
-        
+
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
@@ -95,10 +95,14 @@ public class ChatMonitor(
     {
         try
         {
+            if (string.IsNullOrEmpty(response.Content))
+            {
+                return;
+            }
+
             var responseMessage = new ChatResponseMessage
             {
-                Message = response.Content,
-                CalledTools = response.ToolCalls
+                Message = response.Content
             };
             await chatMessengerClient.SendResponse(agentKey.ChatId, responseMessage, agentKey.ThreadId, ct);
         }

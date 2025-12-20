@@ -136,6 +136,25 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
         return true;
     }
 
+    public async Task NotifyAutoApprovedAsync(
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        if (_activeChatId is null)
+        {
+            return;
+        }
+
+        var message = FormatAutoApprovedMessage(requests);
+
+        await _client.SendMessage(
+            _activeChatId.Value,
+            message,
+            ParseMode.Html,
+            messageThreadId: _activeThreadId,
+            cancellationToken: cancellationToken);
+    }
+
     private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
         var sb = new StringBuilder();
@@ -144,22 +163,41 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
 
         foreach (var request in requests)
         {
-            sb.AppendLine($"<b>Tool:</b> <code>{HtmlEncode(request.ToolName)}</code>");
-
-            if (request.Arguments.Count > 0)
-            {
-                sb.AppendLine("<b>Arguments:</b>");
-                var json = JsonSerializer.Serialize(request.Arguments, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-                sb.AppendLine($"<pre><code class=\"language-json\">{HtmlEncode(json)}</code></pre>");
-            }
-
-            sb.AppendLine();
+            AppendToolDetails(sb, request);
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static string FormatAutoApprovedMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<b>✅ Tool Auto-Approved</b>");
+        sb.AppendLine();
+
+        foreach (var request in requests)
+        {
+            AppendToolDetails(sb, request);
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static void AppendToolDetails(StringBuilder sb, ToolApprovalRequest request)
+    {
+        sb.AppendLine($"<b>Tool:</b> <code>{HtmlEncode(request.ToolName)}</code>");
+
+        if (request.Arguments.Count > 0)
+        {
+            sb.AppendLine("<b>Arguments:</b>");
+            var json = JsonSerializer.Serialize(request.Arguments, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+            sb.AppendLine($"<pre><code class=\"language-json\">{HtmlEncode(json)}</code></pre>");
+        }
+
+        sb.AppendLine();
     }
 
     private static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)

@@ -182,6 +182,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     private sealed class TestApprovalHandler(bool approved) : IToolApprovalHandler
     {
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
+        public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
 
         public Task<bool> RequestApprovalAsync(
             IReadOnlyList<ToolApprovalRequest> requests,
@@ -189,6 +190,14 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         {
             RequestedApprovals.Add(requests);
             return Task.FromResult(approved);
+        }
+
+        public Task NotifyAutoApprovedAsync(
+            IReadOnlyList<ToolApprovalRequest> requests,
+            CancellationToken cancellationToken)
+        {
+            AutoApprovedNotifications.Add(requests);
+            return Task.CompletedTask;
         }
     }
 }
