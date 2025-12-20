@@ -27,13 +27,13 @@ public class OpenAiClient : DelegatingChatClient
             .GetChatClient(model)
             .AsIChatClient()
             .AsBuilder()
-            .UseFunctionInvocation(configure: c =>
-            {
-                c.IncludeDetailedErrors = true;
-                c.MaximumIterationsPerRequest = 50;
-                c.AllowConcurrentInvocation = true;
-                c.MaximumConsecutiveErrorsPerRequest = 3;
-            })
+            // .UseFunctionInvocation(configure: c =>
+            // {
+            //     c.IncludeDetailedErrors = true;
+            //     c.MaximumIterationsPerRequest = 50;
+            //     c.AllowConcurrentInvocation = true;
+            //     c.MaximumConsecutiveErrorsPerRequest = 3;
+            // })
             .Build();
     }
 

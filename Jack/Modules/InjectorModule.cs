@@ -25,7 +25,9 @@ public static class InjectorModule
                         sp.GetRequiredService<IChatClient>(),
                         mcpEndpoints,
                         DownloaderPrompt.AgentName,
-                        DownloaderPrompt.AgentDescription))
+                        DownloaderPrompt.AgentDescription,
+                        sp.GetService<TelegramToolApprovalHandler>(),
+                        settings.WhitelistedTools))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }
@@ -45,15 +47,21 @@ public static class InjectorModule
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
                     return new CliChatMessengerClient("Jack", lifetime.StopApplication);
                 }),
-                ChatInterface.Telegram =>
-                    services.AddSingleton<IChatMessengerClient, TelegramBotChatMessengerClient>(_ =>
-                    {
-                        var botClient = new TelegramBotClient(settings.Telegram.BotToken);
-                        return new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames);
-                    }),
+                ChatInterface.Telegram => services.AddTelegramClient(settings),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
+        }
+
+        private IServiceCollection AddTelegramClient(AgentSettings settings)
+        {
+            var botClient = new TelegramBotClient(settings.Telegram.BotToken);
+            var approvalHandler = new TelegramToolApprovalHandler(botClient);
+
+            return services
+                .AddSingleton(approvalHandler)
+                .AddSingleton<IChatMessengerClient>(_ =>
+                    new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames, approvalHandler));
         }
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)

@@ -12,7 +12,8 @@ namespace Infrastructure.Clients;
 
 public class TelegramBotChatMessengerClient(
     ITelegramBotClient client,
-    string[] allowedUserNames) : IChatMessengerClient
+    string[] allowedUserNames,
+    TelegramToolApprovalHandler? approvalHandler = null) : IChatMessengerClient
 {
     private string? _topicIconId;
 
@@ -28,6 +29,16 @@ public class TelegramBotChatMessengerClient(
                 cancellationToken: cancellationToken);
 
             offset = GetNewOffset(updates) ?? offset;
+
+            // Handle callback queries for tool approvals
+            foreach (var update in updates.Where(u => u.CallbackQuery is not null))
+            {
+                if (approvalHandler is not null && update.CallbackQuery is not null)
+                {
+                    await approvalHandler.HandleCallbackQueryAsync(update.CallbackQuery, cancellationToken);
+                }
+            }
+
             var messageUpdates = updates
                 .Select(u => u.Message)
                 .Where(m => m is not null && m.Type == MessageType.Text && IsBotMessage(m))
