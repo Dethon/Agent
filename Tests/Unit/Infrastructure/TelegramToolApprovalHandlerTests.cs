@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Agents;
 using Domain.DTOs;
 using Infrastructure.Clients;
 using Shouldly;
@@ -13,6 +14,9 @@ namespace Tests.Unit.Infrastructure;
 public class TelegramToolApprovalHandlerTests : IAsyncLifetime
 {
     private const string TestBotToken = "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
+    private const long TestChatId = 12345;
+    private const int TestThreadId = 100;
+
     private WireMockServer _server = null!;
     private ITelegramBotClient _botClient = null!;
 
@@ -33,35 +37,17 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RequestApprovalAsync_WhenNoChatSet_ReturnsFalse()
-    {
-        // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient);
-        var requests = new List<ToolApprovalRequest>
-        {
-            new("TestTool", new Dictionary<string, object?> { ["param"] = "value" })
-        };
-
-        // Act
-        var result = await handler.RequestApprovalAsync(requests, CancellationToken.None);
-
-        // Assert
-        result.ShouldBeFalse();
-    }
-
-    [Fact]
     public async Task RequestApprovalAsync_WhenTimesOut_ReturnsFalse()
     {
         // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient, TimeSpan.FromMilliseconds(100));
-        handler.SetActiveChat(12345, null);
-
+        var handler =
+            new TelegramToolApprovalHandler(_botClient, TestChatId, TestThreadId, TimeSpan.FromMilliseconds(100));
         var requests = new List<ToolApprovalRequest>
         {
             new("TestTool", new Dictionary<string, object?> { ["param"] = "value" })
         };
 
-        SetupSendMessage(12345);
+        SetupSendMessage(TestChatId);
 
         // Act
         var result = await handler.RequestApprovalAsync(requests, CancellationToken.None);
@@ -74,11 +60,11 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public async Task HandleCallbackQueryAsync_WithInvalidData_ReturnsFalse()
     {
         // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient);
-        var callbackQuery = CreateCallbackQueryWithoutMessage("invalid_data", 12345);
+        var callbackQuery = CreateCallbackQueryWithoutMessage("invalid_data", TestChatId);
 
         // Act
-        var handled = await handler.HandleCallbackQueryAsync(callbackQuery, CancellationToken.None);
+        var handled = await TelegramToolApprovalHandler.HandleCallbackQueryAsync(
+            _botClient, callbackQuery, CancellationToken.None);
 
         // Assert
         handled.ShouldBeFalse();
@@ -88,13 +74,12 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public async Task HandleCallbackQueryAsync_WithExpiredApproval_AnswersWithExpiredMessage()
     {
         // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient);
         SetupAnswerCallbackQuery();
-
-        var callbackQuery = CreateCallbackQueryWithoutMessage("tool_approve:expired123", 12345);
+        var callbackQuery = CreateCallbackQueryWithoutMessage("tool_approve:expired123", TestChatId);
 
         // Act
-        var handled = await handler.HandleCallbackQueryAsync(callbackQuery, CancellationToken.None);
+        var handled = await TelegramToolApprovalHandler.HandleCallbackQueryAsync(
+            _botClient, callbackQuery, CancellationToken.None);
 
         // Assert
         handled.ShouldBeTrue();
@@ -104,25 +89,29 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public async Task HandleCallbackQueryAsync_WithEmptyData_ReturnsFalse()
     {
         // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient);
-        var callbackQuery = CreateCallbackQueryWithoutMessage(null, 12345);
+        var callbackQuery = CreateCallbackQueryWithoutMessage(null, TestChatId);
 
         // Act
-        var handled = await handler.HandleCallbackQueryAsync(callbackQuery, CancellationToken.None);
+        var handled = await TelegramToolApprovalHandler.HandleCallbackQueryAsync(
+            _botClient, callbackQuery, CancellationToken.None);
 
         // Assert
         handled.ShouldBeFalse();
     }
 
     [Fact]
-    public void SetActiveChat_UpdatesChatContext()
+    public void Factory_CreatesHandlerWithCorrectContext()
     {
         // Arrange
-        var handler = new TelegramToolApprovalHandler(_botClient);
+        var factory = new TelegramToolApprovalHandlerFactory(_botClient);
+        var agentKey = new AgentKey(TestChatId, TestThreadId);
 
-        // Act & Assert - no exception
-        handler.SetActiveChat(12345, 100);
-        handler.SetActiveChat(67890, null);
+        // Act
+        var handler = factory.Create(agentKey);
+
+        // Assert
+        handler.ShouldNotBeNull();
+        handler.ShouldBeOfType<TelegramToolApprovalHandler>();
     }
 
     private static CallbackQuery CreateCallbackQueryWithoutMessage(string? data, long userId)

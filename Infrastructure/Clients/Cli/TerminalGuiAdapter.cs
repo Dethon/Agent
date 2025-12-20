@@ -3,7 +3,7 @@ using Terminal.Gui;
 
 namespace Infrastructure.Clients.Cli;
 
-internal sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
+public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 {
     private static readonly TimeSpan _ctrlCTimeout = TimeSpan.FromSeconds(2);
 

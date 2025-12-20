@@ -1,6 +1,6 @@
 namespace Infrastructure.Clients.Cli;
 
-internal enum ChatLineType
+public enum ChatLineType
 {
     Blank,
     System,

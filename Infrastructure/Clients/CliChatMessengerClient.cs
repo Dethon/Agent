@@ -11,25 +11,15 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private readonly CliChatMessageRouter _router;
     private readonly ITerminalAdapter _terminalAdapter;
 
-    public CliChatMessengerClient(string agentName, Action? onShutdownRequested = null)
-    {
-        _terminalAdapter = new TerminalGuiAdapter(agentName);
-        _router = new CliChatMessageRouter(agentName, Environment.UserName, _terminalAdapter);
-
-        if (onShutdownRequested is not null)
-        {
-            _router.ShutdownRequested += onShutdownRequested;
-        }
-    }
-
-    internal CliChatMessengerClient(
+    public CliChatMessengerClient(
         string agentName,
         string userName,
         ITerminalAdapter terminalAdapter,
+        CliToolApprovalHandler? approvalHandler = null,
         Action? onShutdownRequested = null)
     {
         _terminalAdapter = terminalAdapter;
-        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter);
+        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter, approvalHandler);
 
         if (onShutdownRequested is not null)
         {

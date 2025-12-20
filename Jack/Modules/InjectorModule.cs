@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Cli;
 using Jack.App;
 using Jack.Settings;
 using Microsoft.Extensions.AI;
@@ -26,7 +27,7 @@ public static class InjectorModule
                         mcpEndpoints,
                         DownloaderPrompt.AgentName,
                         DownloaderPrompt.AgentDescription,
-                        sp.GetService<TelegramToolApprovalHandler>(),
+                        sp.GetRequiredService<IToolApprovalHandlerFactory>(),
                         settings.WhitelistedTools))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
@@ -42,26 +43,40 @@ public static class InjectorModule
 
             return cmdParams.ChatInterface switch
             {
-                ChatInterface.Cli => services.AddSingleton<IChatMessengerClient, CliChatMessengerClient>(sp =>
-                {
-                    var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
-                    return new CliChatMessengerClient("Jack", lifetime.StopApplication);
-                }),
+                ChatInterface.Cli => services.AddCliClient(),
                 ChatInterface.Telegram => services.AddTelegramClient(settings),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
         }
 
+        private IServiceCollection AddCliClient()
+        {
+            var terminalAdapter = new TerminalGuiAdapter("Jack");
+            var approvalHandler = new CliToolApprovalHandler(terminalAdapter);
+
+            return services
+                .AddSingleton<IToolApprovalHandlerFactory>(new CliToolApprovalHandlerFactory(approvalHandler))
+                .AddSingleton<IChatMessengerClient>(sp =>
+                {
+                    var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+                    return new CliChatMessengerClient(
+                        "Jack",
+                        Environment.UserName,
+                        terminalAdapter,
+                        approvalHandler,
+                        lifetime.StopApplication);
+                });
+        }
+
         private IServiceCollection AddTelegramClient(AgentSettings settings)
         {
             var botClient = new TelegramBotClient(settings.Telegram.BotToken);
-            var approvalHandler = new TelegramToolApprovalHandler(botClient);
 
             return services
-                .AddSingleton(approvalHandler)
+                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClient))
                 .AddSingleton<IChatMessengerClient>(_ =>
-                    new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames, approvalHandler));
+                    new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames));
         }
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)

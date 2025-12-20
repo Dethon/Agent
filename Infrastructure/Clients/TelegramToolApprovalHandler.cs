@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Telegram.Bot;
@@ -10,40 +11,23 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Infrastructure.Clients;
 
-public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
+public sealed class TelegramToolApprovalHandler(
+    ITelegramBotClient client,
+    long chatId,
+    int? threadId,
+    TimeSpan? timeout = null) : IToolApprovalHandler
 {
     private const string ApproveCallbackPrefix = "tool_approve:";
     private const string RejectCallbackPrefix = "tool_reject:";
 
-    private readonly ITelegramBotClient _client;
-    private readonly TimeSpan _timeout;
-    private readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
+    private static readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
 
-    private long? _activeChatId;
-    private int? _activeThreadId;
-
-    public TelegramToolApprovalHandler(ITelegramBotClient client, TimeSpan? timeout = null)
-    {
-        ArgumentNullException.ThrowIfNull(client);
-        _client = client;
-        _timeout = timeout ?? TimeSpan.FromMinutes(2);
-    }
-
-    public void SetActiveChat(long chatId, int? threadId)
-    {
-        _activeChatId = chatId;
-        _activeThreadId = threadId;
-    }
+    private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromMinutes(2);
 
     public async Task<bool> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        if (_activeChatId is null)
-        {
-            return false;
-        }
-
         var approvalId = Guid.NewGuid().ToString("N")[..8];
         var context = new ApprovalContext();
         _pendingApprovals[approvalId] = context;
@@ -53,12 +37,12 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
             var message = FormatApprovalMessage(requests);
             var keyboard = CreateApprovalKeyboard(approvalId);
 
-            await _client.SendMessage(
-                _activeChatId.Value,
+            await client.SendMessage(
+                chatId,
                 message,
                 ParseMode.Html,
                 replyMarkup: keyboard,
-                messageThreadId: _activeThreadId,
+                messageThreadId: threadId,
                 cancellationToken: cancellationToken);
 
             using var timeoutCts = new CancellationTokenSource(_timeout);
@@ -81,7 +65,10 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
         }
     }
 
-    public async Task<bool> HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken cancellationToken)
+    public static async Task<bool> HandleCallbackQueryAsync(
+        ITelegramBotClient botClient,
+        CallbackQuery callbackQuery,
+        CancellationToken cancellationToken)
     {
         var data = callbackQuery.Data;
         if (string.IsNullOrEmpty(data))
@@ -109,7 +96,7 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
 
         if (!_pendingApprovals.TryGetValue(approvalId, out var context))
         {
-            await _client.AnswerCallbackQuery(
+            await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "This approval request has expired.",
                 cancellationToken: cancellationToken);
@@ -119,14 +106,14 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
         context.SetResult(approved);
 
         var responseText = approved ? "✅ Approved" : "❌ Rejected";
-        await _client.AnswerCallbackQuery(
+        await botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             responseText,
             cancellationToken: cancellationToken);
 
         if (callbackQuery.Message is not null)
         {
-            await _client.EditMessageReplyMarkup(
+            await botClient.EditMessageReplyMarkup(
                 callbackQuery.Message.Chat.Id,
                 callbackQuery.Message.MessageId,
                 replyMarkup: null,
@@ -140,18 +127,13 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        if (_activeChatId is null)
-        {
-            return;
-        }
-
         var message = FormatAutoApprovedMessage(requests);
 
-        await _client.SendMessage(
-            _activeChatId.Value,
+        await client.SendMessage(
+            chatId,
             message,
             ParseMode.Html,
-            messageThreadId: _activeThreadId,
+            messageThreadId: threadId,
             cancellationToken: cancellationToken);
     }
 
@@ -213,15 +195,10 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
 
     private async Task SendTimeoutMessageAsync(CancellationToken cancellationToken)
     {
-        if (_activeChatId is null)
-        {
-            return;
-        }
-
-        await _client.SendMessage(
-            _activeChatId.Value,
+        await client.SendMessage(
+            chatId,
             "⏱️ Tool approval timed out. Execution rejected.",
-            messageThreadId: _activeThreadId,
+            messageThreadId: threadId,
             cancellationToken: cancellationToken);
     }
 
@@ -247,5 +224,13 @@ public sealed class TelegramToolApprovalHandler : IToolApprovalHandler
             cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
             return _tcs.Task;
         }
+    }
+}
+
+public sealed class TelegramToolApprovalHandlerFactory(ITelegramBotClient client) : IToolApprovalHandlerFactory
+{
+    public IToolApprovalHandler Create(AgentKey agentKey)
+    {
+        return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
     }
 }

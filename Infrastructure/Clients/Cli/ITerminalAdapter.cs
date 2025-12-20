@@ -1,6 +1,6 @@
 namespace Infrastructure.Clients.Cli;
 
-internal interface ITerminalAdapter : IDisposable
+public interface ITerminalAdapter : IDisposable
 {
     event Action<string>? InputReceived;
     event Action? ShutdownRequested;
