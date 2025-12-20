@@ -1,0 +1,59 @@
+using Domain.Contracts;
+using Domain.DTOs;
+using Microsoft.Extensions.AI;
+
+namespace Infrastructure.Agents;
+
+public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
+{
+    private readonly IToolApprovalHandler _approvalHandler;
+    private readonly HashSet<string> _whitelistedTools;
+
+    public ToolApprovalChatClient(
+        IChatClient innerClient,
+        IToolApprovalHandler approvalHandler,
+        IEnumerable<string>? whitelistedTools = null)
+        : base(innerClient)
+    {
+        ArgumentNullException.ThrowIfNull(approvalHandler);
+        _approvalHandler = approvalHandler;
+        _whitelistedTools = whitelistedTools is not null
+            ? new HashSet<string>(whitelistedTools, StringComparer.OrdinalIgnoreCase)
+            : [];
+
+        IncludeDetailedErrors = true;
+        MaximumIterationsPerRequest = 50;
+        AllowConcurrentInvocation = true;
+        MaximumConsecutiveErrorsPerRequest = 3;
+    }
+
+    protected override async ValueTask<object?> InvokeFunctionAsync(
+        FunctionInvocationContext context,
+        CancellationToken cancellationToken)
+    {
+        var toolName = context.Function.Name;
+
+        if (_whitelistedTools.Contains(toolName))
+        {
+            return await base.InvokeFunctionAsync(context, cancellationToken);
+        }
+
+        var request = new ToolApprovalRequest(
+            toolName,
+            ToReadOnlyDictionary(context.CallContent.Arguments));
+
+        var approved = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
+        if (!approved)
+        {
+            return $"Tool execution was rejected by user: {toolName}";
+        }
+
+        return await base.InvokeFunctionAsync(context, cancellationToken);
+    }
+
+    private static IReadOnlyDictionary<string, object?> ToReadOnlyDictionary(IDictionary<string, object?>? source)
+    {
+        return source as IReadOnlyDictionary<string, object?>
+               ?? new Dictionary<string, object?>(source ?? new Dictionary<string, object?>());
+    }
+}

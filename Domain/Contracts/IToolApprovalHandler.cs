@@ -1,0 +1,8 @@
+using Domain.DTOs;
+
+namespace Domain.Contracts;
+
+public interface IToolApprovalHandler
+{
+    Task<bool> RequestApprovalAsync(IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken);
+}
