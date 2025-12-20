@@ -27,7 +27,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     }
 
     [Fact]
-    public async Task Agent_WithApprovalRequired_BlocksToolCallWhenRejected()
+    public async Task Agent_WithApprovalRequired_TerminatesWhenRejected()
     {
         // Arrange
         var innerClient = CreateLlmClient();
@@ -52,10 +52,8 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
             .Select(x => x.Item2!)
             .ToListAsync(cts.Token);
 
-        // Assert
+        // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
-
-        // Verify the tool call was processed (rejection was requested)
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldBe("ListDirectories");
 

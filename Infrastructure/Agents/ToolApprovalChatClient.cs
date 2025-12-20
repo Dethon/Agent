@@ -43,12 +43,13 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         }
 
         var approved = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
-        if (!approved)
+        if (approved)
         {
-            return $"Tool execution was rejected by user: {toolName}";
+            return await base.InvokeFunctionAsync(context, cancellationToken);
         }
 
-        return await base.InvokeFunctionAsync(context, cancellationToken);
+        context.Terminate = true;
+        return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
     }
 
     private static IReadOnlyDictionary<string, object?> ToReadOnlyDictionary(IDictionary<string, object?>? source)

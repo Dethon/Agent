@@ -64,7 +64,7 @@ public class ToolApprovalChatClientTests
     }
 
     [Fact]
-    public async Task InvokeFunctionAsync_WhenRejected_ReturnsRejectionMessage()
+    public async Task InvokeFunctionAsync_WhenRejected_TerminatesAndReturnsRejectionMessage()
     {
         // Arrange
         var handler = new TestApprovalHandler(approved: false);
@@ -88,7 +88,7 @@ public class ToolApprovalChatClientTests
         handler.RequestedApprovals.ShouldNotBeEmpty();
         invoked.ShouldBeFalse("Rejected tool should not be invoked");
 
-        // The rejection is returned as function result
+        // The rejection message is returned as function result
         var resultContent = response.Messages
             .SelectMany(m => m.Contents)
             .OfType<FunctionResultContent>()
