@@ -92,7 +92,7 @@ public class ToolApprovalChatClientTests
             .OfType<FunctionResultContent>()
             .FirstOrDefault();
         resultContent.ShouldNotBeNull();
-        resultContent.Result?.ToString().ShouldContain("rejected");
+        (resultContent.Result?.ToString() ?? string.Empty).ShouldContain("rejected");
     }
 
     [Fact]
