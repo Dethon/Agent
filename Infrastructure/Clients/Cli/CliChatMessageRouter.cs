@@ -152,12 +152,10 @@ internal sealed class CliChatMessageRouter : IDisposable
 
     private void ClearHistory()
     {
-        _terminalAdapter.ClearDisplay();
-
         _inputQueue.Add("/cancel");
-
         var oldQueue = _inputQueue;
         _inputQueue = new BlockingCollection<string>();
         oldQueue.CompleteAdding();
+        _terminalAdapter.ClearDisplay();
     }
 }

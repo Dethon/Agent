@@ -2,14 +2,16 @@ namespace Infrastructure.Clients.Cli;
 
 internal static class ChatMessageFormatter
 {
+    private static readonly string[] LineSeparators = ["\r\n", "\n"];
+
     public static IEnumerable<ChatLine> FormatMessage(ChatMessage msg)
     {
         var timestamp = msg.Timestamp.ToString("HH:mm");
-        var messageLines = msg.Message.Split('\n');
+        var messageLines = msg.Message.Split(LineSeparators, StringSplitOptions.None);
 
         if (msg.IsSystem)
         {
-            yield return new ChatLine($"  ○ {msg.Message}", ChatLineType.System);
+            yield return new ChatLine($"  ○ {msg.Message.Replace("\r", "").Replace("\n", " ")}", ChatLineType.System);
         }
         else if (msg.IsToolCall)
         {
