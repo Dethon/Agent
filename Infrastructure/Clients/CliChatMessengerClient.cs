@@ -28,7 +28,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
     public IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
     {
-        return _router.ReadPrompts(cancellationToken);
+        return _router.ReadPrompts(cancellationToken).ToAsyncEnumerable();
     }
 
     public Task SendResponse(

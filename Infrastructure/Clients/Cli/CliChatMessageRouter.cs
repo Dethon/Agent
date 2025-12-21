@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using Domain.DTOs;
 
 namespace Infrastructure.Clients.Cli;
@@ -35,8 +34,7 @@ internal sealed class CliChatMessageRouter : IDisposable
 
     public event Action? ShutdownRequested;
 
-    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+    public IEnumerable<ChatPrompt> ReadPrompts(CancellationToken cancellationToken)
     {
         if (!_isStarted)
         {
@@ -87,8 +85,6 @@ internal sealed class CliChatMessageRouter : IDisposable
                 Sender = _userName,
                 ThreadId = DefaultThreadId
             };
-
-            await Task.CompletedTask;
         }
     }
 

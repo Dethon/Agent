@@ -23,13 +23,13 @@ public class CliChatMessageRouterTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadPrompts_StartsTerminalOnFirstCall()
+    public void ReadPrompts_StartsTerminalOnFirstCall()
     {
         // Arrange
         using var cts = new CancellationTokenSource(100);
 
         // Act
-        await foreach (var _ in _router.ReadPrompts(cts.Token))
+        foreach (var _ in _router.ReadPrompts(cts.Token))
         {
             break;
         }
@@ -46,10 +46,10 @@ public class CliChatMessageRouterTests : IDisposable
         var prompts = new List<ChatPrompt>();
 
         // Start reading prompts in background
-        var readTask = Task.Run(async () =>
+        var readTask = Task.Run(() =>
         {
             // ReSharper disable once AccessToDisposedClosure
-            await foreach (var prompt in _router.ReadPrompts(cts.Token))
+            foreach (var prompt in _router.ReadPrompts(cts.Token))
             {
                 prompts.Add(prompt);
                 if (prompts.Count >= 1)
@@ -79,9 +79,9 @@ public class CliChatMessageRouterTests : IDisposable
         // Arrange
         using var cts = new CancellationTokenSource(1000);
 
-        var readTask = Task.Run(async () =>
+        var readTask = Task.Run(() =>
         {
-            await foreach (var _ in _router.ReadPrompts(cts.Token))
+            foreach (var _ in _router.ReadPrompts(cts.Token))
             {
                 break;
             }
@@ -163,9 +163,9 @@ public class CliChatMessageRouterTests : IDisposable
         using var cts = new CancellationTokenSource(500);
         var prompts = new List<ChatPrompt>();
 
-        var readTask = Task.Run(async () =>
+        var readTask = Task.Run(() =>
         {
-            await foreach (var prompt in _router.ReadPrompts(cts.Token))
+            foreach (var prompt in _router.ReadPrompts(cts.Token))
             {
                 prompts.Add(prompt);
             }
@@ -192,9 +192,9 @@ public class CliChatMessageRouterTests : IDisposable
         using var cts = new CancellationTokenSource(500);
         var prompts = new List<ChatPrompt>();
 
-        var readTask = Task.Run(async () =>
+        var readTask = Task.Run(() =>
         {
-            await foreach (var prompt in _router.ReadPrompts(cts.Token))
+            foreach (var prompt in _router.ReadPrompts(cts.Token))
             {
                 prompts.Add(prompt);
             }
@@ -234,9 +234,9 @@ public class CliChatMessageRouterTests : IDisposable
         // Arrange
         using var cts = new CancellationTokenSource();
 
-        _ = Task.Run(async () =>
+        _ = Task.Run(() =>
         {
-            await foreach (var _ in _router.ReadPrompts(cts.Token))
+            foreach (var _ in _router.ReadPrompts(cts.Token))
             {
             }
         }, cts.Token);
@@ -258,9 +258,9 @@ public class CliChatMessageRouterTests : IDisposable
         using var cts = new CancellationTokenSource(1000);
         var prompts = new List<ChatPrompt>();
 
-        var readTask = Task.Run(async () =>
+        var readTask = Task.Run(() =>
         {
-            await foreach (var prompt in _router.ReadPrompts(cts.Token))
+            foreach (var prompt in _router.ReadPrompts(cts.Token))
             {
                 prompts.Add(prompt);
                 if (prompts.Count >= 2)
