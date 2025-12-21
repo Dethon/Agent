@@ -173,7 +173,7 @@ public sealed class TelegramToolApprovalHandler(
     private static string FormatResultMessage(IReadOnlyList<ToolApprovalRequest> requests, ToolApprovalResult result)
     {
         var sb = new StringBuilder();
-        var toolNames = string.Join(", ", requests.Select(r => r.ToolName));
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split(':').Last()));
         var (icon, label) = result switch
         {
             ToolApprovalResult.Approved => ("✅", "Approved"),

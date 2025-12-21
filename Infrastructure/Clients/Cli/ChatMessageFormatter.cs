@@ -61,7 +61,7 @@ internal static class ChatMessageFormatter
             _ => ("•", ChatLineType.System, ChatLineType.System)
         };
 
-        yield return new ChatLine($"  {symbol} {toolName}", headerType);
+        yield return new ChatLine($"  {symbol} {toolName.Split(':').Last()}", headerType);
 
         foreach (var (key, value) in arguments)
         {
