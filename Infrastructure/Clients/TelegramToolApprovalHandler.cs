@@ -30,7 +30,7 @@ public sealed class TelegramToolApprovalHandler(
         CancellationToken cancellationToken)
     {
         var approvalId = Guid.NewGuid().ToString("N")[..8];
-        var context = new ApprovalContext();
+        var context = new ApprovalContext(requests);
         _pendingApprovals[approvalId] = context;
 
         try
@@ -114,7 +114,7 @@ public sealed class TelegramToolApprovalHandler(
         var responseText = result switch
         {
             ToolApprovalResult.Approved => "✅ Approved",
-            ToolApprovalResult.ApprovedAndRemember => "✅ Always approved",
+            ToolApprovalResult.ApprovedAndRemember => "✅ Approved",
             _ => "❌ Rejected"
         };
         await botClient.AnswerCallbackQuery(
@@ -124,10 +124,12 @@ public sealed class TelegramToolApprovalHandler(
 
         if (callbackQuery.Message is not null)
         {
-            await botClient.EditMessageReplyMarkup(
+            var updatedMessage = FormatResultMessage(context.Requests, result);
+            await botClient.EditMessageText(
                 callbackQuery.Message.Chat.Id,
                 callbackQuery.Message.MessageId,
-                replyMarkup: null,
+                updatedMessage,
+                ParseMode.Html,
                 cancellationToken: cancellationToken);
         }
 
@@ -151,7 +153,8 @@ public sealed class TelegramToolApprovalHandler(
     private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("<b>🔧 Tool Approval Required</b>");
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName));
+        sb.AppendLine($"<b>🔧 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
         sb.AppendLine();
 
         foreach (var request in requests)
@@ -164,10 +167,20 @@ public sealed class TelegramToolApprovalHandler(
 
     private static string FormatAutoApprovedMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine("<b>✅ Tool Auto-Approved</b>");
-        sb.AppendLine();
+        return FormatResultMessage(requests, ToolApprovalResult.Approved);
+    }
 
+    private static string FormatResultMessage(IReadOnlyList<ToolApprovalRequest> requests, ToolApprovalResult result)
+    {
+        var sb = new StringBuilder();
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName));
+        var (icon, label) = result switch
+        {
+            ToolApprovalResult.Approved => ("✅", "Approved"),
+            ToolApprovalResult.ApprovedAndRemember => ("✅", "Approved"),
+            _ => ("❌", "Rejected")
+        };
+        sb.AppendLine($"<b>{icon} {label}:</b> <code>{HtmlEncode(toolNames)}</code>");
         foreach (var request in requests)
         {
             AppendToolDetails(sb, request);
@@ -178,19 +191,15 @@ public sealed class TelegramToolApprovalHandler(
 
     private static void AppendToolDetails(StringBuilder sb, ToolApprovalRequest request)
     {
-        sb.AppendLine($"<b>Tool:</b> <code>{HtmlEncode(request.ToolName)}</code>");
-
         if (request.Arguments.Count > 0)
         {
-            sb.AppendLine("<b>Arguments:</b>");
             var json = JsonSerializer.Serialize(request.Arguments, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
-            sb.AppendLine($"<pre><code class=\"language-json\">{HtmlEncode(json)}</code></pre>");
+            sb.AppendLine(
+                $"<blockquote expandable><pre><code class=\"language-json\">{HtmlEncode(json)}</code></pre></blockquote>");
         }
-
-        sb.AppendLine();
     }
 
     private static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)
@@ -222,10 +231,12 @@ public sealed class TelegramToolApprovalHandler(
             .Replace(">", "&gt;");
     }
 
-    private sealed class ApprovalContext
+    private sealed class ApprovalContext(IReadOnlyList<ToolApprovalRequest> requests)
     {
         private readonly TaskCompletionSource<ToolApprovalResult> _tcs =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IReadOnlyList<ToolApprovalRequest> Requests => requests;
 
         public void SetResult(ToolApprovalResult result)
         {
