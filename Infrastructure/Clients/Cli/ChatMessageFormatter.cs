@@ -48,26 +48,35 @@ internal static class ChatMessageFormatter
         yield return new ChatLine("", ChatLineType.Blank);
     }
 
-    public static IEnumerable<ChatLine> FormatAutoApprovedTool(
+    public static IEnumerable<ChatLine> FormatToolResult(
         string toolName,
-        IReadOnlyDictionary<string, object?> arguments)
+        IReadOnlyDictionary<string, object?> arguments,
+        ToolResultType resultType)
     {
-        yield return new ChatLine($"  ✓ {toolName}", ChatLineType.AutoApprovedHeader);
+        var (symbol, headerType, contentType) = resultType switch
+        {
+            ToolResultType.AutoApproved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
+            ToolResultType.Approved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
+            ToolResultType.Rejected => ("✗", ChatLineType.ToolRejectedHeader, ChatLineType.ToolRejectedContent),
+            _ => ("•", ChatLineType.System, ChatLineType.System)
+        };
+
+        yield return new ChatLine($"  {symbol} {toolName}", headerType);
 
         foreach (var (key, value) in arguments)
         {
             var formattedValue = FormatArgumentValue(value);
             if (formattedValue.Contains('\n'))
             {
-                yield return new ChatLine($"    {key}:", ChatLineType.AutoApprovedContent);
+                yield return new ChatLine($"    {key}:", contentType);
                 foreach (var line in formattedValue.Split(LineSeparators, StringSplitOptions.None))
                 {
-                    yield return new ChatLine($"      {line}", ChatLineType.AutoApprovedContent);
+                    yield return new ChatLine($"      {line}", contentType);
                 }
             }
             else
             {
-                yield return new ChatLine($"    {key}: {formattedValue}", ChatLineType.AutoApprovedContent);
+                yield return new ChatLine($"    {key}: {formattedValue}", contentType);
             }
         }
     }
@@ -88,6 +97,7 @@ internal static class ChatMessageFormatter
     private static string FormatArray(JsonElement arrayElement)
     {
         var items = arrayElement.EnumerateArray().ToList();
+        ;
         if (items.Count == 0)
         {
             return "[]";

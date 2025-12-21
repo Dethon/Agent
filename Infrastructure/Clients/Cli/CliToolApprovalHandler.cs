@@ -19,10 +19,8 @@ public sealed class CliToolApprovalHandler(ITerminalAdapter terminalAdapter) : I
             details,
             cancellationToken);
 
-        var resultMessage = approved
-            ? $"✅ Approved: {request.ToolName}"
-            : $"❌ Rejected: {request.ToolName}";
-        terminalAdapter.ShowSystemMessage(resultMessage);
+        var resultType = approved ? ToolResultType.Approved : ToolResultType.Rejected;
+        terminalAdapter.ShowToolResult(request.ToolName, request.Arguments, resultType);
 
         return approved;
     }
@@ -33,7 +31,7 @@ public sealed class CliToolApprovalHandler(ITerminalAdapter terminalAdapter) : I
     {
         foreach (var request in requests)
         {
-            terminalAdapter.ShowAutoApprovedTool(request.ToolName, request.Arguments);
+            terminalAdapter.ShowToolResult(request.ToolName, request.Arguments, ToolResultType.AutoApproved);
         }
 
         return Task.CompletedTask;

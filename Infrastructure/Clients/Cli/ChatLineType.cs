@@ -10,6 +10,8 @@ public enum ChatLineType
     AgentContent,
     ToolHeader,
     ToolContent,
-    AutoApprovedHeader,
-    AutoApprovedContent
+    ToolApprovedHeader,
+    ToolApprovedContent,
+    ToolRejectedHeader,
+    ToolRejectedContent
 }

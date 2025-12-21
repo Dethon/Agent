@@ -6,7 +6,9 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
 {
     private readonly List<ChatLine[]> _displayedMessages = [];
     private readonly List<string> _systemMessages = [];
-    private readonly List<(string ToolName, IReadOnlyDictionary<string, object?> Arguments)> _autoApprovedTools = [];
+
+    private readonly List<(string ToolName, IReadOnlyDictionary<string, object?> Arguments, ToolResultType ResultType)>
+        _toolResults = [];
 
     public event Action<string>? InputReceived;
     public event Action? ShutdownRequested;
@@ -17,8 +19,9 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     public IReadOnlyList<ChatLine[]> DisplayedMessages => _displayedMessages;
     public IReadOnlyList<string> SystemMessages => _systemMessages;
 
-    public IReadOnlyList<(string ToolName, IReadOnlyDictionary<string, object?> Arguments)> AutoApprovedTools =>
-        _autoApprovedTools;
+    public IReadOnlyList<(string ToolName, IReadOnlyDictionary<string, object?> Arguments, ToolResultType ResultType)>
+        ToolResults =>
+        _toolResults;
 
     public bool NextApprovalResult { get; set; } = true;
 
@@ -48,9 +51,10 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
         _systemMessages.Add(message);
     }
 
-    public void ShowAutoApprovedTool(string toolName, IReadOnlyDictionary<string, object?> arguments)
+    public void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments,
+        ToolResultType resultType)
     {
-        _autoApprovedTools.Add((toolName, arguments));
+        _toolResults.Add((toolName, arguments, resultType));
     }
 
     public Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken)

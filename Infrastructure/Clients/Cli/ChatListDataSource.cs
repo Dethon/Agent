@@ -140,8 +140,10 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
             ChatLineType.AgentContent => driver.MakeAttribute(Color.Cyan, Color.Black),
             ChatLineType.ToolHeader => driver.MakeAttribute(Color.BrightMagenta, Color.Black),
             ChatLineType.ToolContent => driver.MakeAttribute(Color.Magenta, Color.Black),
-            ChatLineType.AutoApprovedHeader => driver.MakeAttribute(Color.BrightGreen, Color.Black),
-            ChatLineType.AutoApprovedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ToolApprovedHeader => driver.MakeAttribute(Color.BrightGreen, Color.Black),
+            ChatLineType.ToolApprovedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ToolRejectedHeader => driver.MakeAttribute(Color.BrightRed, Color.Black),
+            ChatLineType.ToolRejectedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
             _ => driver.MakeAttribute(Color.White, Color.Black)
         };
     }
