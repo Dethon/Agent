@@ -196,22 +196,25 @@ public sealed class TelegramToolApprovalHandler(
             return;
         }
 
+        var details = new StringBuilder();
         foreach (var (key, value) in request.Arguments)
         {
             var formattedValue = FormatArgumentValue(value);
             if (formattedValue.Contains('\n'))
             {
-                sb.AppendLine($"  <i>{HtmlEncode(key)}:</i>");
+                details.AppendLine($"<i>{HtmlEncode(key)}:</i>");
                 foreach (var line in formattedValue.Split(["\r\n", "\n"], StringSplitOptions.None))
                 {
-                    sb.AppendLine($"    {HtmlEncode(line)}");
+                    details.AppendLine($"  {HtmlEncode(line)}");
                 }
             }
             else
             {
-                sb.AppendLine($"  <i>{HtmlEncode(key)}:</i> {HtmlEncode(formattedValue)}");
+                details.AppendLine($"<i>{HtmlEncode(key)}:</i> {HtmlEncode(formattedValue)}");
             }
         }
+
+        sb.AppendLine($"<blockquote expandable>{details.ToString().TrimEnd()}</blockquote>");
     }
 
     private static string FormatArgumentValue(object? value)
