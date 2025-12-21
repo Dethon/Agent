@@ -93,15 +93,22 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
     {
         var result = new List<string>();
         var currentLine = new StringBuilder();
-        var words = text.Split(' ');
+
+        // Trim the indent from text since we'll re-add it for wrapped lines
+        var contentStart = indent.Length;
+        var content = contentStart < text.Length ? text[contentStart..] : "";
+        var words = content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        // First line starts with original indent
+        currentLine.Append(indent);
 
         foreach (var word in words)
         {
-            var testLength = currentLine.Length + (currentLine.Length > 0 ? 1 : 0) + word.Length;
+            var testLength = currentLine.Length + (currentLine.Length > indent.Length ? 1 : 0) + word.Length;
 
             if (testLength <= maxWidth)
             {
-                if (currentLine.Length > 0)
+                if (currentLine.Length > indent.Length)
                 {
                     currentLine.Append(' ');
                 }
@@ -110,7 +117,7 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
             }
             else
             {
-                if (currentLine.Length > 0)
+                if (currentLine.Length > indent.Length)
                 {
                     result.Add(currentLine.ToString());
                 }
@@ -121,7 +128,7 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
             }
         }
 
-        if (currentLine.Length > 0)
+        if (currentLine.Length > indent.Length)
         {
             result.Add(currentLine.ToString());
         }
