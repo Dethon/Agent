@@ -4,5 +4,6 @@ public enum ToolApprovalResult
 {
     Rejected,
     Approved,
-    ApprovedAndRemember
+    ApprovedAndRemember,
+    AutoApproved
 }

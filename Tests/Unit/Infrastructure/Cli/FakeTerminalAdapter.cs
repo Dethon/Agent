@@ -41,7 +41,7 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     }
 
     public void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments,
-        ToolResultType resultType)
+        ToolApprovalResult resultType)
     {
     }
 

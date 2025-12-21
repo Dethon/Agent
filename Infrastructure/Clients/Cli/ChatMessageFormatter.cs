@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs;
 
 namespace Infrastructure.Clients.Cli;
 
@@ -51,13 +52,15 @@ internal static class ChatMessageFormatter
     public static IEnumerable<ChatLine> FormatToolResult(
         string toolName,
         IReadOnlyDictionary<string, object?> arguments,
-        ToolResultType resultType)
+        ToolApprovalResult resultType)
     {
         var (symbol, headerType, contentType) = resultType switch
         {
-            ToolResultType.AutoApproved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
-            ToolResultType.Approved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
-            ToolResultType.Rejected => ("✗", ChatLineType.ToolRejectedHeader, ChatLineType.ToolRejectedContent),
+            ToolApprovalResult.AutoApproved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
+            ToolApprovalResult.Approved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
+            ToolApprovalResult.ApprovedAndRemember => ("✓", ChatLineType.ToolApprovedHeader,
+                ChatLineType.ToolApprovedContent),
+            ToolApprovalResult.Rejected => ("✗", ChatLineType.ToolRejectedHeader, ChatLineType.ToolRejectedContent),
             _ => ("•", ChatLineType.System, ChatLineType.System)
         };
 

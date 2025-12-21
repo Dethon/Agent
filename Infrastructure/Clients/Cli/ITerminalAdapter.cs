@@ -12,15 +12,8 @@ public interface ITerminalAdapter : IDisposable
     void DisplayMessage(ChatLine[] lines);
     void ClearDisplay();
     void ShowSystemMessage(string message);
-    void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments, ToolResultType resultType);
+    void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments, ToolApprovalResult resultType);
 
     Task<ToolApprovalResult> ShowApprovalDialogAsync(string toolName, string details,
         CancellationToken cancellationToken);
-}
-
-public enum ToolResultType
-{
-    AutoApproved,
-    Approved,
-    Rejected
 }

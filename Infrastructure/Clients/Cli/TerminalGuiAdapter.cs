@@ -67,7 +67,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     }
 
     public void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments,
-        ToolResultType resultType)
+        ToolApprovalResult resultType)
     {
         var lines = ChatMessageFormatter.FormatToolResult(toolName, arguments, resultType).ToArray();
         DisplayMessage(lines);
