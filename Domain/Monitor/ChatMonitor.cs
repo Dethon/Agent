@@ -83,7 +83,7 @@ public class ChatMonitor(
         var threadId = await chatMessengerClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
         var responseMessage = new ChatResponseMessage
         {
-            Message = prompt.Prompt,
+            Message = prompt.Prompt.TrimStart('/'),
             Bold = true
         };
         await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, threadId, cancellationToken);
