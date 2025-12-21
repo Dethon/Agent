@@ -104,7 +104,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistedTools: ["ListDirectories"]);
+            whitelistPatterns: ["*:ListDirectories"]);
 
         var agent = new McpAgent(
             [mcpFixture.McpEndpoint],
@@ -142,7 +142,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistedTools: ["ListDirectories"]);
+            whitelistPatterns: ["*:ListDirectories"]);
 
         var agent = new McpAgent(
             [mcpFixture.McpEndpoint],

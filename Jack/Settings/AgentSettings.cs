@@ -7,7 +7,7 @@ public record AgentSettings
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
     public required Mcp[] McpServers { get; init; }
-    public string[] WhitelistedTools { get; [UsedImplicitly] init; } = [];
+    public string[] WhitelistPatterns { get; [UsedImplicitly] init; } = [];
 }
 
 public record OpenRouterConfiguration

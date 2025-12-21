@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents;
@@ -7,19 +8,19 @@ namespace Infrastructure.Agents;
 public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 {
     private readonly IToolApprovalHandler _approvalHandler;
-    private readonly HashSet<string> _whitelistedTools;
+    private readonly ToolPatternMatcher _patternMatcher;
+    private readonly HashSet<string> _dynamicallyApproved;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
-        IEnumerable<string>? whitelistedTools = null)
+        IEnumerable<string>? whitelistPatterns = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
         _approvalHandler = approvalHandler;
-        _whitelistedTools = whitelistedTools is not null
-            ? new HashSet<string>(whitelistedTools, StringComparer.OrdinalIgnoreCase)
-            : [];
+        _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
+        _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
@@ -36,7 +37,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
-        if (_whitelistedTools.Contains(toolName))
+        if (_patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
         {
             await _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
             return await base.InvokeFunctionAsync(context, cancellationToken);
@@ -47,7 +48,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         switch (result)
         {
             case ToolApprovalResult.ApprovedAndRemember:
-                _whitelistedTools.Add(toolName);
+                _dynamicallyApproved.Add(toolName);
                 return await base.InvokeFunctionAsync(context, cancellationToken);
 
             case ToolApprovalResult.Approved:

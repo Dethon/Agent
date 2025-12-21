@@ -10,14 +10,14 @@ public sealed class McpAgentFactory(
     string agentName,
     string agentDescription,
     IToolApprovalHandlerFactory approvalHandlerFactory,
-    IEnumerable<string>? whitelistedTools = null) : IAgentFactory
+    IEnumerable<string>? whitelistPatterns = null) : IAgentFactory
 {
     public DisposableAgent Create(AgentKey agentKey)
     {
         var name = $"{agentName}-{agentKey.ChatId}-{agentKey.ThreadId}";
 
         var handler = approvalHandlerFactory.Create(agentKey);
-        var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistedTools);
+        var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistPatterns);
 
         return new McpAgent(mcpEndpoints, effectiveClient, name, agentDescription);
     }

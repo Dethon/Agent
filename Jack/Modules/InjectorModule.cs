@@ -28,7 +28,7 @@ public static class InjectorModule
                         DownloaderPrompt.AgentName,
                         DownloaderPrompt.AgentDescription,
                         sp.GetRequiredService<IToolApprovalHandlerFactory>(),
-                        settings.WhitelistedTools))
+                        settings.WhitelistPatterns))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }

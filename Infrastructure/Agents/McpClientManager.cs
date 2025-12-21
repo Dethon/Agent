@@ -31,9 +31,10 @@ internal sealed class McpClientManager : IAsyncDisposable
         McpClientHandlers handlers,
         CancellationToken ct)
     {
-        var clients = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
-        var tools = await LoadTools(clients, ct);
-        var prompts = await LoadPrompts(clients, ct);
+        var clientsWithEndpoints = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
+        var tools = await LoadTools(clientsWithEndpoints, ct);
+        var prompts = await LoadPrompts(clientsWithEndpoints.Select(c => c.Client), ct);
+        var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         return new McpClientManager(clients, tools, prompts);
     }
 
@@ -51,7 +52,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         }
     }
 
-    private static async Task<McpClient[]> CreateClientsWithRetry(
+    private static async Task<(McpClient Client, string ServerName)[]> CreateClientsWithRetry(
         string name,
         string description,
         string[] endpoints,
@@ -62,27 +63,45 @@ internal sealed class McpClientManager : IAsyncDisposable
             .Handle<HttpRequestException>()
             .WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)));
 
-        var clients = await Task.WhenAll(endpoints.Select(endpoint =>
-            retryPolicy.ExecuteAsync(() => McpClient.CreateAsync(
+        var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
+        {
+            var client = await retryPolicy.ExecuteAsync(() => McpClient.CreateAsync(
                 new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint) }),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
                     Handlers = handlers
                 },
-                cancellationToken: ct))));
+                cancellationToken: ct));
+
+            var serverName = ExtractServerName(endpoint);
+            return (client, serverName);
+        }));
 
         return clients;
     }
 
-    private static async Task<AITool[]> LoadTools(IEnumerable<McpClient> clients, CancellationToken ct)
+    private static async Task<AITool[]> LoadTools(
+        IEnumerable<(McpClient Client, string ServerName)> clients,
+        CancellationToken ct)
     {
-        var tasks = clients.Select(c => c.ListToolsAsync(cancellationToken: ct).AsTask());
+        var tasks = clients.Select(async c =>
+        {
+            var tools = await c.Client.ListToolsAsync(cancellationToken: ct);
+            return tools.Select(t => new QualifiedMcpTool(c.ServerName, t));
+        });
+
         var results = await Task.WhenAll(tasks);
         return results
             .SelectMany(t => t)
             .Select(t => t.WithProgress(new Progress<ProgressNotificationValue>()))
             .ToArray<AITool>();
+    }
+
+    private static string ExtractServerName(string endpoint)
+    {
+        var uri = new Uri(endpoint);
+        return uri.Host;
     }
 
     private static async Task<string[]> LoadPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
