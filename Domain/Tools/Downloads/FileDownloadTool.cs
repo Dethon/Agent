@@ -2,7 +2,7 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Downloads;
 
 public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
 {

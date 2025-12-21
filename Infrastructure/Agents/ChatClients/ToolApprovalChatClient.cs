@@ -3,7 +3,7 @@ using Domain.DTOs;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.ChatClients;
 
 public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 {

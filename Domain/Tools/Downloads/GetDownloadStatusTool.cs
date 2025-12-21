@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Downloads;
 
 public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager)
 {

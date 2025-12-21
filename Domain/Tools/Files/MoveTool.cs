@@ -2,7 +2,7 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Files;
 
 public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {

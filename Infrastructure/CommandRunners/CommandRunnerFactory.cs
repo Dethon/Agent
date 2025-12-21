@@ -1,6 +1,6 @@
 ﻿using Domain.Contracts;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.CommandRunners;
 
 public static class CommandRunnerFactory
 {

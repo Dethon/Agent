@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpSubscriptionManager : IAsyncDisposable
 {

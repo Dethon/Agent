@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Files;
 
 public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {

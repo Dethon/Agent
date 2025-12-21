@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using Domain.Contracts;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.CommandRunners;
 
 public abstract class BaseCliRunner : ICommandRunner
 {

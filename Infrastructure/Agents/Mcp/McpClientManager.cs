@@ -4,7 +4,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Polly;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpClientManager : IAsyncDisposable
 {

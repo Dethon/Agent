@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents;

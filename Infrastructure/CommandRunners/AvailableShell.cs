@@ -3,11 +3,12 @@ using System.Runtime.InteropServices;
 using Domain.Contracts;
 using Microsoft.Win32;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.CommandRunners;
 
 public class AvailableShell : IAvailableShell
 {
     private string? _cachedShell;
+
     public async Task<string> Get(CancellationToken ct)
     {
         if (_cachedShell is not null)

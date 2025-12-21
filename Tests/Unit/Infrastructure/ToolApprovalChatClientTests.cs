@@ -1,6 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
 

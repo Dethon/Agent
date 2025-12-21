@@ -1,7 +1,7 @@
 ﻿using System.Text.Json.Nodes;
 using Domain.Contracts;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Commands;
 
 public class GetCliPlatformTool(IAvailableShell shell)
 {

@@ -2,6 +2,7 @@
 using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Cli;
 using Jack.App;

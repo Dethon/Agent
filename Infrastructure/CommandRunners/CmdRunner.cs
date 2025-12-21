@@ -1,4 +1,4 @@
-﻿namespace Infrastructure.Services;
+﻿namespace Infrastructure.CommandRunners;
 
 public class CmdRunner(string workingDirectory) : BaseCliRunner
 {

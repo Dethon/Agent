@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
 

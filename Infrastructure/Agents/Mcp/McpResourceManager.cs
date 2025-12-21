@@ -3,7 +3,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpResourceManager : IAsyncDisposable
 {

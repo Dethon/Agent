@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.Mcp;
 
 internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerTool) : AIFunction
 {

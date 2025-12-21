@@ -3,7 +3,7 @@ using Domain.Contracts;
 using Domain.Tools.Config;
 using FluentResults;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Downloads;
 
 public class CleanupDownloadTool(
     IDownloadClient downloadClient,
@@ -34,7 +34,7 @@ public class CleanupDownloadTool(
                 ["downloadId"] = downloadId
             };
         }
-        
+
         var allErrors = fullResult.Errors.Select(e => e.Message).ToArray();
         var jsonErrors = new JsonArray(allErrors.Select(e => JsonValue.Create(e)).ToArray());
         if (cleanupTaskResult.IsSuccess || cleanupDirectoryResult.IsSuccess)
@@ -58,7 +58,7 @@ public class CleanupDownloadTool(
             ["errors"] = jsonErrors
         };
     }
-    
+
     private async Task<Result> CleanupDownloadTask(string sessionId, int downloadId, CancellationToken ct)
     {
         try
@@ -72,7 +72,7 @@ public class CleanupDownloadTool(
             return Result.Fail($"Failed to cleanup download task: {ex.Message}");
         }
     }
-    
+
     private async Task<Result> CleanupDownloadDirectory(int downloadId, CancellationToken ct)
     {
         try

@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;

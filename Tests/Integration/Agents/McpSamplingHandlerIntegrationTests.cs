@@ -1,5 +1,6 @@
 using System.Text.Json;
-using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;

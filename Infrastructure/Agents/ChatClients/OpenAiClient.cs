@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.ChatClients;
 
 public class OpenAiClient : DelegatingChatClient
 {

@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.ChatClients;
 
 public sealed class ConcurrentChatMessageStore : ChatMessageStore
 {

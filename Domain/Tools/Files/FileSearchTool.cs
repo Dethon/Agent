@@ -2,7 +2,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 
-namespace Domain.Tools;
+namespace Domain.Tools.Files;
 
 public class FileSearchTool(ISearchClient client, IStateManager stateManager)
 {
@@ -30,7 +30,7 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
                 x.Id,
                 x.Title,
                 x.Size,
-                x.Seeders,
+                x.Seeders
             })
             .ToArray();
 
