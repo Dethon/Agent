@@ -37,7 +37,7 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RequestApprovalAsync_WhenTimesOut_ReturnsFalse()
+    public async Task RequestApprovalAsync_WhenTimesOut_ReturnsRejected()
     {
         // Arrange
         var handler =
@@ -53,7 +53,7 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
         var result = await handler.RequestApprovalAsync(requests, CancellationToken.None);
 
         // Assert
-        result.ShouldBeFalse();
+        result.ShouldBe(ToolApprovalResult.Rejected);
     }
 
     [Fact]

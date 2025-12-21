@@ -18,13 +18,14 @@ public sealed class TelegramToolApprovalHandler(
     TimeSpan? timeout = null) : IToolApprovalHandler
 {
     private const string ApproveCallbackPrefix = "tool_approve:";
+    private const string AlwaysCallbackPrefix = "tool_always:";
     private const string RejectCallbackPrefix = "tool_reject:";
 
     private static readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
 
     private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromMinutes(2);
 
-    public async Task<bool> RequestApprovalAsync(
+    public async Task<ToolApprovalResult> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
@@ -56,7 +57,7 @@ public sealed class TelegramToolApprovalHandler(
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
                 await SendTimeoutMessageAsync(cancellationToken);
-                return false;
+                return ToolApprovalResult.Rejected;
             }
         }
         finally
@@ -77,17 +78,22 @@ public sealed class TelegramToolApprovalHandler(
         }
 
         string? approvalId;
-        bool approved;
+        ToolApprovalResult result;
 
         if (data.StartsWith(ApproveCallbackPrefix, StringComparison.Ordinal))
         {
             approvalId = data[ApproveCallbackPrefix.Length..];
-            approved = true;
+            result = ToolApprovalResult.Approved;
+        }
+        else if (data.StartsWith(AlwaysCallbackPrefix, StringComparison.Ordinal))
+        {
+            approvalId = data[AlwaysCallbackPrefix.Length..];
+            result = ToolApprovalResult.ApprovedAndRemember;
         }
         else if (data.StartsWith(RejectCallbackPrefix, StringComparison.Ordinal))
         {
             approvalId = data[RejectCallbackPrefix.Length..];
-            approved = false;
+            result = ToolApprovalResult.Rejected;
         }
         else
         {
@@ -103,9 +109,14 @@ public sealed class TelegramToolApprovalHandler(
             return true;
         }
 
-        context.SetResult(approved);
+        context.SetResult(result);
 
-        var responseText = approved ? "✅ Approved" : "❌ Rejected";
+        var responseText = result switch
+        {
+            ToolApprovalResult.Approved => "✅ Approved",
+            ToolApprovalResult.ApprovedAndRemember => "✅ Always approved",
+            _ => "❌ Rejected"
+        };
         await botClient.AnswerCallbackQuery(
             callbackQuery.Id,
             responseText,
@@ -188,6 +199,7 @@ public sealed class TelegramToolApprovalHandler(
         [
             [
                 InlineKeyboardButton.WithCallbackData("✅ Approve", $"{ApproveCallbackPrefix}{approvalId}"),
+                InlineKeyboardButton.WithCallbackData("🔁 Always", $"{AlwaysCallbackPrefix}{approvalId}"),
                 InlineKeyboardButton.WithCallbackData("❌ Reject", $"{RejectCallbackPrefix}{approvalId}")
             ]
         ]);
@@ -212,14 +224,15 @@ public sealed class TelegramToolApprovalHandler(
 
     private sealed class ApprovalContext
     {
-        private readonly TaskCompletionSource<bool> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<ToolApprovalResult> _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public void SetResult(bool approved)
+        public void SetResult(ToolApprovalResult result)
         {
-            _tcs.TrySetResult(approved);
+            _tcs.TrySetResult(result);
         }
 
-        public Task<bool> WaitForApprovalAsync(CancellationToken cancellationToken)
+        public Task<ToolApprovalResult> WaitForApprovalAsync(CancellationToken cancellationToken)
         {
             cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
             return _tcs.Task;

@@ -42,14 +42,22 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return await base.InvokeFunctionAsync(context, cancellationToken);
         }
 
-        var approved = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
-        if (approved)
-        {
-            return await base.InvokeFunctionAsync(context, cancellationToken);
-        }
+        var result = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
 
-        context.Terminate = true;
-        return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+        switch (result)
+        {
+            case ToolApprovalResult.ApprovedAndRemember:
+                _whitelistedTools.Add(toolName);
+                return await base.InvokeFunctionAsync(context, cancellationToken);
+
+            case ToolApprovalResult.Approved:
+                return await base.InvokeFunctionAsync(context, cancellationToken);
+
+            case ToolApprovalResult.Rejected:
+            default:
+                context.Terminate = true;
+                return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+        }
     }
 
     private static IReadOnlyDictionary<string, object?> ToReadOnlyDictionary(IDictionary<string, object?>? source)

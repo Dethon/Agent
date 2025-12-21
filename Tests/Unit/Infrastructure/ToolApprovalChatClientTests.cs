@@ -12,7 +12,7 @@ public class ToolApprovalChatClientTests
     public async Task InvokeFunctionAsync_WhenNotWhitelisted_RequestsApproval()
     {
         // Arrange
-        var handler = new TestApprovalHandler(approved: true);
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var invoked = false;
         var function = AIFunctionFactory.Create(() =>
         {
@@ -39,7 +39,7 @@ public class ToolApprovalChatClientTests
     public async Task InvokeFunctionAsync_WhenWhitelisted_SkipsApproval()
     {
         // Arrange
-        var handler = new TestApprovalHandler(approved: true);
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var invoked = false;
         var function = AIFunctionFactory.Create(() =>
         {
@@ -67,7 +67,7 @@ public class ToolApprovalChatClientTests
     public async Task InvokeFunctionAsync_WhenRejected_TerminatesAndReturnsRejectionMessage()
     {
         // Arrange
-        var handler = new TestApprovalHandler(approved: false);
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var invoked = false;
         var function = AIFunctionFactory.Create(() =>
         {
@@ -101,7 +101,7 @@ public class ToolApprovalChatClientTests
     public async Task InvokeFunctionAsync_WithMultipleTools_OnlyApprovesNonWhitelisted()
     {
         // Arrange
-        var handler = new TestApprovalHandler(approved: true);
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var whitelistedInvoked = false;
         var nonWhitelistedInvoked = false;
 
@@ -152,17 +152,17 @@ public class ToolApprovalChatClientTests
         return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
     }
 
-    private sealed class TestApprovalHandler(bool approved) : IToolApprovalHandler
+    private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
     {
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
         public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
 
-        public Task<bool> RequestApprovalAsync(
+        public Task<ToolApprovalResult> RequestApprovalAsync(
             IReadOnlyList<ToolApprovalRequest> requests,
             CancellationToken cancellationToken)
         {
             RequestedApprovals.Add(requests);
-            return Task.FromResult(approved);
+            return Task.FromResult(result);
         }
 
         public Task NotifyAutoApprovedAsync(

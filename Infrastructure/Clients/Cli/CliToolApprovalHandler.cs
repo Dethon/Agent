@@ -7,22 +7,24 @@ namespace Infrastructure.Clients.Cli;
 
 public sealed class CliToolApprovalHandler(ITerminalAdapter terminalAdapter) : IToolApprovalHandler
 {
-    public async Task<bool> RequestApprovalAsync(
+    public async Task<ToolApprovalResult> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
         var request = requests[0];
         var details = FormatArguments(request.Arguments);
 
-        var approved = await terminalAdapter.ShowApprovalDialogAsync(
+        var result = await terminalAdapter.ShowApprovalDialogAsync(
             request.ToolName,
             details,
             cancellationToken);
 
-        var resultType = approved ? ToolResultType.Approved : ToolResultType.Rejected;
+        var resultType = result == ToolApprovalResult.Rejected
+            ? ToolResultType.Rejected
+            : ToolResultType.Approved;
         terminalAdapter.ShowToolResult(request.ToolName, request.Arguments, resultType);
 
-        return approved;
+        return result;
     }
 
     public Task NotifyAutoApprovedAsync(

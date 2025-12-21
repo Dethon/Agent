@@ -31,7 +31,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     {
         // Arrange
         var innerClient = CreateLlmClient();
-        var rejectingHandler = new TestApprovalHandler(approved: false);
+        var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var approvalClient = new ToolApprovalChatClient(innerClient, rejectingHandler);
 
         var agent = new McpAgent(
@@ -65,7 +65,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     {
         // Arrange
         var innerClient = CreateLlmClient();
-        var approvingHandler = new TestApprovalHandler(approved: true);
+        var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var approvalClient = new ToolApprovalChatClient(innerClient, approvingHandler);
 
         var agent = new McpAgent(
@@ -100,7 +100,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     {
         // Arrange
         var innerClient = CreateLlmClient();
-        var rejectingHandler = new TestApprovalHandler(approved: false);
+        var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
@@ -138,7 +138,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
     {
         // Arrange
         var innerClient = CreateLlmClient();
-        var approvingHandler = new TestApprovalHandler(approved: true);
+        var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
@@ -177,24 +177,22 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         await agent.DisposeAsync();
     }
 
-    private sealed class TestApprovalHandler(bool approved) : IToolApprovalHandler
+    private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
     {
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
-        public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
 
-        public Task<bool> RequestApprovalAsync(
+        public Task<ToolApprovalResult> RequestApprovalAsync(
             IReadOnlyList<ToolApprovalRequest> requests,
             CancellationToken cancellationToken)
         {
             RequestedApprovals.Add(requests);
-            return Task.FromResult(approved);
+            return Task.FromResult(result);
         }
 
         public Task NotifyAutoApprovedAsync(
             IReadOnlyList<ToolApprovalRequest> requests,
             CancellationToken cancellationToken)
         {
-            AutoApprovedNotifications.Add(requests);
             return Task.CompletedTask;
         }
     }

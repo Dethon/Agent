@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs;
 using Terminal.Gui;
 
 namespace Infrastructure.Clients.Cli;
@@ -72,9 +73,10 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         DisplayMessage(lines);
     }
 
-    public Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken)
+    public Task<ToolApprovalResult> ShowApprovalDialogAsync(string toolName, string details,
+        CancellationToken cancellationToken)
     {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<ToolApprovalResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
 
@@ -93,7 +95,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
             var dialog = new Dialog
             {
                 Title = "🔧 Approval Required",
-                Width = Dim.Percent(60),
+                Width = Dim.Percent(70),
                 Height = contentHeight,
                 ColorScheme = dialogScheme,
                 Border = new Border
@@ -140,50 +142,62 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
             };
 
             var selectedIndex = 0;
+            var buttons = new Button[3];
 
             var approveBtn = new Button("_Approve")
             {
-                X = Pos.Center() - 12,
+                X = Pos.Center() - 20,
                 Y = Pos.AnchorEnd(1),
                 ColorScheme = CreateButtonScheme(true)
             };
+            buttons[0] = approveBtn;
 
-            var rejectBtn = new Button("_Reject")
+            var alwaysBtn = new Button("A_lways")
             {
-                X = Pos.Center() + 3,
+                X = Pos.Center() - 5,
                 Y = Pos.AnchorEnd(1),
                 ColorScheme = CreateButtonScheme(false)
             };
+            buttons[1] = alwaysBtn;
+
+            var rejectBtn = new Button("_Reject")
+            {
+                X = Pos.Center() + 10,
+                Y = Pos.AnchorEnd(1),
+                ColorScheme = CreateButtonScheme(false)
+            };
+            buttons[2] = rejectBtn;
 
             void UpdateButtonStyles()
             {
-                approveBtn.ColorScheme = CreateButtonScheme(selectedIndex == 0);
-                rejectBtn.ColorScheme = CreateButtonScheme(selectedIndex == 1);
+                for (var i = 0; i < buttons.Length; i++)
+                {
+                    buttons[i].ColorScheme = CreateButtonScheme(selectedIndex == i);
+                }
             }
 
-            var dialogResult = false;
+            var dialogResult = ToolApprovalResult.Rejected;
 
-            void CloseDialog(bool result)
+            void CloseDialog(ToolApprovalResult result)
             {
                 dialogResult = result;
                 registration.Dispose();
                 Application.RequestStop();
             }
 
-            approveBtn.Clicked += () => CloseDialog(true);
-            rejectBtn.Clicked += () => CloseDialog(false);
+            approveBtn.Clicked += () => CloseDialog(ToolApprovalResult.Approved);
+            alwaysBtn.Clicked += () => CloseDialog(ToolApprovalResult.ApprovedAndRemember);
+            rejectBtn.Clicked += () => CloseDialog(ToolApprovalResult.Rejected);
 
-            approveBtn.Enter += _ =>
+            for (var i = 0; i < buttons.Length; i++)
             {
-                selectedIndex = 0;
-                UpdateButtonStyles();
-            };
-
-            rejectBtn.Enter += _ =>
-            {
-                selectedIndex = 1;
-                UpdateButtonStyles();
-            };
+                var index = i;
+                buttons[i].Enter += _ =>
+                {
+                    selectedIndex = index;
+                    UpdateButtonStyles();
+                };
+            }
 
             dialog.KeyPress += args =>
             {
@@ -191,37 +205,43 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
                 {
                     case Key.CursorLeft:
                     case Key.CursorUp:
-                        selectedIndex = 0;
+                        selectedIndex = Math.Max(0, selectedIndex - 1);
                         UpdateButtonStyles();
-                        approveBtn.SetFocus();
+                        buttons[selectedIndex].SetFocus();
                         args.Handled = true;
                         break;
 
                     case Key.CursorRight:
                     case Key.CursorDown:
                     case Key.Tab:
-                        selectedIndex = 1;
+                        selectedIndex = Math.Min(buttons.Length - 1, selectedIndex + 1);
                         UpdateButtonStyles();
-                        rejectBtn.SetFocus();
+                        buttons[selectedIndex].SetFocus();
                         args.Handled = true;
                         break;
 
                     case Key.a:
                     case Key.A:
-                        CloseDialog(true);
+                        CloseDialog(ToolApprovalResult.Approved);
+                        args.Handled = true;
+                        break;
+
+                    case Key.l:
+                    case Key.L:
+                        CloseDialog(ToolApprovalResult.ApprovedAndRemember);
                         args.Handled = true;
                         break;
 
                     case Key.r:
                     case Key.R:
                     case Key.Esc:
-                        CloseDialog(false);
+                        CloseDialog(ToolApprovalResult.Rejected);
                         args.Handled = true;
                         break;
                 }
             };
 
-            dialog.Add(toolLabel, toolNameLabel, detailsView, approveBtn, rejectBtn);
+            dialog.Add(toolLabel, toolNameLabel, detailsView, approveBtn, alwaysBtn, rejectBtn);
             approveBtn.SetFocus();
             Application.Run(dialog);
 

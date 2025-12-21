@@ -1,3 +1,5 @@
+using Domain.DTOs;
+
 namespace Infrastructure.Clients.Cli;
 
 public interface ITerminalAdapter : IDisposable
@@ -11,7 +13,9 @@ public interface ITerminalAdapter : IDisposable
     void ClearDisplay();
     void ShowSystemMessage(string message);
     void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments, ToolResultType resultType);
-    Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken);
+
+    Task<ToolApprovalResult> ShowApprovalDialogAsync(string toolName, string details,
+        CancellationToken cancellationToken);
 }
 
 public enum ToolResultType
