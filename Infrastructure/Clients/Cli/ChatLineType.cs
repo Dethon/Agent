@@ -9,5 +9,7 @@ public enum ChatLineType
     AgentHeader,
     AgentContent,
     ToolHeader,
-    ToolContent
+    ToolContent,
+    AutoApprovedHeader,
+    AutoApprovedContent
 }

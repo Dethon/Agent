@@ -6,6 +6,7 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
 {
     private readonly List<ChatLine[]> _displayedMessages = [];
     private readonly List<string> _systemMessages = [];
+    private readonly List<(string ToolName, IReadOnlyDictionary<string, object?> Arguments)> _autoApprovedTools = [];
 
     public event Action<string>? InputReceived;
     public event Action? ShutdownRequested;
@@ -15,6 +16,9 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     public bool IsCleared { get; private set; }
     public IReadOnlyList<ChatLine[]> DisplayedMessages => _displayedMessages;
     public IReadOnlyList<string> SystemMessages => _systemMessages;
+
+    public IReadOnlyList<(string ToolName, IReadOnlyDictionary<string, object?> Arguments)> AutoApprovedTools =>
+        _autoApprovedTools;
 
     public bool NextApprovalResult { get; set; } = true;
 
@@ -42,6 +46,11 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     public void ShowSystemMessage(string message)
     {
         _systemMessages.Add(message);
+    }
+
+    public void ShowAutoApprovedTool(string toolName, IReadOnlyDictionary<string, object?> arguments)
+    {
+        _autoApprovedTools.Add((toolName, arguments));
     }
 
     public Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken)

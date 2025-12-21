@@ -65,6 +65,12 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         DisplayMessage(lines);
     }
 
+    public void ShowAutoApprovedTool(string toolName, IReadOnlyDictionary<string, object?> arguments)
+    {
+        var lines = ChatMessageFormatter.FormatAutoApprovedTool(toolName, arguments).ToArray();
+        DisplayMessage(lines);
+    }
+
     public Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
