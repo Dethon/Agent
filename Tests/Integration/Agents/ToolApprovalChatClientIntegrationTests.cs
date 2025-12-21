@@ -55,7 +55,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
-        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldBe("ListDirectories");
+        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("ListDirectories");
 
         await agent.DisposeAsync();
     }

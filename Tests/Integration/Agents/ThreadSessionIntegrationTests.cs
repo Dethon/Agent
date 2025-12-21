@@ -72,7 +72,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
 
         // Assert
         var toolNames = session.ClientManager.Tools.Select(t => t.Name).ToList();
-        toolNames.ShouldContain("Echo");
+        toolNames.ShouldContain(n => n.EndsWith(":Echo"));
 
         await session.DisposeAsync();
     }
