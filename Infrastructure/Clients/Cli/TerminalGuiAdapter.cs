@@ -168,26 +168,11 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
             };
             buttons[2] = rejectBtn;
 
-            void UpdateButtonStyles()
-            {
-                for (var i = 0; i < buttons.Length; i++)
-                {
-                    buttons[i].ColorScheme = CreateButtonScheme(selectedIndex == i);
-                }
-            }
-
             var dialogResult = ToolApprovalResult.Rejected;
 
-            void CloseDialog(ToolApprovalResult result)
-            {
-                dialogResult = result;
-                registration.Dispose();
-                Application.RequestStop();
-            }
-
-            approveBtn.Clicked += () => CloseDialog(ToolApprovalResult.Approved);
-            alwaysBtn.Clicked += () => CloseDialog(ToolApprovalResult.ApprovedAndRemember);
-            rejectBtn.Clicked += () => CloseDialog(ToolApprovalResult.Rejected);
+            approveBtn.Clicked += () => closeDialog(ToolApprovalResult.Approved);
+            alwaysBtn.Clicked += () => closeDialog(ToolApprovalResult.ApprovedAndRemember);
+            rejectBtn.Clicked += () => closeDialog(ToolApprovalResult.Rejected);
 
             for (var i = 0; i < buttons.Length; i++)
             {
@@ -195,7 +180,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
                 buttons[i].Enter += _ =>
                 {
                     selectedIndex = index;
-                    UpdateButtonStyles();
+                    updateButtonStyles();
                 };
             }
 
@@ -206,7 +191,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
                     case Key.CursorLeft:
                     case Key.CursorUp:
                         selectedIndex = Math.Max(0, selectedIndex - 1);
-                        UpdateButtonStyles();
+                        updateButtonStyles();
                         buttons[selectedIndex].SetFocus();
                         args.Handled = true;
                         break;
@@ -215,27 +200,27 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
                     case Key.CursorDown:
                     case Key.Tab:
                         selectedIndex = Math.Min(buttons.Length - 1, selectedIndex + 1);
-                        UpdateButtonStyles();
+                        updateButtonStyles();
                         buttons[selectedIndex].SetFocus();
                         args.Handled = true;
                         break;
 
                     case Key.a:
                     case Key.A:
-                        CloseDialog(ToolApprovalResult.Approved);
+                        closeDialog(ToolApprovalResult.Approved);
                         args.Handled = true;
                         break;
 
                     case Key.l:
                     case Key.L:
-                        CloseDialog(ToolApprovalResult.ApprovedAndRemember);
+                        closeDialog(ToolApprovalResult.ApprovedAndRemember);
                         args.Handled = true;
                         break;
 
                     case Key.r:
                     case Key.R:
                     case Key.Esc:
-                        CloseDialog(ToolApprovalResult.Rejected);
+                        closeDialog(ToolApprovalResult.Rejected);
                         args.Handled = true;
                         break;
                 }
@@ -250,6 +235,22 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
             // Restore focus to input field after dialog closes
             _inputField?.SetFocus();
+            return;
+
+            void updateButtonStyles()
+            {
+                for (var i = 0; i < buttons.Length; i++)
+                {
+                    buttons[i].ColorScheme = CreateButtonScheme(selectedIndex == i);
+                }
+            }
+
+            void closeDialog(ToolApprovalResult result)
+            {
+                dialogResult = result;
+                registration.Dispose();
+                Application.RequestStop();
+            }
         });
 
         return tcs.Task;

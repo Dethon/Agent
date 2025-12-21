@@ -5,13 +5,19 @@ namespace Infrastructure.Clients.Cli;
 
 internal static class ChatMessageFormatter
 {
-    private static readonly string[] LineSeparators = ["\r\n", "\n"];
+    private static readonly string[] _lineSeparators = ["\r\n", "\n"];
 
     public static IEnumerable<ChatLine> FormatMessage(ChatMessage msg)
     {
         var timestamp = msg.Timestamp.ToString("HH:mm");
-        var messageLines = msg.Message.Split(LineSeparators, StringSplitOptions.None);
+        var messageLines = msg.Message
+            .Split(_lineSeparators, StringSplitOptions.None)
+            .SkipWhile(string.IsNullOrWhiteSpace)
+            .Reverse()
+            .SkipWhile(string.IsNullOrWhiteSpace)
+            .Reverse();
 
+        yield return new ChatLine("", ChatLineType.Blank);
         if (msg.IsSystem)
         {
             foreach (var line in messageLines)
@@ -72,7 +78,7 @@ internal static class ChatMessageFormatter
             if (formattedValue.Contains('\n'))
             {
                 yield return new ChatLine($"    {key}:", contentType);
-                foreach (var line in formattedValue.Split(LineSeparators, StringSplitOptions.None))
+                foreach (var line in formattedValue.Split(_lineSeparators, StringSplitOptions.None))
                 {
                     yield return new ChatLine($"      {line}", contentType);
                 }
@@ -100,17 +106,11 @@ internal static class ChatMessageFormatter
     private static string FormatArray(JsonElement arrayElement)
     {
         var items = arrayElement.EnumerateArray().ToList();
-        ;
-        if (items.Count == 0)
+        return items.Count switch
         {
-            return "[]";
-        }
-
-        if (items.Count == 1)
-        {
-            return FormatArgumentValue(items[0]);
-        }
-
-        return string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"));
+            0 => "[]",
+            1 => FormatArgumentValue(items[0]),
+            _ => string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"))
+        };
     }
 }

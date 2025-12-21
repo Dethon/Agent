@@ -191,15 +191,56 @@ public sealed class TelegramToolApprovalHandler(
 
     private static void AppendToolDetails(StringBuilder sb, ToolApprovalRequest request)
     {
-        if (request.Arguments.Count > 0)
+        if (request.Arguments.Count == 0)
         {
-            var json = JsonSerializer.Serialize(request.Arguments, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-            sb.AppendLine(
-                $"<blockquote expandable><pre><code class=\"language-json\">{HtmlEncode(json)}</code></pre></blockquote>");
+            return;
         }
+
+        foreach (var (key, value) in request.Arguments)
+        {
+            var formattedValue = FormatArgumentValue(value);
+            if (formattedValue.Contains('\n'))
+            {
+                sb.AppendLine($"  <i>{HtmlEncode(key)}:</i>");
+                foreach (var line in formattedValue.Split(["\r\n", "\n"], StringSplitOptions.None))
+                {
+                    sb.AppendLine($"    {HtmlEncode(line)}");
+                }
+            }
+            else
+            {
+                sb.AppendLine($"  <i>{HtmlEncode(key)}:</i> {HtmlEncode(formattedValue)}");
+            }
+        }
+    }
+
+    private static string FormatArgumentValue(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString() ?? "",
+            JsonElement { ValueKind: JsonValueKind.Array } je => FormatArray(je),
+            JsonElement je => je.GetRawText(),
+            _ => value.ToString() ?? ""
+        };
+    }
+
+    private static string FormatArray(JsonElement arrayElement)
+    {
+        var items = arrayElement.EnumerateArray().ToList();
+        if (items.Count == 0)
+        {
+            return "[]";
+        }
+
+        if (items.Count == 1)
+        {
+            return FormatArgumentValue(items[0]);
+        }
+
+        return string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"));
     }
 
     private static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)
