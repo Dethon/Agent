@@ -13,7 +13,6 @@ internal sealed class CliChatMessageRouter : IDisposable
     private readonly string _userName;
     private readonly ITerminalAdapter _terminalAdapter;
     private readonly CliCommandHandler _commandHandler;
-    private readonly CliToolApprovalHandler? _approvalHandler;
 
     private BlockingCollection<string> _inputQueue = new();
     private int _messageCounter;
@@ -23,13 +22,11 @@ internal sealed class CliChatMessageRouter : IDisposable
     public CliChatMessageRouter(
         string agentName,
         string userName,
-        ITerminalAdapter terminalAdapter,
-        CliToolApprovalHandler? approvalHandler = null)
+        ITerminalAdapter terminalAdapter)
     {
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
-        _approvalHandler = approvalHandler;
         _commandHandler = new CliCommandHandler(ClearHistory, AddToHistory);
 
         _terminalAdapter.InputReceived += OnInputReceived;
@@ -123,12 +120,6 @@ internal sealed class CliChatMessageRouter : IDisposable
 
     private void OnInputReceived(string input)
     {
-        // Check for approval input first
-        if (_approvalHandler is not null && _approvalHandler.TryHandleApprovalInput(input))
-        {
-            return;
-        }
-
         if (!_commandHandler.TryHandleCommand(input))
         {
             _inputQueue.Add(input);

@@ -15,11 +15,10 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         string agentName,
         string userName,
         ITerminalAdapter terminalAdapter,
-        CliToolApprovalHandler? approvalHandler = null,
         Action? onShutdownRequested = null)
     {
         _terminalAdapter = terminalAdapter;
-        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter, approvalHandler);
+        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter);
 
         if (onShutdownRequested is not null)
         {

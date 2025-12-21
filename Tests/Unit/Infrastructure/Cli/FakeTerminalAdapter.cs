@@ -16,6 +16,8 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     public IReadOnlyList<ChatLine[]> DisplayedMessages => _displayedMessages;
     public IReadOnlyList<string> SystemMessages => _systemMessages;
 
+    public bool NextApprovalResult { get; set; } = true;
+
     public void Start()
     {
         IsStarted = true;
@@ -40,6 +42,11 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     public void ShowSystemMessage(string message)
     {
         _systemMessages.Add(message);
+    }
+
+    public Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken)
+    {
+        return Task.FromResult(NextApprovalResult);
     }
 
     public void SimulateInput(string input)

@@ -64,7 +64,6 @@ public static class InjectorModule
                         "Jack",
                         Environment.UserName,
                         terminalAdapter,
-                        approvalHandler,
                         lifetime.StopApplication);
                 });
         }

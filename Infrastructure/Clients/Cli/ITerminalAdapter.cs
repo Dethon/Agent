@@ -10,4 +10,5 @@ public interface ITerminalAdapter : IDisposable
     void DisplayMessage(ChatLine[] lines);
     void ClearDisplay();
     void ShowSystemMessage(string message);
+    Task<bool> ShowApprovalDialogAsync(string toolName, string details, CancellationToken cancellationToken);
 }

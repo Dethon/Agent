@@ -11,7 +11,10 @@ internal static class ChatMessageFormatter
 
         if (msg.IsSystem)
         {
-            yield return new ChatLine($"  ○ {msg.Message.Replace("\r", "").Replace("\n", " ")}", ChatLineType.System);
+            foreach (var line in messageLines)
+            {
+                yield return new ChatLine($"  ○ {line}", ChatLineType.System);
+            }
         }
         else if (msg.IsToolCall)
         {

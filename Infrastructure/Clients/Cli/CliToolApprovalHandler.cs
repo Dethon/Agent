@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
@@ -7,188 +5,135 @@ using Domain.DTOs;
 
 namespace Infrastructure.Clients.Cli;
 
-public sealed class CliToolApprovalHandler : IToolApprovalHandler
+public sealed class CliToolApprovalHandler(ITerminalAdapter terminalAdapter) : IToolApprovalHandler
 {
-    private readonly ITerminalAdapter _terminalAdapter;
-    private readonly TimeSpan _timeout;
-    private readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
-
-    private string? _currentApprovalId;
-
-    public CliToolApprovalHandler(ITerminalAdapter terminalAdapter, TimeSpan? timeout = null)
-    {
-        ArgumentNullException.ThrowIfNull(terminalAdapter);
-        _terminalAdapter = terminalAdapter;
-        _timeout = timeout ?? TimeSpan.FromMinutes(2);
-    }
-
     public async Task<bool> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        var approvalId = Guid.NewGuid().ToString("N")[..8];
-        var context = new ApprovalContext();
-        _pendingApprovals[approvalId] = context;
-        _currentApprovalId = approvalId;
+        var request = requests[0];
+        var details = FormatArguments(request.Arguments);
 
-        try
-        {
-            var message = FormatApprovalMessage(requests);
-            DisplayApprovalRequest(message);
+        var approved = await terminalAdapter.ShowApprovalDialogAsync(
+            request.ToolName,
+            details,
+            cancellationToken);
 
-            using var timeoutCts = new CancellationTokenSource(_timeout);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken, timeoutCts.Token);
+        var resultMessage = approved
+            ? $"✅ Approved: {request.ToolName}"
+            : $"❌ Rejected: {request.ToolName}";
+        terminalAdapter.ShowSystemMessage(resultMessage);
 
-            try
-            {
-                return await context.WaitForApprovalAsync(linkedCts.Token);
-            }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-            {
-                _terminalAdapter.ShowSystemMessage("⏱️ Tool approval timed out. Execution rejected.");
-                return false;
-            }
-        }
-        finally
-        {
-            _currentApprovalId = null;
-            _pendingApprovals.TryRemove(approvalId, out _);
-        }
+        return approved;
     }
 
     public Task NotifyAutoApprovedAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        var message = FormatAutoApprovedMessage(requests);
-        DisplayAutoApproved(message);
+        foreach (var request in requests)
+        {
+            var args = FormatArgumentsMultiline(request.Arguments);
+            var message = string.IsNullOrEmpty(args)
+                ? $"✅ Auto-approved: {request.ToolName}"
+                : $"✅ Auto-approved:\n{request.ToolName}\n{args}";
+            terminalAdapter.ShowSystemMessage(message);
+        }
+
         return Task.CompletedTask;
     }
 
-    public bool TryHandleApprovalInput(string input)
+    private static string FormatArguments(IReadOnlyDictionary<string, object?> arguments)
     {
-        if (_currentApprovalId is null)
+        if (arguments.Count == 0)
         {
-            return false;
+            return "(no arguments)";
         }
 
-        if (!_pendingApprovals.TryGetValue(_currentApprovalId, out var context))
+        return JsonSerializer.Serialize(arguments, new JsonSerializerOptions
         {
-            return false;
+            WriteIndented = true
+        });
+    }
+
+    private static string FormatArgumentsMultiline(IReadOnlyDictionary<string, object?> arguments)
+    {
+        if (arguments.Count == 0)
+        {
+            return "";
         }
 
-        var normalizedInput = input.Trim().ToLowerInvariant();
-
-        switch (normalizedInput)
+        var lines = new List<string>();
+        foreach (var kvp in arguments)
         {
-            case "y":
-            case "yes":
-            case "approve":
-                context.SetResult(true);
-                _terminalAdapter.ShowSystemMessage("✅ Tool approved");
-                return true;
+            var formattedValue = FormatValue(kvp.Value, "   ");
+            lines.Add($"   {kvp.Key}: {formattedValue}");
+        }
 
-            case "n":
-            case "no":
-            case "reject":
-                context.SetResult(false);
-                _terminalAdapter.ShowSystemMessage("❌ Tool rejected");
-                return true;
+        return string.Join("\n", lines);
+    }
+
+    private static string FormatValue(object? value, string indent)
+    {
+        if (value is null)
+        {
+            return "null";
+        }
+
+        if (value is JsonElement element)
+        {
+            return FormatJsonElement(element, indent);
+        }
+
+        if (value is string s)
+        {
+            return s;
+        }
+
+        return value.ToString() ?? "null";
+    }
+
+    private static string FormatJsonElement(JsonElement element, string indent)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Array:
+                var items = element.EnumerateArray().ToList();
+                if (items.Count <= 1)
+                {
+                    return items.Count == 0 ? "[]" : FormatJsonElement(items[0], indent);
+                }
+
+                var arrayLines = items.Select(item => $"{indent}   - {FormatJsonElement(item, indent + "   ")}");
+                return "\n" + string.Join("\n", arrayLines);
+
+            case JsonValueKind.Object:
+                var props = element.EnumerateObject().ToList();
+                if (props.Count == 0)
+                {
+                    return "{}";
+                }
+
+                var objLines = props.Select(p => $"{indent}   {p.Name}: {FormatJsonElement(p.Value, indent + "   ")}");
+                return "\n" + string.Join("\n", objLines);
+
+            case JsonValueKind.String:
+                return element.GetString() ?? "";
+
+            case JsonValueKind.Number:
+                return element.GetRawText();
+
+            case JsonValueKind.True:
+                return "true";
+
+            case JsonValueKind.False:
+                return "false";
+
+            case JsonValueKind.Null:
+                return "null";
 
             default:
-                return false;
-        }
-    }
-
-    public bool HasPendingApproval => _currentApprovalId is not null;
-
-    private void DisplayApprovalRequest(string message)
-    {
-        var chatMessage = new ChatMessage(
-            "[Approval]",
-            message,
-            false,
-            false,
-            true,
-            DateTime.Now);
-        var lines = ChatMessageFormatter.FormatMessage(chatMessage).ToArray();
-        _terminalAdapter.DisplayMessage(lines);
-    }
-
-    private void DisplayAutoApproved(string message)
-    {
-        var chatMessage = new ChatMessage(
-            "[Auto-Approved]",
-            message,
-            false,
-            true,
-            false,
-            DateTime.Now);
-        var lines = ChatMessageFormatter.FormatMessage(chatMessage).ToArray();
-        _terminalAdapter.DisplayMessage(lines);
-    }
-
-    private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("🔧 Tool Approval Required");
-        sb.AppendLine();
-
-        foreach (var request in requests)
-        {
-            AppendToolDetails(sb, request);
-        }
-
-        sb.AppendLine("Type 'y' to approve or 'n' to reject:");
-
-        return sb.ToString().TrimEnd();
-    }
-
-    private static string FormatAutoApprovedMessage(IReadOnlyList<ToolApprovalRequest> requests)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("✅ Tool Auto-Approved");
-        sb.AppendLine();
-
-        foreach (var request in requests)
-        {
-            AppendToolDetails(sb, request);
-        }
-
-        return sb.ToString().TrimEnd();
-    }
-
-    private static void AppendToolDetails(StringBuilder sb, ToolApprovalRequest request)
-    {
-        sb.AppendLine($"Tool: {request.ToolName}");
-
-        if (request.Arguments.Count > 0)
-        {
-            sb.AppendLine("Arguments:");
-            var json = JsonSerializer.Serialize(request.Arguments, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-            sb.AppendLine(json);
-        }
-
-        sb.AppendLine();
-    }
-
-    private sealed class ApprovalContext
-    {
-        private readonly TaskCompletionSource<bool> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public void SetResult(bool approved)
-        {
-            _tcs.TrySetResult(approved);
-        }
-
-        public Task<bool> WaitForApprovalAsync(CancellationToken cancellationToken)
-        {
-            cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
-            return _tcs.Task;
+                return element.GetRawText();
         }
     }
 }
