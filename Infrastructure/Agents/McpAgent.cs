@@ -91,7 +91,7 @@ public sealed class McpAgent : DisposableAgent
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         var json = new JsonObject
         {
-            ["StoreState"] = JsonObject.Create(serializedThread)
+            ["StoreState"] = JsonValue.Create(serializedThread)
         };
         var wrappedElement = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
         return _innerAgent.DeserializeThread(wrappedElement, jsonSerializerOptions);
