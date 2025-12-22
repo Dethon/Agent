@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Infrastructure.Clients;
+using Microsoft.Extensions.Logging.Abstractions;
 using Telegram.Bot;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -31,7 +32,8 @@ public class TelegramBotFixture : IAsyncLifetime
     {
         var options = new TelegramBotClientOptions(BotToken, BaseUrl);
         var botClient = new TelegramBotClient(options);
-        return new TelegramBotChatMessengerClient(botClient, AllowedUserNames);
+        var logger = NullLogger<TelegramBotChatMessengerClient>.Instance;
+        return new TelegramBotChatMessengerClient(botClient, AllowedUserNames, logger);
     }
 
     private void SetupGetMe()

@@ -10,6 +10,7 @@ using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 
 namespace Jack.Modules;
@@ -75,8 +76,10 @@ public static class InjectorModule
 
             return services
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClient))
-                .AddSingleton<IChatMessengerClient>(_ =>
-                    new TelegramBotChatMessengerClient(botClient, settings.Telegram.AllowedUserNames));
+                .AddSingleton<IChatMessengerClient>(sp => new TelegramBotChatMessengerClient(
+                    botClient,
+                    settings.Telegram.AllowedUserNames,
+                    sp.GetRequiredService<ILogger<TelegramBotChatMessengerClient>>()));
         }
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)

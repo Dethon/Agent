@@ -24,7 +24,17 @@ public class ChatMonitor(
 
             await foreach (var (key, aiResponse) in responses)
             {
-                await SendResponse(key, aiResponse, cancellationToken);
+                try
+                {
+                    await SendResponse(key, aiResponse, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    if (logger.IsEnabled(LogLevel.Error))
+                    {
+                        logger.LogError(ex, "Inner ChatMonitor exception: {exceptionMessage}", ex.Message);
+                    }
+                }
             }
         }
         catch (Exception ex)

@@ -2,6 +2,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
@@ -12,7 +13,8 @@ namespace Infrastructure.Clients;
 
 public class TelegramBotChatMessengerClient(
     ITelegramBotClient client,
-    string[] allowedUserNames) : IChatMessengerClient
+    string[] allowedUserNames,
+    ILogger<TelegramBotChatMessengerClient> logger) : IChatMessengerClient
 {
     private string? _topicIconId;
 
@@ -22,27 +24,40 @@ public class TelegramBotChatMessengerClient(
         int? offset = null;
         while (!cancellationToken.IsCancellationRequested)
         {
-            var updates = await client.GetUpdates(
-                offset: offset,
-                timeout: timeout,
-                cancellationToken: cancellationToken);
-
-            offset = GetNewOffset(updates) ?? offset;
-
-            // Handle callback queries for tool approvals
-            foreach (var update in updates.Where(u => u.CallbackQuery is not null))
+            IEnumerable<Message> messageUpdates;
+            try
             {
-                if (update.CallbackQuery is not null)
-                {
-                    await TelegramToolApprovalHandler.HandleCallbackQueryAsync(
-                        client, update.CallbackQuery, cancellationToken);
-                }
-            }
+                var updates = await client.GetUpdates(
+                    offset: offset,
+                    timeout: timeout,
+                    cancellationToken: cancellationToken);
 
-            var messageUpdates = updates
-                .Select(u => u.Message)
-                .Where(m => m is not null && m.Type == MessageType.Text && IsBotMessage(m))
-                .Cast<Message>();
+                offset = GetNewOffset(updates) ?? offset;
+
+                // Handle callback queries for tool approvals
+                foreach (var update in updates.Where(u => u.CallbackQuery is not null))
+                {
+                    if (update.CallbackQuery is not null)
+                    {
+                        await TelegramToolApprovalHandler.HandleCallbackQueryAsync(
+                            client, update.CallbackQuery, cancellationToken);
+                    }
+                }
+
+                messageUpdates = updates
+                    .Select(u => u.Message)
+                    .Where(m => m is not null && m.Type == MessageType.Text && IsBotMessage(m))
+                    .Cast<Message>();
+            }
+            catch (Exception ex)
+            {
+                if (logger.IsEnabled(LogLevel.Error))
+                {
+                    logger.LogError(ex, "Telegram read messages exception: {exceptionMessage}", ex.Message);
+                }
+
+                continue;
+            }
 
             foreach (var message in messageUpdates)
             {

@@ -1,16 +1,13 @@
 namespace Infrastructure.Clients.Cli;
 
-internal sealed class CliCommandHandler(
-    Action clearHistory,
-    Action<string, string, bool, bool, bool> addToHistory)
+internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action onClear)
 {
-    private static readonly string[] _helpLines =
-    [
-        "Available commands:",
-        "  /help, /?     - Show this help",
-        "  /clear, /cls  - Clear conversation and start fresh",
-        "  Ctrl+C twice  - Exit application"
-    ];
+    private const string HelpText = """
+                                    Available commands:
+                                      /help, /?     - Show this help
+                                      /clear, /cls  - Clear conversation and start fresh
+                                      Ctrl+C twice  - Exit application
+                                    """;
 
     public bool TryHandleCommand(string input)
     {
@@ -18,16 +15,13 @@ internal sealed class CliCommandHandler(
         {
             case "/clear":
             case "/cls":
-                clearHistory();
+                onClear();
+                terminalAdapter.ClearDisplay();
                 return true;
 
             case "/help":
             case "/?":
-                foreach (var line in _helpLines)
-                {
-                    addToHistory("[Help]", line, false, false, true);
-                }
-
+                terminalAdapter.ShowSystemMessage(HelpText);
                 return true;
 
             default:

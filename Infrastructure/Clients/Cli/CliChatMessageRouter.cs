@@ -26,7 +26,7 @@ internal sealed class CliChatMessageRouter : IDisposable
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
-        _commandHandler = new CliCommandHandler(ClearHistory, AddToHistory);
+        _commandHandler = new CliCommandHandler(terminalAdapter, ResetInputQueue);
 
         _terminalAdapter.InputReceived += OnInputReceived;
         _terminalAdapter.ShutdownRequested += OnShutdownRequested;
@@ -137,12 +137,11 @@ internal sealed class CliChatMessageRouter : IDisposable
         _terminalAdapter.DisplayMessage(lines);
     }
 
-    private void ClearHistory()
+    private void ResetInputQueue()
     {
         _inputQueue.Add("/cancel");
         var oldQueue = _inputQueue;
         _inputQueue = new BlockingCollection<string>();
         oldQueue.CompleteAdding();
-        _terminalAdapter.ClearDisplay();
     }
 }
