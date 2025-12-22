@@ -7,11 +7,10 @@ using StackExchange.Redis;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class RedisChatMessageStore(IDatabase db, AgentKey key) : ChatMessageStore
+public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessageStore
 {
     private static readonly TimeSpan _expiry = TimeSpan.FromDays(30);
 
-    private readonly string _redisKey = GetRedisKey(key);
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ImmutableList<ChatMessage> _messages = [];
 
@@ -20,16 +19,18 @@ public sealed class RedisChatMessageStore(IDatabase db, AgentKey key) : ChatMess
         return $"thread:{key.ChatId}:{key.ThreadId}";
     }
 
-    public static RedisChatMessageStore CreateAsync(
+    public static RedisChatMessageStore Create(
         IDatabase db, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
-        var state = ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
-        if (state is null)
-        {
-            throw new JsonException("Failed to deserialize RedisChatMessageStore state.");
-        }
+        var state = ctx.SerializedState.ValueKind == JsonValueKind.Undefined
+            ? null
+            : ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
 
-        var store = new RedisChatMessageStore(db, state.Value);
+        var agentKey = state is null
+            ? Guid.NewGuid().ToString()
+            : GetRedisKey(state.Value);
+
+        var store = new RedisChatMessageStore(db, agentKey);
         store.LoadFromRedis();
         return store;
     }
@@ -64,7 +65,7 @@ public sealed class RedisChatMessageStore(IDatabase db, AgentKey key) : ChatMess
 
     private void LoadFromRedis()
     {
-        var value = db.StringGet(_redisKey);
+        var value = db.StringGet(key);
         if (!value.HasValue)
         {
             return;
@@ -88,7 +89,7 @@ public sealed class RedisChatMessageStore(IDatabase db, AgentKey key) : ChatMess
     {
         var state = new StoreState { Messages = [.. _messages] };
         var json = JsonSerializer.Serialize(state);
-        await db.StringSetAsync(_redisKey, json, _expiry);
+        await db.StringSetAsync(key, json, _expiry);
     }
 
     private sealed class StoreState

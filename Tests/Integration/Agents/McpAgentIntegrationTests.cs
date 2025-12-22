@@ -29,7 +29,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
-            "",
+            "test-agent",
             "",
             redisFixture.Connection.GetDatabase());
     }

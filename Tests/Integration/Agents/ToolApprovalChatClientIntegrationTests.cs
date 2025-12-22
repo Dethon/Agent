@@ -32,7 +32,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             approvalClient,
-            "",
+            "test-agent",
             "",
             redisFixture.Connection.GetDatabase());
     }

@@ -35,7 +35,6 @@ public sealed class McpAgent : DisposableAgent
         _endpoints = endpoints;
         _name = name;
         _description = description;
-        var redisDb1 = redisDb;
         _innerAgent = chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -44,7 +43,7 @@ public sealed class McpAgent : DisposableAgent
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
             },
             Description = description,
-            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(redisDb1, ctx)
+            ChatMessageStoreFactory = ctx => RedisChatMessageStore.Create(redisDb, ctx)
         });
     }
 
