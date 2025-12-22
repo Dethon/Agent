@@ -11,14 +11,14 @@ namespace Tests.Unit.Infrastructure;
 public class RedisChatMessageStoreTests
 {
     [Fact]
-    public async Task CreateAsync_WithAgentKey_UsesCorrectRedisKey()
+    public async Task CreateAsync_WithStringKey_UsesKeyDirectly()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
 
         var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey);
+        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
         var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
         {
             SerializedState = serializedState,
@@ -48,7 +48,7 @@ public class RedisChatMessageStoreTests
         // Act
         await RedisChatMessageStore.CreateAsync(mockStore.Object, ctx);
 
-        // Assert - Should have called GetMessagesAsync with a GUID-like key
+        // Assert
         mockStore.Verify(s => s.GetMessagesAsync(It.Is<string>(k => IsGuid(k))), Times.Once);
     }
 
@@ -65,7 +65,7 @@ public class RedisChatMessageStoreTests
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
 
         var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey);
+        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
         var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
         {
             SerializedState = serializedState,
@@ -77,31 +77,9 @@ public class RedisChatMessageStoreTests
         // Act
         var serialized = store.Serialize();
 
-        // Assert - The serialized value is a string (the redis key)
+        // Assert
         serialized.ValueKind.ShouldBe(JsonValueKind.String);
         serialized.GetString().ShouldBe(agentKey.ToString());
-    }
-
-    [Fact]
-    public async Task CreateAsync_WithSerializedStringKey_UsesStringKeyDirectly()
-    {
-        // Arrange - This tests what happens when we restore from a serialized thread
-        var mockStore = new Mock<IThreadStateStore>();
-        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
-
-        var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
-        {
-            SerializedState = serializedState,
-            JsonSerializerOptions = new JsonSerializerOptions()
-        };
-
-        // Act
-        await RedisChatMessageStore.CreateAsync(mockStore.Object, ctx);
-
-        // Assert - The string key should be used directly
-        mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
     }
 
     [Fact]
@@ -114,6 +92,6 @@ public class RedisChatMessageStoreTests
         var key = agentKey.ToString();
 
         // Assert
-        key.ShouldBe("thread:999:888");
+        key.ShouldBe("agent-key:999:888");
     }
 }

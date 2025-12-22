@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Text.Json;
-using Domain.Agents;
 using Domain.Contracts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -25,20 +24,12 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
 
     private static string ResolveRedisKey(ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
-        if (ctx.SerializedState.ValueKind == JsonValueKind.Undefined)
-        {
-            return Guid.NewGuid().ToString();
-        }
-
-        // Try to deserialize as string first (from serialized thread state)
         if (ctx.SerializedState.ValueKind == JsonValueKind.String)
         {
             return ctx.SerializedState.GetString() ?? Guid.NewGuid().ToString();
         }
 
-        // Try to deserialize as AgentKey (from ChatMonitor initial creation)
-        var agentKey = ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
-        return agentKey?.ToString() ?? Guid.NewGuid().ToString();
+        return Guid.NewGuid().ToString();
     }
 
     public override Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)

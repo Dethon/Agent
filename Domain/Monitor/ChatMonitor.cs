@@ -92,7 +92,7 @@ public class ChatMonitor(
 
     private static AgentThread GetOrRestoreThread(DisposableAgent agent, AgentKey agentKey)
     {
-        return agent.DeserializeThread(JsonSerializer.SerializeToElement(agentKey));
+        return agent.DeserializeThread(JsonSerializer.SerializeToElement(agentKey.ToString()));
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
