@@ -2,7 +2,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Tools;
-using Infrastructure.Agents.Mappers;
 using Infrastructure.Utils;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
@@ -54,10 +53,16 @@ public class McpContentRecommendationTool(ILogger<McpContentRecommendationTool> 
 
     private static CreateMessageRequestParams CreateRequestSamplingParams(string userPrompt)
     {
-        var messages = GetFullPrompt(userPrompt);
         return new CreateMessageRequestParams
         {
-            Messages = messages.Select(x => x.ToSamplingMessage()).ToArray(),
+            Messages =
+            [
+                new SamplingMessage
+                {
+                    Role = Role.User,
+                    Content = [new TextContentBlock { Text = userPrompt }]
+                }
+            ],
             SystemPrompt = SystemPrompt,
             IncludeContext = ContextInclusion.None,
             MaxTokens = 5000,

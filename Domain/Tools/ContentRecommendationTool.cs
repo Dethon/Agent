@@ -1,6 +1,4 @@
-﻿using Domain.DTOs;
-
-namespace Domain.Tools;
+﻿namespace Domain.Tools;
 
 public class ContentRecommendationTool
 {
@@ -41,16 +39,4 @@ public class ContentRecommendationTool
                                           The output must JUST be recommendations, do not mention downloads, resolution,
                                           etc. as you are not a download tool.
                                           """;
-
-    protected static AiMessage[] GetFullPrompt(string userPrompt)
-    {
-        return
-        [
-            new AiMessage
-            {
-                Role = AiMessageRole.User,
-                Content = userPrompt
-            }
-        ];
-    }
 }
