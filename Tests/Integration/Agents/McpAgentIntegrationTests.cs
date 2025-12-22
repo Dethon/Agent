@@ -1,6 +1,7 @@
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -26,12 +27,13 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
 
     private McpAgent CreateAgent(OpenAiClient llmClient)
     {
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection);
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,
             "test-agent",
             "",
-            redisFixture.Connection.GetDatabase());
+            stateStore);
     }
 
     [SkippableFact]

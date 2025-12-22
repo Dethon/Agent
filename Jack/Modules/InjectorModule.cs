@@ -33,7 +33,7 @@ public static class InjectorModule
                         DownloaderPrompt.AgentName,
                         DownloaderPrompt.AgentDescription,
                         sp.GetRequiredService<IToolApprovalHandlerFactory>(),
-                        sp.GetRequiredService<IConnectionMultiplexer>(),
+                        sp.GetRequiredService<IThreadStateStore>(),
                         settings.WhitelistPatterns))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);

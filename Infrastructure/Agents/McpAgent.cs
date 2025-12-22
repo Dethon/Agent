@@ -3,11 +3,11 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
+using Domain.Contracts;
 using Domain.Extensions;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using StackExchange.Redis;
 
 namespace Infrastructure.Agents;
 
@@ -30,7 +30,7 @@ public sealed class McpAgent : DisposableAgent
         IChatClient chatClient,
         string name,
         string description,
-        IDatabase redisDb)
+        IThreadStateStore stateStore)
     {
         _endpoints = endpoints;
         _name = name;
@@ -43,7 +43,7 @@ public sealed class McpAgent : DisposableAgent
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
             },
             Description = description,
-            ChatMessageStoreFactory = ctx => RedisChatMessageStore.Create(redisDb, ctx)
+            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(stateStore, ctx).GetAwaiter().GetResult()
         });
     }
 

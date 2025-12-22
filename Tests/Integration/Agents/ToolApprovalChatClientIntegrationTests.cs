@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -29,12 +30,13 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
     {
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection);
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             approvalClient,
             "test-agent",
             "",
-            redisFixture.Connection.GetDatabase());
+            stateStore);
     }
 
     [Fact]

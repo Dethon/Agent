@@ -2,7 +2,6 @@ using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
-using StackExchange.Redis;
 
 namespace Infrastructure.Agents;
 
@@ -12,7 +11,7 @@ public sealed class McpAgentFactory(
     string agentName,
     string agentDescription,
     IToolApprovalHandlerFactory approvalHandlerFactory,
-    IConnectionMultiplexer redis,
+    IThreadStateStore stateStore,
     IEnumerable<string>? whitelistPatterns = null) : IAgentFactory
 {
     public DisposableAgent Create(AgentKey agentKey)
@@ -21,8 +20,7 @@ public sealed class McpAgentFactory(
 
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistPatterns);
-        var db = redis.GetDatabase();
 
-        return new McpAgent(mcpEndpoints, effectiveClient, name, agentDescription, db);
+        return new McpAgent(mcpEndpoints, effectiveClient, name, agentDescription, stateStore);
     }
 }
