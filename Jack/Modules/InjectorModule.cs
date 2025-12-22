@@ -5,12 +5,14 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Cli;
+using Infrastructure.StateManagers;
 using Jack.App;
 using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Telegram.Bot;
 
 namespace Jack.Modules;
@@ -31,6 +33,7 @@ public static class InjectorModule
                         DownloaderPrompt.AgentDescription,
                         sp.GetRequiredService<IToolApprovalHandlerFactory>(),
                         settings.WhitelistPatterns))
+                .AddRedis(settings.Redis)
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }
@@ -50,6 +53,14 @@ public static class InjectorModule
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
+        }
+
+        private IServiceCollection AddRedis(RedisConfiguration config)
+        {
+            return services
+                .AddSingleton<IConnectionMultiplexer>(_ =>
+                    ConnectionMultiplexer.Connect(config.ConnectionString))
+                .AddSingleton<IThreadStateStore, RedisThreadStateStore>();
         }
 
         private IServiceCollection AddCliClient()

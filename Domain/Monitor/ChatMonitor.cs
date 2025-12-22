@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -50,9 +51,9 @@ public class ChatMonitor(
         AgentKey agentKey, IAsyncGrouping<AgentKey, ChatPrompt> group, [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.Create(agentKey);
-        var thread = agent.GetNewThread();
+        var context = await threadResolver.ResolveAsync(agentKey, ct);
+        var thread = GetOrRestoreThread(agent, context);
 
-        var context = threadResolver.Resolve(agentKey);
         context.RegisterCompletionCallback(group.Complete);
 
         using var linkedCts = context.GetLinkedTokenSource(ct);
@@ -60,7 +61,7 @@ public class ChatMonitor(
 
         // ReSharper disable once AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
         var aiResponses = group
-            .Select(x =>
+            .Select(async (x, _, _) =>
             {
                 if (!x.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
                 {
@@ -72,15 +73,23 @@ public class ChatMonitor(
                         .Cast<AiResponse>();
                 }
 
-                threadResolver.Clean(agentKey);
+                await threadResolver.CleanAsync(agentKey);
                 return AsyncEnumerable.Empty<AiResponse>();
             })
             .Merge(linkedCt);
 
         await foreach (var aiResponse in aiResponses)
         {
+            await context.SaveThreadAsync(thread.Serialize(), linkedCt);
             yield return (agentKey, aiResponse);
         }
+    }
+
+    private static AgentThread GetOrRestoreThread(DisposableAgent agent, ChatThreadContext context)
+    {
+        return context.PersistedThread is { } persisted
+            ? agent.DeserializeThread(persisted)
+            : agent.GetNewThread();
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

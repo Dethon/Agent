@@ -1,32 +1,34 @@
 using System.Collections.Concurrent;
+using Domain.Contracts;
+using Domain.Extensions;
 
 namespace Domain.Agents;
 
-public sealed class ChatThreadResolver : IDisposable
+public sealed class ChatThreadResolver(IThreadStateStore store) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<AgentKey, ChatThreadContext> _contexts = [];
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _lock = new(1, 1);
     private int _isDisposed;
 
     public IEnumerable<AgentKey> AgentKeys => _contexts.Keys;
 
-    public ChatThreadContext Resolve(AgentKey key)
+    public async Task<ChatThreadContext> ResolveAsync(AgentKey key, CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
-        lock (_lock)
+        return await _lock.WithLockAsync(async () =>
         {
             if (_contexts.TryGetValue(key, out var existing))
             {
                 return existing;
             }
 
-            var context = new ChatThreadContext();
+            var context = await ChatThreadContext.CreateAsync(key, store, ct);
             _contexts[key] = context;
             return context;
-        }
+        }, ct);
     }
 
-    public void Clean(AgentKey key)
+    public async Task CleanAsync(AgentKey key)
     {
         if (_isDisposed != 0)
         {
@@ -35,25 +37,27 @@ public sealed class ChatThreadResolver : IDisposable
 
         if (_contexts.Remove(key, out var context))
         {
-            context.Dispose();
+            await context.DisposeAsync();
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
         {
             return;
         }
 
-        lock (_lock)
+        await _lock.WithLockAsync(async () =>
         {
             foreach (var context in _contexts.Values)
             {
-                context.Dispose();
+                await context.DisposeAsync();
             }
 
             _contexts.Clear();
-        }
+        });
+
+        _lock.Dispose();
     }
 }

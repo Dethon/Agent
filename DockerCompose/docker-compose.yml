@@ -1,5 +1,21 @@
 name: jackbot
 services:
+  redis:
+    image: redis:7-alpine
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./volumes/redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - jackbot
+
   qbittorrent:
     image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
     logging:
@@ -150,6 +166,7 @@ services:
       - jackbot
     depends_on:
       - mcp-library
+      - redis
 
 networks:
   jackbot:

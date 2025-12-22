@@ -7,6 +7,7 @@ public record AgentSettings
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
     public required Mcp[] McpServers { get; init; }
+    public required RedisConfiguration Redis { get; init; }
     public string[] WhitelistPatterns { get; [UsedImplicitly] init; } = [];
 }
 
@@ -26,4 +27,9 @@ public record TelegramConfiguration
 public record Mcp
 {
     public required string Endpoint { get; [UsedImplicitly] init; }
+}
+
+public record RedisConfiguration
+{
+    public required string ConnectionString { get; [UsedImplicitly] init; }
 }

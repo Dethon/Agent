@@ -15,7 +15,7 @@ public class AgentCleanupMonitor(
             var threadId = agentKey.ThreadId;
             if (!await chatMessengerClient.DoesThreadExist(chatId, threadId, ct))
             {
-                threadResolver.Clean(agentKey);
+                await threadResolver.CleanAsync(agentKey);
             }
         }
     }

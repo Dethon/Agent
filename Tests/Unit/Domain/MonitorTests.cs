@@ -108,6 +108,12 @@ internal static class MonitorTestMocks
     {
         return new FakeAgentFactory(agent);
     }
+
+    public static ChatThreadResolver CreateThreadResolver(IThreadStateStore? store = null)
+    {
+        store ??= new Mock<IThreadStateStore>().Object;
+        return new ChatThreadResolver(store);
+    }
 }
 
 public class ChatMonitorTests
@@ -116,7 +122,7 @@ public class ChatMonitorTests
     public async Task Monitor_WithNullThreadId_CallsCreateThread()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt(threadId: null) };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
@@ -139,7 +145,7 @@ public class ChatMonitorTests
     public async Task Monitor_WithCancelCommand_CleansUpResources()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         var fakeAgent = MonitorTestMocks.CreateAgent();
@@ -148,7 +154,7 @@ public class ChatMonitorTests
 
         // First resolve a context for the agent key so we can verify it gets cleaned
         var agentKey = new AgentKey(1, 1);
-        var context = threadResolver.Resolve(agentKey);
+        var context = await threadResolver.ResolveAsync(agentKey, CancellationToken.None);
 
         var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
 
@@ -166,10 +172,10 @@ public class AgentCleanupMonitorTests
     public async Task Check_WithExistingChannel_DoesNotCleanup()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        threadResolver.Resolve(new AgentKey(1, 1));
+        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -187,10 +193,10 @@ public class AgentCleanupMonitorTests
     public async Task Check_WithDeletedThread_CleansUpChannel()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        threadResolver.Resolve(new AgentKey(1, 1));
+        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
@@ -208,11 +214,11 @@ public class AgentCleanupMonitorTests
     public async Task Check_WithMultipleChannels_CleansUpOnlyDeletedThreads()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        threadResolver.Resolve(new AgentKey(1, 1));
-        threadResolver.Resolve(new AgentKey(2, 2));
+        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
+        await threadResolver.ResolveAsync(new AgentKey(2, 2), CancellationToken.None);
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -233,7 +239,7 @@ public class AgentCleanupMonitorTests
     public async Task Check_WithNoChannels_DoesNothing()
     {
         // Arrange
-        var threadResolver = new ChatThreadResolver();
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
         var monitor = new AgentCleanupMonitor(threadResolver, chatMessengerClient.Object);

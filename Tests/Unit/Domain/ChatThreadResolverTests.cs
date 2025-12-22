@@ -1,64 +1,72 @@
 using Domain.Agents;
+using Domain.Contracts;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain;
 
 public class ChatThreadResolverTests
 {
+    private static ChatThreadResolver CreateResolver(IThreadStateStore? store = null)
+    {
+        store ??= new Mock<IThreadStateStore>().Object;
+        return new ChatThreadResolver(store);
+    }
+
     [Fact]
-    public void Resolve_WithNewKey_ReturnsNewContext()
+    public async Task ResolveAsync_WithNewKey_ReturnsNewContext()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(1, 1);
 
         // Act
-        var context = resolver.Resolve(key);
+        var context = await resolver.ResolveAsync(key, CancellationToken.None);
 
         // Assert
         context.ShouldNotBeNull();
     }
 
     [Fact]
-    public void Resolve_WithExistingKey_ReturnsSameContext()
+    public async Task ResolveAsync_WithExistingKey_ReturnsSameContext()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(1, 1);
-        var firstContext = resolver.Resolve(key);
+        var firstContext = await resolver.ResolveAsync(key, CancellationToken.None);
 
         // Act
-        var secondContext = resolver.Resolve(key);
+        var secondContext = await resolver.ResolveAsync(key, CancellationToken.None);
 
         // Assert
         secondContext.ShouldBeSameAs(firstContext);
     }
 
     [Fact]
-    public void Resolve_WithDifferentKeys_ReturnsDifferentContexts()
+    public async Task ResolveAsync_WithDifferentKeys_ReturnsDifferentContexts()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key1 = new AgentKey(1, 1);
         var key2 = new AgentKey(2, 2);
 
         // Act
-        var context1 = resolver.Resolve(key1);
-        var context2 = resolver.Resolve(key2);
+        var context1 = await resolver.ResolveAsync(key1, CancellationToken.None);
+        var context2 = await resolver.ResolveAsync(key2, CancellationToken.None);
 
         // Assert
         context1.ShouldNotBeSameAs(context2);
     }
 
     [Fact]
-    public void AgentKeys_ReturnsAllResolvedKeys()
+    public async Task AgentKeys_ReturnsAllResolvedKeys()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key1 = new AgentKey(1, 1);
         var key2 = new AgentKey(2, 2);
-        resolver.Resolve(key1);
-        resolver.Resolve(key2);
+        await resolver.ResolveAsync(key1, CancellationToken.None);
+        await resolver.ResolveAsync(key2, CancellationToken.None);
 
         // Act
         var keys = resolver.AgentKeys.ToArray();
@@ -70,15 +78,15 @@ public class ChatThreadResolverTests
     }
 
     [Fact]
-    public void Clean_WithExistingKey_RemovesKeyAndCompletesContext()
+    public async Task CleanAsync_WithExistingKey_RemovesKeyAndCompletesContext()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(1, 1);
-        var context = resolver.Resolve(key);
+        var context = await resolver.ResolveAsync(key, CancellationToken.None);
 
         // Act
-        resolver.Clean(key);
+        await resolver.CleanAsync(key);
 
         // Assert
         resolver.AgentKeys.ShouldNotContain(key);
@@ -86,56 +94,57 @@ public class ChatThreadResolverTests
     }
 
     [Fact]
-    public void Clean_WithNonExistentKey_DoesNotThrow()
+    public async Task CleanAsync_WithNonExistentKey_DoesNotThrow()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(999, 999);
 
         // Act & Assert
-        Should.NotThrow(() => resolver.Clean(key));
+        await Should.NotThrowAsync(() => resolver.CleanAsync(key));
     }
 
     [Fact]
-    public void Clean_ThenResolve_ReturnsNewContext()
+    public async Task CleanAsync_ThenResolveAsync_ReturnsNewContext()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(1, 1);
-        var firstContext = resolver.Resolve(key);
-        resolver.Clean(key);
+        var firstContext = await resolver.ResolveAsync(key, CancellationToken.None);
+        await resolver.CleanAsync(key);
 
         // Act
-        var secondContext = resolver.Resolve(key);
+        var secondContext = await resolver.ResolveAsync(key, CancellationToken.None);
 
         // Assert
         secondContext.ShouldNotBeSameAs(firstContext);
     }
 
     [Fact]
-    public void Resolve_AfterDispose_Throws()
+    public async Task ResolveAsync_AfterDispose_Throws()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
-        resolver.Dispose();
+        var resolver = CreateResolver();
+        await resolver.DisposeAsync();
 
         // Act & Assert
-        Should.Throw<ObjectDisposedException>(() => resolver.Resolve(new AgentKey(1, 1)));
+        await Should.ThrowAsync<ObjectDisposedException>(() =>
+            resolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None));
     }
 
     [Fact]
-    public async Task Resolve_ConcurrentCalls_ReturnsConsistentResults()
+    public async Task ResolveAsync_ConcurrentCalls_ReturnsConsistentResults()
     {
         // Arrange
-        var resolver = new ChatThreadResolver();
+        var resolver = CreateResolver();
         var key = new AgentKey(1, 1);
         var results = new List<ChatThreadContext>();
         var lockObj = new object();
 
         // Act - simulate concurrent access
-        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() =>
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(async () =>
         {
-            var result = resolver.Resolve(key);
+            var result = await resolver.ResolveAsync(key, CancellationToken.None);
             lock (lockObj)
             {
                 results.Add(result);
@@ -143,7 +152,7 @@ public class ChatThreadResolverTests
         }));
         await Task.WhenAll(tasks);
 
-        // Assert - only one should be new, all should reference same context
+        // Assert - all should reference same context
         var firstContext = results.First();
         results.ShouldAllBe(r => ReferenceEquals(r, firstContext));
     }
