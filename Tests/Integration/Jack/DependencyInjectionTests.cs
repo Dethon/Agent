@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;
+using StackExchange.Redis;
 
 namespace Tests.Integration.Jack;
 
@@ -37,9 +38,32 @@ public class DependencyInjectionTests
             ],
             Redis = new RedisConfiguration
             {
-                ConnectionString = "localhost:6379"
+                ConnectionString = "localhost:6379,abortConnect=false"
             }
         };
+    }
+
+    private static void AddMockInfrastructure(IServiceCollection services)
+    {
+        // Pre-register mocks before ConfigureJack so they take precedence
+        var mockMultiplexer = new Mock<IConnectionMultiplexer>();
+        var mockDatabase = new Mock<IDatabase>();
+        mockMultiplexer.Setup(m => m.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(mockDatabase.Object);
+
+        // Remove existing registrations and add mocks
+        var descriptorsToRemove = services
+            .Where(d => d.ServiceType == typeof(IConnectionMultiplexer) ||
+                        d.ServiceType == typeof(IThreadStateStore))
+            .ToList();
+
+        foreach (var descriptor in descriptorsToRemove)
+        {
+            services.Remove(descriptor);
+        }
+
+        services.AddSingleton(mockMultiplexer.Object);
+        services.AddSingleton(new Mock<IThreadStateStore>().Object);
     }
 
     [Fact]
@@ -57,6 +81,7 @@ public class DependencyInjectionTests
 
         // Act
         services.ConfigureJack(settings, cmdParams);
+        AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
@@ -82,6 +107,7 @@ public class DependencyInjectionTests
 
         // Act
         services.ConfigureJack(settings, cmdParams);
+        AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
         // Assert
