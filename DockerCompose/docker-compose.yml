@@ -2,6 +2,10 @@ name: jackbot
 services:
   qbittorrent:
     image: qbittorrentofficial/qbittorrent-nox:5.1.2-2
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
     container_name: qbittorrent
     ports:
       - "8001:8001"
@@ -26,6 +30,10 @@ services:
 
   filebrowser:
     image: filebrowser/filebrowser:v2
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
     container_name: filebrowser
     user: ${PUID:-1654}:${PGID:-1654}
     ports:
@@ -44,6 +52,7 @@ services:
       driver: "json-file"
       options:
         max-size: "5m"
+        max-file: "3"
     container_name: jackett
     ports:
       - "8003:9117"
@@ -63,6 +72,10 @@ services:
         
 #  flaresolverr:
 #    image: ghcr.io/flaresolverr/flaresolverr:latest
+  #    logging:
+  #      options:
+  #        max-size: "5m"
+  #        max-file: "3"
 #    container_name: flaresolverr
 #    environment:
 #      - LOG_LEVEL=info
@@ -77,6 +90,10 @@ services:
 
   plex:
     image: lscr.io/linuxserver/plex:1.42.1
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
     container_name: plex
     network_mode: host
     devices:
@@ -93,6 +110,10 @@ services:
     
   mcp-library:
     image: mcp-library:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
     container_name: mcp-library
     ports:
       - "6001:8080"
@@ -114,6 +135,10 @@ services:
         
   jack:
     image: jack:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
     container_name: jack
     build:
       context: ${JACK_REPOSITORY_PATH}
