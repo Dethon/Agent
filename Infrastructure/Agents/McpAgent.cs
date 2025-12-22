@@ -89,12 +89,16 @@ public sealed class McpAgent : DisposableAgent
         JsonSerializerOptions? jsonSerializerOptions = null)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        var json = new JsonObject
+        if (!serializedThread.TryGetProperty("StoreState", StringComparison.InvariantCultureIgnoreCase, out _))
         {
-            ["StoreState"] = JsonValue.Create(serializedThread)
-        };
-        var wrappedElement = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
-        return _innerAgent.DeserializeThread(wrappedElement, jsonSerializerOptions);
+            var json = new JsonObject
+            {
+                ["StoreState"] = JsonNode.Parse(serializedThread.ToString())
+            };
+            serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
+        }
+
+        return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
     }
 
     public override async Task<AgentRunResponse> RunAsync(
