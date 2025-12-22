@@ -25,14 +25,14 @@ public class ThreadSessionServerFixture : IAsyncLifetime
 
     public string McpEndpoint { get; private set; } = null!;
     public TestDownloadClient DownloadClient { get; private set; } = null!;
-    public TestStateManager StateManager { get; private set; } = null!;
+    public ITrackedDownloadsManager TrackedDownloadsManager { get; private set; } = null!;
     private MemoryCache Cache { get; set; } = null!;
 
     public async Task InitializeAsync()
     {
         Cache = new MemoryCache(new MemoryCacheOptions());
         DownloadClient = new TestDownloadClient();
-        StateManager = new TestStateManager(Cache);
+        TrackedDownloadsManager = new TrackedDownloadsManager(Cache);
 
         _port = GetAvailablePort();
 
@@ -44,10 +44,10 @@ public class ThreadSessionServerFixture : IAsyncLifetime
         builder.Services
             .AddSingleton(Cache)
             .AddSingleton<IDownloadClient>(DownloadClient)
-            .AddSingleton<IStateManager>(StateManager)
+            .AddSingleton(TrackedDownloadsManager)
             .AddSingleton(subscriptionTracker)
             .AddHostedService(sp => new SubscriptionMonitor(
-                sp.GetRequiredService<IStateManager>(),
+                sp.GetRequiredService<ITrackedDownloadsManager>(),
                 sp.GetRequiredService<SubscriptionTracker>(),
                 sp.GetRequiredService<IDownloadClient>(),
                 sp.GetRequiredService<ILogger<SubscriptionMonitor>>()))
@@ -89,10 +89,10 @@ public class ThreadSessionServerFixture : IAsyncLifetime
             throw new InvalidOperationException("Services are not available.");
         }
 
-        var stateManager = context.Services.GetRequiredService<IStateManager>();
+        var trackedDownloadsManager = context.Services.GetRequiredService<ITrackedDownloadsManager>();
         var stateKey = context.Server.StateKey;
 
-        var downloadIds = stateManager.TrackedDownloads.Get(stateKey) ?? [];
+        var downloadIds = trackedDownloadsManager.Get(stateKey) ?? [];
         var resources = downloadIds.Select(id => new Resource
         {
             Uri = $"download://{id}/",
@@ -161,27 +161,6 @@ public class TestDownloadClient : IDownloadClient
     public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(_downloads.GetValueOrDefault(id));
-    }
-}
-
-public class TestStateManager(IMemoryCache cache) : IStateManager
-{
-    public ISearchResultsManager SearchResults { get; } = new TestSearchResultsManager();
-    public ITrackedDownloadsManager TrackedDownloads { get; } = new TrackedDownloadsManager(cache);
-}
-
-public class TestSearchResultsManager : ISearchResultsManager
-{
-    private readonly ConcurrentDictionary<string, SearchResult[]> _results = new();
-
-    public void Add(string sessionId, SearchResult[] results)
-    {
-        _results[sessionId] = results;
-    }
-
-    public SearchResult? Get(string sessionId, int downloadId)
-    {
-        return _results.GetValueOrDefault(sessionId)?.FirstOrDefault(r => r.Id == downloadId);
     }
 }
 

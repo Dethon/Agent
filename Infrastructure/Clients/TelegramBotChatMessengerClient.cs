@@ -175,7 +175,6 @@ public class TelegramBotChatMessengerClient(
                      message.Chat.Username ??
                      message.Chat.FirstName ??
                      $"{message.Chat.Id}",
-            ReplyToMessageId = message.ReplyToMessage?.MessageId,
             ThreadId = message.MessageThreadId
         };
     }

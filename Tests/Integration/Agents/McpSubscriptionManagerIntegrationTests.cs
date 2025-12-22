@@ -29,7 +29,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
     {
         // Arrange
         var sessionKey = $"SyncSubscribeClient_{Guid.NewGuid()}";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 301);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 301);
         fixture.DownloadClient.SetDownload(301, DownloadState.InProgress);
 
         using var chatClient = CreateChatClient();
@@ -60,7 +60,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
     {
         // Arrange
         var sessionKey = $"UnsubscribeClient_{Guid.NewGuid()}";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 302);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 302);
         fixture.DownloadClient.SetDownload(302, DownloadState.InProgress);
 
         using var chatClient = CreateChatClient();
@@ -77,7 +77,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             cts.Token);
 
         // Act - Remove the download and sync
-        fixture.StateManager.TrackedDownloads.Remove(sessionKey, 302);
+        fixture.TrackedDownloadsManager.Remove(sessionKey, 302);
         await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert - No exception means unsubscribe succeeded
@@ -138,7 +138,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Act - Add a download and ensure channel is active
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 303);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 303);
         fixture.DownloadClient.SetDownload(303, DownloadState.InProgress);
         await session.ResourceManager.EnsureChannelActive(cts.Token);
 
@@ -153,7 +153,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
     {
         // Arrange
         var sessionKey = $"DisposeUnsubClient_{Guid.NewGuid()}";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 304);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 304);
         fixture.DownloadClient.SetDownload(304, DownloadState.InProgress);
 
         using var chatClient = CreateChatClient();
@@ -178,7 +178,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
     {
         // Arrange
         var sessionKey = $"MultiClientSync_{Guid.NewGuid()}";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 305);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 305);
         fixture.DownloadClient.SetDownload(305, DownloadState.InProgress);
 
         using var chatClient = CreateChatClient();

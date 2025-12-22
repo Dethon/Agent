@@ -5,7 +5,7 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Downloads;
 
-public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateManager)
+public class GetDownloadStatusTool(IDownloadClient client, ISearchResultsManager searchResultsManager)
 {
     protected const string Name = "GetDownloadStatus";
 
@@ -34,7 +34,7 @@ public class GetDownloadStatusTool(IDownloadClient client, IStateManager stateMa
             ["status"] = "success",
             ["message"] = JsonSerializer.Serialize(new DownloadStatus(downloadItem)
             {
-                Title = stateManager.SearchResults.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
+                Title = searchResultsManager.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
             })
         };
     }

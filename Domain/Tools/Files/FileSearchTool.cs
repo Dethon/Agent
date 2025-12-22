@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Files;
 
-public class FileSearchTool(ISearchClient client, IStateManager stateManager)
+public class FileSearchTool(ISearchClient client, ISearchResultsManager searchResultsManager)
 {
     protected const string Name = "FileSearch";
 
@@ -23,7 +23,7 @@ public class FileSearchTool(ISearchClient client, IStateManager stateManager)
             .GroupBy(x => x.Id)
             .Select(x => x.First())
             .ToArray();
-        stateManager.SearchResults.Add(sessionId, summarizedResults);
+        searchResultsManager.Add(sessionId, summarizedResults);
         var output = summarizedResults
             .Select(x => new
             {

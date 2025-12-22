@@ -4,7 +4,11 @@ using Domain.Tools.Config;
 
 namespace Domain.Tools.Downloads;
 
-public class FileDownloadTool(IDownloadClient client, IStateManager stateManager, DownloadPathConfig pathConfig)
+public class FileDownloadTool(
+    IDownloadClient client,
+    ISearchResultsManager searchResultsManager,
+    ITrackedDownloadsManager trackedDownloadsManager,
+    DownloadPathConfig pathConfig)
 {
     protected const string Name = "FileDownload";
 
@@ -20,7 +24,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
         await CheckDownloadNotAdded(searchResultId, ct);
 
         var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
-        var itemToDownload = stateManager.SearchResults.Get(sessionId, searchResultId);
+        var itemToDownload = searchResultsManager.Get(sessionId, searchResultId);
         if (itemToDownload == null)
         {
             throw new InvalidOperationException(
@@ -30,7 +34,7 @@ public class FileDownloadTool(IDownloadClient client, IStateManager stateManager
 
         await client.Download(itemToDownload.Link, savePath, searchResultId, ct);
 
-        stateManager.TrackedDownloads.Add(sessionId, searchResultId);
+        trackedDownloadsManager.Add(sessionId, searchResultId);
         return new JsonObject
         {
             ["status"] = "success",

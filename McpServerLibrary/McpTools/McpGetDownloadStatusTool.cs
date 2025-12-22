@@ -12,8 +12,8 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class McpGetDownloadStatusTool(
     IDownloadClient client,
-    IStateManager stateManager,
-    ILogger<McpGetDownloadStatusTool> logger) : GetDownloadStatusTool(client, stateManager)
+    ISearchResultsManager searchResultsManager,
+    ILogger<McpGetDownloadStatusTool> logger) : GetDownloadStatusTool(client, searchResultsManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]

@@ -154,19 +154,6 @@ public class StateManagerTests
         downloads.Length.ShouldBe(1);
     }
 
-    [Fact]
-    public void StateManager_ExposesTrackedDownloadsAndSearchResults()
-    {
-        // Arrange
-        var trackedDownloads = new TrackedDownloadsManager(_cache);
-        var searchResults = new SearchResultsManager(_cache);
-        var stateManager = new StateManager(trackedDownloads, searchResults);
-
-        // Act & Assert
-        stateManager.TrackedDownloads.ShouldBe(trackedDownloads);
-        stateManager.SearchResults.ShouldBe(searchResults);
-    }
-
     private static SearchResult CreateSearchResult(int id, string title)
     {
         return new SearchResult

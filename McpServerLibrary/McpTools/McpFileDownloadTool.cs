@@ -13,9 +13,11 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class McpFileDownloadTool(
     IDownloadClient client,
-    IStateManager stateManager,
+    ISearchResultsManager searchResultsManager,
+    ITrackedDownloadsManager trackedDownloadsManager,
     DownloadPathConfig pathConfig,
-    ILogger<McpFileDownloadTool> logger) : FileDownloadTool(client, stateManager, pathConfig)
+    ILogger<McpFileDownloadTool> logger)
+    : FileDownloadTool(client, searchResultsManager, trackedDownloadsManager, pathConfig)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]

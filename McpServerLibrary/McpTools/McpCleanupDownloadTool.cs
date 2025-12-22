@@ -13,11 +13,11 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class McpCleanupDownloadTool(
     IDownloadClient downloadClient,
-    IStateManager stateManager,
+    ITrackedDownloadsManager trackedDownloadsManager,
     IFileSystemClient fileSystemClient,
     DownloadPathConfig downloadPath,
     ILogger<McpCleanupDownloadTool> logger)
-    : CleanupDownloadTool(downloadClient, stateManager, fileSystemClient, downloadPath)
+    : CleanupDownloadTool(downloadClient, trackedDownloadsManager, fileSystemClient, downloadPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]

@@ -12,8 +12,8 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class McpFileSearchTool(
     ISearchClient client,
-    IStateManager stateManager,
-    ILogger<McpFileSearchTool> logger) : FileSearchTool(client, stateManager)
+    ISearchResultsManager searchResultsManager,
+    ILogger<McpFileSearchTool> logger) : FileSearchTool(client, searchResultsManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]

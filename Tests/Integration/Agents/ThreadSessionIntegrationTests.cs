@@ -109,7 +109,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange - Add a tracked download so resources exist
         const string sessionKey = "SubscriptionTestClient";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 101);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 101);
         fixture.DownloadClient.SetDownload(101, DownloadState.InProgress, 0.5);
 
         using var chatClient = CreateChatClient();
@@ -137,7 +137,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         var sessionKey = $"NotificationTestClient_{Guid.NewGuid()}";
-        fixture.StateManager.TrackedDownloads.Add(sessionKey, 201);
+        fixture.TrackedDownloadsManager.Add(sessionKey, 201);
         fixture.DownloadClient.SetDownload(201, DownloadState.InProgress, 0.1);
 
         using var chatClient = CreateChatClient();

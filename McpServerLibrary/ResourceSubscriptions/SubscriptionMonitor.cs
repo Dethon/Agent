@@ -7,7 +7,7 @@ using ModelContextProtocol.Server;
 namespace McpServerLibrary.ResourceSubscriptions;
 
 public class SubscriptionMonitor(
-    IStateManager stateManager,
+    ITrackedDownloadsManager trackedDownloadsManager,
     SubscriptionTracker subscriptionsTracker,
     IDownloadClient downloadClient,
     ILogger<SubscriptionMonitor> logger) : BackgroundService
@@ -59,7 +59,7 @@ public class SubscriptionMonitor(
         McpServer server,
         CancellationToken cancellationToken)
     {
-        var downloadIds = stateManager.TrackedDownloads.Get(sessionId) ?? [];
+        var downloadIds = trackedDownloadsManager.Get(sessionId) ?? [];
 
         //TODO: Check all downloads in a single call
         var downloadTasks = downloadIds
@@ -74,7 +74,7 @@ public class SubscriptionMonitor(
 
         foreach (var (id, _) in filteredDownloads)
         {
-            stateManager.TrackedDownloads.Remove(sessionId, id);
+            trackedDownloadsManager.Remove(sessionId, id);
             await server.SendNotificationAsync("notifications/resources/updated",
                 new
                 {

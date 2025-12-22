@@ -36,7 +36,6 @@ public static class ConfigModule
             .AddSingleton(subscriptionTracker)
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
-            .AddTransient<IStateManager, StateManager>()
             .AddJacketClient(settings)
             .AddQBittorrentClient(settings)
             .AddFileSystemClient()

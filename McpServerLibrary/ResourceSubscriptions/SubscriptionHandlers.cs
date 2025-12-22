@@ -46,10 +46,10 @@ public static class SubscriptionHandlers
             throw new InvalidOperationException("Services are not available.");
         }
 
-        var stateManager = context.Services.GetRequiredService<IStateManager>();
+        var trackedDownloadsManager = context.Services.GetRequiredService<ITrackedDownloadsManager>();
         var stateKey = context.Server.StateKey;
 
-        var downloadIds = stateManager.TrackedDownloads.Get(stateKey) ?? [];
+        var downloadIds = trackedDownloadsManager.Get(stateKey) ?? [];
         var resources = downloadIds.Select(id => new Resource
         {
             Uri = $"download://{id}/",

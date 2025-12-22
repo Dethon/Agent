@@ -7,7 +7,7 @@ namespace Domain.Tools.Downloads;
 
 public class CleanupDownloadTool(
     IDownloadClient downloadClient,
-    IStateManager stateManager,
+    ITrackedDownloadsManager trackedDownloadsManager,
     IFileSystemClient fileSystemClient,
     DownloadPathConfig downloadPath)
 {
@@ -63,7 +63,7 @@ public class CleanupDownloadTool(
     {
         try
         {
-            stateManager.TrackedDownloads.Remove(sessionId, downloadId);
+            trackedDownloadsManager.Remove(sessionId, downloadId);
             await downloadClient.Cleanup(downloadId, ct);
             return Result.Ok();
         }

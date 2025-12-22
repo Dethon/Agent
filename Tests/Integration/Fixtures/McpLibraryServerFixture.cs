@@ -51,7 +51,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton(_cache)
             .AddSingleton<ITrackedDownloadsManager, TrackedDownloadsManager>()
             .AddSingleton<ISearchResultsManager, SearchResultsManager>()
-            .AddSingleton<IStateManager, StateManager>()
             .AddSingleton<ISearchClient>(_ => Jackett.CreateClient())
             .AddSingleton<IDownloadClient>(_ => QBittorrent.CreateClient())
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
