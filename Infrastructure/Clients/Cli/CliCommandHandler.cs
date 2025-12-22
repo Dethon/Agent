@@ -1,11 +1,12 @@
 namespace Infrastructure.Clients.Cli;
 
-internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action onClear)
+internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action<bool> onReset)
 {
     private const string HelpText = """
                                     Available commands:
                                       /help, /?     - Show this help
-                                      /clear, /cls  - Clear conversation and start fresh
+                                      /cancel       - Cancel current operation (keeps conversation history)
+                                      /clear, /cls  - Clear conversation and wipe thread history
                                       Ctrl+C twice  - Exit application
                                     """;
 
@@ -13,9 +14,13 @@ internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action
     {
         switch (input.ToLowerInvariant())
         {
+            case "/cancel":
+                onReset(false);
+                return true;
+
             case "/clear":
             case "/cls":
-                onClear();
+                onReset(true);
                 terminalAdapter.ClearDisplay();
                 return true;
 

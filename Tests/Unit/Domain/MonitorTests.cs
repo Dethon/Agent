@@ -141,11 +141,39 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public async Task Monitor_WithCancelCommand_CleansUpResources()
+    public async Task Monitor_WithCancelCommand_CancelsWithoutWipingThread()
     {
         // Arrange
-        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var mockStateStore = new Mock<IThreadStateStore>();
+        var threadResolver = new ChatThreadResolver(mockStateStore.Object);
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
+        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        // First resolve a context for the agent key so we can verify it gets canceled but not cleaned
+        var agentKey = new AgentKey(1, 1);
+        var context = threadResolver.Resolve(agentKey);
+
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - CTS should be canceled but thread state should NOT be deleted
+        context.Cts.IsCancellationRequested.ShouldBeTrue();
+        mockStateStore.Verify(s => s.DeleteAsync(It.IsAny<AgentKey>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Monitor_WithClearCommand_CleansUpAndWipesThread()
+    {
+        // Arrange
+        var mockStateStore = new Mock<IThreadStateStore>();
+        mockStateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
+        var threadResolver = new ChatThreadResolver(mockStateStore.Object);
+        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/clear") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
@@ -160,8 +188,9 @@ public class ChatMonitorTests
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - the resources should be cleaned up (CTS gets canceled and disposed when Clean is called)
+        // Assert - CTS should be canceled AND thread state should be deleted
         context.Cts.IsCancellationRequested.ShouldBeTrue();
+        mockStateStore.Verify(s => s.DeleteAsync(agentKey), Times.Once);
     }
 }
 

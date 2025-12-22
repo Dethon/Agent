@@ -19,6 +19,12 @@ public sealed class ChatThreadContext : IDisposable
         return CancellationTokenSource.CreateLinkedTokenSource(Cts.Token, externalToken);
     }
 
+    public void Cancel()
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
+        Cts.Cancel();
+    }
+
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)

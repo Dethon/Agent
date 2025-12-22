@@ -186,7 +186,7 @@ public class CliChatMessageRouterTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadPrompts_ClearCommandDoesNotYieldPrompt()
+    public async Task ReadPrompts_ClearCommandSendsClearToMonitor()
     {
         // Arrange
         using var cts = new CancellationTokenSource(500);
@@ -197,6 +197,10 @@ public class CliChatMessageRouterTests : IDisposable
             foreach (var prompt in _router.ReadPrompts(cts.Token))
             {
                 prompts.Add(prompt);
+                if (prompts.Count >= 1)
+                {
+                    break;
+                }
             }
         }, cts.Token);
 
@@ -205,13 +209,48 @@ public class CliChatMessageRouterTests : IDisposable
         // Act
         _terminalAdapter.SimulateInput("/clear");
         await Task.Delay(100, cts.Token);
-        await cts.CancelAsync();
 
         try { await readTask; }
         catch (OperationCanceledException) { }
 
-        // Assert - /clear sends /cancel internally but not as a user prompt
-        prompts.ShouldNotContain(p => p.Prompt == "/clear");
+        await cts.CancelAsync();
+
+        // Assert - /clear sends /clear command to monitor to wipe thread
+        prompts.ShouldContain(p => p.Prompt == "/clear");
+    }
+
+    [Fact]
+    public async Task ReadPrompts_CancelCommandSendsCancelToMonitor()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource(500);
+        var prompts = new List<ChatPrompt>();
+
+        var readTask = Task.Run(() =>
+        {
+            foreach (var prompt in _router.ReadPrompts(cts.Token))
+            {
+                prompts.Add(prompt);
+                if (prompts.Count >= 1)
+                {
+                    break;
+                }
+            }
+        }, cts.Token);
+
+        await Task.Delay(50, cts.Token);
+
+        // Act
+        _terminalAdapter.SimulateInput("/cancel");
+        await Task.Delay(100, cts.Token);
+
+        try { await readTask; }
+        catch (OperationCanceledException) { }
+
+        await cts.CancelAsync();
+
+        // Assert - /cancel sends /cancel command to monitor to cancel without wiping
+        prompts.ShouldContain(p => p.Prompt == "/cancel");
     }
 
     [Fact]

@@ -64,17 +64,24 @@ public class ChatMonitor(
         var aiResponses = group
             .Select(async (x, _, _) =>
             {
-                if (!x.Prompt.Equals("/cancel", StringComparison.OrdinalIgnoreCase))
+                var command = ParseCommand(x.Prompt);
+                switch (command)
                 {
-                    return agent
-                        .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                        .ToUpdateAiResponsePairs()
-                        .Where(y => y.Item2 is not null)
-                        .Select(y => y.Item2)
-                        .Cast<AiResponse>();
+                    case null:
+                        return agent
+                            .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
+                            .ToUpdateAiResponsePairs()
+                            .Where(y => y.Item2 is not null)
+                            .Select(y => y.Item2)
+                            .Cast<AiResponse>();
+                    case CommandType.Clear:
+                        await threadResolver.CleanAsync(agentKey);
+                        break;
+                    default:
+                        context.Cancel();
+                        break;
                 }
 
-                await threadResolver.CleanAsync(agentKey);
                 return AsyncEnumerable.Empty<AiResponse>();
             })
             .Merge(linkedCt);
@@ -83,6 +90,22 @@ public class ChatMonitor(
         {
             yield return (agentKey, aiResponse);
         }
+    }
+
+    private static CommandType? ParseCommand(string prompt)
+    {
+        return prompt.ToLowerInvariant() switch
+        {
+            "/clear" => CommandType.Clear,
+            "/cancel" => CommandType.Cancel,
+            _ => null
+        };
+    }
+
+    private enum CommandType
+    {
+        Cancel,
+        Clear
     }
 
     private static AgentThread GetOrRestoreThread(DisposableAgent agent, AgentKey agentKey)

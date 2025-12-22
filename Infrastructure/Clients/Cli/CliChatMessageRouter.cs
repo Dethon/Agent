@@ -137,9 +137,10 @@ internal sealed class CliChatMessageRouter : IDisposable
         _terminalAdapter.DisplayMessage(lines);
     }
 
-    private void ResetInputQueue()
+    private void ResetInputQueue(bool wipeThread)
     {
-        _inputQueue.Add("/cancel");
+        var command = wipeThread ? "/clear" : "/cancel";
+        _inputQueue.Add(command);
         var oldQueue = _inputQueue;
         _inputQueue = new BlockingCollection<string>();
         oldQueue.CompleteAdding();
