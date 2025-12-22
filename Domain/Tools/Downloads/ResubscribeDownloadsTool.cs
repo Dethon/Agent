@@ -4,6 +4,8 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Downloads;
 
+public record ResubscribeDownloadsResult(JsonNode Response, bool HasNewSubscriptions);
+
 public class ResubscribeDownloadsTool(
     IDownloadClient downloadClient,
     ITrackedDownloadsManager trackedDownloadsManager)
@@ -18,17 +20,18 @@ public class ResubscribeDownloadsTool(
                                          if the files need to be organized.
                                          """;
 
-    protected async Task<JsonNode> Run(string sessionId, int[] downloadIds, CancellationToken ct)
+    protected async Task<ResubscribeDownloadsResult> Run(string sessionId, int[] downloadIds, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(downloadIds);
 
         if (downloadIds.Length == 0)
         {
-            return new JsonObject
+            var emptyResponse = new JsonObject
             {
                 ["status"] = "error",
                 ["message"] = "No download IDs provided"
             };
+            return new ResubscribeDownloadsResult(emptyResponse, false);
         }
 
         var trackedIds = trackedDownloadsManager.Get(sessionId) ?? [];
@@ -40,7 +43,8 @@ public class ResubscribeDownloadsTool(
             results.Add(result);
         }
 
-        return BuildResponse(results);
+        var hasNewSubscriptions = results.Any(r => r.Status == ResubscribeStatus.Resubscribed);
+        return new ResubscribeDownloadsResult(BuildResponse(results), hasNewSubscriptions);
     }
 
     private async Task<ResubscribeResult> ProcessDownloadId(
@@ -84,7 +88,7 @@ public class ResubscribeDownloadsTool(
             $"Successfully resubscribed to download {downloadId}");
     }
 
-    private static JsonNode BuildResponse(List<ResubscribeResult> results)
+    private static JsonObject BuildResponse(List<ResubscribeResult> results)
     {
         var resubscribed = results.Where(r => r.Status == ResubscribeStatus.Resubscribed).ToList();
         var needsAttention = results

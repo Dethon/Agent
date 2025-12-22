@@ -28,10 +28,15 @@ public class McpResubscribeDownloadsTool(
         {
             var sessionId = context.Server.StateKey;
             var result = await Run(sessionId, downloadIds, cancellationToken);
-            await context.Server.SendNotificationAsync(
-                "notifications/resources/list_changed",
-                cancellationToken: cancellationToken);
-            return ToolResponse.Create(result);
+
+            if (result.HasNewSubscriptions)
+            {
+                await context.Server.SendNotificationAsync(
+                    "notifications/resources/list_changed",
+                    cancellationToken: cancellationToken);
+            }
+
+            return ToolResponse.Create(result.Response);
         }
         catch (Exception ex)
         {

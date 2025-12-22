@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.Downloads;
 using Infrastructure.StateManagers;
 using McpServerLibrary.Extensions;
 using McpServerLibrary.ResourceSubscriptions;
@@ -66,6 +67,7 @@ public class ThreadSessionServerFixture : IAsyncLifetime
             })
             .WithHttpTransport()
             .WithTools<TestEchoTool>()
+            .WithTools<TestResubscribeDownloadsTool>()
             .WithPrompts<TestPrompt>()
             .WithResources<TestDownloadResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
@@ -200,5 +202,35 @@ public class TestDownloadResource(IDownloadClient downloadClient)
         return item is null
             ? $"Download {id} not found"
             : $"Download {id}: {item.State} ({item.Progress:P0})";
+    }
+}
+
+[McpServerToolType]
+public class TestResubscribeDownloadsTool(
+    IDownloadClient downloadClient,
+    ITrackedDownloadsManager trackedDownloadsManager)
+    : ResubscribeDownloadsTool(downloadClient, trackedDownloadsManager)
+{
+    [McpServerTool(Name = "ResubscribeDownloads")]
+    [Description("Resubscribes to download progress updates for the specified download IDs")]
+    public async Task<CallToolResult> McpRun(
+        RequestContext<CallToolRequestParams> context,
+        int[] downloadIds,
+        CancellationToken cancellationToken)
+    {
+        var sessionId = context.Server.StateKey;
+        var result = await Run(sessionId, downloadIds, cancellationToken);
+
+        if (result.HasNewSubscriptions)
+        {
+            await context.Server.SendNotificationAsync(
+                "notifications/resources/list_changed",
+                cancellationToken: cancellationToken);
+        }
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = result.Response.ToJsonString() }]
+        };
     }
 }
