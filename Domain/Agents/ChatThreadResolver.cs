@@ -1,31 +1,30 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
-using Domain.Extensions;
 
 namespace Domain.Agents;
 
-public sealed class ChatThreadResolver(IThreadStateStore store) : IAsyncDisposable
+public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = null) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<AgentKey, ChatThreadContext> _contexts = [];
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly Lock _lock = new();
     private int _isDisposed;
 
     public IEnumerable<AgentKey> AgentKeys => _contexts.Keys;
 
-    public async Task<ChatThreadContext> ResolveAsync(AgentKey key, CancellationToken ct)
+    public ChatThreadContext Resolve(AgentKey key)
     {
         ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
-        return await _lock.WithLockAsync(async () =>
+        lock (_lock)
         {
             if (_contexts.TryGetValue(key, out var existing))
             {
                 return existing;
             }
 
-            var context = await ChatThreadContext.CreateAsync(key, store, ct);
+            var context = new ChatThreadContext();
             _contexts[key] = context;
             return context;
-        }, ct);
+        }
     }
 
     public async Task CleanAsync(AgentKey key)
@@ -37,7 +36,8 @@ public sealed class ChatThreadResolver(IThreadStateStore store) : IAsyncDisposab
 
         if (_contexts.Remove(key, out var context))
         {
-            await context.DisposeAsync();
+            context.Dispose();
+            await DeletePersistedStateAsync(key);
         }
     }
 
@@ -48,16 +48,29 @@ public sealed class ChatThreadResolver(IThreadStateStore store) : IAsyncDisposab
             return;
         }
 
-        await _lock.WithLockAsync(async () =>
+        lock (_lock)
         {
             foreach (var context in _contexts.Values)
             {
-                await context.DisposeAsync();
+                context.Dispose();
             }
+        }
 
-            _contexts.Clear();
-        });
+        foreach (var key in _contexts.Keys)
+        {
+            await DeletePersistedStateAsync(key);
+        }
 
-        _lock.Dispose();
+        _contexts.Clear();
+    }
+
+    private async Task DeletePersistedStateAsync(AgentKey key)
+    {
+        if (threadStateStore is null)
+        {
+            return;
+        }
+
+        await threadStateStore.DeleteAsync(key);
     }
 }

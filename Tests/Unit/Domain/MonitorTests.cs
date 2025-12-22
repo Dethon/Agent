@@ -109,10 +109,9 @@ internal static class MonitorTestMocks
         return new FakeAgentFactory(agent);
     }
 
-    public static ChatThreadResolver CreateThreadResolver(IThreadStateStore? store = null)
+    public static ChatThreadResolver CreateThreadResolver()
     {
-        store ??= new Mock<IThreadStateStore>().Object;
-        return new ChatThreadResolver(store);
+        return new ChatThreadResolver();
     }
 }
 
@@ -154,7 +153,7 @@ public class ChatMonitorTests
 
         // First resolve a context for the agent key so we can verify it gets cleaned
         var agentKey = new AgentKey(1, 1);
-        var context = await threadResolver.ResolveAsync(agentKey, CancellationToken.None);
+        var context = threadResolver.Resolve(agentKey);
 
         var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
 
@@ -175,7 +174,7 @@ public class AgentCleanupMonitorTests
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
+        threadResolver.Resolve(new AgentKey(1, 1));
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -196,7 +195,7 @@ public class AgentCleanupMonitorTests
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
+        threadResolver.Resolve(new AgentKey(1, 1));
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
@@ -217,8 +216,8 @@ public class AgentCleanupMonitorTests
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient();
 
-        await threadResolver.ResolveAsync(new AgentKey(1, 1), CancellationToken.None);
-        await threadResolver.ResolveAsync(new AgentKey(2, 2), CancellationToken.None);
+        threadResolver.Resolve(new AgentKey(1, 1));
+        threadResolver.Resolve(new AgentKey(2, 2));
 
         chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);

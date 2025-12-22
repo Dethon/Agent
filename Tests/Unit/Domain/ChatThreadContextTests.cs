@@ -1,26 +1,15 @@
-using System.Text.Json;
 using Domain.Agents;
-using Domain.Contracts;
-using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain;
 
 public class ChatThreadContextTests
 {
-    private static readonly AgentKey _testKey = new(123, 456);
-
-    private static async Task<ChatThreadContext> CreateContextAsync(IThreadStateStore? store = null)
-    {
-        store ??= new Mock<IThreadStateStore>().Object;
-        return await ChatThreadContext.CreateAsync(_testKey, store, CancellationToken.None);
-    }
-
     [Fact]
-    public async Task CreateAsync_InitializesPropertiesCorrectly()
+    public void Constructor_InitializesPropertiesCorrectly()
     {
         // Act
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
 
         // Assert
         context.Cts.ShouldNotBeNull();
@@ -28,26 +17,10 @@ public class ChatThreadContextTests
     }
 
     [Fact]
-    public async Task CreateAsync_LoadsPersistedThread()
+    public void GetLinkedTokenSource_ReturnsLinkedSource()
     {
         // Arrange
-        var storeMock = new Mock<IThreadStateStore>();
-        var persistedThread = JsonDocument.Parse("{}").RootElement;
-        storeMock.Setup(s => s.LoadAsync(_testKey, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(persistedThread);
-
-        // Act
-        var context = await ChatThreadContext.CreateAsync(_testKey, storeMock.Object, CancellationToken.None);
-
-        // Assert
-        context.PersistedThread.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task GetLinkedTokenSource_ReturnsLinkedSource()
-    {
-        // Arrange
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
         using var externalCts = new CancellationTokenSource();
 
         // Act
@@ -59,90 +32,70 @@ public class ChatThreadContextTests
     }
 
     [Fact]
-    public async Task GetLinkedTokenSource_CancelsWhenContextCts_IsCancelled()
+    public void GetLinkedTokenSource_CancelsWhenContextCts_IsCancelled()
     {
         // Arrange
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
         using var externalCts = new CancellationTokenSource();
         using var linked = context.GetLinkedTokenSource(externalCts.Token);
 
         // Act
-        await context.Cts.CancelAsync();
+        context.Cts.Cancel();
 
         // Assert
         linked.Token.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task GetLinkedTokenSource_CancelsWhenExternalToken_IsCancelled()
+    public void GetLinkedTokenSource_CancelsWhenExternalToken_IsCancelled()
     {
         // Arrange
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
         using var externalCts = new CancellationTokenSource();
         using var linked = context.GetLinkedTokenSource(externalCts.Token);
 
         // Act
-        await externalCts.CancelAsync();
+        externalCts.Cancel();
 
         // Assert
         linked.Token.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task DisposeAsync_CancelsCts()
+    public void Dispose_CancelsCts()
     {
         // Arrange
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
 
         // Act
-        await context.DisposeAsync();
+        context.Dispose();
 
         // Assert
         context.Cts.IsCancellationRequested.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task DisposeAsync_InvokesRegisteredCallback()
+    public void Dispose_InvokesRegisteredCallback()
     {
         // Arrange
-        var context = await CreateContextAsync();
+        var context = new ChatThreadContext();
         var callbackInvoked = false;
         context.RegisterCompletionCallback(() => callbackInvoked = true);
 
         // Act
-        await context.DisposeAsync();
+        context.Dispose();
 
         // Assert
         callbackInvoked.ShouldBeTrue();
     }
 
     [Fact]
-    public async Task DisposeAsync_DeletesFromStore()
+    public void Dispose_WithNoCallback_DoesNotThrow()
     {
         // Arrange
-        var storeMock = new Mock<IThreadStateStore>();
-        var context = await ChatThreadContext.CreateAsync(_testKey, storeMock.Object, CancellationToken.None);
+        var context = new ChatThreadContext();
 
-        // Act
-        await context.DisposeAsync();
-
-        // Assert
-        storeMock.Verify(s => s.DeleteAsync(_testKey, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SaveThreadAsync_SavesAndUpdatesPersistedThread()
-    {
-        // Arrange
-        var storeMock = new Mock<IThreadStateStore>();
-        var context = await ChatThreadContext.CreateAsync(_testKey, storeMock.Object, CancellationToken.None);
-        var thread = JsonDocument.Parse("{\"test\":true}").RootElement;
-
-        // Act
-        await context.SaveThreadAsync(thread, CancellationToken.None);
-
-        // Assert
-        storeMock.Verify(s => s.SaveAsync(_testKey, thread, It.IsAny<CancellationToken>()), Times.Once);
-        context.PersistedThread.ShouldNotBeNull();
+        // Act & Assert
+        Should.NotThrow(() => context.Dispose());
     }
 }

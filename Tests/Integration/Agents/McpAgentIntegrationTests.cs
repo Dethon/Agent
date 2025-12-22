@@ -7,8 +7,8 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
-    : IClassFixture<McpLibraryServerFixture>
+public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
+    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentIntegrationTests>()
@@ -24,6 +24,16 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         return new OpenAiClient(apiUrl, apiKey, models);
     }
 
+    private McpAgent CreateAgent(OpenAiClient llmClient)
+    {
+        return new McpAgent(
+            [mcpFixture.McpEndpoint],
+            llmClient,
+            "",
+            "",
+            redisFixture.Connection.GetDatabase());
+    }
+
     [SkippableFact]
     public async Task Agent_WithListDirectoriesTool_CanListLibraryDirectories()
     {
@@ -32,11 +42,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMovies");
         mcpFixture.CreateLibraryStructure("AgentSeries");
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "");
+        var agent = CreateAgent(llmClient);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -65,11 +71,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         mcpFixture.CreateLibraryStructure("AgentMoveDestination");
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoveSource", "agent-test-file.mkv"), "fake content");
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "");
+        var agent = CreateAgent(llmClient);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
@@ -99,11 +101,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoviesFiles", "agent-existing-movie.mkv"));
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "");
+        var agent = CreateAgent(llmClient);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -132,11 +130,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         var llmClient = CreateLlmClient();
         // Note: System prompt is now fetched from the MCP server, not passed here
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "");
+        var agent = CreateAgent(llmClient);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
@@ -167,11 +161,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture)
         Directory.CreateDirectory(downloadSubDir);
         await File.WriteAllTextAsync(Path.Combine(downloadSubDir, "leftover.nfo"), "info file");
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            llmClient,
-            "",
-            "");
+        var agent = CreateAgent(llmClient);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 

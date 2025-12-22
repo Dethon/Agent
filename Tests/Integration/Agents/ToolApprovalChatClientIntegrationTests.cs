@@ -9,8 +9,8 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpFixture)
-    : IClassFixture<McpLibraryServerFixture>
+public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
+    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentIntegrationTests>()
@@ -27,6 +27,16 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         return new OpenAiClient(apiUrl, apiKey, models);
     }
 
+    private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
+    {
+        return new McpAgent(
+            [mcpFixture.McpEndpoint],
+            approvalClient,
+            "",
+            "",
+            redisFixture.Connection.GetDatabase());
+    }
+
     [Fact]
     public async Task Agent_WithApprovalRequired_TerminatesWhenRejected()
     {
@@ -35,11 +45,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var rejectingHandler = new TestApprovalHandler(result: ToolApprovalResult.Rejected);
         var approvalClient = new ToolApprovalChatClient(innerClient, rejectingHandler);
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            approvalClient,
-            "",
-            "");
+        var agent = CreateAgent(approvalClient);
 
         mcpFixture.CreateLibraryStructure("ApprovalTestMovies");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
@@ -69,11 +75,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvingHandler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
         var approvalClient = new ToolApprovalChatClient(innerClient, approvingHandler);
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            approvalClient,
-            "",
-            "");
+        var agent = CreateAgent(approvalClient);
 
         mcpFixture.CreateLibraryStructure("ApprovalTestApproved");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
@@ -107,11 +109,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
             rejectingHandler,
             whitelistPatterns: ["*:ListDirectories"]);
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            approvalClient,
-            "",
-            "");
+        var agent = CreateAgent(approvalClient);
 
         mcpFixture.CreateLibraryStructure("WhitelistTestMovies");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
@@ -145,11 +143,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
             approvingHandler,
             whitelistPatterns: ["*:ListDirectories"]);
 
-        var agent = new McpAgent(
-            [mcpFixture.McpEndpoint],
-            approvalClient,
-            "",
-            "");
+        var agent = CreateAgent(approvalClient);
 
         mcpFixture.CreateLibraryStructure("MixedTestSource");
         mcpFixture.CreateLibraryStructure("MixedTestDest");

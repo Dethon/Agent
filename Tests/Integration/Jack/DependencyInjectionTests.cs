@@ -53,8 +53,7 @@ public class DependencyInjectionTests
 
         // Remove existing registrations and add mocks
         var descriptorsToRemove = services
-            .Where(d => d.ServiceType == typeof(IConnectionMultiplexer) ||
-                        d.ServiceType == typeof(IThreadStateStore))
+            .Where(d => d.ServiceType == typeof(IConnectionMultiplexer))
             .ToList();
 
         foreach (var descriptor in descriptorsToRemove)
@@ -63,7 +62,6 @@ public class DependencyInjectionTests
         }
 
         services.AddSingleton(mockMultiplexer.Object);
-        services.AddSingleton(new Mock<IThreadStateStore>().Object);
     }
 
     [Fact]

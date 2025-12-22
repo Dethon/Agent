@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Extensions;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using StackExchange.Redis;
 
 namespace Infrastructure.Agents;
 
@@ -23,11 +25,17 @@ public sealed class McpAgent : DisposableAgent
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    public McpAgent(string[] endpoints, IChatClient chatClient, string name, string description)
+    public McpAgent(
+        string[] endpoints,
+        IChatClient chatClient,
+        string name,
+        string description,
+        IDatabase redisDb)
     {
         _endpoints = endpoints;
         _name = name;
         _description = description;
+        var redisDb1 = redisDb;
         _innerAgent = chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -36,9 +44,7 @@ public sealed class McpAgent : DisposableAgent
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
             },
             Description = description,
-            ChatMessageStoreFactory = ctx => ctx.SerializedState.ValueKind is JsonValueKind.Object
-                ? new ConcurrentChatMessageStore(ctx.SerializedState, ctx.JsonSerializerOptions)
-                : new ConcurrentChatMessageStore()
+            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(redisDb1, ctx)
         });
     }
 
@@ -83,7 +89,13 @@ public sealed class McpAgent : DisposableAgent
         JsonElement serializedThread,
         JsonSerializerOptions? jsonSerializerOptions = null)
     {
-        return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+        var json = new JsonObject
+        {
+            ["StoreState"] = JsonObject.Create(serializedThread)
+        };
+        var wrappedElement = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
+        return _innerAgent.DeserializeThread(wrappedElement, jsonSerializerOptions);
     }
 
     public override async Task<AgentRunResponse> RunAsync(

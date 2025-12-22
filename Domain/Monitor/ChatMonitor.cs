@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -51,8 +52,8 @@ public class ChatMonitor(
         AgentKey agentKey, IAsyncGrouping<AgentKey, ChatPrompt> group, [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.Create(agentKey);
-        var context = await threadResolver.ResolveAsync(agentKey, ct);
-        var thread = GetOrRestoreThread(agent, context);
+        var context = threadResolver.Resolve(agentKey);
+        var thread = GetOrRestoreThread(agent, agentKey);
 
         context.RegisterCompletionCallback(group.Complete);
 
@@ -80,16 +81,13 @@ public class ChatMonitor(
 
         await foreach (var aiResponse in aiResponses)
         {
-            await context.SaveThreadAsync(thread.Serialize(), linkedCt);
             yield return (agentKey, aiResponse);
         }
     }
 
-    private static AgentThread GetOrRestoreThread(DisposableAgent agent, ChatThreadContext context)
+    private static AgentThread GetOrRestoreThread(DisposableAgent agent, AgentKey agentKey)
     {
-        return context.PersistedThread is { } persisted
-            ? agent.DeserializeThread(persisted)
-            : agent.GetNewThread();
+        return agent.DeserializeThread(JsonSerializer.SerializeToElement(agentKey));
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

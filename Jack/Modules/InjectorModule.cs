@@ -25,6 +25,7 @@ public static class InjectorModule
         {
             var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
             return services
+                .AddRedis(settings.Redis)
                 .AddSingleton<IAgentFactory>(sp =>
                     new McpAgentFactory(
                         sp.GetRequiredService<IChatClient>(),
@@ -32,8 +33,8 @@ public static class InjectorModule
                         DownloaderPrompt.AgentName,
                         DownloaderPrompt.AgentDescription,
                         sp.GetRequiredService<IToolApprovalHandlerFactory>(),
+                        sp.GetRequiredService<IConnectionMultiplexer>(),
                         settings.WhitelistPatterns))
-                .AddRedis(settings.Redis)
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);
         }
