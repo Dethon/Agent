@@ -1,13 +1,13 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Domain.Agents;
+using Domain.Contracts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using StackExchange.Redis;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessageStore
+public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatMessageStore
 {
     private static readonly TimeSpan _expiry = TimeSpan.FromDays(30);
 
@@ -19,8 +19,8 @@ public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessag
         return $"thread:{key.ChatId}:{key.ThreadId}";
     }
 
-    public static RedisChatMessageStore Create(
-        IDatabase db, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
+    public static async Task<RedisChatMessageStore> CreateAsync(
+        IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
         var state = ctx.SerializedState.ValueKind == JsonValueKind.Undefined
             ? null
@@ -30,9 +30,9 @@ public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessag
             ? Guid.NewGuid().ToString()
             : GetRedisKey(state.Value);
 
-        var store = new RedisChatMessageStore(db, agentKey);
-        store.LoadFromRedis();
-        return store;
+        var chatStore = new RedisChatMessageStore(store, agentKey);
+        await chatStore.LoadFromStoreAsync();
+        return chatStore;
     }
 
     public override Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
@@ -50,7 +50,7 @@ public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessag
         try
         {
             _messages = _messages.AddRange(messages);
-            await PersistToRedisAsync();
+            await PersistToStoreAsync();
         }
         finally
         {
@@ -63,17 +63,17 @@ public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessag
         return JsonSerializer.SerializeToElement(key, jsonSerializerOptions);
     }
 
-    private void LoadFromRedis()
+    private async Task LoadFromStoreAsync()
     {
-        var value = db.StringGet(key);
-        if (!value.HasValue)
+        var value = await store.GetMessagesAsync(key);
+        if (value is null)
         {
             return;
         }
 
         try
         {
-            var state = JsonSerializer.Deserialize<StoreState>(value.ToString());
+            var state = JsonSerializer.Deserialize<StoreState>(value);
             if (state?.Messages is { } messages)
             {
                 _messages = [.. messages];
@@ -85,11 +85,11 @@ public sealed class RedisChatMessageStore(IDatabase db, string key) : ChatMessag
         }
     }
 
-    private async Task PersistToRedisAsync()
+    private async Task PersistToStoreAsync()
     {
         var state = new StoreState { Messages = [.. _messages] };
         var json = JsonSerializer.Serialize(state);
-        await db.StringSetAsync(key, json, _expiry);
+        await store.SetMessagesAsync(key, json, _expiry);
     }
 
     private sealed class StoreState
