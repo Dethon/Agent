@@ -22,17 +22,30 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
     public static async Task<RedisChatMessageStore> CreateAsync(
         IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
-        var state = ctx.SerializedState.ValueKind == JsonValueKind.Undefined
-            ? null
-            : ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
-
-        var agentKey = state is null
-            ? Guid.NewGuid().ToString()
-            : GetRedisKey(state.Value);
-
-        var chatStore = new RedisChatMessageStore(store, agentKey);
+        var redisKey = ResolveRedisKey(ctx);
+        var chatStore = new RedisChatMessageStore(store, redisKey);
         await chatStore.LoadFromStoreAsync();
         return chatStore;
+    }
+
+    private static string ResolveRedisKey(ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
+    {
+        if (ctx.SerializedState.ValueKind == JsonValueKind.Undefined)
+        {
+            return Guid.NewGuid().ToString();
+        }
+
+        // Try to deserialize as string first (from serialized thread state)
+        if (ctx.SerializedState.ValueKind == JsonValueKind.String)
+        {
+            return ctx.SerializedState.GetString() ?? Guid.NewGuid().ToString();
+        }
+
+        // Try to deserialize as AgentKey (from ChatMonitor initial creation)
+        var agentKey = ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
+        return agentKey is null
+            ? Guid.NewGuid().ToString()
+            : GetRedisKey(agentKey.Value);
     }
 
     public override Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)

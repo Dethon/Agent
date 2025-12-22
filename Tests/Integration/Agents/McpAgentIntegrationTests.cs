@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Domain.Agents;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -181,5 +183,98 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         Directory.Exists(downloadSubDir).ShouldBeFalse();
 
         await agent.DisposeAsync();
+    }
+
+    [SkippableFact]
+    public async Task Agent_ThreadSerialization_CanSerializeAndDeserializeThread()
+    {
+        // Arrange
+        var llmClient = CreateLlmClient();
+        var agent = CreateAgent(llmClient);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        // Act - First interaction to create a thread with state
+        var thread = agent.GetNewThread();
+        var responses1 = await agent.RunStreamingAsync(
+                "Remember: my favorite color is blue.",
+                thread,
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+
+        // Serialize the thread
+        var serialized = thread.Serialize();
+        var serializedJson = serialized.GetRawText();
+
+        // Deserialize into a new thread
+        var deserializedThread = agent.DeserializeThread(serialized);
+
+        // Continue conversation with deserialized thread
+        var responses2 = await agent.RunStreamingAsync(
+                "What is my favorite color?",
+                deserializedThread,
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+
+        // Assert
+        responses1.ShouldNotBeEmpty();
+        responses2.ShouldNotBeEmpty();
+        serializedJson.ShouldNotBeNullOrEmpty();
+
+        await agent.DisposeAsync();
+    }
+
+    [SkippableFact]
+    public async Task Agent_ThreadSerialization_WithAgentKey_CanRestoreThread()
+    {
+        // Arrange
+        var llmClient = CreateLlmClient();
+        var agent = CreateAgent(llmClient);
+        var agentKey = new AgentKey(12345, 67890);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        // Act - Create thread from AgentKey (simulating how ChatMonitor works)
+        var agentKeyJson = JsonSerializer.SerializeToElement(agentKey);
+        var thread = agent.DeserializeThread(agentKeyJson);
+
+        // First interaction
+        var responses1 = await agent.RunStreamingAsync(
+                "Remember: my name is TestUser.",
+                thread,
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+
+        // Create a new agent instance (simulating agent restart)
+        await agent.DisposeAsync();
+        var agent2 = CreateAgent(llmClient);
+
+        // Restore thread from same AgentKey
+        var thread2 = agent2.DeserializeThread(agentKeyJson);
+
+        // Continue conversation
+        var responses2 = await agent2.RunStreamingAsync(
+                "What is my name?",
+                thread2,
+                cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+
+        // Assert
+        responses1.ShouldNotBeEmpty();
+        responses2.ShouldNotBeEmpty();
+
+        await agent2.DisposeAsync();
     }
 }
