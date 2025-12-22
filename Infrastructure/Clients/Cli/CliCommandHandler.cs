@@ -6,7 +6,7 @@ internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action
                                     Available commands:
                                       /help, /?     - Show this help
                                       /cancel       - Cancel current operation (keeps conversation history)
-                                      /clear, /cls  - Clear conversation and wipe thread history
+                                      /clear        - Clear conversation and wipe thread history
                                       Ctrl+C twice  - Exit application
                                     """;
 
@@ -19,7 +19,6 @@ internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action
                 return true;
 
             case "/clear":
-            case "/cls":
                 onReset(true);
                 terminalAdapter.ClearDisplay();
                 return true;
