@@ -29,7 +29,7 @@ public class RedisChatMessageStoreTests
         await RedisChatMessageStore.CreateAsync(mockStore.Object, ctx);
 
         // Assert
-        mockStore.Verify(s => s.GetMessagesAsync("thread:123:456"), Times.Once);
+        mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
     }
 
     [Fact]
@@ -77,45 +77,43 @@ public class RedisChatMessageStoreTests
         // Act
         var serialized = store.Serialize();
 
-        // Assert - The serialized value is a string (the redis key), not an AgentKey
+        // Assert - The serialized value is a string (the redis key)
         serialized.ValueKind.ShouldBe(JsonValueKind.String);
-        serialized.GetString().ShouldBe("thread:123:456");
+        serialized.GetString().ShouldBe(agentKey.ToString());
     }
 
     [Fact]
     public async Task CreateAsync_WithSerializedStringKey_UsesStringKeyDirectly()
     {
         // Arrange - This tests what happens when we restore from a serialized thread
-        // The serialized state will be a string like "thread:123:456"
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
 
-        // Simulate what happens when the serialized store state (a string) is passed back
-        const string stringKey = "thread:123:456";
-        var serializedState = JsonSerializer.SerializeToElement(stringKey);
+        var agentKey = new AgentKey(123, 456);
+        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
         var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
         {
             SerializedState = serializedState,
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        // Act - Should use the string key directly
+        // Act
         await RedisChatMessageStore.CreateAsync(mockStore.Object, ctx);
 
         // Assert - The string key should be used directly
-        mockStore.Verify(s => s.GetMessagesAsync("thread:123:456"), Times.Once);
+        mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
     }
 
     [Fact]
-    public void GetRedisKey_ReturnsCorrectFormat()
+    public void AgentKey_ToString_ReturnsCorrectFormat()
     {
         // Arrange
         var agentKey = new AgentKey(999, 888);
 
         // Act
-        var redisKey = RedisChatMessageStore.GetRedisKey(agentKey);
+        var key = agentKey.ToString();
 
         // Assert
-        redisKey.ShouldBe("thread:999:888");
+        key.ShouldBe("thread:999:888");
     }
 }

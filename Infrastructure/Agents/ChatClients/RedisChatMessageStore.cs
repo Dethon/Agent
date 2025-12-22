@@ -14,11 +14,6 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ImmutableList<ChatMessage> _messages = [];
 
-    public static string GetRedisKey(AgentKey key)
-    {
-        return $"thread:{key.ChatId}:{key.ThreadId}";
-    }
-
     public static async Task<RedisChatMessageStore> CreateAsync(
         IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
@@ -43,9 +38,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
 
         // Try to deserialize as AgentKey (from ChatMonitor initial creation)
         var agentKey = ctx.SerializedState.Deserialize<AgentKey?>(ctx.JsonSerializerOptions);
-        return agentKey is null
-            ? Guid.NewGuid().ToString()
-            : GetRedisKey(agentKey.Value);
+        return agentKey?.ToString() ?? Guid.NewGuid().ToString();
     }
 
     public override Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)

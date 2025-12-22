@@ -1,6 +1,5 @@
 using Domain.Agents;
 using Domain.Contracts;
-using Infrastructure.Agents.ChatClients;
 using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
@@ -10,7 +9,7 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis) : IThrea
     public async Task DeleteAsync(AgentKey key)
     {
         var db = redis.GetDatabase();
-        await db.KeyDeleteAsync(GetKey(key));
+        await db.KeyDeleteAsync(key.ToString());
     }
 
     public async Task<string?> GetMessagesAsync(string key)
@@ -24,10 +23,5 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis) : IThrea
     {
         var db = redis.GetDatabase();
         await db.StringSetAsync(key, json, expiry);
-    }
-
-    private static string GetKey(AgentKey agentKey)
-    {
-        return RedisChatMessageStore.GetRedisKey(agentKey);
     }
 }
