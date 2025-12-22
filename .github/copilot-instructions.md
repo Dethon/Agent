@@ -63,6 +63,53 @@ Dependencies flow inward: `Jack` → `Infrastructure` → `Domain`
 - Follow patterns in existing `McpServer*` projects
 - Tool definitions should have clear descriptions and parameters
 
+## Key Patterns & Components
+
+### Message Streaming Pipeline
+
+The `ChatMonitor` uses a streaming pipeline to handle concurrent conversations:
+
+1. **GroupByStreaming** - Groups incoming prompts by chat thread (AgentKey)
+2. **Merge** - Combines multiple async streams into a single output stream
+3. Each thread gets its own agent instance and cancellation context
+
+```
+Prompts → GroupByStreaming(AgentKey) → ProcessChatThread → Merge → SendResponse
+```
+
+### MCP Resource Subscriptions
+
+The system supports real-time resource updates from MCP servers:
+
+- **SubscriptionTracker** (McpServerLibrary) - Tracks which clients are subscribed to which resources
+- **McpSubscriptionManager** (Infrastructure) - Client-side subscription lifecycle management
+- **ResourceUpdateProcessor** - Processes resource updates and feeds them back to the agent
+
+Flow: MCP Server emits `notifications/resources/updated` → Client receives → Agent processes update
+
+### Tool Approval System
+
+Tool execution requires user approval through the `IToolApprovalHandler` interface:
+
+- **ToolApprovalChatClient** - Wraps the chat client to intercept tool calls
+- **TelegramToolApprovalHandler** - Shows inline keyboard for approve/reject in Telegram
+- **CliToolApprovalHandler** - Shows modal dialog in CLI interface
+
+Approval results:
+- `Approved` - Execute once
+- `ApprovedAndRemember` - Auto-approve this tool for the session
+- `Rejected` - Block execution
+- `AutoApproved` - Matched whitelist pattern
+
+### CLI Interface Components
+
+Located in `Infrastructure/Clients/Cli/`:
+
+- **CliChatMessengerClient** - `IChatMessengerClient` implementation for terminal
+- **CliChatMessageRouter** - Routes messages between UI and agent
+- **CliToolApprovalHandler** - Terminal-based approval dialogs
+- **TerminalGuiAdapter** - Terminal.Gui wrapper for the TUI
+
 ---
 
 ## 🔥 CRITICAL: Use Subagents for Specialized Tasks

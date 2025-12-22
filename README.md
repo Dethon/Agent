@@ -5,17 +5,21 @@ Context Protocol (MCP).
 
 ## Features
 
-- **Telegram Integration** - Chat-based interface for natural language media management
+- **Dual Interface** - Chat via Telegram bot or local CLI terminal
+- **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
+- **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers for extensibility
+- **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
 - **Docker Compose Stack** - Full media server setup with Plex, qBittorrent, Jackett, and FileBrowser
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│   Telegram Bot  │────▶│      Jack       │
-└─────────────────┘     │   (AI Agent)    │
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Telegram Bot  │────▶│                 │◀────│   CLI Terminal  │
+└─────────────────┘     │      Jack       │     └─────────────────┘
+                        │   (AI Agent)    │
                         └────────┬────────┘
                                  │
                ┌─────────────────┴─────────────────┐
@@ -37,7 +41,7 @@ Context Protocol (MCP).
 
 | Server                | Tools                                                   | Purpose                                             |
 |-----------------------|---------------------------------------------------------|-----------------------------------------------------|
-| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownloadTask, CleanupDownloadDirectory, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
+| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
 | **mcp-commandrunner** | RunCommand, GetCliPlatform                              | Execute system commands (Not included in Docker Compose) |
 
 ## Projects
@@ -111,8 +115,45 @@ docker compose up -d
 
 ## Usage
 
-1. Start a group chat with with threads with your Telegram bot
-2. Bot commands should stat with /
+### CLI Interface
+
+Run Jack with the CLI interface for local terminal interaction:
+
+```bash
+dotnet run --project Jack -- --chat Cli
+```
+
+### Telegram Interface (Default)
+
+```bash
+dotnet run --project Jack -- --chat Telegram
+```
+
+Or simply:
+
+```bash
+dotnet run --project Jack
+```
+
+### Tool Approval
+
+When the agent wants to execute a tool:
+- **Approve** - Allow the tool to run once
+- **Always** - Auto-approve this tool for the session
+- **Reject** - Block the tool execution
+
+Configure permanent auto-approvals in `appsettings.json` using glob patterns:
+
+```json
+{
+  "whitelistPatterns": [
+    "mcp:mcp-library:*",
+    "mcp:localhost:*"
+  ]
+}
+```
+
+Pattern format: `mcp:<server>:<tool>` with `*` wildcard support.
 
 ## License
 
