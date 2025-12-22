@@ -58,8 +58,7 @@ public static class InjectorModule
         private IServiceCollection AddRedis(RedisConfiguration config)
         {
             return services
-                .AddSingleton<IConnectionMultiplexer>(_ =>
-                    ConnectionMultiplexer.Connect(config.ConnectionString))
+                .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore, RedisThreadStateStore>();
         }
 

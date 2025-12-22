@@ -65,6 +65,7 @@ public static class ConfigModule
             .WithTools<McpGetDownloadStatusTool>()
             .WithTools<McpCleanupDownloadTool>()
             .WithTools<McpContentRecommendationTool>()
+            .WithTools<McpResubscribeDownloadsTool>()
             // Organize tools
             .WithTools<McpListDirectoriesTool>()
             .WithTools<McpListFilesTool>()
