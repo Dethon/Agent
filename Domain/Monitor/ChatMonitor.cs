@@ -68,10 +68,10 @@ public class ChatMonitor(
                 switch (command)
                 {
                     case ChatCommand.Clear:
-                        await threadResolver.CleanAsync(agentKey);
+                        await threadResolver.ClearAsync(agentKey);
                         return AsyncEnumerable.Empty<AiResponse>();
                     case ChatCommand.Cancel:
-                        context.Cancel();
+                        threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<AiResponse>();
                     default:
                         return agent

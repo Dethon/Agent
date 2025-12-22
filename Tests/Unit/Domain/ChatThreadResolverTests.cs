@@ -78,7 +78,7 @@ public class ChatThreadResolverTests
         var context = resolver.Resolve(key);
 
         // Act
-        await resolver.CleanAsync(key);
+        await resolver.ClearAsync(key);
 
         // Assert
         resolver.AgentKeys.ShouldNotContain(key);
@@ -93,7 +93,7 @@ public class ChatThreadResolverTests
         var key = new AgentKey(999, 999);
 
         // Act & Assert
-        await Should.NotThrowAsync(() => resolver.CleanAsync(key));
+        await Should.NotThrowAsync(() => resolver.ClearAsync(key));
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class ChatThreadResolverTests
         var resolver = new ChatThreadResolver();
         var key = new AgentKey(1, 1);
         var firstContext = resolver.Resolve(key);
-        await resolver.CleanAsync(key);
+        await resolver.ClearAsync(key);
 
         // Act
         var secondContext = resolver.Resolve(key);

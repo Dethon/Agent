@@ -27,7 +27,20 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
         }
     }
 
-    public async Task CleanAsync(AgentKey key)
+    public void Cancel(AgentKey key)
+    {
+        if (_isDisposed != 0)
+        {
+            return;
+        }
+
+        if (_contexts.Remove(key, out var context))
+        {
+            context.Dispose();
+        }
+    }
+
+    public async Task ClearAsync(AgentKey key)
     {
         if (_isDisposed != 0)
         {
