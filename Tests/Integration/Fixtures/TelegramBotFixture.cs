@@ -86,7 +86,10 @@ public class TelegramBotFixture : IAsyncLifetime
     {
         // For simplicity, just return the first batch of updates once, then empty
         // The test should break out after getting the expected prompts
-        if (updatesSequence.Length == 0) return;
+        if (updatesSequence.Length == 0)
+        {
+            return;
+        }
 
         // Return the first batch, then empty arrays for subsequent calls
         var firstBatch = updatesSequence[0];
