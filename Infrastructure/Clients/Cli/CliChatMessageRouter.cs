@@ -5,9 +5,8 @@ namespace Infrastructure.Clients.Cli;
 
 internal sealed class CliChatMessageRouter : IDisposable
 {
-    private const long DefaultChatId = 1;
-    private const int DefaultThreadId = 1;
-
+    private readonly long _chatId;
+    private readonly int _threadId;
     private readonly string _agentName;
     private readonly string _userName;
     private readonly ITerminalAdapter _terminalAdapter;
@@ -21,11 +20,15 @@ internal sealed class CliChatMessageRouter : IDisposable
     public CliChatMessageRouter(
         string agentName,
         string userName,
-        ITerminalAdapter terminalAdapter)
+        ITerminalAdapter terminalAdapter,
+        long chatId,
+        int threadId)
     {
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
+        _chatId = chatId;
+        _threadId = threadId;
         _commandHandler = new CliCommandHandler(terminalAdapter, ResetInputQueue);
 
         _terminalAdapter.InputReceived += OnInputReceived;
@@ -80,10 +83,10 @@ internal sealed class CliChatMessageRouter : IDisposable
             yield return new ChatPrompt
             {
                 Prompt = input,
-                ChatId = DefaultChatId,
+                ChatId = _chatId,
                 MessageId = Interlocked.Increment(ref _messageCounter),
                 Sender = _userName,
-                ThreadId = DefaultThreadId
+                ThreadId = _threadId
             };
         }
     }

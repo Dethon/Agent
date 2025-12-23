@@ -184,7 +184,7 @@ services:
     env_file:
       - .env
     environment:
-      - NAME=jack
+      - NAME=Jack
       - MCPSERVERS__0__ENDPOINT=http://mcp-library:8080/sse
       - WHITELISTPATTERNS__0=mcp:mcp-library:*
       - TELEGRAM__BOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
@@ -208,7 +208,7 @@ services:
     env_file:
       - .env
     environment:
-      - NAME=jonas
+      - NAME=Jonas
       - MCPSERVERS__0__ENDPOINT=http://mcp-text:8080/sse
       - WHITELISTPATTERNS__0=mcp:mcp-text:*
       - TELEGRAM__BOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}

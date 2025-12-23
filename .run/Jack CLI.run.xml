@@ -6,8 +6,9 @@
         <option name="PASS_PARENT_ENVS" value="1"/>
         <envs>
             <env name="MCPSERVERS__0__ENDPOINT" value="http://localhost:6001/sse"/>
-            <env name="WHITELISTPATTERNS__0" value="mcp:mcp-library:*"/>
             <env name="REDIS__CONNECTIONSTRING" value="localhost:6379"/>
+            <env name="WHITELISTPATTERNS__0" value="mcp:mcp-library:*"/>
+            <env name="NAME" value="Jack"/>
         </envs>
         <option name="ENV_FILE_PATHS" value=""/>
         <option name="REDIRECT_INPUT_PATH" value=""/>

@@ -1,4 +1,6 @@
+using System.IO.Hashing;
 using System.Runtime.CompilerServices;
+using System.Text;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -8,9 +10,8 @@ namespace Infrastructure.Clients;
 
 public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {
-    private const long DefaultChatId = 1;
-    private const int DefaultThreadId = 1;
-
+    private readonly long _chatId;
+    private readonly int _threadId;
     private readonly string _agentName;
     private readonly string _userName;
     private readonly CliChatMessageRouter _router;
@@ -29,7 +30,8 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _userName = userName;
         _terminalAdapter = terminalAdapter;
         _threadStateStore = threadStateStore;
-        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter);
+        (_chatId, _threadId) = DeriveIdsFromAgentName(agentName);
+        _router = new CliChatMessageRouter(agentName, userName, terminalAdapter, _chatId, _threadId);
 
         if (onShutdownRequested is not null)
         {
@@ -58,7 +60,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     public Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
     {
         _router.CreateThread(name);
-        return Task.FromResult(DefaultThreadId);
+        return Task.FromResult(_threadId);
     }
 
     public Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken)
@@ -82,7 +84,7 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
         _historyRestored = true;
 
-        var agentKey = new AgentKey(DefaultChatId, DefaultThreadId);
+        var agentKey = new AgentKey(_chatId, _threadId);
         var history = _threadStateStore.GetMessages(agentKey.ToString());
         if (history is not { Length: > 0 })
         {
@@ -90,10 +92,20 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         }
 
         var lines = ChatHistoryMapper.MapToDisplayLines(history, _agentName, _userName).ToArray();
-        if (lines.Length > 0)
+        if (lines.Length == 0)
         {
-            _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
-            _terminalAdapter.DisplayMessage(lines);
+            return;
         }
+
+        _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
+        _terminalAdapter.DisplayMessage(lines);
+    }
+
+    private static (long ChatId, int ThreadId) DeriveIdsFromAgentName(string agentName)
+    {
+        var bytes = Encoding.UTF8.GetBytes(agentName.ToLowerInvariant());
+        var hash = XxHash32.HashToUInt32(bytes);
+        var threadId = (int)(hash & 0x7FFFFFFF);
+        return (hash, threadId);
     }
 }
