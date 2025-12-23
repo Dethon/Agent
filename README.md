@@ -6,8 +6,10 @@ Context Protocol (MCP).
 ## Features
 
 - **Dual Interface** - Chat via Telegram bot or local CLI terminal
+- **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
+- **Download Resubscription** - Resume tracking in-progress downloads after restart
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
@@ -22,12 +24,12 @@ Context Protocol (MCP).
                         │   (AI Agent)    │
                         └────────┬────────┘
                                  │
-               ┌─────────────────┴─────────────────┐
-               ▼                                   ▼
-      ┌────────────────┐                  ┌────────────────┐
-      │  MCP Library   │                  │ MCP CommandRun │
-      │    Server      │                  │    Server      │
-      └───────┬────────┘                  └────────────────┘
+               ┌─────────────────┼─────────────────┐
+               ▼                 ▼                 ▼
+      ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+      │  MCP Library   │ │ MCP CommandRun │ │     Redis      │
+      │    Server      │ │    Server      │ │  (Persistence) │
+      └───────┬────────┘ └────────────────┘ └────────────────┘
               │
       ┌───────┴───────┐
       │  qBittorrent  │
@@ -41,7 +43,7 @@ Context Protocol (MCP).
 
 | Server                | Tools                                                   | Purpose                                             |
 |-----------------------|---------------------------------------------------------|-----------------------------------------------------|
-| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
+| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
 | **mcp-commandrunner** | RunCommand, GetCliPlatform                              | Execute system commands (Not included in Docker Compose) |
 
 ## Projects
@@ -105,13 +107,14 @@ docker compose up -d
 
 ## Services & Ports
 
-| Service      | Port  | Description           |
-|--------------|-------|-----------------------|
-| qBittorrent  | 8001  | Torrent client WebUI  |
-| FileBrowser  | 8002  | File management WebUI |
-| Jackett      | 8003  | Torrent indexer proxy |
-| Plex         | 32400 | Media server          |
-| MCP Library  | 6001  | Library MCP server    |
+| Service      | Port  | Description                    |
+|--------------|-------|--------------------------------|
+| Redis        | 6379  | Conversation state persistence |
+| qBittorrent  | 8001  | Torrent client WebUI           |
+| FileBrowser  | 8002  | File management WebUI          |
+| Jackett      | 8003  | Torrent indexer proxy          |
+| Plex         | 32400 | Media server                   |
+| MCP Library  | 6001  | Library MCP server             |
 
 ## Usage
 
@@ -154,6 +157,24 @@ Configure permanent auto-approvals in `appsettings.json` using glob patterns:
 ```
 
 Pattern format: `mcp:<server>:<tool>` with `*` wildcard support.
+
+### Chat Commands
+
+| Command   | Description                                           |
+|-----------|-------------------------------------------------------|
+| `/cancel` | Cancel current operation (keeps conversation history) |
+| `/clear`  | Clear conversation and wipe thread history from Redis |
+| `/help`   | Show available commands (CLI only)                    |
+
+## Persistence
+
+Jack uses Redis to persist conversation history across restarts:
+
+- **Chat History** - All messages are stored with a 30-day expiry
+- **Thread State** - Each chat thread is identified by `agent-key:{chatId}:{threadId}`
+- **Download Tracking** - Use `ResubscribeDownloads` tool to resume tracking downloads after restart
+
+The CLI interface automatically restores previous conversation on startup.
 
 ## License
 

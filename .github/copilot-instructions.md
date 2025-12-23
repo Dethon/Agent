@@ -11,6 +11,7 @@ This repository contains **Jack**, an AI-powered agent that manages a personal m
 - **OpenRouter LLMs** - AI model provider (Gemini, GPT-4, etc.)
 - **Microsoft.Extensions.AI** - LLM abstraction layer
 - **Microsoft.Agents.AI** - Agent framework
+- **Redis** - Conversation state persistence
 - **Docker Compose** - Deployment stack
 
 ## Project Structure
@@ -87,6 +88,28 @@ The system supports real-time resource updates from MCP servers:
 
 Flow: MCP Server emits `notifications/resources/updated` → Client receives → Agent processes update
 
+### Conversation Persistence
+
+Chat history is persisted to Redis, enabling conversations to survive application restarts:
+
+- **IThreadStateStore** (Domain) - Interface for thread state persistence
+- **RedisThreadStateStore** (Infrastructure) - Redis implementation using StackExchange.Redis
+- **RedisChatMessageStore** (Infrastructure) - `ChatMessageStore` implementation that persists to Redis
+- **ChatHistoryMapper** (Infrastructure) - Maps stored messages to CLI display format
+
+Key format: `agent-key:{chatId}:{threadId}` with 30-day expiry.
+
+Flow: Agent message → RedisChatMessageStore.AddMessagesAsync → Redis SET with expiry
+
+### Chat Commands
+
+The `ChatCommandParser` handles user commands in `ChatMonitor`:
+
+| Command | Action |
+|---------|--------|
+| `/cancel` | Cancels current operation, keeps conversation history |
+| `/clear` | Clears conversation and deletes persisted state from Redis |
+
 ### Tool Approval System
 
 Tool execution requires user approval through the `IToolApprovalHandler` interface:
@@ -105,9 +128,11 @@ Approval results:
 
 Located in `Infrastructure/Clients/Cli/`:
 
-- **CliChatMessengerClient** - `IChatMessengerClient` implementation for terminal
+- **CliChatMessengerClient** - `IChatMessengerClient` implementation for terminal, restores history on startup
 - **CliChatMessageRouter** - Routes messages between UI and agent
 - **CliToolApprovalHandler** - Terminal-based approval dialogs
+- **CliCommandHandler** - Handles `/cancel`, `/clear`, `/help` commands
+- **ChatHistoryMapper** - Maps persisted chat messages to display format
 - **TerminalGuiAdapter** - Terminal.Gui wrapper for the TUI
 
 ---
@@ -169,6 +194,7 @@ For complex tasks, use multiple subagents in sequence:
 - Unit tests go in `Tests/` project
 - Follow existing test patterns and naming conventions
 - Agent behaviors should be testable
+- Integration tests requiring Redis use `RedisFixture` for container management
 
 ## Documentation & Comments
 
