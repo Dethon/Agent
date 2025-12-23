@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerLibrary", "McpServ
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerCommandRunner", "McpServerCommandRunner\McpServerCommandRunner.csproj", "{B5966AD0-2CE8-4D27-94AD-A16992A2651F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerTextTools", "McpServerTextTools\McpServerTextTools.csproj", "{6F5FD9DA-D77F-4980-8336-91C76FA64519}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +46,10 @@ Global
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B5966AD0-2CE8-4D27-94AD-A16992A2651F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F5FD9DA-D77F-4980-8336-91C76FA64519}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F5FD9DA-D77F-4980-8336-91C76FA64519}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F5FD9DA-D77F-4980-8336-91C76FA64519}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F5FD9DA-D77F-4980-8336-91C76FA64519}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(RiderSharedRunConfigurations) = postSolution
 		File = .run-agent\Agent.run.xml
