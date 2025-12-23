@@ -73,11 +73,13 @@ public static class InjectorModule
                 .AddSingleton<IChatMessengerClient>(sp =>
                 {
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+                    var threadStateStore = sp.GetRequiredService<IThreadStateStore>();
                     return new CliChatMessengerClient(
                         "Jack",
                         Environment.UserName,
                         terminalAdapter,
-                        lifetime.StopApplication);
+                        lifetime.StopApplication,
+                        threadStateStore);
                 });
         }
 

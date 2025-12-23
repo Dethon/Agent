@@ -1,29 +1,34 @@
+using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Clients.Cli;
-using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Clients;
 
 public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {
+    private const long DefaultChatId = 1;
     private const int DefaultThreadId = 1;
 
     private readonly string _agentName;
     private readonly string _userName;
     private readonly CliChatMessageRouter _router;
     private readonly ITerminalAdapter _terminalAdapter;
+    private readonly IThreadStateStore? _threadStateStore;
+    private bool _historyRestored;
 
     public CliChatMessengerClient(
         string agentName,
         string userName,
         ITerminalAdapter terminalAdapter,
-        Action? onShutdownRequested = null)
+        Action? onShutdownRequested = null,
+        IThreadStateStore? threadStateStore = null)
     {
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
+        _threadStateStore = threadStateStore;
         _router = new CliChatMessageRouter(agentName, userName, terminalAdapter);
 
         if (onShutdownRequested is not null)
@@ -32,9 +37,15 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         }
     }
 
-    public IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
+        int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        return _router.ReadPrompts(cancellationToken).ToAsyncEnumerable();
+        await RestoreHistoryOnceAsync();
+
+        await foreach (var prompt in _router.ReadPrompts(cancellationToken).ToAsyncEnumerable())
+        {
+            yield return prompt;
+        }
     }
 
     public Task SendResponse(
@@ -55,22 +66,34 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         return Task.FromResult(true);
     }
 
-    public void OnHistoryRestored(AgentKey key, IReadOnlyList<ChatMessage> messages)
-    {
-        var lines = ChatHistoryMapper.MapToDisplayLines(messages, _agentName, _userName).ToArray();
-        if (lines.Length <= 0)
-        {
-            return;
-        }
-
-        _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
-        _terminalAdapter.DisplayMessage(lines);
-    }
-
     public void Dispose()
     {
         _router.Dispose();
         _terminalAdapter.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private async Task RestoreHistoryOnceAsync()
+    {
+        if (_historyRestored || _threadStateStore is null)
+        {
+            return;
+        }
+
+        _historyRestored = true;
+
+        var agentKey = new AgentKey(DefaultChatId, DefaultThreadId);
+        var history = await _threadStateStore.GetChatHistoryAsync(agentKey);
+        if (history is not { Count: > 0 })
+        {
+            return;
+        }
+
+        var lines = ChatHistoryMapper.MapToDisplayLines(history, _agentName, _userName).ToArray();
+        if (lines.Length > 0)
+        {
+            _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
+            _terminalAdapter.DisplayMessage(lines);
+        }
     }
 }

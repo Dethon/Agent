@@ -1,6 +1,4 @@
-﻿using Domain.Agents;
-using Domain.DTOs;
-using Microsoft.Extensions.AI;
+﻿using Domain.DTOs;
 
 namespace Domain.Contracts;
 
@@ -13,6 +11,4 @@ public interface IChatMessengerClient
 
     Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken);
     Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken);
-
-    void OnHistoryRestored(AgentKey key, IReadOnlyList<ChatMessage> messages);
 }
