@@ -20,14 +20,14 @@ Context Protocol (MCP).
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Telegram Bot  │────▶│                 │◀────│   CLI Terminal  │
-└─────────────────┘     │      Jack       │     └─────────────────┘
-                        │   (AI Agent)    │
+└─────────────────┘     │   Jack/Jonas    │     └─────────────────┘
+                        │   (AI Agents)   │
                         └────────┬────────┘
                                  │
                ┌─────────────────┼─────────────────┐
                ▼                 ▼                 ▼
       ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
-      │  MCP Library   │ │ MCP CommandRun │ │     Redis      │
+      │  MCP Library   │ │ MCP TextTools  │ │     Redis      │
       │    Server      │ │    Server      │ │  (Persistence) │
       └───────┬────────┘ └────────────────┘ └────────────────┘
               │
@@ -44,7 +44,15 @@ Context Protocol (MCP).
 | Server                | Tools                                                   | Purpose                                             |
 |-----------------------|---------------------------------------------------------|-----------------------------------------------------|
 | **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
+| **mcp-text**          | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate | Manage a knowledge vault of markdown notes and text files |
 | **mcp-commandrunner** | RunCommand, GetCliPlatform                              | Execute system commands (Not included in Docker Compose) |
+
+### Agents
+
+| Agent   | MCP Server  | Purpose                                              |
+|---------|-------------|------------------------------------------------------|
+| **Jack** | mcp-library | Media acquisition and library management ("Captain Jack" pirate persona) |
+| **Jonas** | mcp-text | Knowledge base management ("Scribe" persona for managing markdown vaults) |
 
 ## Projects
 
@@ -54,6 +62,7 @@ Context Protocol (MCP).
 | `Domain`                 | Core domain logic, agent contracts, and services     |
 | `Infrastructure`         | External service clients (Telegram, MCP, OpenRouter) |
 | `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
+| `McpServerText`          | MCP server for text/markdown file inspection and editing |
 | `McpServerCommandRunner` | MCP server for CLI command execution                 |
 | `DockerCompose`          | Docker Compose configuration for the full stack      |
 | `Tests`                  | Unit and integration tests                           |
@@ -86,12 +95,14 @@ cd DockerCompose
 Required variables:
 
 ```env
-JACK_REPOSITORY_PATH=..
+REPOSITORY_PATH=..
 DATA_PATH=./volumes/data
+VAULT_PATH=./volumes/vault
 PUID=1000
 PGID=1000
 OPENROUTER__APIKEY=your_openrouter_api_key
-TELEGRAM__BOTTOKEN=your_telegram_bot_token
+JONAS__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jonas
+JACK__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jack
 TELEGRAM__ALLOWEDUSERNAMES__0=your_telegram_username
 JACKETT__APIKEY=your_jackett_api_key
 QBITTORRENT__USERNAME=admin
@@ -107,14 +118,15 @@ docker compose up -d
 
 ## Services & Ports
 
-| Service      | Port  | Description                    |
-|--------------|-------|--------------------------------|
-| Redis        | 6379  | Conversation state persistence |
-| qBittorrent  | 8001  | Torrent client WebUI           |
-| FileBrowser  | 8002  | File management WebUI          |
-| Jackett      | 8003  | Torrent indexer proxy          |
-| Plex         | 32400 | Media server                   |
-| MCP Library  | 6001  | Library MCP server             |
+| Service        | Port  | Description                    |
+|----------------|-------|--------------------------------|
+| Redis          | 6379  | Conversation state persistence |
+| qBittorrent    | 8001  | Torrent client WebUI           |
+| FileBrowser    | 8002  | File management WebUI          |
+| Jackett        | 8003  | Torrent indexer proxy          |
+| Plex           | 32400 | Media server                   |
+| MCP Library    | 6001  | Library MCP server             |
+| MCP Text Tools | 6002  | Text/Markdown MCP server       |
 
 ## Usage
 

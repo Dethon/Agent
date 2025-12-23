@@ -22,6 +22,7 @@ This repository contains **Jack**, an AI-powered agent that manages a personal m
 | `Domain` | Domain | Pure business logic, contracts, DTOs, exceptions |
 | `Infrastructure` | Infrastructure | External service clients, agent implementations |
 | `McpServerLibrary` | Module | MCP server for torrent search, downloads, file organization |
+| `McpServerText` | Module | MCP server for text/markdown file inspection and editing |
 | `McpServerCommandRunner` | Module | MCP server for CLI command execution |
 | `Tests` | Testing | Unit and integration tests |
 | `DockerCompose` | Deployment | Docker Compose configuration |
