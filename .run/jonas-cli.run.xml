@@ -1,12 +1,13 @@
 ﻿<component name="ProjectRunConfigurationManager">
-    <configuration default="false" name="Agent" type="DotNetProject" factoryName=".NET Project">
+    <configuration default="false" name="Jonas CLI" type="DotNetProject" factoryName=".NET Project">
         <option name="EXE_PATH" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0/Agent.exe"/>
         <option name="PROGRAM_PARAMETERS" value="--chat Cli"/>
         <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0"/>
         <option name="PASS_PARENT_ENVS" value="1"/>
         <envs>
-            <env name="MCPSERVERS__0__ENDPOINT" value="http://localhost:6001/sse"/>
+            <env name="MCPSERVERS__0__ENDPOINT" value="http://localhost:6002/sse"/>
             <env name="REDIS__CONNECTIONSTRING" value="localhost:6379"/>
+            <env name="WHITELISTPATTERNS__0" value="mcp:mcp-text:*"/>
         </envs>
         <option name="ENV_FILE_PATHS" value=""/>
         <option name="REDIRECT_INPUT_PATH" value=""/>
@@ -23,8 +24,8 @@
         <option name="PROJECT_TFM" value="net10.0"/>
         <method v="2">
             <option name="Build"/>
-            <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_down"/>
-            <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_up"/>
+            <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_down text"/>
+            <option name="ToolBeforeRunTask" enabled="true" actionId="Tool_External Tools_up text"/>
         </method>
     </configuration>
 </component>
