@@ -4,21 +4,21 @@ WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
 WORKDIR /src
-COPY ["McpServerTextTools/McpServerTextTools.csproj", "McpServerTextTools/"]
+COPY ["McpServerText/McpServerText.csproj", "McpServerText/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerTextTools/McpServerTextTools.csproj"
+RUN dotnet restore "McpServerText/McpServerText.csproj"
 
 FROM dependencies AS build
 ARG BUILD_CONFIGURATION=Release
 COPY . .
-WORKDIR "/src/McpServerTextTools"
-RUN dotnet build "./McpServerTextTools.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/McpServerText"
+RUN dotnet build "./McpServerText.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "./McpServerTextTools.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./McpServerText.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "McpServerTextTools.dll"]
+ENTRYPOINT ["dotnet", "McpServerText.dll"]
