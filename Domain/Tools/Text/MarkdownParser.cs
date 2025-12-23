@@ -6,166 +6,164 @@ public static partial class MarkdownParser
 {
     public static MarkdownStructure Parse(string[] lines)
     {
-        var headings = new List<MarkdownHeading>();
-        var codeBlocks = new List<MarkdownCodeBlock>();
-        var anchors = new List<MarkdownAnchor>();
-        MarkdownFrontmatter? frontmatter = null;
+        var indexed = lines.Select((line, i) => (Line: line, Number: i + 1)).ToList();
+        var frontMatter = ParseFrontMatter(indexed);
+        var contentStart = frontMatter?.EndLine ?? 0;
+        var contentLines = indexed.Skip(contentStart).ToList();
+        var codeBlockRanges = ParseCodeBlocks(contentLines).ToList();
 
-        var inCodeBlock = false;
-        var codeBlockStart = 0;
-        string? codeBlockLang = null;
-        var inFrontmatter = false;
-        var frontmatterStart = 0;
-        var frontmatterKeys = new List<string>();
-
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i];
-            var lineNumber = i + 1;
-
-            // Check for frontmatter (only at start of file)
-            if (i == 0 && line == "---")
-            {
-                inFrontmatter = true;
-                frontmatterStart = lineNumber;
-                continue;
-            }
-
-            if (inFrontmatter)
-            {
-                if (line == "---")
-                {
-                    frontmatter = new MarkdownFrontmatter(frontmatterStart, lineNumber, frontmatterKeys);
-                    inFrontmatter = false;
-                }
-                else
-                {
-                    var colonIndex = line.IndexOf(':');
-                    if (colonIndex > 0)
-                    {
-                        frontmatterKeys.Add(line[..colonIndex].Trim());
-                    }
-                }
-
-                continue;
-            }
-
-            // Check for code blocks
-            if (line.StartsWith("```"))
-            {
-                if (!inCodeBlock)
-                {
-                    inCodeBlock = true;
-                    codeBlockStart = lineNumber;
-                    codeBlockLang = line.Length > 3 ? line[3..].Trim() : null;
-                    if (string.IsNullOrEmpty(codeBlockLang))
-                    {
-                        codeBlockLang = null;
-                    }
-                }
-                else
-                {
-                    codeBlocks.Add(new MarkdownCodeBlock(codeBlockLang, codeBlockStart, lineNumber));
-                    inCodeBlock = false;
-                    codeBlockLang = null;
-                }
-
-                continue;
-            }
-
-            if (inCodeBlock)
-            {
-                continue;
-            }
-
-            // Check for headings
-            var headingMatch = HeadingRegex().Match(line);
-            if (headingMatch.Success)
-            {
-                var level = headingMatch.Groups[1].Value.Length;
-                var text = headingMatch.Groups[2].Value.Trim();
-                headings.Add(new MarkdownHeading(level, text, lineNumber));
-            }
-
-            // Check for anchors (HTML id attributes or markdown anchor syntax)
-            var anchorMatches = AnchorRegex().Matches(line);
-            foreach (Match match in anchorMatches)
-            {
-                anchors.Add(new MarkdownAnchor(match.Groups[1].Value, lineNumber));
-            }
-
-            // Also check for {#anchor} syntax
-            var hashAnchorMatch = HashAnchorRegex().Match(line);
-            if (hashAnchorMatch.Success)
-            {
-                anchors.Add(new MarkdownAnchor(hashAnchorMatch.Groups[1].Value, lineNumber));
-            }
-        }
+        var nonCodeLines = contentLines
+            .Where(l => !IsInsideCodeBlock(l.Number, codeBlockRanges))
+            .ToList();
 
         return new MarkdownStructure
         {
-            Frontmatter = frontmatter,
-            Headings = headings,
-            CodeBlocks = codeBlocks,
-            Anchors = anchors
+            Frontmatter = frontMatter,
+            Headings = ParseHeadings(nonCodeLines).ToList(),
+            CodeBlocks = codeBlockRanges,
+            Anchors = ParseAnchors(nonCodeLines).ToList()
         };
     }
 
     public static TextStructure ParsePlainText(string[] lines)
     {
-        var sections = new List<TextSection>();
-        var blankLineGroups = new List<int>();
-
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i];
-            var lineNumber = i + 1;
-
-            // Check for INI-style sections
-            if (line.StartsWith('[') && line.EndsWith(']'))
-            {
-                sections.Add(new TextSection(line, lineNumber));
-            }
-
-            // Track blank line groups (could indicate logical sections)
-            if (string.IsNullOrWhiteSpace(line) &&
-                (i == 0 || !string.IsNullOrWhiteSpace(lines[i - 1])))
-            {
-                blankLineGroups.Add(lineNumber);
-            }
-        }
-
         return new TextStructure
         {
-            Sections = sections,
-            BlankLineGroups = blankLineGroups
+            Sections = ParseSections(lines).ToList(),
+            BlankLineGroups = ParseBlankLineGroups(lines).ToList()
         };
     }
 
     public static int FindHeadingEnd(IReadOnlyList<MarkdownHeading> headings, int headingIndex, int totalLines)
     {
-        var heading = headings[headingIndex];
-
-        // Find next heading of same or higher level
-        for (var i = headingIndex + 1; i < headings.Count; i++)
-        {
-            if (headings[i].Level <= heading.Level)
-            {
-                return headings[i].Line - 1;
-            }
-        }
-
-        return totalLines;
+        return headings
+            .Skip(headingIndex + 1)
+            .FirstOrDefault(h => h.Level <= headings[headingIndex].Level)
+            ?.Line - 1 ?? totalLines;
     }
 
     public static int FindSectionEnd(IReadOnlyList<TextSection> sections, int sectionIndex, int totalLines)
     {
-        if (sectionIndex + 1 < sections.Count)
+        return sectionIndex + 1 < sections.Count
+            ? sections[sectionIndex + 1].Line - 1
+            : totalLines;
+    }
+
+    private static MarkdownFrontmatter? ParseFrontMatter(IReadOnlyList<(string Line, int Number)> lines)
+    {
+        if (lines.Count == 0 || lines[0].Line != "---")
         {
-            return sections[sectionIndex + 1].Line - 1;
+            return null;
         }
 
-        return totalLines;
+        var endIndex = lines
+            .Skip(1)
+            .Select((l, i) => (l.Line, Index: i + 1))
+            .FirstOrDefault(x => x.Line == "---")
+            .Index;
+
+        if (endIndex == 0)
+        {
+            return null;
+        }
+
+        var keys = lines
+            .Skip(1)
+            .Take(endIndex - 1)
+            .Select(l => l.Line.IndexOf(':'))
+            .Where(colonIdx => colonIdx > 0)
+            .Select((colonIdx, i) => lines[i + 1].Line[..colonIdx].Trim())
+            .ToList();
+
+        return new MarkdownFrontmatter(1, lines[endIndex].Number, keys);
+    }
+
+    private static IEnumerable<MarkdownCodeBlock> ParseCodeBlocks(IEnumerable<(string Line, int Number)> lines)
+    {
+        int? blockStart = null;
+        string? language = null;
+
+        foreach (var (line, number) in lines)
+        {
+            if (!line.StartsWith("```"))
+            {
+                continue;
+            }
+
+            if (blockStart is null)
+            {
+                blockStart = number;
+                language = ExtractCodeLanguage(line);
+            }
+            else
+            {
+                yield return new MarkdownCodeBlock(language, blockStart.Value, number);
+                blockStart = null;
+                language = null;
+            }
+        }
+    }
+
+    private static string? ExtractCodeLanguage(string fenceLine)
+    {
+        return fenceLine.Length > 3 ? fenceLine[3..].Trim().NullIfEmpty() : null;
+    }
+
+    private static bool IsInsideCodeBlock(int lineNumber, IEnumerable<MarkdownCodeBlock> codeBlocks)
+    {
+        return codeBlocks.Any(cb => lineNumber >= cb.StartLine && lineNumber <= cb.EndLine);
+    }
+
+    private static IEnumerable<MarkdownHeading> ParseHeadings(IEnumerable<(string Line, int Number)> lines)
+    {
+        return lines
+            .Select(l => (Match: HeadingRegex().Match(l.Line), l.Number))
+            .Where(x => x.Match.Success)
+            .Select(x => new MarkdownHeading(
+                x.Match.Groups[1].Value.Length,
+                x.Match.Groups[2].Value.Trim(),
+                x.Number));
+    }
+
+    private static IEnumerable<MarkdownAnchor> ParseAnchors(IEnumerable<(string Line, int Number)> lines)
+    {
+        return lines.SelectMany(l => ExtractAnchorsFromLine(l.Line, l.Number));
+    }
+
+    private static IEnumerable<MarkdownAnchor> ExtractAnchorsFromLine(string line, int lineNumber)
+    {
+        foreach (Match match in AnchorRegex().Matches(line))
+        {
+            yield return new MarkdownAnchor(match.Groups[1].Value, lineNumber);
+        }
+
+        var hashMatch = HashAnchorRegex().Match(line);
+        if (hashMatch.Success)
+        {
+            yield return new MarkdownAnchor(hashMatch.Groups[1].Value, lineNumber);
+        }
+    }
+
+    private static IEnumerable<TextSection> ParseSections(string[] lines)
+    {
+        return lines
+            .Select((line, i) => (Line: line, Number: i + 1))
+            .Where(l => l.Line.StartsWith('[') && l.Line.EndsWith(']'))
+            .Select(l => new TextSection(l.Line, l.Number));
+    }
+
+    private static IEnumerable<int> ParseBlankLineGroups(string[] lines)
+    {
+        return lines
+            .Select((line, i) => (Line: line, Index: i, Number: i + 1))
+            .Where(l => string.IsNullOrWhiteSpace(l.Line))
+            .Where(l => l.Index == 0 || !string.IsNullOrWhiteSpace(lines[l.Index - 1]))
+            .Select(l => l.Number);
+    }
+
+    private static string? NullIfEmpty(this string s)
+    {
+        return string.IsNullOrEmpty(s) ? null : s;
     }
 
     [GeneratedRegex(@"^(#{1,6})\s+(.+)$")]
