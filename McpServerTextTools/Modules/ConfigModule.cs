@@ -34,10 +34,11 @@ public static class ConfigModule
             .WithTools<McpTextListDirectoriesTool>()
             .WithTools<McpTextListFilesTool>()
             .WithTools<McpTextSearchTool>()
-            // Inspect/Read/Patch tools
+            // Inspect/Read/Patch/Create tools
             .WithTools<McpTextInspectTool>()
             .WithTools<McpTextReadTool>()
             .WithTools<McpTextPatchTool>()
+            .WithTools<McpTextCreateTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>();
 
