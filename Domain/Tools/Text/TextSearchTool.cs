@@ -28,6 +28,17 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
                                          - Search markdown files: query="config", filePattern="*.md"
                                          """;
 
+    private record SearchParams(string Query, Regex? Pattern, int ContextLines, int MaxResults);
+
+    private record FileMatch(string File, IReadOnlyList<MatchResult> Matches);
+
+    private record MatchResult(
+        int LineNumber,
+        string Text,
+        string? Section,
+        IReadOnlyList<string>? ContextBefore,
+        IReadOnlyList<string>? ContextAfter);
+
     protected JsonNode Run(
         string query,
         bool regex = false,
@@ -43,127 +54,135 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             throw new DirectoryNotFoundException($"Directory not found: {path}");
         }
 
-        var pattern = regex ? new Regex(query, RegexOptions.IgnoreCase) : null;
-        var results = new List<JsonObject>();
+        var searchParams = new SearchParams(
+            query,
+            regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
+            contextLines,
+            maxResults);
+
+        var files = EnumerateAllowedFiles(fullPath, filePattern);
+        var (results, filesSearched) = SearchFiles(files, searchParams);
+        var totalMatches = results.Sum(r => r.Matches.Count);
+
+        return BuildResultJson(query, regex, path, filesSearched, results, totalMatches, maxResults);
+    }
+
+    private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern)
+    {
+        return Directory
+            .EnumerateFiles(fullPath, filePattern ?? "*", SearchOption.AllDirectories)
+            .Where(IsAllowedExtension);
+    }
+
+    private bool IsAllowedExtension(string filePath)
+    {
+        return allowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
+    }
+
+    private (List<FileMatch> Results, int FilesSearched) SearchFiles(
+        IEnumerable<string> files, SearchParams searchParams)
+    {
+        var results = new List<FileMatch>();
         var filesSearched = 0;
         var totalMatches = 0;
-
-        var files = Directory
-            .EnumerateFiles(fullPath, filePattern ?? "*", SearchOption.AllDirectories)
-            .Where(f => allowedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
 
         foreach (var file in files)
         {
             filesSearched++;
-            var fileMatches = SearchFile(file, query, pattern, contextLines, maxResults - results.Count);
-
-            if (fileMatches.Count > 0)
+            var remaining = searchParams.MaxResults - totalMatches;
+            if (remaining <= 0)
             {
-                totalMatches += fileMatches.Count;
-                results.Add(new JsonObject
-                {
-                    ["file"] = Path.GetRelativePath(vaultPath, file).Replace('\\', '/'),
-                    ["matches"] = new JsonArray(fileMatches.ToArray<JsonNode>())
-                });
-
-                if (results.Sum(r => r["matches"]!.AsArray().Count) >= maxResults)
-                {
-                    break;
-                }
+                break;
             }
+
+            var matches = SearchSingleFile(file, searchParams, remaining);
+            if (matches.Count == 0)
+            {
+                continue;
+            }
+
+            results.Add(new FileMatch(ToRelativePath(file), matches));
+            totalMatches += matches.Count;
         }
 
-        return new JsonObject
-        {
-            ["query"] = query,
-            ["regex"] = regex,
-            ["path"] = path,
-            ["filesSearched"] = filesSearched,
-            ["filesWithMatches"] = results.Count,
-            ["totalMatches"] = totalMatches,
-            ["truncated"] = totalMatches > maxResults,
-            ["results"] = new JsonArray(results.ToArray<JsonNode>())
-        };
+        return (results, filesSearched);
     }
 
-    private static List<JsonObject> SearchFile(string filePath, string query, Regex? pattern, int contextLines,
-        int maxMatches)
+    private IReadOnlyList<MatchResult> SearchSingleFile(string filePath, SearchParams searchParams, int maxMatches)
     {
-        var matches = new List<JsonObject>();
-
         try
         {
             var lines = File.ReadAllLines(filePath);
-
-            for (var i = 0; i < lines.Length && matches.Count < maxMatches; i++)
-            {
-                var line = lines[i];
-                var isMatch = pattern?.IsMatch(line) ?? line.Contains(query, StringComparison.OrdinalIgnoreCase);
-
-                if (!isMatch)
-                {
-                    continue;
-                }
-
-                var matchObj = new JsonObject
-                {
-                    ["line"] = i + 1,
-                    ["text"] = line.Length > 200 ? line[..200] + "..." : line
-                };
-
-                if (contextLines > 0)
-                {
-                    var before = lines
-                        .Skip(Math.Max(0, i - contextLines))
-                        .Take(Math.Min(contextLines, i))
-                        .Select(l => l.Length > 100 ? l[..100] + "..." : l)
-                        .ToList();
-
-                    var after = lines
-                        .Skip(i + 1)
-                        .Take(contextLines)
-                        .Select(l => l.Length > 100 ? l[..100] + "..." : l)
-                        .ToList();
-
-                    if (before.Count > 0 || after.Count > 0)
-                    {
-                        matchObj["context"] = new JsonObject
-                        {
-                            ["before"] = new JsonArray(before.Select(b => JsonValue.Create(b)).ToArray<JsonNode>()),
-                            ["after"] = new JsonArray(after.Select(a => JsonValue.Create(a)).ToArray<JsonNode>())
-                        };
-                    }
-                }
-
-                // Try to find nearest markdown heading for context
-                var nearestHeading = FindNearestHeading(lines, i);
-                if (nearestHeading is not null)
-                {
-                    matchObj["section"] = nearestHeading;
-                }
-
-                matches.Add(matchObj);
-            }
+            return FindMatchesInLines(lines, searchParams, maxMatches).ToList();
         }
-        catch (Exception)
+        catch
         {
-            // Skip files that can't be read
+            return [];
         }
+    }
 
-        return matches;
+    private static IEnumerable<MatchResult> FindMatchesInLines(
+        string[] lines, SearchParams searchParams, int maxMatches)
+    {
+        return lines
+            .Select((text, index) => (Text: text, Index: index))
+            .Where(line => IsMatchingLine(line.Text, searchParams))
+            .Take(maxMatches)
+            .Select(line => CreateMatchResult(lines, line.Index, searchParams.ContextLines));
+    }
+
+    private static bool IsMatchingLine(string line, SearchParams searchParams)
+    {
+        return searchParams.Pattern?.IsMatch(line) ??
+               line.Contains(searchParams.Query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static MatchResult CreateMatchResult(string[] lines, int index, int contextLines)
+    {
+        return new MatchResult(
+            LineNumber: index + 1,
+            Text: Truncate(lines[index], 200),
+            Section: FindNearestHeading(lines, index),
+            ContextBefore: contextLines > 0 ? GetContextBefore(lines, index, contextLines) : null,
+            ContextAfter: contextLines > 0 ? GetContextAfter(lines, index, contextLines) : null);
+    }
+
+    private static IReadOnlyList<string> GetContextBefore(string[] lines, int index, int count)
+    {
+        return lines
+            .Take(index)
+            .TakeLast(count)
+            .Select(l => Truncate(l, 100))
+            .ToList();
+    }
+
+    private static IReadOnlyList<string> GetContextAfter(string[] lines, int index, int count)
+    {
+        return lines
+            .Skip(index + 1)
+            .Take(count)
+            .Select(l => Truncate(l, 100))
+            .ToList();
     }
 
     private static string? FindNearestHeading(string[] lines, int lineIndex)
     {
-        for (var i = lineIndex; i >= 0; i--)
-        {
-            if (lines[i].StartsWith('#'))
-            {
-                return lines[i].TrimStart('#').Trim();
-            }
-        }
+        return lines
+            .Take(lineIndex + 1)
+            .Reverse()
+            .FirstOrDefault(l => l.StartsWith('#'))
+            ?.TrimStart('#')
+            .Trim();
+    }
 
-        return null;
+    private static string Truncate(string text, int maxLength)
+    {
+        return text.Length > maxLength ? text[..maxLength] + "..." : text;
+    }
+
+    private string ToRelativePath(string fullPath)
+    {
+        return Path.GetRelativePath(vaultPath, fullPath).Replace('\\', '/');
     }
 
     private string ResolvePath(string path)
@@ -173,11 +192,69 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ? vaultPath
             : Path.GetFullPath(Path.Combine(vaultPath, normalized));
 
-        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
+        return fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase)
+            ? fullPath
+            : throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
+    }
+
+    private JsonNode BuildResultJson(
+        string query,
+        bool regex,
+        string path,
+        int filesSearched,
+        List<FileMatch> results,
+        int totalMatches,
+        int maxResults)
+    {
+        return new JsonObject
         {
-            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
+            ["query"] = query,
+            ["regex"] = regex,
+            ["path"] = path,
+            ["filesSearched"] = filesSearched,
+            ["filesWithMatches"] = results.Count,
+            ["totalMatches"] = totalMatches,
+            ["truncated"] = totalMatches >= maxResults,
+            ["results"] = new JsonArray(results.Select(ToFileMatchJson).ToArray())
+        };
+    }
+
+    private static JsonNode ToFileMatchJson(FileMatch fileMatch)
+    {
+        return new JsonObject
+        {
+            ["file"] = fileMatch.File,
+            ["matches"] = new JsonArray(fileMatch.Matches.Select(ToMatchResultJson).ToArray())
+        };
+    }
+
+    private static JsonNode ToMatchResultJson(MatchResult match)
+    {
+        var obj = new JsonObject
+        {
+            ["line"] = match.LineNumber,
+            ["text"] = match.Text
+        };
+
+        if (match.Section is not null)
+        {
+            obj["section"] = match.Section;
         }
 
-        return fullPath;
+        if (match.ContextBefore?.Count > 0 || match.ContextAfter?.Count > 0)
+        {
+            obj["context"] = new JsonObject
+            {
+                ["before"] = ToJsonArray(match.ContextBefore ?? []),
+                ["after"] = ToJsonArray(match.ContextAfter ?? [])
+            };
+        }
+
+        return obj;
+    }
+
+    private static JsonArray ToJsonArray(IEnumerable<string> items)
+    {
+        return new JsonArray(items.Select(s => JsonValue.Create(s)).ToArray<JsonNode>());
     }
 }
