@@ -8,8 +8,6 @@ namespace Infrastructure.Agents.ChatClients;
 
 public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatMessageStore
 {
-    private static readonly TimeSpan _expiry = TimeSpan.FromDays(30);
-
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ImmutableList<ChatMessage> _messages = [];
 
@@ -62,35 +60,12 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
 
     private async Task LoadFromStoreAsync()
     {
-        var value = await store.GetMessagesAsync(key);
-        if (value is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var state = JsonSerializer.Deserialize<StoreState>(value);
-            if (state?.Messages is { } messages)
-            {
-                _messages = [.. messages];
-            }
-        }
-        catch (JsonException)
-        {
-            _messages = [];
-        }
+        var messages = await store.GetMessagesAsync(key) ?? [];
+        _messages = [.. messages];
     }
 
     private async Task PersistToStoreAsync()
     {
-        var state = new StoreState { Messages = [.. _messages] };
-        var json = JsonSerializer.Serialize(state);
-        await store.SetMessagesAsync(key, json, _expiry);
-    }
-
-    private sealed class StoreState
-    {
-        public List<ChatMessage> Messages { get; init; } = [];
+        await store.SetMessagesAsync(key, [.. _messages]);
     }
 }

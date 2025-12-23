@@ -113,11 +113,11 @@ public class ChatThreadResolverTests
     }
 
     [Fact]
-    public async Task Resolve_AfterDispose_Throws()
+    public void Resolve_AfterDispose_Throws()
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        await resolver.DisposeAsync();
+        resolver.Dispose();
 
         // Act & Assert
         Should.Throw<ObjectDisposedException>(() => resolver.Resolve(new AgentKey(1, 1)));

@@ -60,7 +60,10 @@ public static class InjectorModule
         {
             return services
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
-                .AddSingleton<IThreadStateStore, RedisThreadStateStore>();
+                .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    TimeSpan.FromDays(config.ExpirationDays ?? 30))
+                );
         }
 
         private IServiceCollection AddCliClient()

@@ -29,7 +29,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
 
     private McpAgent CreateAgent(OpenAiClient llmClient)
     {
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             llmClient,

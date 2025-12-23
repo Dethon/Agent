@@ -6,7 +6,6 @@ namespace Domain.Contracts;
 public interface IThreadStateStore
 {
     Task DeleteAsync(AgentKey key);
-    Task<string?> GetMessagesAsync(string key);
-    Task SetMessagesAsync(string key, string json, TimeSpan expiry);
-    Task<IReadOnlyList<ChatMessage>?> GetChatHistoryAsync(AgentKey key);
+    Task<ChatMessage[]?> GetMessagesAsync(string key);
+    Task SetMessagesAsync(string key, ChatMessage[] messages);
 }

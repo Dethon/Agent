@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
 
@@ -15,7 +16,7 @@ public class RedisChatMessageStoreTests
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
-        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
+        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
         var agentKey = new AgentKey(123, 456);
         var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
@@ -37,7 +38,7 @@ public class RedisChatMessageStoreTests
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
-        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
+        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
         var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
         {
@@ -62,7 +63,7 @@ public class RedisChatMessageStoreTests
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
-        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
+        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
         var agentKey = new AgentKey(123, 456);
         var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());

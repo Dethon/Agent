@@ -3,7 +3,7 @@ using Domain.Contracts;
 
 namespace Domain.Agents;
 
-public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = null) : IAsyncDisposable
+public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = null) : IDisposable
 {
     private readonly ConcurrentDictionary<AgentKey, ChatThreadContext> _contexts = [];
     private readonly Lock _lock = new();
@@ -54,7 +54,7 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
         {
@@ -67,11 +67,6 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
             {
                 context.Dispose();
             }
-        }
-
-        foreach (var key in _contexts.Keys)
-        {
-            await DeletePersistedStateAsync(key);
         }
 
         _contexts.Clear();

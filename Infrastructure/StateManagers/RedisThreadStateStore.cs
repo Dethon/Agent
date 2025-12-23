@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public sealed class RedisThreadStateStore(IConnectionMultiplexer redis) : IThreadStateStore
+public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration) : IThreadStateStore
 {
     public async Task DeleteAsync(AgentKey key)
     {
@@ -14,40 +14,24 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis) : IThrea
         await db.KeyDeleteAsync(key.ToString());
     }
 
-    public async Task<string?> GetMessagesAsync(string key)
+    public async Task<ChatMessage[]?> GetMessagesAsync(string key)
     {
         var db = redis.GetDatabase();
         var value = await db.StringGetAsync(key);
-        return value.HasValue ? value.ToString() : null;
+        return value.HasValue
+            ? JsonSerializer.Deserialize<StoreState>(value.ToString())?.Messages
+            : null;
     }
 
-    public async Task SetMessagesAsync(string key, string json, TimeSpan expiry)
+    public async Task SetMessagesAsync(string key, ChatMessage[] messages)
     {
         var db = redis.GetDatabase();
-        await db.StringSetAsync(key, json, expiry);
-    }
-
-    public async Task<IReadOnlyList<ChatMessage>?> GetChatHistoryAsync(AgentKey key)
-    {
-        var json = await GetMessagesAsync(key.ToString());
-        if (json is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var state = JsonSerializer.Deserialize<StoreState>(json);
-            return state?.Messages;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        var json = JsonSerializer.Serialize(new StoreState { Messages = messages });
+        await db.StringSetAsync(key, json, expiration);
     }
 
     private sealed class StoreState
     {
-        public List<ChatMessage> Messages { get; init; } = [];
+        public ChatMessage[] Messages { get; init; } = [];
     }
 }

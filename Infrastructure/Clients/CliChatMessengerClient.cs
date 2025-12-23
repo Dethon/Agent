@@ -83,8 +83,8 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _historyRestored = true;
 
         var agentKey = new AgentKey(DefaultChatId, DefaultThreadId);
-        var history = await _threadStateStore.GetChatHistoryAsync(agentKey);
-        if (history is not { Count: > 0 })
+        var history = await _threadStateStore.GetMessagesAsync(agentKey.ToString());
+        if (history is not { Length: > 0 })
         {
             return;
         }

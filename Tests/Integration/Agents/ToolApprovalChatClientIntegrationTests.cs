@@ -30,7 +30,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
     {
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection);
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
             [mcpFixture.McpEndpoint],
             approvalClient,
