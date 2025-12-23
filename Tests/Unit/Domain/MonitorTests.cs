@@ -130,8 +130,10 @@ public class ChatMonitorTests
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
+        var stateStore = new Mock<IThreadStateStore>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver,
+            stateStore.Object, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -156,7 +158,8 @@ public class ChatMonitorTests
         var agentKey = new AgentKey(1, 1);
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver,
+            mockStateStore.Object, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -183,7 +186,8 @@ public class ChatMonitorTests
         var agentKey = new AgentKey(1, 1);
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver,
+            mockStateStore.Object, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);

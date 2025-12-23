@@ -93,7 +93,7 @@ public sealed class McpAgent : DisposableAgent
         {
             var json = new JsonObject
             {
-                ["StoreState"] = JsonNode.Parse(serializedThread.ToString())
+                ["StoreState"] = serializedThread.ToJsonNode()
             };
             serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
         }

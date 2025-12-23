@@ -1,6 +1,8 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Clients.Cli;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.Clients;
 
@@ -8,6 +10,8 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {
     private const int DefaultThreadId = 1;
 
+    private readonly string _agentName;
+    private readonly string _userName;
     private readonly CliChatMessageRouter _router;
     private readonly ITerminalAdapter _terminalAdapter;
 
@@ -17,6 +21,8 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
         ITerminalAdapter terminalAdapter,
         Action? onShutdownRequested = null)
     {
+        _agentName = agentName;
+        _userName = userName;
         _terminalAdapter = terminalAdapter;
         _router = new CliChatMessageRouter(agentName, userName, terminalAdapter);
 
@@ -47,6 +53,18 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     public Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
+    }
+
+    public void OnHistoryRestored(AgentKey key, IReadOnlyList<ChatMessage> messages)
+    {
+        var lines = ChatHistoryMapper.MapToDisplayLines(messages, _agentName, _userName).ToArray();
+        if (lines.Length <= 0)
+        {
+            return;
+        }
+
+        _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
+        _terminalAdapter.DisplayMessage(lines);
     }
 
     public void Dispose()

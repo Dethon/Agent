@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using JetBrains.Annotations;
 
 namespace Domain.Extensions;
@@ -11,6 +12,13 @@ public static class JsonExtensions
         public bool TryGetProperty(string propertyName, StringComparison comparisonType, out JsonElement jsonElement)
         {
             ArgumentNullException.ThrowIfNull(propertyName);
+
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                jsonElement = default;
+                return false;
+            }
+
             var result = element
                 .EnumerateObject()
                 .Where(o => propertyName.Equals(o.Name, comparisonType))
@@ -31,6 +39,17 @@ public static class JsonExtensions
             return success
                 ? result
                 : throw new KeyNotFoundException($"Property '{propertyName}' not found in JsonElement.");
+        }
+
+        public JsonNode? ToJsonNode()
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.Null => null,
+                JsonValueKind.Array => JsonArray.Create(element),
+                JsonValueKind.Object => JsonObject.Create(element),
+                _ => JsonValue.Create(element)
+            };
         }
     }
 }

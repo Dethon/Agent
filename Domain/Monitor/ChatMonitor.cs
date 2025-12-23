@@ -13,6 +13,7 @@ public class ChatMonitor(
     IChatMessengerClient chatMessengerClient,
     IAgentFactory agentFactory,
     ChatThreadResolver threadResolver,
+    IThreadStateStore threadStateStore,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -55,6 +56,8 @@ public class ChatMonitor(
         var context = threadResolver.Resolve(agentKey);
         var thread = GetOrRestoreThread(agent, agentKey);
 
+        await NotifyHistoryRestoredAsync(agentKey);
+
         context.RegisterCompletionCallback(group.Complete);
 
         using var linkedCts = context.GetLinkedTokenSource(ct);
@@ -87,6 +90,15 @@ public class ChatMonitor(
         await foreach (var aiResponse in aiResponses)
         {
             yield return (agentKey, aiResponse);
+        }
+    }
+
+    private async Task NotifyHistoryRestoredAsync(AgentKey agentKey)
+    {
+        var history = await threadStateStore.GetChatHistoryAsync(agentKey);
+        if (history is { Count: > 0 })
+        {
+            chatMessengerClient.OnHistoryRestored(agentKey, history);
         }
     }
 

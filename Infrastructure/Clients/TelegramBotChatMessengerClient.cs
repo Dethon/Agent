@@ -1,7 +1,9 @@
 ﻿using System.Runtime.CompilerServices;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
@@ -192,5 +194,10 @@ public class TelegramBotChatMessengerClient(
                      $"{message.Chat.Id}",
             ThreadId = message.MessageThreadId
         };
+    }
+
+    public void OnHistoryRestored(AgentKey key, IReadOnlyList<ChatMessage> messages)
+    {
+        // Telegram already displays chat history natively - no action needed
     }
 }
