@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jack", "Jack\Jack.csproj", "{118137BE-F6DB-4F58-9DB6-E6C58A1EF5F5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent", "Agent\Agent.csproj", "{118137BE-F6DB-4F58-9DB6-E6C58A1EF5F5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Domain", "Domain\Domain.csproj", "{B9ADC0BE-BA3C-4801-8504-72AE7DD676D5}"
 EndProject
@@ -14,7 +14,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerLibrary", "McpServ
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerCommandRunner", "McpServerCommandRunner\McpServerCommandRunner.csproj", "{B5966AD0-2CE8-4D27-94AD-A16992A2651F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerTextTools", "McpServerTextTools\McpServerTextTools.csproj", "{6F5FD9DA-D77F-4980-8336-91C76FA64519}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerText", "McpServerText\McpServerText.csproj", "{6F5FD9DA-D77F-4980-8336-91C76FA64519}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

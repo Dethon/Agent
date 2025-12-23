@@ -52,6 +52,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 return await base.InvokeFunctionAsync(context, cancellationToken);
 
             case ToolApprovalResult.Approved:
+            case ToolApprovalResult.AutoApproved:
                 return await base.InvokeFunctionAsync(context, cancellationToken);
 
             case ToolApprovalResult.Rejected:

@@ -1,9 +1,7 @@
-namespace McpServerTextTools.McpPrompts;
+namespace Domain.Prompts;
 
 public static class KnowledgeBasePrompt
 {
-    public const string AgentName = "scribe";
-
     public const string AgentDescription =
         """
         Knowledge base management agent. Manages a personal knowledge vault of markdown notes, 

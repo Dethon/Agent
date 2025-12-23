@@ -134,7 +134,7 @@ services:
     ports:
       - "6001:8080"
     build:
-      context: ${JACK_REPOSITORY_PATH}
+      context: ${REPOSITORY_PATH}
       dockerfile: McpServerLibrary/Dockerfile
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
@@ -148,24 +148,74 @@ services:
     depends_on:
       - qbittorrent
       - jackett
+
+  mcp-text:
+    image: mcp-text:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-text
+    ports:
+      - "6002:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerText/Dockerfile
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ${VAULT_PATH:-./volumes/vault}:/vault
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
         
   jack:
-    image: jack:latest
+    image: agent:latest
     logging:
       options:
         max-size: "5m"
         max-file: "3"
     container_name: jack
     build:
-      context: ${JACK_REPOSITORY_PATH}
-      dockerfile: Jack/Dockerfile
+      context: ${REPOSITORY_PATH}
+      dockerfile: Agent/Dockerfile
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - NAME=jack
+      - MCPSERVERS__0__ENDPOINT=http://mcp-library:8080/sse
+      - WHITELISTPATTERNS__0=mcp:mcp-library:*
+      - TELEGRAM__BOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
     depends_on:
       - mcp-library
+      - redis
+
+  jonas:
+    image: agent:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: jonas
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Agent/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NAME=jonas
+      - MCPSERVERS__0__ENDPOINT=http://mcp-text:8080/sse
+      - WHITELISTPATTERNS__0=mcp:mcp-text:*
+      - TELEGRAM__BOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
+    networks:
+      - jackbot
+    depends_on:
+      - mcp-text
       - redis
 
 networks:

@@ -1,9 +1,9 @@
 ﻿using System.CommandLine;
-using Jack.Settings;
+using Agent.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Jack.Modules;
+namespace Agent.Modules;
 
 public static class ConfigModule
 {
@@ -39,7 +39,7 @@ public static class ConfigModule
             Required = false,
             DefaultValueFactory = _ => ChatInterface.Telegram
         };
-        var rootCommand = new RootCommand("Jack Application")
+        var rootCommand = new RootCommand("Agent Application")
         {
             chatOption
         };

@@ -1,4 +1,4 @@
-﻿namespace Jack.Settings;
+﻿namespace Agent.Settings;
 
 public record CommandLineParams
 {

@@ -1,9 +1,10 @@
 ﻿using JetBrains.Annotations;
 
-namespace Jack.Settings;
+namespace Agent.Settings;
 
 public record AgentSettings
 {
+    public required string Name { get; [UsedImplicitly] init; }
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
     public required Mcp[] McpServers { get; init; }

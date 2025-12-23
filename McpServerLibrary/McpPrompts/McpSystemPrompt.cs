@@ -1,5 +1,5 @@
 using System.ComponentModel;
-using Domain.Agents;
+using Domain.Prompts;
 using ModelContextProtocol.Server;
 
 namespace McpServerLibrary.McpPrompts;

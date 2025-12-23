@@ -33,7 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Jack\Jack.csproj"/>
+    <ProjectReference Include="..\Agent\Agent.csproj"/>
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj"/>
     <ProjectReference Include="..\McpServerLibrary\McpServerLibrary.csproj"/>
   </ItemGroup>

@@ -6,9 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <UserSecretsId>bae64127-c00e-4499-8325-0fb6b452133c</UserSecretsId>
-    <RootNamespace>Jack</RootNamespace>
     <LangVersion>14</LangVersion>
+    <RootNamespace>McpServerTextTools</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,13 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj"/>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1"/>
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.5.0-preview.1"/>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1"/>
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1"/>
-    <PackageReference Include="System.CommandLine" Version="2.0.1"/>
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,6 @@
-﻿using Domain.Agents;
+﻿using Agent.App;
+using Agent.Settings;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
@@ -6,8 +8,6 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Cli;
 using Infrastructure.StateManagers;
-using Jack.App;
-using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Telegram.Bot;
 
-namespace Jack.Modules;
+namespace Agent.Modules;
 
 public static class InjectorModule
 {
@@ -30,8 +30,7 @@ public static class InjectorModule
                     new McpAgentFactory(
                         sp.GetRequiredService<IChatClient>(),
                         mcpEndpoints,
-                        DownloaderPrompt.AgentName,
-                        DownloaderPrompt.AgentDescription,
+                        settings.Name,
                         sp.GetRequiredService<IToolApprovalHandlerFactory>(),
                         sp.GetRequiredService<IThreadStateStore>(),
                         settings.WhitelistPatterns))
@@ -49,7 +48,7 @@ public static class InjectorModule
 
             return cmdParams.ChatInterface switch
             {
-                ChatInterface.Cli => services.AddCliClient(),
+                ChatInterface.Cli => services.AddCliClient(settings),
                 ChatInterface.Telegram => services.AddTelegramClient(settings),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
@@ -66,9 +65,9 @@ public static class InjectorModule
                 );
         }
 
-        private IServiceCollection AddCliClient()
+        private IServiceCollection AddCliClient(AgentSettings settings)
         {
-            var terminalAdapter = new TerminalGuiAdapter("Jack");
+            var terminalAdapter = new TerminalGuiAdapter(settings.Name);
             var approvalHandler = new CliToolApprovalHandler(terminalAdapter);
 
             return services
@@ -78,7 +77,7 @@ public static class InjectorModule
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
                     var threadStateStore = sp.GetRequiredService<IThreadStateStore>();
                     return new CliChatMessengerClient(
-                        "Jack",
+                        settings.Name,
                         Environment.UserName,
                         terminalAdapter,
                         lifetime.StopApplication,

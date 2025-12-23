@@ -4,21 +4,21 @@ WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
 WORKDIR /src
-COPY ["Jack/Jack.csproj", "Jack/"]
+COPY ["Agent/Agent.csproj", "Agent/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "Jack/Jack.csproj"
+RUN dotnet restore "Agent/Agent.csproj"
 
 FROM dependencies AS build
 ARG BUILD_CONFIGURATION=Release
 COPY . .
-WORKDIR "/src/Jack"
-RUN dotnet build "./Jack.csproj" -c $BUILD_CONFIGURATION -o /app/build
+WORKDIR "/src/Agent"
+RUN dotnet build "./Agent.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
 FROM build AS publish
-RUN dotnet publish "./Jack.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./Agent.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "Jack.dll"]
+ENTRYPOINT ["dotnet", "Agent.dll"]

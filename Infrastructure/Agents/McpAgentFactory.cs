@@ -9,7 +9,6 @@ public sealed class McpAgentFactory(
     IChatClient chatClient,
     string[] mcpEndpoints,
     string agentName,
-    string agentDescription,
     IToolApprovalHandlerFactory approvalHandlerFactory,
     IThreadStateStore stateStore,
     IEnumerable<string>? whitelistPatterns = null) : IAgentFactory
@@ -21,6 +20,6 @@ public sealed class McpAgentFactory(
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistPatterns);
 
-        return new McpAgent(mcpEndpoints, effectiveClient, name, agentDescription, stateStore);
+        return new McpAgent(mcpEndpoints, effectiveClient, name, "", stateStore);
     }
 }

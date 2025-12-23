@@ -1,8 +1,8 @@
 ﻿<component name="ProjectRunConfigurationManager">
     <configuration default="false" name="Agent" type="DotNetProject" factoryName=".NET Project">
-        <option name="EXE_PATH" value="$PROJECT_DIR$/Jack/bin/Debug/net10.0/Jack.exe"/>
+        <option name="EXE_PATH" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0/Agent.exe"/>
         <option name="PROGRAM_PARAMETERS" value="--chat Cli"/>
-        <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/Jack/bin/Debug/net10.0"/>
+        <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0"/>
         <option name="PASS_PARENT_ENVS" value="1"/>
         <envs>
             <env name="MCPSERVERS__0__ENDPOINT" value="http://localhost:6001/sse"/>
@@ -15,7 +15,7 @@
         <option name="USE_MONO" value="0"/>
         <option name="RUNTIME_ARGUMENTS" value=""/>
         <option name="AUTO_ATTACH_CHILDREN" value="0"/>
-        <option name="PROJECT_PATH" value="$PROJECT_DIR$/Jack/Jack.csproj"/>
+        <option name="PROJECT_PATH" value="$PROJECT_DIR$/Agent/Agent.csproj"/>
         <option name="PROJECT_EXE_PATH_TRACKING" value="1"/>
         <option name="PROJECT_ARGUMENTS_TRACKING" value="1"/>
         <option name="PROJECT_WORKING_DIRECTORY_TRACKING" value="1"/>

@@ -1,8 +1,8 @@
+using Agent.Modules;
+using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
-using Jack.Modules;
-using Jack.Settings;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -18,6 +18,7 @@ public class DependencyInjectionTests
     {
         return new AgentSettings
         {
+            Name = "TestAgent",
             OpenRouter = new OpenRouterConfiguration
             {
                 ApiUrl = "https://openrouter.ai/api/v1/",
