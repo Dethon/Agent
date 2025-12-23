@@ -1,3 +1,6 @@
+using Domain.Contracts;
+using Domain.Tools.Config;
+using Infrastructure.Clients;
 using McpServerTextTools.McpPrompts;
 using McpServerTextTools.McpTools;
 using McpServerTextTools.Settings;
@@ -23,11 +26,19 @@ public static class ConfigModule
     {
         services
             .AddSingleton(settings)
+            .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
+            .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
+            // Discovery tools
+            .WithTools<McpTextListDirectoriesTool>()
+            .WithTools<McpTextListFilesTool>()
+            .WithTools<McpTextSearchTool>()
+            // Inspect/Read/Patch tools
             .WithTools<McpTextInspectTool>()
             .WithTools<McpTextReadTool>()
             .WithTools<McpTextPatchTool>()
+            // Prompts
             .WithPrompts<McpSystemPrompt>();
 
         return services;
