@@ -43,7 +43,7 @@ public sealed class McpAgent : DisposableAgent
                 AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
             },
             Description = description,
-            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(stateStore, ctx).GetAwaiter().GetResult()
+            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(stateStore, ctx)
         });
     }
 

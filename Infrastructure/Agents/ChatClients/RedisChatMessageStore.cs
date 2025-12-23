@@ -11,12 +11,12 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
     private readonly SemaphoreSlim _lock = new(1, 1);
     private ImmutableList<ChatMessage> _messages = [];
 
-    public static async Task<RedisChatMessageStore> CreateAsync(
+    public static RedisChatMessageStore CreateAsync(
         IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
         var redisKey = ResolveRedisKey(ctx);
         var chatStore = new RedisChatMessageStore(store, redisKey);
-        await chatStore.LoadFromStoreAsync();
+        chatStore.LoadFromStoreAsync();
         return chatStore;
     }
 
@@ -58,9 +58,9 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
         return JsonSerializer.SerializeToElement(key, jsonSerializerOptions);
     }
 
-    private async Task LoadFromStoreAsync()
+    private void LoadFromStoreAsync()
     {
-        var messages = await store.GetMessagesAsync(key) ?? [];
+        var messages = store.GetMessages(key) ?? [];
         _messages = [.. messages];
     }
 
