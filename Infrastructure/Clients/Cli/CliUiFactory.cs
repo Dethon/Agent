@@ -44,7 +44,7 @@ internal static class CliUiFactory
 
     public static Label CreateStatusBar()
     {
-        return new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  ↑↓ scroll")
+        return new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  🗙 /cancel  ◦  ↑↓ scroll")
         {
             X = 0,
             Y = 1,
