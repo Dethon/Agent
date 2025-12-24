@@ -1,9 +1,10 @@
 using System.Collections;
 using System.Text;
+using Infrastructure.CliGui.Rendering;
 using Terminal.Gui;
 using Attribute = Terminal.Gui.Attribute;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Ui;
 
 internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int initialWidth = 80) : IListDataSource
 {

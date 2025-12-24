@@ -1,4 +1,4 @@
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Rendering;
 
 public enum ChatLineType
 {

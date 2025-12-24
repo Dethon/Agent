@@ -2,10 +2,11 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.CliGui.Abstractions;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.Clients;
 
-public sealed class CliToolApprovalHandler(ITerminalAdapter terminalAdapter) : IToolApprovalHandler
+public sealed class CliToolApprovalHandler(IToolApprovalUi terminalAdapter) : IToolApprovalHandler
 {
     public async Task<ToolApprovalResult> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,

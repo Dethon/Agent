@@ -6,7 +6,7 @@ using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
-using Infrastructure.Clients.Cli;
+using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;

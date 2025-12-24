@@ -1,5 +1,6 @@
 using Domain.DTOs;
-using Infrastructure.Clients.Cli;
+using Infrastructure.CliGui.Abstractions;
+using Infrastructure.CliGui.Rendering;
 
 namespace Tests.Unit.Infrastructure.Cli;
 

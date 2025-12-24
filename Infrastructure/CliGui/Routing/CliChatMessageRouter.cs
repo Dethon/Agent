@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Domain.DTOs;
+using Infrastructure.CliGui.Abstractions;
+using Infrastructure.CliGui.Rendering;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Routing;
 
 internal sealed class CliChatMessageRouter : IDisposable
 {
@@ -9,7 +11,7 @@ internal sealed class CliChatMessageRouter : IDisposable
     private readonly int _threadId;
     private readonly string _agentName;
     private readonly string _userName;
-    private readonly ITerminalAdapter _terminalAdapter;
+    private readonly ITerminalSession _terminalAdapter;
     private readonly CliCommandHandler _commandHandler;
 
     private BlockingCollection<string> _inputQueue = new();
@@ -20,7 +22,7 @@ internal sealed class CliChatMessageRouter : IDisposable
     public CliChatMessageRouter(
         string agentName,
         string userName,
-        ITerminalAdapter terminalAdapter,
+        ITerminalSession terminalAdapter,
         long chatId,
         int threadId)
     {

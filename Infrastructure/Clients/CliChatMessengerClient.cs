@@ -4,7 +4,9 @@ using System.Text;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Clients.Cli;
+using Infrastructure.CliGui.Abstractions;
+using Infrastructure.CliGui.Rendering;
+using Infrastructure.CliGui.Routing;
 
 namespace Infrastructure.Clients;
 
@@ -15,14 +17,14 @@ public class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private readonly string _agentName;
     private readonly string _userName;
     private readonly CliChatMessageRouter _router;
-    private readonly ITerminalAdapter _terminalAdapter;
+    private readonly ITerminalSession _terminalAdapter;
     private readonly IThreadStateStore? _threadStateStore;
     private bool _historyRestored;
 
     public CliChatMessengerClient(
         string agentName,
         string userName,
-        ITerminalAdapter terminalAdapter,
+        ITerminalSession terminalAdapter,
         Action? onShutdownRequested = null,
         IThreadStateStore? threadStateStore = null)
     {

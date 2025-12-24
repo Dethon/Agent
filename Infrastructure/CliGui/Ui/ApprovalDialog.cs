@@ -1,7 +1,7 @@
 using Domain.DTOs;
 using Terminal.Gui;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Ui;
 
 internal static class ApprovalDialog
 {

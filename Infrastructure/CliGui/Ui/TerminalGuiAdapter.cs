@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using Domain.DTOs;
+using Infrastructure.CliGui.Abstractions;
+using Infrastructure.CliGui.Rendering;
 using Terminal.Gui;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Ui;
 
 public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 {

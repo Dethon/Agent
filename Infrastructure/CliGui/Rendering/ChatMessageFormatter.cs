@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Domain.DTOs;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Rendering;
 
 internal static class ChatMessageFormatter
 {

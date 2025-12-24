@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Domain.DTOs;
-using Infrastructure.Clients.Cli;
+using Infrastructure.CliGui.Rendering;
+using Infrastructure.CliGui.Routing;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Cli;

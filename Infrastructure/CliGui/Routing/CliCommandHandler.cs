@@ -1,6 +1,8 @@
-namespace Infrastructure.Clients.Cli;
+using Infrastructure.CliGui.Abstractions;
 
-internal sealed class CliCommandHandler(ITerminalAdapter terminalAdapter, Action<bool> onReset)
+namespace Infrastructure.CliGui.Routing;
+
+internal sealed class CliCommandHandler(ITerminalSession terminalAdapter, Action<bool> onReset)
 {
     private const string HelpText = """
                                     Available commands:

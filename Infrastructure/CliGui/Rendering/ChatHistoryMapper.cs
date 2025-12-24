@@ -1,6 +1,6 @@
 using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Rendering;
 
 internal static class ChatHistoryMapper
 {

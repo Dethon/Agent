@@ -1,6 +1,6 @@
 using Terminal.Gui;
 
-namespace Infrastructure.Clients.Cli;
+namespace Infrastructure.CliGui.Ui;
 
 internal static class CliUiFactory
 {
