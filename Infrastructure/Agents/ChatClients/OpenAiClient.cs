@@ -28,7 +28,17 @@ public class OpenAiClient : DelegatingChatClient
 
         foreach (var client in AllClients)
         {
-            var response = await client.GetResponseAsync(conversation, options, cancellationToken);
+            ChatResponse response;
+            try
+            {
+                response = await client.GetResponseAsync(conversation, options, cancellationToken);
+            }
+            catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
+            {
+                // OpenRouter may return unknown finish reasons (e.g., "error")
+                continue;
+            }
+
             if (!WasContentFiltered(response))
             {
                 return response;
@@ -46,16 +56,42 @@ public class OpenAiClient : DelegatingChatClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var conversation = messages.ToList();
-
         foreach (var client in AllClients)
         {
-            var (updates, wasFiltered) = await StreamAndCollectAsync(client, conversation, options, ct);
-            foreach (var update in updates)
+            var updates = new List<ChatResponseUpdate>();
+            var shouldFallback = false;
+
+            await using var enumerator =
+                client.GetStreamingResponseAsync(conversation, options, ct).GetAsyncEnumerator(ct);
+            while (true)
             {
+                ChatResponseUpdate update;
+                try
+                {
+                    if (!await enumerator.MoveNextAsync())
+                    {
+                        break;
+                    }
+
+                    update = enumerator.Current;
+                }
+                catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
+                {
+                    // OpenRouter may return unknown finish reasons (e.g., "error")
+                    shouldFallback = true;
+                    break;
+                }
+
+                updates.Add(update);
                 yield return update;
+
+                if (update.FinishReason == ChatFinishReason.ContentFilter)
+                {
+                    shouldFallback = true;
+                }
             }
 
-            if (!wasFiltered)
+            if (!shouldFallback)
             {
                 yield break;
             }
@@ -102,25 +138,5 @@ public class OpenAiClient : DelegatingChatClient
     private static bool WasContentFiltered(ChatResponse response)
     {
         return response.FinishReason == ChatFinishReason.ContentFilter;
-    }
-
-    private static bool WasContentFiltered(IEnumerable<ChatResponseUpdate> updates)
-    {
-        return updates.Any(u => u.FinishReason == ChatFinishReason.ContentFilter);
-    }
-
-    private static async Task<(List<ChatResponseUpdate> Updates, bool WasFiltered)> StreamAndCollectAsync(
-        IChatClient client,
-        List<ChatMessage> messages,
-        ChatOptions? options,
-        CancellationToken ct)
-    {
-        var updates = new List<ChatResponseUpdate>();
-        await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct))
-        {
-            updates.Add(update);
-        }
-
-        return (updates, WasContentFiltered(updates));
     }
 }
