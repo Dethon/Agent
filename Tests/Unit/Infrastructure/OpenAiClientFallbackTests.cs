@@ -236,7 +236,6 @@ public class OpenAiClientFallbackTests
 
     private sealed class FakeChatClient(string modelId) : IChatClient
     {
-        private readonly Queue<ChatResponse> _responses = [];
         private IReadOnlyList<ChatResponseUpdate>? _streamingResponse;
         private Exception? _throwOnCall;
         private Exception? _throwOnStreaming;
@@ -262,9 +261,7 @@ public class OpenAiClientFallbackTests
             CallCount++;
             if (_throwOnCall is null)
             {
-                return Task.FromResult(_responses.TryDequeue(out var response)
-                    ? response
-                    : CreateSuccessResponse("Default response"));
+                return Task.FromResult(CreateSuccessResponse("Default response"));
             }
 
             var ex = _throwOnCall;
