@@ -6,21 +6,26 @@ namespace Infrastructure.Clients.Cli;
 
 public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 {
-    private static readonly TimeSpan _ctrlCTimeout = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan _enterPasteBurst = TimeSpan.FromMilliseconds(75);
+    private static class Ui
+    {
+        public const int DefaultWidth = 80;
+        public const int MinInputHeight = 3; // 1 text line + frame borders
+        public const int MaxInputHeight = 10;
 
-    private const int MinInputHeight = 3;
-    private const int MaxInputHeight = 10;
+        public static readonly TimeSpan CtrlCConfirmTimeout = TimeSpan.FromSeconds(2);
+        public static readonly TimeSpan EnterPasteBurst = TimeSpan.FromMilliseconds(75);
+    }
 
     private readonly ConcurrentQueue<ChatLine> _displayLines = new();
 
     private ListView? _chatListView;
     private FrameView? _inputFrame;
     private TextView? _inputField;
+
     private bool _isRunning;
     private bool _resizeScheduled;
-    private int _currentInputHeight = MinInputHeight;
-    private DateTime? _lastCtrlC;
+    private int _currentInputHeight = Ui.MinInputHeight;
+    private DateTime? _lastCtrlCUtc;
     private DateTime _lastKeyPressUtc;
 
     public event Action<string>? InputReceived;
@@ -35,12 +40,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
         _isRunning = true;
 
-        var guiThread = new Thread(RunTerminalGui)
-        {
-            IsBackground = true
-        };
-
-        guiThread.Start();
+        new Thread(RunTerminalGui) { IsBackground = true }.Start();
         Thread.Sleep(500);
     }
 
@@ -70,15 +70,13 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     public void ShowSystemMessage(string message)
     {
         var chatMessage = new ChatMessage("[System]", message, false, false, true, DateTime.Now);
-        var lines = ChatMessageFormatter.FormatMessage(chatMessage).ToArray();
-        DisplayMessage(lines);
+        DisplayMessage(ChatMessageFormatter.FormatMessage(chatMessage).ToArray());
     }
 
     public void ShowToolResult(string toolName, IReadOnlyDictionary<string, object?> arguments,
         ToolApprovalResult resultType)
     {
-        var lines = ChatMessageFormatter.FormatToolResult(toolName, arguments, resultType).ToArray();
-        DisplayMessage(lines);
+        DisplayMessage(ChatMessageFormatter.FormatToolResult(toolName, arguments, resultType).ToArray());
     }
 
     public Task<ToolApprovalResult> ShowApprovalDialogAsync(string toolName, string details,
@@ -106,28 +104,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private void RunTerminalGui()
     {
         Application.Init();
-
-        var baseScheme = CliUiFactory.CreateBaseScheme();
-        var mainWindow = CliUiFactory.CreateMainWindow(baseScheme);
-        var titleBar = CliUiFactory.CreateTitleBar(agentName);
-        var statusBar = CliUiFactory.CreateStatusBar();
-        var (inputFrame, inputField) = CliUiFactory.CreateInputArea();
-        _inputFrame = inputFrame;
-        _chatListView = CliUiFactory.CreateChatListView(inputFrame);
-        _chatListView.Source = new ChatListDataSource(_displayLines.ToArray());
-        _inputField = inputField;
-
-        _inputField.KeyPress += HandleKeyPress;
-
-        mainWindow.Add(titleBar, statusBar, _chatListView, inputFrame);
-        Application.Top.Add(mainWindow);
-        Application.Top.Loaded += () =>
-        {
-            _inputField.SetFocus();
-            ScheduleInputResize();
-        };
-        _inputField.SetFocus();
-        ScheduleInputResize();
+        InitializeUi();
 
         ShowSystemMessage("Welcome! Type a message to start chatting.");
 
@@ -135,45 +112,74 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         Application.Shutdown();
     }
 
+    private void InitializeUi()
+    {
+        var baseScheme = CliUiFactory.CreateBaseScheme();
+        var (mainWindow, titleBar, statusBar, chatListView, inputFrame, inputField) = CreateViews(baseScheme);
+
+        _chatListView = chatListView;
+        _inputFrame = inputFrame;
+        _inputField = inputField;
+
+        WireEvents();
+
+        mainWindow.Add(titleBar, statusBar, chatListView, inputFrame);
+        Application.Top.Add(mainWindow);
+
+        Application.Top.Loaded += () =>
+        {
+            _inputField.SetFocus();
+            ScheduleInputResize();
+        };
+
+        _inputField.SetFocus();
+        ScheduleInputResize();
+    }
+
+    private (Window MainWindow, View TitleBar, View StatusBar, ListView ChatListView, FrameView InputFrame, TextView
+        InputField)
+        CreateViews(ColorScheme baseScheme)
+    {
+        var mainWindow = CliUiFactory.CreateMainWindow(baseScheme);
+        var titleBar = CliUiFactory.CreateTitleBar(agentName);
+        var statusBar = CliUiFactory.CreateStatusBar();
+        var (inputFrame, inputField) = CliUiFactory.CreateInputArea();
+
+        var chatListView = CliUiFactory.CreateChatListView(inputFrame);
+        chatListView.Source = new ChatListDataSource(_displayLines.ToArray());
+
+        return (mainWindow, titleBar, statusBar, chatListView, inputFrame, inputField);
+    }
+
+    private void WireEvents()
+    {
+        if (_inputField is null)
+        {
+            return;
+        }
+
+        _inputField.KeyPress += HandleKeyPress;
+    }
+
     private void HandleKeyPress(View.KeyEventEventArgs args)
     {
         var now = DateTime.UtcNow;
-        var burst = now - _lastKeyPressUtc < _enterPasteBurst;
+        var isBurst = now - _lastKeyPressUtc < Ui.EnterPasteBurst;
 
         try
         {
             switch (args.KeyEvent.Key)
             {
                 case Key.Enter | Key.ShiftMask:
-                {
-                    _inputField?.InsertText("\n");
-                    args.Handled = true;
-                    break;
-                }
+                    InsertNewline(args);
+                    return;
                 case Key.Enter:
-                {
-                    // During paste, many Enter key events arrive in a burst; treat them as newlines.
-                    if (burst)
-                    {
-                        _inputField?.InsertText("\n");
-                        args.Handled = true;
-                        break;
-                    }
-
-                    var input = _inputField?.Text?.ToString()?.Trim();
-                    if (!string.IsNullOrEmpty(input))
-                    {
-                        InputReceived?.Invoke(input);
-                        _inputField!.Text = "";
-                    }
-
-                    args.Handled = true;
-                    break;
-                }
+                    HandleEnter(isBurst, args);
+                    return;
                 case Key.C | Key.CtrlMask:
                     HandleCtrlC();
                     args.Handled = true;
-                    break;
+                    return;
             }
         }
         finally
@@ -181,6 +187,38 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
             _lastKeyPressUtc = now;
             ScheduleInputResize();
         }
+    }
+
+    private void HandleEnter(bool treatAsNewline, View.KeyEventEventArgs args)
+    {
+        if (_inputField is null)
+        {
+            return;
+        }
+
+        // During paste, many Enter key events arrive in a burst; treat them as newlines.
+        if (treatAsNewline)
+        {
+            InsertNewline(args);
+            return;
+        }
+
+        var input = _inputField.Text?.ToString()?.Trim();
+        if (string.IsNullOrEmpty(input))
+        {
+            args.Handled = true;
+            return;
+        }
+
+        InputReceived?.Invoke(input);
+        _inputField.Text = "";
+        args.Handled = true;
+    }
+
+    private void InsertNewline(View.KeyEventEventArgs args)
+    {
+        _inputField?.InsertText("\n");
+        args.Handled = true;
     }
 
     private void ScheduleInputResize()
@@ -209,26 +247,11 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         var frameWidth = _inputFrame.Bounds.Width - 2;
         if (frameWidth <= 0)
         {
-            frameWidth = 80;
+            frameWidth = Ui.DefaultWidth;
         }
 
-        var text = _inputField.Text.ToString() ?? "";
-        var visualLines = 0;
-
-        foreach (var line in text.Split('\n'))
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                visualLines++;
-                continue;
-            }
-
-            visualLines += (int)Math.Ceiling((double)line.Length / frameWidth);
-        }
-
-        visualLines = Math.Max(1, visualLines);
-        var newHeight = Math.Clamp(visualLines + 2, MinInputHeight, MaxInputHeight);
-
+        var visualLines = ComputeVisualLineCount(_inputField.Text.ToString() ?? "", frameWidth);
+        var newHeight = Math.Clamp(visualLines + 2, Ui.MinInputHeight, Ui.MaxInputHeight);
         if (_currentInputHeight == newHeight)
         {
             return;
@@ -243,27 +266,48 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         _chatListView?.SetNeedsDisplay();
     }
 
+    private static int ComputeVisualLineCount(string text, int frameWidth)
+    {
+        if (frameWidth <= 0)
+        {
+            return 1;
+        }
+
+        var visualLines = 0;
+        foreach (var line in text.Split('\n'))
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                visualLines++;
+                continue;
+            }
+
+            visualLines += (int)Math.Ceiling((double)line.Length / frameWidth);
+        }
+
+        return Math.Max(1, visualLines);
+    }
+
     private void HandleCtrlC()
     {
         var now = DateTime.UtcNow;
 
-        if (_lastCtrlC.HasValue && now - _lastCtrlC.Value < _ctrlCTimeout)
+        if (_lastCtrlCUtc.HasValue && now - _lastCtrlCUtc.Value < Ui.CtrlCConfirmTimeout)
         {
             _isRunning = false;
             Application.RequestStop();
             ShutdownRequested?.Invoke();
+            return;
         }
-        else
+
+        _lastCtrlCUtc = now;
+
+        if (_inputField is { Selecting: true })
         {
-            _lastCtrlC = now;
-
-            if (_inputField is { Selecting: true })
-            {
-                _inputField.Copy();
-            }
-
-            ShowSystemMessage("Press Ctrl+C again to exit.");
+            _inputField.Copy();
         }
+
+        ShowSystemMessage("Press Ctrl+C again to exit.");
     }
 
     private void UpdateChatView()
@@ -274,20 +318,25 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         var snapshot = _displayLines.ToArray();
+        Application.MainLoop?.Invoke(() => UpdateChatViewCore(snapshot));
+    }
 
-        Application.MainLoop?.Invoke(() =>
+    private void UpdateChatViewCore(ChatLine[] snapshot)
+    {
+        if (_chatListView is null)
         {
-            var width = _chatListView.Bounds.Width;
-            var dataSource = new ChatListDataSource(snapshot, width > 0 ? width : 80);
-            _chatListView.Source = dataSource;
+            return;
+        }
 
-            if (_chatListView.Source.Count > 0)
-            {
-                _chatListView.SelectedItem = _chatListView.Source.Count - 1;
-                _chatListView.TopItem = Math.Max(0, _chatListView.Source.Count - _chatListView.Bounds.Height);
-            }
+        var width = _chatListView.Bounds.Width;
+        _chatListView.Source = new ChatListDataSource(snapshot, width > 0 ? width : Ui.DefaultWidth);
 
-            _inputField?.SetFocus();
-        });
+        if (_chatListView.Source.Count > 0)
+        {
+            _chatListView.SelectedItem = _chatListView.Source.Count - 1;
+            _chatListView.TopItem = Math.Max(0, _chatListView.Source.Count - _chatListView.Bounds.Height);
+        }
+
+        _inputField?.SetFocus();
     }
 }
