@@ -7,7 +7,7 @@ namespace Infrastructure.Agents.ChatClients;
 
 public class OpenAiClient : DelegatingChatClient
 {
-    private readonly IChatClient[] _fallbackClients;
+    private readonly IReadOnlyList<IChatClient> _fallbackClients;
 
     public OpenAiClient(string endpoint, string apiKey, string[] models, bool useFunctionInvocation = true)
         : base(CreateClient(endpoint, apiKey, models[0], useFunctionInvocation))
@@ -17,58 +17,27 @@ public class OpenAiClient : DelegatingChatClient
             .ToArray();
     }
 
-    private static IChatClient CreateClient(string endpoint, string apiKey, string model, bool useFunctionInvocation)
-    {
-        var options = new OpenAIClientOptions
-        {
-            Endpoint = new Uri(endpoint)
-        };
-        var builder = new OpenAIClient(new ApiKeyCredential(apiKey), options)
-            .GetChatClient(model)
-            .AsIChatClient()
-            .AsBuilder();
-
-        if (useFunctionInvocation)
-        {
-            builder = builder.UseFunctionInvocation(configure: c =>
-            {
-                c.IncludeDetailedErrors = true;
-                c.MaximumIterationsPerRequest = 50;
-                c.AllowConcurrentInvocation = true;
-                c.MaximumConsecutiveErrorsPerRequest = 3;
-            });
-        }
-
-        return builder.Build();
-    }
+    private IEnumerable<IChatClient> AllClients => [InnerClient, .. _fallbackClients];
 
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var processedMessages = messages.ToList();
-        var response = await base.GetResponseAsync(processedMessages, options, cancellationToken);
+        var conversation = messages.ToList();
 
-        if (response.FinishReason != ChatFinishReason.ContentFilter)
+        foreach (var client in AllClients)
         {
-            return response;
-        }
-
-        processedMessages.AddRange(response.Messages);
-
-        foreach (var client in _fallbackClients)
-        {
-            response = await client.GetResponseAsync(processedMessages, options, cancellationToken);
-            if (response.FinishReason != ChatFinishReason.ContentFilter)
+            var response = await client.GetResponseAsync(conversation, options, cancellationToken);
+            if (!WasContentFiltered(response))
             {
                 return response;
             }
 
-            processedMessages.AddRange(response.Messages);
+            conversation.AddRange(response.Messages);
         }
 
-        return response;
+        return await InnerClient.GetResponseAsync(conversation, options, cancellationToken);
     }
 
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -76,24 +45,22 @@ public class OpenAiClient : DelegatingChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var processedMessages = messages.ToList();
-        var allClients = new[] { InnerClient }.Concat(_fallbackClients);
+        var conversation = messages.ToList();
 
-        foreach (var client in allClients)
+        foreach (var client in AllClients)
         {
-            List<ChatResponseUpdate> updates = [];
-            await foreach (var update in client.GetStreamingResponseAsync(processedMessages, options, ct))
+            var (updates, wasFiltered) = await StreamAndCollectAsync(client, conversation, options, ct);
+            foreach (var update in updates)
             {
-                updates.Add(update);
                 yield return update;
             }
 
-            if (updates.All(x => x.FinishReason != ChatFinishReason.ContentFilter))
+            if (!wasFiltered)
             {
                 yield break;
             }
 
-            processedMessages.AddMessages(updates);
+            conversation.AddMessages(updates);
         }
     }
 
@@ -108,5 +75,52 @@ public class OpenAiClient : DelegatingChatClient
         }
 
         base.Dispose(disposing);
+    }
+
+    private static IChatClient CreateClient(string endpoint, string apiKey, string model, bool useFunctionInvocation)
+    {
+        var options = new OpenAIClientOptions { Endpoint = new Uri(endpoint) };
+        var builder = new OpenAIClient(new ApiKeyCredential(apiKey), options)
+            .GetChatClient(model)
+            .AsIChatClient()
+            .AsBuilder();
+
+        if (useFunctionInvocation)
+        {
+            builder = builder.UseFunctionInvocation(configure: opts =>
+            {
+                opts.IncludeDetailedErrors = true;
+                opts.MaximumIterationsPerRequest = 50;
+                opts.AllowConcurrentInvocation = true;
+                opts.MaximumConsecutiveErrorsPerRequest = 3;
+            });
+        }
+
+        return builder.Build();
+    }
+
+    private static bool WasContentFiltered(ChatResponse response)
+    {
+        return response.FinishReason == ChatFinishReason.ContentFilter;
+    }
+
+    private static bool WasContentFiltered(IEnumerable<ChatResponseUpdate> updates)
+    {
+        return updates.Any(u => u.FinishReason == ChatFinishReason.ContentFilter);
+    }
+
+    private static async Task<(List<ChatResponseUpdate> Updates, bool WasFiltered)> StreamAndCollectAsync(
+        IChatClient client,
+        List<ChatMessage> messages,
+        ChatOptions? options,
+        CancellationToken ct)
+    {
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in client.GetStreamingResponseAsync(messages, options, ct))
+        {
+            updates.Add(update);
+        }
+
+        return (updates, WasContentFiltered(updates));
     }
 }
