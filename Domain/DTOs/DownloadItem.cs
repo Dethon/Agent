@@ -19,7 +19,11 @@ public record DownloadStatus
     public int Id { get; init; }
     public string Title { get; init; }
     public DownloadState State { get; init; }
+
     public double Progress { get; init; }
+    public double ProgressPercent => Math.Round(Progress * 100.0, 2);
+    public string ProgressText => $"{ProgressPercent:0.##}%";
+
     public double DownSpeed { get; init; }
     public double UpSpeed { get; init; }
     public double Eta { get; init; }

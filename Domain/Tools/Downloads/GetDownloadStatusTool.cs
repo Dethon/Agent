@@ -11,7 +11,8 @@ public class GetDownloadStatusTool(IDownloadClient client, ISearchResultsManager
 
     protected const string Description = """
                                          Returns the status of download referenced by DownloadId.
-                                         Progress is a percentage from 0 to 1, with 1 meaning 100%.
+                                         Progress is a fraction from 0 to 1 (e.g. 0.37 = 37%).
+                                         ProgressPercent is a percentage from 0 to 100 (e.g. 37).
                                          DownSpeed and UpSpeed are in megabytes per second.
                                          Size is the total size of the download in megabytes.
                                          Eta is the estimated time until the completion of the download on minutes.
@@ -29,13 +30,14 @@ public class GetDownloadStatusTool(IDownloadClient client, ISearchResultsManager
             };
         }
 
+        var status = new DownloadStatus(downloadItem)
+        {
+            Title = searchResultsManager.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
+        };
+
         return new JsonObject
         {
-            ["status"] = "success",
-            ["message"] = JsonSerializer.Serialize(new DownloadStatus(downloadItem)
-            {
-                Title = searchResultsManager.Get(sessionId, downloadItem.Id)?.Title ?? "Missing Title"
-            })
+            ["status"] = JsonSerializer.SerializeToNode(status)
         };
     }
 }
