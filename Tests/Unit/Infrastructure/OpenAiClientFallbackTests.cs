@@ -205,14 +205,6 @@ public class OpenAiClientFallbackTests
         updates.Count.ShouldBeGreaterThan(1);
     }
 
-    private static ChatResponse CreateContentFilteredResponse()
-    {
-        return new ChatResponse([new ChatMessage(ChatRole.Assistant, "Content filtered")])
-        {
-            FinishReason = ChatFinishReason.ContentFilter
-        };
-    }
-
     private static ChatResponse CreateSuccessResponse(string text)
     {
         return new ChatResponse([new ChatMessage(ChatRole.Assistant, text)])
@@ -244,28 +236,17 @@ public class OpenAiClientFallbackTests
 
     private sealed class FakeChatClient(string modelId) : IChatClient
     {
-        private readonly Queue<ChatResponse> _responses = new();
+        private readonly Queue<ChatResponse> _responses = [];
         private IReadOnlyList<ChatResponseUpdate>? _streamingResponse;
         private Exception? _throwOnCall;
         private Exception? _throwOnStreaming;
 
-        public int CallCount { get; private set; }
+        private int CallCount { get; set; }
         public int StreamingCallCount { get; private set; }
-        public IReadOnlyList<ChatMessage> LastReceivedMessages { get; private set; } = [];
-
-        public void SetNextResponse(ChatResponse response)
-        {
-            _responses.Enqueue(response);
-        }
 
         public void SetStreamingResponse(IReadOnlyList<ChatResponseUpdate> updates)
         {
             _streamingResponse = updates;
-        }
-
-        public void ThrowOnNextCall(Exception ex)
-        {
-            _throwOnCall = ex;
         }
 
         public void ThrowOnStreamingEnumeration(Exception ex)
@@ -279,21 +260,16 @@ public class OpenAiClientFallbackTests
             CancellationToken cancellationToken = default)
         {
             CallCount++;
-            LastReceivedMessages = messages.ToList();
-
-            if (_throwOnCall is not null)
+            if (_throwOnCall is null)
             {
-                var ex = _throwOnCall;
-                _throwOnCall = null;
-                throw ex;
+                return Task.FromResult(_responses.TryDequeue(out var response)
+                    ? response
+                    : CreateSuccessResponse("Default response"));
             }
 
-            if (_responses.TryDequeue(out var response))
-            {
-                return Task.FromResult(response);
-            }
-
-            return Task.FromResult(CreateSuccessResponse("Default response"));
+            var ex = _throwOnCall;
+            _throwOnCall = null;
+            throw ex;
         }
 
         public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -311,13 +287,15 @@ public class OpenAiClientFallbackTests
                 throw ex;
             }
 
-            if (_streamingResponse is not null)
+            if (_streamingResponse is null)
             {
-                foreach (var update in _streamingResponse)
-                {
-                    yield return update;
-                    await Task.Yield();
-                }
+                yield break;
+            }
+
+            foreach (var update in _streamingResponse)
+            {
+                yield return update;
+                await Task.Yield();
             }
         }
 
@@ -325,12 +303,9 @@ public class OpenAiClientFallbackTests
 
         public object? GetService(Type serviceType, object? serviceKey = null)
         {
-            if (serviceType == typeof(ChatClientMetadata))
-            {
-                return new ChatClientMetadata(defaultModelId: modelId);
-            }
-
-            return null;
+            return serviceType == typeof(ChatClientMetadata)
+                ? new ChatClientMetadata(defaultModelId: modelId)
+                : null;
         }
     }
 }

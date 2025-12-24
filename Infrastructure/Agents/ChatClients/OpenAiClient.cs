@@ -140,8 +140,8 @@ public class OpenAiClient : DelegatingChatClient
             return false;
         }
 
-        var nextModel = _fallbackClients[failedClientIndex].GetService<ChatClientMetadata>()?.DefaultModelId ??
-                        "fallback";
+        var nextModel = _fallbackClients[failedClientIndex]
+            .GetService<ChatClientMetadata>()?.DefaultModelId ?? "fallback";
         message = $"\n\n_Switching to {nextModel} due to {reason}_\n\n";
         return true;
     }
