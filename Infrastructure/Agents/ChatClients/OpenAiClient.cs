@@ -39,16 +39,15 @@ public class OpenAiClient : DelegatingChatClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var conversation = messages.ToList();
-        var clientIndex = 0;
-
-        foreach (var client in AllClients)
+        foreach (var (idx, client) in AllClients.Index())
         {
             var updates = new List<ChatResponseUpdate>();
             var shouldFallback = false;
             string? fallbackReason = null;
 
-            await using var enumerator =
-                client.GetStreamingResponseAsync(conversation, options, ct).GetAsyncEnumerator(ct);
+            await using var enumerator = client
+                .GetStreamingResponseAsync(conversation, options, ct)
+                .GetAsyncEnumerator(ct);
             while (true)
             {
                 ChatResponseUpdate update;
@@ -85,12 +84,15 @@ public class OpenAiClient : DelegatingChatClient
                 yield break;
             }
 
-            if (TryGetFallbackMessage(clientIndex, fallbackReason!, out var msg))
+            if (TryGetFallbackMessage(idx, fallbackReason!, out var msg))
             {
-                yield return new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new TextContent(msg)] };
+                yield return new ChatResponseUpdate
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new TextContent(msg)]
+                };
             }
 
-            clientIndex++;
             conversation.AddMessages(updates);
         }
     }
