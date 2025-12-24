@@ -5,13 +5,14 @@ using Attribute = Terminal.Gui.Attribute;
 
 namespace Infrastructure.Clients.Cli;
 
-internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListDataSource
+internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int initialWidth = 80) : IListDataSource
 {
     private List<(string Text, ChatLineType Type)>? _wrappedLines;
     private int _lastWidth;
+    private int _currentWidth = initialWidth;
 
-    public int Count => GetWrappedLines().Count;
-    public int Length => GetWrappedLines().Count;
+    public int Count => GetWrappedLines(_currentWidth).Count;
+    public int Length => GetWrappedLines(_currentWidth).Count;
 
     public bool IsMarked(int item)
     {
@@ -21,6 +22,7 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
     public void Render(ListView container, ConsoleDriver driver, bool selected, int item, int col, int row,
         int width, int start = 0)
     {
+        _currentWidth = width;
         var wrapped = GetWrappedLines(width);
         if (item < 0 || item >= wrapped.Count)
         {
@@ -39,10 +41,10 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
 
     public IList ToList()
     {
-        return GetWrappedLines().Select(l => l.Text).ToList();
+        return GetWrappedLines(_currentWidth).Select(l => l.Text).ToList();
     }
 
-    private List<(string Text, ChatLineType Type)> GetWrappedLines(int width = 80)
+    private List<(string Text, ChatLineType Type)> GetWrappedLines(int width)
     {
         if (_wrappedLines is not null && _lastWidth == width)
         {
@@ -112,8 +114,6 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
                 {
                     currentLine.Append(' ');
                 }
-
-                currentLine.Append(word);
             }
             else
             {
@@ -124,8 +124,9 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines) : IListD
 
                 currentLine.Clear();
                 currentLine.Append(indent);
-                currentLine.Append(word);
             }
+
+            currentLine.Append(word);
         }
 
         if (currentLine.Length > indent.Length)

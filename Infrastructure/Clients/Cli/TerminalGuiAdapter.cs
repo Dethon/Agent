@@ -177,7 +177,9 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
         Application.MainLoop?.Invoke(() =>
         {
-            _chatListView.Source = new ChatListDataSource(snapshot);
+            var width = _chatListView.Bounds.Width;
+            var dataSource = new ChatListDataSource(snapshot, width > 0 ? width : 80);
+            _chatListView.Source = dataSource;
 
             if (_chatListView.Source.Count > 0)
             {
