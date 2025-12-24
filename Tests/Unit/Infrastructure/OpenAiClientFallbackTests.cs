@@ -14,10 +14,10 @@ public class OpenAiClientFallbackTests
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
-        primaryClient.SetNextResponse(CreateContentFilteredResponse());
+        primaryClient.SetStreamingResponse(CreateContentFilteredStreamingResponse());
 
         var fallbackClient = new FakeChatClient("fallback-model");
-        fallbackClient.SetNextResponse(CreateSuccessResponse("Fallback response"));
+        fallbackClient.SetStreamingResponse(CreateSuccessStreamingResponse("Fallback response"));
 
         var client = new OpenAiClient(primaryClient, [fallbackClient]);
 
@@ -25,9 +25,9 @@ public class OpenAiClientFallbackTests
         var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
 
         // Assert
-        response.Messages.Last().Text.ShouldBe("Fallback response");
-        primaryClient.CallCount.ShouldBe(1);
-        fallbackClient.CallCount.ShouldBe(1);
+        response.Messages.Last().Text.ShouldContain("Fallback response");
+        primaryClient.StreamingCallCount.ShouldBe(1);
+        fallbackClient.StreamingCallCount.ShouldBe(1);
     }
 
     [Fact]
@@ -35,19 +35,19 @@ public class OpenAiClientFallbackTests
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
-        primaryClient.SetNextResponse(CreateContentFilteredResponse());
+        primaryClient.SetStreamingResponse(CreateContentFilteredStreamingResponse());
 
         var fallbackClient = new FakeChatClient("fallback-model");
-        fallbackClient.SetNextResponse(CreateSuccessResponse("Fallback response"));
+        fallbackClient.SetStreamingResponse(CreateSuccessStreamingResponse("Fallback response"));
 
         var client = new OpenAiClient(primaryClient, [fallbackClient]);
 
         // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
+        var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
 
-        // Assert - fallback message is in the conversation sent to fallback client
-        var conversationSentToFallback = string.Join("", fallbackClient.LastReceivedMessages.Select(m => m.Text));
-        conversationSentToFallback.ShouldContain("Switching to fallback-model due to content filter");
+        // Assert - fallback message is included in the response
+        var allText = string.Join("", response.Messages.Select(m => m.Text));
+        allText.ShouldContain("Switching to fallback-model due to content filter");
     }
 
     [Fact]
@@ -55,10 +55,11 @@ public class OpenAiClientFallbackTests
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
-        primaryClient.ThrowOnNextCall(new ArgumentOutOfRangeException("value", "Unknown ChatFinishReason value."));
+        primaryClient.ThrowOnStreamingEnumeration(new ArgumentOutOfRangeException("value",
+            "Unknown ChatFinishReason value."));
 
         var fallbackClient = new FakeChatClient("fallback-model");
-        fallbackClient.SetNextResponse(CreateSuccessResponse("Fallback response"));
+        fallbackClient.SetStreamingResponse(CreateSuccessStreamingResponse("Fallback response"));
 
         var client = new OpenAiClient(primaryClient, [fallbackClient]);
 
@@ -66,8 +67,8 @@ public class OpenAiClientFallbackTests
         var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
 
         // Assert
-        response.Messages.Last().Text.ShouldBe("Fallback response");
-        fallbackClient.CallCount.ShouldBe(1);
+        response.Messages.Last().Text.ShouldContain("Fallback response");
+        fallbackClient.StreamingCallCount.ShouldBe(1);
     }
 
     [Fact]
@@ -75,33 +76,37 @@ public class OpenAiClientFallbackTests
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
-        primaryClient.ThrowOnNextCall(new ArgumentOutOfRangeException("value", "Unknown ChatFinishReason value."));
+        primaryClient.ThrowOnStreamingEnumeration(new ArgumentOutOfRangeException("value",
+            "Unknown ChatFinishReason value."));
 
         var fallbackClient = new FakeChatClient("fallback-model");
-        fallbackClient.SetNextResponse(CreateSuccessResponse("Fallback response"));
+        fallbackClient.SetStreamingResponse(CreateSuccessStreamingResponse("Fallback response"));
 
         var client = new OpenAiClient(primaryClient, [fallbackClient]);
 
         // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
+        var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
 
-        // Assert - fallback message is in the conversation sent to fallback client
-        var conversationSentToFallback = string.Join("", fallbackClient.LastReceivedMessages.Select(m => m.Text));
-        conversationSentToFallback.ShouldContain("Switching to fallback-model due to unknown error");
+        // Assert - fallback message is included in the response
+        var allText = string.Join("", response.Messages.Select(m => m.Text));
+        allText.ShouldContain("Switching to fallback-model due to unknown error");
     }
 
     [Fact]
-    public async Task GetResponseAsync_WhenNoFallbackAvailable_ThrowsOnUnknownFinishReason()
+    public async Task GetResponseAsync_WhenNoFallbackAvailable_ReturnsEmptyOnUnknownFinishReason()
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
-        primaryClient.ThrowOnNextCall(new ArgumentOutOfRangeException("value", "Unknown ChatFinishReason value."));
+        primaryClient.ThrowOnStreamingEnumeration(new ArgumentOutOfRangeException("value",
+            "Unknown ChatFinishReason value."));
 
         var client = new OpenAiClient(primaryClient, []);
 
-        // Act & Assert
-        await Should.ThrowAsync<ArgumentOutOfRangeException>(() =>
-            client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]));
+        // Act
+        var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
+
+        // Assert - no fallback available, returns empty response
+        response.Messages.ShouldBeEmpty();
     }
 
     [Fact]

@@ -28,46 +28,9 @@ public class OpenAiClient : DelegatingChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        var conversation = messages.ToList();
-        var clientIndex = 0;
-
-        foreach (var client in AllClients)
-        {
-            ChatResponse response;
-            try
-            {
-                response = await client.GetResponseAsync(conversation, options, cancellationToken);
-            }
-            catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
-            {
-                if (TryGetFallbackMessage(clientIndex, "unknown error", out var fallbackMsg))
-                {
-                    conversation.Add(new ChatMessage(ChatRole.Assistant, fallbackMsg));
-                }
-                else
-                {
-                    throw;
-                }
-
-                clientIndex++;
-                continue;
-            }
-
-            if (!WasContentFiltered(response))
-            {
-                return response;
-            }
-
-            if (TryGetFallbackMessage(clientIndex, "content filter", out var msg))
-            {
-                response.Messages.Add(new ChatMessage(ChatRole.Assistant, msg));
-            }
-
-            clientIndex++;
-            conversation.AddRange(response.Messages);
-        }
-
-        return await InnerClient.GetResponseAsync(conversation, options, cancellationToken);
+        var allUpdates = await GetStreamingResponseAsync(messages, options, cancellationToken)
+            .ToListAsync(cancellationToken);
+        return allUpdates.ToChatResponse();
     }
 
     public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
@@ -165,11 +128,6 @@ public class OpenAiClient : DelegatingChatClient
         }
 
         return builder.Build();
-    }
-
-    private static bool WasContentFiltered(ChatResponse response)
-    {
-        return response.FinishReason == ChatFinishReason.ContentFilter;
     }
 
     private bool TryGetFallbackMessage(int failedClientIndex, string reason, out string message)
