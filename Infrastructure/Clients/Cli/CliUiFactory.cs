@@ -44,7 +44,7 @@ internal static class CliUiFactory
 
     public static Label CreateStatusBar()
     {
-        return new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  🗙 /cancel  ◦  ↑↓ scroll")
+        return new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  × /cancel  ◦  ↑↓ scroll")
         {
             X = 0,
             Y = 1,
@@ -56,14 +56,50 @@ internal static class CliUiFactory
         };
     }
 
-    public static ListView CreateChatListView(IReadOnlyList<ChatLine> displayLines)
+    private const int MinInputHeight = 3;
+
+    public static (FrameView frame, TextView input) CreateInputArea()
     {
-        return new ListView(new ChatListDataSource(displayLines))
+        var inputFrame = new FrameView
+        {
+            X = 1,
+            Y = Pos.AnchorEnd(MinInputHeight + 1),
+            Width = Dim.Fill() - 2,
+            Height = MinInputHeight,
+            ColorScheme = new ColorScheme
+            {
+                Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
+                Focus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
+            }
+        };
+
+        var inputField = new TextView
+        {
+            X = 0,
+            Y = 0,
+            Width = Dim.Fill(),
+            Height = Dim.Fill(),
+            WordWrap = true,
+            ColorScheme = new ColorScheme
+            {
+                Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
+                Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
+            }
+        };
+
+
+        inputFrame.Add(inputField);
+        return (inputFrame, inputField);
+    }
+
+    public static ListView CreateChatListView(FrameView inputFrame)
+    {
+        return new ListView
         {
             X = 1,
             Y = 3,
             Width = Dim.Fill() - 2,
-            Height = Dim.Fill() - 6,
+            Height = Dim.Fill() - Dim.Height(inputFrame) - 5,
             AllowsMarking = false,
             CanFocus = false,
             ColorScheme = new ColorScheme
@@ -72,36 +108,5 @@ internal static class CliUiFactory
                 Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
             }
         };
-    }
-
-    public static (FrameView frame, TextField input) CreateInputArea(ListView chatListView)
-    {
-        var inputFrame = new FrameView
-        {
-            X = 1,
-            Y = Pos.Bottom(chatListView) + 1,
-            Width = Dim.Fill() - 2,
-            Height = 3,
-            ColorScheme = new ColorScheme
-            {
-                Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
-                Focus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
-            }
-        };
-
-        var inputField = new TextField("")
-        {
-            X = 0,
-            Y = 0,
-            Width = Dim.Fill(),
-            ColorScheme = new ColorScheme
-            {
-                Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
-                Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
-            }
-        };
-
-        inputFrame.Add(inputField);
-        return (inputFrame, inputField);
     }
 }
