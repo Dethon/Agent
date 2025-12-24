@@ -1,14 +1,18 @@
 using System.Collections.Concurrent;
+using System.IO.Hashing;
+using System.Text;
 using Domain.DTOs;
 using Infrastructure.CliGui.Abstractions;
 using Infrastructure.CliGui.Rendering;
+using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Infrastructure.CliGui.Routing;
 
-internal sealed class CliChatMessageRouter : IDisposable
+public sealed class CliChatMessageRouter : ICliChatMessageRouter
 {
-    private readonly long _chatId;
-    private readonly int _threadId;
+    public long ChatId { get; }
+    public int ThreadId { get; }
+
     private readonly string _agentName;
     private readonly string _userName;
     private readonly ITerminalSession _terminalAdapter;
@@ -22,15 +26,15 @@ internal sealed class CliChatMessageRouter : IDisposable
     public CliChatMessageRouter(
         string agentName,
         string userName,
-        ITerminalSession terminalAdapter,
-        long chatId,
-        int threadId)
+        ITerminalSession terminalAdapter)
     {
+        var (chatId, threadId) = DeriveIdsFromAgentName(agentName);
+
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
-        _chatId = chatId;
-        _threadId = threadId;
+        ChatId = chatId;
+        ThreadId = threadId;
         _commandHandler = new CliCommandHandler(terminalAdapter, ResetInputQueue);
 
         _terminalAdapter.InputReceived += OnInputReceived;
@@ -38,6 +42,18 @@ internal sealed class CliChatMessageRouter : IDisposable
     }
 
     public event Action? ShutdownRequested;
+
+    public void RestoreHistory(IReadOnlyList<AiChatMessage> messages)
+    {
+        var lines = ChatHistoryMapper.MapToDisplayLines(messages, _agentName, _userName).ToArray();
+        if (lines.Length == 0)
+        {
+            return;
+        }
+
+        _terminalAdapter.ShowSystemMessage("--- Previous conversation restored ---");
+        _terminalAdapter.DisplayMessage(lines);
+    }
 
     public IEnumerable<ChatPrompt> ReadPrompts(CancellationToken cancellationToken)
     {
@@ -85,10 +101,10 @@ internal sealed class CliChatMessageRouter : IDisposable
             yield return new ChatPrompt
             {
                 Prompt = input,
-                ChatId = _chatId,
+                ChatId = ChatId,
                 MessageId = Interlocked.Increment(ref _messageCounter),
                 Sender = _userName,
-                ThreadId = _threadId
+                ThreadId = ThreadId
             };
         }
     }
@@ -117,6 +133,15 @@ internal sealed class CliChatMessageRouter : IDisposable
         _terminalAdapter.InputReceived -= OnInputReceived;
         _terminalAdapter.ShutdownRequested -= OnShutdownRequested;
         _inputQueue.Dispose();
+        _terminalAdapter.Dispose();
+    }
+
+    private static (long ChatId, int ThreadId) DeriveIdsFromAgentName(string agentName)
+    {
+        var bytes = Encoding.UTF8.GetBytes(agentName.ToLowerInvariant());
+        var hash = XxHash32.HashToUInt32(bytes);
+        var threadId = (int)(hash & 0x7FFFFFFF);
+        return (hash, threadId);
     }
 
     private void OnInputReceived(string input)

@@ -6,6 +6,7 @@ using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
+using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
@@ -76,10 +77,11 @@ public static class InjectorModule
                 {
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
                     var threadStateStore = sp.GetRequiredService<IThreadStateStore>();
+
+                    var router = new CliChatMessageRouter(settings.Name, Environment.UserName, terminalAdapter);
+
                     return new CliChatMessengerClient(
-                        settings.Name,
-                        Environment.UserName,
-                        terminalAdapter,
+                        router,
                         lifetime.StopApplication,
                         threadStateStore);
                 });

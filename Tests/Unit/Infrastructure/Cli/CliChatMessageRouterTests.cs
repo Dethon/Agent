@@ -14,7 +14,7 @@ public class CliChatMessageRouterTests : IDisposable
 
     public CliChatMessageRouterTests()
     {
-        _router = new CliChatMessageRouter("TestAgent", "TestUser", _terminalAdapter, 1, 1);
+        _router = new CliChatMessageRouter("TestAgent", "TestUser", _terminalAdapter);
     }
 
     public void Dispose()
