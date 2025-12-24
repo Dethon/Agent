@@ -8,16 +8,20 @@ namespace Infrastructure.Agents.ChatClients;
 public class OpenAiClient : DelegatingChatClient
 {
     private readonly IReadOnlyList<IChatClient> _fallbackClients;
+    private IEnumerable<IChatClient> AllClients => [InnerClient, .._fallbackClients];
 
     public OpenAiClient(string endpoint, string apiKey, string[] models, bool useFunctionInvocation = true)
-        : base(CreateClient(endpoint, apiKey, models[0], useFunctionInvocation))
+        : this(
+            CreateClient(endpoint, apiKey, models[0], useFunctionInvocation),
+            models.Skip(1).Select(model => CreateClient(endpoint, apiKey, model, useFunctionInvocation)).ToArray())
     {
-        _fallbackClients = models.Skip(1)
-            .Select(model => CreateClient(endpoint, apiKey, model, useFunctionInvocation))
-            .ToArray();
     }
 
-    private IEnumerable<IChatClient> AllClients => [InnerClient, .. _fallbackClients];
+    internal OpenAiClient(IChatClient primaryClient, IReadOnlyList<IChatClient> fallbackClients)
+        : base(primaryClient)
+    {
+        _fallbackClients = fallbackClients;
+    }
 
     public override async Task<ChatResponse> GetResponseAsync(
         IEnumerable<ChatMessage> messages,
@@ -25,6 +29,7 @@ public class OpenAiClient : DelegatingChatClient
         CancellationToken cancellationToken = default)
     {
         var conversation = messages.ToList();
+        var clientIndex = 0;
 
         foreach (var client in AllClients)
         {
@@ -35,7 +40,16 @@ public class OpenAiClient : DelegatingChatClient
             }
             catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
             {
-                // OpenRouter may return unknown finish reasons (e.g., "error")
+                if (TryGetFallbackMessage(clientIndex, "unknown error", out var fallbackMsg))
+                {
+                    conversation.Add(new ChatMessage(ChatRole.Assistant, fallbackMsg));
+                }
+                else
+                {
+                    throw;
+                }
+
+                clientIndex++;
                 continue;
             }
 
@@ -44,6 +58,12 @@ public class OpenAiClient : DelegatingChatClient
                 return response;
             }
 
+            if (TryGetFallbackMessage(clientIndex, "content filter", out var msg))
+            {
+                response.Messages.Add(new ChatMessage(ChatRole.Assistant, msg));
+            }
+
+            clientIndex++;
             conversation.AddRange(response.Messages);
         }
 
@@ -56,10 +76,13 @@ public class OpenAiClient : DelegatingChatClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var conversation = messages.ToList();
+        var clientIndex = 0;
+
         foreach (var client in AllClients)
         {
             var updates = new List<ChatResponseUpdate>();
             var shouldFallback = false;
+            string? fallbackReason = null;
 
             await using var enumerator =
                 client.GetStreamingResponseAsync(conversation, options, ct).GetAsyncEnumerator(ct);
@@ -77,18 +100,21 @@ public class OpenAiClient : DelegatingChatClient
                 }
                 catch (ArgumentOutOfRangeException ex) when (ex.Message.Contains("ChatFinishReason"))
                 {
-                    // OpenRouter may return unknown finish reasons (e.g., "error")
                     shouldFallback = true;
+                    fallbackReason = "unknown error";
                     break;
                 }
 
                 updates.Add(update);
                 yield return update;
 
-                if (update.FinishReason == ChatFinishReason.ContentFilter)
+                if (update.FinishReason != ChatFinishReason.ContentFilter)
                 {
-                    shouldFallback = true;
+                    continue;
                 }
+
+                shouldFallback = true;
+                fallbackReason = "content filter";
             }
 
             if (!shouldFallback)
@@ -96,6 +122,12 @@ public class OpenAiClient : DelegatingChatClient
                 yield break;
             }
 
+            if (TryGetFallbackMessage(clientIndex, fallbackReason!, out var msg))
+            {
+                yield return new ChatResponseUpdate { Role = ChatRole.Assistant, Contents = [new TextContent(msg)] };
+            }
+
+            clientIndex++;
             conversation.AddMessages(updates);
         }
     }
@@ -138,5 +170,19 @@ public class OpenAiClient : DelegatingChatClient
     private static bool WasContentFiltered(ChatResponse response)
     {
         return response.FinishReason == ChatFinishReason.ContentFilter;
+    }
+
+    private bool TryGetFallbackMessage(int failedClientIndex, string reason, out string message)
+    {
+        message = string.Empty;
+        if (failedClientIndex >= _fallbackClients.Count)
+        {
+            return false;
+        }
+
+        var nextModel = _fallbackClients[failedClientIndex].GetService<ChatClientMetadata>()?.DefaultModelId ??
+                        "fallback";
+        message = $"\n\n_Switching to {nextModel} due to {reason}_\n\n";
+        return true;
     }
 }
