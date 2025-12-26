@@ -1,13 +1,13 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
-using McpServerTextTools.McpPrompts;
-using McpServerTextTools.McpTools;
-using McpServerTextTools.Settings;
+using McpServerText.McpPrompts;
+using McpServerText.McpTools;
+using McpServerText.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace McpServerTextTools.Modules;
+namespace McpServerText.Modules;
 
 public static class ConfigModule
 {

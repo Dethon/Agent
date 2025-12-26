@@ -2,7 +2,7 @@ using System.ComponentModel;
 using Domain.Prompts;
 using ModelContextProtocol.Server;
 
-namespace McpServerTextTools.McpPrompts;
+namespace McpServerText.McpPrompts;
 
 [McpServerPromptType]
 public class McpSystemPrompt

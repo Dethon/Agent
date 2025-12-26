@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerTextTools.McpTools;
+namespace McpServerText.McpTools;
 
 [McpServerToolType]
 public class McpMoveTool(

@@ -234,7 +234,9 @@ public class LocalFileSystemClientTests : IDisposable
         // Arrange
         var filePath = Path.Combine(_testDir, "to-trash.txt");
         await File.WriteAllTextAsync(filePath, "content");
-        var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".trash");
+        var trashDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            LocalFileSystemClient.TrashFolderName);
 
         // Act
         var trashPath = await _client.MoveToTrash(filePath);

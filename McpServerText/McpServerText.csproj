@@ -7,7 +7,6 @@
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <LangVersion>14</LangVersion>
-    <RootNamespace>McpServerTextTools</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

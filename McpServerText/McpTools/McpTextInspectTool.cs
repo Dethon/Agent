@@ -1,12 +1,12 @@
 using System.ComponentModel;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
-using McpServerTextTools.Settings;
+using McpServerText.Settings;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerTextTools.McpTools;
+namespace McpServerText.McpTools;
 
 [McpServerToolType]
 public class McpTextInspectTool(McpSettings settings, ILogger<McpTextInspectTool> logger)

@@ -9,7 +9,7 @@ public class RemoveFileTool(IFileSystemClient client, LibraryPathConfig libraryP
     protected const string Name = "RemoveFile";
 
     protected const string Description = """
-                                         Removes a file from the library by moving it to a .trash folder.
+                                         Removes a file from the library by moving it to a trash folder.
                                          The path must be an absolute path derived from the ListFiles tool response.
                                          It must start with the library path.
                                          """;

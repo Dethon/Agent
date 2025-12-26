@@ -3,12 +3,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
-using McpServerTextTools.Settings;
+using McpServerText.Settings;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerTextTools.McpTools;
+namespace McpServerText.McpTools;
 
 [McpServerToolType]
 public class McpTextReadTool(McpSettings settings, ILogger<McpTextReadTool> logger)

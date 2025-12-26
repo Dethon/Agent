@@ -4,15 +4,14 @@ namespace Infrastructure.Clients;
 
 public class LocalFileSystemClient : IFileSystemClient
 {
+    public const string TrashFolderName = ".trash";
+
     public Task<Dictionary<string, string[]>> DescribeDirectory(string path,
         CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(path))
-        {
-            throw new DirectoryNotFoundException($"Library directory not found: {path}");
-        }
-
-        return Task.FromResult(GetLibraryPaths(path));
+        return !Directory.Exists(path)
+            ? throw new DirectoryNotFoundException($"Library directory not found: {path}")
+            : Task.FromResult(GetLibraryPaths(path));
     }
 
     public Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default)
@@ -79,7 +78,7 @@ public class LocalFileSystemClient : IFileSystemClient
         }
 
         var fileName = Path.GetFileName(path);
-        var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".trash");
+        var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), TrashFolderName);
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
         var trashPath = Path.Combine(trashDir, $"{timestamp}_{uniqueId}_{fileName}");

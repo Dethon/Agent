@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
+using Infrastructure.Clients;
 using Moq;
 using Shouldly;
 
@@ -28,7 +29,9 @@ public class RemoveFileToolTests
         // Arrange
         var tool = CreateTool();
         var filePath = Path.Combine(_libraryPath, "movies", "test.mkv");
-        var trashPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".trash",
+        var trashPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            LocalFileSystemClient.TrashFolderName,
             "test.mkv");
 
         _fileSystemClientMock
