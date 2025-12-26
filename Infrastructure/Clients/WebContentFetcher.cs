@@ -259,33 +259,27 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
 
         var md = html;
 
-        md = Regex.Replace(md, "<h1[^>]*>(.*?)</h1>", "# $1\n\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<h2[^>]*>(.*?)</h2>", "## $1\n\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<h3[^>]*>(.*?)</h3>", "### $1\n\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<h4[^>]*>(.*?)</h4>", "#### $1\n\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<h5[^>]*>(.*?)</h5>", "##### $1\n\n",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<h6[^>]*>(.*?)</h6>", "###### $1\n\n",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        md = H1TagRegex().Replace(md, "# $1\n\n");
+        md = H2TagRegex().Replace(md, "## $1\n\n");
+        md = H3TagRegex().Replace(md, "### $1\n\n");
+        md = H4TagRegex().Replace(md, "#### $1\n\n");
+        md = H5TagRegex().Replace(md, "##### $1\n\n");
+        md = H6TagRegex().Replace(md, "###### $1\n\n");
 
-        md = Regex.Replace(md, "<strong[^>]*>(.*?)</strong>", "**$1**",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<b[^>]*>(.*?)</b>", "**$1**", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<em[^>]*>(.*?)</em>", "*$1*", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<i[^>]*>(.*?)</i>", "*$1*", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<code[^>]*>(.*?)</code>", "`$1`", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        md = StrongTagRegex().Replace(md, "**$1**");
+        md = BoldTagRegex().Replace(md, "**$1**");
+        md = EmTagRegex().Replace(md, "*$1*");
+        md = ItalicTagRegex().Replace(md, "*$1*");
+        md = CodeTagRegex().Replace(md, "`$1`");
 
-        md = Regex.Replace(md, """<a\s+href=["']([^"']+)["'][^>]*>(.*?)</a>""", "[$2]($1)",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        md = AnchorTagRegex().Replace(md, "[$2]($1)");
 
-        md = Regex.Replace(md, "<li[^>]*>(.*?)</li>", "- $1\n", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<[uo]l[^>]*>", "\n", RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "</[uo]l>", "\n", RegexOptions.IgnoreCase);
+        md = ListItemTagRegex().Replace(md, "- $1\n");
+        md = ListOpenTagRegex().Replace(md, "\n");
+        md = ListCloseTagRegex().Replace(md, "\n");
 
-        md = Regex.Replace(md, "<pre[^>]*><code[^>]*>(.*?)</code></pre>", "\n```\n$1\n```\n",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        md = Regex.Replace(md, "<pre[^>]*>(.*?)</pre>", "\n```\n$1\n```\n",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+        md = PreCodeTagRegex().Replace(md, "\n```\n$1\n```\n");
+        md = PreTagRegex().Replace(md, "\n```\n$1\n```\n");
 
         md = BrTagRegex().Replace(md, "\n");
         md = ParagraphTagRegex().Replace(md, "\n\n");
@@ -345,4 +339,55 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
 
     [GeneratedRegex(" {2,}")]
     private static partial Regex MultipleSpacesRegex();
+
+    [GeneratedRegex("<h1[^>]*>(.*?)</h1>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H1TagRegex();
+
+    [GeneratedRegex("<h2[^>]*>(.*?)</h2>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H2TagRegex();
+
+    [GeneratedRegex("<h3[^>]*>(.*?)</h3>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H3TagRegex();
+
+    [GeneratedRegex("<h4[^>]*>(.*?)</h4>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H4TagRegex();
+
+    [GeneratedRegex("<h5[^>]*>(.*?)</h5>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H5TagRegex();
+
+    [GeneratedRegex("<h6[^>]*>(.*?)</h6>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex H6TagRegex();
+
+    [GeneratedRegex("<strong[^>]*>(.*?)</strong>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex StrongTagRegex();
+
+    [GeneratedRegex("<b[^>]*>(.*?)</b>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex BoldTagRegex();
+
+    [GeneratedRegex("<em[^>]*>(.*?)</em>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex EmTagRegex();
+
+    [GeneratedRegex("<i[^>]*>(.*?)</i>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex ItalicTagRegex();
+
+    [GeneratedRegex("<code[^>]*>(.*?)</code>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex CodeTagRegex();
+
+    [GeneratedRegex("""<a\s+href=["']([^"']+)["'][^>]*>(.*?)</a>""", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex AnchorTagRegex();
+
+    [GeneratedRegex("<li[^>]*>(.*?)</li>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex ListItemTagRegex();
+
+    [GeneratedRegex("<[uo]l[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex ListOpenTagRegex();
+
+    [GeneratedRegex("</[uo]l>", RegexOptions.IgnoreCase)]
+    private static partial Regex ListCloseTagRegex();
+
+    [GeneratedRegex("<pre[^>]*><code[^>]*>(.*?)</code></pre>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex PreCodeTagRegex();
+
+    [GeneratedRegex("<pre[^>]*>(.*?)</pre>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex PreTagRegex();
 }
