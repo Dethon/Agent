@@ -169,6 +169,24 @@ services:
       - .env
     networks:
       - jackbot
+
+  mcp-websearch:
+    image: mcp-websearch:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-websearch
+    ports:
+      - "6003:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerWebSearch/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
         
   jack:
     image: agent:latest
@@ -186,12 +204,15 @@ services:
     environment:
       - NAME=Jack
       - MCPSERVERS__0__ENDPOINT=http://mcp-library:8080/sse
+      - MCPSERVERS__1__ENDPOINT=http://mcp-websearch:8080/sse
       - WHITELISTPATTERNS__0=mcp:mcp-library:*
+      - WHITELISTPATTERNS__1=mcp:mcp-websearch:*
       - TELEGRAM__BOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
     depends_on:
       - mcp-library
+      - mcp-websearch
       - redis
 
   jonas:
@@ -210,12 +231,15 @@ services:
     environment:
       - NAME=Jonas
       - MCPSERVERS__0__ENDPOINT=http://mcp-text:8080/sse
+      - MCPSERVERS__1__ENDPOINT=http://mcp-websearch:8080/sse
       - WHITELISTPATTERNS__0=mcp:mcp-text:*
+      - WHITELISTPATTERNS__1=mcp:mcp-websearch:*
       - TELEGRAM__BOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
     depends_on:
       - mcp-text
+      - mcp-websearch
       - redis
 
 networks:

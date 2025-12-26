@@ -1,0 +1,43 @@
+using System.ComponentModel;
+using Domain.Contracts;
+using Domain.Tools.Web;
+using Infrastructure.Utils;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+namespace McpServerWebSearch.McpTools;
+
+[McpServerToolType]
+public class McpWebSearchTool(IWebSearchClient searchClient, ILogger<McpWebSearchTool> logger)
+    : WebSearchTool(searchClient)
+{
+    [McpServerTool(Name = Name)]
+    [Description(Description)]
+    public async Task<CallToolResult> Run(
+        [Description("The search query. Be specific for better results.")]
+        string query,
+        [Description("Maximum results to return (1-20, default: 10)")]
+        int maxResults = 10,
+        [Description("Limit search to specific domain (e.g., 'imdb.com', 'wikipedia.org')")]
+        string? site = null,
+        [Description("Filter by recency: 'day', 'week', 'month', 'year'")]
+        string? dateRange = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var result = await RunAsync(query, maxResults, site, dateRange, ct);
+            return ToolResponse.Create(result);
+        }
+        catch (Exception ex)
+        {
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                logger.LogError(ex, "Error in {ToolName} tool", Name);
+            }
+
+            return ToolResponse.Create(ex);
+        }
+    }
+}

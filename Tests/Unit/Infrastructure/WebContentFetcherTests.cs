@@ -1,0 +1,349 @@
+using System.Net;
+using Domain.Contracts;
+using Infrastructure.Clients;
+using Shouldly;
+using WireMock.RequestBuilders;
+using WireMock.ResponseBuilders;
+using WireMock.Server;
+
+namespace Tests.Unit.Infrastructure;
+
+public class WebContentFetcherTests : IDisposable
+{
+    private readonly WireMockServer _server;
+    private readonly WebContentFetcher _fetcher;
+
+    public WebContentFetcherTests()
+    {
+        _server = WireMockServer.Start();
+        var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(_server.Url!)
+        };
+        _fetcher = new WebContentFetcher(httpClient);
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithValidHtml_ReturnsContent()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test Page</title></head>
+                   <body>
+                       <article>
+                           <h1>Hello World</h1>
+                           <p>This is test content.</p>
+                       </article>
+                   </body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Success);
+        result.Title.ShouldBe("Test Page");
+        result.Content.ShouldNotBeNullOrEmpty();
+        result.Content.ShouldContain("Hello World");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithCssSelector_ReturnsTargetedContent()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test Page</title></head>
+                   <body>
+                       <div class="header">Header content</div>
+                       <div class="main-content">
+                           <p>Main content here</p>
+                       </div>
+                       <div class="footer">Footer content</div>
+                   </body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", Selector: ".main-content");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Success);
+        result.Content!.ShouldContain("Main content here");
+        result.Content!.ShouldNotContain("Header content");
+        result.Content!.ShouldNotContain("Footer content");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithNonMatchingSelector_ReturnsPartialStatus()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test Page</title></head>
+                   <body><p>Content</p></body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", Selector: ".nonexistent");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Partial);
+        result.ErrorMessage!.ShouldContain("nonexistent");
+    }
+
+    [Fact]
+    public async Task FetchAsync_ExtractsMetadata()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head>
+                       <title>Test Page</title>
+                       <meta name="description" content="Page description">
+                       <meta name="author" content="John Doe">
+                       <meta property="og:site_name" content="Example Site">
+                       <meta property="article:published_time" content="2024-01-15T10:00:00Z">
+                   </head>
+                   <body><p>Content</p></body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Metadata.ShouldNotBeNull();
+        result.Metadata.Description.ShouldBe("Page description");
+        result.Metadata.Author.ShouldBe("John Doe");
+        result.Metadata.SiteName.ShouldBe("Example Site");
+        result.Metadata.DatePublished.ShouldBe(new DateOnly(2024, 1, 15));
+    }
+
+    [Fact]
+    public async Task FetchAsync_ExtractsLinks()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test Page</title></head>
+                   <body>
+                       <a href="https://example.com/page1">Link 1</a>
+                       <a href="https://example.com/page2">Link 2</a>
+                       <a href="/relative">Relative Link</a>
+                   </body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", IncludeLinks: true);
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Links.ShouldNotBeNull();
+        result.Links.Count.ShouldBe(2); // Only absolute URLs
+        result.Links.ShouldContain(l => l.Text == "Link 1" && l.Url == "https://example.com/page1");
+        result.Links.ShouldContain(l => l.Text == "Link 2" && l.Url == "https://example.com/page2");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithTextFormat_ReturnsPlainText()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test</title></head>
+                   <body>
+                       <h1>Title</h1>
+                       <p>Paragraph <strong>with bold</strong> text.</p>
+                   </body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", Format: WebFetchOutputFormat.Text);
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Content!.ShouldNotContain("<h1>");
+        result.Content!.ShouldNotContain("<strong>");
+        result.Content!.ShouldContain("Title");
+        result.Content!.ShouldContain("with bold");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithMarkdownFormat_ConvertsToMarkdown()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test</title></head>
+                   <body>
+                       <h1>Title</h1>
+                       <p>Text with <strong>bold</strong> and <em>italic</em>.</p>
+                       <a href="https://example.com">Link</a>
+                   </body>
+                   </html>
+                   """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", Format: WebFetchOutputFormat.Markdown);
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Content!.ShouldContain("# Title");
+        result.Content!.ShouldContain("**bold**");
+        result.Content!.ShouldContain("*italic*");
+        result.Content!.ShouldContain("[Link](https://example.com)");
+    }
+
+    [Fact]
+    public async Task FetchAsync_TruncatesLongContent()
+    {
+        // Arrange
+        var longContent = string.Join("\n",
+            Enumerable.Range(1, 1000).Select(i => $"<p>Paragraph {i} with some content.</p>"));
+        var html = $"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Test</title></head>
+                    <body>{longContent}</body>
+                    </html>
+                    """;
+
+        _server.Given(Request.Create()
+                .WithPath("/test")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "text/html")
+                .WithBody(html));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/test", MaxLength: 500);
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Truncated.ShouldBeTrue();
+        result.ContentLength.ShouldBeLessThanOrEqualTo(520); // Some tolerance for truncation message
+        result.Content!.ShouldContain("[Content truncated...]");
+    }
+
+    [Fact]
+    public async Task FetchAsync_On404_ReturnsError()
+    {
+        // Arrange
+        _server.Given(Request.Create()
+                .WithPath("/notfound")
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(HttpStatusCode.NotFound));
+
+        // Act
+        var request = new WebFetchRequest($"{_server.Url}/notfound");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Error);
+        result.ErrorMessage!.ShouldContain("404");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithInvalidUrl_ReturnsError()
+    {
+        // Act
+        var request = new WebFetchRequest("not-a-valid-url");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Error);
+        result.ErrorMessage!.ShouldContain("Invalid URL");
+    }
+
+    [Fact]
+    public async Task FetchAsync_WithFtpUrl_ReturnsError()
+    {
+        // Act
+        var request = new WebFetchRequest("ftp://example.com/file");
+        var result = await _fetcher.FetchAsync(request);
+
+        // Assert
+        result.Status.ShouldBe(WebFetchStatus.Error);
+        result.ErrorMessage!.ShouldContain("http");
+    }
+
+    public void Dispose()
+    {
+        _server.Dispose();
+    }
+}
