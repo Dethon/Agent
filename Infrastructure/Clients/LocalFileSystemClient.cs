@@ -71,6 +71,25 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.CompletedTask;
     }
 
+    public Task<string> MoveToTrash(string path, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"File not found: {path}");
+        }
+
+        var fileName = Path.GetFileName(path);
+        var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".trash");
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+        var uniqueId = Guid.NewGuid().ToString("N")[..8];
+        var trashPath = Path.Combine(trashDir, $"{timestamp}_{uniqueId}_{fileName}");
+
+        CreateDestinationParentPath(trashPath);
+        File.Move(path, trashPath);
+
+        return Task.FromResult(trashPath);
+    }
+
     private static Dictionary<string, string[]> GetLibraryPaths(string basePath)
     {
         // ReSharper disable once ConvertClosureToMethodGroup | It messes with the nullability checks somehow

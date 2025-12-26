@@ -227,4 +227,61 @@ public class LocalFileSystemClientTests : IDisposable
         // Assert
         directories.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task MoveToTrash_WithExistingFile_MovesToUserTrashFolder()
+    {
+        // Arrange
+        var filePath = Path.Combine(_testDir, "to-trash.txt");
+        await File.WriteAllTextAsync(filePath, "content");
+        var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".trash");
+
+        // Act
+        var trashPath = await _client.MoveToTrash(filePath);
+
+        // Assert
+        File.Exists(filePath).ShouldBeFalse();
+        File.Exists(trashPath).ShouldBeTrue();
+        trashPath.ShouldStartWith(trashDir);
+        trashPath.ShouldContain("to-trash.txt");
+        (await File.ReadAllTextAsync(trashPath)).ShouldBe("content");
+
+        // Cleanup
+        File.Delete(trashPath);
+    }
+
+    [Fact]
+    public async Task MoveToTrash_WithNonExistentFile_ThrowsFileNotFoundException()
+    {
+        // Arrange
+        var nonExistentPath = Path.Combine(_testDir, "does-not-exist.txt");
+
+        // Act & Assert
+        await Should.ThrowAsync<FileNotFoundException>(async () =>
+            await _client.MoveToTrash(nonExistentPath));
+    }
+
+    [Fact]
+    public async Task MoveToTrash_WithMultipleFiles_CreatesUniqueTrashPaths()
+    {
+        // Arrange
+        var file1 = Path.Combine(_testDir, "same-name.txt");
+        var file2 = Path.Combine(_testDir, "subdir", "same-name.txt");
+        Directory.CreateDirectory(Path.Combine(_testDir, "subdir"));
+        await File.WriteAllTextAsync(file1, "content1");
+        await File.WriteAllTextAsync(file2, "content2");
+
+        // Act
+        var trashPath1 = await _client.MoveToTrash(file1);
+        var trashPath2 = await _client.MoveToTrash(file2);
+
+        // Assert
+        trashPath1.ShouldNotBe(trashPath2);
+        File.Exists(trashPath1).ShouldBeTrue();
+        File.Exists(trashPath2).ShouldBeTrue();
+
+        // Cleanup
+        File.Delete(trashPath1);
+        File.Delete(trashPath2);
+    }
 }

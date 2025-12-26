@@ -8,4 +8,5 @@ public interface IFileSystemClient
     Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default);
     Task RemoveDirectory(string path, CancellationToken cancellationToken = default);
     Task RemoveFile(string path, CancellationToken cancellationToken = default);
+    Task<string> MoveToTrash(string path, CancellationToken cancellationToken = default);
 }
