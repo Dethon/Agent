@@ -93,7 +93,7 @@ public class OpenAiClientFallbackTests
     }
 
     [Fact]
-    public async Task GetResponseAsync_WhenNoFallbackAvailable_ReturnsEmptyOnUnknownFinishReason()
+    public async Task GetResponseAsync_WhenNoFallbackAvailable_ReturnsFailureMessageOnUnknownFinishReason()
     {
         // Arrange
         var primaryClient = new FakeChatClient("primary-model");
@@ -105,8 +105,9 @@ public class OpenAiClientFallbackTests
         // Act
         var response = await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")]);
 
-        // Assert - no fallback available, returns empty response
-        response.Messages.ShouldBeEmpty();
+        // Assert - no fallback available, returns failure message
+        var allText = string.Join("", response.Messages.Select(m => m.Text));
+        allText.ShouldContain("All models failed due to unknown error");
     }
 
     [Fact]

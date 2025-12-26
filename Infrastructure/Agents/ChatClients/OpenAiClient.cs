@@ -84,14 +84,12 @@ public class OpenAiClient : DelegatingChatClient
                 yield break;
             }
 
-            if (TryGetFallbackMessage(idx, fallbackReason!, out var msg))
+            var fallbackMsg = GetFallbackMessage(idx, fallbackReason!);
+            yield return new ChatResponseUpdate
             {
-                yield return new ChatResponseUpdate
-                {
-                    Role = ChatRole.Assistant,
-                    Contents = [new TextContent(msg)]
-                };
-            }
+                Role = ChatRole.Assistant,
+                Contents = [new TextContent(fallbackMsg)]
+            };
 
             conversation.AddMessages(updates);
         }
@@ -132,17 +130,15 @@ public class OpenAiClient : DelegatingChatClient
         return builder.Build();
     }
 
-    private bool TryGetFallbackMessage(int failedClientIndex, string reason, out string message)
+    private string GetFallbackMessage(int failedClientIndex, string reason)
     {
-        message = string.Empty;
         if (failedClientIndex >= _fallbackClients.Count)
         {
-            return false;
+            return $"\n\n_All models failed due to {reason}_\n\n";
         }
 
         var nextModel = _fallbackClients[failedClientIndex]
             .GetService<ChatClientMetadata>()?.DefaultModelId ?? "fallback";
-        message = $"\n\n_Switching to {nextModel} due to {reason}_\n\n";
-        return true;
+        return $"\n\n_Switching to {nextModel} due to {reason}_\n\n";
     }
 }
