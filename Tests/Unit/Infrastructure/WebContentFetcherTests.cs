@@ -20,7 +20,9 @@ public class WebContentFetcherTests : IDisposable
         {
             BaseAddress = new Uri(_server.Url!)
         };
-        _fetcher = new WebContentFetcher(httpClient);
+        var htmlConverter = new HtmlConverter();
+        var htmlProcessor = new HtmlProcessor(htmlConverter);
+        _fetcher = new WebContentFetcher(httpClient, htmlProcessor);
     }
 
     [Fact]

@@ -14,7 +14,9 @@ public class WebContentFetcherIntegrationTests
         {
             Timeout = TimeSpan.FromSeconds(30)
         };
-        _fetcher = new WebContentFetcher(httpClient);
+        var htmlConverter = new HtmlConverter();
+        var htmlProcessor = new HtmlProcessor(htmlConverter);
+        _fetcher = new WebContentFetcher(httpClient, htmlProcessor);
     }
 
     [SkippableFact]
