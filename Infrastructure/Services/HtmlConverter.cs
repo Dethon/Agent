@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using Domain.Contracts;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Services;
 
 public interface IHtmlConverter
 {

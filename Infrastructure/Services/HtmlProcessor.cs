@@ -3,7 +3,7 @@ using AngleSharp.Dom;
 using Domain.Contracts;
 using SmartReader;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Services;
 
 public interface IHtmlProcessor
 {

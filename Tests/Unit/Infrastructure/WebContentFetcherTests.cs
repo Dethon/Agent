@@ -1,6 +1,7 @@
 using System.Net;
 using Domain.Contracts;
 using Infrastructure.Clients;
+using Infrastructure.Services;
 using Shouldly;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;

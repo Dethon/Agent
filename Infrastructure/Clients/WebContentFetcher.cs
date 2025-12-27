@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Infrastructure.Services;
 
 namespace Infrastructure.Clients;
 

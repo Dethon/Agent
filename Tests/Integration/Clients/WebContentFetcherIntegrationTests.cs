@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
+using Infrastructure.Services;
 using Shouldly;
 
 namespace Tests.Integration.Clients;
