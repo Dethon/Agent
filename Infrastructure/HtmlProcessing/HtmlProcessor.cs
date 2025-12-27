@@ -3,16 +3,11 @@ using AngleSharp.Dom;
 using Domain.Contracts;
 using SmartReader;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.HtmlProcessing;
 
-public interface IHtmlProcessor
+public static class HtmlProcessor
 {
-    Task<WebFetchResult> ProcessAsync(WebFetchRequest request, string html, CancellationToken ct);
-}
-
-public class HtmlProcessor(IHtmlConverter htmlConverter) : IHtmlProcessor
-{
-    public async Task<WebFetchResult> ProcessAsync(WebFetchRequest request, string html, CancellationToken ct)
+    public static async Task<WebFetchResult> ProcessAsync(WebFetchRequest request, string html, CancellationToken ct)
     {
         var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
 
@@ -21,7 +16,7 @@ public class HtmlProcessor(IHtmlConverter htmlConverter) : IHtmlProcessor
             : await ProcessWithSmartReaderAsync(request, html, document, ct);
     }
 
-    private WebFetchResult ProcessWithSelector(WebFetchRequest request, IDocument document)
+    private static WebFetchResult ProcessWithSelector(WebFetchRequest request, IDocument document)
     {
         var element = document.QuerySelector(request.Selector!);
         if (element == null)
@@ -30,20 +25,20 @@ public class HtmlProcessor(IHtmlConverter htmlConverter) : IHtmlProcessor
                 $"CSS selector '{request.Selector}' did not match any elements");
         }
 
-        var content = htmlConverter.Convert(element, request.Format);
+        var content = HtmlConverter.Convert(element, request.Format);
         var links = request.IncludeLinks ? ExtractLinks(element) : null;
 
         return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
     }
 
-    private async Task<WebFetchResult> ProcessWithSmartReaderAsync(
+    private static async Task<WebFetchResult> ProcessWithSmartReaderAsync(
         WebFetchRequest request, string html, IDocument document, CancellationToken ct)
     {
         var article = await new Reader(request.Url, html).GetArticleAsync(ct);
 
         if (string.IsNullOrEmpty(article.Content))
         {
-            var content = htmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
+            var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
             var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
             return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
         }
@@ -136,23 +131,23 @@ public class HtmlProcessor(IHtmlConverter htmlConverter) : IHtmlProcessor
         };
     }
 
-    private string FormatArticleContent(Article article, WebFetchOutputFormat format)
+    private static string FormatArticleContent(Article article, WebFetchOutputFormat format)
     {
         return format switch
         {
             WebFetchOutputFormat.Html => article.Content,
-            WebFetchOutputFormat.Text => htmlConverter.Convert(article.Content, WebFetchOutputFormat.Text),
-            _ => htmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown)
+            WebFetchOutputFormat.Text => HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Text),
+            _ => HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown)
         };
     }
 
-    private WebFetchResult CreateSuccessResult(
+    private static WebFetchResult CreateSuccessResult(
         WebFetchRequest request, string? title, string content, WebPageMetadata metadata, List<ExtractedLink>? links)
     {
         var truncated = content.Length > request.MaxLength;
         if (truncated)
         {
-            content = htmlConverter.Truncate(content, request.MaxLength);
+            content = HtmlConverter.Truncate(content, request.MaxLength);
         }
 
         return new WebFetchResult(

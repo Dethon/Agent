@@ -3,18 +3,11 @@ using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using Domain.Contracts;
 
-namespace Infrastructure.Services;
+namespace Infrastructure.HtmlProcessing;
 
-public interface IHtmlConverter
+public static partial class HtmlConverter
 {
-    string Convert(IElement? element, WebFetchOutputFormat format);
-    string Convert(string html, WebFetchOutputFormat format);
-    string Truncate(string content, int maxLength);
-}
-
-public partial class HtmlConverter : IHtmlConverter
-{
-    public string Convert(IElement? element, WebFetchOutputFormat format)
+    public static string Convert(IElement? element, WebFetchOutputFormat format)
     {
         if (element == null)
         {
@@ -29,7 +22,7 @@ public partial class HtmlConverter : IHtmlConverter
         };
     }
 
-    public string Convert(string html, WebFetchOutputFormat format)
+    public static string Convert(string html, WebFetchOutputFormat format)
     {
         if (string.IsNullOrEmpty(html))
         {
@@ -44,7 +37,7 @@ public partial class HtmlConverter : IHtmlConverter
         };
     }
 
-    public string Truncate(string text, int maxLength)
+    public static string Truncate(string text, int maxLength)
     {
         if (text.Length <= maxLength)
         {

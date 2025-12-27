@@ -1,9 +1,9 @@
 using Domain.Contracts;
-using Infrastructure.Services;
+using Infrastructure.HtmlProcessing;
 
 namespace Infrastructure.Clients;
 
-public class WebContentFetcher(HttpClient httpClient, IHtmlProcessor htmlProcessor) : IWebFetcher
+public class WebContentFetcher(HttpClient httpClient) : IWebFetcher
 {
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -18,7 +18,7 @@ public class WebContentFetcher(HttpClient httpClient, IHtmlProcessor htmlProcess
         try
         {
             var html = await PerformRequestAsync(request.Url, ct);
-            return await htmlProcessor.ProcessAsync(request, html, ct);
+            return await HtmlProcessor.ProcessAsync(request, html, ct);
         }
         catch (HttpRequestException ex)
         {

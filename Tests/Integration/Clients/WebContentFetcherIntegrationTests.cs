@@ -1,6 +1,5 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
-using Infrastructure.Services;
 using Shouldly;
 
 namespace Tests.Integration.Clients;
@@ -15,9 +14,7 @@ public class WebContentFetcherIntegrationTests
         {
             Timeout = TimeSpan.FromSeconds(30)
         };
-        var htmlConverter = new HtmlConverter();
-        var htmlProcessor = new HtmlProcessor(htmlConverter);
-        _fetcher = new WebContentFetcher(httpClient, htmlProcessor);
+        _fetcher = new WebContentFetcher(httpClient);
     }
 
     [SkippableFact]

@@ -1,7 +1,6 @@
 using System.Net;
 using Domain.Contracts;
 using Infrastructure.Clients;
-using Infrastructure.Services;
 using Shouldly;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
@@ -21,9 +20,7 @@ public class WebContentFetcherTests : IDisposable
         {
             BaseAddress = new Uri(_server.Url!)
         };
-        var htmlConverter = new HtmlConverter();
-        var htmlProcessor = new HtmlProcessor(htmlConverter);
-        _fetcher = new WebContentFetcher(httpClient, htmlProcessor);
+        _fetcher = new WebContentFetcher(httpClient);
     }
 
     [Fact]

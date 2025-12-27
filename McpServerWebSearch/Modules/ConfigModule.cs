@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
-using Infrastructure.Services;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Configuration;
@@ -39,9 +38,6 @@ public static class ConfigModule
 
         private IServiceCollection AddWebSearchClients(McpSettings settings)
         {
-            services.AddSingleton<IHtmlConverter, HtmlConverter>();
-            services.AddSingleton<IHtmlProcessor, HtmlProcessor>();
-
             services.AddHttpClient<IWebSearchClient, BraveSearchClient>((httpClient, _) =>
                 {
                     httpClient.BaseAddress = new Uri(settings.BraveSearch.ApiUrl);
@@ -53,11 +49,10 @@ public static class ConfigModule
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
 
-            services.AddHttpClient<IWebFetcher, WebContentFetcher>((httpClient, sp) =>
+            services.AddHttpClient<IWebFetcher, WebContentFetcher>((httpClient, _) =>
                 {
                     httpClient.Timeout = TimeSpan.FromSeconds(30);
-                    var processor = sp.GetRequiredService<IHtmlProcessor>();
-                    return new WebContentFetcher(httpClient, processor);
+                    return new WebContentFetcher(httpClient);
                 })
                 .AddRetryWithExponentialWaitPolicy(
                     attempts: 2,
