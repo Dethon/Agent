@@ -14,26 +14,14 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
 
     public async Task<WebFetchResult> FetchAsync(WebFetchRequest request, CancellationToken ct = default)
     {
-        if (!Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != "http" && uri.Scheme != "https"))
+        if (!ValidateUrl(request.Url))
         {
             return CreateErrorResult(request.Url, "Invalid URL. Only http and https URLs are supported.");
         }
 
         try
         {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, request.Url);
-            httpRequest.Headers.Add("User-Agent", UserAgent);
-            httpRequest.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-
-            var response = await httpClient.SendAsync(httpRequest, ct);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return CreateErrorResult(request.Url, $"HTTP {(int)response.StatusCode}: {response.ReasonPhrase}");
-            }
-
-            var html = await response.Content.ReadAsStringAsync(ct);
+            var html = await PerformRequestAsync(request.Url, ct);
             return await ProcessHtmlAsync(request, html, ct);
         }
         catch (HttpRequestException ex)
@@ -50,87 +38,91 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
         }
     }
 
-    private static async Task<WebFetchResult> ProcessHtmlAsync(
-        WebFetchRequest request, string html, CancellationToken ct)
+    private static bool ValidateUrl(string url)
     {
-        var config = Configuration.Default;
-        var context = BrowsingContext.New(config);
-        var document = await context.OpenAsync(req => req.Content(html), ct);
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https");
+    }
 
-        var title = document.Title;
-        var metadata = ExtractMetadata(document);
-        string content;
-        List<ExtractedLink>? links = null;
+    private async Task<string> PerformRequestAsync(string url, CancellationToken ct)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
+        httpRequest.Headers.Add("User-Agent", UserAgent);
+        httpRequest.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
-        if (!string.IsNullOrEmpty(request.Selector))
+        var response = await httpClient.SendAsync(httpRequest, ct);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadAsStringAsync(ct);
+    }
+
+    private async Task<WebFetchResult> ProcessHtmlAsync(WebFetchRequest request, string html, CancellationToken ct)
+    {
+        var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
+
+        return !string.IsNullOrEmpty(request.Selector)
+            ? ProcessWithSelector(request, document)
+            : await ProcessWithSmartReaderAsync(request, html, document, ct);
+    }
+
+    private static WebFetchResult ProcessWithSelector(WebFetchRequest request, IDocument document)
+    {
+        var element = document.QuerySelector(request.Selector!);
+        if (element == null)
         {
-            var element = document.QuerySelector(request.Selector);
-            if (element == null)
-            {
-                return new WebFetchResult(
-                    Url: request.Url,
-                    Status: WebFetchStatus.Partial,
-                    Title: title,
-                    Content: "Selector did not match any elements",
-                    ContentLength: 0,
-                    Truncated: false,
-                    Metadata: metadata,
-                    Links: null,
-                    ErrorMessage: $"CSS selector '{request.Selector}' did not match any elements"
-                );
-            }
-
-            content = FormatContent(element, request.Format);
-            if (request.IncludeLinks)
-            {
-                links = ExtractLinks(element);
-            }
-        }
-        else
-        {
-            var reader = new Reader(request.Url, html);
-            var article = await reader.GetArticleAsync(ct);
-
-            if (string.IsNullOrEmpty(article.Content))
-            {
-                content = FormatContent(document.Body ?? document.DocumentElement, request.Format);
-            }
-            else
-            {
-                title = article.Title;
-
-                if (article.PublicationDate.HasValue)
-                {
-                    metadata = metadata with
-                    {
-                        DatePublished = DateOnly.FromDateTime(article.PublicationDate.Value)
-                    };
-                }
-
-                if (!string.IsNullOrEmpty(article.Author))
-                {
-                    metadata = metadata with { Author = article.Author };
-                }
-
-                if (!string.IsNullOrEmpty(article.SiteName))
-                {
-                    metadata = metadata with { SiteName = article.SiteName };
-                }
-
-                content = request.Format switch
-                {
-                    WebFetchOutputFormat.Html => article.Content,
-                    WebFetchOutputFormat.Text => HtmlToText(article.Content),
-                    _ => HtmlToMarkdown(article.Content)
-                };
-            }
-
-            if (request.IncludeLinks && document.Body != null)
-            {
-                links = ExtractLinks(document.Body);
-            }
+            return CreatePartialResult(request, document.Title, ExtractMetadata(document),
+                $"CSS selector '{request.Selector}' did not match any elements");
         }
 
+        var content = FormatContent(element, request.Format);
+        var links = request.IncludeLinks ? ExtractLinks(element) : null;
+
+        return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
+    }
+
+    private static async Task<WebFetchResult> ProcessWithSmartReaderAsync(
+        WebFetchRequest request, string html, IDocument document, CancellationToken ct)
+    {
+        var article = await new Reader(request.Url, html).GetArticleAsync(ct);
+
+        if (string.IsNullOrEmpty(article.Content))
+        {
+            var content = FormatContent(document.Body ?? document.DocumentElement, request.Format);
+            var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
+            return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
+        }
+
+        var metadata = UpdateMetadataFromArticle(ExtractMetadata(document), article);
+        var articleContent = FormatArticleContent(article, request.Format);
+        var articleLinks = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
+
+        return CreateSuccessResult(request, article.Title, articleContent, metadata, articleLinks);
+    }
+
+    private static WebPageMetadata UpdateMetadataFromArticle(WebPageMetadata metadata, Article article)
+    {
+        return metadata with
+        {
+            DatePublished = article.PublicationDate.HasValue
+                ? DateOnly.FromDateTime(article.PublicationDate.Value)
+                : metadata.DatePublished,
+            Author = !string.IsNullOrEmpty(article.Author) ? article.Author : metadata.Author,
+            SiteName = !string.IsNullOrEmpty(article.SiteName) ? article.SiteName : metadata.SiteName
+        };
+    }
+
+    private static string FormatArticleContent(Article article, WebFetchOutputFormat format)
+    {
+        return format switch
+        {
+            WebFetchOutputFormat.Html => article.Content,
+            WebFetchOutputFormat.Text => HtmlToText(article.Content),
+            _ => HtmlToMarkdown(article.Content)
+        };
+    }
+
+    private static WebFetchResult CreateSuccessResult(
+        WebFetchRequest request, string? title, string content, WebPageMetadata metadata, List<ExtractedLink>? links)
+    {
         var truncated = content.Length > request.MaxLength;
         if (truncated)
         {
@@ -147,6 +139,22 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
             Metadata: metadata,
             Links: links,
             ErrorMessage: null
+        );
+    }
+
+    private static WebFetchResult CreatePartialResult(
+        WebFetchRequest request, string? title, WebPageMetadata metadata, string errorMessage)
+    {
+        return new WebFetchResult(
+            Url: request.Url,
+            Status: WebFetchStatus.Partial,
+            Title: title,
+            Content: errorMessage,
+            ContentLength: 0,
+            Truncated: false,
+            Metadata: metadata,
+            Links: null,
+            ErrorMessage: errorMessage
         );
     }
 
@@ -258,29 +266,59 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
         }
 
         var md = html;
+        md = ReplaceHeadings(md);
+        md = ReplaceFormatting(md);
+        md = ReplaceLinks(md);
+        md = ReplaceLists(md);
+        md = ReplaceCodeBlocks(md);
+        md = CleanUpHtml(md);
 
+        return md.Trim();
+    }
+
+    private static string ReplaceHeadings(string md)
+    {
         md = H1TagRegex().Replace(md, "# $1\n\n");
         md = H2TagRegex().Replace(md, "## $1\n\n");
         md = H3TagRegex().Replace(md, "### $1\n\n");
         md = H4TagRegex().Replace(md, "#### $1\n\n");
         md = H5TagRegex().Replace(md, "##### $1\n\n");
         md = H6TagRegex().Replace(md, "###### $1\n\n");
+        return md;
+    }
 
+    private static string ReplaceFormatting(string md)
+    {
         md = StrongTagRegex().Replace(md, "**$1**");
         md = BoldTagRegex().Replace(md, "**$1**");
         md = EmTagRegex().Replace(md, "*$1*");
         md = ItalicTagRegex().Replace(md, "*$1*");
         md = CodeTagRegex().Replace(md, "`$1`");
+        return md;
+    }
 
-        md = AnchorTagRegex().Replace(md, "[$2]($1)");
+    private static string ReplaceLinks(string md)
+    {
+        return AnchorTagRegex().Replace(md, "[$2]($1)");
+    }
 
+    private static string ReplaceLists(string md)
+    {
         md = ListItemTagRegex().Replace(md, "- $1\n");
         md = ListOpenTagRegex().Replace(md, "\n");
         md = ListCloseTagRegex().Replace(md, "\n");
+        return md;
+    }
 
+    private static string ReplaceCodeBlocks(string md)
+    {
         md = PreCodeTagRegex().Replace(md, "\n```\n$1\n```\n");
         md = PreTagRegex().Replace(md, "\n```\n$1\n```\n");
+        return md;
+    }
 
+    private static string CleanUpHtml(string md)
+    {
         md = BrTagRegex().Replace(md, "\n");
         md = ParagraphTagRegex().Replace(md, "\n\n");
         md = HtmlTagRegex().Replace(md, string.Empty);
@@ -288,8 +326,7 @@ public partial class WebContentFetcher(HttpClient httpClient) : IWebFetcher
         md = WebUtility.HtmlDecode(md);
         md = MultipleNewlinesRegex().Replace(md, "\n\n");
         md = MultipleSpacesRegex().Replace(md, " ");
-
-        return md.Trim();
+        return md;
     }
 
     private static string TruncateAtBoundary(string text, int maxLength)
