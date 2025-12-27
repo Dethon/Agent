@@ -64,6 +64,10 @@ services:
 
   jackett:
     image: lscr.io/linuxserver/jackett:0.24.306
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     logging:
       driver: "json-file"
       options:
