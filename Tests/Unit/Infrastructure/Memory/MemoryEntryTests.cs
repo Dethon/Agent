@@ -14,7 +14,6 @@ public class MemoryEntryTests
         {
             Id = "mem_123",
             UserId = "user_456",
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Preference,
             Content = "User prefers concise responses",
             Importance = 0.8,
@@ -26,7 +25,6 @@ public class MemoryEntryTests
         // Assert
         memory.Id.ShouldBe("mem_123");
         memory.UserId.ShouldBe("user_456");
-        memory.Tier.ShouldBe(MemoryTier.LongTerm);
         memory.Category.ShouldBe(MemoryCategory.Preference);
         memory.Content.ShouldBe("User prefers concise responses");
         memory.Importance.ShouldBe(0.8);
@@ -41,7 +39,6 @@ public class MemoryEntryTests
         {
             Id = "mem_123",
             UserId = "user_456",
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Fact,
             Content = "test",
             Importance = 0.5,
@@ -53,7 +50,6 @@ public class MemoryEntryTests
         // Assert
         memory.Tags.ShouldBeEmpty();
         memory.AccessCount.ShouldBe(0);
-        memory.DecayFactor.ShouldBe(1.0);
         memory.SupersededById.ShouldBeNull();
         memory.Context.ShouldBeNull();
         memory.Embedding.ShouldBeNull();
@@ -68,7 +64,6 @@ public class MemoryEntryTests
         {
             Id = "mem_123",
             UserId = "user_456",
-            Tier = MemoryTier.MidTerm,
             Category = MemoryCategory.Project,
             Content = "Working on API project",
             Context = "Mentioned in conversation about work",
@@ -79,7 +74,6 @@ public class MemoryEntryTests
             CreatedAt = DateTimeOffset.UtcNow,
             LastAccessedAt = DateTimeOffset.UtcNow,
             AccessCount = 5,
-            DecayFactor = 0.9,
             Source = new MemorySource("conv_123", "msg_456")
         };
 
@@ -88,7 +82,6 @@ public class MemoryEntryTests
         memory.Embedding.ShouldBe([0.1f, 0.2f, 0.3f]);
         memory.Tags.ShouldBe(["work", "api", "project"]);
         memory.AccessCount.ShouldBe(5);
-        memory.DecayFactor.ShouldBe(0.9);
         memory.Source!.ConversationId.ShouldBe("conv_123");
         memory.Source!.MessageId.ShouldBe("msg_456");
     }
@@ -101,7 +94,6 @@ public class MemoryEntryTests
         {
             Id = "mem_123",
             UserId = "user_456",
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Preference,
             Content = "Original content",
             Importance = 0.5,
@@ -228,7 +220,6 @@ public class MemorySearchResultTests
         {
             Id = id,
             UserId = "user_123",
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Fact,
             Content = content,
             Importance = 0.5,
@@ -250,20 +241,13 @@ public class MemoryStatsTests
             [MemoryCategory.Preference] = 5,
             [MemoryCategory.Fact] = 3
         };
-        var byTier = new Dictionary<MemoryTier, int>
-        {
-            [MemoryTier.LongTerm] = 7,
-            [MemoryTier.MidTerm] = 1
-        };
 
         // Act
-        var stats = new MemoryStats(8, byCategory, byTier);
+        var stats = new MemoryStats(8, byCategory);
 
         // Assert
         stats.TotalMemories.ShouldBe(8);
         stats.ByCategory[MemoryCategory.Preference].ShouldBe(5);
         stats.ByCategory[MemoryCategory.Fact].ShouldBe(3);
-        stats.ByTier[MemoryTier.LongTerm].ShouldBe(7);
-        stats.ByTier[MemoryTier.MidTerm].ShouldBe(1);
     }
 }

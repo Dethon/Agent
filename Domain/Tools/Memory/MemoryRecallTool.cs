@@ -34,7 +34,6 @@ public class MemoryRecallTool(
         string? query = null,
         string? categories = null,
         string? tags = null,
-        string? tier = null,
         double? minImportance = null,
         int limit = DefaultLimit,
         bool includeContext = false,
@@ -44,7 +43,6 @@ public class MemoryRecallTool(
             Query: query,
             Categories: ParseCategories(categories),
             Tags: ParseTags(tags),
-            Tier: ParseTier(tier),
             MinImportance: minImportance,
             Limit: limit);
 
@@ -76,7 +74,6 @@ public class MemoryRecallTool(
             queryEmbedding: queryEmbedding,
             categories: searchParams.Categories,
             tags: searchParams.Tags,
-            tier: searchParams.Tier,
             minImportance: searchParams.MinImportance,
             limit: searchParams.Limit,
             ct: ct);
@@ -113,17 +110,6 @@ public class MemoryRecallTool(
         return string.IsNullOrWhiteSpace(tags)
             ? null
             : tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-    }
-
-    private static MemoryTier? ParseTier(string? tier)
-    {
-        return tier?.ToLowerInvariant() switch
-        {
-            "long-term" => MemoryTier.LongTerm,
-            "mid-term" => MemoryTier.MidTerm,
-            null => null,
-            _ => throw new ArgumentException($"Invalid tier: {tier}")
-        };
     }
 
     private static JsonObject CreateResponse(
@@ -165,7 +151,6 @@ public class MemoryRecallTool(
         {
             ["id"] = memory.Id,
             ["category"] = memory.Category.ToString().ToLowerInvariant(),
-            ["tier"] = memory.Tier.ToString().ToLowerInvariant(),
             ["content"] = memory.Content,
             ["importance"] = memory.Importance,
             ["relevance"] = Math.Round(result.Relevance, 2),
@@ -189,7 +174,6 @@ public class MemoryRecallTool(
         string? Query,
         List<MemoryCategory>? Categories,
         List<string>? Tags,
-        MemoryTier? Tier,
         double? MinImportance,
         int Limit);
 }

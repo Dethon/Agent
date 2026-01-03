@@ -10,7 +10,6 @@ public class MemoryStoreTool(
 {
     private const int SimilarMemorySearchLimit = 3;
     private const double SimilarityThreshold = 0.85;
-    private const double DefaultDecayFactor = 1.0;
     private const int DefaultAccessCount = 0;
 
     protected const string Name = "memory_store";
@@ -36,7 +35,6 @@ public class MemoryStoreTool(
         string userId,
         string content,
         string category,
-        string? tier = null,
         double importance = 0.5,
         double confidence = 0.7,
         string? tags = null,
@@ -49,11 +47,10 @@ public class MemoryStoreTool(
             return CreateCategoryErrorResponse(category);
         }
 
-        var memoryTier = ParseTier(tier, memoryCategory);
         var embedding = await embeddingService.GenerateEmbeddingAsync(content, ct);
 
-        var memory = CreateMemoryEntry(userId, content, memoryCategory, memoryTier, importance, confidence, tags,
-            context, embedding);
+        var memory = CreateMemoryEntry(userId, content, memoryCategory, importance, confidence, tags, context,
+            embedding);
 
         var similarMemories = await FindSimilarMemories(userId, embedding, memoryCategory, supersedes, ct);
 
@@ -72,36 +69,10 @@ public class MemoryStoreTool(
         return Enum.TryParse(category, ignoreCase: true, out result);
     }
 
-    private static MemoryTier ParseTier(string? tier, MemoryCategory category)
-    {
-        return tier switch
-        {
-            "long-term" => MemoryTier.LongTerm,
-            "mid-term" => MemoryTier.MidTerm,
-            null => InferTier(category),
-            _ => throw new ArgumentException($"Invalid tier: {tier}")
-        };
-    }
-
-    private static MemoryTier InferTier(MemoryCategory category)
-    {
-        return category switch
-        {
-            MemoryCategory.Preference => MemoryTier.LongTerm,
-            MemoryCategory.Fact => MemoryTier.LongTerm,
-            MemoryCategory.Instruction => MemoryTier.LongTerm,
-            MemoryCategory.Personality => MemoryTier.LongTerm,
-            MemoryCategory.Skill => MemoryTier.LongTerm,
-            MemoryCategory.Relationship => MemoryTier.LongTerm,
-            _ => MemoryTier.MidTerm
-        };
-    }
-
     private static MemoryEntry CreateMemoryEntry(
         string userId,
         string content,
         MemoryCategory category,
-        MemoryTier tier,
         double importance,
         double confidence,
         string? tags,
@@ -112,7 +83,6 @@ public class MemoryStoreTool(
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
-            Tier = tier,
             Category = category,
             Content = content,
             Context = context,
@@ -122,8 +92,7 @@ public class MemoryStoreTool(
             Tags = ParseTags(tags),
             CreatedAt = DateTimeOffset.UtcNow,
             LastAccessedAt = DateTimeOffset.UtcNow,
-            AccessCount = DefaultAccessCount,
-            DecayFactor = DefaultDecayFactor
+            AccessCount = DefaultAccessCount
         };
     }
 
@@ -170,8 +139,7 @@ public class MemoryStoreTool(
             ["status"] = "created",
             ["memoryId"] = memory.Id,
             ["userId"] = memory.UserId,
-            ["category"] = memory.Category.ToString().ToLowerInvariant(),
-            ["tier"] = memory.Tier.ToString().ToLowerInvariant()
+            ["category"] = memory.Category.ToString().ToLowerInvariant()
         };
 
         if (similarMemories.Count <= 0)

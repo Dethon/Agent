@@ -28,7 +28,6 @@ public class MemoryListTool(IMemoryStore store)
     protected async Task<JsonNode> Run(
         string userId,
         string? category = null,
-        string? tier = null,
         string sortBy = "created",
         string order = "desc",
         int page = 1,
@@ -36,9 +35,7 @@ public class MemoryListTool(IMemoryStore store)
         CancellationToken ct = default)
     {
         var pagination = new PaginationParams(page, pageSize);
-        var filter = new ListFilter(
-            Category: ParseCategory(category),
-            Tier: ParseTier(tier));
+        var filter = ParseCategory(category);
         var sorting = new SortParams(sortBy, order);
 
         var allMemories = await store.GetByUserIdAsync(userId, ct);
@@ -52,19 +49,14 @@ public class MemoryListTool(IMemoryStore store)
 
     private static List<MemoryEntry> GetActiveMemories(
         IReadOnlyList<MemoryEntry> memories,
-        ListFilter filter,
+        MemoryCategory? filter,
         SortParams sorting)
     {
         var active = memories.Where(m => m.SupersededById is null);
 
-        if (filter.Category.HasValue)
+        if (filter.HasValue)
         {
-            active = active.Where(m => m.Category == filter.Category.Value);
-        }
-
-        if (filter.Tier.HasValue)
-        {
-            active = active.Where(m => m.Tier == filter.Tier.Value);
+            active = active.Where(m => m.Category == filter.Value);
         }
 
         return ApplySorting(active, sorting).ToList();
@@ -109,16 +101,6 @@ public class MemoryListTool(IMemoryStore store)
             : null;
     }
 
-    private static MemoryTier? ParseTier(string? tier)
-    {
-        return tier?.ToLowerInvariant() switch
-        {
-            "long-term" => MemoryTier.LongTerm,
-            "mid-term" => MemoryTier.MidTerm,
-            _ => null
-        };
-    }
-
     private static JsonObject CreateResponse(string userId, PagedResult result, MemoryStats stats)
     {
         return new JsonObject
@@ -136,7 +118,6 @@ public class MemoryListTool(IMemoryStore store)
         {
             ["id"] = m.Id,
             ["category"] = m.Category.ToString().ToLowerInvariant(),
-            ["tier"] = m.Tier.ToString().ToLowerInvariant(),
             ["content"] = m.Content,
             ["importance"] = m.Importance,
             ["createdAt"] = m.CreatedAt.ToString("o"),
@@ -164,22 +145,14 @@ public class MemoryListTool(IMemoryStore store)
             byCategory[cat.ToString().ToLowerInvariant()] = count;
         }
 
-        var byTier = new JsonObject();
-        foreach (var (tier, count) in stats.ByTier)
-        {
-            byTier[tier.ToString().ToLowerInvariant()] = count;
-        }
-
         return new JsonObject
         {
-            ["byCategory"] = byCategory,
-            ["byTier"] = byTier
+            ["total"] = stats.TotalMemories,
+            ["byCategory"] = byCategory
         };
     }
 
     private enum SortField { Created, Accessed, Importance }
-
-    private sealed record ListFilter(MemoryCategory? Category, MemoryTier? Tier);
 
     private sealed record SortParams
     {

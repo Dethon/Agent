@@ -6,18 +6,16 @@ namespace Domain.Tools.Memory;
 
 public class MemoryForgetTool(IMemoryStore store)
 {
-    private const double DecayFactor = 0.5;
     private const int ContentPreviewLength = 100;
 
     protected const string Name = "memory_forget";
 
     protected const string Description = """
-                                         Removes or diminishes memories. Use when information is outdated, wrong, or user
+                                         Removes or archives memories. Use when information is outdated, wrong, or user
                                          explicitly asks you to forget something.
 
                                          Modes:
                                          - delete: Permanent removal
-                                         - decay: Reduce importance by 50% (memory fades but isn't gone)
                                          - archive: Keep for history but exclude from normal recall (marks as superseded)
 
                                          When to forget:
@@ -99,9 +97,8 @@ public class MemoryForgetTool(IMemoryStore store)
         return mode.ToLowerInvariant() switch
         {
             "delete" => await store.DeleteAsync(userId, memory.Id, ct),
-            "decay" => await store.UpdateImportanceAsync(userId, memory.Id, memory.Importance * DecayFactor, ct),
             "archive" => await store.SupersedeAsync(userId, memory.Id, "archived", ct),
-            _ => throw new ArgumentException($"Invalid mode: {mode}")
+            _ => throw new ArgumentException($"Invalid mode: {mode}. Valid: delete, archive")
         };
     }
 

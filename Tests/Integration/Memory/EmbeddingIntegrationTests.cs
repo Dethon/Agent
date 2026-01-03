@@ -207,7 +207,6 @@ public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixt
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
-            Tier = MemoryTier.LongTerm,
             Category = category,
             Content = content,
             Importance = 0.7,
@@ -351,7 +350,6 @@ public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixt
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Skill,
             Content = "User mentioned databases once",
             Importance = 0.2,
@@ -366,7 +364,6 @@ public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixt
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
-            Tier = MemoryTier.LongTerm,
             Category = MemoryCategory.Skill,
             Content = "User explicitly stated expertise in PostgreSQL databases",
             Importance = 0.95,

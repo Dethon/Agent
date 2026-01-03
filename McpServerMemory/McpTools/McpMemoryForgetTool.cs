@@ -25,8 +25,7 @@ public class McpMemoryForgetTool(IMemoryStore store, ILogger<McpMemoryForgetTool
         string? categories = null,
         [Description("Forget memories older than this ISO date")]
         string? olderThan = null,
-        [Description(
-            "Mode: delete (permanent), decay (reduce importance), archive (hide from recall). Default: delete")]
+        [Description("Mode: delete (permanent), archive (hide from recall). Default: delete")]
         string mode = "delete",
         [Description("Reason for forgetting (for audit)")]
         string? reason = null,

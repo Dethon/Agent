@@ -14,7 +14,6 @@ public class MemoryReflectTool(IMemoryStore store)
     private const int MaxGuidelines = 10;
     private const int MaxActiveProjects = 5;
     private const double MinMemoriesForFullConfidence = 20.0;
-    private const double MinProjectDecayFactor = 0.5;
     private const double HighImportanceThreshold = 0.7;
 
     protected const string Name = "memory_reflect";
@@ -246,7 +245,6 @@ public class MemoryReflectTool(IMemoryStore store)
     private static List<string> BuildActiveProjects(List<MemoryEntry> projects)
     {
         return projects
-            .Where(p => p.DecayFactor > MinProjectDecayFactor)
             .OrderByDescending(p => p.LastAccessedAt)
             .Take(MaxActiveProjects)
             .Select(p => p.Content)

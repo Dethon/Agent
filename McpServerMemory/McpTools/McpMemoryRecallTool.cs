@@ -27,8 +27,6 @@ public class McpMemoryRecallTool(
         string? categories = null,
         [Description("Filter by tags (comma-separated, OR logic)")]
         string? tags = null,
-        [Description("Filter by tier: long-term or mid-term")]
-        string? tier = null,
         [Description("Minimum importance threshold 0.0-1.0")]
         double? minImportance = null,
         [Description("Maximum memories to return. Default: 10")]
@@ -39,7 +37,7 @@ public class McpMemoryRecallTool(
     {
         try
         {
-            var result = await Run(userId, query, categories, tags, tier, minImportance, limit, includeContext,
+            var result = await Run(userId, query, categories, tags, minImportance, limit, includeContext,
                 cancellationToken);
             return ToolResponse.Create(result);
         }

@@ -24,8 +24,6 @@ public class McpMemoryStoreTool(
         string content,
         [Description("Category: preference, fact, relationship, skill, project, personality, instruction")]
         string category,
-        [Description("Tier: long-term (permanent) or mid-term (decays over time). Default: inferred from category")]
-        string? tier = null,
         [Description("Importance score 0.0-1.0. Default: 0.5")]
         double importance = 0.5,
         [Description("Confidence in accuracy 0.0-1.0. Default: 0.7")]
@@ -40,7 +38,7 @@ public class McpMemoryStoreTool(
     {
         try
         {
-            var result = await Run(userId, content, category, tier, importance, confidence, tags, context, supersedes,
+            var result = await Run(userId, content, category, importance, confidence, tags, context, supersedes,
                 cancellationToken);
             return ToolResponse.Create(result);
         }

@@ -28,7 +28,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         string userId,
         string content,
         MemoryCategory category = MemoryCategory.Fact,
-        MemoryTier tier = MemoryTier.LongTerm,
         double importance = 0.5,
         float[]? embedding = null,
         IReadOnlyList<string>? tags = null)
@@ -37,7 +36,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         {
             Id = $"mem_{Guid.NewGuid():N}",
             UserId = userId,
-            Tier = tier,
             Category = category,
             Content = content,
             Importance = importance,
@@ -283,23 +281,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
     }
 
     [Fact]
-    public async Task SearchAsync_WithTierFilter_ReturnsMatchingMemories()
-    {
-        // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        await store.StoreAsync(CreateMemory(userId, "Long term", tier: MemoryTier.LongTerm));
-        await store.StoreAsync(CreateMemory(userId, "Mid term", tier: MemoryTier.MidTerm));
-
-        // Act
-        var results = await store.SearchAsync(userId, tier: MemoryTier.MidTerm);
-
-        // Assert
-        results.Count.ShouldBe(1);
-        results[0].Memory.Content.ShouldBe("Mid term");
-    }
-
-    [Fact]
     public async Task SearchAsync_WithMinImportance_FiltersLowImportance()
     {
         // Arrange
@@ -444,7 +425,7 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         await store.StoreAsync(CreateMemory(userId, "Pref 1", MemoryCategory.Preference));
         await store.StoreAsync(CreateMemory(userId, "Pref 2", MemoryCategory.Preference));
         await store.StoreAsync(CreateMemory(userId, "Fact 1"));
-        await store.StoreAsync(CreateMemory(userId, "Project 1", MemoryCategory.Project, MemoryTier.MidTerm));
+        await store.StoreAsync(CreateMemory(userId, "Project 1", MemoryCategory.Project));
 
         // Act
         var stats = await store.GetStatsAsync(userId);
@@ -454,8 +435,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         stats.ByCategory[MemoryCategory.Preference].ShouldBe(2);
         stats.ByCategory[MemoryCategory.Fact].ShouldBe(1);
         stats.ByCategory[MemoryCategory.Project].ShouldBe(1);
-        stats.ByTier[MemoryTier.LongTerm].ShouldBe(3);
-        stats.ByTier[MemoryTier.MidTerm].ShouldBe(1);
     }
 
     [Fact]

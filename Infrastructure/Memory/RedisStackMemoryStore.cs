@@ -72,12 +72,11 @@ public class RedisStackMemoryStore : IMemoryStore
         float[]? queryEmbedding = null,
         IEnumerable<MemoryCategory>? categories = null,
         IEnumerable<string>? tags = null,
-        MemoryTier? tier = null,
         double? minImportance = null,
         int limit = 10,
         CancellationToken ct = default)
     {
-        var filter = new MemoryFilter(categories, tags, tier, minImportance);
+        var filter = new MemoryFilter(categories, tags, minImportance);
 
         if (queryEmbedding is { Length: > 0 })
         {
@@ -150,8 +149,7 @@ public class RedisStackMemoryStore : IMemoryStore
 
         return new MemoryStats(
             memories.Count,
-            memories.GroupBy(m => m.Category).ToDictionary(g => g.Key, g => g.Count()),
-            memories.GroupBy(m => m.Tier).ToDictionary(g => g.Key, g => g.Count()));
+            memories.GroupBy(m => m.Category).ToDictionary(g => g.Key, g => g.Count()));
     }
 
     private async Task<bool> UpdateMemory(MemoryEntry memory, CancellationToken ct)
@@ -201,7 +199,7 @@ public class RedisStackMemoryStore : IMemoryStore
         return filtered
             .OrderByDescending(m => m.Importance)
             .Take(limit)
-            .Select(m => new MemorySearchResult(m, m.Importance * m.DecayFactor))
+            .Select(m => new MemorySearchResult(m, m.Importance))
             .ToList();
     }
 
@@ -212,11 +210,6 @@ public class RedisStackMemoryStore : IMemoryStore
         if (filter.Categories is { Length: > 0 })
         {
             filters.Add($"@category:{{{string.Join("|", filter.Categories)}}}");
-        }
-
-        if (filter.Tier.HasValue)
-        {
-            filters.Add($"@tier:{{{filter.Tier.Value}}}");
         }
 
         if (filter.Tags is { Length: > 0 })
@@ -239,7 +232,7 @@ public class RedisStackMemoryStore : IMemoryStore
 
         var distance = props.TryGetValue("vector_score", out var score) && score.HasValue ? (double)score : 1.0;
         var similarity = 1.0 - distance;
-        var weightedScore = memory is not null ? similarity * memory.Importance * memory.DecayFactor : 0;
+        var weightedScore = memory is not null ? similarity * memory.Importance : 0;
 
         return new MemorySearchResult(memory!, weightedScore);
     }
@@ -269,14 +262,12 @@ public class RedisStackMemoryStore : IMemoryStore
             .AddTagField("userId", separator: "|")
             .AddTextField("content")
             .AddTagField("category", separator: ",")
-            .AddTagField("tier", separator: ",")
             .AddTagField("tags", separator: ",")
             .AddNumericField("importance", sortable: true)
             .AddNumericField("confidence")
             .AddNumericField("createdAt", sortable: true)
             .AddNumericField("lastAccessedAt", sortable: true)
             .AddNumericField("accessCount")
-            .AddNumericField("decayFactor")
             .AddTagField("supersededById", separator: "|")
             .AddVectorField("embedding", Schema.VectorField.VectorAlgo.HNSW, new Dictionary<string, object>
             {
@@ -306,18 +297,15 @@ public class RedisStackMemoryStore : IMemoryStore
     private sealed record MemoryFilter(
         MemoryCategory[]? Categories,
         string[]? Tags,
-        MemoryTier? Tier,
         double? MinImportance)
     {
         public MemoryFilter(
             IEnumerable<MemoryCategory>? categories,
             IEnumerable<string>? tags,
-            MemoryTier? tier,
             double? minImportance)
             : this(
                 categories?.ToArray(),
                 tags?.ToArray(),
-                tier,
                 minImportance)
         {
         }
@@ -325,7 +313,6 @@ public class RedisStackMemoryStore : IMemoryStore
         public bool Matches(MemoryEntry m)
         {
             return (Categories is null || Categories.Contains(m.Category)) &&
-                   (Tier is null || m.Tier == Tier) &&
                    (Tags is null || m.Tags.Any(t => Tags.Contains(t, StringComparer.OrdinalIgnoreCase))) &&
                    (MinImportance is null || m.Importance >= MinImportance);
         }
@@ -342,14 +329,12 @@ public class RedisStackMemoryStore : IMemoryStore
                 new("content", m.Content),
                 new("context", m.Context ?? ""),
                 new("category", m.Category.ToString()),
-                new("tier", m.Tier.ToString()),
                 new("tags", string.Join(",", m.Tags)),
                 new("importance", m.Importance),
                 new("confidence", m.Confidence),
                 new("createdAt", m.CreatedAt.ToUnixTimeMilliseconds()),
                 new("lastAccessedAt", m.LastAccessedAt.ToUnixTimeMilliseconds()),
                 new("accessCount", m.AccessCount),
-                new("decayFactor", m.DecayFactor),
                 new("supersededById", m.SupersededById ?? ""),
                 new("embedding", m.Embedding != null ? VectorSerializer.ToBytes(m.Embedding) : Array.Empty<byte>()),
                 new("sourceJson", m.Source != null ? JsonSerializer.Serialize(m.Source) : "")
@@ -374,7 +359,6 @@ public class RedisStackMemoryStore : IMemoryStore
             }
 
             Enum.TryParse<MemoryCategory>(d.GetValueOrDefault("category", "Fact").ToString(), out var category);
-            Enum.TryParse<MemoryTier>(d.GetValueOrDefault("tier", "LongTerm").ToString(), out var tier);
 
             var supersededById = d.GetValueOrDefault("supersededById", "").ToString();
             var sourceJson = d.GetValueOrDefault("sourceJson", "").ToString();
@@ -386,7 +370,6 @@ public class RedisStackMemoryStore : IMemoryStore
                 Content = d.GetValueOrDefault("content", "").ToString(),
                 Context = d.GetValueOrDefault("context", "").ToString(),
                 Category = category,
-                Tier = tier,
                 Tags = ParseTags(d.GetValueOrDefault("tags", "").ToString()),
                 Importance = (double)d.GetValueOrDefault("importance", 0.5),
                 Confidence = (double)d.GetValueOrDefault("confidence", 0.7),
@@ -394,7 +377,6 @@ public class RedisStackMemoryStore : IMemoryStore
                 LastAccessedAt =
                     DateTimeOffset.FromUnixTimeMilliseconds((long)d.GetValueOrDefault("lastAccessedAt", 0)),
                 AccessCount = (int)d.GetValueOrDefault("accessCount", 0),
-                DecayFactor = (double)d.GetValueOrDefault("decayFactor", 1.0),
                 SupersededById = string.IsNullOrEmpty(supersededById) ? null : supersededById,
                 Embedding = VectorSerializer.FromBytes(d.GetValueOrDefault("embedding", RedisValue.Null)),
                 Source = string.IsNullOrEmpty(sourceJson) ? null : JsonSerializer.Deserialize<MemorySource>(sourceJson)

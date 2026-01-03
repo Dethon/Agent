@@ -14,7 +14,6 @@ public interface IMemoryStore
         float[]? queryEmbedding = null,
         IEnumerable<MemoryCategory>? categories = null,
         IEnumerable<string>? tags = null,
-        MemoryTier? tier = null,
         double? minImportance = null,
         int limit = 10,
         CancellationToken ct = default);
@@ -35,5 +34,4 @@ public record MemorySearchResult(MemoryEntry Memory, double Relevance);
 
 public record MemoryStats(
     int TotalMemories,
-    IReadOnlyDictionary<MemoryCategory, int> ByCategory,
-    IReadOnlyDictionary<MemoryTier, int> ByTier);
+    IReadOnlyDictionary<MemoryCategory, int> ByCategory);

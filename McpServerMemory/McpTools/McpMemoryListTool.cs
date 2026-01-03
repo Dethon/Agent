@@ -19,8 +19,6 @@ public class McpMemoryListTool(IMemoryStore store, ILogger<McpMemoryListTool> lo
         [Description(
             "Filter by single category: preference, fact, relationship, skill, project, personality, instruction")]
         string? category = null,
-        [Description("Filter by tier: long-term or mid-term")]
-        string? tier = null,
         [Description("Sort by: created, accessed, importance. Default: created")]
         string sortBy = "created",
         [Description("Sort order: asc or desc. Default: desc")]
@@ -33,7 +31,7 @@ public class McpMemoryListTool(IMemoryStore store, ILogger<McpMemoryListTool> lo
     {
         try
         {
-            var result = await Run(userId, category, tier, sortBy, order, page, pageSize, cancellationToken);
+            var result = await Run(userId, category, sortBy, order, page, pageSize, cancellationToken);
             return ToolResponse.Create(result);
         }
         catch (Exception ex)
