@@ -15,10 +15,10 @@ public class RedisFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _container = new ContainerBuilder()
-            .WithImage("redis:7-alpine")
+            .WithImage("redis/redis-stack:latest")
             .WithPortBinding(RedisPort, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilCommandIsCompleted("redis-cli", "ping"))
+                .UntilMessageIsLogged("Ready to accept connections"))
             .Build();
 
         await _container.StartAsync();

@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerText", "McpServerT
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerWebSearch", "McpServerWebSearch\McpServerWebSearch.csproj", "{85ADD74C-5092-4F18-BCA4-D71A5B118F9B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerMemory", "McpServerMemory\McpServerMemory.csproj", "{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -124,6 +126,18 @@ Global
 		{85ADD74C-5092-4F18-BCA4-D71A5B118F9B}.Release|x64.Build.0 = Release|Any CPU
 		{85ADD74C-5092-4F18-BCA4-D71A5B118F9B}.Release|x86.ActiveCfg = Release|Any CPU
 		{85ADD74C-5092-4F18-BCA4-D71A5B118F9B}.Release|x86.Build.0 = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|x64.Build.0 = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Debug|x86.Build.0 = Debug|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|x64.ActiveCfg = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|x64.Build.0 = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|x86.ActiveCfg = Release|Any CPU
+		{1469671B-6A80-44AD-ABBC-4C3A2C5B009A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
