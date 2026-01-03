@@ -396,45 +396,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
     }
 
     [Fact]
-    public async Task DeleteByQueryAsync_DeletesMatchingMemories()
-    {
-        // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        await store.StoreAsync(CreateMemory(userId, "Delete Python memory", MemoryCategory.Skill));
-        await store.StoreAsync(CreateMemory(userId, "Keep TypeScript memory", MemoryCategory.Skill));
-        await store.StoreAsync(CreateMemory(userId, "Delete Python fact"));
-
-        // Act
-        var deleted = await store.DeleteByQueryAsync(userId, contentQuery: "Python");
-        var remaining = await store.GetByUserIdAsync(userId);
-
-        // Assert
-        deleted.ShouldBe(2);
-        remaining.Count.ShouldBe(1);
-        remaining[0].Content.ShouldContain("TypeScript");
-    }
-
-    [Fact]
-    public async Task DeleteByQueryAsync_WithCategoryFilter_DeletesMatchingOnly()
-    {
-        // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        await store.StoreAsync(CreateMemory(userId, "Skill memory", MemoryCategory.Skill));
-        await store.StoreAsync(CreateMemory(userId, "Fact memory"));
-
-        // Act
-        var deleted = await store.DeleteByQueryAsync(userId, categories: [MemoryCategory.Skill]);
-        var remaining = await store.GetByUserIdAsync(userId);
-
-        // Assert
-        deleted.ShouldBe(1);
-        remaining.Count.ShouldBe(1);
-        remaining[0].Category.ShouldBe(MemoryCategory.Fact);
-    }
-
-    [Fact]
     public async Task SaveProfileAsync_AndGetProfile_Works()
     {
         // Arrange

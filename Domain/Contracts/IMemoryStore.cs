@@ -21,13 +21,6 @@ public interface IMemoryStore
 
     Task<bool> DeleteAsync(string userId, string memoryId, CancellationToken ct = default);
 
-    Task<int> DeleteByQueryAsync(
-        string userId,
-        string? contentQuery = null,
-        IEnumerable<MemoryCategory>? categories = null,
-        DateTimeOffset? olderThan = null,
-        CancellationToken ct = default);
-
     Task<bool> UpdateAccessAsync(string userId, string memoryId, CancellationToken ct = default);
     Task<bool> UpdateImportanceAsync(string userId, string memoryId, double importance, CancellationToken ct = default);
     Task<bool> SupersedeAsync(string userId, string oldMemoryId, string newMemoryId, CancellationToken ct = default);
