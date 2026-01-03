@@ -9,8 +9,10 @@ public class McpSystemPrompt
 {
     [McpServerPrompt(Name = MemoryPrompt.Name)]
     [Description(MemoryPrompt.Description)]
-    public static string GetSystemPrompt()
+    public static string GetSystemPrompt(
+        [Description("User identifier to use for all memory operations")]
+        string userId)
     {
-        return MemoryPrompt.SystemPrompt;
+        return MemoryPrompt.GetSystemPrompt(userId);
     }
 }
