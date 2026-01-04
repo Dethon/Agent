@@ -16,10 +16,11 @@ public sealed class McpAgentFactory(
     public DisposableAgent Create(AgentKey agentKey)
     {
         var name = $"{agentName}-{agentKey.ChatId}-{agentKey.ThreadId}";
+        var userId = agentKey.ChatId.ToString();
 
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistPatterns);
 
-        return new McpAgent(mcpEndpoints, effectiveClient, name, "", stateStore);
+        return new McpAgent(mcpEndpoints, effectiveClient, name, "", stateStore, userId);
     }
 }

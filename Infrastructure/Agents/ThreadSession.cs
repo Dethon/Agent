@@ -28,9 +28,10 @@ internal sealed class ThreadSession : IAsyncDisposable
         string description,
         ChatClientAgent agent,
         AgentThread thread,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? userId = null)
     {
-        var builder = new ThreadSessionBuilder(endpoints, name, description, agent, thread);
+        var builder = new ThreadSessionBuilder(endpoints, name, description, agent, thread, userId);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -52,7 +53,8 @@ internal sealed class ThreadSessionBuilder(
     string name,
     string description,
     ChatClientAgent agent,
-    AgentThread thread)
+    AgentThread thread,
+    string? userId)
 {
     private IReadOnlyList<AITool> _tools = [];
 
@@ -66,7 +68,7 @@ internal sealed class ThreadSessionBuilder(
         var clientManager = await McpClientManager.CreateAsync(name, description, endpoints, handlers, ct);
         _tools = clientManager.Tools;
 
-        // Step 3: Setup resource management
+        // Step 3: Setup resource management with user context prepended
         var resourceManager = await CreateResourceManagerAsync(clientManager, ct);
 
         return new ThreadSessionData(clientManager, resourceManager);
@@ -76,12 +78,25 @@ internal sealed class ThreadSessionBuilder(
         McpClientManager clientManager,
         CancellationToken ct)
     {
-        var instructions = string.Join("\n\n", clientManager.Prompts);
+        var instructions = BuildInstructions(clientManager.Prompts);
         var resourceManager = new McpResourceManager(agent, thread, instructions, clientManager.Tools);
 
         await resourceManager.SyncResourcesAsync(clientManager.Clients, ct);
         resourceManager.SubscribeToNotifications(clientManager.Clients);
 
         return resourceManager;
+    }
+
+    private string BuildInstructions(IReadOnlyList<string> mcpPrompts)
+    {
+        var userContextPrompt = userId is not null
+            ? $"## User Context\n\nCurrent user ID: `{userId}`\n\nUse this userId for all user-scoped operations."
+            : null;
+
+        var allPrompts = userContextPrompt is not null
+            ? mcpPrompts.Prepend(userContextPrompt)
+            : mcpPrompts;
+
+        return string.Join("\n\n", allPrompts);
     }
 }
