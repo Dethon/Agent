@@ -43,7 +43,13 @@ public sealed class McpAgent : DisposableAgent
             Name = name,
             ChatOptions = new ChatOptions
             {
-                AdditionalProperties = new AdditionalPropertiesDictionary { ["reasoning_effort"] = "low" }
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    // OpenRouter expects a JSON object; using JsonObject avoids anonymous-type serialization quirks.
+                    ["reasoning"] = new JsonObject { ["effort"] = "low" },
+                    ["include_reasoning"] = true,
+                    ["reasoning_effort"] = "low"
+                }
             },
             Description = description,
             ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(stateStore, ctx)

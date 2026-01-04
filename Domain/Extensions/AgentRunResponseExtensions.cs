@@ -56,6 +56,6 @@ public static class AgentRunResponseExtensions
 
     private static bool HasUsageOrToolCall(this AgentRunResponseUpdate update)
     {
-        return update.Contents.Any(c => c is UsageContent or FunctionCallContent or TextReasoningContent);
+        return update.Contents.Any(c => c is UsageContent or FunctionCallContent);
     }
 }

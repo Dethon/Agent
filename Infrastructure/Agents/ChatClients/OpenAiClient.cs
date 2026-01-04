@@ -1,4 +1,6 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
+using System.Net;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.AI;
 using OpenAI;
@@ -110,7 +112,16 @@ public class OpenAiClient : DelegatingChatClient
 
     private static IChatClient CreateClient(string endpoint, string apiKey, string model, bool useFunctionInvocation)
     {
-        var options = new OpenAIClientOptions { Endpoint = new Uri(endpoint) };
+        var httpHandler = new OpenRouterReasoningHandler
+        {
+            InnerHandler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }
+        };
+
+        var options = new OpenAIClientOptions
+        {
+            Endpoint = new Uri(endpoint),
+            Transport = new HttpClientPipelineTransport(new HttpClient(httpHandler))
+        };
         var builder = new OpenAIClient(new ApiKeyCredential(apiKey), options)
             .GetChatClient(model)
             .AsIChatClient()
