@@ -13,20 +13,19 @@ public class MemoryRecallTool(
     protected const string Name = "memory_recall";
 
     protected const string Description = """
-                                         Retrieves memories about the user. Use this at the START of conversations and when
-                                         you need context about the user's preferences, background, or ongoing work.
+                                         **MANDATORY: Call this FIRST before responding to ANY user message.**
 
-                                         IMPORTANT: Call this proactively! Don't wait for the user to remind you of things.
+                                         Retrieves memories about the user including their preferences, personality profile,
+                                         explicit instructions, and relevant context.
 
-                                         Search modes:
-                                         - Semantic: Provide query to find conceptually related memories
-                                         - Filtered: Use categories/tags to browse specific memory types
-                                         - Combined: Both query and filters for precise retrieval
+                                         Default call (ALWAYS do this first):
+                                         memory_recall(userId, categories="preference,personality,instruction", limit=10)
 
-                                         Best practices:
-                                         1. At conversation start: categories=preference,personality,instruction
-                                         2. When user mentions a topic: query about that topic
-                                         3. Before giving advice: categories=skill,fact to tailor response
+                                         Additional searches when relevant:
+                                         - Topic-specific: Add query parameter for semantic search
+                                         - Skill context: categories="skill,fact" before giving advice
+
+                                         Do NOT respond to users without first calling this tool.
                                          """;
 
     protected async Task<JsonNode> Run(
