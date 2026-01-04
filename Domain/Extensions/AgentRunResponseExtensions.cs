@@ -13,11 +13,13 @@ public static class AgentRunResponseExtensions
         var text = string.Join("", contents.OfType<TextContent>().Select(x => x.Text));
         var toolCalls = string.Join("\n", contents.OfType<FunctionCallContent>()
             .Select(x => $"{x.Name}({JsonSerializer.Serialize(x.Arguments)})"));
+        var reasoning = string.Join("", contents.OfType<TextReasoningContent>().Select(x => x.Text));
 
         return new AiResponse
         {
             Content = text,
-            ToolCalls = toolCalls
+            ToolCalls = toolCalls,
+            Reasoning = reasoning
         };
     }
 
