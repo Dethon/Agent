@@ -17,7 +17,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string[] _endpoints;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
-    private readonly string? _userId;
+    private readonly string _userId;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
@@ -32,7 +32,7 @@ public sealed class McpAgent : DisposableAgent
         string name,
         string description,
         IThreadStateStore stateStore,
-        string? userId = null)
+        string userId)
     {
         _endpoints = endpoints;
         _name = name;
@@ -178,7 +178,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _description, _innerAgent, thread, ct, _userId);
+                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent, thread, ct);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

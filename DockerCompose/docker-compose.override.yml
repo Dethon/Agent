@@ -10,6 +10,10 @@ services:
   mcp-websearch:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
+
+  mcp-memory:
+    volumes:
+      - ${APPDATA}/Microsoft/UserSecrets:/home/app/.microsoft/usersecrets:ro
   
   jack:
     volumes:

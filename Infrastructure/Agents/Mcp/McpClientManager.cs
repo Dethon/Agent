@@ -26,6 +26,7 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     public static async Task<McpClientManager> CreateAsync(
         string name,
+        string userId,
         string description,
         string[] endpoints,
         McpClientHandlers handlers,
@@ -33,7 +34,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     {
         var clientsWithEndpoints = await CreateClientsWithRetry(name, description, endpoints, handlers, ct);
         var tools = await LoadTools(clientsWithEndpoints, ct);
-        var prompts = await LoadPrompts(clientsWithEndpoints.Select(c => c.Client), ct);
+        var prompts = await LoadPrompts(clientsWithEndpoints.Select(c => c.Client), userId, ct);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         return new McpClientManager(clients, tools, prompts);
     }
@@ -104,8 +105,11 @@ internal sealed class McpClientManager : IAsyncDisposable
         return uri.Host;
     }
 
-    private static async Task<string[]> LoadPrompts(IEnumerable<McpClient> clients, CancellationToken ct)
+    private static async Task<string[]> LoadPrompts(
+        IEnumerable<McpClient> clients, string userId, CancellationToken ct)
     {
+        var userContextPrompt =
+            $"## User Context\n\nCurrent user ID: `{userId}`\n\nUse this userId for all user-scoped operations.";
         return await clients
             .Where(c => c.ServerCapabilities.Prompts is not null)
             .ToAsyncEnumerable()
@@ -122,6 +126,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                 }));
             })
             .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Prepend(userContextPrompt)
             .ToArrayAsync(ct);
     }
 }
