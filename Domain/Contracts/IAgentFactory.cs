@@ -4,5 +4,5 @@ namespace Domain.Contracts;
 
 public interface IAgentFactory
 {
-    DisposableAgent Create(AgentKey agentKey);
+    DisposableAgent Create(AgentKey agentKey, string userId);
 }

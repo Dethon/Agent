@@ -13,10 +13,9 @@ public sealed class McpAgentFactory(
     IThreadStateStore stateStore,
     IEnumerable<string>? whitelistPatterns = null) : IAgentFactory
 {
-    public DisposableAgent Create(AgentKey agentKey)
+    public DisposableAgent Create(AgentKey agentKey, string userId)
     {
         var name = $"{agentName}-{agentKey.ChatId}-{agentKey.ThreadId}";
-        var userId = agentKey.ChatId.ToString();
 
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, whitelistPatterns);

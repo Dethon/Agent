@@ -49,9 +49,12 @@ public class ChatMonitor(
     }
 
     private async IAsyncEnumerable<(AgentKey, AiResponse)> ProcessChatThread(
-        AgentKey agentKey, IAsyncGrouping<AgentKey, ChatPrompt> group, [EnumeratorCancellation] CancellationToken ct)
+        AgentKey agentKey,
+        IAsyncGrouping<AgentKey, ChatPrompt> group,
+        [EnumeratorCancellation] CancellationToken ct)
     {
-        await using var agent = agentFactory.Create(agentKey);
+        var firstPrompt = await group.FirstAsync(ct);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender);
         var context = threadResolver.Resolve(agentKey);
         var thread = GetOrRestoreThread(agent, agentKey);
 
@@ -61,7 +64,7 @@ public class ChatMonitor(
         var linkedCt = linkedCts.Token;
 
         // ReSharper disable once AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
-        var aiResponses = group
+        var aiResponses = group.Prepend(firstPrompt)
             .Select(async (x, _, _) =>
             {
                 var command = ChatCommandParser.Parse(x.Prompt);
