@@ -120,14 +120,15 @@ public class ChatMonitor(
     {
         try
         {
-            if (string.IsNullOrEmpty(response.Content))
+            if (string.IsNullOrEmpty(response.Content) && string.IsNullOrEmpty(response.Reasoning))
             {
                 return;
             }
 
             var responseMessage = new ChatResponseMessage
             {
-                Message = response.Content
+                Message = response.Content,
+                Reasoning = response.Reasoning
             };
             await chatMessengerClient.SendResponse(agentKey.ChatId, responseMessage, agentKey.ThreadId, ct);
         }

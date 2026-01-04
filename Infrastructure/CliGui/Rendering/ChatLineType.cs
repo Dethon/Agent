@@ -13,5 +13,7 @@ public enum ChatLineType
     ToolApprovedHeader,
     ToolApprovedContent,
     ToolRejectedHeader,
-    ToolRejectedContent
+    ToolRejectedContent,
+    ReasoningHeader,
+    ReasoningContent
 }

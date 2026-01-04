@@ -55,6 +55,36 @@ internal static class ChatMessageFormatter
         yield return new ChatLine("", ChatLineType.Blank);
     }
 
+    public static IEnumerable<ChatLine> FormatReasoning(string reasoning, string groupId)
+    {
+        var lines = reasoning
+            .Split(_lineSeparators, StringSplitOptions.RemoveEmptyEntries)
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToArray();
+
+        if (lines.Length == 0)
+        {
+            yield break;
+        }
+
+        yield return new ChatLine(
+            $"  ▶ Reasoning ({lines.Length} {(lines.Length == 1 ? "line" : "lines")})",
+            ChatLineType.ReasoningHeader,
+            groupId,
+            IsCollapsible: true);
+
+        foreach (var line in lines)
+        {
+            yield return new ChatLine(
+                $"    │ {line}",
+                ChatLineType.ReasoningContent,
+                groupId);
+        }
+
+        yield return new ChatLine("", ChatLineType.Blank);
+    }
+
     public static IEnumerable<ChatLine> FormatToolResult(
         string toolName,
         IReadOnlyDictionary<string, object?> arguments,

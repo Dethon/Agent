@@ -19,6 +19,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     }
 
     private readonly ConcurrentQueue<ChatLine> _displayLines = new();
+    private readonly CollapseStateManager _collapseState = new();
 
     private ListView? _chatListView;
     private FrameView? _inputFrame;
@@ -138,8 +139,13 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         ScheduleInputResize();
     }
 
-    private (Window MainWindow, View TitleBar, View StatusBar, ListView ChatListView, FrameView InputFrame, TextView
-        InputField)
+    private (
+        Window MainWindow,
+        View TitleBar,
+        View StatusBar,
+        ListView ChatListView,
+        FrameView InputFrame,
+        TextView InputField)
         CreateViews(ColorScheme baseScheme)
     {
         var mainWindow = CliUiFactory.CreateMainWindow(baseScheme);
@@ -148,7 +154,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         var (inputFrame, inputField) = CliUiFactory.CreateInputArea();
 
         var chatListView = CliUiFactory.CreateChatListView(inputFrame);
-        chatListView.Source = new ChatListDataSource(_displayLines.ToArray());
+        chatListView.Source = new ChatListDataSource(_displayLines.ToArray(), _collapseState);
 
         return (mainWindow, titleBar, statusBar, chatListView, inputFrame, inputField);
     }
@@ -161,6 +167,31 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         _inputField.KeyPress += HandleKeyPress;
+        _chatListView!.KeyPress += HandleChatListKeyPress;
+    }
+
+    private void HandleChatListKeyPress(View.KeyEventEventArgs args)
+    {
+        if (args.KeyEvent.Key is not (Key.Enter or Key.Space))
+        {
+            return;
+        }
+
+        if (_chatListView?.Source is not ChatListDataSource dataSource)
+        {
+            return;
+        }
+
+        var sourceLine = dataSource.GetSourceLineAt(_chatListView.SelectedItem);
+        if (sourceLine is not { IsCollapsible: true, GroupId: not null })
+        {
+            return;
+        }
+
+        _collapseState.ToggleGroup(sourceLine.GroupId);
+        dataSource.InvalidateCache();
+        _chatListView.SetNeedsDisplay();
+        args.Handled = true;
     }
 
     private void HandleKeyPress(View.KeyEventEventArgs args)
@@ -331,7 +362,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         var width = _chatListView.Bounds.Width;
-        _chatListView.Source = new ChatListDataSource(snapshot, width > 0 ? width : Ui.DefaultWidth);
+        _chatListView.Source = new ChatListDataSource(snapshot, _collapseState, width > 0 ? width : Ui.DefaultWidth);
 
         if (_chatListView.Source.Count > 0)
         {

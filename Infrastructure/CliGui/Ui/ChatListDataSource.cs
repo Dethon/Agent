@@ -6,14 +6,40 @@ using Attribute = Terminal.Gui.Attribute;
 
 namespace Infrastructure.CliGui.Ui;
 
-internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int initialWidth = 80) : IListDataSource
+internal sealed class ChatListDataSource : IListDataSource
 {
-    private List<(string Text, ChatLineType Type)>? _wrappedLines;
+    private readonly IReadOnlyList<ChatLine> _lines;
+    private readonly CollapseStateManager _collapseState;
+
+    private List<WrappedLine>? _wrappedLines;
     private int _lastWidth;
-    private int _currentWidth = initialWidth;
+    private int _currentWidth;
+
+    public ChatListDataSource(
+        IReadOnlyList<ChatLine> lines,
+        CollapseStateManager collapseState,
+        int initialWidth = 80)
+    {
+        _lines = lines;
+        _collapseState = collapseState;
+        _currentWidth = initialWidth;
+
+        InitializeCollapseState();
+    }
 
     public int Count => GetWrappedLines(_currentWidth).Count;
     public int Length => GetWrappedLines(_currentWidth).Count;
+
+    public ChatLine? GetSourceLineAt(int wrappedIndex)
+    {
+        var wrapped = GetWrappedLines(_currentWidth);
+        if (wrappedIndex < 0 || wrappedIndex >= wrapped.Count)
+        {
+            return null;
+        }
+
+        return wrapped[wrappedIndex].SourceLine;
+    }
 
     public bool IsMarked(int item)
     {
@@ -30,10 +56,10 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int init
             return;
         }
 
-        var (text, type) = wrapped[item];
-        driver.SetAttribute(GetAttributeForLineType(type, driver));
+        var line = wrapped[item];
+        driver.SetAttribute(GetAttributeForLineType(line.Type, driver));
 
-        var displayText = text.Length > width ? text[..width] : text.PadRight(width);
+        var displayText = line.Text.Length > width ? line.Text[..width] : line.Text.PadRight(width);
         container.Move(col, row);
         driver.AddStr(displayText);
     }
@@ -45,7 +71,23 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int init
         return GetWrappedLines(_currentWidth).Select(l => l.Text).ToList();
     }
 
-    private List<(string Text, ChatLineType Type)> GetWrappedLines(int width)
+    public void InvalidateCache()
+    {
+        _wrappedLines = null;
+    }
+
+    private void InitializeCollapseState()
+    {
+        foreach (var line in _lines)
+        {
+            if (line is { IsCollapsible: true, GroupId: not null })
+            {
+                _collapseState.SetCollapsed(line.GroupId, true);
+            }
+        }
+    }
+
+    private List<WrappedLine> GetWrappedLines(int width)
     {
         if (_wrappedLines is not null && _lastWidth == width)
         {
@@ -55,23 +97,53 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int init
         _lastWidth = width;
         _wrappedLines = [];
 
-        foreach (var line in lines)
+        foreach (var line in _lines)
         {
-            if (string.IsNullOrEmpty(line.Text) || line.Text.Length <= width)
+            if (ShouldSkipLine(line))
             {
-                _wrappedLines.Add((line.Text, line.Type));
                 continue;
             }
 
-            var indent = GetIndent(line.Text);
-            var wrappedTextLines = WordWrap(line.Text, width, indent);
-            foreach (var wrappedLine in wrappedTextLines)
+            var displayText = GetDisplayText(line);
+
+            if (string.IsNullOrEmpty(displayText) || displayText.Length <= width)
             {
-                _wrappedLines.Add((wrappedLine, line.Type));
+                _wrappedLines.Add(new WrappedLine(displayText, line.Type, line));
+                continue;
+            }
+
+            var indent = GetIndent(displayText);
+            var wrappedTextLines = WordWrap(displayText, width, indent);
+            foreach (var wrappedText in wrappedTextLines)
+            {
+                _wrappedLines.Add(new WrappedLine(wrappedText, line.Type, line));
             }
         }
 
         return _wrappedLines;
+    }
+
+    private bool ShouldSkipLine(ChatLine line)
+    {
+        if (line.GroupId is null || line.IsCollapsible)
+        {
+            return false;
+        }
+
+        return _collapseState.IsCollapsed(line.GroupId);
+    }
+
+    private string GetDisplayText(ChatLine line)
+    {
+        if (!line.IsCollapsible || line.GroupId is null)
+        {
+            return line.Text;
+        }
+
+        var isCollapsed = _collapseState.IsCollapsed(line.GroupId);
+        return isCollapsed
+            ? line.Text.Replace("▼", "▶")
+            : line.Text.Replace("▶", "▼");
     }
 
     private static string GetIndent(string text)
@@ -97,12 +169,10 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int init
         var result = new List<string>();
         var currentLine = new StringBuilder();
 
-        // Trim the indent from text since we'll re-add it for wrapped lines
         var contentStart = indent.Length;
         var content = contentStart < text.Length ? text[contentStart..] : "";
         var words = content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-        // First line starts with original indent
         currentLine.Append(indent);
 
         foreach (var word in words)
@@ -153,7 +223,11 @@ internal sealed class ChatListDataSource(IReadOnlyList<ChatLine> lines, int init
             ChatLineType.ToolApprovedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
             ChatLineType.ToolRejectedHeader => driver.MakeAttribute(Color.BrightRed, Color.Black),
             ChatLineType.ToolRejectedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ReasoningHeader => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ReasoningContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
             _ => driver.MakeAttribute(Color.White, Color.Black)
         };
     }
+
+    private sealed record WrappedLine(string Text, ChatLineType Type, ChatLine SourceLine);
 }

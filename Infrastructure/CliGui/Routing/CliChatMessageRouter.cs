@@ -120,6 +120,15 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
         {
             AddToHistory(_agentName, responseMessage.Message, isUser: false);
         }
+
+        if (string.IsNullOrWhiteSpace(responseMessage.Reasoning))
+        {
+            return;
+        }
+
+        var groupId = Guid.NewGuid().ToString();
+        var reasoningLines = ChatMessageFormatter.FormatReasoning(responseMessage.Reasoning, groupId);
+        _terminalAdapter.DisplayMessage(reasoningLines.ToArray());
     }
 
     public void CreateThread(string name)
