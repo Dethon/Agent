@@ -40,6 +40,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Sync Resources Test",
             agent,
             thread,
@@ -71,6 +72,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Unsubscribe Test",
             agent,
             thread,
@@ -99,6 +101,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "No Resources Test",
             agent,
             thread,
@@ -129,6 +132,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Reactivate Test",
             agent,
             thread,
@@ -164,6 +168,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Dispose Unsub Test",
             agent,
             thread,
@@ -190,6 +195,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Multi Client Sync Test",
             agent,
             thread,

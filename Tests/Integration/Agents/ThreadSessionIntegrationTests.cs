@@ -37,6 +37,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             "TestClient",
+            "test-user",
             "Test Description",
             agent,
             thread,
@@ -66,6 +67,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             "ToolTestClient",
+            "test-user",
             "Tool Test",
             agent,
             thread,
@@ -91,6 +93,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             "PromptTestClient",
+            "test-user",
             "Prompt Test",
             agent,
             thread,
@@ -121,6 +124,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Subscription Test",
             agent,
             thread,
@@ -148,6 +152,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             sessionKey,
+            "test-user",
             "Notification Test",
             agent,
             thread,
@@ -181,6 +186,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             "DisposeTestClient",
+            "test-user",
             "Dispose Test",
             agent,
             thread,
@@ -207,6 +213,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
             "RetryTestClient",
+            "test-user",
             "Retry Test",
             agent,
             thread,
@@ -231,6 +238,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
             "MultiEndpointClient",
+            "test-user",
             "Multi Endpoint Test",
             agent,
             thread,

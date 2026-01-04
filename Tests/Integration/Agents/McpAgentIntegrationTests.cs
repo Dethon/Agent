@@ -35,7 +35,8 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
             llmClient,
             "test-agent",
             "",
-            stateStore);
+            stateStore,
+            "test-user");
     }
 
     [SkippableFact]

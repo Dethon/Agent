@@ -36,7 +36,8 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
             approvalClient,
             "test-agent",
             "",
-            stateStore);
+            stateStore,
+            "test-user");
     }
 
     [Fact]
