@@ -12,12 +12,15 @@ namespace Infrastructure.Agents.ChatClients;
 public sealed class OpenRouterChatClient : IChatClient
 {
     private readonly IChatClient _client;
+    private readonly HttpClient _httpClient;
+    private readonly HttpClientPipelineTransport _transport;
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
 
     public OpenRouterChatClient(string endpoint, string apiKey, string model)
     {
-        var httpClient = CreateHttpClient(_reasoningQueue);
-        _client = CreateClient(endpoint, apiKey, model, httpClient);
+        _httpClient = CreateHttpClient(_reasoningQueue);
+        _transport = new HttpClientPipelineTransport(_httpClient);
+        _client = CreateClient(endpoint, apiKey, model, _transport);
     }
 
     private ChatClientMetadata Metadata => _client.GetService<ChatClientMetadata>() ?? new ChatClientMetadata();
@@ -54,6 +57,8 @@ public sealed class OpenRouterChatClient : IChatClient
     public void Dispose()
     {
         _client.Dispose();
+        _transport.Dispose();
+        _httpClient.Dispose();
     }
 
     private static HttpClient CreateHttpClient(ConcurrentQueue<string> reasoningQueue)
@@ -94,12 +99,13 @@ public sealed class OpenRouterChatClient : IChatClient
         return sb.ToString();
     }
 
-    private static IChatClient CreateClient(string endpoint, string apiKey, string model, HttpClient httpClient)
+    private static IChatClient CreateClient(
+        string endpoint, string apiKey, string model, HttpClientPipelineTransport transport)
     {
         var options = new OpenAIClientOptions
         {
             Endpoint = new Uri(endpoint),
-            Transport = new HttpClientPipelineTransport(httpClient)
+            Transport = transport
         };
 
         return new OpenAIClient(new ApiKeyCredential(apiKey), options)
