@@ -25,6 +25,8 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private FrameView? _inputFrame;
     private TextView? _inputField;
 
+    private Action<MouseEvent>? _previousRootMouseEvent;
+
     private bool _isRunning;
     private bool _resizeScheduled;
     private int _currentInputHeight = Ui.MinInputHeight;
@@ -50,6 +52,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     public void Stop()
     {
         _isRunning = false;
+        Application.RootMouseEvent = _previousRootMouseEvent;
         Application.MainLoop?.Invoke(() => Application.RequestStop());
     }
 
@@ -125,6 +128,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         _inputField = inputField;
 
         WireEvents();
+        WireRootMouseEvents();
 
         mainWindow.Add(titleBar, statusBar, chatListView, inputFrame);
         Application.Top.Add(mainWindow);
@@ -168,10 +172,116 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
         _inputField.KeyPress += HandleKeyPress;
         _chatListView!.KeyPress += HandleChatListKeyPress;
+        _chatListView.MouseClick += HandleChatListMouseClick;
+    }
+
+    private void WireRootMouseEvents()
+    {
+        _previousRootMouseEvent = Application.RootMouseEvent;
+        Application.RootMouseEvent = me =>
+        {
+            _previousRootMouseEvent?.Invoke(me);
+            HandleRootMouseEvent(me);
+        };
+    }
+
+    private void HandleRootMouseEvent(MouseEvent me)
+    {
+        if (_chatListView?.Source is not ChatListDataSource dataSource)
+        {
+            return;
+        }
+
+        var flags = me.Flags;
+        if (!flags.HasFlag(MouseFlags.Button1Released)
+            && !flags.HasFlag(MouseFlags.Button1Clicked)
+            && !flags.HasFlag(MouseFlags.Button1DoubleClicked))
+        {
+            return;
+        }
+
+        var viewPoint = _chatListView.ScreenToView(me.X, me.Y);
+        if (viewPoint.X < 0 || viewPoint.Y < 0
+                            || viewPoint.X >= _chatListView.Bounds.Width
+                            || viewPoint.Y >= _chatListView.Bounds.Height)
+        {
+            return;
+        }
+
+        var wrappedIndex = _chatListView.TopItem + viewPoint.Y;
+        if (wrappedIndex < 0 || wrappedIndex >= _chatListView.Source.Count)
+        {
+            return;
+        }
+
+        _chatListView.SetFocus();
+        _chatListView.SelectedItem = wrappedIndex;
+
+        var sourceLine = dataSource.GetSourceLineAt(wrappedIndex);
+        if (sourceLine is not { IsCollapsible: true, GroupId: not null })
+        {
+            return;
+        }
+
+        _collapseState.ToggleGroup(sourceLine.GroupId);
+        dataSource.InvalidateCache();
+        _chatListView.SetNeedsDisplay();
+    }
+
+    private void HandleChatListMouseClick(View.MouseEventArgs args)
+    {
+        if (_chatListView is null)
+        {
+            return;
+        }
+
+        var flags = args.MouseEvent.Flags;
+        if (!flags.HasFlag(MouseFlags.Button1Released)
+            && !flags.HasFlag(MouseFlags.Button1Clicked)
+            && !flags.HasFlag(MouseFlags.Button1DoubleClicked))
+        {
+            return;
+        }
+
+        if (_chatListView.Source is not ChatListDataSource dataSource)
+        {
+            return;
+        }
+
+        _chatListView.SetFocus();
+
+        var viewPoint = _chatListView.ScreenToView(args.MouseEvent.X, args.MouseEvent.Y);
+        var wrappedIndex = _chatListView.TopItem + viewPoint.Y;
+
+        if (wrappedIndex < 0 || wrappedIndex >= _chatListView.Source.Count)
+        {
+            return;
+        }
+
+        _chatListView.SelectedItem = wrappedIndex;
+
+        var sourceLine = dataSource.GetSourceLineAt(wrappedIndex);
+        if (sourceLine is not { IsCollapsible: true, GroupId: not null })
+        {
+            return;
+        }
+
+        _collapseState.ToggleGroup(sourceLine.GroupId);
+        dataSource.InvalidateCache();
+        _chatListView.SetNeedsDisplay();
+
+        args.Handled = true;
     }
 
     private void HandleChatListKeyPress(View.KeyEventEventArgs args)
     {
+        if (args.KeyEvent.Key is Key.Tab)
+        {
+            _inputField?.SetFocus();
+            args.Handled = true;
+            return;
+        }
+
         if (args.KeyEvent.Key is not (Key.Enter or Key.Space))
         {
             return;
@@ -203,6 +313,10 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         {
             switch (args.KeyEvent.Key)
             {
+                case Key.Tab:
+                    _chatListView?.SetFocus();
+                    args.Handled = true;
+                    return;
                 case Key.Enter | Key.ShiftMask:
                     InsertNewline(args);
                     return;

@@ -101,7 +101,7 @@ internal static class CliUiFactory
             Width = Dim.Fill() - 2,
             Height = Dim.Fill() - Dim.Height(inputFrame) - 5,
             AllowsMarking = false,
-            CanFocus = false,
+            CanFocus = true,
             ColorScheme = new ColorScheme
             {
                 Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
