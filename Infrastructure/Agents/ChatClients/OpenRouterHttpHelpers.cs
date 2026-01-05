@@ -167,34 +167,31 @@ internal static class OpenRouterHttpHelpers
                 _decoder.Convert(bytes, chars, flush: false, out _, out var charsUsed, out _);
                 _buffer.Append(chars[..charsUsed]);
 
-                int nl;
-                while ((nl = _buffer.ToString().IndexOf('\n')) >= 0)
+                var text = _buffer.ToString();
+                if (!text.Contains('\n'))
                 {
-                    var s = _buffer.ToString();
-                    var line = s[..nl].TrimEnd('\r');
-                    _buffer.Clear().Append(s[(nl + 1)..]);
+                    return;
+                }
 
-                    if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
+                var lines = text.Split('\n');
+                _buffer.Clear().Append(lines[^1]);
+                var reasoningLines = lines
+                    .Take(lines.Length - 1)
+                    .Select(l => l.TrimEnd('\r'))
+                    .Where(l => l.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                    .Select(l => l[5..].Trim())
+                    .Where(d => d.Length > 0 && d != "[DONE]")
+                    .Select(ExtractReasoningFromSseData)
+                    .Where(r => r is not null);
 
-                    var data = line[5..].Trim();
-                    if (data.Length == 0 || data == "[DONE]")
-                    {
-                        continue;
-                    }
-
-                    var reasoning = ExtractReasoningFromSseData(data);
-                    if (reasoning is not null)
-                    {
-                        queue.Enqueue(reasoning);
-                    }
+                foreach (var reasoning in reasoningLines)
+                {
+                    queue.Enqueue(reasoning!);
                 }
             }
             catch
             {
-                /* best-effort */
+                // best-effort
             }
         }
 
