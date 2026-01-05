@@ -14,8 +14,7 @@ public class RedisFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _container = new ContainerBuilder()
-            .WithImage("redis/redis-stack:latest")
+        _container = new ContainerBuilder("redis/redis-stack:latest")
             .WithPortBinding(RedisPort, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilMessageIsLogged("Ready to accept connections"))

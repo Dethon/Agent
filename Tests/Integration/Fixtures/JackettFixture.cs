@@ -34,8 +34,7 @@ public class JackettFixture : IAsyncLifetime
                              """;
         await File.WriteAllTextAsync(Path.Combine(_configDir, "ServerConfig.json"), serverConfig);
 
-        _container = new ContainerBuilder()
-            .WithImage("lscr.io/linuxserver/jackett:0.24.306")
+        _container = new ContainerBuilder("lscr.io/linuxserver/jackett:0.24.306")
             .WithPortBinding(JackettPort, true)
             .WithEnvironment("PUID", "1000")
             .WithEnvironment("PGID", "1000")

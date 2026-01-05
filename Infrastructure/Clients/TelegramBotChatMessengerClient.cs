@@ -86,12 +86,26 @@ public class TelegramBotChatMessengerClient(
     {
         var toolCalls = responseMessage.CalledTools?.HtmlSanitize().Left(3800);
         var content = responseMessage.Message?.HtmlSanitize().Left(4096);
+        var reasoning = responseMessage.Reasoning?.HtmlSanitize().Left(3800);
 
         if (!string.IsNullOrWhiteSpace(content))
         {
             await client.SendMessage(
                 chatId,
                 responseMessage.Bold ? $"<b>{content}</b>" : content,
+                ParseMode.Html,
+                messageThreadId: Convert.ToInt32(threadId),
+                cancellationToken: cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(reasoning))
+        {
+            var reasoningMessage = "<blockquote expandable>" +
+                                   $"<b>Reasoning</b>\n<pre><code class=\"language-text\">{reasoning}</code></pre>" +
+                                   "</blockquote>";
+            await client.SendMessage(
+                chatId,
+                reasoningMessage,
                 ParseMode.Html,
                 messageThreadId: Convert.ToInt32(threadId),
                 cancellationToken: cancellationToken);
