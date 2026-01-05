@@ -29,11 +29,9 @@ public static class InjectorModule
                 .AddRedis(settings.Redis)
                 .AddSingleton<IAgentFactory>(sp =>
                     new McpAgentFactory(
-                        sp.GetRequiredService<IChatClient>(),
+                        sp,
                         mcpEndpoints,
                         settings.Name,
-                        sp.GetRequiredService<IToolApprovalHandlerFactory>(),
-                        sp.GetRequiredService<IThreadStateStore>(),
                         settings.WhitelistPatterns))
                 .AddSingleton<ChatThreadResolver>()
                 .AddOpenRouterAdapter(settings);

@@ -2,19 +2,22 @@ using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Infrastructure.Agents;
 
 public sealed class McpAgentFactory(
-    IChatClient chatClient,
+    IServiceProvider serviceProvider,
     string[] mcpEndpoints,
     string agentName,
-    IToolApprovalHandlerFactory approvalHandlerFactory,
-    IThreadStateStore stateStore,
     IEnumerable<string>? whitelistPatterns = null) : IAgentFactory
 {
     public DisposableAgent Create(AgentKey agentKey, string userId)
     {
+        var chatClient = serviceProvider.GetRequiredService<IChatClient>();
+        var approvalHandlerFactory = serviceProvider.GetRequiredService<IToolApprovalHandlerFactory>();
+        var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
+
         var name = $"{agentName}-{agentKey.ChatId}-{agentKey.ThreadId}";
 
         var handler = approvalHandlerFactory.Create(agentKey);
