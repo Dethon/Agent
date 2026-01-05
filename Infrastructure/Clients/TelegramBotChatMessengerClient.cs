@@ -85,7 +85,18 @@ public class TelegramBotChatMessengerClient(
         long chatId, ChatResponseMessage responseMessage, long? threadId, CancellationToken cancellationToken)
     {
         var toolCalls = responseMessage.CalledTools?.HtmlSanitize().Left(3800);
-        var content = responseMessage.Message?.HtmlSanitize().Left(4096);
+        var content = responseMessage.Message?.HtmlSanitize().Left(4000);
+        var reasoning = responseMessage.Reasoning?.HtmlSanitize().Left(4000);
+
+        if (!string.IsNullOrWhiteSpace(reasoning))
+        {
+            await client.SendMessage(
+                chatId,
+                $"<blockquote expandable>{reasoning}</blockquote>",
+                ParseMode.Html,
+                messageThreadId: Convert.ToInt32(threadId),
+                cancellationToken: cancellationToken);
+        }
 
         if (!string.IsNullOrWhiteSpace(content))
         {
