@@ -99,32 +99,48 @@ public static class IAsyncEnumerableExtensions
         this IAsyncEnumerable<IAsyncEnumerable<T>> sources,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var channel = Channel.CreateUnbounded<T>();
-        var writer = channel.Writer;
+        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(100)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false
+        });
 
-        _ = Task.Run(() => startPumps(sources), ct)
-            .ContinueWith(
-                t => t.IsFaulted ? writer.TryComplete(t.Exception) : writer.TryComplete(),
-                TaskScheduler.Default);
-
+        _ = Pump(sources, channel.Writer, ct);
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
         {
             yield return item;
         }
+    }
 
-        yield break;
-
-        Task startPumps(IAsyncEnumerable<IAsyncEnumerable<T>> streams)
+    private static Task Pump<T>(
+        IAsyncEnumerable<IAsyncEnumerable<T>> sources,
+        ChannelWriter<T> writer,
+        CancellationToken ct)
+    {
+        var options = new ParallelOptions
         {
-            return Task.WhenAll(streams.Select(pump).ToBlockingEnumerable(ct));
-        }
-
-        async Task pump(IAsyncEnumerable<T> source)
+            CancellationToken = ct,
+            MaxDegreeOfParallelism = 20
+        };
+        return Task.Run(async () =>
         {
-            await foreach (var item in source.WithCancellation(ct))
+            try
             {
-                await writer.WriteAsync(item, ct);
+                await Parallel.ForEachAsync(sources, options, async (stream, token) =>
+                {
+                    await foreach (var item in stream.WithCancellation(token))
+                    {
+                        await writer.WriteAsync(item, token);
+                    }
+                });
+
+                writer.TryComplete();
             }
-        }
+            catch (Exception ex)
+            {
+                writer.TryComplete(ex);
+            }
+        }, ct);
     }
 }
