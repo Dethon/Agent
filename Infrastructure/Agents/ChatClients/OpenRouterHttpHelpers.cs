@@ -8,82 +8,47 @@ namespace Infrastructure.Agents.ChatClients;
 
 internal static class OpenRouterHttpHelpers
 {
-    public static async Task FixEmptyAssistantContentWithToolCalls(
-        HttpRequestMessage request,
-        CancellationToken ct)
+    private static readonly string[] _reasoningPropertyNames = ["reasoning", "reasoning_content", "thinking"];
+
+    public static async Task FixEmptyAssistantContentWithToolCalls(HttpRequestMessage request, CancellationToken ct)
     {
-        if (request.Content is null)
+        if (request.Content?.Headers.ContentType?.MediaType?.Equals("application/json",
+                StringComparison.OrdinalIgnoreCase) != true)
         {
             return;
         }
 
-        var contentType = request.Content.Headers.ContentType?.MediaType;
-        if (!string.Equals(contentType, "application/json", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages that include tool_calls
-        // when the text content part exists but is empty.
+        // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
         var body = await request.Content.ReadAsStringAsync(ct);
         if (!body.Contains("\"tool_calls\"", StringComparison.Ordinal))
         {
             return;
         }
 
-        JsonNode? root;
-        try
-        {
-            root = JsonNode.Parse(body);
-        }
-        catch
+        if (JsonNode.Parse(body) is not JsonObject obj || obj["messages"] is not JsonArray messages)
         {
             return;
         }
 
-        if (root is not JsonObject obj || obj["messages"] is not JsonArray messages)
+        var messagesToFix = messages.OfType<JsonObject>()
+            .Where(msg => msg["tool_calls"] is not null)
+            .Where(msg => msg["content"] switch
+            {
+                JsonValue v when v.TryGetValue<string>(out var s) => string.IsNullOrWhiteSpace(s),
+                JsonArray { Count: > 0 } parts => parts.OfType<JsonObject>()
+                    .All(p => string.IsNullOrWhiteSpace(p["text"]?.GetValue<string>())),
+                _ => false
+            })
+            .ToList();
+
+        if (messagesToFix.Count == 0)
         {
             return;
         }
 
-        var changed = false;
-        foreach (var node in messages)
+        foreach (var msg in messagesToFix)
         {
-            if (node is not JsonObject msg)
-            {
-                continue;
-            }
-
-            var hasToolCalls = msg["tool_calls"] is not null || msg["function_call"] is not null;
-            if (!hasToolCalls)
-            {
-                continue;
-            }
-
-            if (msg["content"] is JsonValue v && v.TryGetValue<string>(out var s) && string.IsNullOrWhiteSpace(s))
-            {
-                msg.Remove("content");
-                changed = true;
-                continue;
-            }
-
-            if (msg["content"] is JsonArray parts)
-            {
-                var allEmptyText = parts.Count > 0 && parts
-                    .OfType<JsonObject>()
-                    .All(p => string.IsNullOrWhiteSpace(p["text"]?.GetValue<string>()));
-
-                if (allEmptyText)
-                {
-                    msg.Remove("content");
-                    changed = true;
-                }
-            }
-        }
-
-        if (!changed)
-        {
-            return;
+            msg.Remove("content");
         }
 
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
@@ -106,45 +71,23 @@ internal static class OpenRouterHttpHelpers
             }
 
             var choice0 = choices[0];
-
-            if (choice0.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
-            {
-                var r = GetStringProp(delta, "reasoning") ??
-                        GetStringProp(delta, "reasoning_content") ??
-                        GetStringProp(delta, "thinking");
-                if (!string.IsNullOrWhiteSpace(r))
-                {
-                    return r;
-                }
-            }
-
-            if (choice0.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
-            {
-                var r = GetStringProp(message, "reasoning") ??
-                        GetStringProp(message, "reasoning_content") ??
-                        GetStringProp(message, "thinking");
-                if (!string.IsNullOrWhiteSpace(r))
-                {
-                    return r;
-                }
-            }
+            return GetReasoningFromElement(choice0, "delta") ?? GetReasoningFromElement(choice0, "message");
         }
-        catch
-        {
-            // best-effort
-        }
-
-        return null;
+        catch { return null; }
     }
 
-    private static string? GetStringProp(JsonElement obj, string name)
+    private static string? GetReasoningFromElement(JsonElement parent, string propertyName)
     {
-        if (!obj.TryGetProperty(name, out var el))
+        if (!parent.TryGetProperty(propertyName, out var el) || el.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        return el.ValueKind == JsonValueKind.String ? el.GetString() : null;
+        return _reasoningPropertyNames
+            .Select(name => el.TryGetProperty(name, out var prop) && prop.ValueKind == JsonValueKind.String
+                ? prop.GetString()
+                : null)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 
     private sealed class TeeHttpContent(HttpContent inner, ConcurrentQueue<string> queue) : HttpContent
@@ -157,8 +100,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            var innerStream = await inner.ReadAsStreamAsync();
-            return new ReasoningTeeStream(innerStream, queue);
+            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), queue);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -225,18 +167,12 @@ internal static class OpenRouterHttpHelpers
                 _decoder.Convert(bytes, chars, flush: false, out _, out var charsUsed, out _);
                 _buffer.Append(chars[..charsUsed]);
 
-                while (true)
+                int nl;
+                while ((nl = _buffer.ToString().IndexOf('\n')) >= 0)
                 {
                     var s = _buffer.ToString();
-                    var nl = s.IndexOf('\n');
-                    if (nl < 0)
-                    {
-                        return;
-                    }
-
                     var line = s[..nl].TrimEnd('\r');
-                    _buffer.Clear();
-                    _buffer.Append(s[(nl + 1)..]);
+                    _buffer.Clear().Append(s[(nl + 1)..]);
 
                     if (!line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                     {
@@ -250,7 +186,7 @@ internal static class OpenRouterHttpHelpers
                     }
 
                     var reasoning = ExtractReasoningFromSseData(data);
-                    if (!string.IsNullOrWhiteSpace(reasoning))
+                    if (reasoning is not null)
                     {
                         queue.Enqueue(reasoning);
                     }
@@ -258,16 +194,11 @@ internal static class OpenRouterHttpHelpers
             }
             catch
             {
-                // best-effort
+                /* best-effort */
             }
         }
 
         public override void Flush()
-        {
-            throw new NotSupportedException();
-        }
-
-        public override Task FlushAsync(CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
         }
@@ -295,12 +226,6 @@ internal static class OpenRouterHttpHelpers
             }
 
             base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            await inner.DisposeAsync();
-            await base.DisposeAsync();
         }
     }
 }
