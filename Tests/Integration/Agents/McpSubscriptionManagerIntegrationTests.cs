@@ -16,12 +16,12 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
         .AddUserSecrets<McpSubscriptionManagerIntegrationTests>()
         .Build();
 
-    private static OpenAiClient CreateChatClient()
+    private static OpenRouterChatClient CreateChatClient()
     {
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        return new OpenAiClient(apiUrl, apiKey, ["google/gemini-2.5-flash"]);
+        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
     }
 
     [SkippableFact]

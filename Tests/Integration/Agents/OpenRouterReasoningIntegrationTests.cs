@@ -29,8 +29,7 @@ public class OpenRouterReasoningIntegrationTests
     {
         var (apiUrl, apiKey, model) = GetConfig();
 
-        using var client =
-            new OpenRouterReasoningChatClient(new OpenAiClient(apiUrl, apiKey, [model], useFunctionInvocation: false));
+        using var client = new OpenRouterChatClient(apiUrl, apiKey, model);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var options = new ChatOptions

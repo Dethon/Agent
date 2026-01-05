@@ -27,8 +27,7 @@ public class OpenRouterToolCallingWithReasoningIntegrationTests
     {
         var (apiUrl, apiKey, model) = GetConfig();
 
-        using var baseClient = new OpenAiClient(apiUrl, apiKey, [model], useFunctionInvocation: false);
-        using var client = new OpenRouterReasoningChatClient(baseClient);
+        using var client = new OpenRouterChatClient(apiUrl, apiKey, model);
         using var invoking = new FunctionInvokingChatClient(client)
         {
             IncludeDetailedErrors = true,

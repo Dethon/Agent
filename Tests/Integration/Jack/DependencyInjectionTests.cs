@@ -23,7 +23,7 @@ public class DependencyInjectionTests
             {
                 ApiUrl = "https://openrouter.ai/api/v1/",
                 ApiKey = "test-api-key",
-                Models = ["test-model"]
+                Model = "test-model"
             },
             Telegram = new TelegramConfiguration
             {

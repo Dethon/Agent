@@ -6,37 +6,29 @@ using System.Text.Json.Nodes;
 
 namespace Infrastructure.Agents.ChatClients;
 
-internal static class OpenRouterReasoningTap
+internal sealed class OpenRouterHttpHandler(ConcurrentQueue<string> reasoningQueue) : DelegatingHandler
 {
-    public static readonly AsyncLocal<ConcurrentQueue<string>?> CurrentQueue = new();
-}
-
-internal sealed class OpenRouterReasoningHandler : DelegatingHandler
-{
-    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        await TryFixEmptyAssistantContentWithToolCalls(request, cancellationToken);
+        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, cancellationToken);
 
         var response = await base.SendAsync(request, cancellationToken);
 
-        var queue = OpenRouterReasoningTap.CurrentQueue.Value;
-        if (queue is null)
-        {
-            return response;
-        }
-
         var mediaType = response.Content.Headers.ContentType?.MediaType;
-        if (!string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
         {
-            return response;
+            response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(response.Content, reasoningQueue);
         }
 
-        response.Content = new TeeHttpContent(response.Content, queue);
         return response;
     }
+}
 
-    private static async Task TryFixEmptyAssistantContentWithToolCalls(
+internal static class OpenRouterHttpHelpers
+{
+    public static async Task FixEmptyAssistantContentWithToolCalls(
         HttpRequestMessage request,
         CancellationToken ct)
     {
@@ -115,6 +107,64 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
         }
 
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
+    }
+
+    public static HttpContent WrapWithReasoningTee(HttpContent inner, ConcurrentQueue<string> queue)
+    {
+        return new TeeHttpContent(inner, queue);
+    }
+
+    private static string? ExtractReasoningFromSseData(string data)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+            {
+                return null;
+            }
+
+            var choice0 = choices[0];
+
+            if (choice0.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+            {
+                var r = GetStringProp(delta, "reasoning") ??
+                        GetStringProp(delta, "reasoning_content") ??
+                        GetStringProp(delta, "thinking");
+                if (!string.IsNullOrWhiteSpace(r))
+                {
+                    return r;
+                }
+            }
+
+            if (choice0.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+            {
+                var r = GetStringProp(message, "reasoning") ??
+                        GetStringProp(message, "reasoning_content") ??
+                        GetStringProp(message, "thinking");
+                if (!string.IsNullOrWhiteSpace(r))
+                {
+                    return r;
+                }
+            }
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        return null;
+    }
+
+    private static string? GetStringProp(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var el))
+        {
+            return null;
+        }
+
+        return el.ValueKind == JsonValueKind.String ? el.GetString() : null;
     }
 
     private sealed class TeeHttpContent(HttpContent inner, ConcurrentQueue<string> queue) : HttpContent
@@ -219,47 +269,10 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
                         continue;
                     }
 
-                    TryExtractReasoningFromData(data);
-                }
-            }
-            catch
-            {
-                // best-effort
-            }
-        }
-
-        private void TryExtractReasoningFromData(string data)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(data);
-                if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
-                    choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-                {
-                    return;
-                }
-
-                var choice0 = choices[0];
-
-                // Streaming shape: choices[0].delta.reasoning / reasoning_content
-                if (choice0.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
-                {
-                    var r = GetStringProp(delta, "reasoning") ??
-                            GetStringProp(delta, "reasoning_content") ?? GetStringProp(delta, "thinking");
-                    if (!string.IsNullOrWhiteSpace(r))
+                    var reasoning = ExtractReasoningFromSseData(data);
+                    if (!string.IsNullOrWhiteSpace(reasoning))
                     {
-                        queue.Enqueue(r);
-                    }
-                }
-
-                // Non-streaming-ish updates: choices[0].message.reasoning
-                if (choice0.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
-                {
-                    var r = GetStringProp(message, "reasoning") ?? GetStringProp(message, "reasoning_content") ??
-                        GetStringProp(message, "thinking");
-                    if (!string.IsNullOrWhiteSpace(r))
-                    {
-                        queue.Enqueue(r);
+                        queue.Enqueue(reasoning);
                     }
                 }
             }
@@ -267,20 +280,6 @@ internal sealed class OpenRouterReasoningHandler : DelegatingHandler
             {
                 // best-effort
             }
-        }
-
-        private static string? GetStringProp(JsonElement obj, string name)
-        {
-            if (!obj.TryGetProperty(name, out var el))
-            {
-                return null;
-            }
-
-            return el.ValueKind switch
-            {
-                JsonValueKind.String => el.GetString(),
-                _ => null
-            };
         }
 
         public override void Flush()

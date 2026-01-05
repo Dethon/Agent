@@ -17,15 +17,13 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         .AddUserSecrets<McpAgentIntegrationTests>()
         .Build();
 
-    private static OpenAiClient CreateLlmClient()
+    private static OpenRouterChatClient CreateLlmClient()
     {
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var models = new[] { "google/gemini-2.5-flash" };
 
-        // Disable built-in function invocation - ToolApprovalChatClient handles it
-        return new OpenAiClient(apiUrl, apiKey, models);
+        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
     }
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)

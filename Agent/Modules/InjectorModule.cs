@@ -101,13 +101,11 @@ public static class InjectorModule
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)
         {
-            return services.AddSingleton<IChatClient>(_ =>
-                new OpenRouterReasoningChatClient(
-                    new OpenAiClient(
-                        settings.OpenRouter.ApiUrl,
-                        settings.OpenRouter.ApiKey,
-                        settings.OpenRouter.Models,
-                        false)));
+            return services.AddTransient<IChatClient>(_ =>
+                new OpenRouterChatClient(
+                    settings.OpenRouter.ApiUrl,
+                    settings.OpenRouter.ApiKey,
+                    settings.OpenRouter.Model));
         }
     }
 }
