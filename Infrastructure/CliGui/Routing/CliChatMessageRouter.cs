@@ -111,6 +111,13 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
 
     public void SendResponse(ChatResponseMessage responseMessage)
     {
+        if (!string.IsNullOrWhiteSpace(responseMessage.Reasoning))
+        {
+            var groupId = Guid.NewGuid().ToString();
+            var reasoningLines = ChatMessageFormatter.FormatReasoning(responseMessage.Reasoning, groupId);
+            _terminalAdapter.DisplayMessage(reasoningLines.ToArray());
+        }
+
         if (!string.IsNullOrWhiteSpace(responseMessage.CalledTools))
         {
             AddToHistory("[Tools]", responseMessage.CalledTools, isUser: false, isToolCall: true);
@@ -120,15 +127,6 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
         {
             AddToHistory(_agentName, responseMessage.Message, isUser: false);
         }
-
-        if (string.IsNullOrWhiteSpace(responseMessage.Reasoning))
-        {
-            return;
-        }
-
-        var groupId = Guid.NewGuid().ToString();
-        var reasoningLines = ChatMessageFormatter.FormatReasoning(responseMessage.Reasoning, groupId);
-        _terminalAdapter.DisplayMessage(reasoningLines.ToArray());
     }
 
     public void CreateThread(string name)
