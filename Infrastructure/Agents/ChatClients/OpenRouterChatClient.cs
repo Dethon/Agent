@@ -61,19 +61,6 @@ public sealed class OpenRouterChatClient : IChatClient
         _httpClient.Dispose();
     }
 
-    private static HttpClient CreateHttpClient(ConcurrentQueue<string> reasoningQueue)
-    {
-        var handler = new OpenRouterHttpHandler(reasoningQueue)
-        {
-            InnerHandler = new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-            }
-        };
-        return new HttpClient(handler);
-    }
-
     private void AppendReasoningContent(ChatResponseUpdate update)
     {
         var reasoning = DrainReasoningQueue();
@@ -111,5 +98,37 @@ public sealed class OpenRouterChatClient : IChatClient
         return new OpenAIClient(new ApiKeyCredential(apiKey), options)
             .GetChatClient(model)
             .AsIChatClient();
+    }
+
+    private static HttpClient CreateHttpClient(ConcurrentQueue<string> reasoningQueue)
+    {
+        var handler = new ReasoningHandler(reasoningQueue)
+        {
+            InnerHandler = new SocketsHttpHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+            }
+        };
+        return new HttpClient(handler);
+    }
+
+    private sealed class ReasoningHandler(ConcurrentQueue<string> queue) : DelegatingHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, cancellationToken);
+            var response = await base.SendAsync(request, cancellationToken);
+
+            if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",
+                    StringComparison.OrdinalIgnoreCase) == true)
+            {
+                response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(response.Content, queue);
+            }
+
+            return response;
+        }
     }
 }

@@ -6,26 +6,6 @@ using System.Text.Json.Nodes;
 
 namespace Infrastructure.Agents.ChatClients;
 
-internal sealed class OpenRouterHttpHandler(ConcurrentQueue<string> reasoningQueue) : DelegatingHandler
-{
-    protected override async Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request,
-        CancellationToken cancellationToken)
-    {
-        await OpenRouterHttpHelpers.FixEmptyAssistantContentWithToolCalls(request, cancellationToken);
-
-        var response = await base.SendAsync(request, cancellationToken);
-
-        var mediaType = response.Content.Headers.ContentType?.MediaType;
-        if (string.Equals(mediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
-        {
-            response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(response.Content, reasoningQueue);
-        }
-
-        return response;
-    }
-}
-
 internal static class OpenRouterHttpHelpers
 {
     public static async Task FixEmptyAssistantContentWithToolCalls(
