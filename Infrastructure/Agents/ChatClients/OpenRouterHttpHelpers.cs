@@ -12,43 +12,59 @@ internal static class OpenRouterHttpHelpers
 
     public static async Task FixEmptyAssistantContentWithToolCalls(HttpRequestMessage request, CancellationToken ct)
     {
-        if (request.Content?.Headers.ContentType?.MediaType?.Equals("application/json",
-                StringComparison.OrdinalIgnoreCase) != true)
+        if (request.Content?.Headers.ContentType?.MediaType?
+                .Equals("application/json", StringComparison.OrdinalIgnoreCase) != true)
         {
             return;
         }
 
         // Some OpenRouter providers (e.g., Z.AI / GLM) reject assistant messages with tool_calls when content is empty
         var body = await request.Content.ReadAsStringAsync(ct);
-        if (!body.Contains("\"tool_calls\"", StringComparison.Ordinal))
-        {
-            return;
-        }
 
         if (JsonNode.Parse(body) is not JsonObject obj || obj["messages"] is not JsonArray messages)
         {
+            // Restore content
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             return;
         }
 
-        var messagesToFix = messages.OfType<JsonObject>()
-            .Where(msg => msg["tool_calls"] is not null)
-            .Where(msg => msg["content"] switch
-            {
-                JsonValue v when v.TryGetValue<string>(out var s) => string.IsNullOrWhiteSpace(s),
-                JsonArray { Count: > 0 } parts => parts.OfType<JsonObject>()
-                    .All(p => string.IsNullOrWhiteSpace(p["text"]?.GetValue<string>())),
-                _ => false
-            })
-            .ToList();
-
+        var messagesToFix = messages.OfType<JsonObject>().ToList();
         if (messagesToFix.Count == 0)
         {
+            // Restore content
+            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             return;
         }
 
         foreach (var msg in messagesToFix)
         {
-            msg.Remove("content");
+            var content = msg["content"];
+            switch (content)
+            {
+                case null:
+                    continue;
+                case JsonValue val when val.TryGetValue<string>(out var s):
+                {
+                    if (string.IsNullOrEmpty(s))
+                    {
+                        msg.Remove("content");
+                    }
+
+                    break;
+                }
+                case JsonArray arr:
+                {
+                    arr.RemoveAll(x => x is JsonObject itemObj &&
+                                       itemObj["type"]?.GetValue<string>() == "text" &&
+                                       string.IsNullOrEmpty(itemObj["text"]?.GetValue<string>()));
+                    if (arr.Count == 0)
+                    {
+                        msg.Remove("content");
+                    }
+
+                    break;
+                }
+            }
         }
 
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");

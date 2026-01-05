@@ -137,6 +137,10 @@ public static class IAsyncEnumerableExtensions
 
                 writer.TryComplete();
             }
+            catch (OperationCanceledException)
+            {
+                writer.TryComplete();
+            }
             catch (Exception ex)
             {
                 writer.TryComplete(ex);
