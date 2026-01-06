@@ -12,7 +12,8 @@ internal static class OpenRouterHttpHelpers
 
     public static async Task FixEmptyAssistantContentWithToolCalls(HttpRequestMessage request, CancellationToken ct)
     {
-        if (request.Content?.Headers.ContentType?.MediaType?
+        if (request.Method != HttpMethod.Post ||
+            request.Content?.Headers.ContentType?.MediaType?
                 .Equals("application/json", StringComparison.OrdinalIgnoreCase) != true)
         {
             return;
@@ -23,40 +24,25 @@ internal static class OpenRouterHttpHelpers
 
         if (JsonNode.Parse(body) is not JsonObject obj || obj["messages"] is not JsonArray messages)
         {
-            // Restore content
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
             return;
         }
 
-        var messagesToFix = messages.OfType<JsonObject>().ToList();
-        if (messagesToFix.Count == 0)
-        {
-            // Restore content
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
-            return;
-        }
-
-        foreach (var msg in messagesToFix)
+        foreach (var msg in messages.OfType<JsonObject>())
         {
             var content = msg["content"];
             switch (content)
             {
                 case null:
                     continue;
-                case JsonValue val when val.TryGetValue<string>(out var s):
-                {
-                    if (string.IsNullOrEmpty(s))
-                    {
-                        msg.Remove("content");
-                    }
-
+                case JsonValue val when val.TryGetValue<string>(out var s) && string.IsNullOrEmpty(s):
+                    msg.Remove("content");
                     break;
-                }
                 case JsonArray arr:
                 {
                     arr.RemoveAll(x => x is JsonObject itemObj &&
                                        itemObj["type"]?.GetValue<string>() == "text" &&
                                        string.IsNullOrEmpty(itemObj["text"]?.GetValue<string>()));
+
                     if (arr.Count == 0)
                     {
                         msg.Remove("content");
