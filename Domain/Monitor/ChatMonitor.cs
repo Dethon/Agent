@@ -87,9 +87,33 @@ public class ChatMonitor(
             })
             .Merge(linkedCt);
 
-        await foreach (var aiResponse in aiResponses)
+        var enumerator = aiResponses.WithCancellation(ct).GetAsyncEnumerator();
+        try
         {
-            yield return (agentKey, aiResponse);
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    // Ignore cancellation to keep the monitor loop alive for other threads
+                    break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return (agentKey, enumerator.Current);
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
         }
     }
 
