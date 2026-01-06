@@ -53,12 +53,59 @@ public class SubscriptionMonitor(
         throw new NotImplementedException();
     }
 
+    private static bool TryParseDownloadIdFromUri(string uri, out int id)
+    {
+        id = 0;
+        if (!uri.StartsWith("download://", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var remainder = uri["download://".Length..].TrimEnd('/');
+        return int.TryParse(remainder, out id);
+    }
+
     private async Task DownloadMonitoring(
         string sessionId,
         string uri,
         McpServer server,
         CancellationToken cancellationToken)
     {
+        // Most subscriptions are to a concrete resource like download://123/.
+        // Only check that specific download; otherwise, concurrent completions can be reported on the wrong URI.
+        if (!uri.Contains("{id}", StringComparison.OrdinalIgnoreCase) &&
+            TryParseDownloadIdFromUri(uri, out var subscribedId))
+        {
+            // Only emit a completion update once. Clients stay subscribed, so without this guard we'd re-notify forever.
+            var tracked = trackedDownloadsManager.Get(sessionId);
+            if (tracked is null || !tracked.Contains(subscribedId))
+            {
+                return;
+            }
+
+            var downloadItem = await downloadClient.GetDownloadItem(subscribedId, cancellationToken);
+
+            if (downloadItem is not null && downloadItem.State is not DownloadState.Completed)
+            {
+                return;
+            }
+
+            trackedDownloadsManager.Remove(sessionId, subscribedId);
+            await server.SendNotificationAsync(
+                "notifications/resources/updated",
+                new { Uri = uri },
+                cancellationToken: cancellationToken);
+
+            if (downloadItem is null)
+            {
+                await server.SendNotificationAsync(
+                    "notifications/resources/list_changed",
+                    cancellationToken: cancellationToken);
+            }
+
+            return;
+        }
+
         var downloadIds = trackedDownloadsManager.Get(sessionId) ?? [];
 
         //TODO: Check all downloads in a single call
@@ -75,11 +122,10 @@ public class SubscriptionMonitor(
         foreach (var (id, _) in filteredDownloads)
         {
             trackedDownloadsManager.Remove(sessionId, id);
-            await server.SendNotificationAsync("notifications/resources/updated",
-                new
-                {
-                    Uri = uri.Replace("{id}", $"{id}")
-                }, cancellationToken: cancellationToken);
+            await server.SendNotificationAsync(
+                "notifications/resources/updated",
+                new { Uri = uri.Replace("{id}", $"{id}") },
+                cancellationToken: cancellationToken);
         }
 
         if (filteredDownloads.Any(x => x.DownloadItem == null))
