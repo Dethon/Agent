@@ -43,7 +43,18 @@ public class WebContentFetcher(HttpClient httpClient) : IWebFetcher
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
         httpRequest.Headers.Add("User-Agent", UserAgent);
-        httpRequest.Headers.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        httpRequest.Headers.Add("Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+        httpRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+        httpRequest.Headers.Add("Sec-Ch-Ua",
+            "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"");
+        httpRequest.Headers.Add("Sec-Ch-Ua-Mobile", "?0");
+        httpRequest.Headers.Add("Sec-Ch-Ua-Platform", "\"Windows\"");
+        httpRequest.Headers.Add("Sec-Fetch-Dest", "document");
+        httpRequest.Headers.Add("Sec-Fetch-Mode", "navigate");
+        httpRequest.Headers.Add("Sec-Fetch-Site", "none");
+        httpRequest.Headers.Add("Sec-Fetch-User", "?1");
+        httpRequest.Headers.Add("Upgrade-Insecure-Requests", "1");
 
         var response = await httpClient.SendAsync(httpRequest, ct);
         response.EnsureSuccessStatusCode();

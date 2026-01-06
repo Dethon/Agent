@@ -1,3 +1,4 @@
+using System.Net;
 using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
@@ -53,6 +54,13 @@ public static class ConfigModule
                 {
                     httpClient.Timeout = TimeSpan.FromSeconds(30);
                     return new WebContentFetcher(httpClient);
+                })
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.All,
+                    UseCookies = true,
+                    AllowAutoRedirect = true,
+                    MaxAutomaticRedirections = 10
                 })
                 .AddRetryWithExponentialWaitPolicy(
                     attempts: 2,
