@@ -76,36 +76,54 @@ public class SubscriptionMonitor(
         if (!uri.Contains("{id}", StringComparison.OrdinalIgnoreCase) &&
             TryParseDownloadIdFromUri(uri, out var subscribedId))
         {
-            // Only emit a completion update once. Clients stay subscribed, so without this guard we'd re-notify forever.
-            var tracked = trackedDownloadsManager.Get(sessionId);
-            if (tracked is null || !tracked.Contains(subscribedId))
-            {
-                return;
-            }
-
-            var downloadItem = await downloadClient.GetDownloadItem(subscribedId, cancellationToken);
-
-            if (downloadItem is not null && downloadItem.State is not DownloadState.Completed)
-            {
-                return;
-            }
-
-            trackedDownloadsManager.Remove(sessionId, subscribedId);
-            await server.SendNotificationAsync(
-                "notifications/resources/updated",
-                new { Uri = uri },
-                cancellationToken: cancellationToken);
-
-            if (downloadItem is null)
-            {
-                await server.SendNotificationAsync(
-                    "notifications/resources/list_changed",
-                    cancellationToken: cancellationToken);
-            }
-
+            await MonitorSpecificDownload(sessionId, uri, subscribedId, server, cancellationToken);
             return;
         }
 
+        await MonitorAllDownloads(sessionId, uri, server, cancellationToken);
+    }
+
+    private async Task MonitorSpecificDownload(
+        string sessionId,
+        string uri,
+        int downloadId,
+        McpServer server,
+        CancellationToken cancellationToken)
+    {
+        // Only emit a completion update once. Clients stay subscribed, so without this guard we'd re-notify forever.
+        var tracked = trackedDownloadsManager.Get(sessionId);
+        if (tracked is null || !tracked.Contains(downloadId))
+        {
+            return;
+        }
+
+        var downloadItem = await downloadClient.GetDownloadItem(downloadId, cancellationToken);
+
+        if (downloadItem is not null && downloadItem.State is not DownloadState.Completed)
+        {
+            return;
+        }
+
+        trackedDownloadsManager.Remove(sessionId, downloadId);
+        await server.SendNotificationAsync(
+            "notifications/resources/updated",
+            new { Uri = uri },
+            cancellationToken: cancellationToken);
+
+        if (downloadItem is null)
+        {
+            await server.SendNotificationAsync(
+                "notifications/resources/list_changed",
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private async Task MonitorAllDownloads(
+        string sessionId,
+        string uriTemplate,
+        McpServer server,
+        CancellationToken cancellationToken)
+    {
         var downloadIds = trackedDownloadsManager.Get(sessionId) ?? [];
 
         //TODO: Check all downloads in a single call
@@ -124,7 +142,7 @@ public class SubscriptionMonitor(
             trackedDownloadsManager.Remove(sessionId, id);
             await server.SendNotificationAsync(
                 "notifications/resources/updated",
-                new { Uri = uri.Replace("{id}", $"{id}") },
+                new { Uri = uriTemplate.Replace("{id}", $"{id}") },
                 cancellationToken: cancellationToken);
         }
 
