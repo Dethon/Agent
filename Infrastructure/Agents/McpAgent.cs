@@ -167,10 +167,12 @@ public sealed class McpAgent : DisposableAgent
 
     private static ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
+        var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
+        var prompts = session.ClientManager.Prompts.Prepend(timeContext);
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.ClientManager.Tools],
-            Instructions = string.Join("\n\n", session.ClientManager.Prompts)
+            Instructions = string.Join("\n\n", prompts)
         });
     }
 
