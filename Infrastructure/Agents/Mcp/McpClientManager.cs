@@ -108,8 +108,11 @@ internal sealed class McpClientManager : IAsyncDisposable
     private static async Task<string[]> LoadPrompts(
         IEnumerable<McpClient> clients, string userId, CancellationToken ct)
     {
-        var userContextPrompt =
-            $"## User Context\n\nCurrent user ID: `{userId}`\n\nUse this userId for all user-scoped operations.";
+        var currentDate = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var userContextPrompt = "## User Context\n" +
+                                $"Current date: {currentDate}\n" +
+                                $"Current user ID: `{userId}`\n" +
+                                "Use this userId for all user-scoped operations.";
         return await clients
             .Where(c => c.ServerCapabilities.Prompts is not null)
             .ToAsyncEnumerable()
