@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using System.Web;
 using Domain.Contracts;
+using JetBrains.Annotations;
 
 namespace Infrastructure.Clients;
 
@@ -132,24 +133,39 @@ public class BraveSearchClient(HttpClient httpClient, string apiKey) : IWebSearc
 
     private record BraveQuery
     {
-        [JsonPropertyName("response_time")] public double ResponseTime { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("response_time")]
+        public double ResponseTime { get; init; }
     }
 
     private record BraveWebResults
     {
-        [JsonPropertyName("results")] public List<BraveWebResult>? Results { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("results")]
+        public List<BraveWebResult>? Results { get; init; }
 
-        [JsonPropertyName("total_results")] public long TotalResults { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("total_results")]
+        public long TotalResults { get; init; }
     }
 
+    [UsedImplicitly]
     private record BraveWebResult
     {
-        [JsonPropertyName("title")] public string? Title { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("title")]
+        public string? Title { get; init; }
 
-        [JsonPropertyName("url")] public string? Url { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("url")]
+        public string? Url { get; init; }
 
-        [JsonPropertyName("description")] public string? Description { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("description")]
+        public string? Description { get; init; }
 
-        [JsonPropertyName("page_age")] public string? PageAge { get; init; }
+        [UsedImplicitly]
+        [JsonPropertyName("page_age")]
+        public string? PageAge { get; init; }
     }
 }
