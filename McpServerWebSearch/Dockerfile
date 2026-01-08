@@ -1,5 +1,4 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-USER $APP_UID
 WORKDIR /app
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
@@ -18,7 +17,35 @@ RUN dotnet build "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/b
 FROM build AS publish
 RUN dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
+# Install Playwright browsers with dependencies
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/publish/.playwright
+RUN pwsh /app/publish/playwright.ps1 install chromium --with-deps
+
 FROM base AS final
+
+# Install Chromium runtime dependencies (Debian 12 bookworm package names)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0t64 \
+    libatk-bridge2.0-0t64 \
+    libcups2t64 \
+    libdrm2 \
+    libdbus-1-3 \
+    libxkbcommon0 \
+    libatspi2.0-0t64 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2t64 \
+    libpango-1.0-0 \
+    libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "McpServerWebSearch.dll"]
