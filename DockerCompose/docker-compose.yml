@@ -223,6 +223,7 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
+    command: [ "--chat", "Telegram", "--reasoning" ]
     restart: unless-stopped
     env_file:
       - .env
@@ -250,6 +251,7 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
+    command: [ "--chat", "Telegram", "--reasoning" ]
     restart: unless-stopped
     env_file:
       - .env
