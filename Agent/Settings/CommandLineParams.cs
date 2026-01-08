@@ -3,10 +3,13 @@
 public record CommandLineParams
 {
     public ChatInterface ChatInterface { get; init; } = ChatInterface.Telegram;
+    public string? Prompt { get; init; }
+    public bool ShowReasoning { get; init; }
 }
 
 public enum ChatInterface
 {
     Cli,
-    Telegram
+    Telegram,
+    OneShot
 }

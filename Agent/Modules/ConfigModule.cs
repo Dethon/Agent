@@ -39,18 +39,39 @@ public static class ConfigModule
             Required = false,
             DefaultValueFactory = _ => ChatInterface.Telegram
         };
+        var promptOption = new Option<string?>("--prompt", "-p")
+        {
+            Description = "Run in one-shot mode with the specified prompt",
+            Required = false
+        };
+        var reasoningOption = new Option<bool>("--reasoning", "-r")
+        {
+            Description = "Show reasoning output (only applicable in one-shot mode)",
+            Required = false,
+            DefaultValueFactory = _ => false
+        };
         var rootCommand = new RootCommand("Agent Application")
         {
-            chatOption
+            chatOption,
+            promptOption,
+            reasoningOption
         };
 
         var parseResult = rootCommand.Parse(args);
         parseResult.Invoke();
         parseResult.ThrowIfErrors();
         parseResult.ThrowIfSpecialOption();
+
+        var prompt = parseResult.GetValue(promptOption);
+        var chatInterface = prompt is not null
+            ? ChatInterface.OneShot
+            : parseResult.GetValue(chatOption);
+
         return new CommandLineParams
         {
-            ChatInterface = parseResult.GetValue(chatOption)
+            ChatInterface = chatInterface,
+            Prompt = prompt,
+            ShowReasoning = parseResult.GetValue(reasoningOption)
         };
     }
 

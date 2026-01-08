@@ -3,6 +3,7 @@ using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
+using Infrastructure.Clients;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -117,6 +118,62 @@ public class DependencyInjectionTests
     }
 
     [Fact]
+    public void ConfigureJack_WithOneShotInterface_RegistersOneShotClient()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
+        var settings = CreateTestSettings();
+        var cmdParams = new CommandLineParams
+        {
+            ChatInterface = ChatInterface.OneShot,
+            Prompt = "Test prompt",
+            ShowReasoning = true
+        };
+
+        // Act
+        services.ConfigureJack(settings, cmdParams);
+        AddMockInfrastructure(services);
+        var provider = services.BuildServiceProvider();
+
+        // Assert
+        provider.GetService<IAgentFactory>().ShouldNotBeNull();
+        provider.GetService<ChatMonitor>().ShouldNotBeNull();
+
+        var chatClient = provider.GetService<IChatMessengerClient>();
+        chatClient.ShouldNotBeNull();
+        chatClient.ShouldBeOfType<OneShotChatMessengerClient>();
+
+        var approvalFactory = provider.GetService<IToolApprovalHandlerFactory>();
+        approvalFactory.ShouldNotBeNull();
+        approvalFactory.ShouldBeOfType<AutoApproveToolHandlerFactory>();
+    }
+
+    [Fact]
+    public void ConfigureJack_WithOneShotInterfaceNoPrompt_ThrowsOnResolve()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
+        var settings = CreateTestSettings();
+        var cmdParams = new CommandLineParams
+        {
+            ChatInterface = ChatInterface.OneShot,
+            Prompt = null // Missing prompt
+        };
+
+        // Act
+        services.ConfigureJack(settings, cmdParams);
+        AddMockInfrastructure(services);
+        var provider = services.BuildServiceProvider();
+
+        // Assert - Should throw when trying to resolve the client
+        Should.Throw<InvalidOperationException>(() => provider.GetService<IChatMessengerClient>());
+    }
+
+    [Fact]
     public void GetCommandLineParams_WithChatOption_ParsesCorrectly()
     {
         // Act
@@ -124,5 +181,74 @@ public class DependencyInjectionTests
 
         // Assert
         result.ChatInterface.ShouldBe(ChatInterface.Cli);
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithPromptOption_SetsOneShotMode()
+    {
+        // Act
+        var result = ConfigModule.GetCommandLineParams(["--prompt", "Hello world"]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
+        result.Prompt.ShouldBe("Hello world");
+        result.ShowReasoning.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithPromptShortOption_SetsOneShotMode()
+    {
+        // Act
+        var result = ConfigModule.GetCommandLineParams(["-p", "Test prompt"]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
+        result.Prompt.ShouldBe("Test prompt");
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithReasoningOption_SetsShowReasoning()
+    {
+        // Act
+        var result = ConfigModule.GetCommandLineParams(["--prompt", "Test", "--reasoning"]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
+        result.Prompt.ShouldBe("Test");
+        result.ShowReasoning.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithReasoningShortOption_SetsShowReasoning()
+    {
+        // Act
+        var result = ConfigModule.GetCommandLineParams(["-p", "Test", "-r"]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
+        result.ShowReasoning.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithPromptAndChatOption_PromptTakesPrecedence()
+    {
+        // Act - Even if --chat is specified, --prompt should override to OneShot
+        var result = ConfigModule.GetCommandLineParams(["--chat", "Telegram", "--prompt", "Override"]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
+        result.Prompt.ShouldBe("Override");
+    }
+
+    [Fact]
+    public void GetCommandLineParams_WithNoOptions_DefaultsToTelegram()
+    {
+        // Act
+        var result = ConfigModule.GetCommandLineParams([]);
+
+        // Assert
+        result.ChatInterface.ShouldBe(ChatInterface.Telegram);
+        result.Prompt.ShouldBeNull();
+        result.ShowReasoning.ShouldBeFalse();
     }
 }

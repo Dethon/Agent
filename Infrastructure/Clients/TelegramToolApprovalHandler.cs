@@ -233,17 +233,12 @@ public sealed class TelegramToolApprovalHandler(
     private static string FormatArray(JsonElement arrayElement)
     {
         var items = arrayElement.EnumerateArray().ToList();
-        if (items.Count == 0)
+        return items.Count switch
         {
-            return "[]";
-        }
-
-        if (items.Count == 1)
-        {
-            return FormatArgumentValue(items[0]);
-        }
-
-        return string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"));
+            0 => "[]",
+            1 => FormatArgumentValue(items[0]),
+            _ => string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"))
+        };
     }
 
     private static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)

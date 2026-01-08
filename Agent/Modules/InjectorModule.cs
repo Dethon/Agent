@@ -49,6 +49,7 @@ public static class InjectorModule
             {
                 ChatInterface.Cli => services.AddCliClient(settings),
                 ChatInterface.Telegram => services.AddTelegramClient(settings),
+                ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
@@ -95,6 +96,20 @@ public static class InjectorModule
                     botClient,
                     settings.Telegram.AllowedUserNames,
                     sp.GetRequiredService<ILogger<TelegramBotChatMessengerClient>>()));
+        }
+
+        private IServiceCollection AddOneShotClient(CommandLineParams cmdParams)
+        {
+            return services
+                .AddSingleton<IToolApprovalHandlerFactory>(new AutoApproveToolHandlerFactory())
+                .AddSingleton<IChatMessengerClient>(sp =>
+                {
+                    var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
+                    return new OneShotChatMessengerClient(
+                        cmdParams.Prompt ?? throw new InvalidOperationException("Prompt is required for OneShot mode"),
+                        cmdParams.ShowReasoning,
+                        lifetime);
+                });
         }
 
         private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)
