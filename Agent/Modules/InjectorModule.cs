@@ -47,8 +47,8 @@ public static class InjectorModule
 
             return cmdParams.ChatInterface switch
             {
-                ChatInterface.Cli => services.AddCliClient(settings),
-                ChatInterface.Telegram => services.AddTelegramClient(settings),
+                ChatInterface.Cli => services.AddCliClient(settings, cmdParams),
+                ChatInterface.Telegram => services.AddTelegramClient(settings, cmdParams),
                 ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
@@ -65,7 +65,7 @@ public static class InjectorModule
                 );
         }
 
-        private IServiceCollection AddCliClient(AgentSettings settings)
+        private IServiceCollection AddCliClient(AgentSettings settings, CommandLineParams cmdParams)
         {
             var terminalAdapter = new TerminalGuiAdapter(settings.Name);
             var approvalHandler = new CliToolApprovalHandler(terminalAdapter);
@@ -77,7 +77,11 @@ public static class InjectorModule
                     var lifetime = sp.GetRequiredService<IHostApplicationLifetime>();
                     var threadStateStore = sp.GetRequiredService<IThreadStateStore>();
 
-                    var router = new CliChatMessageRouter(settings.Name, Environment.UserName, terminalAdapter);
+                    var router = new CliChatMessageRouter(
+                        settings.Name,
+                        Environment.UserName,
+                        terminalAdapter,
+                        cmdParams.ShowReasoning);
 
                     return new CliChatMessengerClient(
                         router,
@@ -86,7 +90,7 @@ public static class InjectorModule
                 });
         }
 
-        private IServiceCollection AddTelegramClient(AgentSettings settings)
+        private IServiceCollection AddTelegramClient(AgentSettings settings, CommandLineParams cmdParams)
         {
             var botClient = new TelegramBotClient(settings.Telegram.BotToken);
 
@@ -95,6 +99,7 @@ public static class InjectorModule
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramBotChatMessengerClient(
                     botClient,
                     settings.Telegram.AllowedUserNames,
+                    cmdParams.ShowReasoning,
                     sp.GetRequiredService<ILogger<TelegramBotChatMessengerClient>>()));
         }
 

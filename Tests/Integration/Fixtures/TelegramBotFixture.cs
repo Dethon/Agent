@@ -28,12 +28,12 @@ public class TelegramBotFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    public TelegramBotChatMessengerClient CreateClient()
+    public TelegramBotChatMessengerClient CreateClient(bool showReasoning = false)
     {
         var options = new TelegramBotClientOptions(BotToken, BaseUrl);
         var botClient = new TelegramBotClient(options);
         var logger = NullLogger<TelegramBotChatMessengerClient>.Instance;
-        return new TelegramBotChatMessengerClient(botClient, AllowedUserNames, logger);
+        return new TelegramBotChatMessengerClient(botClient, AllowedUserNames, showReasoning, logger);
     }
 
     private void SetupGetMe()

@@ -46,7 +46,7 @@ public static class ConfigModule
         };
         var reasoningOption = new Option<bool>("--reasoning", "-r")
         {
-            Description = "Show reasoning output (only applicable in one-shot mode)",
+            Description = "Show reasoning output from the AI model",
             Required = false,
             DefaultValueFactory = _ => false
         };

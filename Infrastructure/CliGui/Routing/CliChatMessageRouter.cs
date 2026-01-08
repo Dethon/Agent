@@ -17,6 +17,7 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
     private readonly string _userName;
     private readonly ITerminalSession _terminalAdapter;
     private readonly CliCommandHandler _commandHandler;
+    private readonly bool _showReasoning;
 
     private BlockingCollection<string> _inputQueue = new();
     private int _messageCounter;
@@ -26,13 +27,15 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
     public CliChatMessageRouter(
         string agentName,
         string userName,
-        ITerminalSession terminalAdapter)
+        ITerminalSession terminalAdapter,
+        bool showReasoning = false)
     {
         var (chatId, threadId) = DeriveIdsFromAgentName(agentName);
 
         _agentName = agentName;
         _userName = userName;
         _terminalAdapter = terminalAdapter;
+        _showReasoning = showReasoning;
         ChatId = chatId;
         ThreadId = threadId;
         _commandHandler = new CliCommandHandler(terminalAdapter, ResetInputQueue);
@@ -111,7 +114,7 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
 
     public void SendResponse(ChatResponseMessage responseMessage)
     {
-        if (!string.IsNullOrWhiteSpace(responseMessage.Reasoning))
+        if (_showReasoning && !string.IsNullOrWhiteSpace(responseMessage.Reasoning))
         {
             var groupId = Guid.NewGuid().ToString();
             var reasoningLines = ChatMessageFormatter.FormatReasoning(responseMessage.Reasoning, groupId);

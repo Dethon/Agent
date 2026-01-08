@@ -266,4 +266,46 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         // Assert
         exists.ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task SendResponse_WithReasoning_WhenShowReasoningTrue_SendsReasoningMessage()
+    {
+        // Arrange
+        fixture.Reset();
+        var client = fixture.CreateClient(showReasoning: true);
+        const long chatId = 12345L;
+
+        fixture.SetupSendMessage(chatId);
+
+        var responseMessage = new ChatResponseMessage
+        {
+            Message = "Result",
+            Reasoning = "Thinking about the problem..."
+        };
+
+        // Act & Assert - Should not throw (reasoning message + content message = 2 calls)
+        await Should.NotThrowAsync(() =>
+            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SendResponse_WithReasoning_WhenShowReasoningFalse_OmitsReasoningMessage()
+    {
+        // Arrange
+        fixture.Reset();
+        var client = fixture.CreateClient(showReasoning: false);
+        const long chatId = 12345L;
+
+        fixture.SetupSendMessage(chatId);
+
+        var responseMessage = new ChatResponseMessage
+        {
+            Message = "Result",
+            Reasoning = "Thinking about the problem..."
+        };
+
+        // Act & Assert - Should not throw (only content message = 1 call)
+        await Should.NotThrowAsync(() =>
+            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+    }
 }

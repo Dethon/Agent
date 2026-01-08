@@ -322,4 +322,47 @@ public class CliChatMessageRouterTests : IDisposable
         prompts[0].MessageId.ShouldBe(1);
         prompts[1].MessageId.ShouldBe(2);
     }
+
+    [Fact]
+    public void SendResponse_WithReasoning_WhenShowReasoningTrue_DisplaysReasoning()
+    {
+        // Arrange
+        using var terminalAdapter = new FakeTerminalAdapter();
+        using var router = new CliChatMessageRouter("TestAgent", "TestUser", terminalAdapter, showReasoning: true);
+
+        var response = new ChatResponseMessage
+        {
+            Message = "Result",
+            Reasoning = "Thinking about the problem..."
+        };
+
+        // Act
+        router.SendResponse(response);
+
+        // Assert
+        terminalAdapter.DisplayedMessages.Count.ShouldBe(2); // Reasoning + Message
+        var allLines = terminalAdapter.DisplayedMessages.SelectMany(m => m).ToList();
+        allLines.ShouldContain(l => l.Type == ChatLineType.ReasoningHeader);
+        allLines.ShouldContain(l => l.Type == ChatLineType.ReasoningContent);
+    }
+
+    [Fact]
+    public void SendResponse_WithReasoning_WhenShowReasoningFalse_OmitsReasoning()
+    {
+        // Arrange - _router is created with showReasoning: false by default
+        var response = new ChatResponseMessage
+        {
+            Message = "Result",
+            Reasoning = "Thinking about the problem..."
+        };
+
+        // Act
+        _router.SendResponse(response);
+
+        // Assert
+        _terminalAdapter.DisplayedMessages.Count.ShouldBe(1); // Only Message
+        var allLines = _terminalAdapter.DisplayedMessages.SelectMany(m => m).ToList();
+        allLines.ShouldNotContain(l => l.Type == ChatLineType.ReasoningHeader);
+        allLines.ShouldNotContain(l => l.Type == ChatLineType.ReasoningContent);
+    }
 }

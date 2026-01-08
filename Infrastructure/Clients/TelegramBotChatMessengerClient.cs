@@ -14,6 +14,7 @@ namespace Infrastructure.Clients;
 public class TelegramBotChatMessengerClient(
     ITelegramBotClient client,
     string[] allowedUserNames,
+    bool showReasoning,
     ILogger<TelegramBotChatMessengerClient> logger) : IChatMessengerClient
 {
     private string? _topicIconId;
@@ -86,7 +87,7 @@ public class TelegramBotChatMessengerClient(
     {
         var toolCalls = responseMessage.CalledTools?.HtmlSanitize().Left(3800);
         var content = responseMessage.Message?.HtmlSanitize().Left(4000);
-        var reasoning = responseMessage.Reasoning?.HtmlSanitize().Left(4000);
+        var reasoning = showReasoning ? responseMessage.Reasoning?.HtmlSanitize().Left(4000) : null;
 
         if (!string.IsNullOrWhiteSpace(reasoning))
         {

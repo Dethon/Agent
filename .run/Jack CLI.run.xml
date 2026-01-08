@@ -1,15 +1,15 @@
 ﻿<component name="ProjectRunConfigurationManager">
     <configuration default="false" name="Jack CLI" type="DotNetProject" factoryName=".NET Project">
         <option name="EXE_PATH" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0/Agent.exe"/>
-        <option name="PROGRAM_PARAMETERS" value="--chat Cli"/>
+        <option name="PROGRAM_PARAMETERS" value="--chat Cli --reasoning"/>
         <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/Agent/bin/Debug/net10.0"/>
         <option name="PASS_PARENT_ENVS" value="1"/>
         <envs>
             <env name="MCPSERVERS__0__ENDPOINT" value="http://localhost:6001/sse"/>
+            <env name="WHITELISTPATTERNS__0" value="mcp:localhost:*"/>
+            <env name="REDIS__CONNECTIONSTRING" value="localhost:6379"/>
             <env name="MCPSERVERS__1__ENDPOINT" value="http://localhost:6003/sse"/>
             <env name="NAME" value="Jack"/>
-            <env name="REDIS__CONNECTIONSTRING" value="localhost:6379"/>
-            <env name="WHITELISTPATTERNS__0" value="mcp:localhost:*"/>
         </envs>
         <option name="ENV_FILE_PATHS" value=""/>
         <option name="REDIRECT_INPUT_PATH" value=""/>
