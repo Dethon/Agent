@@ -108,10 +108,10 @@ public record IdealistaProperty
     public int? NumPhotos { get; init; }
     public bool? HasVideo { get; init; }
     public required string Operation { get; init; }
-    public required int Price { get; init; }
+    public required double Price { get; init; }
     public double? PriceByArea { get; init; }
     public string? PropertyType { get; init; }
-    public int? Size { get; init; }
+    public double? Size { get; init; }
     public int? Rooms { get; init; }
     public int? Bathrooms { get; init; }
     public string? Floor { get; init; }

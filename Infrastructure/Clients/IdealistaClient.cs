@@ -7,22 +7,12 @@ using JetBrains.Annotations;
 
 namespace Infrastructure.Clients;
 
-public class IdealistaClient : IIdealistaClient
+public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSecret) : IIdealistaClient
 {
-    private readonly HttpClient _httpClient;
-    private readonly string _apiKey;
-    private readonly string _apiSecret;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
     private string? _accessToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
-
-    public IdealistaClient(HttpClient httpClient, string apiKey, string apiSecret)
-    {
-        _httpClient = httpClient;
-        _apiKey = apiKey;
-        _apiSecret = apiSecret;
-    }
 
     public async Task<IdealistaSearchResult> SearchAsync(IdealistaSearchQuery query, CancellationToken ct = default)
     {
@@ -35,7 +25,7 @@ public class IdealistaClient : IIdealistaClient
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         request.Content = content;
 
-        var response = await _httpClient.SendAsync(request, ct);
+        var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var idealistaResponse = await response.Content.ReadFromJsonAsync<IdealistaApiResponse>(ct)
@@ -69,7 +59,7 @@ public class IdealistaClient : IIdealistaClient
 
     private async Task RefreshTokenAsync(CancellationToken ct)
     {
-        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_apiKey}:{_apiSecret}"));
+        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{apiKey}:{apiSecret}"));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "oauth/token");
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
@@ -79,7 +69,7 @@ public class IdealistaClient : IIdealistaClient
             ["scope"] = "read"
         });
 
-        var response = await _httpClient.SendAsync(request, ct);
+        var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var tokenResponse = await response.Content.ReadFromJsonAsync<OAuthTokenResponse>(ct)
@@ -314,13 +304,13 @@ public class IdealistaClient : IIdealistaClient
 
         [JsonPropertyName("operation")] public string? Operation { get; init; }
 
-        [JsonPropertyName("price")] public int? Price { get; init; }
+        [JsonPropertyName("price")] public double? Price { get; init; }
 
         [JsonPropertyName("priceByArea")] public double? PriceByArea { get; init; }
 
         [JsonPropertyName("propertyType")] public string? PropertyType { get; init; }
 
-        [JsonPropertyName("size")] public int? Size { get; init; }
+        [JsonPropertyName("size")] public double? Size { get; init; }
 
         [JsonPropertyName("rooms")] public int? Rooms { get; init; }
 
