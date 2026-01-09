@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
+using McpServerIdealista.McpPrompts;
 using McpServerIdealista.McpTools;
 using McpServerIdealista.Settings;
 using Microsoft.Extensions.Configuration;
@@ -30,7 +31,8 @@ public static class ConfigModule
                 .AddIdealistaClient(settings)
                 .AddMcpServer()
                 .WithHttpTransport()
-                .WithTools<McpPropertySearchTool>();
+                .WithTools<McpPropertySearchTool>()
+                .WithPrompts<McpSystemPrompt>();
 
             return services;
         }
