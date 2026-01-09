@@ -26,6 +26,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 | `McpServerText`          | Module         | MCP server for text/markdown file inspection and editing    |
 | `McpServerWebSearch`     | Module         | MCP server for web search and content fetching              |
 | `McpServerMemory`        | Module         | MCP server for vector-based memory storage and recall       |
+| `McpServerIdealista`     | Module         | MCP server for Idealista real estate property search        |
 | `McpServerCommandRunner` | Module         | MCP server for CLI command execution                        |
 | `Tests`                  | Testing        | Unit and integration tests                                  |
 | `DockerCompose`          | Deployment     | Docker Compose configuration                                |
@@ -117,6 +118,12 @@ Tools: `MemoryStoreTool`, `MemoryRecallTool`, `MemoryForgetTool`, `MemoryListToo
 ### Web Search
 
 `IWebSearchClient` → `BraveSearchClient` + `IWebFetcher` → `WebContentFetcher`
+
+WebFetch supports CSS selectors for targeting content, multiple output formats (text/markdown/html), and link extraction.
+
+### Real Estate Search
+
+`IIdealistaClient` → `IdealistaClient` for property search in Spain, Italy, and Portugal via Idealista API
 
 ### Command Runners
 

@@ -26,36 +26,37 @@ Context Protocol (MCP).
                         │   (AI Agents)   │
                         └────────┬────────┘
                                  │
-       ┌─────────────┬───────────┼───────────┬─────────────┐
-       ▼             ▼           ▼           ▼             ▼
-┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
-│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │   Redis    │
-└─────┬──────┘ └────────────┘ └────────────┘ └─────┬──────┘ │(Persistence)│
-      │                                            │        └────────────┘
-┌─────┴──────┐                               ┌─────┴──────┐
-│ qBittorrent│                               │Redis Vector│
-│  Jackett   │                               │   Store    │
-│    Plex    │                               └────────────┘
+       ┌─────────────┬───────────┼───────────┬─────────────┬─────────────┐
+       ▼             ▼           ▼           ▼             ▼             ▼
+┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
+│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │MCP Idealista│ │   Redis    │
+└─────┬──────┘ └────────────┘ └────────────┘ └─────┬──────┘ └─────┬──────┘ │(Persistence)│
+      │                                            │              │        └────────────┘
+┌─────┴──────┐                               ┌─────┴──────┐ ┌─────┴──────┐
+│ qBittorrent│                               │Redis Vector│ │ Idealista  │
+│  Jackett   │                               │   Store    │ │    API     │
+│    Plex    │                               └────────────┘ └────────────┘
 │ FileBrowser│
 └────────────┘
 ```
 
 ### MCP Servers
 
-| Server                | Tools                                                                                                                                           | Purpose                                                                                          |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure |
-| **mcp-text**          | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate, Move, RemoveFile                                  | Manage a knowledge vault of markdown notes and text files                                        |
-| **mcp-websearch**     | WebSearch, WebFetch                                                                                                                             | Search the web and fetch content from URLs                                                       |
-| **mcp-memory**        | MemoryStore, MemoryRecall, MemoryForget, MemoryList, MemoryReflect                                                                              | Vector-based memory storage and retrieval using Redis                                            |
-| **mcp-commandrunner** | RunCommand, GetCliPlatform                                                                                                                      | Execute system commands (Not included in Docker Compose)                                         |
+| Server                | Tools                                                                                                                                           | Purpose                                                                                                                          |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure                                 |
+| **mcp-text**          | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate, Move, RemoveFile                                  | Manage a knowledge vault of markdown notes and text files                                                                        |
+| **mcp-websearch**     | WebSearch, WebFetch                                                                                                                             | Search the web and fetch content from URLs with CSS selectors, multiple output formats (text/markdown/html), and link extraction |
+| **mcp-memory**        | MemoryStore, MemoryRecall, MemoryForget, MemoryList, MemoryReflect                                                                              | Vector-based memory storage and retrieval using Redis                                                                            |
+| **mcp-idealista**     | IdealistaPropertySearch                                                                                                                         | Search real estate properties on Idealista (Spain, Italy, Portugal) with comprehensive filters                                   |
+| **mcp-commandrunner** | RunCommand, GetCliPlatform                                                                                                                      | Execute system commands (Not included in Docker Compose)                                                                         |
 
 ### Agents
 
-| Agent     | MCP Servers                         | Purpose                                                                   |
-|-----------|-------------------------------------|---------------------------------------------------------------------------|
-| **Jack**  | mcp-library, mcp-websearch          | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-text, mcp-websearch, mcp-memory | Knowledge base management ("Scribe" persona for managing markdown vaults) |
+| Agent     | MCP Servers                                         | Purpose                                                                   |
+|-----------|-----------------------------------------------------|---------------------------------------------------------------------------|
+| **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
+| **Jonas** | mcp-text, mcp-websearch, mcp-memory, mcp-idealista  | Knowledge base management ("Scribe" persona for managing markdown vaults) |
 
 ## Projects
 
@@ -68,6 +69,7 @@ Context Protocol (MCP).
 | `McpServerText`          | MCP server for text/markdown file inspection and editing        |
 | `McpServerWebSearch`     | MCP server for web search and content fetching                  |
 | `McpServerMemory`        | MCP server for vector-based memory storage and recall           |
+| `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpServerCommandRunner` | MCP server for CLI command execution                            |
 | `DockerCompose`          | Docker Compose configuration for the full stack                 |
 | `Tests`                  | Unit and integration tests                                      |
@@ -107,6 +109,8 @@ PUID=1000
 PGID=1000
 OPENROUTER__APIKEY=your_openrouter_api_key
 BRAVE__APIKEY=your_brave_search_api_key
+IDEALISTA__APIKEY=your_idealista_api_key
+IDEALISTA__APISECRET=your_idealista_api_secret
 JONAS__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jonas
 JACK__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jack
 TELEGRAM__ALLOWEDUSERNAMES__0=your_telegram_username
@@ -135,6 +139,7 @@ docker compose up -d
 | MCP Text Tools | 6002  | Text/Markdown MCP server       |
 | MCP WebSearch  | 6003  | Web search MCP server          |
 | MCP Memory     | 6004  | Memory storage MCP server      |
+| MCP Idealista  | 6005  | Idealista property MCP server  |
 
 ## Usage
 
