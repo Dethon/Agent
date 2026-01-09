@@ -99,6 +99,7 @@ public record IdealistaProperty
     public string? Province { get; init; }
     public string? Neighborhood { get; init; }
     public string? Region { get; init; }
+    public string? Subregion { get; init; }
     public string? Country { get; init; }
     public double? Latitude { get; init; }
     public double? Longitude { get; init; }
@@ -119,7 +120,13 @@ public record IdealistaProperty
     public bool? HasLift { get; init; }
     public bool? ShowAddress { get; init; }
     public string? Status { get; init; }
+    public string? Condition { get; init; }
+    public string? Age { get; init; }
+    public string? Description { get; init; }
     public bool? NewDevelopment { get; init; }
+    public bool? NewDevelopmentFinished { get; init; }
+    public bool? NewProperty { get; init; }
+    public bool? Agency { get; init; }
     public IdealistaParkingSpace? ParkingSpace { get; init; }
     public IdealistaDetailedType? DetailedType { get; init; }
     public string? ExternalReference { get; init; }

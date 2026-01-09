@@ -186,6 +186,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
             Province = e.Province,
             Neighborhood = e.Neighborhood,
             Region = e.Region,
+            Subregion = e.Subregion,
             Country = e.Country,
             Latitude = e.Latitude,
             Longitude = e.Longitude,
@@ -206,7 +207,13 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
             HasLift = e.HasLift,
             ShowAddress = e.ShowAddress,
             Status = e.Status,
+            Condition = e.Condition,
+            Age = e.Age,
+            Description = e.Description,
             NewDevelopment = e.NewDevelopment,
+            NewDevelopmentFinished = e.NewDevelopmentFinished,
+            NewProperty = e.NewProperty,
+            Agency = e.Agency,
             ParkingSpace = e.ParkingSpace != null
                 ? new IdealistaParkingSpace
                 {
@@ -286,6 +293,8 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
 
         [JsonPropertyName("region")] public string? Region { get; init; }
 
+        [JsonPropertyName("subregion")] public string? Subregion { get; init; }
+
         [JsonPropertyName("country")] public string? Country { get; init; }
 
         [JsonPropertyName("latitude")] public double? Latitude { get; init; }
@@ -326,7 +335,20 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
 
         [JsonPropertyName("status")] public string? Status { get; init; }
 
+        [JsonPropertyName("condition")] public string? Condition { get; init; }
+
+        [JsonPropertyName("age")] public string? Age { get; init; }
+
+        [JsonPropertyName("description")] public string? Description { get; init; }
+
         [JsonPropertyName("newDevelopment")] public bool? NewDevelopment { get; init; }
+
+        [JsonPropertyName("newDevelopmentFinished")]
+        public bool? NewDevelopmentFinished { get; init; }
+
+        [JsonPropertyName("newProperty")] public bool? NewProperty { get; init; }
+
+        [JsonPropertyName("agency")] public bool? Agency { get; init; }
 
         [JsonPropertyName("parkingSpace")] public IdealistaApiParkingSpace? ParkingSpace { get; init; }
 

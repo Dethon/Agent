@@ -1,10 +1,18 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Domain.Contracts;
 
 namespace Domain.Tools.RealEstate;
 
 public class PropertySearchTool(IIdealistaClient idealistaClient)
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     protected const string Name = "IdealistaPropertySearch";
 
     protected const string Description =
@@ -12,7 +20,8 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         Searches for real estate properties on Idealista (Spain, Italy, Portugal).
         Supports filtering by property type (homes, offices, premises, garages, bedrooms),
         operation (sale, rent), location, price range, size, and many property-specific features.
-        Returns property listings with details including price, location, size, rooms, and URLs.
+        Returns comprehensive property data for market analysis including price, location, size,
+        rooms, description, condition, age, and URLs.
         """;
 
     protected async Task<JsonNode> RunAsync(
@@ -81,131 +90,11 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
             };
         }
 
-        var propertiesArray = new JsonArray();
-        foreach (var property in result.ElementList)
-        {
-            var propertyNode = new JsonObject
-            {
-                ["propertyCode"] = property.PropertyCode,
-                ["operation"] = property.Operation,
-                ["price"] = property.Price,
-                ["url"] = property.Url
-            };
-
-            if (property.Address != null)
-            {
-                propertyNode["address"] = property.Address;
-            }
-
-            if (property.Municipality != null)
-            {
-                propertyNode["municipality"] = property.Municipality;
-            }
-
-            if (property.Province != null)
-            {
-                propertyNode["province"] = property.Province;
-            }
-
-            if (property.District != null)
-            {
-                propertyNode["district"] = property.District;
-            }
-
-            if (property.Size.HasValue)
-            {
-                propertyNode["size"] = property.Size.Value;
-            }
-
-            if (property.Rooms.HasValue)
-            {
-                propertyNode["rooms"] = property.Rooms.Value;
-            }
-
-            if (property.Bathrooms.HasValue)
-            {
-                propertyNode["bathrooms"] = property.Bathrooms.Value;
-            }
-
-            if (property.Floor != null)
-            {
-                propertyNode["floor"] = property.Floor;
-            }
-
-            if (property.Exterior.HasValue)
-            {
-                propertyNode["exterior"] = property.Exterior.Value;
-            }
-
-            if (property.HasLift.HasValue)
-            {
-                propertyNode["hasLift"] = property.HasLift.Value;
-            }
-
-            if (property.Status != null)
-            {
-                propertyNode["status"] = property.Status;
-            }
-
-            if (property.NewDevelopment.HasValue)
-            {
-                propertyNode["newDevelopment"] = property.NewDevelopment.Value;
-            }
-
-            if (property.PriceByArea.HasValue)
-            {
-                propertyNode["pricePerM2"] = Math.Round(property.PriceByArea.Value, 2);
-            }
-
-            if (property is { Latitude: not null, Longitude: not null })
-            {
-                propertyNode["coordinates"] = new JsonObject
-                {
-                    ["lat"] = property.Latitude.Value,
-                    ["lng"] = property.Longitude.Value
-                };
-            }
-
-            if (property.DetailedType != null)
-            {
-                var typeNode = new JsonObject();
-                if (property.DetailedType.Typology != null)
-                {
-                    typeNode["typology"] = property.DetailedType.Typology;
-                }
-
-                if (property.DetailedType.Subtypology != null)
-                {
-                    typeNode["subtypology"] = property.DetailedType.Subtypology;
-                }
-
-                if (typeNode.Count > 0)
-                {
-                    propertyNode["detailedType"] = typeNode;
-                }
-            }
-
-            if (property.ParkingSpace is { HasParkingSpace: true })
-            {
-                var parkingNode = new JsonObject
-                {
-                    ["hasParkingSpace"] = true
-                };
-                if (property.ParkingSpace.IsParkingSpaceIncludedInPrice.HasValue)
-                {
-                    parkingNode["includedInPrice"] = property.ParkingSpace.IsParkingSpaceIncludedInPrice.Value;
-                }
-
-                if (property.ParkingSpace.ParkingSpacePrice.HasValue)
-                {
-                    parkingNode["price"] = property.ParkingSpace.ParkingSpacePrice.Value;
-                }
-
-                propertyNode["parkingSpace"] = parkingNode;
-            }
-
-            propertiesArray.Add(propertyNode);
-        }
+        var properties = result.ElementList
+            .Select(x => JsonSerializer.SerializeToNode(x, _jsonOptions))
+            .Where(x => x != null)
+            .Select(x => x!)
+            .ToArray();
 
         return new JsonObject
         {
@@ -215,7 +104,7 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
             ["currentPage"] = result.ActualPage,
             ["itemsPerPage"] = result.ItemsPerPage,
             ["summary"] = new JsonArray(result.Summary.Select(s => JsonValue.Create(s)).ToArray()),
-            ["properties"] = propertiesArray
+            ["properties"] = new JsonArray(properties)
         };
     }
 }
