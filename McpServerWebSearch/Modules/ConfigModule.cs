@@ -18,7 +18,18 @@ public static class ConfigModule
             .Build();
 
         var settings = config.Get<McpSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
+        if (settings == null)
+        {
+            throw new InvalidOperationException("Settings not found");
+        }
+
+        // Bind nested sections explicitly for environment variable support
+        settings = settings with
+        {
+            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>()
+        };
+
+        return settings;
     }
 
     extension(IServiceCollection services)
@@ -49,7 +60,21 @@ public static class ConfigModule
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
 
-            services.AddSingleton<IWebFetcher, PlaywrightWebFetcher>();
+            // Register CapSolver if configured
+            if (!string.IsNullOrEmpty(settings.CapSolver?.ApiKey))
+            {
+                services.AddHttpClient<ICaptchaSolver, CapSolverClient>((httpClient, _) =>
+                {
+                    httpClient.Timeout = TimeSpan.FromMinutes(3);
+                    return new CapSolverClient(httpClient, settings.CapSolver.ApiKey);
+                });
+            }
+
+            services.AddSingleton<IWebFetcher>(sp =>
+            {
+                var captchaSolver = sp.GetService<ICaptchaSolver>();
+                return new PlaywrightWebFetcher(captchaSolver);
+            });
 
             return services;
         }

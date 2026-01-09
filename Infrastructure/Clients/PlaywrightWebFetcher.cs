@@ -1,25 +1,26 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients;
 
-public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
+public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null) : IWebFetcher, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
+    private IBrowserContext? _context;
     private readonly SemaphoreSlim _initLock = new(1, 1);
+    private readonly SemaphoreSlim _fetchLock = new(1, 1);
     private readonly Random _random = new();
     private bool _initialized;
 
+    private const string UserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
     private const string StealthScript = """
-                                         // Hide webdriver property
                                          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-                                         // Hide automation-related properties
                                          delete navigator.__proto__.webdriver;
-
-                                         // Fake plugins array
                                          Object.defineProperty(navigator, 'plugins', {
                                              get: () => [
                                                  { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
@@ -27,27 +28,14 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
                                                  { name: 'Native Client', filename: 'internal-nacl-plugin' }
                                              ]
                                          });
-
-                                         // Fake languages
                                          Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en-US', 'en'] });
-
-                                         // Hide Chrome automation properties
                                          window.chrome = { runtime: {} };
-
-                                         // Fake permissions query
                                          const originalQuery = window.navigator.permissions.query;
                                          window.navigator.permissions.query = (parameters) => (
                                              parameters.name === 'notifications'
                                                  ? Promise.resolve({ state: Notification.permission })
                                                  : originalQuery(parameters)
                                          );
-
-                                         // Prevent detection via iframe contentWindow
-                                         Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-                                             get: function() {
-                                                 return window;
-                                             }
-                                         });
                                          """;
 
     public async Task<WebFetchResult> FetchAsync(WebFetchRequest request, CancellationToken ct = default)
@@ -57,11 +45,11 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
             return CreateErrorResult(request.Url, "Invalid URL. Only http and https URLs are supported.");
         }
 
+        await _fetchLock.WaitAsync(ct);
         try
         {
             await EnsureInitializedAsync();
-            var html = await FetchWithBrowserAsync(request.Url, ct);
-            return await HtmlProcessor.ProcessAsync(request, html, ct);
+            return await FetchWithBrowserAsync(request, ct);
         }
         catch (PlaywrightException ex)
         {
@@ -75,6 +63,16 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
         {
             return CreateErrorResult(request.Url, $"Error: {ex.Message}");
         }
+        finally
+        {
+            _fetchLock.Release();
+        }
+    }
+
+    public Task<WebFetchResult> ResolveCaptchaAsync(WebFetchRequest request, CancellationToken ct = default)
+    {
+        // CAPTCHA is now resolved automatically, just retry fetch
+        return FetchAsync(request, ct);
     }
 
     private async Task EnsureInitializedAsync()
@@ -93,6 +91,7 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
             }
 
             _playwright = await Playwright.CreateAsync();
+
             _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
             {
                 Headless = true,
@@ -101,20 +100,35 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
                     "--disable-blink-features=AutomationControlled",
                     "--disable-features=IsolateOrigins,site-per-process",
                     "--disable-site-isolation-trials",
-                    "--disable-web-security",
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-accelerated-2d-canvas",
                     "--disable-gpu",
                     "--window-size=1920,1080",
-                    "--start-maximized",
                     "--disable-infobars",
                     "--disable-extensions",
                     "--disable-plugins-discovery",
                     "--disable-background-networking"
                 ]
             });
+
+            // Persistent context preserves cookies between requests
+            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
+            {
+                UserAgent = UserAgent,
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                Locale = "es-ES",
+                TimezoneId = "Europe/Madrid",
+                Geolocation = new Geolocation { Latitude = 41.6523f, Longitude = -4.7245f },
+                Permissions = ["geolocation"],
+                HasTouch = false,
+                IsMobile = false,
+                JavaScriptEnabled = true
+            });
+
+            await _context.AddInitScriptAsync(StealthScript);
+
             _initialized = true;
         }
         finally
@@ -123,55 +137,157 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
         }
     }
 
-    private async Task<string> FetchWithBrowserAsync(string url, CancellationToken ct)
+    private async Task<WebFetchResult> FetchWithBrowserAsync(WebFetchRequest request, CancellationToken ct,
+        bool isRetry = false)
     {
-        var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
-        {
-            UserAgent =
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-            Locale = "es-ES",
-            TimezoneId = "Europe/Madrid",
-            Geolocation = new Geolocation { Latitude = 41.6523f, Longitude = -4.7245f },
-            Permissions = ["geolocation"],
-            HasTouch = false,
-            IsMobile = false,
-            JavaScriptEnabled = true
-        });
+        var page = await _context!.NewPageAsync();
 
         try
         {
-            var page = await context.NewPageAsync();
+            // Random delay before navigation
+            await Task.Delay(_random.Next(500, 1500), ct);
 
-            // Inject stealth script before any page loads
-            await page.AddInitScriptAsync(StealthScript);
-
-            // Add random delay before navigation (1-3 seconds)
-            await Task.Delay(_random.Next(1000, 3000), ct);
-
-            await page.GotoAsync(url, new PageGotoOptions
+            await page.GotoAsync(request.Url, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = 30000
             });
 
-            // Simulate human-like behavior: random scroll
-            await page.EvaluateAsync(@"
-                window.scrollTo({
-                    top: Math.floor(Math.random() * 300),
-                    behavior: 'smooth'
-                });
-            ");
+            // Small delay for dynamic content
+            await Task.Delay(_random.Next(500, 1000), ct);
 
-            // Random delay after page load (1-2 seconds)
-            await Task.Delay(_random.Next(1000, 2000), ct);
+            var html = await page.ContentAsync();
 
-            return await page.ContentAsync();
+            // Check for DataDome CAPTCHA
+            if (!ContainsCaptcha(html))
+            {
+                return await HtmlProcessor.ProcessAsync(request, html, ct);
+            }
+
+            if (isRetry)
+            {
+                return CreateErrorResult(request.Url, "CAPTCHA solving failed - still blocked after retry");
+            }
+
+            var captchaResult = await TrySolveCaptchaAsync(page, request.Url, html, ct);
+            if (!captchaResult.Success)
+            {
+                return CreateErrorResult(request.Url, captchaResult.ErrorMessage ?? "Failed to solve CAPTCHA");
+            }
+
+            // Cookie is now set, close this page and retry
+            await page.CloseAsync();
+            return await FetchWithBrowserAsync(request, ct, isRetry: true);
         }
         finally
         {
-            await context.CloseAsync();
+            if (!page.IsClosed)
+            {
+                await page.CloseAsync();
+            }
         }
+    }
+
+    private async Task<CaptchaSolution> TrySolveCaptchaAsync(IPage page, string websiteUrl, string html,
+        CancellationToken ct)
+    {
+        if (captchaSolver == null)
+        {
+            return new CaptchaSolution(false, null, "No CAPTCHA solver configured");
+        }
+
+        // Extract the captcha URL from the page
+        var captchaUrl = await ExtractCaptchaUrlAsync(page, html);
+        if (string.IsNullOrEmpty(captchaUrl))
+        {
+            return new CaptchaSolution(false, null, "Could not extract CAPTCHA URL from page");
+        }
+
+        var solution = await captchaSolver.SolveDataDomeAsync(
+            new DataDomeCaptchaRequest(websiteUrl, captchaUrl, UserAgent), ct);
+
+        if (!solution.Success || string.IsNullOrEmpty(solution.Cookie))
+        {
+            return solution;
+        }
+
+        // Parse and set the datadome cookie
+        await SetDataDomeCookieAsync(page, solution.Cookie);
+
+        return solution;
+    }
+
+    private static async Task<string?> ExtractCaptchaUrlAsync(IPage page, string html)
+    {
+        // Try to find the captcha iframe URL
+        var captchaFrame = page.Frames.FirstOrDefault(f =>
+            f.Url.Contains("captcha-delivery.com") ||
+            f.Url.Contains("geo.captcha-delivery.com"));
+
+        if (captchaFrame != null)
+        {
+            return captchaFrame.Url;
+        }
+
+        // Try to extract from HTML
+        var match = CaptchaRegex().Match(html);
+
+        if (match.Success)
+        {
+            return match.Groups[1].Value;
+        }
+
+        // Try to get it from page script evaluation
+        try
+        {
+            var url = await page.EvaluateAsync<string?>(@"() => {
+                const iframe = document.querySelector('iframe[src*=""captcha-delivery""]');
+                return iframe ? iframe.src : null;
+            }");
+            return url;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task SetDataDomeCookieAsync(IPage page, string cookieString)
+    {
+        // Parse the cookie string (format: "datadome=value; ...")
+        var uri = new Uri(page.Url);
+        var cookies = cookieString.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Trim())
+            .Select(trimmed => (trimmed, eqIndex: trimmed.IndexOf('=')))
+            .Where(x => x.eqIndex > 0)
+            .Select(x => (name: x.trimmed[..x.eqIndex], value: x.trimmed[(x.eqIndex + 1)..]))
+            .Where(x => !x.name.Equals("path", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("domain", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("expires", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("max-age", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("secure", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("httponly", StringComparison.OrdinalIgnoreCase)
+                        && !x.name.Equals("samesite", StringComparison.OrdinalIgnoreCase))
+            .Select(x => new Cookie
+            {
+                Name = x.name,
+                Value = x.value,
+                Domain = uri.Host,
+                Path = "/"
+            })
+            .ToList();
+
+        if (cookies.Count > 0)
+        {
+            await _context!.AddCookiesAsync(cookies);
+        }
+    }
+
+    private static bool ContainsCaptcha(string html)
+    {
+        return html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
+               html.Contains("geo.captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
+               html.Contains("DataDome", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ValidateUrl(string url)
@@ -196,6 +312,11 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_context != null)
+        {
+            await _context.CloseAsync();
+        }
+
         if (_browser != null)
         {
             await _browser.CloseAsync();
@@ -203,6 +324,10 @@ public class PlaywrightWebFetcher : IWebFetcher, IAsyncDisposable
 
         _playwright?.Dispose();
         _initLock.Dispose();
+        _fetchLock.Dispose();
         GC.SuppressFinalize(this);
     }
+
+    [GeneratedRegex("""(https?://[^"']*captcha-delivery\.com[^"']*)""", RegexOptions.IgnoreCase, "en-150")]
+    private static partial Regex CaptchaRegex();
 }

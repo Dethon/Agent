@@ -3,6 +3,7 @@ namespace Domain.Contracts;
 public interface IWebFetcher
 {
     Task<WebFetchResult> FetchAsync(WebFetchRequest request, CancellationToken ct = default);
+    Task<WebFetchResult> ResolveCaptchaAsync(WebFetchRequest request, CancellationToken ct = default);
 }
 
 public record WebFetchRequest(
@@ -21,7 +22,8 @@ public record WebFetchResult(
     bool Truncated,
     WebPageMetadata? Metadata,
     IReadOnlyList<ExtractedLink>? Links,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? CaptchaSolveUrl = null);
 
 public record WebPageMetadata(
     string? Description,
@@ -42,5 +44,6 @@ public enum WebFetchStatus
 {
     Success,
     Partial,
-    Error
+    Error,
+    CaptchaRequired
 }

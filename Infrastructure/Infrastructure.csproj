@@ -7,6 +7,10 @@
       <LangVersion>14</LangVersion>
     </PropertyGroup>
 
+  <PropertyGroup>
+    <PlaywrightPlatform>all</PlaywrightPlatform>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Tests"/>
   </ItemGroup>

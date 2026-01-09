@@ -8,6 +8,8 @@
                     <list>
                         <option value="jonas"/>
                         <option value="mcp-text"/>
+                        <option value="mcp-websearch"/>
+                        <option value="mcp-memory"/>
                         <option value="redis"/>
                     </list>
                 </option>

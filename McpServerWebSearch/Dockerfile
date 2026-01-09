@@ -1,29 +1,15 @@
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# Stage to install Playwright browsers using SDK
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS base
+USER $APP_UID
+WORKDIR /tmp/pw
+RUN dotnet new console -n pwinstall \
+    && cd pwinstall \
+    && dotnet add package Microsoft.Playwright \
+    && dotnet build \
+    && pwsh ./bin/Debug/net10.0/playwright.ps1 install chromium
+
 WORKDIR /app
-
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
-WORKDIR /src
-COPY ["McpServerWebSearch/McpServerWebSearch.csproj", "McpServerWebSearch/"]
-COPY ["Domain/Domain.csproj", "Domain/"]
-COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
-
-FROM dependencies AS build
-ARG BUILD_CONFIGURATION=Release
-COPY . .
-WORKDIR "/src/McpServerWebSearch"
-RUN dotnet build "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
-FROM build AS publish
-RUN dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
-
-# Install Playwright browsers with dependencies
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/publish/.playwright
-RUN pwsh /app/publish/playwright.ps1 install chromium --with-deps
-
-FROM base AS final
-
-# Install Chromium runtime dependencies (Debian 12 bookworm package names)
+# Install Chromium runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 \
     libnspr4 \
@@ -42,10 +28,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2t64 \
     libpango-1.0-0 \
     libcairo2 \
+    libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
+WORKDIR /src
+COPY ["McpServerWebSearch/McpServerWebSearch.csproj", "McpServerWebSearch/"]
+COPY ["Domain/Domain.csproj", "Domain/"]
+COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
+RUN dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
 
+FROM dependencies AS build
+ARG BUILD_CONFIGURATION=Release
+COPY . .
+WORKDIR "/src/McpServerWebSearch"
+RUN dotnet build "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/build
+
+FROM build AS publish
+RUN dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+
+FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
 ENTRYPOINT ["dotnet", "McpServerWebSearch.dll"]
