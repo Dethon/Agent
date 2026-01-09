@@ -5,7 +5,8 @@ using Microsoft.Playwright;
 
 namespace Infrastructure.Clients;
 
-public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null) : IWebFetcher, IAsyncDisposable
+public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null, string? cdpEndpoint = null)
+    : IWebFetcher, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -92,26 +93,35 @@ public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null) 
 
             _playwright = await Playwright.CreateAsync();
 
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            if (!string.IsNullOrEmpty(cdpEndpoint))
             {
-                Headless = true,
-                Args =
-                [
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-features=IsolateOrigins,site-per-process",
-                    "--disable-site-isolation-trials",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-accelerated-2d-canvas",
-                    "--disable-gpu",
-                    "--window-size=1920,1080",
-                    "--disable-infobars",
-                    "--disable-extensions",
-                    "--disable-plugins-discovery",
-                    "--disable-background-networking"
-                ]
-            });
+                // Connect to remote browser via CDP (Chrome DevTools Protocol)
+                _browser = await _playwright.Chromium.ConnectOverCDPAsync(cdpEndpoint);
+            }
+            else
+            {
+                // Launch local browser
+                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = true,
+                    Args =
+                    [
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-features=IsolateOrigins,site-per-process",
+                        "--disable-site-isolation-trials",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-accelerated-2d-canvas",
+                        "--disable-gpu",
+                        "--window-size=1920,1080",
+                        "--disable-infobars",
+                        "--disable-extensions",
+                        "--disable-plugins-discovery",
+                        "--disable-background-networking"
+                    ]
+                });
+            }
 
             // Persistent context preserves cookies between requests
             _context = await _browser.NewContextAsync(new BrowserNewContextOptions

@@ -1,34 +1,22 @@
 using Domain.Contracts;
-using Infrastructure.Clients;
 using Shouldly;
 
 namespace Tests.Integration.Clients;
 
-public class WebContentFetcherIntegrationTests
+[Collection("PlaywrightWebFetcherIntegration")]
+public class PlaywrightWebFetcherIntegrationTests(PlaywrightWebFetcherFixture fixture)
 {
-    private readonly WebContentFetcher _fetcher;
-
-    public WebContentFetcherIntegrationTests()
-    {
-        var httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(30)
-        };
-        _fetcher = new WebContentFetcher(httpClient);
-    }
-
     [SkippableFact]
     public async Task FetchAsync_WithWikipedia_ReturnsContent()
     {
-        // This test may fail if Wikipedia is unreachable
-        Skip.If(!await IsInternetAvailable(), "Internet not available");
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
 
         // Act
         var request = new WebFetchRequest(
             "https://en.wikipedia.org/wiki/Model_Context_Protocol",
             Format: WebFetchOutputFormat.Markdown,
             MaxLength: 5000);
-        var result = await _fetcher.FetchAsync(request);
+        var result = await fixture.Fetcher.FetchAsync(request);
 
         // Assert
         result.Status.ShouldBe(WebFetchStatus.Success);
@@ -40,7 +28,7 @@ public class WebContentFetcherIntegrationTests
     [SkippableFact]
     public async Task FetchAsync_WithCssSelector_ExtractsSpecificContent()
     {
-        Skip.If(!await IsInternetAvailable(), "Internet not available");
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
 
         // Act - target Wikipedia infobox
         var request = new WebFetchRequest(
@@ -48,7 +36,7 @@ public class WebContentFetcherIntegrationTests
             Selector: ".infobox",
             Format: WebFetchOutputFormat.Markdown,
             MaxLength: 5000);
-        var result = await _fetcher.FetchAsync(request);
+        var result = await fixture.Fetcher.FetchAsync(request);
 
         // Assert
         if (result.Status == WebFetchStatus.Partial)
@@ -64,13 +52,13 @@ public class WebContentFetcherIntegrationTests
     [SkippableFact]
     public async Task FetchAsync_WithTextFormat_ReturnsPlainText()
     {
-        Skip.If(!await IsInternetAvailable(), "Internet not available");
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
 
         // Act
         var request = new WebFetchRequest(
             "https://example.com",
             Format: WebFetchOutputFormat.Text);
-        var result = await _fetcher.FetchAsync(request);
+        var result = await fixture.Fetcher.FetchAsync(request);
 
         // Assert
         result.Status.ShouldBe(WebFetchStatus.Success);
@@ -78,12 +66,14 @@ public class WebContentFetcherIntegrationTests
         result.Content!.ShouldNotContain("<div");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task FetchAsync_WithNonexistentDomain_ReturnsError()
     {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
         // Act
         var request = new WebFetchRequest("https://this-domain-definitely-does-not-exist-xyz123.com/page");
-        var result = await _fetcher.FetchAsync(request);
+        var result = await fixture.Fetcher.FetchAsync(request);
 
         // Assert
         result.Status.ShouldBe(WebFetchStatus.Error);
@@ -93,27 +83,13 @@ public class WebContentFetcherIntegrationTests
     [Fact]
     public async Task FetchAsync_WithInvalidScheme_ReturnsError()
     {
+        // This test doesn't need Playwright - it fails early on URL validation
         // Act
         var request = new WebFetchRequest("ftp://example.com/file");
-        var result = await _fetcher.FetchAsync(request);
+        var result = await fixture.Fetcher.FetchAsync(request);
 
         // Assert
         result.Status.ShouldBe(WebFetchStatus.Error);
         result.ErrorMessage!.ShouldContain("http");
-    }
-
-    private static async Task<bool> IsInternetAvailable()
-    {
-        try
-        {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
-            var response = await client.GetAsync("https://example.com");
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
     }
 }
