@@ -10,6 +10,7 @@
                         <option value="mcp-text"/>
                         <option value="mcp-websearch"/>
                         <option value="mcp-memory"/>
+                        <option value="mcp-idealista"/>
                         <option value="redis"/>
                     </list>
                 </option>

@@ -212,7 +212,25 @@ services:
       - jackbot
     depends_on:
       - redis
-        
+
+  mcp-idealista:
+    image: mcp-idealista:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-idealista
+    ports:
+      - "6005:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerIdealista/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+
   jack:
     image: agent:latest
     logging:
@@ -260,9 +278,11 @@ services:
       - MCPSERVERS__0__ENDPOINT=http://mcp-text:8080/sse
       - MCPSERVERS__1__ENDPOINT=http://mcp-websearch:8080/sse
       - MCPSERVERS__2__ENDPOINT=http://mcp-memory:8080/sse
+      - MCPSERVERS__3__ENDPOINT=http://mcp-idealista:8080/sse
       - WHITELISTPATTERNS__0=mcp:mcp-text:*
       - WHITELISTPATTERNS__1=mcp:mcp-websearch:*
       - WHITELISTPATTERNS__2=mcp:mcp-memory:*
+      - WHITELISTPATTERNS__3=mcp:mcp-idealista:*
       - TELEGRAM__BOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
@@ -270,6 +290,7 @@ services:
       - mcp-text
       - mcp-websearch
       - mcp-memory
+      - mcp-idealista
       - redis
 
 networks:
