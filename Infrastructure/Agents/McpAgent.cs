@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Extensions;
+using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -168,7 +169,9 @@ public sealed class McpAgent : DisposableAgent
     private static ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
         var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
-        var prompts = session.ClientManager.Prompts.Prepend(timeContext);
+        var prompts = session.ClientManager.Prompts
+            .Prepend(BasePrompt.Instructions)
+            .Prepend(timeContext);
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.ClientManager.Tools],

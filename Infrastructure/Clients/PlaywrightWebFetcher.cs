@@ -147,8 +147,8 @@ public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null, 
         }
     }
 
-    private async Task<WebFetchResult> FetchWithBrowserAsync(WebFetchRequest request, CancellationToken ct,
-        bool isRetry = false)
+    private async Task<WebFetchResult> FetchWithBrowserAsync(
+        WebFetchRequest request, CancellationToken ct, bool isRetry = false)
     {
         var page = await _context!.NewPageAsync();
 
@@ -157,14 +157,38 @@ public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null, 
             // Random delay before navigation
             await Task.Delay(_random.Next(500, 1500), ct);
 
+            var waitUntil = MapWaitStrategy(request.WaitStrategy);
             await page.GotoAsync(request.Url, new PageGotoOptions
             {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30000
+                WaitUntil = waitUntil,
+                Timeout = request.WaitTimeoutMs
             });
 
-            // Small delay for dynamic content
-            await Task.Delay(_random.Next(500, 1000), ct);
+            // Element-based waiting if selector strategy or explicit wait selector provided
+            if (request.WaitStrategy == WaitStrategy.Selector && !string.IsNullOrEmpty(request.WaitSelector))
+            {
+                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
+            }
+            else if (!string.IsNullOrEmpty(request.WaitSelector))
+            {
+                // WaitSelector can be used with any strategy as an additional wait condition
+                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
+            }
+
+            // Scroll-to-load for lazy-loaded content
+            if (request.ScrollToLoad)
+            {
+                await ScrollToLoadAsync(page, request.ScrollSteps, ct);
+            }
+
+            // Wait for DOM stability (content stops changing)
+            if (request.WaitForStability || request.WaitStrategy == WaitStrategy.Stable)
+            {
+                await WaitForDomStabilityAsync(page, request.StabilityCheckMs, ct);
+            }
+
+            // Configurable delay for dynamic content
+            await Task.Delay(request.ExtraDelayMs, ct);
 
             var html = await page.ContentAsync();
 
@@ -195,6 +219,80 @@ public partial class PlaywrightWebFetcher(ICaptchaSolver? captchaSolver = null, 
             {
                 await page.CloseAsync();
             }
+        }
+    }
+
+    private static WaitUntilState MapWaitStrategy(WaitStrategy strategy)
+    {
+        return strategy switch
+        {
+            WaitStrategy.DomContentLoaded => WaitUntilState.DOMContentLoaded,
+            WaitStrategy.Load => WaitUntilState.Load,
+            WaitStrategy.Selector => WaitUntilState.DOMContentLoaded, // Fast initial load, then wait for selector
+            WaitStrategy.Stable => WaitUntilState.NetworkIdle, // Start with network idle, then check stability
+            _ => WaitUntilState.NetworkIdle
+        };
+    }
+
+    private static async Task WaitForSelectorAsync(IPage page, string selector, int timeoutMs)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = timeoutMs
+            });
+        }
+        catch (TimeoutException)
+        {
+            // Selector didn't appear within timeout - continue with whatever content we have
+            // This is not a fatal error, the page may still have useful content
+        }
+    }
+
+    private static async Task ScrollToLoadAsync(IPage page, int scrollSteps, CancellationToken ct)
+    {
+        for (var i = 1; i <= scrollSteps; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Scroll to percentage of document height
+            await page.EvaluateAsync($"() => window.scrollTo(0, document.body.scrollHeight * {i} / {scrollSteps})");
+
+            // Wait for lazy content to load
+            await Task.Delay(500, ct);
+        }
+
+        // Scroll back to top
+        await page.EvaluateAsync("() => window.scrollTo(0, 0)");
+    }
+
+    private static async Task WaitForDomStabilityAsync(IPage page, int checkIntervalMs, CancellationToken ct,
+        int stableCountRequired = 2, int maxChecks = 10)
+    {
+        string? previousHtml = null;
+        var stableCount = 0;
+        var checks = 0;
+
+        while (stableCount < stableCountRequired && checks < maxChecks)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await Task.Delay(checkIntervalMs, ct);
+            var currentHtml = await page.ContentAsync();
+
+            if (currentHtml == previousHtml)
+            {
+                stableCount++;
+            }
+            else
+            {
+                stableCount = 0;
+            }
+
+            previousHtml = currentHtml;
+            checks++;
         }
     }
 

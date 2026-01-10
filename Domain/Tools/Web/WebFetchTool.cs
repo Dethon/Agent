@@ -7,11 +7,13 @@ public class WebFetchTool(IWebFetcher webFetcher)
 {
     protected const string Name = "WebFetch";
 
-    protected const string Description = """
-                                         Fetches and extracts readable content from a URL.
-                                         Use this after WebSearch to get full details from a promising search result.
-                                         Can target specific content with CSS selectors and output as text, markdown, or HTML.
-                                         """;
+    protected const string Description =
+        """
+        Fetches and extracts readable content from a URL.
+        Use this after WebSearch to get full details from a promising search result.
+        Can target specific content with CSS selectors and output as text, markdown, or HTML.
+        For JavaScript-heavy sites (SPAs), use waitStrategy='stable' or provide a waitSelector.
+        """;
 
     protected async Task<JsonNode> RunAsync(
         string url,
@@ -19,16 +21,31 @@ public class WebFetchTool(IWebFetcher webFetcher)
         string? format,
         int maxLength,
         bool includeLinks,
+        string? waitStrategy,
+        string? waitSelector,
+        int waitTimeoutMs,
+        int extraDelayMs,
+        bool scrollToLoad,
+        int scrollSteps,
+        bool waitForStability,
         CancellationToken ct)
     {
         var outputFormat = ParseFormat(format);
+        var parsedWaitStrategy = ParseWaitStrategy(waitStrategy);
 
         var request = new WebFetchRequest(
             Url: url,
             Selector: selector,
             Format: outputFormat,
             MaxLength: Math.Clamp(maxLength, 100, 100000),
-            IncludeLinks: includeLinks
+            IncludeLinks: includeLinks,
+            WaitStrategy: parsedWaitStrategy,
+            WaitSelector: waitSelector,
+            WaitTimeoutMs: Math.Clamp(waitTimeoutMs, 1000, 120000),
+            ExtraDelayMs: Math.Clamp(extraDelayMs, 0, 10000),
+            ScrollToLoad: scrollToLoad,
+            ScrollSteps: Math.Clamp(scrollSteps, 1, 10),
+            WaitForStability: waitForStability
         );
 
         var result = await webFetcher.FetchAsync(request, ct);
@@ -99,6 +116,23 @@ public class WebFetchTool(IWebFetcher webFetcher)
             "text" => WebFetchOutputFormat.Text,
             "html" => WebFetchOutputFormat.Html,
             _ => WebFetchOutputFormat.Markdown
+        };
+    }
+
+    private static WaitStrategy ParseWaitStrategy(string? strategy)
+    {
+        if (string.IsNullOrEmpty(strategy))
+        {
+            return WaitStrategy.NetworkIdle;
+        }
+
+        return strategy.ToLowerInvariant() switch
+        {
+            "domcontentloaded" => WaitStrategy.DomContentLoaded,
+            "load" => WaitStrategy.Load,
+            "selector" => WaitStrategy.Selector,
+            "stable" => WaitStrategy.Stable,
+            _ => WaitStrategy.NetworkIdle
         };
     }
 }
