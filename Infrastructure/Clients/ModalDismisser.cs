@@ -170,11 +170,11 @@ public class ModalDismisser
             try
             {
                 var container = page.Locator(pattern.ContainerSelector).First;
-                var isVisible = await container.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = timeout });
-                if (!isVisible)
+                await container.WaitForAsync(new LocatorWaitForOptions
                 {
-                    return null;
-                }
+                    State = WaitForSelectorState.Visible,
+                    Timeout = timeout
+                });
             }
             catch
             {
@@ -191,15 +191,16 @@ public class ModalDismisser
             try
             {
                 var button = page.Locator(buttonSelector).First;
-                var isVisible = await button.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = 500 });
-
-                if (isVisible)
+                await button.WaitForAsync(new LocatorWaitForOptions
                 {
-                    var buttonText = await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
-                    await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 500
+                });
 
-                    return new ModalDismissed(pattern.Type, buttonSelector, buttonText?.Trim());
-                }
+                var buttonText = await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
+                await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+                return new ModalDismissed(pattern.Type, buttonSelector, buttonText?.Trim());
             }
             catch
             {
@@ -218,13 +219,14 @@ public class ModalDismisser
                 {
                     // Try button with text
                     var button = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = textPattern }).First;
-                    var isVisible = await button.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = 500 });
-
-                    if (isVisible)
+                    await button.WaitForAsync(new LocatorWaitForOptions
                     {
-                        await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-                        return new ModalDismissed(pattern.Type, $"button:text({textPattern})", textPattern);
-                    }
+                        State = WaitForSelectorState.Visible,
+                        Timeout = 500
+                    });
+
+                    await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+                    return new ModalDismissed(pattern.Type, $"button:text({textPattern})", textPattern);
                 }
                 catch
                 {
@@ -235,13 +237,14 @@ public class ModalDismisser
                 {
                     // Try link with text
                     var link = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = textPattern }).First;
-                    var isVisible = await link.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = 500 });
-
-                    if (isVisible)
+                    await link.WaitForAsync(new LocatorWaitForOptions
                     {
-                        await link.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
-                        return new ModalDismissed(pattern.Type, $"link:text({textPattern})", textPattern);
-                    }
+                        State = WaitForSelectorState.Visible,
+                        Timeout = 500
+                    });
+
+                    await link.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+                    return new ModalDismissed(pattern.Type, $"link:text({textPattern})", textPattern);
                 }
                 catch
                 {

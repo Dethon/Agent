@@ -56,7 +56,7 @@ public class WebBrowseTool(IWebBrowser browser)
 
         var result = await browser.NavigateAsync(request, ct);
 
-        if (result.Status == BrowseStatus.Error || result.Status == BrowseStatus.SessionNotFound)
+        if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound)
         {
             return new JsonObject
             {

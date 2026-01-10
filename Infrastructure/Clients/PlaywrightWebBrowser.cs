@@ -194,8 +194,15 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             locator = locator.First;
 
             // Check if element exists and is visible
-            var isVisible = await locator.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = 5000 });
-            if (!isVisible)
+            try
+            {
+                await locator.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 5000
+                });
+            }
+            catch (TimeoutException)
             {
                 return new ClickResult(
                     request.SessionId,
@@ -209,16 +216,27 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             }
 
             // Perform click action
+            var urlBefore = page.Url;
+            await PerformClickAsync(locator, request.Action);
+
             if (request.WaitForNavigation)
             {
-                await Task.WhenAll(
-                    PerformClickAsync(locator, request.Action),
-                    page.WaitForNavigationAsync(new PageWaitForNavigationOptions { Timeout = request.WaitTimeoutMs })
-                );
+                // Wait for URL to change or load state
+                try
+                {
+                    await page.WaitForURLAsync(
+                        url => url != urlBefore,
+                        new PageWaitForURLOptions { Timeout = request.WaitTimeoutMs });
+                }
+                catch (TimeoutException)
+                {
+                    // URL didn't change, might be SPA navigation - wait for network idle instead
+                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                        new PageWaitForLoadStateOptions { Timeout = request.WaitTimeoutMs });
+                }
             }
             else
             {
-                await PerformClickAsync(locator, request.Action);
                 // Wait a bit for any dynamic content changes
                 await Task.Delay(500, ct);
             }
