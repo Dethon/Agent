@@ -1,6 +1,6 @@
 using AngleSharp;
 using AngleSharp.Dom;
-using Domain.Contracts;
+using Domain.DTOs;
 using SmartReader;
 
 namespace Infrastructure.HtmlProcessing;

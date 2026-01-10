@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
-using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Infrastructure.HtmlProcessing;
 

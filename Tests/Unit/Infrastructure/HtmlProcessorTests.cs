@@ -1,4 +1,4 @@
-using Domain.Contracts;
+using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
 

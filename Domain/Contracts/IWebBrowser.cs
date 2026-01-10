@@ -1,3 +1,5 @@
+using Domain.DTOs;
+
 namespace Domain.Contracts;
 
 public interface IWebBrowser

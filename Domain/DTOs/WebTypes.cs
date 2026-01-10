@@ -1,4 +1,4 @@
-namespace Domain.Contracts;
+namespace Domain.DTOs;
 
 public record WebFetchRequest(
     string Url,

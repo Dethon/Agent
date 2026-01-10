@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Shouldly;
 
 namespace Tests.Integration.Clients;

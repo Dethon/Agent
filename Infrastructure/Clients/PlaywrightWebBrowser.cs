@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Microsoft.Playwright;
 
