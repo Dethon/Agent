@@ -1,0 +1,529 @@
+using Domain.Contracts;
+using Infrastructure.HtmlProcessing;
+using Microsoft.Playwright;
+
+namespace Infrastructure.Clients;
+
+public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? cdpEndpoint = null)
+    : IWebBrowser, IAsyncDisposable
+{
+    private IPlaywright? _playwright;
+    private IBrowser? _browser;
+    private IBrowserContext? _context;
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    private readonly BrowserSessionManager _sessions = new();
+    private readonly ModalDismisser _modalDismisser = new();
+    private readonly Random _random = new();
+    private bool _initialized;
+
+    private const string UserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+    private const string StealthScript = """
+                                         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                                         delete navigator.__proto__.webdriver;
+                                         Object.defineProperty(navigator, 'plugins', {
+                                             get: () => [
+                                                 { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
+                                                 { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
+                                                 { name: 'Native Client', filename: 'internal-nacl-plugin' }
+                                             ]
+                                         });
+                                         Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en-US', 'en'] });
+                                         window.chrome = { runtime: {} };
+                                         const originalQuery = window.navigator.permissions.query;
+                                         window.navigator.permissions.query = (parameters) => (
+                                             parameters.name === 'notifications'
+                                                 ? Promise.resolve({ state: Notification.permission })
+                                                 : originalQuery(parameters)
+                                         );
+                                         """;
+
+    public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
+    {
+        if (!ValidateUrl(request.Url))
+        {
+            return CreateErrorResult(request.SessionId, request.Url,
+                "Invalid URL. Only http and https URLs are supported.");
+        }
+
+        try
+        {
+            await EnsureInitializedAsync();
+            var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
+            var page = session.Page;
+
+            // Random delay before navigation
+            await Task.Delay(_random.Next(300, 800), ct);
+
+            var waitUntil = MapWaitStrategy(request.WaitStrategy);
+            await page.GotoAsync(request.Url, new PageGotoOptions
+            {
+                WaitUntil = waitUntil,
+                Timeout = request.WaitTimeoutMs
+            });
+
+            _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+
+            // Auto-dismiss modals if enabled
+            IReadOnlyList<ModalDismissed>? dismissedModals = null;
+            if (request.DismissModals)
+            {
+                dismissedModals = await _modalDismisser.DismissModalsAsync(page, request.ModalConfig, ct);
+            }
+
+            // Element-based waiting if selector strategy or explicit wait selector provided
+            if (request.WaitStrategy == WaitStrategy.Selector && !string.IsNullOrEmpty(request.WaitSelector))
+            {
+                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
+            }
+            else if (!string.IsNullOrEmpty(request.WaitSelector))
+            {
+                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
+            }
+
+            // Scroll-to-load for lazy-loaded content
+            if (request.ScrollToLoad)
+            {
+                await ScrollToLoadAsync(page, request.ScrollSteps, ct);
+            }
+
+            // Wait for DOM stability
+            if (request.WaitForStability || request.WaitStrategy == WaitStrategy.Stable)
+            {
+                await WaitForDomStabilityAsync(page, request.StabilityCheckMs, ct);
+            }
+
+            // Configurable delay for dynamic content
+            await Task.Delay(request.ExtraDelayMs, ct);
+
+            var html = await page.ContentAsync();
+            var webFetchRequest = MapToWebFetchRequest(request);
+            var processed = await HtmlProcessor.ProcessAsync(webFetchRequest, html, ct);
+
+            return new BrowseResult(
+                SessionId: request.SessionId,
+                Url: page.Url,
+                Status: MapStatus(processed.Status),
+                Title: processed.Title,
+                Content: processed.Content,
+                ContentLength: processed.ContentLength,
+                Truncated: processed.Truncated,
+                Metadata: processed.Metadata,
+                Links: processed.Links,
+                DismissedModals: dismissedModals,
+                ErrorMessage: processed.ErrorMessage
+            );
+        }
+        catch (PlaywrightException ex)
+        {
+            return CreateErrorResult(request.SessionId, request.Url, $"Browser error: {ex.Message}");
+        }
+        catch (TimeoutException)
+        {
+            return CreateErrorResult(request.SessionId, request.Url, "Request timed out");
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(request.SessionId, request.Url, $"Error: {ex.Message}");
+        }
+    }
+
+    public async Task<ClickResult> ClickAsync(ClickRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session == null)
+        {
+            return new ClickResult(
+                request.SessionId,
+                ClickStatus.SessionNotFound,
+                null,
+                null,
+                0,
+                "No active browser session found. Use WebBrowse first to navigate to a page.",
+                false
+            );
+        }
+
+        var page = session.Page;
+        var originalUrl = page.Url;
+
+        try
+        {
+            // Find element by selector, optionally filter by text
+            var locator = page.Locator(request.Selector);
+            if (!string.IsNullOrEmpty(request.Text))
+            {
+                locator = locator.Filter(new LocatorFilterOptions { HasText = request.Text });
+            }
+
+            locator = locator.First;
+
+            // Check if element exists and is visible
+            var isVisible = await locator.IsVisibleAsync(new LocatorIsVisibleOptions { Timeout = 5000 });
+            if (!isVisible)
+            {
+                return new ClickResult(
+                    request.SessionId,
+                    ClickStatus.ElementNotFound,
+                    page.Url,
+                    null,
+                    0,
+                    $"Element not found or not visible: {request.Selector}",
+                    false
+                );
+            }
+
+            // Perform click action
+            if (request.WaitForNavigation)
+            {
+                await Task.WhenAll(
+                    PerformClickAsync(locator, request.Action),
+                    page.WaitForNavigationAsync(new PageWaitForNavigationOptions { Timeout = request.WaitTimeoutMs })
+                );
+            }
+            else
+            {
+                await PerformClickAsync(locator, request.Action);
+                // Wait a bit for any dynamic content changes
+                await Task.Delay(500, ct);
+            }
+
+            _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+
+            // Get page content after click
+            var html = await page.ContentAsync();
+            var content = HtmlConverter.Convert(html, WebFetchOutputFormat.Markdown);
+            if (content.Length > 10000)
+            {
+                content = content[..10000] + "\n\n... (content truncated)";
+            }
+
+            return new ClickResult(
+                request.SessionId,
+                ClickStatus.Success,
+                page.Url,
+                content,
+                content.Length,
+                null,
+                page.Url != originalUrl
+            );
+        }
+        catch (TimeoutException)
+        {
+            return new ClickResult(
+                request.SessionId,
+                ClickStatus.Timeout,
+                page.Url,
+                null,
+                0,
+                "Click operation timed out",
+                false
+            );
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("not found") || ex.Message.Contains("no element"))
+        {
+            return new ClickResult(
+                request.SessionId,
+                ClickStatus.ElementNotFound,
+                page.Url,
+                null,
+                0,
+                $"Element not found: {request.Selector}",
+                false
+            );
+        }
+        catch (Exception ex)
+        {
+            return new ClickResult(
+                request.SessionId,
+                ClickStatus.Error,
+                page.Url,
+                null,
+                0,
+                $"Error: {ex.Message}",
+                false
+            );
+        }
+    }
+
+    public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(sessionId);
+        if (session == null)
+        {
+            return new BrowseResult(
+                sessionId,
+                "",
+                BrowseStatus.SessionNotFound,
+                null,
+                null,
+                0,
+                false,
+                null,
+                null,
+                null,
+                "No active browser session found"
+            );
+        }
+
+        try
+        {
+            var html = await session.Page.ContentAsync();
+            var request = new WebFetchRequest(session.CurrentUrl);
+            var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
+
+            return new BrowseResult(
+                SessionId: sessionId,
+                Url: session.Page.Url,
+                Status: MapStatus(processed.Status),
+                Title: processed.Title,
+                Content: processed.Content,
+                ContentLength: processed.ContentLength,
+                Truncated: processed.Truncated,
+                Metadata: processed.Metadata,
+                Links: processed.Links,
+                DismissedModals: null,
+                ErrorMessage: processed.ErrorMessage
+            );
+        }
+        catch (Exception ex)
+        {
+            return CreateErrorResult(sessionId, session.CurrentUrl, $"Error: {ex.Message}");
+        }
+    }
+
+    public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        await _sessions.CloseAsync(sessionId);
+    }
+
+    private async Task EnsureInitializedAsync()
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        await _initLock.WaitAsync();
+        try
+        {
+            if (_initialized)
+            {
+                return;
+            }
+
+            _playwright = await Playwright.CreateAsync();
+
+            if (!string.IsNullOrEmpty(cdpEndpoint))
+            {
+                _browser = await _playwright.Chromium.ConnectOverCDPAsync(cdpEndpoint);
+            }
+            else
+            {
+                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = true,
+                    Args =
+                    [
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-features=IsolateOrigins,site-per-process",
+                        "--disable-site-isolation-trials",
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-accelerated-2d-canvas",
+                        "--disable-gpu",
+                        "--window-size=1920,1080",
+                        "--disable-infobars",
+                        "--disable-extensions",
+                        "--disable-plugins-discovery",
+                        "--disable-background-networking"
+                    ]
+                });
+            }
+
+            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
+            {
+                UserAgent = UserAgent,
+                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+                Locale = "es-ES",
+                TimezoneId = "Europe/Madrid",
+                Geolocation = new Geolocation { Latitude = 41.6523f, Longitude = -4.7245f },
+                Permissions = ["geolocation"],
+                HasTouch = false,
+                IsMobile = false,
+                JavaScriptEnabled = true
+            });
+
+            await _context.AddInitScriptAsync(StealthScript);
+
+            _initialized = true;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
+    }
+
+    private static async Task PerformClickAsync(ILocator locator, ClickAction action)
+    {
+        switch (action)
+        {
+            case ClickAction.DoubleClick:
+                await locator.DblClickAsync();
+                break;
+            case ClickAction.RightClick:
+                await locator.ClickAsync(new LocatorClickOptions { Button = MouseButton.Right });
+                break;
+            case ClickAction.Hover:
+                await locator.HoverAsync();
+                break;
+            default:
+                await locator.ClickAsync();
+                break;
+        }
+    }
+
+    private static WaitUntilState MapWaitStrategy(WaitStrategy strategy)
+    {
+        return strategy switch
+        {
+            WaitStrategy.DomContentLoaded => WaitUntilState.DOMContentLoaded,
+            WaitStrategy.Load => WaitUntilState.Load,
+            WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
+            _ => WaitUntilState.NetworkIdle
+        };
+    }
+
+    private static BrowseStatus MapStatus(WebFetchStatus status)
+    {
+        return status switch
+        {
+            WebFetchStatus.Success => BrowseStatus.Success,
+            WebFetchStatus.Partial => BrowseStatus.Partial,
+            WebFetchStatus.CaptchaRequired => BrowseStatus.CaptchaRequired,
+            _ => BrowseStatus.Error
+        };
+    }
+
+    private static WebFetchRequest MapToWebFetchRequest(BrowseRequest request)
+    {
+        return new WebFetchRequest(
+            Url: request.Url,
+            Selector: request.Selector,
+            Format: request.Format,
+            MaxLength: request.MaxLength,
+            IncludeLinks: request.IncludeLinks,
+            WaitStrategy: request.WaitStrategy,
+            WaitSelector: request.WaitSelector,
+            WaitTimeoutMs: request.WaitTimeoutMs,
+            ExtraDelayMs: request.ExtraDelayMs,
+            ScrollToLoad: request.ScrollToLoad,
+            ScrollSteps: request.ScrollSteps,
+            WaitForStability: request.WaitForStability,
+            StabilityCheckMs: request.StabilityCheckMs
+        );
+    }
+
+    private static async Task WaitForSelectorAsync(IPage page, string selector, int timeoutMs)
+    {
+        try
+        {
+            await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = timeoutMs
+            });
+        }
+        catch (TimeoutException)
+        {
+            // Selector didn't appear within timeout - continue with whatever content we have
+        }
+    }
+
+    private static async Task ScrollToLoadAsync(IPage page, int scrollSteps, CancellationToken ct)
+    {
+        for (var i = 1; i <= scrollSteps; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await page.EvaluateAsync($"() => window.scrollTo(0, document.body.scrollHeight * {i} / {scrollSteps})");
+            await Task.Delay(500, ct);
+        }
+
+        await page.EvaluateAsync("() => window.scrollTo(0, 0)");
+    }
+
+    private static async Task WaitForDomStabilityAsync(
+        IPage page,
+        int checkIntervalMs,
+        CancellationToken ct,
+        int stableCountRequired = 2,
+        int maxChecks = 10)
+    {
+        string? previousHtml = null;
+        var stableCount = 0;
+        var checks = 0;
+
+        while (stableCount < stableCountRequired && checks < maxChecks)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            await Task.Delay(checkIntervalMs, ct);
+            var currentHtml = await page.ContentAsync();
+
+            if (currentHtml == previousHtml)
+            {
+                stableCount++;
+            }
+            else
+            {
+                stableCount = 0;
+            }
+
+            previousHtml = currentHtml;
+            checks++;
+        }
+    }
+
+    private static bool ValidateUrl(string url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https");
+    }
+
+    private static BrowseResult CreateErrorResult(string sessionId, string url, string message)
+    {
+        return new BrowseResult(
+            SessionId: sessionId,
+            Url: url,
+            Status: BrowseStatus.Error,
+            Title: null,
+            Content: null,
+            ContentLength: 0,
+            Truncated: false,
+            Metadata: null,
+            Links: null,
+            DismissedModals: null,
+            ErrorMessage: message
+        );
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _sessions.DisposeAsync();
+
+        if (_context != null)
+        {
+            await _context.CloseAsync();
+        }
+
+        if (_browser != null)
+        {
+            await _browser.CloseAsync();
+        }
+
+        _playwright?.Dispose();
+        _initLock.Dispose();
+        GC.SuppressFinalize(this);
+    }
+}

@@ -42,7 +42,9 @@ public static class ConfigModule
                 .AddMcpServer()
                 .WithHttpTransport()
                 .WithTools<McpWebSearchTool>()
-                .WithTools<McpWebFetchTool>();
+                .WithTools<McpWebFetchTool>()
+                .WithTools<McpWebBrowseTool>()
+                .WithTools<McpWebClickTool>();
 
             return services;
         }
@@ -74,6 +76,13 @@ public static class ConfigModule
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
                 return new PlaywrightWebFetcher(captchaSolver);
+            });
+
+            // Register browser for session-based browsing with modal dismissal
+            services.AddSingleton<IWebBrowser>(sp =>
+            {
+                var captchaSolver = sp.GetService<ICaptchaSolver>();
+                return new PlaywrightWebBrowser(captchaSolver);
             });
 
             return services;

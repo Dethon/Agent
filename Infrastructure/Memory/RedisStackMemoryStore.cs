@@ -324,20 +324,21 @@ public class RedisStackMemoryStore : IMemoryStore
         {
             return
             [
-                new("userId", m.UserId),
-                new("memoryId", m.Id),
-                new("content", m.Content),
-                new("context", m.Context ?? ""),
-                new("category", m.Category.ToString()),
-                new("tags", string.Join(",", m.Tags)),
-                new("importance", m.Importance),
-                new("confidence", m.Confidence),
-                new("createdAt", m.CreatedAt.ToUnixTimeMilliseconds()),
-                new("lastAccessedAt", m.LastAccessedAt.ToUnixTimeMilliseconds()),
-                new("accessCount", m.AccessCount),
-                new("supersededById", m.SupersededById ?? ""),
-                new("embedding", m.Embedding != null ? VectorSerializer.ToBytes(m.Embedding) : Array.Empty<byte>()),
-                new("sourceJson", m.Source != null ? JsonSerializer.Serialize(m.Source) : "")
+                new HashEntry("userId", m.UserId),
+                new HashEntry("memoryId", m.Id),
+                new HashEntry("content", m.Content),
+                new HashEntry("context", m.Context ?? ""),
+                new HashEntry("category", m.Category.ToString()),
+                new HashEntry("tags", string.Join(",", m.Tags)),
+                new HashEntry("importance", m.Importance),
+                new HashEntry("confidence", m.Confidence),
+                new HashEntry("createdAt", m.CreatedAt.ToUnixTimeMilliseconds()),
+                new HashEntry("lastAccessedAt", m.LastAccessedAt.ToUnixTimeMilliseconds()),
+                new HashEntry("accessCount", m.AccessCount),
+                new HashEntry("supersededById", m.SupersededById ?? ""),
+                new HashEntry("embedding",
+                    m.Embedding != null ? VectorSerializer.ToBytes(m.Embedding) : Array.Empty<byte>()),
+                new HashEntry("sourceJson", m.Source != null ? JsonSerializer.Serialize(m.Source) : "")
             ];
         }
 
