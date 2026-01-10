@@ -1,11 +1,5 @@
 namespace Domain.DTOs;
 
-public record WebPageMetadata(
-    string? Description,
-    string? Author,
-    DateOnly? DatePublished,
-    string? SiteName);
-
 public record ExtractedLink(string Text, string Url);
 
 public enum WebFetchOutputFormat
@@ -23,13 +17,3 @@ public enum WaitStrategy
     Selector,
     Stable
 }
-
-public record HtmlProcessingResult(
-    string? Title,
-    string? Content,
-    int ContentLength,
-    bool Truncated,
-    WebPageMetadata? Metadata,
-    IReadOnlyList<ExtractedLink>? Links,
-    bool IsPartial,
-    string? ErrorMessage);

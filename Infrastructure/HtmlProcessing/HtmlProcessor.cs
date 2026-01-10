@@ -6,6 +6,16 @@ using SmartReader;
 
 namespace Infrastructure.HtmlProcessing;
 
+public record HtmlProcessingResult(
+    string? Title,
+    string? Content,
+    int ContentLength,
+    bool Truncated,
+    WebPageMetadata? Metadata,
+    IReadOnlyList<ExtractedLink>? Links,
+    bool IsPartial,
+    string? ErrorMessage);
+
 public static class HtmlProcessor
 {
     public static async Task<HtmlProcessingResult> ProcessAsync(BrowseRequest request, string html,

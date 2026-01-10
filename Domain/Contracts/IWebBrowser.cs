@@ -41,6 +41,12 @@ public record BrowseResult(
     IReadOnlyList<ModalDismissed>? DismissedModals,
     string? ErrorMessage);
 
+public record WebPageMetadata(
+    string? Description,
+    string? Author,
+    DateOnly? DatePublished,
+    string? SiteName);
+
 public record ClickRequest(
     string SessionId,
     string Selector,
