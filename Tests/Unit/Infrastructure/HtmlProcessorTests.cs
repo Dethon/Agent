@@ -221,4 +221,63 @@ public class HtmlProcessorTests
         result.ContentLength.ShouldBeLessThanOrEqualTo(520); // Some tolerance for truncation message
         result.Content!.ShouldContain("[Content truncated...]");
     }
+
+    [Fact]
+    public async Task ProcessAsync_WithHtmlFormat_ReturnsRawHtml()
+    {
+        // Arrange
+        var html = """
+                   <!DOCTYPE html>
+                   <html>
+                   <head><title>Test</title></head>
+                   <body>
+                       <div class="container">
+                           <h1>Title</h1>
+                           <p>Paragraph with <strong>bold</strong> text.</p>
+                       </div>
+                   </body>
+                   </html>
+                   """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
+            Format: WebFetchOutputFormat.Html);
+
+        // Act
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        // Assert
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("<div class=\"container\">");
+        result.Content.ShouldContain("<h1>Title</h1>");
+        result.Content.ShouldContain("<strong>bold</strong>");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithHtmlFormat_TruncatesWithValidHtml()
+    {
+        // Arrange
+        var longContent = string.Join("\n",
+            Enumerable.Range(1, 100).Select(i => $"<div><p>Paragraph {i} with some content.</p></div>"));
+        var html = $"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Test</title></head>
+                    <body><main>{longContent}</main></body>
+                    </html>
+                    """;
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
+            Format: WebFetchOutputFormat.Html, MaxLength: 500);
+
+        // Act
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        // Assert
+        result.Truncated.ShouldBeTrue();
+        result.Content.ShouldNotBeNull();
+        // HTML truncation should use HTML comment
+        result.Content.ShouldContain("<!-- Content truncated -->");
+        // Should not end with unclosed tags
+        result.Content.ShouldNotEndWith("<");
+        result.Content.ShouldNotEndWith("<div");
+        result.Content.ShouldNotEndWith("<p");
+    }
 }

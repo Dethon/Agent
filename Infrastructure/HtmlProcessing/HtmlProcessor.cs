@@ -23,9 +23,17 @@ public static class HtmlProcessor
     {
         var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
 
-        return !string.IsNullOrEmpty(request.Selector)
-            ? ProcessWithSelector(request, document)
-            : await ProcessWithSmartReaderAsync(request, html, document, ct);
+        if (!string.IsNullOrEmpty(request.Selector))
+        {
+            return ProcessWithSelector(request, document);
+        }
+
+        if (request.UseReadability)
+        {
+            return await ProcessWithReadabilityAsync(request, html, document, ct);
+        }
+
+        return ProcessFullBody(request, document);
     }
 
     private static HtmlProcessingResult ProcessWithSelector(BrowseRequest request, IDocument document)
@@ -40,26 +48,35 @@ public static class HtmlProcessor
         var content = HtmlConverter.Convert(element, request.Format);
         var links = request.IncludeLinks ? ExtractLinks(element) : null;
 
-        return CreateSuccessResult(request.MaxLength, document.Title, content, ExtractMetadata(document), links);
+        return CreateSuccessResult(request.MaxLength, document.Title, content, request.Format,
+            ExtractMetadata(document), links);
     }
 
-    private static async Task<HtmlProcessingResult> ProcessWithSmartReaderAsync(
+    private static HtmlProcessingResult ProcessFullBody(BrowseRequest request, IDocument document)
+    {
+        var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
+        var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
+
+        return CreateSuccessResult(request.MaxLength, document.Title, content, request.Format,
+            ExtractMetadata(document), links);
+    }
+
+    private static async Task<HtmlProcessingResult> ProcessWithReadabilityAsync(
         BrowseRequest request, string html, IDocument document, CancellationToken ct)
     {
         var article = await new Reader(request.Url, html).GetArticleAsync(ct);
 
         if (string.IsNullOrEmpty(article.Content))
         {
-            var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
-            var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
-            return CreateSuccessResult(request.MaxLength, document.Title, content, ExtractMetadata(document), links);
+            return ProcessFullBody(request, document);
         }
 
         var metadata = UpdateMetadataFromArticle(ExtractMetadata(document), article);
         var articleContent = FormatArticleContent(article, request.Format);
         var articleLinks = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
 
-        return CreateSuccessResult(request.MaxLength, article.Title, articleContent, metadata, articleLinks);
+        return CreateSuccessResult(request.MaxLength, article.Title, articleContent, request.Format, metadata,
+            articleLinks);
     }
 
     private static WebPageMetadata ExtractMetadata(IDocument document)
@@ -154,12 +171,15 @@ public static class HtmlProcessor
     }
 
     private static HtmlProcessingResult CreateSuccessResult(
-        int maxLength, string? title, string content, WebPageMetadata metadata, List<ExtractedLink>? links)
+        int maxLength, string? title, string content, WebFetchOutputFormat format, WebPageMetadata metadata,
+        List<ExtractedLink>? links)
     {
         var truncated = content.Length > maxLength;
         if (truncated)
         {
-            content = HtmlConverter.Truncate(content, maxLength);
+            content = format == WebFetchOutputFormat.Html
+                ? HtmlConverter.TruncateHtml(content, maxLength)
+                : HtmlConverter.Truncate(content, maxLength);
         }
 
         return new HtmlProcessingResult(

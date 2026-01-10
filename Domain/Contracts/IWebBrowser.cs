@@ -17,6 +17,7 @@ public record BrowseRequest(
     WebFetchOutputFormat Format = WebFetchOutputFormat.Markdown,
     int MaxLength = 10000,
     bool IncludeLinks = true,
+    bool UseReadability = false,
     WaitStrategy WaitStrategy = WaitStrategy.NetworkIdle,
     string? WaitSelector = null,
     int WaitTimeoutMs = 30000,

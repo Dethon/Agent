@@ -27,6 +27,8 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         int maxLength = 10000,
         [Description("Include hyperlinks in output (default: true)")]
         bool includeLinks = true,
+        [Description("Use readability mode to extract article content, stripping navigation/ads (default: false)")]
+        bool useReadability = false,
         [Description(
             "Wait strategy: 'networkidle' (default), 'domcontentloaded', 'load', 'selector', or 'stable'. Use 'stable' for JS-heavy SPAs")]
         string? waitStrategy = null,
@@ -50,7 +52,7 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         try
         {
             var sessionId = context.Server.StateKey;
-            var result = await RunAsync(sessionId, url, selector, format, maxLength, includeLinks,
+            var result = await RunAsync(sessionId, url, selector, format, maxLength, includeLinks, useReadability,
                 waitStrategy, waitSelector, waitTimeoutMs, extraDelayMs, scrollToLoad, scrollSteps,
                 waitForStability, dismissModals, ct);
             return ToolResponse.Create(result);

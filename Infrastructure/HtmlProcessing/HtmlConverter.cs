@@ -55,6 +55,77 @@ public static partial class HtmlConverter
         return truncated + "\n\n[Content truncated...]";
     }
 
+    public static string TruncateHtml(string html, int maxLength)
+    {
+        if (html.Length <= maxLength)
+        {
+            return html;
+        }
+
+        var targetLength = maxLength - 50; // Reserve space for closing tags and message
+        var truncated = html[..targetLength];
+
+        // Find last complete tag to avoid cutting in the middle of a tag
+        var lastTagEnd = truncated.LastIndexOf('>');
+        var lastTagStart = truncated.LastIndexOf('<');
+
+        // If we're in the middle of a tag, cut before it
+        if (lastTagStart > lastTagEnd)
+        {
+            truncated = truncated[..lastTagStart];
+        }
+        else if (lastTagEnd > 0)
+        {
+            truncated = truncated[..(lastTagEnd + 1)];
+        }
+
+        // Find unclosed tags and close them
+        var openTags = new Stack<string>();
+        var tagPattern = TagNameRegex();
+
+        foreach (Match match in tagPattern.Matches(truncated))
+        {
+            var tagName = match.Groups[2].Value.ToLowerInvariant();
+            var isClosing = match.Value.StartsWith("</");
+            var isSelfClosing = match.Value.EndsWith("/>") ||
+                                IsSelfClosingTag(tagName);
+
+            if (isSelfClosing)
+            {
+                continue;
+            }
+
+            if (isClosing)
+            {
+                if (openTags.Count > 0 && openTags.Peek() == tagName)
+                {
+                    openTags.Pop();
+                }
+            }
+            else
+            {
+                openTags.Push(tagName);
+            }
+        }
+
+        // Close any unclosed tags
+        while (openTags.Count > 0)
+        {
+            truncated += $"</{openTags.Pop()}>";
+        }
+
+        return truncated + "\n<!-- Content truncated -->";
+    }
+
+    private static bool IsSelfClosingTag(string tagName)
+    {
+        return tagName is "br" or "hr" or "img" or "input" or "meta" or "link" or "area" or "base" or "col" or "embed"
+            or "param" or "source" or "track" or "wbr";
+    }
+
+    [GeneratedRegex(@"<(/?)(\w+)[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex TagNameRegex();
+
     private static string HtmlToText(string html)
     {
         if (string.IsNullOrEmpty(html))
