@@ -1,5 +1,6 @@
 using AngleSharp;
 using AngleSharp.Dom;
+using Domain.Contracts;
 using Domain.DTOs;
 using SmartReader;
 
@@ -7,7 +8,8 @@ namespace Infrastructure.HtmlProcessing;
 
 public static class HtmlProcessor
 {
-    public static async Task<WebFetchResult> ProcessAsync(WebFetchRequest request, string html, CancellationToken ct)
+    public static async Task<HtmlProcessingResult> ProcessAsync(BrowseRequest request, string html,
+        CancellationToken ct)
     {
         var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
 
@@ -16,23 +18,23 @@ public static class HtmlProcessor
             : await ProcessWithSmartReaderAsync(request, html, document, ct);
     }
 
-    private static WebFetchResult ProcessWithSelector(WebFetchRequest request, IDocument document)
+    private static HtmlProcessingResult ProcessWithSelector(BrowseRequest request, IDocument document)
     {
         var element = document.QuerySelector(request.Selector!);
         if (element == null)
         {
-            return CreatePartialResult(request, document.Title, ExtractMetadata(document),
+            return CreatePartialResult(document.Title, ExtractMetadata(document),
                 $"CSS selector '{request.Selector}' did not match any elements");
         }
 
         var content = HtmlConverter.Convert(element, request.Format);
         var links = request.IncludeLinks ? ExtractLinks(element) : null;
 
-        return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
+        return CreateSuccessResult(request.MaxLength, document.Title, content, ExtractMetadata(document), links);
     }
 
-    private static async Task<WebFetchResult> ProcessWithSmartReaderAsync(
-        WebFetchRequest request, string html, IDocument document, CancellationToken ct)
+    private static async Task<HtmlProcessingResult> ProcessWithSmartReaderAsync(
+        BrowseRequest request, string html, IDocument document, CancellationToken ct)
     {
         var article = await new Reader(request.Url, html).GetArticleAsync(ct);
 
@@ -40,14 +42,14 @@ public static class HtmlProcessor
         {
             var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
             var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
-            return CreateSuccessResult(request, document.Title, content, ExtractMetadata(document), links);
+            return CreateSuccessResult(request.MaxLength, document.Title, content, ExtractMetadata(document), links);
         }
 
         var metadata = UpdateMetadataFromArticle(ExtractMetadata(document), article);
         var articleContent = FormatArticleContent(article, request.Format);
         var articleLinks = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
 
-        return CreateSuccessResult(request, article.Title, articleContent, metadata, articleLinks);
+        return CreateSuccessResult(request.MaxLength, article.Title, articleContent, metadata, articleLinks);
     }
 
     private static WebPageMetadata ExtractMetadata(IDocument document)
@@ -141,40 +143,38 @@ public static class HtmlProcessor
         };
     }
 
-    private static WebFetchResult CreateSuccessResult(
-        WebFetchRequest request, string? title, string content, WebPageMetadata metadata, List<ExtractedLink>? links)
+    private static HtmlProcessingResult CreateSuccessResult(
+        int maxLength, string? title, string content, WebPageMetadata metadata, List<ExtractedLink>? links)
     {
-        var truncated = content.Length > request.MaxLength;
+        var truncated = content.Length > maxLength;
         if (truncated)
         {
-            content = HtmlConverter.Truncate(content, request.MaxLength);
+            content = HtmlConverter.Truncate(content, maxLength);
         }
 
-        return new WebFetchResult(
-            Url: request.Url,
-            Status: WebFetchStatus.Success,
+        return new HtmlProcessingResult(
             Title: title,
             Content: content,
             ContentLength: content.Length,
             Truncated: truncated,
             Metadata: metadata,
             Links: links,
+            IsPartial: false,
             ErrorMessage: null
         );
     }
 
-    private static WebFetchResult CreatePartialResult(
-        WebFetchRequest request, string? title, WebPageMetadata metadata, string errorMessage)
+    private static HtmlProcessingResult CreatePartialResult(
+        string? title, WebPageMetadata metadata, string errorMessage)
     {
-        return new WebFetchResult(
-            Url: request.Url,
-            Status: WebFetchStatus.Partial,
+        return new HtmlProcessingResult(
             Title: title,
             Content: errorMessage,
             ContentLength: 0,
             Truncated: false,
             Metadata: metadata,
             Links: null,
+            IsPartial: true,
             ErrorMessage: errorMessage
         );
     }

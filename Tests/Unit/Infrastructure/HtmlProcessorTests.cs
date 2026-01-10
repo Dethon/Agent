@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
@@ -22,13 +23,13 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
         // Assert
-        result.Status.ShouldBe(WebFetchStatus.Success);
+        result.IsPartial.ShouldBeFalse();
         result.Title.ShouldBe("Test Page");
         result.Content.ShouldNotBeNullOrEmpty();
         result.Content.ShouldContain("Hello World");
@@ -51,13 +52,13 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test", Selector: ".main-content");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".main-content");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
         // Assert
-        result.Status.ShouldBe(WebFetchStatus.Success);
+        result.IsPartial.ShouldBeFalse();
         result.Content!.ShouldContain("Main content here");
         result.Content!.ShouldNotContain("Header content");
         result.Content!.ShouldNotContain("Footer content");
@@ -74,13 +75,13 @@ public class HtmlProcessorTests
                    <body><p>Content</p></body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test", Selector: ".nonexistent");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".nonexistent");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
         // Assert
-        result.Status.ShouldBe(WebFetchStatus.Partial);
+        result.IsPartial.ShouldBeTrue();
         result.ErrorMessage!.ShouldContain("nonexistent");
     }
 
@@ -101,7 +102,7 @@ public class HtmlProcessorTests
                    <body><p>Content</p></body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test");
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -129,7 +130,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test", IncludeLinks: true);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", IncludeLinks: true);
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -155,7 +156,8 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test", Format: WebFetchOutputFormat.Text);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
+            Format: WebFetchOutputFormat.Text);
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -183,7 +185,8 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new WebFetchRequest("http://example.com/test", Format: WebFetchOutputFormat.Markdown);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
+            Format: WebFetchOutputFormat.Markdown);
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -208,7 +211,7 @@ public class HtmlProcessorTests
                     <body>{longContent}</body>
                     </html>
                     """;
-        var request = new WebFetchRequest("http://example.com/test", MaxLength: 500);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", MaxLength: 500);
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);

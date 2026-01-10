@@ -132,13 +132,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
             // Re-fetch HTML after all waiting
             html = await page.ContentAsync();
-            var webFetchRequest = MapToWebFetchRequest(request);
-            var processed = await HtmlProcessor.ProcessAsync(webFetchRequest, html, ct);
+            var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
             return new BrowseResult(
                 SessionId: request.SessionId,
                 Url: page.Url,
-                Status: MapStatus(processed.Status),
+                Status: processed.IsPartial ? BrowseStatus.Partial : BrowseStatus.Success,
                 Title: processed.Title,
                 Content: processed.Content,
                 ContentLength: processed.ContentLength,
@@ -322,13 +321,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         try
         {
             var html = await session.Page.ContentAsync();
-            var request = new WebFetchRequest(session.CurrentUrl);
+            var request = new BrowseRequest(SessionId: sessionId, Url: session.CurrentUrl);
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
             return new BrowseResult(
                 SessionId: sessionId,
                 Url: session.Page.Url,
-                Status: MapStatus(processed.Status),
+                Status: processed.IsPartial ? BrowseStatus.Partial : BrowseStatus.Success,
                 Title: processed.Title,
                 Content: processed.Content,
                 ContentLength: processed.ContentLength,
@@ -446,36 +445,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
             _ => WaitUntilState.NetworkIdle
         };
-    }
-
-    private static BrowseStatus MapStatus(WebFetchStatus status)
-    {
-        return status switch
-        {
-            WebFetchStatus.Success => BrowseStatus.Success,
-            WebFetchStatus.Partial => BrowseStatus.Partial,
-            WebFetchStatus.CaptchaRequired => BrowseStatus.CaptchaRequired,
-            _ => BrowseStatus.Error
-        };
-    }
-
-    private static WebFetchRequest MapToWebFetchRequest(BrowseRequest request)
-    {
-        return new WebFetchRequest(
-            Url: request.Url,
-            Selector: request.Selector,
-            Format: request.Format,
-            MaxLength: request.MaxLength,
-            IncludeLinks: request.IncludeLinks,
-            WaitStrategy: request.WaitStrategy,
-            WaitSelector: request.WaitSelector,
-            WaitTimeoutMs: request.WaitTimeoutMs,
-            ExtraDelayMs: request.ExtraDelayMs,
-            ScrollToLoad: request.ScrollToLoad,
-            ScrollSteps: request.ScrollSteps,
-            WaitForStability: request.WaitForStability,
-            StabilityCheckMs: request.StabilityCheckMs
-        );
     }
 
     private static async Task WaitForSelectorAsync(IPage page, string selector, int timeoutMs)

@@ -1,31 +1,5 @@
 namespace Domain.DTOs;
 
-public record WebFetchRequest(
-    string Url,
-    string? Selector = null,
-    WebFetchOutputFormat Format = WebFetchOutputFormat.Markdown,
-    int MaxLength = 10000,
-    bool IncludeLinks = true,
-    WaitStrategy WaitStrategy = WaitStrategy.NetworkIdle,
-    string? WaitSelector = null,
-    int WaitTimeoutMs = 30000,
-    int ExtraDelayMs = 1000,
-    bool ScrollToLoad = false,
-    int ScrollSteps = 3,
-    bool WaitForStability = false,
-    int StabilityCheckMs = 500);
-
-public record WebFetchResult(
-    string Url,
-    WebFetchStatus Status,
-    string? Title,
-    string? Content,
-    int ContentLength,
-    bool Truncated,
-    WebPageMetadata? Metadata,
-    IReadOnlyList<ExtractedLink>? Links,
-    string? ErrorMessage);
-
 public record WebPageMetadata(
     string? Description,
     string? Author,
@@ -50,10 +24,12 @@ public enum WaitStrategy
     Stable
 }
 
-public enum WebFetchStatus
-{
-    Success,
-    Partial,
-    Error,
-    CaptchaRequired
-}
+public record HtmlProcessingResult(
+    string? Title,
+    string? Content,
+    int ContentLength,
+    bool Truncated,
+    WebPageMetadata? Metadata,
+    IReadOnlyList<ExtractedLink>? Links,
+    bool IsPartial,
+    string? ErrorMessage);
