@@ -7,8 +7,80 @@ public interface IWebBrowser
     Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default);
     Task<ClickResult> ClickAsync(ClickRequest request, CancellationToken ct = default);
     Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default);
+    Task<InspectResult> InspectAsync(InspectRequest request, CancellationToken ct = default);
     Task CloseSessionAsync(string sessionId, CancellationToken ct = default);
 }
+
+public record InspectRequest(
+    string SessionId,
+    InspectMode Mode,
+    string? Query = null,
+    bool Regex = false,
+    int MaxResults = 20,
+    string? Selector = null);
+
+public enum InspectMode
+{
+    Structure,
+    Search,
+    Forms,
+    Interactive
+}
+
+public record InspectResult(
+    string SessionId,
+    string? Url,
+    string? Title,
+    InspectMode Mode,
+    InspectStructure? Structure,
+    InspectSearchResult? SearchResult,
+    IReadOnlyList<InspectForm>? Forms,
+    InspectInteractive? Interactive,
+    string? ErrorMessage);
+
+public record InspectStructure(
+    IReadOnlyList<InspectHeading> Headings,
+    IReadOnlyList<InspectSection> Sections,
+    int FormCount,
+    int ButtonCount,
+    int LinkCount,
+    string? Preview,
+    int TotalTextLength);
+
+public record InspectHeading(int Level, string Text, string? Id, string Selector);
+
+public record InspectSection(string Tag, string? Id, string? ClassName, string Selector, int TextLength);
+
+public record InspectSearchResult(
+    string Query,
+    int TotalMatches,
+    IReadOnlyList<InspectSearchMatch> Matches);
+
+public record InspectSearchMatch(string Text, string Context, string NearestSelector, string? NearestHeading);
+
+public record InspectForm(
+    string? Name,
+    string? Action,
+    string? Method,
+    string Selector,
+    IReadOnlyList<InspectFormField> Fields,
+    IReadOnlyList<InspectButton> Buttons);
+
+public record InspectFormField(
+    string Type,
+    string? Name,
+    string? Label,
+    string? Placeholder,
+    string Selector,
+    bool Required);
+
+public record InspectButton(string Tag, string? Text, string Selector, int Count = 1);
+
+public record InspectInteractive(
+    IReadOnlyList<InspectButton> Buttons,
+    IReadOnlyList<InspectLink> Links);
+
+public record InspectLink(string? Text, string Selector, int Count = 1);
 
 public record BrowseRequest(
     string SessionId,

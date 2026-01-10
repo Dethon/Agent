@@ -43,7 +43,8 @@ public static class ConfigModule
                 .WithHttpTransport()
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
-                .WithTools<McpWebClickTool>();
+                .WithTools<McpWebClickTool>()
+                .WithTools<McpWebInspectTool>();
 
             return services;
         }

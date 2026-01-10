@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AngleSharp;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
@@ -341,6 +342,95 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         catch (Exception ex)
         {
             return CreateErrorResult(sessionId, session.CurrentUrl, $"Error: {ex.Message}");
+        }
+    }
+
+    public async Task<InspectResult> InspectAsync(InspectRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session == null)
+        {
+            return new InspectResult(
+                request.SessionId,
+                null,
+                null,
+                request.Mode,
+                null,
+                null,
+                null,
+                null,
+                "No active browser session found. Use WebBrowse first to navigate to a page."
+            );
+        }
+
+        try
+        {
+            var html = await session.Page.ContentAsync();
+            var title = await session.Page.TitleAsync();
+            var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
+
+            InspectStructure? structure = null;
+            InspectSearchResult? searchResult = null;
+            IReadOnlyList<InspectForm>? forms = null;
+            InspectInteractive? interactive = null;
+
+            switch (request.Mode)
+            {
+                case InspectMode.Structure:
+                    structure = HtmlInspector.InspectStructure(document, request.Selector);
+                    break;
+                case InspectMode.Search:
+                    if (string.IsNullOrEmpty(request.Query))
+                    {
+                        return new InspectResult(
+                            request.SessionId,
+                            session.Page.Url,
+                            title,
+                            request.Mode,
+                            null,
+                            null,
+                            null,
+                            null,
+                            "Query is required for search mode"
+                        );
+                    }
+
+                    searchResult = HtmlInspector.SearchText(document, request.Query, request.Regex,
+                        request.MaxResults, request.Selector);
+                    break;
+                case InspectMode.Forms:
+                    forms = HtmlInspector.InspectForms(document, request.Selector);
+                    break;
+                case InspectMode.Interactive:
+                    interactive = HtmlInspector.InspectInteractive(document, request.Selector);
+                    break;
+            }
+
+            return new InspectResult(
+                SessionId: request.SessionId,
+                Url: session.Page.Url,
+                Title: title,
+                Mode: request.Mode,
+                Structure: structure,
+                SearchResult: searchResult,
+                Forms: forms,
+                Interactive: interactive,
+                ErrorMessage: null
+            );
+        }
+        catch (Exception ex)
+        {
+            return new InspectResult(
+                request.SessionId,
+                session.CurrentUrl,
+                null,
+                request.Mode,
+                null,
+                null,
+                null,
+                null,
+                $"Error: {ex.Message}"
+            );
         }
     }
 
