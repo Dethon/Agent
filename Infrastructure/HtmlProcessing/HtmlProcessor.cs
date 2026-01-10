@@ -113,7 +113,7 @@ public static class HtmlProcessor
                 text = text[..97] + "...";
             }
 
-            links.Add(new ExtractedLink(text, href));
+            links.Add(new ExtractedLink(Text: text, Url: href));
         }
 
         return links.Take(50).ToList();

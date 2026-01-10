@@ -1,11 +1,5 @@
 namespace Domain.Contracts;
 
-public interface IWebFetcher
-{
-    Task<WebFetchResult> FetchAsync(WebFetchRequest request, CancellationToken ct = default);
-    Task<WebFetchResult> ResolveCaptchaAsync(WebFetchRequest request, CancellationToken ct = default);
-}
-
 public record WebFetchRequest(
     string Url,
     string? Selector = null,
@@ -20,15 +14,6 @@ public record WebFetchRequest(
     int ScrollSteps = 3,
     bool WaitForStability = false,
     int StabilityCheckMs = 500);
-
-public enum WaitStrategy
-{
-    NetworkIdle,
-    DomContentLoaded,
-    Load,
-    Selector,
-    Stable
-}
 
 public record WebFetchResult(
     string Url,
@@ -51,9 +36,18 @@ public record ExtractedLink(string Text, string Url);
 
 public enum WebFetchOutputFormat
 {
-    Text,
     Markdown,
+    Text,
     Html
+}
+
+public enum WaitStrategy
+{
+    NetworkIdle,
+    DomContentLoaded,
+    Load,
+    Selector,
+    Stable
 }
 
 public enum WebFetchStatus

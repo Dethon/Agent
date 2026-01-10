@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Infrastructure.HtmlProcessing;
 using Microsoft.Playwright;
@@ -15,6 +16,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private readonly ModalDismisser _modalDismisser = new();
     private readonly Random _random = new();
     private bool _initialized;
+    private const int MaxCaptchaRetries = 2;
 
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -65,6 +67,36 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
             _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
+            // Check for CAPTCHA and attempt to solve
+            var html = await page.ContentAsync();
+            var captchaRetries = 0;
+            while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
+            {
+                var captchaResult = await TrySolveCaptchaAsync(request.Url, html, ct);
+                if (!captchaResult.Solved)
+                {
+                    return new BrowseResult(
+                        SessionId: request.SessionId,
+                        Url: page.Url,
+                        Status: BrowseStatus.CaptchaRequired,
+                        Title: null,
+                        Content: captchaResult.Message,
+                        ContentLength: 0,
+                        Truncated: false,
+                        Metadata: null,
+                        Links: null,
+                        DismissedModals: null,
+                        ErrorMessage: captchaResult.Message
+                    );
+                }
+
+                // Refresh page after setting cookie
+                await page.ReloadAsync(new PageReloadOptions
+                    { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
+                html = await page.ContentAsync();
+                captchaRetries++;
+            }
+
             // Auto-dismiss modals if enabled
             IReadOnlyList<ModalDismissed>? dismissedModals = null;
             if (request.DismissModals)
@@ -97,7 +129,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Configurable delay for dynamic content
             await Task.Delay(request.ExtraDelayMs, ct);
 
-            var html = await page.ContentAsync();
+            // Re-fetch HTML after all waiting
+            html = await page.ContentAsync();
             var webFetchRequest = MapToWebFetchRequest(request);
             var processed = await HtmlProcessor.ProcessAsync(webFetchRequest, html, ct);
 
@@ -506,6 +539,89 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             DismissedModals: null,
             ErrorMessage: message
         );
+    }
+
+    private static bool ContainsCaptcha(string html)
+    {
+        // DataDome CAPTCHA patterns
+        return html.Contains("captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
+               html.Contains("geo.captcha-delivery.com", StringComparison.OrdinalIgnoreCase) ||
+               html.Contains("datadome", StringComparison.OrdinalIgnoreCase) ||
+               html.Contains("dd.js", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<(bool Solved, string? Message)> TrySolveCaptchaAsync(
+        string websiteUrl,
+        string html,
+        CancellationToken ct)
+    {
+        if (captchaSolver == null)
+        {
+            return (false, "CAPTCHA detected but no solver configured");
+        }
+
+        var captchaUrl = ExtractCaptchaUrl(html);
+        if (string.IsNullOrEmpty(captchaUrl))
+        {
+            return (false, "CAPTCHA detected but could not extract CAPTCHA URL");
+        }
+
+        var request = new DataDomeCaptchaRequest(
+            WebsiteUrl: websiteUrl,
+            CaptchaUrl: captchaUrl,
+            UserAgent: UserAgent
+        );
+
+        var solution = await captchaSolver.SolveDataDomeAsync(request, ct);
+
+        if (!solution.Success || string.IsNullOrEmpty(solution.Cookie))
+        {
+            return (false, solution.ErrorMessage ?? "CAPTCHA solving failed");
+        }
+
+        // Set the DataDome cookie
+        await SetDataDomeCookieAsync(websiteUrl, solution.Cookie);
+        return (true, "CAPTCHA solved successfully");
+    }
+
+    private static string? ExtractCaptchaUrl(string html)
+    {
+        // Look for captcha-delivery.com URL in iframe src or script
+        var patterns = new[]
+        {
+            "src=\"(https://geo\\.captcha-delivery\\.com/[^\"]+)\"",
+            @"src='(https://geo\.captcha-delivery\.com/[^']+)'",
+            "(https://geo\\.captcha-delivery\\.com/captcha/[^\\s\"'<>]+)"
+        };
+
+        return patterns
+            .Select(pattern => Regex.Match(html, pattern))
+            .Where(match => match is { Success: true, Groups.Count: > 1 })
+            .Select(match => match.Groups[1].Value)
+            .FirstOrDefault();
+    }
+
+    private async Task SetDataDomeCookieAsync(string websiteUrl, string cookieValue)
+    {
+        var uri = new Uri(websiteUrl);
+
+        // Parse the cookie string (format: "datadome=value")
+        var cookieParts = cookieValue.Split('=', 2);
+        var cookieName = cookieParts.Length > 0 ? cookieParts[0] : "datadome";
+        var cookieVal = cookieParts.Length > 1 ? cookieParts[1] : cookieValue;
+
+        await _context!.AddCookiesAsync(
+        [
+            new Cookie
+            {
+                Name = cookieName,
+                Value = cookieVal,
+                Domain = uri.Host,
+                Path = "/",
+                Secure = uri.Scheme == "https",
+                HttpOnly = true
+            }
+        ]);
     }
 
     public async ValueTask DisposeAsync()

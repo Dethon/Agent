@@ -42,7 +42,6 @@ public static class ConfigModule
                 .AddMcpServer()
                 .WithHttpTransport()
                 .WithTools<McpWebSearchTool>()
-                .WithTools<McpWebFetchTool>()
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebClickTool>();
 
@@ -72,13 +71,7 @@ public static class ConfigModule
                 });
             }
 
-            services.AddSingleton<IWebFetcher>(sp =>
-            {
-                var captchaSolver = sp.GetService<ICaptchaSolver>();
-                return new PlaywrightWebFetcher(captchaSolver);
-            });
-
-            // Register browser for session-based browsing with modal dismissal
+            // Register browser for session-based browsing with modal dismissal and captcha solving
             services.AddSingleton<IWebBrowser>(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
