@@ -2,26 +2,6 @@ namespace Domain.Prompts;
 
 public static class KnowledgeBasePrompt
 {
-    public const string AgentDescription =
-        """
-        Knowledge base management agent. Manages a personal knowledge vault of markdown notes, 
-        documentation, and text files. Handles reading, searching, organizing, and editing content
-        while preserving document structure.
-
-        WHEN TO USE THIS AGENT:
-        - User wants to find information in their notes
-        - User needs to update or edit existing documents
-        - User wants to create new notes or documentation
-        - User needs to reorganize or refactor their knowledge base
-        - User wants to search across their vault for specific topics
-
-        HOW TO INTERACT:
-        - For searches: Describe what you're looking for (e.g., "find my notes about Python async")
-        - For edits: Specify the file and what to change (e.g., "update the installation section in README.md")
-        - For creation: Describe the content you want to create (e.g., "create a note about Docker networking")
-        - For exploration: Ask about structure (e.g., "what topics do I have notes on?")
-        """;
-
     public const string AgentSystemPrompt =
         """
         ### Your Role
