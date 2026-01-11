@@ -15,8 +15,4 @@
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1"/>
     </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Memory\"/>
-  </ItemGroup>
-
 </Project>
