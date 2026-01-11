@@ -23,6 +23,10 @@ public static class WebBrowsingPrompt
         - Supports CSS selectors for targeted extraction - returns ALL matching elements
         - Use selector parameter to extract by class/id (e.g., selector=".product")
         - Output formats: markdown (default) or html
+        - Supports pagination with offset/maxLength for large content:
+          - maxLength: Maximum characters to return (default 10000)
+          - offset: Skip this many characters before returning content
+          - Response includes contentLength (total) and truncated flag
 
         **WebInspect** - Analyze page structure without full content
         - Use when pages are large or content is truncated
@@ -81,13 +85,21 @@ public static class WebBrowsingPrompt
         WebClick(selector="a.next-page", waitForNavigation=true) → Navigate
         ```
 
+        **7. Reading Long Content in Chunks (Pagination)**
+        ```
+        WebBrowse(url="...", maxLength=5000) → First 5000 chars, truncated=true, contentLength=15000
+        WebBrowse(url="...", maxLength=5000, offset=5000) → Next 5000 chars
+        WebBrowse(url="...", maxLength=5000, offset=10000) → Final 5000 chars
+        ```
+
         ### Handling Common Situations
 
         **Content Truncated:**
-        - Don't request larger maxLength immediately
-        - Use WebInspect to understand page structure
-        - Use selector parameter to target specific sections
-        - Extract in multiple targeted calls if needed
+        - Check contentLength in response to know total size
+        - Option 1: Use offset to read remaining content in chunks
+        - Option 2: Use WebInspect to understand page structure, then use selector to target specific sections
+        - Option 3: Extract multiple sections in separate targeted calls
+        - Don't immediately increase maxLength - prefer chunking or targeting
 
         **Can't Find Element:**
         - Use WebInspect(mode="interactive") to see available buttons/links

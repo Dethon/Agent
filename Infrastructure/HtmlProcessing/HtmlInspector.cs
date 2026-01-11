@@ -421,25 +421,24 @@ public static partial class HtmlInspector
         }
 
         var matches = new List<InspectSearchMatch>();
+        var matchedElements = new HashSet<IElement>();
         var pattern = regex ? new Regex(query, RegexOptions.IgnoreCase) : null;
 
-        foreach (var element in GetTextElements(root))
+        // Get all text elements and prefer the most specific (deepest) match
+        var textElements = GetTextElements(root)
+            .Where(e => HasDirectTextMatch(e, query, regex, pattern))
+            .OrderByDescending(e => GetElementDepth(e)) // Process deepest elements first
+            .ToList();
+
+        foreach (var element in textElements)
         {
+            // Skip if an ancestor or descendant was already matched (avoid duplicates)
+            if (IsAlreadyMatched(element, matchedElements))
+            {
+                continue;
+            }
+
             var text = element.TextContent;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                continue;
-            }
-
-            var found = regex
-                ? pattern!.IsMatch(text)
-                : text.Contains(query, StringComparison.OrdinalIgnoreCase);
-
-            if (!found)
-            {
-                continue;
-            }
-
             var matchText = regex
                 ? pattern!.Match(text).Value
                 : ExtractMatchText(text, query);
@@ -449,6 +448,7 @@ public static partial class HtmlInspector
             var nearestHeading = FindNearestHeading(element);
 
             matches.Add(new InspectSearchMatch(matchText, context, selector, nearestHeading));
+            matchedElements.Add(element);
 
             if (matches.Count >= maxResults)
             {
@@ -457,6 +457,59 @@ public static partial class HtmlInspector
         }
 
         return new InspectSearchResult(query, matches.Count, matches);
+    }
+
+    private static bool HasDirectTextMatch(IElement element, string query, bool regex, Regex? pattern)
+    {
+        // Check if element has direct text nodes containing the query (not just in descendants)
+        var text = element.TextContent;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return regex
+            ? pattern!.IsMatch(text)
+            : text.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int GetElementDepth(IElement element)
+    {
+        var depth = 0;
+        var current = element.ParentElement;
+        while (current != null)
+        {
+            depth++;
+            current = current.ParentElement;
+        }
+
+        return depth;
+    }
+
+    private static bool IsAlreadyMatched(IElement element, HashSet<IElement> matchedElements)
+    {
+        // Check if any ancestor is already matched
+        var parent = element.ParentElement;
+        while (parent != null)
+        {
+            if (matchedElements.Contains(parent))
+            {
+                return true;
+            }
+
+            parent = parent.ParentElement;
+        }
+
+        // Check if any descendant is already matched
+        foreach (var matched in matchedElements)
+        {
+            if (element.Contains(matched))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static IReadOnlyList<InspectForm> InspectForms(IDocument document, string? selectorScope)
@@ -664,7 +717,19 @@ public static partial class HtmlInspector
 
     private static IEnumerable<IElement> GetTextElements(IElement root)
     {
-        return root.QuerySelectorAll("p, li, td, th, span, div, h1, h2, h3, h4, h5, h6, a, label");
+        // Comprehensive list of elements that can contain visible text
+        // Includes: headings, paragraphs, lists, tables, links, buttons, inline formatting, semantic elements
+        return root.QuerySelectorAll(
+            "p, li, td, th, span, div, " +
+            "h1, h2, h3, h4, h5, h6, " +
+            "a, label, button, " +
+            "strong, em, b, i, u, mark, small, " +
+            "dt, dd, figcaption, caption, " +
+            "blockquote, cite, q, " +
+            "code, pre, kbd, samp, var, " +
+            "summary, details, " +
+            "abbr, dfn, time, address, " +
+            "article, section, aside, header, footer, main, nav");
     }
 
     private static string ExtractMatchText(string text, string query)

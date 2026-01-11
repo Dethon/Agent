@@ -467,6 +467,95 @@ public class HtmlInspectorTests
         result.TotalMatches.ShouldBe(0);
     }
 
+    [Fact]
+    public async Task SearchText_FindsLinkText()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <nav>
+                                    <a href="/products">Browse Products</a>
+                                    <a href="/cart">Shopping Cart</a>
+                                </nav>
+                                <p>Regular text here</p>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var result = HtmlInspector.SearchText(document, "Products", false, 10, null);
+
+        result.TotalMatches.ShouldBeGreaterThan(0);
+        result.Matches.ShouldContain(m => m.Context.Contains("Browse Products"));
+    }
+
+    [Fact]
+    public async Task SearchText_FindsTextInInlineElements()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <p>This is <strong>important</strong> text with <em>emphasis</em>.</p>
+                                <div>Check the <mark>highlighted</mark> section and <code>inline code</code>.</div>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+
+        var importantResult = HtmlInspector.SearchText(document, "important", false, 10, null);
+        importantResult.TotalMatches.ShouldBeGreaterThan(0);
+
+        var highlightedResult = HtmlInspector.SearchText(document, "highlighted", false, 10, null);
+        highlightedResult.TotalMatches.ShouldBeGreaterThan(0);
+
+        var codeResult = HtmlInspector.SearchText(document, "inline code", false, 10, null);
+        codeResult.TotalMatches.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task SearchText_FindsButtonText()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <button>Add to Cart</button>
+                                <button class="submit">Submit Order</button>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var result = HtmlInspector.SearchText(document, "Cart", false, 10, null);
+
+        result.TotalMatches.ShouldBeGreaterThan(0);
+        result.Matches.ShouldContain(m => m.Context.Contains("Add to Cart"));
+    }
+
+    [Fact]
+    public async Task SearchText_AvoidsDuplicatesForNestedElements()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <div>
+                                    <p>The <strong>special</strong> word appears once.</p>
+                                </div>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var result = HtmlInspector.SearchText(document, "special", false, 10, null);
+
+        // Should find one match (the most specific element), not multiple for div, p, and strong
+        result.TotalMatches.ShouldBe(1);
+    }
+
     #endregion
 
     #region Form Inspection Tests
