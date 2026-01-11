@@ -20,13 +20,16 @@ public static class WebBrowsingPrompt
         **WebBrowse** - Navigate to URLs and extract content
         - Maintains a persistent browser session (cookies, login state preserved)
         - Automatically dismisses cookie popups, age gates, newsletter modals
-        - Supports CSS selectors for targeted content extraction
+        - Supports CSS selectors for targeted extraction - returns ALL matching elements
+        - Use selector parameter to extract by class/id (e.g., selector=".product")
         - Output formats: markdown (default) or html
 
         **WebInspect** - Analyze page structure without full content
         - Use when pages are large or content is truncated
         - Returns CSS selectors for targeted extraction
         - Modes: structure, search, forms, interactive
+        - IMPORTANT: search mode finds visible TEXT only, not CSS selectors
+        - To find elements by selector, use WebBrowse with selector parameter
 
         **WebClick** - Interact with page elements
         - Click buttons, links, form fields
@@ -49,14 +52,20 @@ public static class WebBrowsingPrompt
         WebBrowse(url="...", selector="main.content") → Get specific section
         ```
 
-        **3. Finding Specific Data (Inspect Search → Browse)**
+        **3. Finding Text on Page (Inspect Search → Browse)**
         ```
-        WebBrowse(url="...") → Page loaded but data not visible
-        WebInspect(mode="search", query="$") → Find price locations
-        WebBrowse(selector="div.product-info") → Extract targeted content
+        WebBrowse(url="...") → Page loaded but need to find specific text
+        WebInspect(mode="search", query="price") → Find where "price" appears (returns selectors)
+        WebBrowse(selector="returned-selector") → Extract that section
         ```
 
-        **4. Form Interaction (Inspect → Click sequence)**
+        **4. Extracting Multiple Items by Class (Direct Browse)**
+        ```
+        WebBrowse(url="...", selector=".product-card") → Returns ALL matching elements
+        WebBrowse(url="...", selector=".search-result") → Get all search results
+        ```
+
+        **5. Form Interaction (Inspect → Click sequence)**
         ```
         WebBrowse(url="form_page")
         WebInspect(mode="forms") → Get field selectors
@@ -65,7 +74,7 @@ public static class WebBrowsingPrompt
         WebClick(selector="button[type='submit']", waitForNavigation=true) → Submit
         ```
 
-        **5. Multi-Page Navigation (Click with navigation)**
+        **6. Multi-Page Navigation (Click with navigation)**
         ```
         WebBrowse(url="start_page")
         WebInspect(mode="interactive") → Find navigation links

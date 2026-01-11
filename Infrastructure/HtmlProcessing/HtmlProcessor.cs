@@ -38,17 +38,24 @@ public static class HtmlProcessor
 
     private static HtmlProcessingResult ProcessWithSelector(BrowseRequest request, IDocument document)
     {
-        var element = document.QuerySelector(request.Selector!);
-        if (element == null)
+        var elements = document.QuerySelectorAll(request.Selector!);
+        if (elements.Length == 0)
         {
             return CreatePartialResult(document.Title, ExtractMetadata(document),
                 $"CSS selector '{request.Selector}' did not match any elements");
         }
 
-        var content = HtmlConverter.Convert(element, request.Format);
-        var links = request.IncludeLinks ? ExtractLinks(element) : null;
+        // Combine content from all matching elements
+        var contentParts = elements.Select(e => HtmlConverter.Convert(e, request.Format)).ToList();
+        var separator = request.Format == WebFetchOutputFormat.Html ? "\n" : "\n\n---\n\n";
+        var content = string.Join(separator, contentParts);
 
-        return CreateSuccessResult(request.MaxLength, document.Title, content, request.Format,
+        // Combine links from all matching elements
+        var links = request.IncludeLinks
+            ? elements.SelectMany(ExtractLinks).DistinctBy(l => l.Url).ToList()
+            : null;
+
+        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content, request.Format,
             ExtractMetadata(document), links);
     }
 
@@ -57,7 +64,7 @@ public static class HtmlProcessor
         var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
         var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
 
-        return CreateSuccessResult(request.MaxLength, document.Title, content, request.Format,
+        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content, request.Format,
             ExtractMetadata(document), links);
     }
 
@@ -75,7 +82,8 @@ public static class HtmlProcessor
         var articleContent = FormatArticleContent(article, request.Format);
         var articleLinks = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
 
-        return CreateSuccessResult(request.MaxLength, article.Title, articleContent, request.Format, metadata,
+        return CreateSuccessResult(request.MaxLength, request.Offset, article.Title, articleContent, request.Format,
+            metadata,
             articleLinks);
     }
 
@@ -170,9 +178,22 @@ public static class HtmlProcessor
     }
 
     private static HtmlProcessingResult CreateSuccessResult(
-        int maxLength, string? title, string content, WebFetchOutputFormat format, WebPageMetadata metadata,
+        int maxLength, int offset, string? title, string content, WebFetchOutputFormat format, WebPageMetadata metadata,
         List<ExtractedLink>? links)
     {
+        var totalLength = content.Length;
+
+        // Apply offset first
+        if (offset > 0 && offset < content.Length)
+        {
+            content = content[offset..];
+        }
+        else if (offset >= content.Length)
+        {
+            content = "";
+        }
+
+        // Then apply max length truncation
         var truncated = content.Length > maxLength;
         if (truncated)
         {
@@ -181,11 +202,13 @@ public static class HtmlProcessor
                 : HtmlConverter.Truncate(content, maxLength);
         }
 
+        var hasMore = offset + content.Length < totalLength;
+
         return new HtmlProcessingResult(
             Title: title,
             Content: content,
-            ContentLength: content.Length,
-            Truncated: truncated,
+            ContentLength: totalLength,
+            Truncated: truncated || hasMore,
             Metadata: metadata,
             Links: links,
             IsPartial: false,

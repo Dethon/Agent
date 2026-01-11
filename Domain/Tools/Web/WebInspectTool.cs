@@ -13,18 +13,23 @@ public class WebInspectTool(IWebBrowser browser)
         Use to explore large pages before extracting specific content with WebBrowse.
 
         Modes:
-        - 'structure' (default): Page outline with headings, sections, form/button/link counts
-        - 'search': Find text in page, returns matches with context and CSS selectors
+        - 'structure' (default): Smart page analysis with actionable suggestions
+          - Detects main content area
+          - Finds repeating elements (product cards, search results) with field detection
+          - Identifies pagination/navigation
+          - Returns hierarchical outline with selectors
+          - Provides suggestions like "Found 24 items: use selector='.product-card'"
+        - 'search': Find visible TEXT in page, returns matches with context and selectors
         - 'forms': Detailed form inspection with all fields and buttons
-        - 'interactive': All clickable elements (buttons, links) with CSS selectors
+        - 'interactive': All clickable elements (buttons, links) with selectors
 
-        Returns CSS selectors for use with WebBrowse (selector parameter) or WebClick.
+        IMPORTANT: To extract elements by CSS selector (e.g., '.product', '#main'), use WebBrowse
+        with the selector parameter directly. The search mode only finds visible text content.
 
         Examples:
-        - Get page overview: mode="structure"
+        - Analyze page structure: mode="structure" → get suggestions for extraction
         - Find text on page: mode="search", query="price"
-        - Find all forms: mode="forms"
-        - Find clickable elements: mode="interactive"
+        - Extract items: Use suggestions from structure, e.g., WebBrowse(selector=".product-card")
         """;
 
     protected async Task<JsonNode> RunAsync(
@@ -107,39 +112,116 @@ public class WebInspectTool(IWebBrowser browser)
     private static void AddStructureToResponse(JsonObject response, InspectStructure structure)
     {
         response["totalTextLength"] = structure.TotalTextLength;
-        response["preview"] = structure.Preview;
-        response["formCount"] = structure.FormCount;
-        response["buttonCount"] = structure.ButtonCount;
-        response["linkCount"] = structure.LinkCount;
 
-        var headingsArray = new JsonArray();
-        foreach (var heading in structure.Headings)
+        // Main content region
+        if (structure.MainContent != null)
         {
-            headingsArray.Add(new JsonObject
+            response["mainContent"] = new JsonObject
             {
-                ["level"] = heading.Level,
-                ["text"] = heading.Text,
-                ["id"] = heading.Id,
-                ["selector"] = heading.Selector
-            });
+                ["selector"] = structure.MainContent.Selector,
+                ["preview"] = structure.MainContent.Preview,
+                ["textLength"] = structure.MainContent.TextLength
+            };
         }
 
-        response["headings"] = headingsArray;
-
-        var sectionsArray = new JsonArray();
-        foreach (var section in structure.Sections)
+        // Repeating elements (product cards, search results, etc.)
+        if (structure.RepeatingElements.Count > 0)
         {
-            sectionsArray.Add(new JsonObject
+            var repeatingArray = new JsonArray();
+            foreach (var repeating in structure.RepeatingElements)
             {
-                ["tag"] = section.Tag,
-                ["id"] = section.Id,
-                ["className"] = section.ClassName,
-                ["selector"] = section.Selector,
-                ["textLength"] = section.TextLength
-            });
+                var item = new JsonObject
+                {
+                    ["selector"] = repeating.Selector,
+                    ["count"] = repeating.Count,
+                    ["preview"] = repeating.Preview
+                };
+
+                if (repeating.DetectedFields is { Count: > 0 })
+                {
+                    var fieldsArray = new JsonArray();
+                    foreach (var field in repeating.DetectedFields)
+                    {
+                        fieldsArray.Add(field);
+                    }
+
+                    item["detectedFields"] = fieldsArray;
+                }
+
+                repeatingArray.Add(item);
+            }
+
+            response["repeatingElements"] = repeatingArray;
         }
 
-        response["sections"] = sectionsArray;
+        // Navigation info
+        if (structure.Navigation != null)
+        {
+            var nav = new JsonObject();
+            if (structure.Navigation.PaginationSelector != null)
+            {
+                nav["paginationSelector"] = structure.Navigation.PaginationSelector;
+            }
+
+            if (structure.Navigation.NextPageSelector != null)
+            {
+                nav["nextPageSelector"] = structure.Navigation.NextPageSelector;
+            }
+
+            if (structure.Navigation.PrevPageSelector != null)
+            {
+                nav["prevPageSelector"] = structure.Navigation.PrevPageSelector;
+            }
+
+            if (structure.Navigation.MenuSelector != null)
+            {
+                nav["menuSelector"] = structure.Navigation.MenuSelector;
+            }
+
+            response["navigation"] = nav;
+        }
+
+        // Hierarchical outline
+        if (structure.Outline.Count > 0)
+        {
+            response["outline"] = BuildOutlineJson(structure.Outline);
+        }
+
+        // Actionable suggestions
+        if (structure.Suggestions.Count > 0)
+        {
+            var suggestionsArray = new JsonArray();
+            foreach (var suggestion in structure.Suggestions)
+            {
+                suggestionsArray.Add(suggestion);
+            }
+
+            response["suggestions"] = suggestionsArray;
+        }
+    }
+
+    private static JsonArray BuildOutlineJson(IReadOnlyList<OutlineNode> nodes)
+    {
+        var array = new JsonArray();
+        foreach (var node in nodes)
+        {
+            var item = new JsonObject
+            {
+                ["tag"] = node.Tag,
+                ["selector"] = node.Selector,
+                ["preview"] = node.Preview,
+                ["textLength"] = node.TextLength
+            };
+
+            if (node.Children is { Count: > 0 })
+            {
+                item["children"] = BuildOutlineJson(node.Children);
+            }
+
+            array.Add(item);
+        }
+
+        return array;
     }
 
     private static void AddSearchResultToResponse(JsonObject response, InspectSearchResult searchResult)
