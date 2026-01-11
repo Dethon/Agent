@@ -21,7 +21,7 @@ public static class WebBrowsingPrompt
         - Maintains a persistent browser session (cookies, login state preserved)
         - Automatically dismisses cookie popups, age gates, newsletter modals
         - Supports CSS selectors for targeted content extraction
-        - Output formats: markdown (default), text, or html
+        - Output formats: markdown (default) or html
 
         **WebInspect** - Analyze page structure without full content
         - Use when pages are large or content is truncated

@@ -165,7 +165,6 @@ public static class HtmlProcessor
         return format switch
         {
             WebFetchOutputFormat.Html => article.Content,
-            WebFetchOutputFormat.Text => HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Text),
             _ => HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown)
         };
     }

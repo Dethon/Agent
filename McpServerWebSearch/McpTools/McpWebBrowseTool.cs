@@ -21,7 +21,7 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         string url,
         [Description("CSS selector to target specific content (e.g., '.main-content', '#article')")]
         string? selector = null,
-        [Description("Output format: 'text', 'markdown', or 'html' (default: 'markdown')")]
+        [Description("Output format: 'markdown' or 'html' (default: 'markdown')")]
         string? format = null,
         [Description("Maximum characters to return (100-100000, default: 10000)")]
         int maxLength = 10000,

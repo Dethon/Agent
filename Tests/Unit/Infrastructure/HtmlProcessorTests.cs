@@ -143,34 +143,6 @@ public class HtmlProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_WithTextFormat_ReturnsPlainText()
-    {
-        // Arrange
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test</title></head>
-                   <body>
-                       <h1>Title</h1>
-                       <p>Paragraph <strong>with bold</strong> text.</p>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
-            Format: WebFetchOutputFormat.Text);
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.Content.ShouldNotBeNull();
-        result.Content.ShouldNotContain("<h1>");
-        result.Content.ShouldNotContain("<strong>");
-        result.Content.ShouldContain("Title");
-        result.Content.ShouldContain("with bold");
-    }
-
-    [Fact]
     public async Task ProcessAsync_WithMarkdownFormat_ConvertsToMarkdown()
     {
         // Arrange

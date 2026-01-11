@@ -5,7 +5,6 @@ public record ExtractedLink(string Text, string Url);
 public enum WebFetchOutputFormat
 {
     Markdown,
-    Text,
     Html
 }
 

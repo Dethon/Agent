@@ -139,7 +139,6 @@ public class WebBrowseTool(IWebBrowser browser)
 
         return format.ToLowerInvariant() switch
         {
-            "text" => WebFetchOutputFormat.Text,
             "html" => WebFetchOutputFormat.Html,
             _ => WebFetchOutputFormat.Markdown
         };
