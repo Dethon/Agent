@@ -231,13 +231,13 @@ services:
     networks:
       - jackbot
 
-  jack:
+  agent:
     image: agent:latest
     logging:
       options:
         max-size: "5m"
         max-file: "3"
-    container_name: jack
+    container_name: agent
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
@@ -246,47 +246,12 @@ services:
     env_file:
       - .env
     environment:
-      - NAME=Jack
-      - MCPSERVERS__0__ENDPOINT=http://mcp-library:8080/sse
-      - MCPSERVERS__1__ENDPOINT=http://mcp-websearch:8080/sse
-      - WHITELISTPATTERNS__0=mcp:mcp-library:*
-      - WHITELISTPATTERNS__1=mcp:mcp-websearch:*
-      - TELEGRAM__BOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
+      - AGENTS__0__TELEGRAMBOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
+      - AGENTS__1__TELEGRAMBOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
     depends_on:
       - mcp-library
-      - mcp-websearch
-      - redis
-
-  jonas:
-    image: agent:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: jonas
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: Agent/Dockerfile
-    command: [ "--chat", "Telegram", "--reasoning" ]
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      - NAME=Jonas
-      - MCPSERVERS__0__ENDPOINT=http://mcp-text:8080/sse
-      - MCPSERVERS__1__ENDPOINT=http://mcp-websearch:8080/sse
-      - MCPSERVERS__2__ENDPOINT=http://mcp-memory:8080/sse
-      - MCPSERVERS__3__ENDPOINT=http://mcp-idealista:8080/sse
-      - WHITELISTPATTERNS__0=mcp:mcp-text:*
-      - WHITELISTPATTERNS__1=mcp:mcp-websearch:*
-      - WHITELISTPATTERNS__2=mcp:mcp-memory:*
-      - WHITELISTPATTERNS__3=mcp:mcp-idealista:*
-      - TELEGRAM__BOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
-    networks:
-      - jackbot
-    depends_on:
       - mcp-text
       - mcp-websearch
       - mcp-memory

@@ -1,0 +1,25 @@
+﻿<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="agent-compose" type="docker-deploy" factoryName="docker-compose.yml" server-name="Docker">
+    <deployment type="docker-compose.yml">
+      <settings>
+        <option name="commandLineOptions" value="--build" />
+        <option name="services">
+          <list>
+            <option value="agent" />
+            <option value="mcp-text" />
+            <option value="mcp-websearch" />
+            <option value="mcp-memory" />
+            <option value="mcp-idealista" />
+            <option value="mcp-library" />
+            <option value="qbittorrent" />
+            <option value="jackett" />
+            <option value="redis" />
+          </list>
+        </option>
+        <option name="sourceFilePath" value="DockerCompose/docker-compose.yml" />
+      </settings>
+    </deployment>
+    <EXTENSION ID="com.jetbrains.rider.docker.debug" isFastModeEnabled="true" isSslEnabled="false" />
+    <method v="2" />
+  </configuration>
+</component>
