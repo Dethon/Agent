@@ -19,15 +19,14 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         RequestContext<CallToolRequestParams> context,
         [Description("The URL to navigate to")]
         string url,
+        [Description("Maximum characters to return (100-100000)")]
+        int maxLength,
+        [Description("Character offset to start from - use with maxLength to paginate through large content")]
+        int offset,
         [Description("CSS selector to extract specific elements - returns ALL matches (e.g., '.product', '#main')")]
         string? selector = null,
         [Description("Output format: 'markdown' or 'html' (default: 'markdown')")]
         string? format = null,
-        [Description("Maximum characters to return (100-100000, default: 10000)")]
-        int maxLength = 10000,
-        [Description(
-            "Character offset to start from - use with maxLength to paginate through large content (default: 0)")]
-        int offset = 0,
         [Description("Include hyperlinks in output (default: true)")]
         bool includeLinks = true,
         [Description("Use readability mode to extract article content, stripping navigation/ads (default: false)")]

@@ -23,9 +23,9 @@ public static class WebBrowsingPrompt
         - Supports CSS selectors for targeted extraction - returns ALL matching elements
         - Use selector parameter to extract by class/id (e.g., selector=".product")
         - Output formats: markdown (default) or html
-        - Supports pagination with offset/maxLength for large content:
-          - maxLength: Maximum characters to return (default 10000)
-          - offset: Skip this many characters before returning content
+        - REQUIRED: maxLength and offset parameters for pagination:
+          - maxLength: Maximum characters to return (100-100000)
+          - offset: Character position to start from (use 0 for beginning)
           - Response includes contentLength (total) and truncated flag
 
         **WebInspect** - Analyze page structure without full content
@@ -45,33 +45,33 @@ public static class WebBrowsingPrompt
         **1. Simple Research (Search → Browse)**
         ```
         WebSearch(query="topic") → Get URLs
-        WebBrowse(url="result_url") → Get content
+        WebBrowse(url="result_url", maxLength=10000, offset=0) → Get content
         Summarize findings
         ```
 
         **2. Large Page Extraction (Browse → Inspect → Targeted Browse)**
         ```
-        WebBrowse(url="...") → Content truncated
+        WebBrowse(url="...", maxLength=10000, offset=0) → Content truncated
         WebInspect(mode="structure") → See page sections
-        WebBrowse(url="...", selector="main.content") → Get specific section
+        WebBrowse(url="...", maxLength=10000, offset=0, selector="main.content") → Get specific section
         ```
 
         **3. Finding Text on Page (Inspect Search → Browse)**
         ```
-        WebBrowse(url="...") → Page loaded but need to find specific text
+        WebBrowse(url="...", maxLength=10000, offset=0) → Page loaded but need to find specific text
         WebInspect(mode="search", query="price") → Find where "price" appears (returns selectors)
-        WebBrowse(selector="returned-selector") → Extract that section
+        WebBrowse(url="...", maxLength=10000, offset=0, selector="returned-selector") → Extract that section
         ```
 
         **4. Extracting Multiple Items by Class (Direct Browse)**
         ```
-        WebBrowse(url="...", selector=".product-card") → Returns ALL matching elements
-        WebBrowse(url="...", selector=".search-result") → Get all search results
+        WebBrowse(url="...", maxLength=10000, offset=0, selector=".product-card") → Returns ALL matching elements
+        WebBrowse(url="...", maxLength=10000, offset=0, selector=".search-result") → Get all search results
         ```
 
         **5. Form Interaction (Inspect → Click sequence)**
         ```
-        WebBrowse(url="form_page")
+        WebBrowse(url="form_page", maxLength=10000, offset=0)
         WebInspect(mode="forms") → Get field selectors
         WebClick(selector="input[name='email']") → Focus field
         WebClick(selector="input[name='email']", text="user@example.com") → Fill
@@ -80,14 +80,14 @@ public static class WebBrowsingPrompt
 
         **6. Multi-Page Navigation (Click with navigation)**
         ```
-        WebBrowse(url="start_page")
+        WebBrowse(url="start_page", maxLength=10000, offset=0)
         WebInspect(mode="interactive") → Find navigation links
         WebClick(selector="a.next-page", waitForNavigation=true) → Navigate
         ```
 
         **7. Reading Long Content in Chunks (Pagination)**
         ```
-        WebBrowse(url="...", maxLength=5000) → First 5000 chars, truncated=true, contentLength=15000
+        WebBrowse(url="...", maxLength=5000, offset=0) → First 5000 chars, truncated=true, contentLength=15000
         WebBrowse(url="...", maxLength=5000, offset=5000) → Next 5000 chars
         WebBrowse(url="...", maxLength=5000, offset=10000) → Final 5000 chars
         ```
