@@ -295,15 +295,7 @@ public sealed class TelegramToolApprovalHandlerFactory(
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
-        var client = GetClientByHash(agentKey.BotTokenHash);
+        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.BotTokenHash);
         return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
-    }
-
-    private ITelegramBotClient GetClientByHash(string? botTokenHash)
-    {
-        ArgumentNullException.ThrowIfNull(botTokenHash);
-        return botsByTokenHash.TryGetValue(botTokenHash, out var client)
-            ? client
-            : throw new ArgumentException("Invalid bot token hash", nameof(botTokenHash));
     }
 }

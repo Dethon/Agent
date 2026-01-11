@@ -1,6 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -19,20 +17,9 @@ public class TelegramChatClient(
     ILogger<TelegramChatClient> logger,
     string? baseUrl = null) : IChatMessengerClient
 {
-    private readonly Dictionary<string, BotContext> _bots = botTokens
-        .Select(token => new BotContext(token, CreateBotClient(token, baseUrl)))
-        .ToDictionary(ctx => ctx.TokenHash, ctx => ctx);
-
-    private static TelegramBotClient CreateBotClient(string token, string? baseUrl)
-    {
-        if (baseUrl is null)
-        {
-            return new TelegramBotClient(token);
-        }
-
-        var options = new TelegramBotClientOptions(token, baseUrl);
-        return new TelegramBotClient(options);
-    }
+    private readonly Dictionary<string, BotContext> _bots = TelegramBotHelper
+        .CreateBotClientsByHash(botTokens, baseUrl)
+        .ToDictionary(kvp => kvp.Key, kvp => new BotContext(kvp.Key, kvp.Value));
 
     private string? _topicIconId;
 
@@ -262,16 +249,10 @@ public class TelegramChatClient(
         };
     }
 
-    private sealed class BotContext(string token, ITelegramBotClient client)
+    private sealed class BotContext(string tokenHash, ITelegramBotClient client)
     {
         public ITelegramBotClient Client { get; } = client;
-        public string TokenHash { get; } = ComputeHash(token);
+        public string TokenHash { get; } = tokenHash;
         public int? Offset { get; set; }
-
-        private static string ComputeHash(string token)
-        {
-            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-            return Convert.ToHexStringLower(bytes);
-        }
     }
 }

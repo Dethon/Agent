@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
@@ -105,7 +103,7 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public void Factory_CreatesHandlerWithCorrectContext()
     {
         // Arrange
-        var tokenHash = ComputeTokenHash(TestBotToken);
+        var tokenHash = TelegramBotHelper.ComputeTokenHash(TestBotToken);
         var botsByHash = new Dictionary<string, ITelegramBotClient> { [tokenHash] = _botClient };
         var factory = new TelegramToolApprovalHandlerFactory(botsByHash);
         var agentKey = new AgentKey(TestChatId, TestThreadId, tokenHash);
@@ -116,12 +114,6 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
         // Assert
         handler.ShouldNotBeNull();
         handler.ShouldBeOfType<TelegramToolApprovalHandler>();
-    }
-
-    private static string ComputeTokenHash(string token)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        return Convert.ToHexStringLower(bytes);
     }
 
     private static CallbackQuery CreateCallbackQueryWithoutMessage(string? data, long userId)

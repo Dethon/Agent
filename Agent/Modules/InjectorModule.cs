@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Agent.App;
 using Agent.Settings;
 using Domain.Agents;
@@ -15,7 +13,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using Telegram.Bot;
 
 namespace Agent.Modules;
 
@@ -110,8 +107,7 @@ public static class InjectorModule
                 throw new InvalidOperationException("No Telegram bot tokens configured in agents.");
             }
 
-            var botClientsByHash = botTokens
-                .ToDictionary(ComputeTokenHash, ITelegramBotClient (token) => new TelegramBotClient(token));
+            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
 
             return services
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
@@ -120,12 +116,6 @@ public static class InjectorModule
                     settings.Telegram.AllowedUserNames,
                     cmdParams.ShowReasoning,
                     sp.GetRequiredService<ILogger<TelegramChatClient>>()));
-        }
-
-        private static string ComputeTokenHash(string token)
-        {
-            var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-            return Convert.ToHexStringLower(bytes);
         }
 
         private IServiceCollection AddOneShotClient(CommandLineParams cmdParams)
