@@ -70,17 +70,17 @@ public class TelegramChatClient(
     }
 
     public async Task SendResponse(
-        long chatId, ChatResponseMessage responseMessage, long? threadId, CancellationToken cancellationToken)
+        long chatId, ChatResponseMessage responseMessage, long? threadId, string? botTokenHash,
+        CancellationToken cancellationToken)
     {
-        // Use the first bot for sending responses in single-bot scenarios.
-        // In multi-bot scenarios, we'd need to track which bot to use per chat.
-        var client = _bots.Values.First().Client;
+        var client = GetClientByHash(botTokenHash);
         await SendResponseWithClient(client, chatId, responseMessage, threadId, cancellationToken);
     }
 
-    public async Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
+    public async Task<int> CreateThread(long chatId, string name, string? botTokenHash,
+        CancellationToken cancellationToken)
     {
-        var client = _bots.Values.First().Client;
+        var client = GetClientByHash(botTokenHash);
         var icon = await GetIcon(client, cancellationToken);
         var thread = await client.CreateForumTopic(
             chatId,
@@ -91,9 +91,10 @@ public class TelegramChatClient(
         return thread.MessageThreadId;
     }
 
-    public async Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken)
+    public async Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+        CancellationToken cancellationToken)
     {
-        var client = _bots.Values.First().Client;
+        var client = GetClientByHash(botTokenHash);
         var icon = await GetIcon(client, cancellationToken);
         try
         {
@@ -112,6 +113,14 @@ public class TelegramChatClient(
         {
             return false;
         }
+    }
+
+    private ITelegramBotClient GetClientByHash(string? botTokenHash)
+    {
+        ArgumentNullException.ThrowIfNull(botTokenHash);
+        return _bots.TryGetValue(botTokenHash, out var bot)
+            ? bot.Client
+            : throw new ArgumentException("Invalid bot token hash", nameof(botTokenHash));
     }
 
     private async Task<List<(ChatPrompt Prompt, ITelegramBotClient Client, string TokenHash)>> PollBotAsync(

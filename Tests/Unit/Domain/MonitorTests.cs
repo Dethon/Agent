@@ -94,6 +94,7 @@ internal static class MonitorTestMocks
                 It.IsAny<long>(),
                 It.IsAny<ChatResponseMessage>(),
                 It.IsAny<long?>(),
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()
             )).Returns(Task.CompletedTask);
         return mock;
@@ -125,7 +126,8 @@ public class ChatMonitorTests
         var prompts = new[] { MonitorTestMocks.CreatePrompt(threadId: null) };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
-                c.CreateThread(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                c.CreateThread(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
+                    It.IsAny<CancellationToken>()))
             .ReturnsAsync(100);
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -137,7 +139,8 @@ public class ChatMonitorTests
         await monitor.Monitor(CancellationToken.None);
 
         // Assert - CreateThread is called during Monitor, not during task processing
-        chatMessengerClient.Verify(c => c.CreateThread(1, "Hello", It.IsAny<CancellationToken>()), Times.Once);
+        chatMessengerClient.Verify(c => c.CreateThread(1, "Hello", It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
@@ -205,7 +208,7 @@ public class AgentCleanupMonitorTests
 
         threadResolver.Resolve(new AgentKey(1, 1));
 
-        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
+        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var monitor = new AgentCleanupMonitor(threadResolver, chatMessengerClient.Object);
@@ -226,7 +229,7 @@ public class AgentCleanupMonitorTests
 
         threadResolver.Resolve(new AgentKey(1, 1));
 
-        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
+        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var monitor = new AgentCleanupMonitor(threadResolver, chatMessengerClient.Object);
@@ -248,9 +251,9 @@ public class AgentCleanupMonitorTests
         threadResolver.Resolve(new AgentKey(1, 1));
         threadResolver.Resolve(new AgentKey(2, 2));
 
-        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<CancellationToken>()))
+        chatMessengerClient.Setup(c => c.DoesThreadExist(1, 1, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-        chatMessengerClient.Setup(c => c.DoesThreadExist(2, 2, It.IsAny<CancellationToken>()))
+        chatMessengerClient.Setup(c => c.DoesThreadExist(2, 2, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var monitor = new AgentCleanupMonitor(threadResolver, chatMessengerClient.Object);
@@ -276,7 +279,8 @@ public class AgentCleanupMonitorTests
         await Should.NotThrowAsync(async () => await monitor.Check(CancellationToken.None));
 
         chatMessengerClient.Verify(
-            c => c.DoesThreadExist(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()),
+            c => c.DoesThreadExist(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 }

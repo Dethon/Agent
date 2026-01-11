@@ -39,7 +39,8 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public Task SendResponse(
-        long chatId, ChatResponseMessage responseMessage, long? threadId, CancellationToken cancellationToken)
+        long chatId, ChatResponseMessage responseMessage, long? threadId, string? botTokenHash,
+        CancellationToken cancellationToken)
     {
         lock (_lock)
         {
@@ -66,12 +67,13 @@ public sealed class OneShotChatMessengerClient(
         return Task.CompletedTask;
     }
 
-    public Task<int> CreateThread(long chatId, string name, CancellationToken cancellationToken)
+    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
     {
         return Task.FromResult(1);
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, CancellationToken cancellationToken)
+    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+        CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
     }
