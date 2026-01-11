@@ -6,7 +6,8 @@
       "Bash(dotnet sln:*)",
       "Bash(ls:*)",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(dotnet restore:*)"
     ]
   }
 }
