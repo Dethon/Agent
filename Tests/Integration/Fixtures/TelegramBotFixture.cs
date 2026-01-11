@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Infrastructure.Clients;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,6 +17,13 @@ public class TelegramBotFixture : IAsyncLifetime
     private string BaseUrl { get; set; } = null!;
     private static string BotToken => TestBotToken;
     public string[] AllowedUserNames { get; } = ["testuser", "alloweduser"];
+    public string BotTokenHash { get; } = ComputeTokenHash(TestBotToken);
+
+    private static string ComputeTokenHash(string token)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexStringLower(bytes);
+    }
 
     public Task InitializeAsync()
     {
