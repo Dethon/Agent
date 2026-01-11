@@ -72,6 +72,35 @@ See `.claude/rules/` for layer-specific coding rules that apply automatically ba
 
 ## Key Components
 
+### Multi-Agent Architecture
+
+Agents are defined as configuration data, allowing a single container to run multiple agents:
+
+- **AgentDefinition** (`Domain/DTOs/AgentDefinition.cs`) - Defines an agent with name, model, MCP endpoints, whitelist patterns, and custom instructions
+- **MultiAgentFactory** (`Infrastructure/Agents/MultiAgentFactory.cs`) - Creates agents based on definitions, resolves agent from bot token hash
+- **TelegramChatClient** (`Infrastructure/Clients/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
+
+Agent routing:
+- **Telegram**: Each bot token maps to one agent via SHA256 hash matching
+- **CLI**: Uses the first configured agent
+
+Configuration in `appsettings.json`:
+```json
+{
+  "agents": [
+    {
+      "id": "jack",
+      "name": "Jack",
+      "model": "google/gemini-2.0-flash-001",
+      "mcpServerEndpoints": ["http://mcp-library:8080/sse"],
+      "whitelistPatterns": ["mcp:mcp-library:*"],
+      "customInstructions": "You are Jack...",
+      "telegramBotToken": "123456:ABC..."
+    }
+  ]
+}
+```
+
 ### Message Streaming Pipeline
 
 The `ChatMonitor` uses a streaming pipeline to handle concurrent conversations:
