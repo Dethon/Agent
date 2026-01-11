@@ -231,6 +231,28 @@ services:
     networks:
       - jackbot
 
+  mcp-scheduler:
+    image: mcp-scheduler:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-scheduler
+    ports:
+      - "6006:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerScheduler/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDISCONNECTIONSTRING=redis:6379
+    networks:
+      - jackbot
+    depends_on:
+      - redis
+
   jack:
     image: agent:latest
     logging:
