@@ -61,11 +61,44 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             await Task.Delay(_random.Next(300, 800), ct);
 
             var waitUntil = MapWaitStrategy(request.WaitStrategy);
-            await page.GotoAsync(request.Url, new PageGotoOptions
+            var navigationTimedOut = false;
+
+            try
             {
-                WaitUntil = waitUntil,
-                Timeout = request.WaitTimeoutMs
-            });
+                await page.GotoAsync(request.Url, new PageGotoOptions
+                {
+                    WaitUntil = waitUntil,
+                    Timeout = request.WaitTimeoutMs
+                });
+            }
+            catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                // Navigation timed out (common for JS-heavy sites like Reddit that never reach NetworkIdle)
+                // Check if we have content loaded and proceed with it
+                var currentUrl = page.Url;
+                if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
+                {
+                    navigationTimedOut = true;
+                    // Continue processing - we have partial content
+                }
+                else
+                {
+                    throw; // Re-throw if we have no content at all
+                }
+            }
+            catch (TimeoutException)
+            {
+                // Fallback for System.TimeoutException if thrown
+                var currentUrl = page.Url;
+                if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
+                {
+                    navigationTimedOut = true;
+                }
+                else
+                {
+                    throw;
+                }
+            }
 
             _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
@@ -135,10 +168,24 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             html = await page.ContentAsync();
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
+            // Determine status - partial if navigation timed out or processing was partial
+            var status = navigationTimedOut || processed.IsPartial
+                ? BrowseStatus.Partial
+                : BrowseStatus.Success;
+
+            // Build error message
+            var errorMessage = processed.ErrorMessage;
+            if (navigationTimedOut)
+            {
+                var timeoutMsg = "Page did not fully load (NetworkIdle timeout). Content may be incomplete. " +
+                                 "Try waitStrategy='domcontentloaded' for JS-heavy sites.";
+                errorMessage = string.IsNullOrEmpty(errorMessage) ? timeoutMsg : $"{timeoutMsg} {errorMessage}";
+            }
+
             return new BrowseResult(
                 SessionId: request.SessionId,
                 Url: page.Url,
-                Status: processed.IsPartial ? BrowseStatus.Partial : BrowseStatus.Success,
+                Status: status,
                 Title: processed.Title,
                 Content: processed.Content,
                 ContentLength: processed.ContentLength,
@@ -146,7 +193,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 Metadata: processed.Metadata,
                 Links: processed.Links,
                 DismissedModals: dismissedModals,
-                ErrorMessage: processed.ErrorMessage
+                ErrorMessage: errorMessage
             );
         }
         catch (PlaywrightException ex)

@@ -107,10 +107,12 @@ public static class WebBrowsingPrompt
         - Check if content is in an iframe (may need different approach)
 
         **JavaScript-Heavy Sites (SPAs):**
-        - Use waitStrategy="stable" for React/Vue/Angular sites
+        - Use waitStrategy="domcontentloaded" for sites with continuous network activity (Reddit, Twitter, etc.)
+        - Use waitStrategy="stable" for React/Vue/Angular sites that eventually settle
         - Set waitForStability=true if content loads dynamically
         - Use scrollToLoad=true for infinite scroll pages
         - Increase extraDelayMs if content appears after initial load
+        - If you see "NetworkIdle timeout" in response, retry with waitStrategy="domcontentloaded"
 
         **Authentication Required:**
         - Session persists - login state is maintained
