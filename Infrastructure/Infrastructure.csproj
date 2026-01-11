@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Cronos" Version="0.11.1" />
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.251219.1"/>
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.1.1"/>
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.1.1-preview.1.25612.2"/>
