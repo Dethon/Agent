@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
 using Infrastructure.Extensions;
+using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Configuration;
@@ -44,7 +45,8 @@ public static class ConfigModule
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebClickTool>()
-                .WithTools<McpWebInspectTool>();
+                .WithTools<McpWebInspectTool>()
+                .WithPrompts<McpSystemPrompt>();
 
             return services;
         }

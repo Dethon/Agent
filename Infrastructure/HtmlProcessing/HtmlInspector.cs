@@ -7,7 +7,7 @@ namespace Infrastructure.HtmlProcessing;
 public static partial class HtmlInspector
 {
     public static InspectStructure InspectStructure(IDocument document, string? selectorScope,
-        int previewLength = 200)
+        int maxHeadings = 15, int maxSections = 8, int previewLength = 200)
     {
         var root = GetScopedElement(document, selectorScope);
         if (root == null)
@@ -15,8 +15,8 @@ public static partial class HtmlInspector
             return new InspectStructure([], [], 0, 0, 0, null, 0);
         }
 
-        var headings = ExtractHeadings(root);
-        var sections = ExtractSections(root);
+        var headings = ExtractHeadings(root, maxHeadings);
+        var sections = ExtractSections(root, maxSections);
         var formCount = root.QuerySelectorAll("form").Length;
         var buttonCount = root.QuerySelectorAll("button, input[type='submit'], input[type='button']").Length;
         var linkCount = root.QuerySelectorAll("a[href]").Length;
@@ -130,40 +130,53 @@ public static partial class HtmlInspector
         return document.QuerySelector(selectorScope);
     }
 
-    private static List<InspectHeading> ExtractHeadings(IElement root)
+    private static List<InspectHeading> ExtractHeadings(IElement root, int maxHeadings)
     {
-        var headings = new List<InspectHeading>();
-
-        foreach (var h in root.QuerySelectorAll("h1, h2, h3, h4, h5, h6"))
-        {
-            var level = int.Parse(h.TagName[1..]);
-            var text = CollapseWhitespace(h.TextContent.Trim());
-            if (text.Length > 100)
+        // Prioritize by heading level (h1 first, then h2, etc.) and take top N
+        return root.QuerySelectorAll("h1, h2, h3, h4, h5, h6")
+            .Select(h =>
             {
-                text = text[..97] + "...";
-            }
+                var level = int.Parse(h.TagName[1..]);
+                var text = CollapseWhitespace(h.TextContent.Trim());
+                if (text.Length > 80)
+                {
+                    text = text[..77] + "...";
+                }
 
-            headings.Add(new InspectHeading(
-                Level: level,
-                Text: text,
-                Id: h.GetAttribute("id"),
-                Selector: GenerateSelector(h)));
-        }
-
-        return headings;
+                return new InspectHeading(
+                    Level: level,
+                    Text: text,
+                    Id: h.GetAttribute("id"),
+                    Selector: GenerateSelector(h));
+            })
+            .Where(h => !string.IsNullOrWhiteSpace(h.Text))
+            .OrderBy(h => h.Level)
+            .Take(maxHeadings)
+            .ToList();
     }
 
-    private static List<InspectSection> ExtractSections(IElement root)
+    private static List<InspectSection> ExtractSections(IElement root, int maxSections)
     {
+        // Prioritize: main > article > section, then by content size
         var sectionTags = new[] { "main", "article", "section", "aside", "nav", "header", "footer" };
+        var tagPriority = sectionTags.Select((tag, i) => (tag, priority: i)).ToDictionary(x => x.tag, x => x.priority);
 
         return sectionTags
-            .SelectMany(root.QuerySelectorAll, (tag, section) => new InspectSection(
-                Tag: tag,
-                Id: section.GetAttribute("id"),
-                ClassName: section.GetAttribute("class")?.Split(' ').FirstOrDefault(),
-                Selector: GenerateSelector(section),
-                TextLength: section.TextContent.Length))
+            .SelectMany(root.QuerySelectorAll, (tag, section) => new
+            {
+                Section = new InspectSection(
+                    Tag: tag,
+                    Id: section.GetAttribute("id"),
+                    ClassName: section.GetAttribute("class")?.Split(' ').FirstOrDefault(),
+                    Selector: GenerateSelector(section),
+                    TextLength: section.TextContent.Length),
+                Priority = tagPriority[tag]
+            })
+            .Where(x => x.Section.TextLength > 100) // Skip tiny sections
+            .OrderBy(x => x.Priority)
+            .ThenByDescending(x => x.Section.TextLength)
+            .Take(maxSections)
+            .Select(x => x.Section)
             .ToList();
     }
 
@@ -268,11 +281,15 @@ public static partial class HtmlInspector
             }
         }
 
-        return buttonGroups.Select(kvp => new InspectButton(
-            Tag: "button",
-            Text: kvp.Key,
-            Selector: kvp.Value.Selector,
-            Count: kvp.Value.Count)).ToList();
+        return buttonGroups
+            .OrderByDescending(kvp => kvp.Value.Count)
+            .Take(20)
+            .Select(kvp => new InspectButton(
+                Tag: "button",
+                Text: kvp.Key,
+                Selector: kvp.Value.Selector,
+                Count: kvp.Value.Count))
+            .ToList();
     }
 
     private static List<InspectLink> ExtractLinks(IElement root)

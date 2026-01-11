@@ -1,6 +1,9 @@
 using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
+using AngleSharp;
 using AngleSharp.Dom;
+using AngleSharp.Html.Dom;
 using Domain.DTOs;
 
 namespace Infrastructure.HtmlProcessing;
@@ -17,8 +20,8 @@ public static partial class HtmlConverter
         return format switch
         {
             WebFetchOutputFormat.Html => element.InnerHtml,
-            WebFetchOutputFormat.Text => element.TextContent,
-            _ => HtmlToMarkdown(element.InnerHtml)
+            WebFetchOutputFormat.Text => ExtractText(element),
+            _ => ConvertToMarkdown(element)
         };
     }
 
@@ -29,11 +32,23 @@ public static partial class HtmlConverter
             return string.Empty;
         }
 
+        if (format == WebFetchOutputFormat.Html)
+        {
+            return html;
+        }
+
+        // Parse HTML and convert using DOM
+        var document = BrowsingContext.New(Configuration.Default)
+            .OpenAsync(req => req.Content(html))
+            .GetAwaiter()
+            .GetResult();
+
+        var body = document.Body ?? document.DocumentElement;
+
         return format switch
         {
-            WebFetchOutputFormat.Html => html,
-            WebFetchOutputFormat.Text => HtmlToText(html),
-            _ => HtmlToMarkdown(html)
+            WebFetchOutputFormat.Text => ExtractText(body),
+            _ => ConvertToMarkdown(body)
         };
     }
 
@@ -62,14 +77,12 @@ public static partial class HtmlConverter
             return html;
         }
 
-        var targetLength = maxLength - 50; // Reserve space for closing tags and message
+        var targetLength = maxLength - 50;
         var truncated = html[..targetLength];
 
-        // Find last complete tag to avoid cutting in the middle of a tag
         var lastTagEnd = truncated.LastIndexOf('>');
         var lastTagStart = truncated.LastIndexOf('<');
 
-        // If we're in the middle of a tag, cut before it
         if (lastTagStart > lastTagEnd)
         {
             truncated = truncated[..lastTagStart];
@@ -79,7 +92,6 @@ public static partial class HtmlConverter
             truncated = truncated[..(lastTagEnd + 1)];
         }
 
-        // Find unclosed tags and close them
         var openTags = new Stack<string>();
         var tagPattern = TagNameRegex();
 
@@ -87,8 +99,7 @@ public static partial class HtmlConverter
         {
             var tagName = match.Groups[2].Value.ToLowerInvariant();
             var isClosing = match.Value.StartsWith("</");
-            var isSelfClosing = match.Value.EndsWith("/>") ||
-                                IsSelfClosingTag(tagName);
+            var isSelfClosing = match.Value.EndsWith("/>") || IsSelfClosingTag(tagName);
 
             if (isSelfClosing)
             {
@@ -108,13 +119,307 @@ public static partial class HtmlConverter
             }
         }
 
-        // Close any unclosed tags
         while (openTags.Count > 0)
         {
             truncated += $"</{openTags.Pop()}>";
         }
 
         return truncated + "\n<!-- Content truncated -->";
+    }
+
+    private static string ExtractText(IElement element)
+    {
+        var sb = new StringBuilder();
+        ExtractTextRecursive(element, sb);
+        var text = sb.ToString();
+        text = MultipleNewlinesRegex().Replace(text, "\n\n");
+        text = MultipleSpacesRegex().Replace(text, " ");
+        return text.Trim();
+    }
+
+    private static void ExtractTextRecursive(INode node, StringBuilder sb)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            switch (child)
+            {
+                case IText textNode:
+                    var text = textNode.Data;
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        sb.Append(WebUtility.HtmlDecode(text));
+                    }
+
+                    break;
+                case IElement { TagName: "SCRIPT" or "STYLE" or "NOSCRIPT" }:
+                    // Skip script/style content
+                    break;
+                case IElement elem:
+                    // Add appropriate spacing before/after block elements
+                    var isBlock = IsBlockElement(elem.TagName);
+                    if (isBlock && sb.Length > 0 && !sb.ToString().EndsWith('\n'))
+                    {
+                        sb.AppendLine();
+                    }
+
+                    ExtractTextRecursive(elem, sb);
+
+                    if (isBlock)
+                    {
+                        sb.AppendLine();
+                    }
+                    else if (elem.TagName == "BR")
+                    {
+                        sb.AppendLine();
+                    }
+
+                    break;
+            }
+        }
+    }
+
+    private static string ConvertToMarkdown(IElement element)
+    {
+        var sb = new StringBuilder();
+        ConvertToMarkdownRecursive(element, sb, 0);
+        var md = sb.ToString();
+        md = MultipleNewlinesRegex().Replace(md, "\n\n");
+        return md.Trim();
+    }
+
+    private static void ConvertToMarkdownRecursive(INode node, StringBuilder sb, int listDepth)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            switch (child)
+            {
+                case IText textNode:
+                    var text = WebUtility.HtmlDecode(textNode.Data);
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        sb.Append(text);
+                    }
+
+                    break;
+                case IElement { TagName: "SCRIPT" or "STYLE" or "NOSCRIPT" }:
+                    break;
+                case IHtmlAnchorElement anchor:
+                    var href = anchor.GetAttribute("href");
+                    var linkText = anchor.TextContent.Trim();
+                    if (!string.IsNullOrEmpty(href) && !string.IsNullOrEmpty(linkText))
+                    {
+                        sb.Append($"[{linkText}]({href})");
+                    }
+                    else if (!string.IsNullOrEmpty(linkText))
+                    {
+                        sb.Append(linkText);
+                    }
+
+                    break;
+                case IHtmlImageElement img:
+                    var alt = img.GetAttribute("alt") ?? "";
+                    var src = img.GetAttribute("src") ?? "";
+                    if (!string.IsNullOrEmpty(src))
+                    {
+                        sb.Append($"![{alt}]({src})");
+                    }
+
+                    break;
+                case IElement elem:
+                    ConvertElementToMarkdown(elem, sb, listDepth);
+                    break;
+            }
+        }
+    }
+
+    private static void ConvertElementToMarkdown(IElement elem, StringBuilder sb, int listDepth)
+    {
+        var tag = elem.TagName.ToUpperInvariant();
+
+        switch (tag)
+        {
+            case "H1":
+                sb.Append("\n\n# ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "H2":
+                sb.Append("\n\n## ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "H3":
+                sb.Append("\n\n### ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "H4":
+                sb.Append("\n\n#### ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "H5":
+                sb.Append("\n\n##### ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "H6":
+                sb.Append("\n\n###### ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "P":
+            case "DIV":
+            case "ARTICLE":
+            case "SECTION":
+            case "MAIN":
+            case "ASIDE":
+            case "HEADER":
+            case "FOOTER":
+            case "NAV":
+                sb.Append("\n\n");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("\n\n");
+                break;
+            case "BR":
+                sb.Append("  \n");
+                break;
+            case "HR":
+                sb.Append("\n\n---\n\n");
+                break;
+            case "STRONG":
+            case "B":
+                sb.Append("**");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("**");
+                break;
+            case "EM":
+            case "I":
+                sb.Append('*');
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append('*');
+                break;
+            case "CODE":
+                sb.Append('`');
+                sb.Append(elem.TextContent);
+                sb.Append('`');
+                break;
+            case "PRE":
+                sb.Append("\n\n```\n");
+                sb.Append(elem.TextContent);
+                sb.Append("\n```\n\n");
+                break;
+            case "BLOCKQUOTE":
+                sb.Append("\n\n> ");
+                var quoteText = elem.TextContent.Trim().Replace("\n", "\n> ");
+                sb.Append(quoteText);
+                sb.Append("\n\n");
+                break;
+            case "UL":
+            case "OL":
+                sb.AppendLine();
+                ConvertToMarkdownRecursive(elem, sb, listDepth + 1);
+                sb.AppendLine();
+                break;
+            case "LI":
+                var indent = new string(' ', (listDepth - 1) * 2);
+                var parent = elem.ParentElement;
+                var bullet = parent?.TagName == "OL" ? "1." : "-";
+                sb.Append($"{indent}{bullet} ");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.AppendLine();
+                break;
+            case "TABLE":
+                ConvertTableToMarkdown(elem, sb);
+                break;
+            case "DL":
+                ConvertDefinitionListToMarkdown(elem, sb);
+                break;
+            case "FIGURE":
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                break;
+            case "FIGCAPTION":
+                sb.Append("\n*");
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                sb.Append("*\n");
+                break;
+            default:
+                // For unknown elements, just process children
+                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                break;
+        }
+    }
+
+    private static void ConvertTableToMarkdown(IElement table, StringBuilder sb)
+    {
+        sb.Append("\n\n");
+
+        var rows = table.QuerySelectorAll("tr");
+        var isFirstRow = true;
+
+        foreach (var row in rows)
+        {
+            var cells = row.QuerySelectorAll("th, td");
+            if (cells.Length == 0)
+            {
+                continue;
+            }
+
+            sb.Append('|');
+            foreach (var cell in cells)
+            {
+                var cellText = cell.TextContent.Trim().Replace("|", "\\|").Replace("\n", " ");
+                sb.Append($" {cellText} |");
+            }
+
+            sb.AppendLine();
+
+            // Add header separator after first row
+            if (isFirstRow)
+            {
+                sb.Append('|');
+                foreach (var _ in cells)
+                {
+                    sb.Append(" --- |");
+                }
+
+                sb.AppendLine();
+                isFirstRow = false;
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void ConvertDefinitionListToMarkdown(IElement dl, StringBuilder sb)
+    {
+        sb.AppendLine();
+
+        foreach (var child in dl.Children)
+        {
+            switch (child.TagName)
+            {
+                case "DT":
+                    sb.Append("**");
+                    sb.Append(child.TextContent.Trim());
+                    sb.AppendLine("**");
+                    break;
+                case "DD":
+                    sb.Append(": ");
+                    sb.AppendLine(child.TextContent.Trim());
+                    break;
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    private static bool IsBlockElement(string tagName)
+    {
+        return tagName is "P" or "DIV" or "H1" or "H2" or "H3" or "H4" or "H5" or "H6"
+            or "UL" or "OL" or "LI" or "TABLE" or "TR" or "BLOCKQUOTE" or "PRE"
+            or "ARTICLE" or "SECTION" or "HEADER" or "FOOTER" or "NAV" or "ASIDE"
+            or "MAIN" or "FIGURE" or "FIGCAPTION" or "DL" or "DT" or "DD" or "HR";
     }
 
     private static bool IsSelfClosingTag(string tagName)
@@ -126,156 +431,9 @@ public static partial class HtmlConverter
     [GeneratedRegex(@"<(/?)(\w+)[^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex TagNameRegex();
 
-    private static string HtmlToText(string html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return string.Empty;
-        }
-
-        var text = html;
-        text = BrTagRegex().Replace(text, "\n");
-        text = ParagraphTagRegex().Replace(text, "\n\n");
-        text = HtmlTagRegex().Replace(text, string.Empty);
-        text = WebUtility.HtmlDecode(text);
-        text = MultipleNewlinesRegex().Replace(text, "\n\n");
-        return text.Trim();
-    }
-
-    private static string HtmlToMarkdown(string html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return string.Empty;
-        }
-
-        var md = html;
-        md = ReplaceHeadings(md);
-        md = ReplaceFormatting(md);
-        md = ReplaceLinks(md);
-        md = ReplaceLists(md);
-        md = ReplaceCodeBlocks(md);
-        md = CleanUpHtml(md);
-
-        return md.Trim();
-    }
-
-    private static string ReplaceHeadings(string md)
-    {
-        md = H1TagRegex().Replace(md, "# $1\n\n");
-        md = H2TagRegex().Replace(md, "## $1\n\n");
-        md = H3TagRegex().Replace(md, "### $1\n\n");
-        md = H4TagRegex().Replace(md, "#### $1\n\n");
-        md = H5TagRegex().Replace(md, "##### $1\n\n");
-        md = H6TagRegex().Replace(md, "###### $1\n\n");
-        return md;
-    }
-
-    private static string ReplaceFormatting(string md)
-    {
-        md = StrongTagRegex().Replace(md, "**$1**");
-        md = BoldTagRegex().Replace(md, "**$1**");
-        md = EmTagRegex().Replace(md, "*$1*");
-        md = ItalicTagRegex().Replace(md, "*$1*");
-        md = CodeTagRegex().Replace(md, "`$1`");
-        return md;
-    }
-
-    private static string ReplaceLinks(string md)
-    {
-        return AnchorTagRegex().Replace(md, "[$2]($1)");
-    }
-
-    private static string ReplaceLists(string md)
-    {
-        md = ListItemTagRegex().Replace(md, "- $1\n");
-        md = ListOpenTagRegex().Replace(md, "\n");
-        md = ListCloseTagRegex().Replace(md, "\n");
-        return md;
-    }
-
-    private static string ReplaceCodeBlocks(string md)
-    {
-        md = PreCodeTagRegex().Replace(md, "\n```\n$1\n```\n");
-        md = PreTagRegex().Replace(md, "\n```\n$1\n```\n");
-        return md;
-    }
-
-    private static string CleanUpHtml(string md)
-    {
-        md = BrTagRegex().Replace(md, "\n");
-        md = ParagraphTagRegex().Replace(md, "\n\n");
-        md = HtmlTagRegex().Replace(md, string.Empty);
-
-        md = WebUtility.HtmlDecode(md);
-        md = MultipleNewlinesRegex().Replace(md, "\n\n");
-        md = MultipleSpacesRegex().Replace(md, " ");
-        return md;
-    }
-
-    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase)]
-    private static partial Regex BrTagRegex();
-
-    [GeneratedRegex("</?(p|div)[^>]*>", RegexOptions.IgnoreCase)]
-    private static partial Regex ParagraphTagRegex();
-
-    [GeneratedRegex("<[^>]+>")]
-    private static partial Regex HtmlTagRegex();
-
     [GeneratedRegex(@"\n{3,}")]
     private static partial Regex MultipleNewlinesRegex();
 
     [GeneratedRegex(" {2,}")]
     private static partial Regex MultipleSpacesRegex();
-
-    [GeneratedRegex("<h1[^>]*>(.*?)</h1>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H1TagRegex();
-
-    [GeneratedRegex("<h2[^>]*>(.*?)</h2>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H2TagRegex();
-
-    [GeneratedRegex("<h3[^>]*>(.*?)</h3>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H3TagRegex();
-
-    [GeneratedRegex("<h4[^>]*>(.*?)</h4>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H4TagRegex();
-
-    [GeneratedRegex("<h5[^>]*>(.*?)</h5>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H5TagRegex();
-
-    [GeneratedRegex("<h6[^>]*>(.*?)</h6>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex H6TagRegex();
-
-    [GeneratedRegex("<strong[^>]*>(.*?)</strong>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex StrongTagRegex();
-
-    [GeneratedRegex("<b[^>]*>(.*?)</b>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex BoldTagRegex();
-
-    [GeneratedRegex("<em[^>]*>(.*?)</em>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex EmTagRegex();
-
-    [GeneratedRegex("<i[^>]*>(.*?)</i>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex ItalicTagRegex();
-
-    [GeneratedRegex("<code[^>]*>(.*?)</code>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex CodeTagRegex();
-
-    [GeneratedRegex("""<a\s+href=["']([^"']+)["'][^>]*>(.*?)</a>""", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex AnchorTagRegex();
-
-    [GeneratedRegex("<li[^>]*>(.*?)</li>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex ListItemTagRegex();
-
-    [GeneratedRegex("<[uo]l[^>]*>", RegexOptions.IgnoreCase)]
-    private static partial Regex ListOpenTagRegex();
-
-    [GeneratedRegex("</[uo]l>", RegexOptions.IgnoreCase)]
-    private static partial Regex ListCloseTagRegex();
-
-    [GeneratedRegex("<pre[^>]*><code[^>]*>(.*?)</code></pre>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex PreCodeTagRegex();
-
-    [GeneratedRegex("<pre[^>]*>(.*?)</pre>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex PreTagRegex();
 }
