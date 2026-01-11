@@ -54,7 +54,7 @@ public class ChatMonitor(
         [EnumeratorCancellation] CancellationToken ct)
     {
         var firstPrompt = await group.FirstAsync(ct);
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.BotTokenHash);
         var context = threadResolver.Resolve(agentKey);
         var thread = GetOrRestoreThread(agent, agentKey);
 
