@@ -257,7 +257,7 @@ public static partial class HtmlInspector
 
     private static List<InspectButton> ExtractButtons(IElement root)
     {
-        var buttonGroups = new Dictionary<string, (string Selector, int Count)>();
+        var buttonGroups = new Dictionary<string, List<IElement>>();
 
         foreach (var button in root.QuerySelectorAll("button, input[type='submit'], input[type='button']"))
         {
@@ -271,14 +271,13 @@ public static partial class HtmlInspector
                 text = button.GetAttribute("aria-label") ?? button.GetAttribute("title") ?? "(no text)";
             }
 
-            if (buttonGroups.TryGetValue(text, out var existing))
+            if (!buttonGroups.TryGetValue(text, out var list))
             {
-                buttonGroups[text] = (existing.Selector, existing.Count + 1);
+                list = [];
+                buttonGroups[text] = list;
             }
-            else
-            {
-                buttonGroups[text] = (GenerateSelector(button), 1);
-            }
+
+            list.Add(button);
         }
 
         return buttonGroups
@@ -287,14 +286,14 @@ public static partial class HtmlInspector
             .Select(kvp => new InspectButton(
                 Tag: "button",
                 Text: kvp.Key,
-                Selector: kvp.Value.Selector,
+                Selector: GenerateGroupSelector(kvp.Value),
                 Count: kvp.Value.Count))
             .ToList();
     }
 
     private static List<InspectLink> ExtractLinks(IElement root)
     {
-        var linkGroups = new Dictionary<string, (string Selector, int Count)>();
+        var linkGroups = new Dictionary<string, List<IElement>>();
 
         foreach (var link in root.QuerySelectorAll("a[href]"))
         {
@@ -309,14 +308,13 @@ public static partial class HtmlInspector
                 text = text[..47] + "...";
             }
 
-            if (linkGroups.TryGetValue(text, out var existing))
+            if (!linkGroups.TryGetValue(text, out var list))
             {
-                linkGroups[text] = (existing.Selector, existing.Count + 1);
+                list = [];
+                linkGroups[text] = list;
             }
-            else
-            {
-                linkGroups[text] = (GenerateSelector(link), 1);
-            }
+
+            list.Add(link);
         }
 
         return linkGroups
@@ -324,7 +322,7 @@ public static partial class HtmlInspector
             .Take(30)
             .Select(kvp => new InspectLink(
                 Text: kvp.Key,
-                Selector: kvp.Value.Selector,
+                Selector: GenerateGroupSelector(kvp.Value),
                 Count: kvp.Value.Count))
             .ToList();
     }
@@ -447,6 +445,34 @@ public static partial class HtmlInspector
 
         var index2 = siblings2.Index().FirstOrDefault(x => x.Item == element).Index + 1;
         return $"{tag}:nth-child({index2})";
+    }
+
+    private static string GenerateGroupSelector(IReadOnlyList<IElement> elements)
+    {
+        if (elements.Count == 1)
+        {
+            return GenerateSelector(elements[0]);
+        }
+
+        // Find common classes across all elements
+        var firstElement = elements[0];
+        var tag = firstElement.TagName.ToLowerInvariant();
+
+        var commonClasses = firstElement.GetAttribute("class")?
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .ToHashSet() ?? [];
+
+        foreach (var element in elements.Skip(1))
+        {
+            var classes = element.GetAttribute("class")?
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .ToHashSet() ?? [];
+            commonClasses.IntersectWith(classes);
+        }
+
+        return commonClasses.Count > 0
+            ? $"{tag}.{commonClasses.First()}"
+            : tag; // No common class - return just the tag
     }
 
     private static string CollapseWhitespace(string text)
