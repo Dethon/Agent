@@ -54,10 +54,17 @@ public static partial class HtmlConverter
             return text;
         }
 
-        var truncated = text[..(maxLength - 20)];
+        // Ensure we have room for the truncation suffix
+        var targetLength = Math.Max(0, maxLength - 20);
+        if (targetLength == 0)
+        {
+            return "[Content truncated...]";
+        }
+
+        var truncated = text[..Math.Min(targetLength, text.Length)];
 
         var lastNewline = truncated.LastIndexOf('\n');
-        if (lastNewline > maxLength * 0.7)
+        if (lastNewline > targetLength * 0.7)
         {
             truncated = truncated[..lastNewline];
         }
@@ -72,8 +79,14 @@ public static partial class HtmlConverter
             return html;
         }
 
-        var targetLength = maxLength - 50;
-        var truncated = html[..targetLength];
+        // Ensure we have room for closing tags and truncation comment
+        var targetLength = Math.Max(0, maxLength - 50);
+        if (targetLength == 0)
+        {
+            return "<!-- Content truncated -->";
+        }
+
+        var truncated = html[..Math.Min(targetLength, html.Length)];
 
         var lastTagEnd = truncated.LastIndexOf('>');
         var lastTagStart = truncated.LastIndexOf('<');
@@ -266,11 +279,11 @@ public static partial class HtmlConverter
                 sb.AppendLine();
                 break;
             case "LI":
-                var indent = new string(' ', (listDepth - 1) * 2);
+                var indent = listDepth > 0 ? new string(' ', (listDepth - 1) * 2) : "";
                 var parent = elem.ParentElement;
                 var bullet = parent?.TagName == "OL" ? "1." : "-";
                 sb.Append($"{indent}{bullet} ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1);
                 sb.AppendLine();
                 break;
             case "TABLE":
