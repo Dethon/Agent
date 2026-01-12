@@ -103,8 +103,10 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public void Factory_CreatesHandlerWithCorrectContext()
     {
         // Arrange
-        var factory = new TelegramToolApprovalHandlerFactory(_botClient);
-        var agentKey = new AgentKey(TestChatId, TestThreadId);
+        var tokenHash = TelegramBotHelper.ComputeTokenHash(TestBotToken);
+        var botsByHash = new Dictionary<string, ITelegramBotClient> { [tokenHash] = _botClient };
+        var factory = new TelegramToolApprovalHandlerFactory(botsByHash);
+        var agentKey = new AgentKey(TestChatId, TestThreadId, tokenHash);
 
         // Act
         var handler = factory.Create(agentKey);

@@ -23,6 +23,7 @@ public class WebBrowseTool(IWebBrowser browser)
         string? selector,
         string? format,
         int maxLength,
+        int offset,
         bool includeLinks,
         bool useReadability,
         string? waitStrategy,
@@ -44,6 +45,7 @@ public class WebBrowseTool(IWebBrowser browser)
             Selector: selector,
             Format: outputFormat,
             MaxLength: Math.Clamp(maxLength, 100, 100000),
+            Offset: Math.Max(0, offset),
             IncludeLinks: includeLinks,
             UseReadability: useReadability,
             WaitStrategy: parsedWaitStrategy,
@@ -139,7 +141,6 @@ public class WebBrowseTool(IWebBrowser browser)
 
         return format.ToLowerInvariant() switch
         {
-            "text" => WebFetchOutputFormat.Text,
             "html" => WebFetchOutputFormat.Html,
             _ => WebFetchOutputFormat.Markdown
         };

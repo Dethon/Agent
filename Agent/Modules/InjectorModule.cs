@@ -1,20 +1,18 @@
-﻿using Agent.App;
+using Agent.App;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
-using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
-using Telegram.Bot;
 
 namespace Agent.Modules;
 
@@ -24,17 +22,22 @@ public static class InjectorModule
     {
         public IServiceCollection AddAgent(AgentSettings settings)
         {
-            var mcpEndpoints = settings.McpServers.Select(x => x.Endpoint).ToArray();
+            var llmConfig = new OpenRouterConfig
+            {
+                ApiUrl = settings.OpenRouter.ApiUrl,
+                ApiKey = settings.OpenRouter.ApiKey
+            };
+
+            services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
+
             return services
                 .AddRedis(settings.Redis)
-                .AddSingleton<IAgentFactory>(sp =>
-                    new McpAgentFactory(
-                        sp,
-                        mcpEndpoints,
-                        settings.Name,
-                        settings.WhitelistPatterns))
                 .AddSingleton<ChatThreadResolver>()
-                .AddOpenRouterAdapter(settings);
+                .AddSingleton<IAgentFactory>(sp =>
+                    new MultiAgentFactory(
+                        sp,
+                        sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
+                        llmConfig));
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -67,7 +70,8 @@ public static class InjectorModule
 
         private IServiceCollection AddCliClient(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var terminalAdapter = new TerminalGuiAdapter(settings.Name);
+            var agent = settings.Agents[0];
+            var terminalAdapter = new TerminalGuiAdapter(agent.Name);
             var approvalHandler = new CliToolApprovalHandler(terminalAdapter);
 
             return services
@@ -78,7 +82,7 @@ public static class InjectorModule
                     var threadStateStore = sp.GetRequiredService<IThreadStateStore>();
 
                     var router = new CliChatMessageRouter(
-                        settings.Name,
+                        agent.Name,
                         Environment.UserName,
                         terminalAdapter,
                         cmdParams.ShowReasoning);
@@ -92,15 +96,26 @@ public static class InjectorModule
 
         private IServiceCollection AddTelegramClient(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var botClient = new TelegramBotClient(settings.Telegram.BotToken);
+            var botTokens = settings.Agents
+                .Select(a => a.TelegramBotToken)
+                .Where(t => t is not null)
+                .Cast<string>()
+                .ToArray();
+
+            if (botTokens.Length == 0)
+            {
+                throw new InvalidOperationException("No Telegram bot tokens configured in agents.");
+            }
+
+            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
 
             return services
-                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClient))
-                .AddSingleton<IChatMessengerClient>(sp => new TelegramBotChatMessengerClient(
-                    botClient,
+                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
+                .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
+                    botTokens,
                     settings.Telegram.AllowedUserNames,
                     cmdParams.ShowReasoning,
-                    sp.GetRequiredService<ILogger<TelegramBotChatMessengerClient>>()));
+                    sp.GetRequiredService<ILogger<TelegramChatClient>>()));
         }
 
         private IServiceCollection AddOneShotClient(CommandLineParams cmdParams)
@@ -115,15 +130,6 @@ public static class InjectorModule
                         cmdParams.ShowReasoning,
                         lifetime);
                 });
-        }
-
-        private IServiceCollection AddOpenRouterAdapter(AgentSettings settings)
-        {
-            return services.AddTransient<IChatClient>(_ =>
-                new OpenRouterChatClient(
-                    settings.OpenRouter.ApiUrl,
-                    settings.OpenRouter.ApiKey,
-                    settings.OpenRouter.Model));
         }
     }
 }

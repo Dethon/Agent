@@ -448,4 +448,102 @@ public class PlaywrightWebBrowserIntegrationTests(PlaywrightWebBrowserFixture fi
             await fixture.Browser.CloseSessionAsync(sessionId);
         }
     }
+
+    [SkippableFact]
+    public async Task ClickAsync_FillAndPressEnter_SubmitsForm()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            // Navigate to DuckDuckGo search page
+            var browseRequest = new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://duckduckgo.com",
+                MaxLength: 5000,
+                DismissModals: true,
+                WaitStrategy: WaitStrategy.NetworkIdle,
+                WaitTimeoutMs: 15000);
+            var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
+            browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+
+            // Fill the search input with a query
+            var fillRequest = new ClickRequest(
+                SessionId: sessionId,
+                Selector: "input[name='q']",
+                Action: ClickAction.Fill,
+                InputValue: "playwright testing",
+                WaitTimeoutMs: 5000);
+            var fillResult = await fixture.Browser.ClickAsync(fillRequest);
+            fillResult.Status.ShouldBe(ClickStatus.Success);
+
+            // Press Enter to submit the form
+            var pressRequest = new ClickRequest(
+                SessionId: sessionId,
+                Selector: "input[name='q']",
+                Action: ClickAction.Press,
+                Key: "Enter",
+                WaitForNavigation: true,
+                WaitTimeoutMs: 15000);
+            var pressResult = await fixture.Browser.ClickAsync(pressRequest);
+
+            // Assert - form submission should work
+            pressResult.Status.ShouldBe(ClickStatus.Success);
+            pressResult.NavigationOccurred.ShouldBeTrue();
+            // URL should now contain the search query
+            pressResult.CurrentUrl.ShouldNotBeNull();
+            pressResult.CurrentUrl.ShouldContain("q=");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [SkippableFact]
+    public async Task ClickAsync_ClearAction_ClearsInputField()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            // Navigate to DuckDuckGo
+            var browseRequest = new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://duckduckgo.com",
+                MaxLength: 2000,
+                DismissModals: true,
+                WaitStrategy: WaitStrategy.NetworkIdle,
+                WaitTimeoutMs: 15000);
+            var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
+            browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+
+            // Fill the input first
+            var fillRequest = new ClickRequest(
+                SessionId: sessionId,
+                Selector: "input[name='q']",
+                Action: ClickAction.Fill,
+                InputValue: "test query",
+                WaitTimeoutMs: 5000);
+            var fillResult = await fixture.Browser.ClickAsync(fillRequest);
+            fillResult.Status.ShouldBe(ClickStatus.Success);
+
+            // Clear the input
+            var clearRequest = new ClickRequest(
+                SessionId: sessionId,
+                Selector: "input[name='q']",
+                Action: ClickAction.Clear,
+                WaitTimeoutMs: 5000);
+            var clearResult = await fixture.Browser.ClickAsync(clearRequest);
+
+            // Assert - clear should succeed
+            clearResult.Status.ShouldBe(ClickStatus.Success);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
 }

@@ -290,10 +290,12 @@ public sealed class TelegramToolApprovalHandler(
     }
 }
 
-public sealed class TelegramToolApprovalHandlerFactory(ITelegramBotClient client) : IToolApprovalHandlerFactory
+public sealed class TelegramToolApprovalHandlerFactory(
+    IReadOnlyDictionary<string, ITelegramBotClient> botsByTokenHash) : IToolApprovalHandlerFactory
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
+        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.BotTokenHash);
         return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
     }
 }

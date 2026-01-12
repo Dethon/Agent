@@ -54,7 +54,7 @@ public class ChatMonitor(
         [EnumeratorCancellation] CancellationToken ct)
     {
         var firstPrompt = await group.FirstAsync(ct);
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.BotTokenHash);
         var context = threadResolver.Resolve(agentKey);
         var thread = GetOrRestoreThread(agent, agentKey);
 
@@ -126,18 +126,20 @@ public class ChatMonitor(
     {
         if (prompt.ThreadId is not null)
         {
-            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value);
+            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value, prompt.BotTokenHash);
         }
 
-        var threadId = await chatMessengerClient.CreateThread(prompt.ChatId, prompt.Prompt, cancellationToken);
+        var threadId = await chatMessengerClient.CreateThread(
+            prompt.ChatId, prompt.Prompt, prompt.BotTokenHash, cancellationToken);
         var responseMessage = new ChatResponseMessage
         {
             Message = prompt.Prompt.TrimStart('/'),
             Bold = true
         };
-        await chatMessengerClient.SendResponse(prompt.ChatId, responseMessage, threadId, cancellationToken);
+        await chatMessengerClient.SendResponse(
+            prompt.ChatId, responseMessage, threadId, prompt.BotTokenHash, cancellationToken);
 
-        return new AgentKey(prompt.ChatId, threadId);
+        return new AgentKey(prompt.ChatId, threadId, prompt.BotTokenHash);
     }
 
     private async Task SendResponse(AgentKey agentKey, AiResponse response, CancellationToken ct)
@@ -154,7 +156,8 @@ public class ChatMonitor(
                 Message = response.Content,
                 Reasoning = response.Reasoning
             };
-            await chatMessengerClient.SendResponse(agentKey.ChatId, responseMessage, agentKey.ThreadId, ct);
+            await chatMessengerClient.SendResponse(
+                agentKey.ChatId, responseMessage, agentKey.ThreadId, agentKey.BotTokenHash, ct);
         }
         catch (Exception ex)
         {

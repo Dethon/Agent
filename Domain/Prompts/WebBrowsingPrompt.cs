@@ -20,16 +20,25 @@ public static class WebBrowsingPrompt
         **WebBrowse** - Navigate to URLs and extract content
         - Maintains a persistent browser session (cookies, login state preserved)
         - Automatically dismisses cookie popups, age gates, newsletter modals
-        - Supports CSS selectors for targeted content extraction
-        - Output formats: markdown (default), text, or html
+        - Supports CSS selectors for targeted extraction - returns ALL matching elements
+        - Use selector parameter to extract by class/id (e.g., selector=".product")
+        - Output formats: markdown (default) or html
+        - REQUIRED: maxLength and offset parameters for pagination:
+          - maxLength: Maximum characters to return (100-100000)
+          - offset: Character position to start from (use 0 for beginning)
+          - Response includes contentLength (total) and truncated flag
 
         **WebInspect** - Analyze page structure without full content
         - Use when pages are large or content is truncated
         - Returns CSS selectors for targeted extraction
         - Modes: structure, search, forms, interactive
+        - IMPORTANT: search mode finds visible TEXT only, not CSS selectors
+        - To find elements by selector, use WebBrowse with selector parameter
 
         **WebClick** - Interact with page elements
-        - Click buttons, links, form fields
+        - Actions: click, fill (type text), clear, press (keyboard), doubleclick, hover
+        - Use action="fill" with inputValue to type into input fields
+        - Use action="press" with key="Enter" to submit forms
         - Supports text matching to find specific elements
         - Can wait for navigation after clicking
 
@@ -38,47 +47,61 @@ public static class WebBrowsingPrompt
         **1. Simple Research (Search → Browse)**
         ```
         WebSearch(query="topic") → Get URLs
-        WebBrowse(url="result_url") → Get content
+        WebBrowse(url="result_url", maxLength=10000, offset=0) → Get content
         Summarize findings
         ```
 
         **2. Large Page Extraction (Browse → Inspect → Targeted Browse)**
         ```
-        WebBrowse(url="...") → Content truncated
+        WebBrowse(url="...", maxLength=10000, offset=0) → Content truncated
         WebInspect(mode="structure") → See page sections
-        WebBrowse(url="...", selector="main.content") → Get specific section
+        WebBrowse(url="...", maxLength=10000, offset=0, selector="main.content") → Get specific section
         ```
 
-        **3. Finding Specific Data (Inspect Search → Browse)**
+        **3. Finding Text on Page (Inspect Search → Browse)**
         ```
-        WebBrowse(url="...") → Page loaded but data not visible
-        WebInspect(mode="search", query="$") → Find price locations
-        WebBrowse(selector="div.product-info") → Extract targeted content
+        WebBrowse(url="...", maxLength=10000, offset=0) → Page loaded but need to find specific text
+        WebInspect(mode="search", query="price") → Find where "price" appears (returns selectors)
+        WebBrowse(url="...", maxLength=10000, offset=0, selector="returned-selector") → Extract that section
         ```
 
-        **4. Form Interaction (Inspect → Click sequence)**
+        **4. Extracting Multiple Items by Class (Direct Browse)**
         ```
-        WebBrowse(url="form_page")
+        WebBrowse(url="...", maxLength=10000, offset=0, selector=".product-card") → Returns ALL matching elements
+        WebBrowse(url="...", maxLength=10000, offset=0, selector=".search-result") → Get all search results
+        ```
+
+        **5. Form Interaction (Fill → Submit)**
+        ```
+        WebBrowse(url="form_page", maxLength=10000, offset=0)
         WebInspect(mode="forms") → Get field selectors
-        WebClick(selector="input[name='email']") → Focus field
-        WebClick(selector="input[name='email']", text="user@example.com") → Fill
+        WebClick(selector="input[name='email']", action="fill", inputValue="user@example.com")
+        WebClick(selector="input[name='password']", action="fill", inputValue="secretpass")
         WebClick(selector="button[type='submit']", waitForNavigation=true) → Submit
         ```
 
-        **5. Multi-Page Navigation (Click with navigation)**
+        **6. Multi-Page Navigation (Click with navigation)**
         ```
-        WebBrowse(url="start_page")
+        WebBrowse(url="start_page", maxLength=10000, offset=0)
         WebInspect(mode="interactive") → Find navigation links
         WebClick(selector="a.next-page", waitForNavigation=true) → Navigate
+        ```
+
+        **7. Reading Long Content in Chunks (Pagination)**
+        ```
+        WebBrowse(url="...", maxLength=5000, offset=0) → First 5000 chars, truncated=true, contentLength=15000
+        WebBrowse(url="...", maxLength=5000, offset=5000) → Next 5000 chars
+        WebBrowse(url="...", maxLength=5000, offset=10000) → Final 5000 chars
         ```
 
         ### Handling Common Situations
 
         **Content Truncated:**
-        - Don't request larger maxLength immediately
-        - Use WebInspect to understand page structure
-        - Use selector parameter to target specific sections
-        - Extract in multiple targeted calls if needed
+        - Check contentLength in response to know total size
+        - Option 1: Use offset to read remaining content in chunks
+        - Option 2: Use WebInspect to understand page structure, then use selector to target specific sections
+        - Option 3: Extract multiple sections in separate targeted calls
+        - Don't immediately increase maxLength - prefer chunking or targeting
 
         **Can't Find Element:**
         - Use WebInspect(mode="interactive") to see available buttons/links
@@ -86,10 +109,12 @@ public static class WebBrowsingPrompt
         - Check if content is in an iframe (may need different approach)
 
         **JavaScript-Heavy Sites (SPAs):**
-        - Use waitStrategy="stable" for React/Vue/Angular sites
+        - Use waitStrategy="domcontentloaded" for sites with continuous network activity (Reddit, Twitter, etc.)
+        - Use waitStrategy="stable" for React/Vue/Angular sites that eventually settle
         - Set waitForStability=true if content loads dynamically
         - Use scrollToLoad=true for infinite scroll pages
         - Increase extraDelayMs if content appears after initial load
+        - If you see "NetworkIdle timeout" in response, retry with waitStrategy="domcontentloaded"
 
         **Authentication Required:**
         - Session persists - login state is maintained
@@ -108,6 +133,45 @@ public static class WebBrowsingPrompt
         3. **Target Precisely**: Use CSS selectors to extract exactly what's needed
         4. **Wait Appropriately**: Use waitForNavigation when clicks load new pages
         5. **Iterate if Needed**: Large pages may require multiple targeted extractions
+
+        ### Error Recovery
+
+        **NetworkIdle Timeout (status: "partial"):**
+        - Content may still be usable - check if you got what you needed
+        - Retry with waitStrategy="domcontentloaded" for JS-heavy sites
+        - For Reddit/Twitter/social media, always use domcontentloaded
+
+        **Selector Not Found:**
+        - Use WebInspect(mode="structure") to see available elements
+        - Try broader selector (class without tag, or parent element)
+        - Content may be dynamically loaded - try extraDelayMs=2000
+
+        **Session Not Found:**
+        - Start fresh with WebBrowse to create a new session
+        - Previous session expired or was closed
+
+        **Element Not Clickable:**
+        - Use WebInspect(mode="interactive") to find visible elements
+        - Modal may be blocking - ensure dismissModals=true
+        - Try waiting longer with increased waitTimeoutMs
+
+        ### When to Retry
+
+        | Failure | Strategy |
+        |---------|----------|
+        | Timeout/Partial | Retry with waitStrategy="domcontentloaded" |
+        | Selector miss | WebInspect first, then retry with correct selector |
+        | Element not found | Add extraDelayMs, then retry |
+        | Session lost | Fresh WebBrowse to create new session |
+
+        ### Quick Decision Guide
+
+        - **First visit?** → WebBrowse(maxLength=10000, offset=0)
+        - **Content truncated?** → Use offset to paginate OR WebInspect to find specific selector
+        - **Need to find text?** → WebInspect(mode="search", query="...")
+        - **Need to click?** → WebInspect(mode="interactive") first
+        - **Filling a form?** → WebInspect(mode="forms") → WebClick(action="fill") for each field
+        - **Page not loading?** → Try waitStrategy="domcontentloaded", extraDelayMs=2000
 
         ### Response Style
 

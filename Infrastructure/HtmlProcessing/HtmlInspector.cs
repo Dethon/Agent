@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using Domain.Contracts;
@@ -6,36 +8,417 @@ namespace Infrastructure.HtmlProcessing;
 
 public static partial class HtmlInspector
 {
-    public static InspectStructure InspectStructure(IDocument document, string? selectorScope,
-        int maxHeadings = 15, int maxSections = 8, int previewLength = 200)
+    private const int PreviewLength = 100;
+    private const int MinRepeatingCount = 3;
+
+    public static InspectStructure InspectStructure(IDocument document, string? selectorScope)
     {
         var root = GetScopedElement(document, selectorScope);
         if (root == null)
         {
-            return new InspectStructure([], [], 0, 0, 0, null, 0);
+            return new InspectStructure(null, [], null, [], [], [], 0);
         }
 
-        var headings = ExtractHeadings(root, maxHeadings);
-        var sections = ExtractSections(root, maxSections);
-        var formCount = root.QuerySelectorAll("form").Length;
-        var buttonCount = root.QuerySelectorAll("button, input[type='submit'], input[type='button']").Length;
-        var linkCount = root.QuerySelectorAll("a[href]").Length;
         var totalTextLength = root.TextContent.Length;
 
-        var preview = root.TextContent.Trim();
-        if (preview.Length > previewLength)
+        // Detect main content area
+        var mainContent = DetectMainContent(root);
+
+        // Detect repeating elements (product cards, search results, list items)
+        var repeatingElements = DetectRepeatingElements(root);
+
+        // Detect navigation elements
+        var navigation = DetectNavigation(root);
+
+        // Build hierarchical outline
+        var outline = BuildOutline(root);
+
+        // Generate actionable suggestions
+        var suggestions = GenerateSuggestions(mainContent, repeatingElements, navigation, root);
+
+        // Extract structured data (JSON-LD)
+        var structuredData = ExtractStructuredData(document);
+
+        return new InspectStructure(mainContent, repeatingElements, navigation, outline, suggestions, structuredData,
+            totalTextLength);
+    }
+
+    private static ContentRegion? DetectMainContent(IElement root)
+    {
+        // Priority order for main content detection
+        var candidates = new List<(IElement Element, int Score)>();
+
+        // Check semantic elements first
+        var main = root.QuerySelector("main");
+        if (main != null)
         {
-            preview = preview[..previewLength] + "...";
+            candidates.Add((main, 100 + (main.TextContent.Length / 100)));
         }
 
-        preview = CollapseWhitespace(preview);
+        var article = root.QuerySelector("article");
+        if (article != null)
+        {
+            candidates.Add((article, 90 + (article.TextContent.Length / 100)));
+        }
 
-        return new InspectStructure(headings, sections, formCount, buttonCount, linkCount, preview, totalTextLength);
+        // Check common content class patterns
+        var contentPatterns = new[]
+        {
+            "[role='main']", ".content", ".main-content", ".post-content",
+            ".article-content", ".entry-content", ".page-content", "#content", "#main"
+        };
+
+        foreach (var pattern in contentPatterns)
+        {
+            var element = root.QuerySelector(pattern);
+            if (element != null && element.TextContent.Length > 200)
+            {
+                candidates.Add((element, 80 + (element.TextContent.Length / 100)));
+            }
+        }
+
+        // Find largest content div that's not navigation/header/footer
+        var contentDivs = root.QuerySelectorAll("div")
+            .Where(d => !IsNavigationElement(d) && d.TextContent.Length > 500)
+            .OrderByDescending(d => d.TextContent.Length)
+            .Take(3);
+
+        foreach (var div in contentDivs)
+        {
+            candidates.Add((div, 50 + (div.TextContent.Length / 100)));
+        }
+
+        var best = candidates.OrderByDescending(c => c.Score).FirstOrDefault();
+        if (best.Element == null)
+        {
+            return null;
+        }
+
+        return new ContentRegion(
+            Selector: GenerateSelector(best.Element),
+            Preview: GetPreview(best.Element),
+            TextLength: best.Element.TextContent.Length);
+    }
+
+    private static List<RepeatingElements> DetectRepeatingElements(IElement root)
+    {
+        var results = new List<RepeatingElements>();
+        var classGroups = new Dictionary<string, List<IElement>>();
+
+        // Group elements by their class combinations
+        foreach (var element in root.QuerySelectorAll("div, li, article, section, tr"))
+        {
+            var classes = element.GetAttribute("class");
+            if (string.IsNullOrWhiteSpace(classes))
+            {
+                continue;
+            }
+
+            // Use first 1-2 classes as key
+            var classKey = string.Join(".", classes.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2));
+            if (string.IsNullOrEmpty(classKey))
+            {
+                continue;
+            }
+
+            var key = $"{element.TagName.ToLowerInvariant()}.{classKey}";
+            if (!classGroups.TryGetValue(key, out var list))
+            {
+                list = [];
+                classGroups[key] = list;
+            }
+
+            list.Add(element);
+        }
+
+        // Find groups with enough similar elements
+        foreach (var (selector, elements) in classGroups.Where(g => g.Value.Count >= MinRepeatingCount))
+        {
+            // Verify elements are siblings or at same level (not nested within each other)
+            if (!AreElementsAtSameLevel(elements))
+            {
+                continue;
+            }
+
+            var sample = elements.First();
+            var detectedFields = DetectFieldsInElement(sample);
+
+            results.Add(new RepeatingElements(
+                Selector: selector,
+                Count: elements.Count,
+                Preview: GetPreview(sample),
+                DetectedFields: detectedFields.Count > 0 ? detectedFields : null));
+        }
+
+        return results
+            .OrderByDescending(r => r.Count)
+            .Take(5)
+            .ToList();
+    }
+
+    private static List<string> DetectFieldsInElement(IElement element)
+    {
+        var fields = new List<string>();
+
+        // Check for common field patterns
+        if (element.QuerySelector("h1, h2, h3, h4, h5, h6, .title, .name") != null)
+        {
+            fields.Add("title");
+        }
+
+        if (element.QuerySelector("img") != null)
+        {
+            fields.Add("image");
+        }
+
+        if (element.QuerySelector(".price, [class*='price']") != null ||
+            element.TextContent.Contains('$') || element.TextContent.Contains('€'))
+        {
+            fields.Add("price");
+        }
+
+        if (element.QuerySelector("a[href]") != null)
+        {
+            fields.Add("link");
+        }
+
+        if (element.QuerySelector(".description, .summary, p") != null)
+        {
+            fields.Add("description");
+        }
+
+        if (element.QuerySelector(".rating, [class*='star'], [class*='rating']") != null)
+        {
+            fields.Add("rating");
+        }
+
+        if (element.QuerySelector("time, .date, [class*='date']") != null)
+        {
+            fields.Add("date");
+        }
+
+        return fields;
+    }
+
+    private static bool AreElementsAtSameLevel(List<IElement> elements)
+    {
+        if (elements.Count < 2)
+        {
+            return true;
+        }
+
+        // Check if any element is ancestor of another
+        var first = elements[0];
+        return elements.Skip(1).All(e => !first.Contains(e) && !e.Contains(first));
+    }
+
+    private static NavigationInfo? DetectNavigation(IElement root)
+    {
+        string? paginationSelector = null;
+        string? nextPageSelector = null;
+        string? prevPageSelector = null;
+        string? menuSelector = null;
+
+        // Detect pagination
+        var paginationPatterns = new[] { ".pagination", ".pager", "[class*='pagina']", "nav[aria-label*='page']" };
+        foreach (var pattern in paginationPatterns)
+        {
+            var element = root.QuerySelector(pattern);
+            if (element != null)
+            {
+                paginationSelector = pattern;
+                break;
+            }
+        }
+
+        // Detect next/prev links
+        var nextPatterns = new[]
+            { "a.next", "a[rel='next']", "[class*='next']", "a:has-text('Next')", "a:has-text('>')" };
+        foreach (var pattern in nextPatterns)
+        {
+            try
+            {
+                var element = root.QuerySelector(pattern);
+                if (element != null)
+                {
+                    nextPageSelector = GenerateSelector(element);
+                    break;
+                }
+            }
+            catch
+            {
+                // Some patterns may not be supported
+            }
+        }
+
+        var prevPatterns = new[]
+            { "a.prev", "a[rel='prev']", "[class*='prev']", "a:has-text('Prev')", "a:has-text('<')" };
+        foreach (var pattern in prevPatterns)
+        {
+            try
+            {
+                var element = root.QuerySelector(pattern);
+                if (element != null)
+                {
+                    prevPageSelector = GenerateSelector(element);
+                    break;
+                }
+            }
+            catch
+            {
+                // Some patterns may not be supported
+            }
+        }
+
+        // Detect main navigation
+        var navElement = root.QuerySelector("nav") ?? root.QuerySelector("[role='navigation']");
+        if (navElement != null)
+        {
+            menuSelector = GenerateSelector(navElement) + " a";
+        }
+
+        if (paginationSelector == null && nextPageSelector == null && prevPageSelector == null && menuSelector == null)
+        {
+            return null;
+        }
+
+        return new NavigationInfo(paginationSelector, nextPageSelector, prevPageSelector, menuSelector);
+    }
+
+    private static List<OutlineNode> BuildOutline(IElement root, int maxDepth = 3, int currentDepth = 0)
+    {
+        if (currentDepth >= maxDepth)
+        {
+            return [];
+        }
+
+        var outline = new List<OutlineNode>();
+        var structuralTags = new HashSet<string> { "HEADER", "NAV", "MAIN", "ARTICLE", "SECTION", "ASIDE", "FOOTER" };
+
+        // Get direct structural children
+        var structuralChildren = root.Children
+            .Where(c => structuralTags.Contains(c.TagName) ||
+                        (c.TagName == "DIV" && HasSignificantClass(c) && c.TextContent.Length > 100))
+            .Take(10)
+            .ToList();
+
+        foreach (var child in structuralChildren)
+        {
+            var childOutline = BuildOutline(child, maxDepth, currentDepth + 1);
+
+            outline.Add(new OutlineNode(
+                Tag: child.TagName.ToLowerInvariant(),
+                Selector: GenerateSelector(child),
+                Preview: GetPreview(child, 60),
+                TextLength: child.TextContent.Length,
+                Children: childOutline.Count > 0 ? childOutline : null));
+        }
+
+        return outline;
+    }
+
+    private static bool HasSignificantClass(IElement element)
+    {
+        var classes = element.GetAttribute("class");
+        if (string.IsNullOrWhiteSpace(classes))
+        {
+            return false;
+        }
+
+        var significantPatterns = new[]
+        {
+            "content", "main", "article", "post", "entry", "container",
+            "wrapper", "body", "page", "section", "sidebar", "widget"
+        };
+
+        return significantPatterns.Any(p => classes.Contains(p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static List<string> GenerateSuggestions(
+        ContentRegion? mainContent,
+        List<RepeatingElements> repeatingElements,
+        NavigationInfo? navigation,
+        IElement root)
+    {
+        var suggestions = new List<string>();
+
+        if (mainContent != null)
+        {
+            suggestions.Add($"Main content: use selector='{mainContent.Selector}'");
+        }
+
+        foreach (var repeating in repeatingElements.Take(3))
+        {
+            var fieldsInfo = repeating.DetectedFields != null
+                ? $" (contains: {string.Join(", ", repeating.DetectedFields)})"
+                : "";
+            suggestions.Add($"Found {repeating.Count} items: use selector='{repeating.Selector}'{fieldsInfo}");
+        }
+
+        if (navigation?.NextPageSelector != null)
+        {
+            suggestions.Add($"Next page: use WebClick(selector='{navigation.NextPageSelector}')");
+        }
+
+        if (navigation?.PaginationSelector != null)
+        {
+            suggestions.Add($"Pagination available at '{navigation.PaginationSelector}'");
+        }
+
+        var formCount = root.QuerySelectorAll("form").Length;
+        if (formCount > 0)
+        {
+            suggestions.Add($"Page has {formCount} form(s): use WebInspect(mode='forms') for details");
+        }
+
+        if (suggestions.Count == 0)
+        {
+            suggestions.Add(
+                "No clear structure detected. Try WebInspect(mode='interactive') to find clickable elements");
+        }
+
+        return suggestions;
+    }
+
+    private static bool IsNavigationElement(IElement element)
+    {
+        var tag = element.TagName.ToUpperInvariant();
+        if (tag is "NAV" or "HEADER" or "FOOTER")
+        {
+            return true;
+        }
+
+        var classes = element.GetAttribute("class") ?? "";
+        var id = element.GetAttribute("id") ?? "";
+        var role = element.GetAttribute("role") ?? "";
+
+        var navPatterns = new[] { "nav", "menu", "header", "footer", "sidebar", "widget" };
+        return navPatterns.Any(p =>
+            classes.Contains(p, StringComparison.OrdinalIgnoreCase) ||
+            id.Contains(p, StringComparison.OrdinalIgnoreCase) ||
+            role.Contains(p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetPreview(IElement element, int length = PreviewLength)
+    {
+        var text = CollapseWhitespace(element.TextContent.Trim());
+        if (text.Length <= length)
+        {
+            return text;
+        }
+
+        return text[..(length - 3)] + "...";
     }
 
     public static InspectSearchResult SearchText(IDocument document, string query, bool regex,
         int maxResults, string? selectorScope)
     {
+        // Return empty results for empty/whitespace query (unless regex, which might match on empty)
+        if (!regex && string.IsNullOrWhiteSpace(query))
+        {
+            return new InspectSearchResult(query, 0, []);
+        }
+
         var root = GetScopedElement(document, selectorScope);
         if (root == null)
         {
@@ -43,25 +426,24 @@ public static partial class HtmlInspector
         }
 
         var matches = new List<InspectSearchMatch>();
+        var matchedElements = new HashSet<IElement>();
         var pattern = regex ? new Regex(query, RegexOptions.IgnoreCase) : null;
 
-        foreach (var element in GetTextElements(root))
+        // Get all text elements and prefer the most specific (deepest) match
+        var textElements = GetTextElements(root)
+            .Where(e => HasDirectTextMatch(e, query, regex, pattern))
+            .OrderByDescending(e => GetElementDepth(e)) // Process deepest elements first
+            .ToList();
+
+        foreach (var element in textElements)
         {
+            // Skip if an ancestor or descendant was already matched (avoid duplicates)
+            if (IsAlreadyMatched(element, matchedElements))
+            {
+                continue;
+            }
+
             var text = element.TextContent;
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                continue;
-            }
-
-            var found = regex
-                ? pattern!.IsMatch(text)
-                : text.Contains(query, StringComparison.OrdinalIgnoreCase);
-
-            if (!found)
-            {
-                continue;
-            }
-
             var matchText = regex
                 ? pattern!.Match(text).Value
                 : ExtractMatchText(text, query);
@@ -71,6 +453,7 @@ public static partial class HtmlInspector
             var nearestHeading = FindNearestHeading(element);
 
             matches.Add(new InspectSearchMatch(matchText, context, selector, nearestHeading));
+            matchedElements.Add(element);
 
             if (matches.Count >= maxResults)
             {
@@ -79,6 +462,59 @@ public static partial class HtmlInspector
         }
 
         return new InspectSearchResult(query, matches.Count, matches);
+    }
+
+    private static bool HasDirectTextMatch(IElement element, string query, bool regex, Regex? pattern)
+    {
+        // Check if element has direct text nodes containing the query (not just in descendants)
+        var text = element.TextContent;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return regex
+            ? pattern!.IsMatch(text)
+            : text.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int GetElementDepth(IElement element)
+    {
+        var depth = 0;
+        var current = element.ParentElement;
+        while (current != null)
+        {
+            depth++;
+            current = current.ParentElement;
+        }
+
+        return depth;
+    }
+
+    private static bool IsAlreadyMatched(IElement element, HashSet<IElement> matchedElements)
+    {
+        // Check if any ancestor is already matched
+        var parent = element.ParentElement;
+        while (parent != null)
+        {
+            if (matchedElements.Contains(parent))
+            {
+                return true;
+            }
+
+            parent = parent.ParentElement;
+        }
+
+        // Check if any descendant is already matched
+        foreach (var matched in matchedElements)
+        {
+            if (element.Contains(matched))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static IReadOnlyList<InspectForm> InspectForms(IDocument document, string? selectorScope)
@@ -128,56 +564,6 @@ public static partial class HtmlInspector
         }
 
         return document.QuerySelector(selectorScope);
-    }
-
-    private static List<InspectHeading> ExtractHeadings(IElement root, int maxHeadings)
-    {
-        // Prioritize by heading level (h1 first, then h2, etc.) and take top N
-        return root.QuerySelectorAll("h1, h2, h3, h4, h5, h6")
-            .Select(h =>
-            {
-                var level = int.Parse(h.TagName[1..]);
-                var text = CollapseWhitespace(h.TextContent.Trim());
-                if (text.Length > 80)
-                {
-                    text = text[..77] + "...";
-                }
-
-                return new InspectHeading(
-                    Level: level,
-                    Text: text,
-                    Id: h.GetAttribute("id"),
-                    Selector: GenerateSelector(h));
-            })
-            .Where(h => !string.IsNullOrWhiteSpace(h.Text))
-            .OrderBy(h => h.Level)
-            .Take(maxHeadings)
-            .ToList();
-    }
-
-    private static List<InspectSection> ExtractSections(IElement root, int maxSections)
-    {
-        // Prioritize: main > article > section, then by content size
-        var sectionTags = new[] { "main", "article", "section", "aside", "nav", "header", "footer" };
-        var tagPriority = sectionTags.Select((tag, i) => (tag, priority: i)).ToDictionary(x => x.tag, x => x.priority);
-
-        return sectionTags
-            .SelectMany(root.QuerySelectorAll, (tag, section) => new
-            {
-                Section = new InspectSection(
-                    Tag: tag,
-                    Id: section.GetAttribute("id"),
-                    ClassName: section.GetAttribute("class")?.Split(' ').FirstOrDefault(),
-                    Selector: GenerateSelector(section),
-                    TextLength: section.TextContent.Length),
-                Priority = tagPriority[tag]
-            })
-            .Where(x => x.Section.TextLength > 100) // Skip tiny sections
-            .OrderBy(x => x.Priority)
-            .ThenByDescending(x => x.Section.TextLength)
-            .Take(maxSections)
-            .Select(x => x.Section)
-            .ToList();
     }
 
     private static List<InspectFormField> ExtractFormFields(IElement form)
@@ -233,7 +619,14 @@ public static partial class HtmlInspector
             return null;
         }
 
-        var text = parentLabel.TextContent.Replace(input.TextContent, "").Trim();
+        // Get the label text, excluding the input's text content (if any)
+        var inputText = input.TextContent;
+        var labelText = parentLabel.TextContent;
+
+        var text = string.IsNullOrEmpty(inputText)
+            ? labelText.Trim()
+            : labelText.Replace(inputText, "").Trim();
+
         return CollapseWhitespace(text);
     }
 
@@ -329,7 +722,19 @@ public static partial class HtmlInspector
 
     private static IEnumerable<IElement> GetTextElements(IElement root)
     {
-        return root.QuerySelectorAll("p, li, td, th, span, div, h1, h2, h3, h4, h5, h6, a, label");
+        // Comprehensive list of elements that can contain visible text
+        // Includes: headings, paragraphs, lists, tables, links, buttons, inline formatting, semantic elements
+        return root.QuerySelectorAll(
+            "p, li, td, th, span, div, " +
+            "h1, h2, h3, h4, h5, h6, " +
+            "a, label, button, " +
+            "strong, em, b, i, u, mark, small, " +
+            "dt, dd, figcaption, caption, " +
+            "blockquote, cite, q, " +
+            "code, pre, kbd, samp, var, " +
+            "summary, details, " +
+            "abbr, dfn, time, address, " +
+            "article, section, aside, header, footer, main, nav");
     }
 
     private static string ExtractMatchText(string text, string query)
@@ -399,20 +804,21 @@ public static partial class HtmlInspector
         var id = element.GetAttribute("id");
         if (!string.IsNullOrEmpty(id))
         {
-            return $"{element.TagName.ToLowerInvariant()}#{id}";
+            return $"{element.TagName.ToLowerInvariant()}#{EscapeCssIdentifier(id)}";
         }
 
         var name = element.GetAttribute("name");
         if (!string.IsNullOrEmpty(name))
         {
-            return $"{element.TagName.ToLowerInvariant()}[name='{name}']";
+            return $"{element.TagName.ToLowerInvariant()}[name='{EscapeCssAttributeValue(name)}']";
         }
 
+        var tag = element.TagName.ToLowerInvariant();
         var classes = element.GetAttribute("class")?.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (classes is { Length: > 0 })
         {
             var primaryClass = classes[0];
-            var selector = $"{element.TagName.ToLowerInvariant()}.{primaryClass}";
+            var selector = $"{tag}.{EscapeCssIdentifier(primaryClass)}";
 
             var parent = element.ParentElement;
             if (parent == null)
@@ -420,31 +826,71 @@ public static partial class HtmlInspector
                 return selector;
             }
 
-            var siblings = parent.QuerySelectorAll(selector);
-            if (siblings.Length <= 1)
+            // Check if selector is unique within parent
+            var matchingInParent = parent.QuerySelectorAll(selector);
+            if (matchingInParent.Length <= 1)
             {
                 return selector;
             }
 
-            var index = siblings.Index().FirstOrDefault(x => x.Item == element).Index + 1;
-            return $"{selector}:nth-child({index})";
+            // Use nth-of-type with the index among same-tag siblings with same class
+            var nthOfTypeIndex = GetNthOfTypeIndex(element, parent, selector);
+            return $"{selector}:nth-of-type({nthOfTypeIndex})";
         }
 
-        var tag = element.TagName.ToLowerInvariant();
         var parentElement = element.ParentElement;
         if (parentElement == null)
         {
             return tag;
         }
 
-        var siblings2 = parentElement.QuerySelectorAll(tag);
-        if (siblings2.Length <= 1)
+        // Check if tag alone is unique
+        var sameTagSiblings = parentElement.Children.Where(c => c.TagName == element.TagName).ToList();
+        if (sameTagSiblings.Count <= 1)
         {
             return tag;
         }
 
-        var index2 = siblings2.Index().FirstOrDefault(x => x.Item == element).Index + 1;
-        return $"{tag}:nth-child({index2})";
+        var index = sameTagSiblings.IndexOf(element) + 1;
+        return $"{tag}:nth-of-type({index})";
+    }
+
+    private static int GetNthOfTypeIndex(IElement element, IElement parent, string selector)
+    {
+        // Get all elements matching the selector, then find position among same-tag siblings
+        var matchingElements = parent.QuerySelectorAll(selector).ToList();
+        var sameTagElements = matchingElements.Where(e => e.TagName == element.TagName).ToList();
+        return sameTagElements.IndexOf(element) + 1;
+    }
+
+    private static string EscapeCssIdentifier(string identifier)
+    {
+        // Escape special CSS characters in identifiers (IDs, class names)
+        // Characters that need escaping: !"#$%&'()*+,./:;<=>?@[\]^`{|}~
+        if (string.IsNullOrEmpty(identifier))
+        {
+            return identifier;
+        }
+
+        var sb = new StringBuilder();
+        foreach (var c in identifier)
+        {
+            if (c is ':' or '.' or '[' or ']' or '#' or '>' or '+' or '~' or ',' or ' ' or '(' or ')' or '"' or '\''
+                or '\\')
+            {
+                sb.Append('\\');
+            }
+
+            sb.Append(c);
+        }
+
+        return sb.ToString();
+    }
+
+    private static string EscapeCssAttributeValue(string value)
+    {
+        // Escape single quotes in attribute values
+        return value.Replace("'", "\\'");
     }
 
     private static string GenerateGroupSelector(IReadOnlyList<IElement> elements)
@@ -478,6 +924,166 @@ public static partial class HtmlInspector
     private static string CollapseWhitespace(string text)
     {
         return WhitespaceRegex().Replace(text, " ").Trim();
+    }
+
+    public static IReadOnlyList<ExtractedTable> ExtractTables(IDocument document, string? selectorScope)
+    {
+        var root = GetScopedElement(document, selectorScope);
+        if (root == null)
+        {
+            return [];
+        }
+
+        return root.QuerySelectorAll("table")
+            .Select(table => new ExtractedTable(
+                Selector: GenerateSelector(table),
+                Caption: table.QuerySelector("caption")?.TextContent.Trim(),
+                Headers: ExtractTableHeaders(table),
+                Rows: ExtractTableRows(table)))
+            .ToList();
+    }
+
+    private static List<string> ExtractTableHeaders(IElement table)
+    {
+        // Try thead first
+        var headerRow = table.QuerySelector("thead tr");
+        if (headerRow != null)
+        {
+            return headerRow.QuerySelectorAll("th, td")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+        }
+
+        // Fall back to first row if it contains th elements
+        var firstRow = table.QuerySelector("tr");
+        if (firstRow == null)
+        {
+            return [];
+        }
+
+        {
+            var cells = firstRow.QuerySelectorAll("th");
+            if (cells.Length > 0)
+            {
+                return cells.Select(cell => CollapseWhitespace(cell.TextContent)).ToList();
+            }
+
+            // If first row has no th, use first row cells as headers anyway
+            return firstRow.QuerySelectorAll("td")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+        }
+    }
+
+    private static List<IReadOnlyList<string>> ExtractTableRows(IElement table)
+    {
+        var rows = new List<IReadOnlyList<string>>();
+
+        // Get rows from tbody, or all tr if no tbody
+        var tbody = table.QuerySelector("tbody");
+        var rowElements = tbody != null
+            ? tbody.QuerySelectorAll("tr")
+            : table.QuerySelectorAll("tr");
+
+        // Skip header row if it's the first one with th elements
+        var skipFirst = false;
+        var firstRow = rowElements.FirstOrDefault();
+        if (firstRow != null && table.QuerySelector("thead") == null)
+        {
+            var hasHeaders = firstRow.QuerySelectorAll("th").Length > 0;
+            skipFirst = hasHeaders;
+        }
+
+        foreach (var row in skipFirst ? rowElements.Skip(1) : rowElements)
+        {
+            var cells = row.QuerySelectorAll("td, th")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+
+            if (cells.Count > 0)
+            {
+                rows.Add(cells);
+            }
+        }
+
+        return rows;
+    }
+
+    public static IReadOnlyList<StructuredData> ExtractStructuredData(IDocument document)
+    {
+        var results = new List<StructuredData>();
+
+        // Extract JSON-LD blocks
+        foreach (var script in document.QuerySelectorAll("script[type='application/ld+json']"))
+        {
+            try
+            {
+                var json = script.TextContent.Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    continue;
+                }
+
+                // Parse to validate JSON and extract @type
+                using var doc = JsonDocument.Parse(json);
+                var type = ExtractJsonLdType(doc.RootElement);
+
+                results.Add(new StructuredData(type, json));
+            }
+            catch
+            {
+                // Skip invalid JSON
+            }
+        }
+
+        return results;
+    }
+
+    private static string ExtractJsonLdType(JsonElement element)
+    {
+        // Handle arrays (multiple items in single JSON-LD block)
+        if (element.ValueKind == JsonValueKind.Array && element.GetArrayLength() > 0)
+        {
+            var firstItem = element[0];
+            if (firstItem.TryGetProperty("@type", out var typeElement))
+            {
+                return GetTypeValue(typeElement);
+            }
+
+            return "Array";
+        }
+
+        // Handle objects
+        if (element.TryGetProperty("@type", out var objectType))
+        {
+            return GetTypeValue(objectType);
+        }
+
+        // Check for @graph structure (common in complex JSON-LD)
+        if (element.TryGetProperty("@graph", out var graph) &&
+            graph.ValueKind == JsonValueKind.Array && graph.GetArrayLength() > 0)
+        {
+            var firstGraphItem = graph[0];
+            if (firstGraphItem.TryGetProperty("@type", out var graphType))
+            {
+                return $"Graph:{GetTypeValue(graphType)}";
+            }
+
+            return "Graph";
+        }
+
+        return "Unknown";
+    }
+
+    private static string GetTypeValue(JsonElement typeElement)
+    {
+        return typeElement.ValueKind switch
+        {
+            JsonValueKind.String => typeElement.GetString() ?? "Unknown",
+            JsonValueKind.Array when typeElement.GetArrayLength() > 0 =>
+                typeElement[0].GetString() ?? "Unknown",
+            _ => "Unknown"
+        };
     }
 
     [GeneratedRegex(@"\s+")]

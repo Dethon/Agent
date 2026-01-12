@@ -9,11 +9,21 @@ public class WebClickTool(IWebBrowser browser)
 
     protected const string Description =
         """
-        Clicks an element on the current page in a browser session.
+        Interacts with an element on the current page in a browser session.
         Use after WebBrowse to interact with buttons, links, or form elements.
-        Supports CSS selectors and optional text matching.
-        Can wait for page navigation if the click triggers a page load.
-        Returns the new page content after clicking.
+
+        Actions:
+        - 'click' (default): Click the element
+        - 'fill': Type text into an input field (requires inputValue)
+        - 'clear': Clear an input field
+        - 'press': Press a keyboard key (requires key: Enter, Tab, Escape, etc.)
+        - 'doubleclick': Double-click the element
+        - 'hover': Hover over the element
+
+        Form workflow example:
+        1. WebClick(selector="input[name='email']", action="fill", inputValue="user@example.com")
+        2. WebClick(selector="input[name='password']", action="fill", inputValue="secret")
+        3. WebClick(selector="button[type='submit']", waitForNavigation=true)
         """;
 
     protected async Task<JsonNode> RunAsync(
@@ -21,6 +31,8 @@ public class WebClickTool(IWebBrowser browser)
         string selector,
         string? text,
         string? action,
+        string? inputValue,
+        string? key,
         bool waitForNavigation,
         int waitTimeoutMs,
         CancellationToken ct)
@@ -32,6 +44,8 @@ public class WebClickTool(IWebBrowser browser)
             Selector: selector,
             Action: clickAction,
             Text: text,
+            InputValue: inputValue,
+            Key: key,
             WaitForNavigation: waitForNavigation,
             WaitTimeoutMs: Math.Clamp(waitTimeoutMs, 1000, 120000)
         );
@@ -73,6 +87,9 @@ public class WebClickTool(IWebBrowser browser)
             "doubleclick" => ClickAction.DoubleClick,
             "rightclick" => ClickAction.RightClick,
             "hover" => ClickAction.Hover,
+            "fill" => ClickAction.Fill,
+            "clear" => ClickAction.Clear,
+            "press" => ClickAction.Press,
             _ => ClickAction.Click
         };
     }

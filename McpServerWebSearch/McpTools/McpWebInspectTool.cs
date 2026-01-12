@@ -17,15 +17,17 @@ public class McpWebInspectTool(IWebBrowser browser, ILogger<McpWebInspectTool> l
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        [Description("Inspection mode: 'structure' (default), 'search', 'forms', or 'interactive'")]
+        [Description("Inspection mode: 'structure' (default), 'search', 'forms', 'interactive', or 'tables'")]
         string mode = "structure",
-        [Description("Search query for 'search' mode (text or regex pattern)")]
+        [Description(
+            "Text to find in page for 'search' mode. Searches visible text content only, NOT CSS selectors. To find elements by selector, use WebBrowse instead.")]
         string? query = null,
         [Description("Treat query as regex pattern (default: false)")]
         bool regex = false,
-        [Description("Maximum results for search mode (1-100, default: 20)")]
+        [Description("Maximum search results (1-100, default: 20)")]
         int maxResults = 20,
-        [Description("CSS selector to scope inspection to specific element")]
+        [Description(
+            "CSS selector to limit inspection scope to elements within this parent (e.g., '#main'). Does NOT search for this selector.")]
         string? selector = null,
         CancellationToken ct = default)
     {

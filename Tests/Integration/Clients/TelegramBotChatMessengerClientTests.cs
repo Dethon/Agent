@@ -144,7 +144,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -186,7 +186,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, threadId, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, threadId, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupCreateForumTopic(chatId, expectedThreadId);
 
         // Act
-        var threadId = await client.CreateThread(chatId, "Test Topic", CancellationToken.None);
+        var threadId = await client.CreateThread(chatId, "Test Topic", fixture.BotTokenHash, CancellationToken.None);
 
         // Assert
         threadId.ShouldBe(expectedThreadId);
@@ -242,7 +242,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupEditForumTopic(true);
 
         // Act
-        var exists = await client.DoesThreadExist(chatId, threadId, CancellationToken.None);
+        var exists = await client.DoesThreadExist(chatId, threadId, fixture.BotTokenHash, CancellationToken.None);
 
         // Assert
         exists.ShouldBeTrue();
@@ -261,7 +261,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupEditForumTopic(false);
 
         // Act
-        var exists = await client.DoesThreadExist(chatId, threadId, CancellationToken.None);
+        var exists = await client.DoesThreadExist(chatId, threadId, fixture.BotTokenHash, CancellationToken.None);
 
         // Assert
         exists.ShouldBeFalse();
@@ -285,7 +285,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw (reasoning message + content message = 2 calls)
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -306,6 +306,6 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act & Assert - Should not throw (only content message = 1 call)
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, CancellationToken.None));
+            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
     }
 }

@@ -5,6 +5,7 @@ Context Protocol (MCP).
 
 ## Features
 
+- **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
 - **Dual Interface** - Chat via Telegram bot or local CLI terminal
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
@@ -58,6 +59,19 @@ Context Protocol (MCP).
 | **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
 | **Jonas** | mcp-text, mcp-websearch, mcp-memory, mcp-idealista  | Knowledge base management ("Scribe" persona for managing markdown vaults) |
 
+### Multi-Agent Configuration
+
+Agents are defined as configuration data, each with:
+- Unique Telegram bot token for routing
+- Custom LLM model selection
+- Specific MCP server endpoints
+- Tool whitelist patterns
+- Custom system instructions
+
+Agent routing:
+- **Telegram**: Each bot token maps to one agent (bot token hash matching)
+- **CLI**: Uses the first configured agent
+
 ## Projects
 
 | Project                  | Description                                                     |
@@ -108,15 +122,34 @@ VAULT_PATH=./volumes/vault
 PUID=1000
 PGID=1000
 OPENROUTER__APIKEY=your_openrouter_api_key
+OPENROUTER__APIURL=https://openrouter.ai/api/v1/
 BRAVE__APIKEY=your_brave_search_api_key
 IDEALISTA__APIKEY=your_idealista_api_key
 IDEALISTA__APISECRET=your_idealista_api_secret
-JONAS__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jonas
-JACK__TELEGRAM__BOTTOKEN=your_telegram_bot_token_for_jack
 TELEGRAM__ALLOWEDUSERNAMES__0=your_telegram_username
 JACKETT__APIKEY=your_jackett_api_key
 QBITTORRENT__USERNAME=admin
 QBITTORRENT__PASSWORD=your_password
+
+# Agent definitions (array)
+AGENTS__0__ID=jack
+AGENTS__0__NAME=Jack
+AGENTS__0__MODEL=google/gemini-2.0-flash-001
+AGENTS__0__TELEGRAMBOTTOKEN=your_telegram_bot_token_for_jack
+AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/sse
+AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/sse
+AGENTS__0__WHITELISTPATTERNS__0=mcp:mcp-library:*
+AGENTS__0__WHITELISTPATTERNS__1=mcp:mcp-websearch:*
+AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
+
+AGENTS__1__ID=jonas
+AGENTS__1__NAME=Jonas
+AGENTS__1__MODEL=google/gemini-2.0-flash-001
+AGENTS__1__TELEGRAMBOTTOKEN=your_telegram_bot_token_for_jonas
+AGENTS__1__MCPSERVERENDPOINTS__0=http://mcp-text:8080/sse
+AGENTS__1__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/sse
+AGENTS__1__MCPSERVERENDPOINTS__2=http://mcp-memory:8080/sse
+AGENTS__1__MCPSERVERENDPOINTS__3=http://mcp-idealista:8080/sse
 ```
 
 ### 3. Run with Docker Compose

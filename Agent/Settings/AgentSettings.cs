@@ -1,33 +1,25 @@
-﻿using JetBrains.Annotations;
+using Domain.DTOs;
+using JetBrains.Annotations;
 
 namespace Agent.Settings;
 
 public record AgentSettings
 {
-    public required string Name { get; [UsedImplicitly] init; }
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
-    public required Mcp[] McpServers { get; init; }
     public required RedisConfiguration Redis { get; init; }
-    public string[] WhitelistPatterns { get; [UsedImplicitly] init; } = [];
+    public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
 }
 
 public record OpenRouterConfiguration
 {
     public required string ApiUrl { get; [UsedImplicitly] init; }
     public required string ApiKey { get; [UsedImplicitly] init; }
-    public required string Model { get; [UsedImplicitly] init; }
 }
 
 public record TelegramConfiguration
 {
-    public required string BotToken { get; [UsedImplicitly] init; }
     public required string[] AllowedUserNames { get; [UsedImplicitly] init; }
-}
-
-public record Mcp
-{
-    public required string Endpoint { get; [UsedImplicitly] init; }
 }
 
 public record RedisConfiguration

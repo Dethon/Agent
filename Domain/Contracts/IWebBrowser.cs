@@ -24,7 +24,8 @@ public enum InspectMode
     Structure,
     Search,
     Forms,
-    Interactive
+    Interactive,
+    Tables
 }
 
 public record InspectResult(
@@ -36,20 +37,51 @@ public record InspectResult(
     InspectSearchResult? SearchResult,
     IReadOnlyList<InspectForm>? Forms,
     InspectInteractive? Interactive,
+    IReadOnlyList<ExtractedTable>? Tables,
     string? ErrorMessage);
 
+public record ExtractedTable(
+    string Selector,
+    string? Caption,
+    IReadOnlyList<string> Headers,
+    IReadOnlyList<IReadOnlyList<string>> Rows);
+
 public record InspectStructure(
-    IReadOnlyList<InspectHeading> Headings,
-    IReadOnlyList<InspectSection> Sections,
-    int FormCount,
-    int ButtonCount,
-    int LinkCount,
-    string? Preview,
+    ContentRegion? MainContent,
+    IReadOnlyList<RepeatingElements> RepeatingElements,
+    NavigationInfo? Navigation,
+    IReadOnlyList<OutlineNode> Outline,
+    IReadOnlyList<string> Suggestions,
+    IReadOnlyList<StructuredData> StructuredData,
     int TotalTextLength);
 
-public record InspectHeading(int Level, string Text, string? Id, string Selector);
+public record StructuredData(
+    string Type,
+    string RawJson);
 
-public record InspectSection(string Tag, string? Id, string? ClassName, string Selector, int TextLength);
+public record ContentRegion(
+    string Selector,
+    string? Preview,
+    int TextLength);
+
+public record RepeatingElements(
+    string Selector,
+    int Count,
+    string? Preview,
+    IReadOnlyList<string>? DetectedFields);
+
+public record NavigationInfo(
+    string? PaginationSelector,
+    string? NextPageSelector,
+    string? PrevPageSelector,
+    string? MenuSelector);
+
+public record OutlineNode(
+    string Tag,
+    string Selector,
+    string? Preview,
+    int TextLength,
+    IReadOnlyList<OutlineNode>? Children);
 
 public record InspectSearchResult(
     string Query,
@@ -88,6 +120,7 @@ public record BrowseRequest(
     string? Selector = null,
     WebFetchOutputFormat Format = WebFetchOutputFormat.Markdown,
     int MaxLength = 10000,
+    int Offset = 0,
     bool IncludeLinks = true,
     bool UseReadability = false,
     WaitStrategy WaitStrategy = WaitStrategy.NetworkIdle,
@@ -125,6 +158,8 @@ public record ClickRequest(
     string Selector,
     ClickAction Action = ClickAction.Click,
     string? Text = null,
+    string? InputValue = null,
+    string? Key = null,
     bool WaitForNavigation = false,
     int WaitTimeoutMs = 30000);
 
@@ -160,7 +195,10 @@ public enum ClickAction
     Click,
     DoubleClick,
     RightClick,
-    Hover
+    Hover,
+    Fill,
+    Clear,
+    Press
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);

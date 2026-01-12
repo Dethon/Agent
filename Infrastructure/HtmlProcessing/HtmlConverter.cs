@@ -20,7 +20,6 @@ public static partial class HtmlConverter
         return format switch
         {
             WebFetchOutputFormat.Html => element.InnerHtml,
-            WebFetchOutputFormat.Text => ExtractText(element),
             _ => ConvertToMarkdown(element)
         };
     }
@@ -45,11 +44,7 @@ public static partial class HtmlConverter
 
         var body = document.Body ?? document.DocumentElement;
 
-        return format switch
-        {
-            WebFetchOutputFormat.Text => ExtractText(body),
-            _ => ConvertToMarkdown(body)
-        };
+        return ConvertToMarkdown(body);
     }
 
     public static string Truncate(string text, int maxLength)
@@ -59,10 +54,17 @@ public static partial class HtmlConverter
             return text;
         }
 
-        var truncated = text[..(maxLength - 20)];
+        // Ensure we have room for the truncation suffix
+        var targetLength = Math.Max(0, maxLength - 20);
+        if (targetLength == 0)
+        {
+            return "[Content truncated...]";
+        }
+
+        var truncated = text[..Math.Min(targetLength, text.Length)];
 
         var lastNewline = truncated.LastIndexOf('\n');
-        if (lastNewline > maxLength * 0.7)
+        if (lastNewline > targetLength * 0.7)
         {
             truncated = truncated[..lastNewline];
         }
@@ -77,8 +79,14 @@ public static partial class HtmlConverter
             return html;
         }
 
-        var targetLength = maxLength - 50;
-        var truncated = html[..targetLength];
+        // Ensure we have room for closing tags and truncation comment
+        var targetLength = Math.Max(0, maxLength - 50);
+        if (targetLength == 0)
+        {
+            return "<!-- Content truncated -->";
+        }
+
+        var truncated = html[..Math.Min(targetLength, html.Length)];
 
         var lastTagEnd = truncated.LastIndexOf('>');
         var lastTagStart = truncated.LastIndexOf('<');
@@ -125,57 +133,6 @@ public static partial class HtmlConverter
         }
 
         return truncated + "\n<!-- Content truncated -->";
-    }
-
-    private static string ExtractText(IElement element)
-    {
-        var sb = new StringBuilder();
-        ExtractTextRecursive(element, sb);
-        var text = sb.ToString();
-        text = MultipleNewlinesRegex().Replace(text, "\n\n");
-        text = MultipleSpacesRegex().Replace(text, " ");
-        return text.Trim();
-    }
-
-    private static void ExtractTextRecursive(INode node, StringBuilder sb)
-    {
-        foreach (var child in node.ChildNodes)
-        {
-            switch (child)
-            {
-                case IText textNode:
-                    var text = textNode.Data;
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        sb.Append(WebUtility.HtmlDecode(text));
-                    }
-
-                    break;
-                case IElement { TagName: "SCRIPT" or "STYLE" or "NOSCRIPT" }:
-                    // Skip script/style content
-                    break;
-                case IElement elem:
-                    // Add appropriate spacing before/after block elements
-                    var isBlock = IsBlockElement(elem.TagName);
-                    if (isBlock && sb.Length > 0 && !sb.ToString().EndsWith('\n'))
-                    {
-                        sb.AppendLine();
-                    }
-
-                    ExtractTextRecursive(elem, sb);
-
-                    if (isBlock)
-                    {
-                        sb.AppendLine();
-                    }
-                    else if (elem.TagName == "BR")
-                    {
-                        sb.AppendLine();
-                    }
-
-                    break;
-            }
-        }
     }
 
     private static string ConvertToMarkdown(IElement element)
@@ -322,11 +279,11 @@ public static partial class HtmlConverter
                 sb.AppendLine();
                 break;
             case "LI":
-                var indent = new string(' ', (listDepth - 1) * 2);
+                var indent = listDepth > 0 ? new string(' ', (listDepth - 1) * 2) : "";
                 var parent = elem.ParentElement;
                 var bullet = parent?.TagName == "OL" ? "1." : "-";
                 sb.Append($"{indent}{bullet} ");
-                ConvertToMarkdownRecursive(elem, sb, listDepth);
+                ConvertToMarkdownRecursive(elem, sb, listDepth > 0 ? listDepth : 1);
                 sb.AppendLine();
                 break;
             case "TABLE":
@@ -414,14 +371,6 @@ public static partial class HtmlConverter
         sb.AppendLine();
     }
 
-    private static bool IsBlockElement(string tagName)
-    {
-        return tagName is "P" or "DIV" or "H1" or "H2" or "H3" or "H4" or "H5" or "H6"
-            or "UL" or "OL" or "LI" or "TABLE" or "TR" or "BLOCKQUOTE" or "PRE"
-            or "ARTICLE" or "SECTION" or "HEADER" or "FOOTER" or "NAV" or "ASIDE"
-            or "MAIN" or "FIGURE" or "FIGCAPTION" or "DL" or "DT" or "DD" or "HR";
-    }
-
     private static bool IsSelfClosingTag(string tagName)
     {
         return tagName is "br" or "hr" or "img" or "input" or "meta" or "link" or "area" or "base" or "col" or "embed"
@@ -433,7 +382,4 @@ public static partial class HtmlConverter
 
     [GeneratedRegex(@"\n{3,}")]
     private static partial Regex MultipleNewlinesRegex();
-
-    [GeneratedRegex(" {2,}")]
-    private static partial Regex MultipleSpacesRegex();
 }

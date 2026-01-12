@@ -2,9 +2,9 @@ using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Monitor;
 using Infrastructure.Clients;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -19,29 +19,30 @@ public class DependencyInjectionTests
     {
         return new AgentSettings
         {
-            Name = "TestAgent",
             OpenRouter = new OpenRouterConfiguration
             {
                 ApiUrl = "https://openrouter.ai/api/v1/",
-                ApiKey = "test-api-key",
-                Model = "test-model"
+                ApiKey = "test-api-key"
             },
             Telegram = new TelegramConfiguration
             {
-                BotToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11",
                 AllowedUserNames = ["testuser"]
             },
-            McpServers =
-            [
-                new Mcp
-                {
-                    Endpoint = "http://localhost:5000"
-                }
-            ],
             Redis = new RedisConfiguration
             {
                 ConnectionString = "localhost:6379,abortConnect=false"
-            }
+            },
+            Agents =
+            [
+                new AgentDefinition
+                {
+                    Id = "test-agent",
+                    Name = "TestAgent",
+                    Model = "test-model",
+                    McpServerEndpoints = ["http://localhost:5000"],
+                    TelegramBotToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                }
+            ]
         };
     }
 
@@ -90,7 +91,6 @@ public class DependencyInjectionTests
         provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
-        provider.GetService<IChatClient>().ShouldNotBeNull();
     }
 
     [Fact]

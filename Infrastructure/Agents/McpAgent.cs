@@ -14,6 +14,7 @@ namespace Infrastructure.Agents;
 
 public sealed class McpAgent : DisposableAgent
 {
+    private readonly string? _customInstructions;
     private readonly string _description;
     private readonly string[] _endpoints;
     private readonly ChatClientAgent _innerAgent;
@@ -33,12 +34,14 @@ public sealed class McpAgent : DisposableAgent
         string name,
         string description,
         IThreadStateStore stateStore,
-        string userId)
+        string userId,
+        string? customInstructions = null)
     {
         _endpoints = endpoints;
         _name = name;
         _description = description;
         _userId = userId;
+        _customInstructions = customInstructions;
         _innerAgent = chatClient.CreateAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -166,12 +169,19 @@ public sealed class McpAgent : DisposableAgent
         await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, ct);
     }
 
-    private static ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
+    private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
         var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
         var prompts = session.ClientManager.Prompts
-            .Prepend(BasePrompt.Instructions)
-            .Prepend(timeContext);
+            .Prepend(BasePrompt.Instructions);
+
+        if (!string.IsNullOrEmpty(_customInstructions))
+        {
+            prompts = prompts.Prepend(_customInstructions);
+        }
+
+        prompts = prompts.Prepend(timeContext);
+
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.ClientManager.Tools],

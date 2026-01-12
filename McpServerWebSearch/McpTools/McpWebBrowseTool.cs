@@ -19,12 +19,14 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         RequestContext<CallToolRequestParams> context,
         [Description("The URL to navigate to")]
         string url,
-        [Description("CSS selector to target specific content (e.g., '.main-content', '#article')")]
+        [Description("Maximum characters to return (100-100000)")]
+        int maxLength,
+        [Description("Character offset to start from - use with maxLength to paginate through large content")]
+        int offset,
+        [Description("CSS selector to extract specific elements - returns ALL matches (e.g., '.product', '#main')")]
         string? selector = null,
-        [Description("Output format: 'text', 'markdown', or 'html' (default: 'markdown')")]
+        [Description("Output format: 'markdown' or 'html' (default: 'markdown')")]
         string? format = null,
-        [Description("Maximum characters to return (100-100000, default: 10000)")]
-        int maxLength = 10000,
         [Description("Include hyperlinks in output (default: true)")]
         bool includeLinks = true,
         [Description("Use readability mode to extract article content, stripping navigation/ads (default: false)")]
@@ -52,7 +54,8 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         try
         {
             var sessionId = context.Server.StateKey;
-            var result = await RunAsync(sessionId, url, selector, format, maxLength, includeLinks, useReadability,
+            var result = await RunAsync(sessionId, url, selector, format, maxLength, offset, includeLinks,
+                useReadability,
                 waitStrategy, waitSelector, waitTimeoutMs, extraDelayMs, scrollToLoad, scrollSteps,
                 waitForStability, dismissModals, ct);
             return ToolResponse.Create(result);
