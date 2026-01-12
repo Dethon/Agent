@@ -93,34 +93,24 @@ public class ModalDismisser
         ModalDismissalConfig? config,
         CancellationToken ct)
     {
-        var dismissed = new List<ModalDismissed>();
         var patterns = GetEffectivePatterns(config);
         var timeout = config?.TimeoutMs ?? 3000;
 
         // Brief wait for modals to appear
-        await Task.Delay(500, ct);
+        await Task.Delay(200, ct);
 
-        foreach (var pattern in patterns)
+        // Try all patterns in parallel - first successful dismissal per pattern type wins
+        var dismissTasks = patterns
+            .Select(pattern => TryDismissPatternSafeAsync(page, pattern, timeout, ct))
+            .ToList();
+
+        var results = await Task.WhenAll(dismissTasks);
+        var dismissed = results.Where(r => r != null).Cast<ModalDismissed>().ToList();
+
+        // Brief wait after dismissing for animations (only if we dismissed something)
+        if (dismissed.Count > 0)
         {
-            if (ct.IsCancellationRequested)
-            {
-                break;
-            }
-
-            try
-            {
-                var result = await TryDismissPatternAsync(page, pattern, timeout, ct);
-                if (result != null)
-                {
-                    dismissed.Add(result);
-                    // Brief wait after dismissing for any animations
-                    await Task.Delay(300, ct);
-                }
-            }
-            catch
-            {
-                // Modal dismissal is best-effort, continue on failure
-            }
+            await Task.Delay(150, ct);
         }
 
         // Try Escape key as fallback for generic modals
@@ -134,6 +124,23 @@ public class ModalDismisser
         }
 
         return dismissed;
+    }
+
+    private async Task<ModalDismissed?> TryDismissPatternSafeAsync(
+        IPage page,
+        ModalPattern pattern,
+        int timeout,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await TryDismissPatternAsync(page, pattern, timeout, ct);
+        }
+        catch
+        {
+            // Modal dismissal is best-effort
+            return null;
+        }
     }
 
     private IReadOnlyList<ModalPattern> GetEffectivePatterns(ModalDismissalConfig? config)

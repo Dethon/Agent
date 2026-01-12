@@ -57,8 +57,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
             var page = session.Page;
 
-            // Random delay before navigation
-            await Task.Delay(_random.Next(300, 800), ct);
+            // Brief random delay before navigation
+            await Task.Delay(_random.Next(50, 150), ct);
 
             var waitUntil = MapWaitStrategy(request.WaitStrategy);
             var navigationTimedOut = false;
@@ -606,7 +606,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             ct.ThrowIfCancellationRequested();
             await page.EvaluateAsync($"() => window.scrollTo(0, document.body.scrollHeight * {i} / {scrollSteps})");
-            await Task.Delay(500, ct);
+            await Task.Delay(200, ct);
         }
 
         await page.EvaluateAsync("() => window.scrollTo(0, 0)");
@@ -617,7 +617,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         int checkIntervalMs,
         CancellationToken ct,
         int stableCountRequired = 2,
-        int maxChecks = 10)
+        int maxChecks = 6)
     {
         string? previousHtml = null;
         var stableCount = 0;

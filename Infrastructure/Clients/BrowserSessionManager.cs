@@ -7,26 +7,29 @@ namespace Infrastructure.Clients;
 public class BrowserSessionManager : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
-    private readonly Lock _lock = new();
+    private readonly SemaphoreSlim _createLock = new(1, 1);
 
-    public Task<BrowserSession> GetOrCreateAsync(
+    public async Task<BrowserSession> GetOrCreateAsync(
         string sessionId,
         IBrowserContext context,
         CancellationToken ct = default)
     {
         if (_sessions.TryGetValue(sessionId, out var existing))
         {
-            return Task.FromResult(existing with { LastAccessedAt = DateTimeOffset.UtcNow });
+            _sessions[sessionId] = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
+            return existing;
         }
 
-        lock (_lock)
+        await _createLock.WaitAsync(ct);
+        try
         {
             if (_sessions.TryGetValue(sessionId, out existing))
             {
-                return Task.FromResult(existing with { LastAccessedAt = DateTimeOffset.UtcNow });
+                _sessions[sessionId] = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
+                return existing;
             }
 
-            var page = context.NewPageAsync().GetAwaiter().GetResult();
+            var page = await context.NewPageAsync();
             var session = new BrowserSession(
                 SessionId: sessionId,
                 Page: page,
@@ -36,7 +39,11 @@ public class BrowserSessionManager : IAsyncDisposable
             );
 
             _sessions[sessionId] = session;
-            return Task.FromResult(session);
+            return session;
+        }
+        finally
+        {
+            _createLock.Release();
         }
     }
 
@@ -82,6 +89,7 @@ public class BrowserSessionManager : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await CloseAllAsync();
+        _createLock.Dispose();
         GC.SuppressFinalize(this);
     }
 }
