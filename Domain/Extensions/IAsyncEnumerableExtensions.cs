@@ -99,7 +99,7 @@ public static class IAsyncEnumerableExtensions
         this IAsyncEnumerable<IAsyncEnumerable<T>> sources,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(100)
+        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(1000)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
@@ -118,23 +118,17 @@ public static class IAsyncEnumerableExtensions
         ChannelWriter<T> writer,
         CancellationToken ct)
     {
-        var options = new ParallelOptions
-        {
-            CancellationToken = ct,
-            MaxDegreeOfParallelism = 20
-        };
         return Task.Run(async () =>
         {
+            var tasks = new List<Task>();
             try
             {
-                await Parallel.ForEachAsync(sources, options, async (stream, token) =>
+                await foreach (var stream in sources.WithCancellation(ct))
                 {
-                    await foreach (var item in stream.WithCancellation(token))
-                    {
-                        await writer.WriteAsync(item, token);
-                    }
-                });
+                    tasks.Add(ConsumeStream(stream, writer, ct));
+                }
 
+                await Task.WhenAll(tasks);
                 writer.TryComplete();
             }
             catch (OperationCanceledException)
@@ -146,5 +140,16 @@ public static class IAsyncEnumerableExtensions
                 writer.TryComplete(ex);
             }
         }, ct);
+    }
+
+    private static async Task ConsumeStream<T>(
+        IAsyncEnumerable<T> stream,
+        ChannelWriter<T> writer,
+        CancellationToken ct)
+    {
+        await foreach (var item in stream.WithCancellation(ct))
+        {
+            await writer.WriteAsync(item, ct);
+        }
     }
 }
