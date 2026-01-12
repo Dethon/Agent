@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using Domain.Contracts;
@@ -15,7 +16,7 @@ public static partial class HtmlInspector
         var root = GetScopedElement(document, selectorScope);
         if (root == null)
         {
-            return new InspectStructure(null, [], null, [], [], 0);
+            return new InspectStructure(null, [], null, [], [], [], 0);
         }
 
         var totalTextLength = root.TextContent.Length;
@@ -35,7 +36,11 @@ public static partial class HtmlInspector
         // Generate actionable suggestions
         var suggestions = GenerateSuggestions(mainContent, repeatingElements, navigation, root);
 
-        return new InspectStructure(mainContent, repeatingElements, navigation, outline, suggestions, totalTextLength);
+        // Extract structured data (JSON-LD)
+        var structuredData = ExtractStructuredData(document);
+
+        return new InspectStructure(mainContent, repeatingElements, navigation, outline, suggestions, structuredData,
+            totalTextLength);
     }
 
     private static ContentRegion? DetectMainContent(IElement root)
@@ -919,6 +924,166 @@ public static partial class HtmlInspector
     private static string CollapseWhitespace(string text)
     {
         return WhitespaceRegex().Replace(text, " ").Trim();
+    }
+
+    public static IReadOnlyList<ExtractedTable> ExtractTables(IDocument document, string? selectorScope)
+    {
+        var root = GetScopedElement(document, selectorScope);
+        if (root == null)
+        {
+            return [];
+        }
+
+        return root.QuerySelectorAll("table")
+            .Select(table => new ExtractedTable(
+                Selector: GenerateSelector(table),
+                Caption: table.QuerySelector("caption")?.TextContent.Trim(),
+                Headers: ExtractTableHeaders(table),
+                Rows: ExtractTableRows(table)))
+            .ToList();
+    }
+
+    private static List<string> ExtractTableHeaders(IElement table)
+    {
+        // Try thead first
+        var headerRow = table.QuerySelector("thead tr");
+        if (headerRow != null)
+        {
+            return headerRow.QuerySelectorAll("th, td")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+        }
+
+        // Fall back to first row if it contains th elements
+        var firstRow = table.QuerySelector("tr");
+        if (firstRow == null)
+        {
+            return [];
+        }
+
+        {
+            var cells = firstRow.QuerySelectorAll("th");
+            if (cells.Length > 0)
+            {
+                return cells.Select(cell => CollapseWhitespace(cell.TextContent)).ToList();
+            }
+
+            // If first row has no th, use first row cells as headers anyway
+            return firstRow.QuerySelectorAll("td")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+        }
+    }
+
+    private static List<IReadOnlyList<string>> ExtractTableRows(IElement table)
+    {
+        var rows = new List<IReadOnlyList<string>>();
+
+        // Get rows from tbody, or all tr if no tbody
+        var tbody = table.QuerySelector("tbody");
+        var rowElements = tbody != null
+            ? tbody.QuerySelectorAll("tr")
+            : table.QuerySelectorAll("tr");
+
+        // Skip header row if it's the first one with th elements
+        var skipFirst = false;
+        var firstRow = rowElements.FirstOrDefault();
+        if (firstRow != null && table.QuerySelector("thead") == null)
+        {
+            var hasHeaders = firstRow.QuerySelectorAll("th").Length > 0;
+            skipFirst = hasHeaders;
+        }
+
+        foreach (var row in skipFirst ? rowElements.Skip(1) : rowElements)
+        {
+            var cells = row.QuerySelectorAll("td, th")
+                .Select(cell => CollapseWhitespace(cell.TextContent))
+                .ToList();
+
+            if (cells.Count > 0)
+            {
+                rows.Add(cells);
+            }
+        }
+
+        return rows;
+    }
+
+    public static IReadOnlyList<StructuredData> ExtractStructuredData(IDocument document)
+    {
+        var results = new List<StructuredData>();
+
+        // Extract JSON-LD blocks
+        foreach (var script in document.QuerySelectorAll("script[type='application/ld+json']"))
+        {
+            try
+            {
+                var json = script.TextContent.Trim();
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    continue;
+                }
+
+                // Parse to validate JSON and extract @type
+                using var doc = JsonDocument.Parse(json);
+                var type = ExtractJsonLdType(doc.RootElement);
+
+                results.Add(new StructuredData(type, json));
+            }
+            catch
+            {
+                // Skip invalid JSON
+            }
+        }
+
+        return results;
+    }
+
+    private static string ExtractJsonLdType(JsonElement element)
+    {
+        // Handle arrays (multiple items in single JSON-LD block)
+        if (element.ValueKind == JsonValueKind.Array && element.GetArrayLength() > 0)
+        {
+            var firstItem = element[0];
+            if (firstItem.TryGetProperty("@type", out var typeElement))
+            {
+                return GetTypeValue(typeElement);
+            }
+
+            return "Array";
+        }
+
+        // Handle objects
+        if (element.TryGetProperty("@type", out var objectType))
+        {
+            return GetTypeValue(objectType);
+        }
+
+        // Check for @graph structure (common in complex JSON-LD)
+        if (element.TryGetProperty("@graph", out var graph) &&
+            graph.ValueKind == JsonValueKind.Array && graph.GetArrayLength() > 0)
+        {
+            var firstGraphItem = graph[0];
+            if (firstGraphItem.TryGetProperty("@type", out var graphType))
+            {
+                return $"Graph:{GetTypeValue(graphType)}";
+            }
+
+            return "Graph";
+        }
+
+        return "Unknown";
+    }
+
+    private static string GetTypeValue(JsonElement typeElement)
+    {
+        return typeElement.ValueKind switch
+        {
+            JsonValueKind.String => typeElement.GetString() ?? "Unknown",
+            JsonValueKind.Array when typeElement.GetArrayLength() > 0 =>
+                typeElement[0].GetString() ?? "Unknown",
+            _ => "Unknown"
+        };
     }
 
     [GeneratedRegex(@"\s+")]

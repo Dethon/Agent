@@ -36,7 +36,9 @@ public static class WebBrowsingPrompt
         - To find elements by selector, use WebBrowse with selector parameter
 
         **WebClick** - Interact with page elements
-        - Click buttons, links, form fields
+        - Actions: click, fill (type text), clear, press (keyboard), doubleclick, hover
+        - Use action="fill" with inputValue to type into input fields
+        - Use action="press" with key="Enter" to submit forms
         - Supports text matching to find specific elements
         - Can wait for navigation after clicking
 
@@ -69,12 +71,12 @@ public static class WebBrowsingPrompt
         WebBrowse(url="...", maxLength=10000, offset=0, selector=".search-result") → Get all search results
         ```
 
-        **5. Form Interaction (Inspect → Click sequence)**
+        **5. Form Interaction (Fill → Submit)**
         ```
         WebBrowse(url="form_page", maxLength=10000, offset=0)
         WebInspect(mode="forms") → Get field selectors
-        WebClick(selector="input[name='email']") → Focus field
-        WebClick(selector="input[name='email']", text="user@example.com") → Fill
+        WebClick(selector="input[name='email']", action="fill", inputValue="user@example.com")
+        WebClick(selector="input[name='password']", action="fill", inputValue="secretpass")
         WebClick(selector="button[type='submit']", waitForNavigation=true) → Submit
         ```
 
@@ -131,6 +133,45 @@ public static class WebBrowsingPrompt
         3. **Target Precisely**: Use CSS selectors to extract exactly what's needed
         4. **Wait Appropriately**: Use waitForNavigation when clicks load new pages
         5. **Iterate if Needed**: Large pages may require multiple targeted extractions
+
+        ### Error Recovery
+
+        **NetworkIdle Timeout (status: "partial"):**
+        - Content may still be usable - check if you got what you needed
+        - Retry with waitStrategy="domcontentloaded" for JS-heavy sites
+        - For Reddit/Twitter/social media, always use domcontentloaded
+
+        **Selector Not Found:**
+        - Use WebInspect(mode="structure") to see available elements
+        - Try broader selector (class without tag, or parent element)
+        - Content may be dynamically loaded - try extraDelayMs=2000
+
+        **Session Not Found:**
+        - Start fresh with WebBrowse to create a new session
+        - Previous session expired or was closed
+
+        **Element Not Clickable:**
+        - Use WebInspect(mode="interactive") to find visible elements
+        - Modal may be blocking - ensure dismissModals=true
+        - Try waiting longer with increased waitTimeoutMs
+
+        ### When to Retry
+
+        | Failure | Strategy |
+        |---------|----------|
+        | Timeout/Partial | Retry with waitStrategy="domcontentloaded" |
+        | Selector miss | WebInspect first, then retry with correct selector |
+        | Element not found | Add extraDelayMs, then retry |
+        | Session lost | Fresh WebBrowse to create new session |
+
+        ### Quick Decision Guide
+
+        - **First visit?** → WebBrowse(maxLength=10000, offset=0)
+        - **Content truncated?** → Use offset to paginate OR WebInspect to find specific selector
+        - **Need to find text?** → WebInspect(mode="search", query="...")
+        - **Need to click?** → WebInspect(mode="interactive") first
+        - **Filling a form?** → WebInspect(mode="forms") → WebClick(action="fill") for each field
+        - **Page not loading?** → Try waitStrategy="domcontentloaded", extraDelayMs=2000
 
         ### Response Style
 

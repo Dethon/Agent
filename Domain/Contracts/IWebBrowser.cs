@@ -24,7 +24,8 @@ public enum InspectMode
     Structure,
     Search,
     Forms,
-    Interactive
+    Interactive,
+    Tables
 }
 
 public record InspectResult(
@@ -36,7 +37,14 @@ public record InspectResult(
     InspectSearchResult? SearchResult,
     IReadOnlyList<InspectForm>? Forms,
     InspectInteractive? Interactive,
+    IReadOnlyList<ExtractedTable>? Tables,
     string? ErrorMessage);
+
+public record ExtractedTable(
+    string Selector,
+    string? Caption,
+    IReadOnlyList<string> Headers,
+    IReadOnlyList<IReadOnlyList<string>> Rows);
 
 public record InspectStructure(
     ContentRegion? MainContent,
@@ -44,7 +52,12 @@ public record InspectStructure(
     NavigationInfo? Navigation,
     IReadOnlyList<OutlineNode> Outline,
     IReadOnlyList<string> Suggestions,
+    IReadOnlyList<StructuredData> StructuredData,
     int TotalTextLength);
+
+public record StructuredData(
+    string Type,
+    string RawJson);
 
 public record ContentRegion(
     string Selector,
@@ -145,6 +158,8 @@ public record ClickRequest(
     string Selector,
     ClickAction Action = ClickAction.Click,
     string? Text = null,
+    string? InputValue = null,
+    string? Key = null,
     bool WaitForNavigation = false,
     int WaitTimeoutMs = 30000);
 
@@ -180,7 +195,10 @@ public enum ClickAction
     Click,
     DoubleClick,
     RightClick,
-    Hover
+    Hover,
+    Fill,
+    Clear,
+    Press
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);

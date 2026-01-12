@@ -264,7 +264,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
             // Perform click action
             var urlBefore = page.Url;
-            await PerformClickAsync(locator, request.Action);
+            await PerformClickAsync(locator, request);
 
             if (request.WaitForNavigation)
             {
@@ -406,6 +406,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 null,
                 null,
                 null,
+                null,
                 "No active browser session found. Use WebBrowse first to navigate to a page."
             );
         }
@@ -420,6 +421,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             InspectSearchResult? searchResult = null;
             IReadOnlyList<InspectForm>? forms = null;
             InspectInteractive? interactive = null;
+            IReadOnlyList<ExtractedTable>? tables = null;
 
             switch (request.Mode)
             {
@@ -438,6 +440,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                             null,
                             null,
                             null,
+                            null,
                             "Query is required for search mode"
                         );
                     }
@@ -451,6 +454,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 case InspectMode.Interactive:
                     interactive = HtmlInspector.InspectInteractive(document, request.Selector);
                     break;
+                case InspectMode.Tables:
+                    tables = HtmlInspector.ExtractTables(document, request.Selector);
+                    break;
             }
 
             return new InspectResult(
@@ -462,6 +468,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 SearchResult: searchResult,
                 Forms: forms,
                 Interactive: interactive,
+                Tables: tables,
                 ErrorMessage: null
             );
         }
@@ -472,6 +479,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 session.CurrentUrl,
                 null,
                 request.Mode,
+                null,
                 null,
                 null,
                 null,
@@ -554,9 +562,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    private static async Task PerformClickAsync(ILocator locator, ClickAction action)
+    private static async Task PerformClickAsync(ILocator locator, ClickRequest request)
     {
-        switch (action)
+        switch (request.Action)
         {
             case ClickAction.DoubleClick:
                 await locator.DblClickAsync();
@@ -566,6 +574,15 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 break;
             case ClickAction.Hover:
                 await locator.HoverAsync();
+                break;
+            case ClickAction.Fill:
+                await locator.FillAsync(request.InputValue ?? "");
+                break;
+            case ClickAction.Clear:
+                await locator.ClearAsync();
+                break;
+            case ClickAction.Press:
+                await locator.PressAsync(request.Key ?? "Enter");
                 break;
             default:
                 await locator.ClickAsync();

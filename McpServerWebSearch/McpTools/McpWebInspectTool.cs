@@ -17,7 +17,7 @@ public class McpWebInspectTool(IWebBrowser browser, ILogger<McpWebInspectTool> l
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        [Description("Inspection mode: 'structure' (default), 'search', 'forms', or 'interactive'")]
+        [Description("Inspection mode: 'structure' (default), 'search', 'forms', 'interactive', or 'tables'")]
         string mode = "structure",
         [Description(
             "Text to find in page for 'search' mode. Searches visible text content only, NOT CSS selectors. To find elements by selector, use WebBrowse instead.")]

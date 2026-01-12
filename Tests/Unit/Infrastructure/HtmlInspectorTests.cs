@@ -697,4 +697,317 @@ public class HtmlInspectorTests
     }
 
     #endregion
+
+    #region Table Extraction Tests
+
+    [Fact]
+    public async Task ExtractTables_ExtractsSimpleTable()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <table>
+                                    <thead>
+                                        <tr><th>Name</th><th>Price</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>Product A</td><td>$10</td></tr>
+                                        <tr><td>Product B</td><td>$20</td></tr>
+                                    </tbody>
+                                </table>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var tables = HtmlInspector.ExtractTables(document, null);
+
+        tables.Count.ShouldBe(1);
+        tables[0].Headers.ShouldBe(new[] { "Name", "Price" });
+        tables[0].Rows.Count.ShouldBe(2);
+        tables[0].Rows[0].ShouldBe(new[] { "Product A", "$10" });
+        tables[0].Rows[1].ShouldBe(new[] { "Product B", "$20" });
+    }
+
+    [Fact]
+    public async Task ExtractTables_ExtractsTableWithCaption()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <table>
+                                    <caption>Sales Report</caption>
+                                    <tr><th>Month</th><th>Revenue</th></tr>
+                                    <tr><td>January</td><td>$1000</td></tr>
+                                </table>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var tables = HtmlInspector.ExtractTables(document, null);
+
+        tables.Count.ShouldBe(1);
+        tables[0].Caption.ShouldBe("Sales Report");
+    }
+
+    [Fact]
+    public async Task ExtractTables_ExtractsMultipleTables()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <table id="table1">
+                                    <tr><th>A</th></tr>
+                                    <tr><td>1</td></tr>
+                                </table>
+                                <table id="table2">
+                                    <tr><th>B</th></tr>
+                                    <tr><td>2</td></tr>
+                                </table>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var tables = HtmlInspector.ExtractTables(document, null);
+
+        tables.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ExtractTables_WithScope_OnlyExtractsTablesInScope()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <div class="main">
+                                    <table id="main-table">
+                                        <tr><th>Main</th></tr>
+                                    </table>
+                                </div>
+                                <div class="sidebar">
+                                    <table id="sidebar-table">
+                                        <tr><th>Sidebar</th></tr>
+                                    </table>
+                                </div>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var tables = HtmlInspector.ExtractTables(document, ".main");
+
+        tables.Count.ShouldBe(1);
+        tables[0].Selector.ShouldContain("main-table");
+    }
+
+    [Fact]
+    public async Task ExtractTables_HandlesTableWithoutThead()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <body>
+                                <table>
+                                    <tr><th>Column 1</th><th>Column 2</th></tr>
+                                    <tr><td>Data 1</td><td>Data 2</td></tr>
+                                </table>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var tables = HtmlInspector.ExtractTables(document, null);
+
+        tables.Count.ShouldBe(1);
+        tables[0].Headers.ShouldBe(new[] { "Column 1", "Column 2" });
+        tables[0].Rows.Count.ShouldBe(1);
+    }
+
+    #endregion
+
+    #region Structured Data Extraction Tests
+
+    [Fact]
+    public async Task ExtractStructuredData_ExtractsJsonLd()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                {
+                                    "@context": "https://schema.org",
+                                    "@type": "Product",
+                                    "name": "Test Product",
+                                    "price": "29.99"
+                                }
+                                </script>
+                            </head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        structuredData.Count.ShouldBe(1);
+        structuredData[0].Type.ShouldBe("Product");
+        structuredData[0].RawJson.ShouldContain("Test Product");
+    }
+
+    [Fact]
+    public async Task ExtractStructuredData_ExtractsMultipleJsonLdBlocks()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                {"@type": "Organization", "name": "Test Org"}
+                                </script>
+                                <script type="application/ld+json">
+                                {"@type": "WebPage", "name": "Test Page"}
+                                </script>
+                            </head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        structuredData.Count.ShouldBe(2);
+        structuredData.ShouldContain(d => d.Type == "Organization");
+        structuredData.ShouldContain(d => d.Type == "WebPage");
+    }
+
+    [Fact]
+    public async Task ExtractStructuredData_HandlesJsonLdArray()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                [
+                                    {"@type": "BreadcrumbList", "name": "Breadcrumbs"},
+                                    {"@type": "Product", "name": "Item"}
+                                ]
+                                </script>
+                            </head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        structuredData.Count.ShouldBe(1);
+        structuredData[0].Type.ShouldBe("BreadcrumbList"); // Uses first item's type
+    }
+
+    [Fact]
+    public async Task ExtractStructuredData_HandlesGraphStructure()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                {
+                                    "@context": "https://schema.org",
+                                    "@graph": [
+                                        {"@type": "WebSite", "name": "Example Site"},
+                                        {"@type": "Person", "name": "John"}
+                                    ]
+                                }
+                                </script>
+                            </head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        structuredData.Count.ShouldBe(1);
+        structuredData[0].Type.ShouldBe("Graph:WebSite");
+    }
+
+    [Fact]
+    public async Task ExtractStructuredData_SkipsInvalidJson()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                {invalid json here}
+                                </script>
+                                <script type="application/ld+json">
+                                {"@type": "Article", "name": "Valid Article"}
+                                </script>
+                            </head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        // Should skip invalid and return only valid
+        structuredData.Count.ShouldBe(1);
+        structuredData[0].Type.ShouldBe("Article");
+    }
+
+    [Fact]
+    public async Task ExtractStructuredData_ReturnsEmptyForNoJsonLd()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head><title>No JSON-LD</title></head>
+                            <body><p>Content</p></body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var structuredData = HtmlInspector.ExtractStructuredData(document);
+
+        structuredData.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task InspectStructure_IncludesStructuredData()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <script type="application/ld+json">
+                                {"@type": "Product", "name": "Widget"}
+                                </script>
+                            </head>
+                            <body>
+                                <main>
+                                    <article>Product description here</article>
+                                </main>
+                            </body>
+                            </html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var result = HtmlInspector.InspectStructure(document, null);
+
+        result.StructuredData.Count.ShouldBe(1);
+        result.StructuredData[0].Type.ShouldBe("Product");
+    }
+
+    #endregion
 }

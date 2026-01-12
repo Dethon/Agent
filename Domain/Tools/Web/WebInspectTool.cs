@@ -18,10 +18,12 @@ public class WebInspectTool(IWebBrowser browser)
           - Finds repeating elements (product cards, search results) with field detection
           - Identifies pagination/navigation
           - Returns hierarchical outline with selectors
+          - Extracts JSON-LD structured data (Product, Article, Organization, etc.)
           - Provides suggestions like "Found 24 items: use selector='.product-card'"
         - 'search': Find visible TEXT in page, returns matches with context and selectors
         - 'forms': Detailed form inspection with all fields and buttons
         - 'interactive': All clickable elements (buttons, links) with selectors
+        - 'tables': Extract all tables as structured JSON with headers and rows
 
         IMPORTANT: To extract elements by CSS selector (e.g., '.product', '#main'), use WebBrowse
         with the selector parameter directly. The search mode only finds visible text content.
@@ -29,7 +31,7 @@ public class WebInspectTool(IWebBrowser browser)
         Examples:
         - Analyze page structure: mode="structure" → get suggestions for extraction
         - Find text on page: mode="search", query="price"
-        - Extract items: Use suggestions from structure, e.g., WebBrowse(selector=".product-card")
+        - Extract tables: mode="tables" → get structured data from all tables
         """;
 
     protected async Task<JsonNode> RunAsync(
@@ -88,6 +90,9 @@ public class WebInspectTool(IWebBrowser browser)
             case InspectMode.Interactive when result.Interactive != null:
                 AddInteractiveToResponse(response, result.Interactive);
                 break;
+            case InspectMode.Tables when result.Tables != null:
+                AddTablesToResponse(response, result.Tables);
+                break;
         }
 
         return response;
@@ -105,6 +110,7 @@ public class WebInspectTool(IWebBrowser browser)
             "search" => InspectMode.Search,
             "forms" => InspectMode.Forms,
             "interactive" => InspectMode.Interactive,
+            "tables" => InspectMode.Tables,
             _ => InspectMode.Structure
         };
     }
@@ -197,6 +203,22 @@ public class WebInspectTool(IWebBrowser browser)
             }
 
             response["suggestions"] = suggestionsArray;
+        }
+
+        // Structured data (JSON-LD)
+        if (structure.StructuredData.Count > 0)
+        {
+            var structuredDataArray = new JsonArray();
+            foreach (var data in structure.StructuredData)
+            {
+                structuredDataArray.Add(new JsonObject
+                {
+                    ["type"] = data.Type,
+                    ["rawJson"] = data.RawJson
+                });
+            }
+
+            response["structuredData"] = structuredDataArray;
         }
     }
 
@@ -316,5 +338,51 @@ public class WebInspectTool(IWebBrowser browser)
         }
 
         response["links"] = linksArray;
+    }
+
+    private static void AddTablesToResponse(JsonObject response, IReadOnlyList<ExtractedTable> tables)
+    {
+        response["tableCount"] = tables.Count;
+
+        var tablesArray = new JsonArray();
+        foreach (var table in tables)
+        {
+            var tableObj = new JsonObject
+            {
+                ["selector"] = table.Selector
+            };
+
+            if (!string.IsNullOrEmpty(table.Caption))
+            {
+                tableObj["caption"] = table.Caption;
+            }
+
+            var headersArray = new JsonArray();
+            foreach (var header in table.Headers)
+            {
+                headersArray.Add(header);
+            }
+
+            tableObj["headers"] = headersArray;
+
+            var rowsArray = new JsonArray();
+            foreach (var row in table.Rows)
+            {
+                var rowArray = new JsonArray();
+                foreach (var cell in row)
+                {
+                    rowArray.Add(cell);
+                }
+
+                rowsArray.Add(rowArray);
+            }
+
+            tableObj["rows"] = rowsArray;
+            tableObj["rowCount"] = table.Rows.Count;
+
+            tablesArray.Add(tableObj);
+        }
+
+        response["tables"] = tablesArray;
     }
 }
