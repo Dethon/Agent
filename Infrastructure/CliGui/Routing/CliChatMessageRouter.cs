@@ -114,6 +114,12 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
 
     public void SendResponse(ChatResponseMessage responseMessage)
     {
+        if (responseMessage.IsComplete)
+        {
+            _terminalAdapter.HideThinkingIndicator();
+            return;
+        }
+
         if (_showReasoning && !string.IsNullOrWhiteSpace(responseMessage.Reasoning))
         {
             var groupId = Guid.NewGuid().ToString();
@@ -158,6 +164,7 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
     {
         if (!_commandHandler.TryHandleCommand(input))
         {
+            _terminalAdapter.ShowThinkingIndicator();
             _inputQueue.Add(input);
         }
     }
@@ -179,6 +186,7 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
 
     private void ResetInputQueue(bool wipeThread)
     {
+        _terminalAdapter.HideThinkingIndicator();
         var command = wipeThread ? "/clear" : "/cancel";
         _inputQueue.Add(command);
         var oldQueue = _inputQueue;

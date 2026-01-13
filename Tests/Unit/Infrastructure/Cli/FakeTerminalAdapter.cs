@@ -13,6 +13,7 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
 
     public bool IsStarted { get; private set; }
     public bool IsStopped { get; private set; }
+    public bool IsThinkingIndicatorVisible { get; private set; }
     public IReadOnlyList<ChatLine[]> DisplayedMessages => _displayedMessages;
 
     private static ToolApprovalResult NextApprovalResult => ToolApprovalResult.Approved;
@@ -50,6 +51,16 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
         CancellationToken cancellationToken)
     {
         return Task.FromResult(NextApprovalResult);
+    }
+
+    public void ShowThinkingIndicator()
+    {
+        IsThinkingIndicatorVisible = true;
+    }
+
+    public void HideThinkingIndicator()
+    {
+        IsThinkingIndicatorVisible = false;
     }
 
     public void SimulateInput(string input)

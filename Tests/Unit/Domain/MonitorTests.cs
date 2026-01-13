@@ -119,6 +119,38 @@ internal static class MonitorTestMocks
 public class ChatMonitorTests
 {
     [Fact]
+    public async Task Monitor_WhenAgentCompletes_SendsIsCompleteResponse()
+    {
+        // Arrange
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var prompts = new[] { MonitorTestMocks.CreatePrompt() };
+        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        var capturedResponses = new List<ChatResponseMessage>();
+        chatMessengerClient.Setup(c =>
+                c.SendResponse(
+                    It.IsAny<long>(),
+                    It.IsAny<ChatResponseMessage>(),
+                    It.IsAny<long?>(),
+                    It.IsAny<string?>(),
+                    It.IsAny<CancellationToken>()))
+            .Callback<long, ChatResponseMessage, long?, string?, CancellationToken>((_, response, _, _, _) =>
+                capturedResponses.Add(response))
+            .Returns(Task.CompletedTask);
+
+        var mockAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - Should have at least one IsComplete response
+        capturedResponses.ShouldContain(r => r.IsComplete);
+    }
+
+    [Fact]
     public async Task Monitor_WithNullThreadId_CallsCreateThread()
     {
         // Arrange

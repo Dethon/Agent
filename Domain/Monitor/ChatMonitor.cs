@@ -77,12 +77,14 @@ public class ChatMonitor(
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<AiResponse>();
                     default:
+                        // Append IsComplete after each agent run finishes
                         return agent
                             .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Where(y => y.Item2 is not null)
                             .Select(y => y.Item2)
-                            .Cast<AiResponse>();
+                            .Cast<AiResponse>()
+                            .Append(new AiResponse { IsComplete = true });
                 }
             })
             .Merge(linkedCt);
@@ -146,6 +148,17 @@ public class ChatMonitor(
     {
         try
         {
+            if (response.IsComplete)
+            {
+                await chatMessengerClient.SendResponse(
+                    agentKey.ChatId,
+                    new ChatResponseMessage { IsComplete = true },
+                    agentKey.ThreadId,
+                    agentKey.BotTokenHash,
+                    ct);
+                return;
+            }
+
             if (string.IsNullOrEmpty(response.Content) && string.IsNullOrEmpty(response.Reasoning))
             {
                 return;

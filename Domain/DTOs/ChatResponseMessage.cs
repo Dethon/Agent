@@ -6,4 +6,5 @@ public record ChatResponseMessage
     public string? CalledTools;
     public string? Reasoning;
     public bool Bold;
+    public bool IsComplete;
 }

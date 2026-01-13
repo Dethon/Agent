@@ -13,4 +13,7 @@ public interface ITerminalSession : IDisposable
     void DisplayMessage(ChatLine[] lines);
     void ClearDisplay();
     void ShowSystemMessage(string message);
+
+    void ShowThinkingIndicator();
+    void HideThinkingIndicator();
 }

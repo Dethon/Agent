@@ -24,6 +24,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private ListView? _chatListView;
     private FrameView? _inputFrame;
     private TextView? _inputField;
+    private ThinkingIndicator? _thinkingIndicator;
 
     private Action<MouseEvent>? _previousRootMouseEvent;
 
@@ -102,8 +103,19 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         return tcs.Task;
     }
 
+    public void ShowThinkingIndicator()
+    {
+        _thinkingIndicator?.Show();
+    }
+
+    public void HideThinkingIndicator()
+    {
+        _thinkingIndicator?.Hide();
+    }
+
     public void Dispose()
     {
+        _thinkingIndicator?.Dispose();
         Stop();
     }
 
@@ -126,6 +138,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         _chatListView = chatListView;
         _inputFrame = inputFrame;
         _inputField = inputField;
+        _thinkingIndicator = new ThinkingIndicator((Label)titleBar, agentName);
 
         WireEvents();
         WireRootMouseEvents();

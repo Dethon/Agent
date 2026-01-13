@@ -365,4 +365,71 @@ public class CliChatMessageRouterTests : IDisposable
         allLines.ShouldNotContain(l => l.Type == ChatLineType.ReasoningHeader);
         allLines.ShouldNotContain(l => l.Type == ChatLineType.ReasoningContent);
     }
+
+    [Fact]
+    public async Task OnInputReceived_NonCommand_ShowsThinkingIndicator()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource(500);
+        _ = Task.Run(() => _router.ReadPrompts(cts.Token).ToList(), cts.Token);
+        await Task.Delay(50, cts.Token);
+
+        // Act
+        _terminalAdapter.SimulateInput("Hello");
+        await Task.Delay(50, cts.Token);
+
+        // Assert
+        _terminalAdapter.IsThinkingIndicatorVisible.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task OnInputReceived_Command_DoesNotShowThinkingIndicator()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource(500);
+        _ = Task.Run(() => _router.ReadPrompts(cts.Token).ToList(), cts.Token);
+        await Task.Delay(50, cts.Token);
+
+        // Act
+        _terminalAdapter.SimulateInput("/help");
+        await Task.Delay(50, cts.Token);
+
+        // Assert
+        _terminalAdapter.IsThinkingIndicatorVisible.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SendResponse_WithIsComplete_HidesThinkingIndicator()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource(500);
+        _ = Task.Run(() => _router.ReadPrompts(cts.Token).ToList(), cts.Token);
+        await Task.Delay(50, cts.Token);
+        _terminalAdapter.SimulateInput("Hello");
+        await Task.Delay(50, cts.Token);
+
+        // Act
+        _router.SendResponse(new ChatResponseMessage { IsComplete = true });
+
+        // Assert
+        _terminalAdapter.IsThinkingIndicatorVisible.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CancelCommand_HidesThinkingIndicator()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource(500);
+        _ = Task.Run(() => _router.ReadPrompts(cts.Token).ToList(), cts.Token);
+        await Task.Delay(50, cts.Token);
+        _terminalAdapter.SimulateInput("Hello");
+        await Task.Delay(50, cts.Token);
+
+        // Act
+        _terminalAdapter.SimulateInput("/cancel");
+        await Task.Delay(50, cts.Token);
+
+        // Assert
+        _terminalAdapter.IsThinkingIndicatorVisible.ShouldBeFalse();
+    }
 }
