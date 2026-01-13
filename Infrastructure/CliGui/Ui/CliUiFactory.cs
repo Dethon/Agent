@@ -44,6 +44,7 @@ internal static class CliUiFactory
 
     public const string StatusBarDefault = "   /help · commands    /clear · reset    ↑↓ · scroll";
     public const string StatusBarThinking = "   Press Esc to cancel";
+    public const string InputHintThinking = "Thinking... press Esc to cancel";
 
     public static Label CreateStatusBar()
     {

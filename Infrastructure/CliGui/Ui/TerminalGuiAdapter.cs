@@ -35,6 +35,9 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private int _currentInputHeight = Ui.MinInputHeight;
     private DateTime? _lastCtrlCUtc;
     private DateTime _lastKeyPressUtc;
+    private string _savedInputText = "";
+    private ColorScheme? _inputColorScheme;
+    private ColorScheme? _inputHintColorScheme;
 
     public event Action<string>? InputReceived;
     public event Action? ShutdownRequested;
@@ -109,14 +112,48 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     {
         _isThinking = true;
         _thinkingIndicator?.Show();
-        Application.MainLoop?.Invoke(() => UpdateStatusBar(CliUiFactory.StatusBarThinking));
+        Application.MainLoop?.Invoke(() =>
+        {
+            UpdateStatusBar(CliUiFactory.StatusBarThinking);
+            ShowInputHint();
+        });
     }
 
     public void HideThinkingIndicator()
     {
         _isThinking = false;
         _thinkingIndicator?.Hide();
-        Application.MainLoop?.Invoke(() => UpdateStatusBar(CliUiFactory.StatusBarDefault));
+        Application.MainLoop?.Invoke(() =>
+        {
+            UpdateStatusBar(CliUiFactory.StatusBarDefault);
+            HideInputHint();
+        });
+    }
+
+    private void ShowInputHint()
+    {
+        if (_inputField is null)
+        {
+            return;
+        }
+
+        _savedInputText = _inputField.Text?.ToString() ?? "";
+        _inputField.Text = CliUiFactory.InputHintThinking;
+        _inputField.ColorScheme = _inputHintColorScheme;
+        _inputField.SetNeedsDisplay();
+    }
+
+    private void HideInputHint()
+    {
+        if (_inputField is null)
+        {
+            return;
+        }
+
+        _inputField.Text = _savedInputText;
+        _inputField.ColorScheme = _inputColorScheme;
+        _inputField.SetNeedsDisplay();
+        _savedInputText = "";
     }
 
     private void UpdateStatusBar(string text)
@@ -151,6 +188,12 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         _inputField = inputField;
         _statusBar = (Label)statusBar;
         _thinkingIndicator = new ThinkingIndicator((Label)titleBar, agentName);
+        _inputColorScheme = inputField.ColorScheme;
+        _inputHintColorScheme = new ColorScheme
+        {
+            Normal = Application.Driver.MakeAttribute(Color.DarkGray, Color.Black),
+            Focus = Application.Driver.MakeAttribute(Color.DarkGray, Color.Black)
+        };
 
         WireEvents();
         WireRootMouseEvents();
