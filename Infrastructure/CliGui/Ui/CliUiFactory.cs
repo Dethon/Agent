@@ -30,28 +30,28 @@ internal static class CliUiFactory
 
     public static Label CreateTitleBar(string agentName)
     {
-        return new Label($" ◆ {agentName}")
+        return new Label($"  ◆ {agentName}")
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             ColorScheme = new ColorScheme
             {
-                Normal = Application.Driver.MakeAttribute(Color.Black, Color.BrightCyan)
+                Normal = Application.Driver.MakeAttribute(Color.White, Color.Blue)
             }
         };
     }
 
     public static Label CreateStatusBar()
     {
-        return new Label(" ⌨ /help  ◦  ⌫ /clear  ◦  × /cancel  ◦  ↑↓ scroll")
+        return new Label("   /help · commands    /clear · reset    /cancel · stop    Tab · switch focus    ↑↓ · scroll")
         {
             X = 0,
             Y = 1,
             Width = Dim.Fill(),
             ColorScheme = new ColorScheme
             {
-                Normal = Application.Driver.MakeAttribute(Color.Gray, Color.DarkGray)
+                Normal = Application.Driver.MakeAttribute(Color.Cyan, Color.Black)
             }
         };
     }
@@ -62,14 +62,21 @@ internal static class CliUiFactory
     {
         var inputFrame = new FrameView
         {
-            X = 1,
+            X = 2,
             Y = Pos.AnchorEnd(MinInputHeight + 1),
-            Width = Dim.Fill() - 2,
+            Width = Dim.Fill() - 4,
             Height = MinInputHeight,
+            Title = " Message ",
+            Border = new Border
+            {
+                BorderStyle = BorderStyle.Rounded
+            },
             ColorScheme = new ColorScheme
             {
                 Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
-                Focus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
+                Focus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black),
+                HotNormal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
+                HotFocus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
             }
         };
 
@@ -86,7 +93,6 @@ internal static class CliUiFactory
                 Focus = Application.Driver.MakeAttribute(Color.White, Color.Black)
             }
         };
-
 
         inputFrame.Add(inputField);
         return (inputFrame, inputField);

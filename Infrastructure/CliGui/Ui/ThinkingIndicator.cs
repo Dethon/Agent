@@ -2,24 +2,17 @@ using Terminal.Gui;
 
 namespace Infrastructure.CliGui.Ui;
 
-internal sealed class ThinkingIndicator : IDisposable
+internal sealed class ThinkingIndicator(Label titleLabel, string agentName) : IDisposable
 {
     private static readonly string[] _spinnerFrames = ["◐", "◓", "◑", "◒"];
     private static readonly TimeSpan _animationInterval = TimeSpan.FromMilliseconds(120);
 
-    private readonly Label _titleLabel;
-    private readonly string _baseTitle;
-    private readonly object _lock = new();
+    private readonly string _baseTitle = $"  ◆ {agentName}";
+    private readonly Lock _lock = new();
 
     private object? _timerToken;
     private int _frameIndex;
     private volatile bool _isVisible;
-
-    public ThinkingIndicator(Label titleLabel, string agentName)
-    {
-        _titleLabel = titleLabel;
-        _baseTitle = $" ◆ {agentName}";
-    }
 
     public void Show()
     {
@@ -69,12 +62,12 @@ internal sealed class ThinkingIndicator : IDisposable
         var mainLoop = Application.MainLoop;
         if (mainLoop is not null)
         {
-            mainLoop.Invoke(() => _titleLabel.Text = _baseTitle);
+            mainLoop.Invoke(() => titleLabel.Text = _baseTitle);
         }
         else
         {
             // Fallback: direct update if no main loop
-            _titleLabel.Text = _baseTitle;
+            titleLabel.Text = _baseTitle;
         }
     }
 
@@ -100,23 +93,20 @@ internal sealed class ThinkingIndicator : IDisposable
         var spinner = _spinnerFrames[_frameIndex];
         var mainLoop = Application.MainLoop;
 
-        if (mainLoop is not null)
+        mainLoop?.Invoke(() =>
         {
-            mainLoop.Invoke(() =>
+            if (!_isVisible)
             {
-                if (!_isVisible)
-                {
-                    return;
-                }
+                return;
+            }
 
-                var thinkingText = $"{spinner} Thinking...";
-                var availableWidth = _titleLabel.Bounds.Width;
-                var padding = availableWidth - _baseTitle.Length - thinkingText.Length - 1;
-                _titleLabel.Text = padding > 0
-                    ? $"{_baseTitle}{new string(' ', padding)}{thinkingText}"
-                    : $"{_baseTitle}  {thinkingText}";
-            });
-        }
+            var thinkingText = $"{spinner} Thinking...";
+            var availableWidth = titleLabel.Bounds.Width;
+            var padding = availableWidth - _baseTitle.Length - thinkingText.Length - 1;
+            titleLabel.Text = padding > 0
+                ? $"{_baseTitle}{new string(' ', padding)}{thinkingText}"
+                : $"{_baseTitle}  {thinkingText}";
+        });
     }
 
     public void Dispose()

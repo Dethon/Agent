@@ -82,7 +82,7 @@ internal sealed class ChatListDataSource : IListDataSource
         {
             if (line is { IsCollapsible: true, GroupId: not null })
             {
-                _collapseState.SetCollapsed(line.GroupId, true);
+                _collapseState.SetCollapsedIfNew(line.GroupId, true);
             }
         }
     }
@@ -214,17 +214,17 @@ internal sealed class ChatListDataSource : IListDataSource
         {
             ChatLineType.System => driver.MakeAttribute(Color.BrightYellow, Color.Black),
             ChatLineType.UserHeader => driver.MakeAttribute(Color.BrightGreen, Color.Black),
-            ChatLineType.UserContent => driver.MakeAttribute(Color.Green, Color.Black),
+            ChatLineType.UserContent => driver.MakeAttribute(Color.White, Color.Black),
             ChatLineType.AgentHeader => driver.MakeAttribute(Color.BrightCyan, Color.Black),
-            ChatLineType.AgentContent => driver.MakeAttribute(Color.Cyan, Color.Black),
+            ChatLineType.AgentContent => driver.MakeAttribute(Color.White, Color.Black),
             ChatLineType.ToolHeader => driver.MakeAttribute(Color.BrightMagenta, Color.Black),
             ChatLineType.ToolContent => driver.MakeAttribute(Color.Magenta, Color.Black),
             ChatLineType.ToolApprovedHeader => driver.MakeAttribute(Color.BrightGreen, Color.Black),
-            ChatLineType.ToolApprovedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ToolApprovedContent => driver.MakeAttribute(Color.Gray, Color.Black),
             ChatLineType.ToolRejectedHeader => driver.MakeAttribute(Color.BrightRed, Color.Black),
-            ChatLineType.ToolRejectedContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
-            ChatLineType.ReasoningHeader => driver.MakeAttribute(Color.DarkGray, Color.Black),
-            ChatLineType.ReasoningContent => driver.MakeAttribute(Color.DarkGray, Color.Black),
+            ChatLineType.ToolRejectedContent => driver.MakeAttribute(Color.Gray, Color.Black),
+            ChatLineType.ReasoningHeader => driver.MakeAttribute(Color.BrightBlue, Color.Black),
+            ChatLineType.ReasoningContent => driver.MakeAttribute(Color.Blue, Color.Black),
             _ => driver.MakeAttribute(Color.White, Color.Black)
         };
     }

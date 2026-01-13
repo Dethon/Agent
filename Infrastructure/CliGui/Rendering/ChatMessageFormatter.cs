@@ -22,33 +22,33 @@ internal static class ChatMessageFormatter
         {
             foreach (var line in messageLines)
             {
-                yield return new ChatLine($"  ○ {line}", ChatLineType.System);
+                yield return new ChatLine($"   ● {line}", ChatLineType.System);
             }
         }
         else if (msg.IsToolCall)
         {
-            yield return new ChatLine("  ┌─ ⚡ Tools ─────────────────", ChatLineType.ToolHeader);
+            yield return new ChatLine("   ╭─ ⚡ Tools ───────────────────────────────", ChatLineType.ToolHeader);
             foreach (var line in messageLines)
             {
-                yield return new ChatLine($"  │  {line}", ChatLineType.ToolContent);
+                yield return new ChatLine($"   │  {line}", ChatLineType.ToolContent);
             }
 
-            yield return new ChatLine("  └──────────────────────────────", ChatLineType.ToolHeader);
+            yield return new ChatLine("   ╰────────────────────────────────────────────", ChatLineType.ToolHeader);
         }
         else if (msg.IsUser)
         {
-            yield return new ChatLine($"  ▶ You · {timestamp}", ChatLineType.UserHeader);
+            yield return new ChatLine($"   ▸ You  ·  {timestamp}", ChatLineType.UserHeader);
             foreach (var line in messageLines)
             {
-                yield return new ChatLine($"    {line}", ChatLineType.UserContent);
+                yield return new ChatLine($"     {line}", ChatLineType.UserContent);
             }
         }
         else
         {
-            yield return new ChatLine($"  ◀ {msg.Sender} · {timestamp}", ChatLineType.AgentHeader);
+            yield return new ChatLine($"   ◂ {msg.Sender}  ·  {timestamp}", ChatLineType.AgentHeader);
             foreach (var line in messageLines)
             {
-                yield return new ChatLine($"    {line}", ChatLineType.AgentContent);
+                yield return new ChatLine($"     {line}", ChatLineType.AgentContent);
             }
         }
 
@@ -72,7 +72,7 @@ internal static class ChatMessageFormatter
 
         yield return new ChatLine("", ChatLineType.Blank);
         yield return new ChatLine(
-            $"  ▶ Reasoning ({lines.Length} {(lines.Length == 1 ? "line" : "lines")})",
+            $"   ▶ Thinking  ·  {lines.Length} {(lines.Length == 1 ? "line" : "lines")}  [click to toggle]",
             ChatLineType.ReasoningHeader,
             groupId,
             IsCollapsible: true);
@@ -80,7 +80,7 @@ internal static class ChatMessageFormatter
         foreach (var line in lines)
         {
             yield return new ChatLine(
-                $"    │ {line}",
+                $"   ┊ {line}",
                 ChatLineType.ReasoningContent,
                 groupId);
         }
@@ -97,28 +97,28 @@ internal static class ChatMessageFormatter
         {
             ToolApprovalResult.AutoApproved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
             ToolApprovalResult.Approved => ("✓", ChatLineType.ToolApprovedHeader, ChatLineType.ToolApprovedContent),
-            ToolApprovalResult.ApprovedAndRemember => ("✓", ChatLineType.ToolApprovedHeader,
+            ToolApprovalResult.ApprovedAndRemember => ("✓✓", ChatLineType.ToolApprovedHeader,
                 ChatLineType.ToolApprovedContent),
             ToolApprovalResult.Rejected => ("✗", ChatLineType.ToolRejectedHeader, ChatLineType.ToolRejectedContent),
             _ => ("•", ChatLineType.System, ChatLineType.System)
         };
 
-        yield return new ChatLine($"  {symbol} {toolName.Split(':').Last()}", headerType);
+        yield return new ChatLine($"   {symbol} {toolName.Split(':').Last()}", headerType);
 
         foreach (var (key, value) in arguments)
         {
             var formattedValue = FormatArgumentValue(value);
             if (formattedValue.Contains('\n'))
             {
-                yield return new ChatLine($"    {key}:", contentType);
+                yield return new ChatLine($"      {key}:", contentType);
                 foreach (var line in formattedValue.Split(_lineSeparators, StringSplitOptions.None))
                 {
-                    yield return new ChatLine($"      {line}", contentType);
+                    yield return new ChatLine($"        {line}", contentType);
                 }
             }
             else
             {
-                yield return new ChatLine($"    {key}: {formattedValue}", contentType);
+                yield return new ChatLine($"      {key}: {formattedValue}", contentType);
             }
         }
     }

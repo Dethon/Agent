@@ -9,31 +9,31 @@ internal static class ApprovalDialog
     {
         var dialogScheme = new ColorScheme
         {
-            Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
+            Normal = Application.Driver.MakeAttribute(Color.White, Color.Black),
             Focus = Application.Driver.MakeAttribute(Color.White, Color.Black),
             HotNormal = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black),
             HotFocus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
         };
 
-        var contentHeight = Math.Min(details.Split('\n').Length + 6, 15);
+        var contentHeight = Math.Min(details.Split('\n').Length + 7, 16);
 
         var dialog = new Dialog
         {
-            Title = "🔧 Approval Required",
-            Width = Dim.Percent(70),
+            Title = " ⚡ Tool Approval ",
+            Width = Dim.Percent(75),
             Height = contentHeight,
             ColorScheme = dialogScheme,
             Border = new Border
             {
                 BorderStyle = BorderStyle.Rounded,
-                BorderBrush = Color.BrightCyan
+                BorderBrush = Color.BrightMagenta
             }
         };
 
         var toolLabel = new Label("Tool: ")
         {
             X = 1,
-            Y = 0,
+            Y = 1,
             ColorScheme = new ColorScheme
             {
                 Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black)
@@ -43,17 +43,17 @@ internal static class ApprovalDialog
         var toolNameLabel = new Label(toolName)
         {
             X = Pos.Right(toolLabel),
-            Y = 0,
+            Y = 1,
             ColorScheme = new ColorScheme
             {
-                Normal = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
+                Normal = Application.Driver.MakeAttribute(Color.BrightMagenta, Color.Black)
             }
         };
 
         var detailsView = new TextView
         {
             X = 1,
-            Y = 2,
+            Y = 3,
             Width = Dim.Fill(1),
             Height = Dim.Fill(2),
             ReadOnly = true,
@@ -61,8 +61,8 @@ internal static class ApprovalDialog
             CanFocus = false,
             ColorScheme = new ColorScheme
             {
-                Normal = Application.Driver.MakeAttribute(Color.DarkGray, Color.Black),
-                Focus = Application.Driver.MakeAttribute(Color.DarkGray, Color.Black)
+                Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
+                Focus = Application.Driver.MakeAttribute(Color.Gray, Color.Black)
             }
         };
 
@@ -176,17 +176,17 @@ internal static class ApprovalDialog
         return isSelected
             ? new ColorScheme
             {
-                Normal = Application.Driver.MakeAttribute(Color.Black, Color.BrightCyan),
-                Focus = Application.Driver.MakeAttribute(Color.Black, Color.BrightCyan),
-                HotNormal = Application.Driver.MakeAttribute(Color.White, Color.BrightCyan),
-                HotFocus = Application.Driver.MakeAttribute(Color.White, Color.BrightCyan)
+                Normal = Application.Driver.MakeAttribute(Color.Black, Color.BrightGreen),
+                Focus = Application.Driver.MakeAttribute(Color.Black, Color.BrightGreen),
+                HotNormal = Application.Driver.MakeAttribute(Color.White, Color.BrightGreen),
+                HotFocus = Application.Driver.MakeAttribute(Color.White, Color.BrightGreen)
             }
             : new ColorScheme
             {
                 Normal = Application.Driver.MakeAttribute(Color.Gray, Color.Black),
                 Focus = Application.Driver.MakeAttribute(Color.White, Color.Black),
-                HotNormal = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black),
-                HotFocus = Application.Driver.MakeAttribute(Color.BrightCyan, Color.Black)
+                HotNormal = Application.Driver.MakeAttribute(Color.BrightGreen, Color.Black),
+                HotFocus = Application.Driver.MakeAttribute(Color.BrightGreen, Color.Black)
             };
     }
 }
