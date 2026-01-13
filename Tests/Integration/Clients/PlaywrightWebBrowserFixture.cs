@@ -67,7 +67,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
             // Use browserless/chrome which provides full Chrome with CDP
             _container = new ContainerBuilder("browserless/chrome:latest")
                 .WithPortBinding(3000, true)
-                .WithEnvironment("CONNECTION_TIMEOUT", "180000")
+                .WithEnvironment("CONNECTION_TIMEOUT", "600000")
                 .WithWaitStrategy(Wait.ForUnixContainer()
                     .UntilHttpRequestIsSucceeded(r => r.ForPort(3000).ForPath("/json/version")))
                 .Build();
@@ -136,6 +136,17 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         // Replace internal host (0.0.0.0 or 127.0.0.1) with external host
         var uri = new Uri(url);
         return $"ws://{host}:{port}{uri.PathAndQuery}";
+    }
+
+    public async Task ClearContextStateAsync()
+    {
+        if (!IsAvailable)
+        {
+            return;
+        }
+
+        // Clear all cookies to ensure test isolation
+        await Browser.ClearCookiesAsync();
     }
 
     public async Task DisposeAsync()

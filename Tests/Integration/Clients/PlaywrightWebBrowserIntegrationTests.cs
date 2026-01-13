@@ -8,8 +8,19 @@ namespace Tests.Integration.Clients;
 [Collection("PlaywrightWebBrowserIntegration")]
 public class PlaywrightWebBrowserIntegrationTests(
     PlaywrightWebBrowserFixture fixture,
-    ITestOutputHelper testOutputHelper)
+    ITestOutputHelper testOutputHelper) : IAsyncLifetime
 {
+    public async Task InitializeAsync()
+    {
+        // Clear cookies between tests to ensure isolation
+        await fixture.ClearContextStateAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
     private string GetUniqueSessionId()
     {
         return $"test-{Guid.NewGuid():N}";
