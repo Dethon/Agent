@@ -300,14 +300,8 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
     private void HandleChatListKeyPress(View.KeyEventEventArgs args)
     {
-        if (args.KeyEvent.Key is Key.Tab)
-        {
-            _inputField?.SetFocus();
-            args.Handled = true;
-            return;
-        }
-
-        if (args.KeyEvent.Key is not (Key.Enter or Key.Space))
+        // Space to toggle collapsible groups (reasoning)
+        if (args.KeyEvent.Key is not Key.Space)
         {
             return;
         }
@@ -340,10 +334,6 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
             {
                 case Key.Esc:
                     HandleEscape(args);
-                    return;
-                case Key.Tab:
-                    _chatListView?.SetFocus();
-                    args.Handled = true;
                     return;
                 case Key.Enter | Key.ShiftMask:
                     if (!_isThinking)

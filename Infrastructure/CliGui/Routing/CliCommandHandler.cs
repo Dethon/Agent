@@ -12,7 +12,6 @@ internal sealed class CliCommandHandler(ITerminalSession terminalAdapter, Action
 
                                     Keyboard shortcuts:
                                       Esc           - Cancel current operation (while thinking) or clear input
-                                      Tab           - Switch focus between input and chat history
                                       Shift+Enter   - Insert newline in input
                                     """;
 
