@@ -1,11 +1,14 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Shouldly;
+using Xunit.Abstractions;
 
 namespace Tests.Integration.Clients;
 
 [Collection("PlaywrightWebBrowserIntegration")]
-public class PlaywrightWebBrowserIntegrationTests(PlaywrightWebBrowserFixture fixture)
+public class PlaywrightWebBrowserIntegrationTests(
+    PlaywrightWebBrowserFixture fixture,
+    ITestOutputHelper testOutputHelper)
 {
     private string GetUniqueSessionId()
     {
@@ -540,6 +543,55 @@ public class PlaywrightWebBrowserIntegrationTests(PlaywrightWebBrowserFixture fi
 
             // Assert - clear should succeed
             clearResult.Status.ShouldBe(ClickStatus.Success);
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [SkippableTheory]
+    [InlineData("https://en.wikipedia.org/wiki/Stranger_Things_season_5")]
+    [InlineData("https://en.wikipedia.org/wiki/Web_browser")]
+    [InlineData("https://en.wikipedia.org/wiki/Main_Page")]
+    public async Task NavigateAsync_WithWikipediaUrls_ChecksForRedirect(string requestedUrl)
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+
+        try
+        {
+            var request = new BrowseRequest(
+                SessionId: sessionId,
+                Url: requestedUrl,
+                Format: WebFetchOutputFormat.Markdown,
+                MaxLength: 15000,
+                IncludeLinks: true,
+                DismissModals: true);
+            var result = await fixture.Browser.NavigateAsync(request);
+
+            // Output for debugging
+            testOutputHelper.WriteLine($"Requested URL: {requestedUrl}");
+            testOutputHelper.WriteLine($"Final URL: {result.Url}");
+            testOutputHelper.WriteLine($"Status: {result.Status}");
+            testOutputHelper.WriteLine($"Title: {result.Title}");
+            testOutputHelper.WriteLine($"Content Length: {result.ContentLength}");
+            testOutputHelper.WriteLine($"Metadata SiteName: {result.Metadata?.SiteName}");
+            testOutputHelper.WriteLine($"Metadata Description: {result.Metadata?.Description}");
+            testOutputHelper.WriteLine($"Error Message: {result.ErrorMessage}");
+            testOutputHelper.WriteLine("--- Content Preview (first 2000 chars) ---");
+            testOutputHelper.WriteLine(result.Content?[..Math.Min(2000, result.Content?.Length ?? 0)]);
+            testOutputHelper.WriteLine("--- Links (first 10) ---");
+            if (result.Links != null)
+            {
+                foreach (var link in result.Links.Take(10))
+                {
+                    testOutputHelper.WriteLine($"  [{link.Text}] -> {link.Url}");
+                }
+            }
+
+            result.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
         }
         finally
         {

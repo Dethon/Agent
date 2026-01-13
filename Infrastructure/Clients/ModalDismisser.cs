@@ -190,6 +190,8 @@ public class ModalDismisser
             }
         }
 
+        var urlBefore = page.Url;
+
         // Try each button selector
         foreach (var buttonSelector in pattern.ButtonSelectors)
         {
@@ -204,8 +206,23 @@ public class ModalDismisser
                     Timeout = 500
                 });
 
+                // Skip elements that would cause navigation (links with href to different pages)
+                if (await WouldCauseNavigationAsync(button, urlBefore))
+                {
+                    continue;
+                }
+
                 var buttonText = await button.TextContentAsync(new LocatorTextContentOptions { Timeout = 500 });
                 await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+                // Verify we didn't navigate away - if we did, this wasn't a modal dismiss
+                await Task.Delay(100, ct);
+                if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                {
+                    // Navigation occurred - go back and continue trying other patterns
+                    await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+                    continue;
+                }
 
                 return new ModalDismissed(pattern.Type, buttonSelector, buttonText?.Trim());
             }
@@ -232,7 +249,20 @@ public class ModalDismisser
                         Timeout = 500
                     });
 
+                    if (await WouldCauseNavigationAsync(button, urlBefore))
+                    {
+                        continue;
+                    }
+
                     await button.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+                    await Task.Delay(100, ct);
+                    if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                    {
+                        await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+                        continue;
+                    }
+
                     return new ModalDismissed(pattern.Type, $"button:text({textPattern})", textPattern);
                 }
                 catch
@@ -242,7 +272,7 @@ public class ModalDismisser
 
                 try
                 {
-                    // Try link with text
+                    // Try link with text - but only if it doesn't navigate
                     var link = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = textPattern }).First;
                     await link.WaitForAsync(new LocatorWaitForOptions
                     {
@@ -250,7 +280,20 @@ public class ModalDismisser
                         Timeout = 500
                     });
 
+                    if (await WouldCauseNavigationAsync(link, urlBefore))
+                    {
+                        continue;
+                    }
+
                     await link.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+
+                    await Task.Delay(100, ct);
+                    if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))
+                    {
+                        await page.GoBackAsync(new PageGoBackOptions { Timeout = 5000 });
+                        continue;
+                    }
+
                     return new ModalDismissed(pattern.Type, $"link:text({textPattern})", textPattern);
                 }
                 catch
@@ -261,6 +304,66 @@ public class ModalDismisser
         }
 
         return null;
+    }
+
+    private static async Task<bool> WouldCauseNavigationAsync(ILocator element, string currentUrl)
+    {
+        try
+        {
+            var tagName = await element.EvaluateAsync<string>("el => el.tagName.toLowerCase()");
+
+            // Check for anchor tags with href that would navigate away
+            if (tagName == "a")
+            {
+                var href = await element.GetAttributeAsync("href");
+                if (!string.IsNullOrEmpty(href))
+                {
+                    // Allow javascript:void(0), #anchors, and empty hrefs
+                    if (href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+                        href == "#" ||
+                        href.StartsWith("#"))
+                    {
+                        return false;
+                    }
+
+                    // If it's an absolute URL to a different page, it would navigate
+                    if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteUri))
+                    {
+                        var currentUri = new Uri(currentUrl);
+                        // Different host or different path = navigation
+                        if (absoluteUri.Host != currentUri.Host ||
+                            absoluteUri.AbsolutePath != currentUri.AbsolutePath)
+                        {
+                            return true;
+                        }
+                    }
+                    else if (!href.StartsWith("#"))
+                    {
+                        // Relative URL that's not an anchor - likely navigation
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            // If we can't determine, assume it's safe
+            return false;
+        }
+    }
+
+    private static bool IsSamePageNavigation(string urlBefore, string urlAfter)
+    {
+        // Consider it same-page if only the fragment/hash changed
+        if (Uri.TryCreate(urlBefore, UriKind.Absolute, out var uriBefore) &&
+            Uri.TryCreate(urlAfter, UriKind.Absolute, out var uriAfter))
+        {
+            return uriBefore.GetLeftPart(UriPartial.Query) == uriAfter.GetLeftPart(UriPartial.Query);
+        }
+
+        return false;
     }
 
     private async Task TryEscapeKeyAsync(IPage page, CancellationToken ct)

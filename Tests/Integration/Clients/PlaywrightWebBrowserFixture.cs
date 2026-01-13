@@ -64,18 +64,19 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     {
         try
         {
-            // Use chromedp/headless-shell which exposes CDP on port 9222
-            _container = new ContainerBuilder("chromedp/headless-shell:latest")
-                .WithPortBinding(9222, true)
+            // Use browserless/chrome which provides full Chrome with CDP
+            _container = new ContainerBuilder("browserless/chrome:latest")
+                .WithPortBinding(3000, true)
+                .WithEnvironment("CONNECTION_TIMEOUT", "180000")
                 .WithWaitStrategy(Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(r => r.ForPort(9222).ForPath("/json/version")))
+                    .UntilHttpRequestIsSucceeded(r => r.ForPort(3000).ForPath("/json/version")))
                 .Build();
 
             using var startCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
             await _container.StartAsync(startCts.Token);
 
             var host = _container.Hostname;
-            var port = _container.GetMappedPublicPort(9222);
+            var port = _container.GetMappedPublicPort(3000);
 
             // Get the WebSocket debugger URL from /json/version and fix the host
             var wsEndpoint = await GetWebSocketDebuggerUrlAsync(host, port);
