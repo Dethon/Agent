@@ -42,9 +42,12 @@ internal static class CliUiFactory
         };
     }
 
+    public const string StatusBarDefault = "   /help · commands    /clear · reset    ↑↓ · scroll";
+    public const string StatusBarThinking = "   Press Esc to cancel";
+
     public static Label CreateStatusBar()
     {
-        return new Label("   /help · commands    /clear · reset    /cancel · stop    Tab · switch focus    ↑↓ · scroll")
+        return new Label(StatusBarDefault)
         {
             X = 0,
             Y = 1,

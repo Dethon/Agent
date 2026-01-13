@@ -24,6 +24,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private ListView? _chatListView;
     private FrameView? _inputFrame;
     private TextView? _inputField;
+    private Label? _statusBar;
     private ThinkingIndicator? _thinkingIndicator;
 
     private Action<MouseEvent>? _previousRootMouseEvent;
@@ -108,12 +109,19 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     {
         _isThinking = true;
         _thinkingIndicator?.Show();
+        Application.MainLoop?.Invoke(() => UpdateStatusBar(CliUiFactory.StatusBarThinking));
     }
 
     public void HideThinkingIndicator()
     {
         _isThinking = false;
         _thinkingIndicator?.Hide();
+        Application.MainLoop?.Invoke(() => UpdateStatusBar(CliUiFactory.StatusBarDefault));
+    }
+
+    private void UpdateStatusBar(string text)
+    {
+        _statusBar?.Text = text;
     }
 
     public void Dispose()
@@ -141,6 +149,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         _chatListView = chatListView;
         _inputFrame = inputFrame;
         _inputField = inputField;
+        _statusBar = (Label)statusBar;
         _thinkingIndicator = new ThinkingIndicator((Label)titleBar, agentName);
 
         WireEvents();
