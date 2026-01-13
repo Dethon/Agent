@@ -33,7 +33,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                                                  { name: 'Native Client', filename: 'internal-nacl-plugin' }
                                              ]
                                          });
-                                         Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en-US', 'en'] });
+                                         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
                                          window.chrome = { runtime: {} };
                                          const originalQuery = window.navigator.permissions.query;
                                          window.navigator.permissions.query = (parameters) => (
@@ -543,10 +543,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             {
                 UserAgent = UserAgent,
                 ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                Locale = "es-ES",
-                TimezoneId = "Europe/Madrid",
-                Geolocation = new Geolocation { Latitude = 41.6523f, Longitude = -4.7245f },
-                Permissions = ["geolocation"],
+                Locale = "en-US",
+                TimezoneId = "America/New_York",
                 HasTouch = false,
                 IsMobile = false,
                 JavaScriptEnabled = true
