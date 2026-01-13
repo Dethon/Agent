@@ -218,9 +218,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         var flags = me.Flags;
-        if (!flags.HasFlag(MouseFlags.Button1Released)
-            && !flags.HasFlag(MouseFlags.Button1Clicked)
-            && !flags.HasFlag(MouseFlags.Button1DoubleClicked))
+        if (!flags.HasFlag(MouseFlags.Button1Clicked))
         {
             return;
         }
@@ -261,9 +259,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         var flags = args.MouseEvent.Flags;
-        if (!flags.HasFlag(MouseFlags.Button1Released)
-            && !flags.HasFlag(MouseFlags.Button1Clicked)
-            && !flags.HasFlag(MouseFlags.Button1DoubleClicked))
+        if (!flags.HasFlag(MouseFlags.Button1Clicked))
         {
             return;
         }
