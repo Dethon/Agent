@@ -30,7 +30,7 @@ internal static class CliUiFactory
 
     public static Label CreateTitleBar(string agentName)
     {
-        return new Label($"  ◆ {agentName}")
+        return new Label($"  ᓚᘏᗢ - {agentName}")
         {
             X = 0,
             Y = 0,
