@@ -445,6 +445,37 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     {
         _inputField?.InsertText("\n");
         args.Handled = true;
+
+        // Reset scroll position after inserting newline - the ScheduleInputResize in finally block
+        // will resize the input, but we need to ensure scroll is reset when content fits
+        ResetInputScrollIfContentFits();
+    }
+
+    private void ResetInputScrollIfContentFits()
+    {
+        if (_inputFrame is null || _inputField is null)
+        {
+            return;
+        }
+
+        var frameWidth = _inputFrame.Bounds.Width - 2;
+        if (frameWidth <= 0)
+        {
+            frameWidth = Ui.DefaultWidth;
+        }
+
+        var text = _inputField.Text.ToString() ?? "";
+        var visualLines = ComputeVisualLineCount(text, frameWidth);
+
+        // Available height inside input field (frame height minus borders)
+        var availableHeight = _currentInputHeight - 2;
+
+        // If all content fits, reset scroll to top
+        if (visualLines <= availableHeight)
+        {
+            _inputField.TopRow = 0;
+            _inputField.SetNeedsDisplay();
+        }
     }
 
     private void ScheduleInputResize()
@@ -490,6 +521,9 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         Application.Top?.LayoutSubviews();
         Application.Top?.SetNeedsDisplay();
         _chatListView?.SetNeedsDisplay();
+
+        // Reset scroll position if content now fits after resize
+        ResetInputScrollIfContentFits();
     }
 
     private static int ComputeVisualLineCount(string text, int frameWidth)
