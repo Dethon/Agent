@@ -7,9 +7,13 @@ internal sealed class CliCommandHandler(ITerminalSession terminalAdapter, Action
     private const string HelpText = """
                                     Available commands:
                                       /help, /?     - Show this help
-                                      /cancel       - Cancel current operation (keeps conversation history)
                                       /clear        - Clear conversation and wipe thread history
                                       Ctrl+C twice  - Exit application
+
+                                    Keyboard shortcuts:
+                                      Esc           - Cancel current operation (while thinking) or clear input
+                                      Tab           - Switch focus between input and chat history
+                                      Shift+Enter   - Insert newline in input
                                     """;
 
     public bool TryHandleCommand(string input)

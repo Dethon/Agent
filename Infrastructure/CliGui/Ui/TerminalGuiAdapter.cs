@@ -29,6 +29,7 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private Action<MouseEvent>? _previousRootMouseEvent;
 
     private bool _isRunning;
+    private bool _isThinking;
     private bool _resizeScheduled;
     private int _currentInputHeight = Ui.MinInputHeight;
     private DateTime? _lastCtrlCUtc;
@@ -105,11 +106,13 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 
     public void ShowThinkingIndicator()
     {
+        _isThinking = true;
         _thinkingIndicator?.Show();
     }
 
     public void HideThinkingIndicator()
     {
+        _isThinking = false;
         _thinkingIndicator?.Hide();
     }
 
@@ -326,20 +329,45 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         {
             switch (args.KeyEvent.Key)
             {
+                case Key.Esc:
+                    HandleEscape(args);
+                    return;
                 case Key.Tab:
                     _chatListView?.SetFocus();
                     args.Handled = true;
                     return;
                 case Key.Enter | Key.ShiftMask:
-                    InsertNewline(args);
+                    if (!_isThinking)
+                    {
+                        InsertNewline(args);
+                    }
+                    else
+                    {
+                        args.Handled = true;
+                    }
+
                     return;
                 case Key.Enter:
-                    HandleEnter(isBurst, args);
+                    if (!_isThinking)
+                    {
+                        HandleEnter(isBurst, args);
+                    }
+                    else
+                    {
+                        args.Handled = true;
+                    }
+
                     return;
                 case Key.C | Key.CtrlMask:
                     HandleCtrlC();
                     args.Handled = true;
                     return;
+            }
+
+            // Block all other input while thinking
+            if (_isThinking)
+            {
+                args.Handled = true;
             }
         }
         finally
@@ -468,6 +496,22 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         ShowSystemMessage("Press Ctrl+C again to exit.");
+    }
+
+    private void HandleEscape(View.KeyEventEventArgs args)
+    {
+        if (_isThinking)
+        {
+            // Cancel the current operation (same as /cancel)
+            InputReceived?.Invoke("/cancel");
+        }
+        else if (_inputField is not null)
+        {
+            // Clear the input field when not thinking
+            _inputField.Text = "";
+        }
+
+        args.Handled = true;
     }
 
     private void UpdateChatView()
