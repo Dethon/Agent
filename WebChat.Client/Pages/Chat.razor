@@ -1,5 +1,6 @@
 @page "/"
 @inject ChatHubService HubService
+@inject IJSRuntime Js
 @implements IDisposable
 
 <div class="chat-layout">
@@ -14,7 +15,7 @@
                IsStreaming="@IsStreaming"/>
 
     <div class="chat-container">
-        <div class="messages-area">
+        <div class="messages-area" @ref="_messagesArea">
             @if (CurrentMessages.Count == 0 && !IsStreaming)
             {
                 <div class="empty-state">
@@ -56,6 +57,10 @@
     private readonly Dictionary<string, ChatMessageModel?> _streamingMessageByTopic = new();
     private readonly HashSet<string> _streamingTopics = new();
 
+    // Auto-scroll tracking
+    private ElementReference _messagesArea;
+    private bool _shouldAutoScroll = true;
+
     private List<ChatMessageModel> CurrentMessages =>
         _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs) ? msgs : [];
 
@@ -81,6 +86,27 @@
         }
 
         StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shouldAutoScroll)
+        {
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea);
+        }
+    }
+
+    private async Task CheckAndUpdateAutoScroll()
+    {
+        try
+        {
+            _shouldAutoScroll = await Js.InvokeAsync<bool>("chatScroll.isAtBottom", _messagesArea);
+        }
+        catch
+        {
+            // JS interop might fail during initialization
+            _shouldAutoScroll = true;
+        }
     }
 
     private async Task HandleReconnected()
@@ -128,6 +154,7 @@
             }).ToList();
         }
 
+        _shouldAutoScroll = true; // Scroll to bottom when switching topics
         StateHasChanged();
     }
 
@@ -211,6 +238,7 @@
 
         _streamingTopics.Add(topic.TopicId);
         _streamingMessageByTopic[topic.TopicId] = new ChatMessageModel { Role = "assistant" };
+        _shouldAutoScroll = true; // Always scroll when user sends a message
         StateHasChanged();
 
         // Run streaming in background
@@ -276,7 +304,11 @@
                         : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls;
                 }
 
-                await InvokeAsync(StateHasChanged);
+                await InvokeAsync(async () =>
+                {
+                    await CheckAndUpdateAutoScroll();
+                    StateHasChanged();
+                });
             }
 
             if (!string.IsNullOrEmpty(streamingMessage.Content)
@@ -302,7 +334,11 @@
         {
             _streamingTopics.Remove(topic.TopicId);
             _streamingMessageByTopic.Remove(topic.TopicId);
-            await InvokeAsync(StateHasChanged);
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
         }
     }
 
