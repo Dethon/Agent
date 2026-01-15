@@ -325,7 +325,7 @@ html, body {
 /* Chat message */
 .chat-message {
     max-width: 85%;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 1rem;
     border-radius: 12px;
     line-height: 1.5;
     word-wrap: break-word;
@@ -349,7 +349,6 @@ html, body {
 }
 
 .message-content {
-    white-space: pre-wrap;
 }
 
 .message-content p {
@@ -381,14 +380,12 @@ html, body {
     background: none;
 }
 
-/* Reasoning block */
-.reasoning-block {
-    margin-top: 0.75rem;
-    border-top: 1px solid var(--border-color);
-    padding-top: 0.5rem;
+/* Collapsible blocks (reasoning, tool calls) */
+.collapsible-block {
+    margin-bottom: 0.5rem;
 }
 
-.reasoning-toggle {
+.collapsible-toggle {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -400,11 +397,15 @@ html, body {
     padding: 0.25rem 0;
 }
 
-.reasoning-toggle:hover {
+.collapsible-toggle:hover {
     color: var(--text-primary);
 }
 
-.reasoning-content {
+.toggle-icon {
+    font-size: 0.625rem;
+}
+
+.collapsible-content {
     margin-top: 0.5rem;
     padding: 0.5rem;
     background-color: var(--bg-primary);
@@ -414,12 +415,7 @@ html, body {
     white-space: pre-wrap;
 }
 
-/* Tool calls */
-.tool-calls {
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background-color: var(--bg-primary);
-    border-radius: 6px;
+.tool-calls-content {
     font-size: 0.75rem;
     font-family: 'Consolas', 'Monaco', monospace;
     color: var(--accent);
