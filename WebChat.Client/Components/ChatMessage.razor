@@ -1,6 +1,7 @@
 @using Markdig
 @code {
     [Parameter] public ChatMessageModel Message { get; set; } = new();
+    [Parameter] public bool IsStreaming { get; set; }
 
     private bool _showReasoning;
     private bool _showToolCalls;
@@ -68,4 +69,16 @@
     <div class="message-content">
         @((MarkupString)RenderMarkdown(Message.Content))
     </div>
+
+    @if (IsStreaming)
+    {
+        <div class="streaming-indicator">
+            <div class="streaming-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span>Thinking...</span>
+        </div>
+    }
 </div>

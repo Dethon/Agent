@@ -31,19 +31,7 @@
 
                 @if (IsStreaming && CurrentStreamingMessage is not null)
                 {
-                    <ChatMessage Message="@CurrentStreamingMessage"/>
-                }
-
-                @if (IsStreaming)
-                {
-                    <div class="streaming-indicator">
-                        <div class="streaming-dots">
-                            <span></span>
-                            <span></span>
-                            <span></span>
-                        </div>
-                        <span>Thinking...</span>
-                    </div>
+                    <ChatMessage Message="@CurrentStreamingMessage" IsStreaming="true"/>
                 }
             }
         </div>
