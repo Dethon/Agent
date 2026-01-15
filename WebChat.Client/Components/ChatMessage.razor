@@ -3,6 +3,7 @@
     [Parameter] public ChatMessageModel Message { get; set; } = new();
 
     private bool _showReasoning;
+    private bool _showToolCalls;
 
     private string RenderMarkdown(string? content)
     {
@@ -32,29 +33,39 @@
 }
 
 <div class="@GetMessageClass()">
-    <div class="message-content">
-        @((MarkupString)RenderMarkdown(Message.Content))
-    </div>
-
-    @if (!string.IsNullOrEmpty(Message.ToolCalls))
-    {
-        <div class="tool-calls">
-            @Message.ToolCalls
-        </div>
-    }
-
     @if (!string.IsNullOrEmpty(Message.Reasoning))
     {
-        <div class="reasoning-block">
-            <button class="reasoning-toggle" @onclick="() => _showReasoning = !_showReasoning">
-                @(_showReasoning ? "Hide" : "Show") reasoning
+        <div class="collapsible-block">
+            <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
+                <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
+                Reasoning
             </button>
             @if (_showReasoning)
             {
-                <div class="reasoning-content">
+                <div class="collapsible-content">
                     @Message.Reasoning
                 </div>
             }
         </div>
     }
+
+    @if (!string.IsNullOrEmpty(Message.ToolCalls))
+    {
+        <div class="collapsible-block">
+            <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
+                <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
+                Tool calls
+            </button>
+            @if (_showToolCalls)
+            {
+                <div class="collapsible-content tool-calls-content">
+                    @Message.ToolCalls
+                </div>
+            }
+        </div>
+    }
+
+    <div class="message-content">
+        @((MarkupString)RenderMarkdown(Message.Content))
+    </div>
 </div>
