@@ -8,9 +8,6 @@ using Infrastructure.Clients;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -42,6 +39,11 @@ public static class InjectorModule
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
+            if (cmdParams.ChatInterface == ChatInterface.Web)
+            {
+                services = services.AddSignalR().Services;
+            }
+
             services = services
                 .AddSingleton<ChatMonitor>()
                 .AddSingleton<AgentCleanupMonitor>()
@@ -53,6 +55,7 @@ public static class InjectorModule
                 ChatInterface.Cli => services.AddCliClient(settings, cmdParams),
                 ChatInterface.Telegram => services.AddTelegramClient(settings, cmdParams),
                 ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
+                ChatInterface.Web => services.AddWebClient(),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
@@ -130,6 +133,15 @@ public static class InjectorModule
                         cmdParams.ShowReasoning,
                         lifetime);
                 });
+        }
+
+        private IServiceCollection AddWebClient()
+        {
+            return services
+                .AddSingleton<WebChatMessengerClient>()
+                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>())
+                .AddSingleton<IToolApprovalHandlerFactory>(sp =>
+                    new WebToolApprovalHandlerFactory(sp.GetRequiredService<WebChatMessengerClient>()));
         }
     }
 }

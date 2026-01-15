@@ -1,10 +1,33 @@
+using Agent.Hubs;
 using Agent.Modules;
-using Microsoft.Extensions.Hosting;
+using Agent.Settings;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 var cmdParams = ConfigModule.GetCommandLineParams(args);
 var settings = builder.Configuration.GetSettings();
-builder.Services.ConfigureJack(settings, cmdParams);
 
-using var host = builder.Build();
-await host.RunAsync();
+if (cmdParams.ChatInterface == ChatInterface.Web)
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.SetIsOriginAllowed(_ => true)
+                .AllowAnyMethod()
+                .AllowAnyHeader()
+                .AllowCredentials();
+        });
+    });
+}
+
+builder.Services.ConfigureAgents(settings, cmdParams);
+
+var app = builder.Build();
+
+if (cmdParams.ChatInterface == ChatInterface.Web)
+{
+    app.UseCors();
+    app.MapHub<ChatHub>("/hubs/chat");
+}
+
+await app.RunAsync();

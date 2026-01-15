@@ -1,7 +1,5 @@
 ﻿using System.CommandLine;
 using Agent.Settings;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Agent.Modules;
 
@@ -15,15 +13,10 @@ public static class ConfigModule
             .Build();
 
         var settings = config.Get<AgentSettings>();
-        if (settings == null)
-        {
-            throw new InvalidOperationException("Settings not found");
-        }
-
-        return settings;
+        return settings ?? throw new InvalidOperationException("Settings not found");
     }
 
-    public static IServiceCollection ConfigureJack(
+    public static IServiceCollection ConfigureAgents(
         this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
     {
         return services
@@ -37,7 +30,7 @@ public static class ConfigModule
         {
             Description = "Chat interface to interact with the agent",
             Required = false,
-            DefaultValueFactory = _ => ChatInterface.Telegram
+            DefaultValueFactory = _ => ChatInterface.Web
         };
         var promptOption = new Option<string?>("--prompt", "-p")
         {

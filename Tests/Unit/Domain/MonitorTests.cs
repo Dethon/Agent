@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -62,6 +63,11 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
     public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
     {
         return agent;
+    }
+
+    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    {
+        return [];
     }
 }
 
