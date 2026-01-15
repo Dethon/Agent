@@ -81,7 +81,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -106,7 +106,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -133,7 +133,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -165,7 +165,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 

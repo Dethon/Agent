@@ -1,6 +1,4 @@
 ﻿using Domain.Monitor;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace Agent.App;
 
