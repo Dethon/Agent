@@ -1,6 +1,5 @@
 @page "/"
 @inject ChatHubService HubService
-@inject LocalStorageService LocalStorage
 @implements IDisposable
 
 <div class="chat-layout">
@@ -85,7 +84,8 @@
         await HubService.ConnectAsync();
         _agents = (await HubService.GetAgentsAsync()).ToList();
 
-        _topics = await LocalStorage.GetTopicsAsync();
+        var serverTopics = await HubService.GetAllTopicsAsync();
+        _topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
 
         if (_agents.Count > 0)
         {
@@ -150,7 +150,6 @@
         _messagesByTopic.Remove(topic.TopicId);
         _streamingMessageByTopic.Remove(topic.TopicId);
         _streamingTopics.Remove(topic.TopicId);
-        await LocalStorage.SaveTopicsAsync(_topics);
 
         if (_selectedTopic?.TopicId == topic.TopicId)
         {
@@ -182,7 +181,7 @@
             topic = new StoredTopic
             {
                 TopicId = ChatHubService.GenerateTopicId(),
-                ChatId = ChatHubService.GenerateChatId(),
+                ChatId = ChatHubService.GetChatIdForAgent(_selectedAgentId),
                 AgentId = _selectedAgentId,
                 Name = topicName,
                 CreatedAt = DateTime.UtcNow
@@ -197,7 +196,7 @@
             _selectedTopic = topic;
             _topics.Add(topic);
             _messagesByTopic[topic.TopicId] = [];
-            await LocalStorage.SaveTopicsAsync(_topics);
+            await HubService.SaveTopicAsync(topic.ToMetadata());
             StateHasChanged();
         }
         else
@@ -300,7 +299,7 @@
             }
 
             topic.LastMessageAt = DateTime.UtcNow;
-            await LocalStorage.SaveTopicsAsync(_topics);
+            await HubService.SaveTopicAsync(topic.ToMetadata());
         }
         catch (Exception ex)
         {

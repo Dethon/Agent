@@ -1,3 +1,5 @@
+using Domain.DTOs.WebChat;
+
 namespace WebChat.Client.Models;
 
 public class StoredTopic
@@ -8,4 +10,28 @@ public class StoredTopic
     public string Name { get; set; } = "New Chat";
     public DateTime CreatedAt { get; set; }
     public DateTime? LastMessageAt { get; set; }
+
+    public static StoredTopic FromMetadata(TopicMetadata metadata)
+    {
+        return new StoredTopic
+        {
+            TopicId = metadata.TopicId,
+            ChatId = metadata.ChatId,
+            AgentId = metadata.AgentId,
+            Name = metadata.Name,
+            CreatedAt = metadata.CreatedAt.UtcDateTime,
+            LastMessageAt = metadata.LastMessageAt?.UtcDateTime
+        };
+    }
+
+    public TopicMetadata ToMetadata()
+    {
+        return new TopicMetadata(
+            TopicId,
+            ChatId,
+            AgentId,
+            Name,
+            new DateTimeOffset(CreatedAt, TimeSpan.Zero),
+            LastMessageAt.HasValue ? new DateTimeOffset(LastMessageAt.Value, TimeSpan.Zero) : null);
+    }
 }

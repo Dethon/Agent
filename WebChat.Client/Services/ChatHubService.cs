@@ -95,6 +95,26 @@ public sealed class ChatHubService : IAsyncDisposable
         return await _hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId);
     }
 
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
+    {
+        if (_hubConnection is null)
+        {
+            return [];
+        }
+
+        return await _hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
+    }
+
+    public async Task SaveTopicAsync(TopicMetadata topic)
+    {
+        if (_hubConnection is null)
+        {
+            return;
+        }
+
+        await _hubConnection.InvokeAsync("SaveTopic", topic);
+    }
+
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string message)
     {
         if (_hubConnection is null || CurrentTopic is null)
@@ -150,14 +170,15 @@ public sealed class ChatHubService : IAsyncDisposable
         }
     }
 
-    public static long GenerateChatId()
-    {
-        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-    }
-
     public static string GenerateTopicId()
     {
         return Guid.NewGuid().ToString("N");
+    }
+
+    public static long GetChatIdForAgent(string agentId)
+    {
+        var hash = agentId.Aggregate(0L, (current, c) => (current * 31) + c);
+        return hash & 0x7FFFFFFF;
     }
 }
 

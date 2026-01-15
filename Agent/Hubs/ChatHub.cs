@@ -50,6 +50,11 @@ public sealed class ChatHub(
             .ToList();
     }
 
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics()
+    {
+        return await threadStateStore.GetAllTopicsAsync();
+    }
+
     public bool IsProcessing(string topicId)
     {
         return messengerClient.IsProcessing(topicId);
@@ -94,5 +99,6 @@ public sealed class ChatHub(
 
         var agentKey = new AgentKey(chatId, 0);
         await threadStateStore.DeleteAsync(agentKey);
+        await threadStateStore.DeleteTopicAsync(topicId);
     }
 }
