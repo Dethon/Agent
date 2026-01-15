@@ -15,7 +15,7 @@
                IsStreaming="@IsStreaming"/>
 
     <div class="chat-container">
-        <div class="messages-area" @ref="_messagesContainer">
+        <div class="messages-area">
             @if (CurrentMessages.Count == 0 && !IsStreaming)
             {
                 <div class="empty-state">
@@ -59,7 +59,6 @@
 </div>
 
 @code {
-    private ElementReference _messagesContainer;
     private List<AgentInfo> _agents = [];
     private List<StoredTopic> _topics = [];
     private StoredTopic? _selectedTopic;
