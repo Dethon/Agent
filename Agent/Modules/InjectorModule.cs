@@ -46,9 +46,7 @@ public static class InjectorModule
 
             services = services
                 .AddSingleton<ChatMonitor>()
-                .AddSingleton<AgentCleanupMonitor>()
-                .AddHostedService<ChatMonitoring>()
-                .AddHostedService<CleanupMonitoring>();
+                .AddHostedService<ChatMonitoring>();
 
             return cmdParams.ChatInterface switch
             {
@@ -113,6 +111,8 @@ public static class InjectorModule
             var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
 
             return services
+                .AddHostedService<CleanupMonitoring>()
+                .AddSingleton<AgentCleanupMonitor>()
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
                     botTokens,
