@@ -54,6 +54,12 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         return topics.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt).ToList();
     }
 
+    public async Task SaveTopicAsync(TopicMetadata topic)
+    {
+        var json = JsonSerializer.Serialize(topic);
+        await _db.StringSetAsync(TopicKey(topic.TopicId), json, expiration);
+    }
+
     public async Task DeleteTopicAsync(string topicId)
     {
         await _db.KeyDeleteAsync(TopicKey(topicId));

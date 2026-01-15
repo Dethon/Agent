@@ -101,4 +101,9 @@ public sealed class ChatHub(
         await threadStateStore.DeleteAsync(agentKey);
         await threadStateStore.DeleteTopicAsync(topicId);
     }
+
+    public async Task SaveTopic(TopicMetadata topic)
+    {
+        await threadStateStore.SaveTopicAsync(topic);
+    }
 }

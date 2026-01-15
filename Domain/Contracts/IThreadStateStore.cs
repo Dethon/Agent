@@ -11,5 +11,6 @@ public interface IThreadStateStore
     Task SetMessagesAsync(string key, ChatMessage[] messages);
 
     Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync();
+    Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string topicId);
 }
