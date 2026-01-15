@@ -52,7 +52,8 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             Content = responseMessage.Message,
             Reasoning = responseMessage.Reasoning,
             ToolCalls = responseMessage.CalledTools,
-            IsComplete = responseMessage.IsComplete
+            IsComplete = responseMessage.IsComplete,
+            MessageIndex = responseMessage.MessageIndex
         };
 
         await channel.Writer.WriteAsync(streamMessage, cancellationToken);

@@ -7,4 +7,5 @@ public record ChatResponseMessage
     public string? Reasoning;
     public bool Bold;
     public bool IsComplete;
+    public int MessageIndex;
 }

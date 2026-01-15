@@ -7,4 +7,5 @@ public record ChatStreamMessage
     public string? ToolCalls { get; init; }
     public bool IsComplete { get; init; }
     public string? Error { get; init; }
+    public int MessageIndex { get; init; }
 }

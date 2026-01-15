@@ -1,7 +1,7 @@
 ---
 name: arch-check
 description: Validate architecture and layer boundaries. Use proactively after code changes or when reviewing PRs.
-model: haiku
+model: inherit
 tools: Read, Grep, Glob
 ---
 

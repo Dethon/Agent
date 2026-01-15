@@ -234,6 +234,7 @@
     {
         var streamingMessage = _streamingMessageByTopic[topic.TopicId]!;
         var messages = _messagesByTopic[topic.TopicId];
+        var currentMessageIndex = 0;
 
         try
         {
@@ -251,25 +252,49 @@
                     break;
                 }
 
+                // New message turn - save current and start fresh
+                if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
+                {
+                    if (!string.IsNullOrEmpty(streamingMessage.Content)
+                        || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                        || !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                    {
+                        messages.Add(streamingMessage);
+                    }
+
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                }
+
+                currentMessageIndex = chunk.MessageIndex;
+
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
-                    streamingMessage.Content = chunk.Content;
+                    streamingMessage.Content = string.IsNullOrEmpty(streamingMessage.Content)
+                        ? chunk.Content
+                        : streamingMessage.Content + "\n\n" + chunk.Content;
                 }
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning))
                 {
-                    streamingMessage.Reasoning = chunk.Reasoning;
+                    streamingMessage.Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                        ? chunk.Reasoning
+                        : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning;
                 }
 
                 if (!string.IsNullOrEmpty(chunk.ToolCalls))
                 {
-                    streamingMessage.ToolCalls = chunk.ToolCalls;
+                    streamingMessage.ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                        ? chunk.ToolCalls
+                        : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls;
                 }
 
                 await InvokeAsync(StateHasChanged);
             }
 
-            if (!string.IsNullOrEmpty(streamingMessage.Content))
+            if (!string.IsNullOrEmpty(streamingMessage.Content)
+                || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                || !string.IsNullOrEmpty(streamingMessage.Reasoning))
             {
                 messages.Add(streamingMessage);
             }

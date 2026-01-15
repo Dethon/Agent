@@ -22,13 +22,14 @@ public class ChatMonitor(
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
                 .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
-                .Merge(cancellationToken);
+                .Merge(cancellationToken)
+                .Select((x, i) => (x.Item1, x.Item2, i));
 
-            await foreach (var (key, aiResponse) in responses)
+            await foreach (var (key, aiResponse, i) in responses)
             {
                 try
                 {
-                    await SendResponse(key, aiResponse, cancellationToken);
+                    await SendResponse(key, aiResponse, i, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -144,7 +145,7 @@ public class ChatMonitor(
         return new AgentKey(prompt.ChatId, threadId, prompt.BotTokenHash);
     }
 
-    private async Task SendResponse(AgentKey agentKey, AiResponse response, CancellationToken ct)
+    private async Task SendResponse(AgentKey agentKey, AiResponse response, int idx, CancellationToken ct)
     {
         try
         {
@@ -167,7 +168,8 @@ public class ChatMonitor(
             var responseMessage = new ChatResponseMessage
             {
                 Message = response.Content,
-                Reasoning = response.Reasoning
+                Reasoning = response.Reasoning,
+                MessageIndex = idx
             };
             await chatMessengerClient.SendResponse(
                 agentKey.ChatId, responseMessage, agentKey.ThreadId, agentKey.BotTokenHash, ct);

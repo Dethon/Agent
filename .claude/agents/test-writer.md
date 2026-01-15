@@ -1,7 +1,7 @@
 ---
 name: test-writer
 description: Write integration tests for code. Use after implementing features or when adding test coverage.
-model: sonnet
+model: inherit
 tools: Read, Grep, Glob, Edit, Write
 skills: integration-test
 ---
