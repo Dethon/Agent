@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Agent Chat</title>
+    <base href="/"/>
+    <link href="css/app.css" rel="stylesheet"/>
+    <link href="manifest.webmanifest" rel="manifest"/>
+</head>
+
+<body>
+<div id="app">
+    <div class="loading-screen">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a class="reload" href="">Reload</a>
+    <a class="dismiss">Dismiss</a>
+</div>
+<script src="_framework/blazor.webassembly.js"></script>
+<script>navigator.serviceWorker.register('service-worker.js');</script>
+</body>
+
+</html>

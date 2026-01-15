@@ -1,0 +1,126 @@
+@code {
+    [Parameter] public List<StoredTopic> Topics { get; set; } = [];
+
+    [Parameter] public StoredTopic? SelectedTopic { get; set; }
+
+    [Parameter] public List<AgentInfo> Agents { get; set; } = [];
+
+    [Parameter] public string? SelectedAgentId { get; set; }
+
+    [Parameter] public EventCallback<StoredTopic> OnTopicSelected { get; set; }
+
+    [Parameter] public EventCallback<StoredTopic> OnTopicDeleted { get; set; }
+
+    [Parameter] public EventCallback OnNewTopic { get; set; }
+
+    [Parameter] public EventCallback<string> OnAgentChanged { get; set; }
+
+    [Parameter] public bool IsStreaming { get; set; }
+
+    private string? _deleteConfirmTopicId;
+
+    private async Task HandleTopicClick(StoredTopic topic)
+    {
+        if (SelectedTopic?.TopicId != topic.TopicId)
+        {
+            await OnTopicSelected.InvokeAsync(topic);
+        }
+    }
+
+    private async Task HandleNewTopic()
+    {
+        await OnNewTopic.InvokeAsync();
+    }
+
+    private void ShowDeleteConfirm(string topicId)
+    {
+        _deleteConfirmTopicId = topicId;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteConfirmTopicId = null;
+    }
+
+    private async Task ConfirmDelete(StoredTopic topic)
+    {
+        _deleteConfirmTopicId = null;
+        await OnTopicDeleted.InvokeAsync(topic);
+    }
+
+    private async Task HandleAgentChange(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(value))
+        {
+            await OnAgentChanged.InvokeAsync(value);
+        }
+    }
+
+}
+
+<div class="topic-sidebar">
+    <div class="sidebar-header">
+        <div class="agent-select-wrapper">
+            <select class="agent-select"
+                    value="@SelectedAgentId"
+                    @onchange="HandleAgentChange">
+                @foreach (var agent in Agents)
+                {
+                    <option value="@agent.Id">@agent.Name</option>
+                }
+            </select>
+        </div>
+        <button class="new-topic-btn" @onclick="HandleNewTopic">
+            + New Chat
+        </button>
+    </div>
+
+    <div class="topic-list">
+        @{
+            var filteredTopics = Topics
+                .Where(t => t.AgentId == SelectedAgentId)
+                .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+                .ToList();
+            Console.WriteLine($"[TopicList] Total topics: {Topics.Count}, Filtered for agent '{SelectedAgentId}': {filteredTopics.Count}");
+        }
+        @if (filteredTopics.Count == 0)
+        {
+            <div class="no-topics">
+                No conversations yet
+            </div>
+        }
+        else
+        {
+            @foreach (var topic in filteredTopics)
+            {
+                <div class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "")"
+                     @onclick="() => HandleTopicClick(topic)">
+                    <div class="topic-content">
+                        <div class="topic-name">@topic.Name</div>
+                        <div class="topic-meta">
+                            @(topic.LastMessageAt?.ToLocalTime().ToString("MMM d, h:mm tt") ?? topic.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt"))
+                        </div>
+                    </div>
+                    @if (_deleteConfirmTopicId == topic.TopicId)
+                    {
+                        <div class="delete-confirm">
+                            <button class="confirm-btn" @onclick="() => ConfirmDelete(topic)"
+                                    @onclick:stopPropagation="true">Delete
+                            </button>
+                            <button class="cancel-btn" @onclick="CancelDelete" @onclick:stopPropagation="true">Cancel
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)"
+                                @onclick:stopPropagation="true" disabled="@IsStreaming">
+                            &times;
+                        </button>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>

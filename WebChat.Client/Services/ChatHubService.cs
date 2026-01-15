@@ -1,0 +1,164 @@
+using System.Net.Http.Json;
+using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR.Client;
+using WebChat.Client.Models;
+
+namespace WebChat.Client.Services;
+
+public sealed class ChatHubService : IAsyncDisposable
+{
+    private HubConnection? _hubConnection;
+    private readonly HttpClient _httpClient;
+
+    public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
+    public StoredTopic? CurrentTopic { get; private set; }
+
+    public event Action? OnStateChanged;
+    public event Func<Task>? OnReconnected;
+
+    public ChatHubService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+    public async Task ConnectAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            return;
+        }
+
+        var config = await _httpClient.GetFromJsonAsync<AppConfig>("/api/config");
+        var agentUrl = config?.AgentUrl ?? "http://localhost:5000";
+        var hubUrl = $"{agentUrl.TrimEnd('/')}/hubs/chat";
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(hubUrl)
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.Closed += _ =>
+        {
+            OnStateChanged?.Invoke();
+            return Task.CompletedTask;
+        };
+
+        _hubConnection.Reconnected += async _ =>
+        {
+            if (OnReconnected is not null)
+            {
+                await OnReconnected.Invoke();
+            }
+
+            OnStateChanged?.Invoke();
+        };
+
+        await _hubConnection.StartAsync();
+        OnStateChanged?.Invoke();
+    }
+
+    public async Task<IReadOnlyList<AgentInfo>> GetAgentsAsync()
+    {
+        if (_hubConnection is null)
+        {
+            return [];
+        }
+
+        return await _hubConnection.InvokeAsync<IReadOnlyList<AgentInfo>>("GetAgents");
+    }
+
+    public async Task<bool> StartSessionAsync(StoredTopic topic)
+    {
+        if (_hubConnection is null)
+        {
+            return false;
+        }
+
+        var success =
+            await _hubConnection.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId);
+        if (success)
+        {
+            CurrentTopic = topic;
+            OnStateChanged?.Invoke();
+        }
+
+        return success;
+    }
+
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId)
+    {
+        if (_hubConnection is null)
+        {
+            return [];
+        }
+
+        return await _hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId);
+    }
+
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string message)
+    {
+        if (_hubConnection is null || CurrentTopic is null)
+        {
+            yield break;
+        }
+
+        var stream = _hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", CurrentTopic.TopicId, message);
+
+        await foreach (var item in stream)
+        {
+            yield return item;
+        }
+    }
+
+    public async Task CancelAsync()
+    {
+        if (_hubConnection is null || CurrentTopic is null)
+        {
+            return;
+        }
+
+        await _hubConnection.InvokeAsync("CancelTopic", CurrentTopic.TopicId);
+    }
+
+    public async Task DeleteTopicAsync(StoredTopic topic)
+    {
+        if (_hubConnection is null)
+        {
+            return;
+        }
+
+        await _hubConnection.InvokeAsync("DeleteTopic", topic.TopicId, topic.ChatId);
+
+        if (CurrentTopic?.TopicId == topic.TopicId)
+        {
+            CurrentTopic = null;
+            OnStateChanged?.Invoke();
+        }
+    }
+
+    public void ClearCurrentTopic()
+    {
+        CurrentTopic = null;
+        OnStateChanged?.Invoke();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            await _hubConnection.DisposeAsync();
+        }
+    }
+
+    public static long GenerateChatId()
+    {
+        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    }
+
+    public static string GenerateTopicId()
+    {
+        return Guid.NewGuid().ToString("N");
+    }
+}
+
+internal record AppConfig(string? AgentUrl);

@@ -1,0 +1,60 @@
+@using Markdig
+@code {
+    [Parameter] public ChatMessageModel Message { get; set; } = new();
+
+    private bool _showReasoning;
+
+    private string RenderMarkdown(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return "";
+        }
+
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .Build();
+
+        return Markdown.ToHtml(content, pipeline);
+    }
+
+    private string GetMessageClass()
+    {
+        var classes = new List<string> { "chat-message", Message.Role };
+        if (Message.IsError)
+        {
+            classes.Add("error");
+        }
+
+        return string.Join(" ", classes);
+    }
+
+}
+
+<div class="@GetMessageClass()">
+    <div class="message-content">
+        @((MarkupString)RenderMarkdown(Message.Content))
+    </div>
+
+    @if (!string.IsNullOrEmpty(Message.ToolCalls))
+    {
+        <div class="tool-calls">
+            @Message.ToolCalls
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Message.Reasoning))
+    {
+        <div class="reasoning-block">
+            <button class="reasoning-toggle" @onclick="() => _showReasoning = !_showReasoning">
+                @(_showReasoning ? "Hide" : "Show") reasoning
+            </button>
+            @if (_showReasoning)
+            {
+                <div class="reasoning-content">
+                    @Message.Reasoning
+                </div>
+            }
+        </div>
+    }
+</div>

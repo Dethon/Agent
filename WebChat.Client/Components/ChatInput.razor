@@ -1,0 +1,64 @@
+@code {
+    [Parameter] public EventCallback<string> OnSend { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    [Parameter] public bool IsStreaming { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    private string _inputText = "";
+
+    private async Task HandleSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(_inputText) || IsStreaming || Disabled)
+        {
+            return;
+        }
+
+        var message = _inputText;
+        _inputText = "";
+        await OnSend.InvokeAsync(message);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+        {
+            await HandleSubmit();
+        }
+    }
+
+    private async Task HandleCancel()
+    {
+        await OnCancel.InvokeAsync();
+    }
+
+}
+
+<div class="input-container">
+    <div class="input-wrapper">
+        <textarea class="chat-input"
+                  placeholder="Type your message..."
+                  @bind="_inputText"
+                  @bind:event="oninput"
+                  @onkeydown="HandleKeyDown"
+                  disabled="@Disabled"
+                  rows="1"></textarea>
+    </div>
+
+    @if (IsStreaming)
+    {
+        <button class="btn btn-secondary" @onclick="HandleCancel">
+            Cancel
+        </button>
+    }
+    else
+    {
+        <button class="btn btn-primary"
+                @onclick="HandleSubmit"
+                disabled="@(Disabled || string.IsNullOrWhiteSpace(_inputText))">
+            Send
+        </button>
+    }
+</div>

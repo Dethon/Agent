@@ -1,0 +1,32 @@
+@code {
+    [Parameter] public List<AgentInfo> Agents { get; set; } = [];
+
+    [Parameter] public string? SelectedAgentId { get; set; }
+
+    [Parameter] public EventCallback<string> OnAgentSelected { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    private async Task HandleChange(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(value))
+        {
+            await OnAgentSelected.InvokeAsync(value);
+        }
+    }
+
+}
+
+<div class="agent-selector">
+    <label for="agent-select">Agent:</label>
+    <select id="agent-select"
+            value="@SelectedAgentId"
+            @onchange="HandleChange"
+            disabled="@Disabled">
+        @foreach (var agent in Agents)
+        {
+            <option value="@agent.Id">@agent.Name</option>
+        }
+    </select>
+</div>

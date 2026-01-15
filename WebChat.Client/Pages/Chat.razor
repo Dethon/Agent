@@ -1,0 +1,315 @@
+@page "/"
+@inject ChatHubService HubService
+@inject LocalStorageService LocalStorage
+@implements IDisposable
+
+<div class="chat-layout">
+    <TopicList Topics="@_topics"
+               SelectedTopic="@_selectedTopic"
+               Agents="@_agents"
+               SelectedAgentId="@_selectedAgentId"
+               OnTopicSelected="HandleTopicSelected"
+               OnTopicDeleted="HandleTopicDeleted"
+               OnNewTopic="HandleNewTopic"
+               OnAgentChanged="HandleAgentChanged"
+               IsStreaming="@IsStreaming"/>
+
+    <div class="chat-container">
+        <div class="messages-area" @ref="_messagesContainer">
+            @if (CurrentMessages.Count == 0 && !IsStreaming)
+            {
+                <div class="empty-state">
+                    <h2>Start a conversation</h2>
+                    <p>Select an agent and type a message to begin.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var message in CurrentMessages)
+                {
+                    <ChatMessage Message="@message"/>
+                }
+
+                @if (IsStreaming && CurrentStreamingMessage is not null)
+                {
+                    <ChatMessage Message="@CurrentStreamingMessage"/>
+                }
+
+                @if (IsStreaming)
+                {
+                    <div class="streaming-indicator">
+                        <div class="streaming-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <span>Thinking...</span>
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="input-area">
+            <ChatInput OnSend="HandleSend"
+                       OnCancel="HandleCancel"
+                       IsStreaming="IsStreaming"
+                       Disabled="string.IsNullOrEmpty(_selectedAgentId) || !HubService.IsConnected"/>
+        </div>
+    </div>
+</div>
+
+@code {
+    private ElementReference _messagesContainer;
+    private List<AgentInfo> _agents = [];
+    private List<StoredTopic> _topics = [];
+    private StoredTopic? _selectedTopic;
+    private string? _selectedAgentId;
+
+    // Per-topic message storage for background streaming
+    private readonly Dictionary<string, List<ChatMessageModel>> _messagesByTopic = new();
+    private readonly Dictionary<string, ChatMessageModel?> _streamingMessageByTopic = new();
+    private readonly HashSet<string> _streamingTopics = new();
+
+    private List<ChatMessageModel> CurrentMessages =>
+        _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs) ? msgs : [];
+
+    private ChatMessageModel? CurrentStreamingMessage =>
+        _selectedTopic is not null && _streamingMessageByTopic.TryGetValue(_selectedTopic.TopicId, out var msg) ? msg : null;
+
+    private bool IsStreaming => _selectedTopic is not null && _streamingTopics.Contains(_selectedTopic.TopicId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        HubService.OnStateChanged += StateHasChanged;
+        HubService.OnReconnected += HandleReconnected;
+
+        await HubService.ConnectAsync();
+        _agents = (await HubService.GetAgentsAsync()).ToList();
+
+        _topics = await LocalStorage.GetTopicsAsync();
+
+        if (_agents.Count > 0)
+        {
+            _selectedAgentId = _agents[0].Id;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task HandleReconnected()
+    {
+        if (_selectedTopic is not null)
+        {
+            await HubService.StartSessionAsync(_selectedTopic);
+        }
+    }
+
+    private Task HandleAgentChanged(string agentId)
+    {
+        if (_selectedAgentId == agentId)
+        {
+            return Task.CompletedTask;
+        }
+
+        _selectedAgentId = agentId;
+        _selectedTopic = null;
+        HubService.ClearCurrentTopic();
+        StateHasChanged();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleTopicSelected(StoredTopic topic)
+    {
+        if (_selectedTopic?.TopicId == topic.TopicId)
+        {
+            return;
+        }
+
+        _selectedTopic = topic;
+        _selectedAgentId = topic.AgentId;
+
+        // Load messages if not already cached
+        if (!_messagesByTopic.ContainsKey(topic.TopicId))
+        {
+            await HubService.StartSessionAsync(topic);
+            var history = await HubService.GetHistoryAsync(topic.ChatId);
+            _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task HandleTopicDeleted(StoredTopic topic)
+    {
+        await HubService.DeleteTopicAsync(topic);
+        _topics.RemoveAll(t => t.TopicId == topic.TopicId);
+        _messagesByTopic.Remove(topic.TopicId);
+        _streamingMessageByTopic.Remove(topic.TopicId);
+        _streamingTopics.Remove(topic.TopicId);
+        await LocalStorage.SaveTopicsAsync(_topics);
+
+        if (_selectedTopic?.TopicId == topic.TopicId)
+        {
+            _selectedTopic = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private Task HandleNewTopic()
+    {
+        _selectedTopic = null;
+        HubService.ClearCurrentTopic();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleSend(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || _selectedAgentId is null)
+        {
+            return;
+        }
+
+        StoredTopic topic;
+        if (_selectedTopic is null)
+        {
+            var topicName = message.Length > 50 ? message[..50] + "..." : message;
+            topic = new StoredTopic
+            {
+                TopicId = ChatHubService.GenerateTopicId(),
+                ChatId = ChatHubService.GenerateChatId(),
+                AgentId = _selectedAgentId,
+                Name = topicName,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var success = await HubService.StartSessionAsync(topic);
+            if (!success)
+            {
+                return;
+            }
+
+            _selectedTopic = topic;
+            _topics.Add(topic);
+            _messagesByTopic[topic.TopicId] = [];
+            await LocalStorage.SaveTopicsAsync(_topics);
+            StateHasChanged();
+        }
+        else
+        {
+            topic = _selectedTopic;
+            if (HubService.CurrentTopic?.TopicId != topic.TopicId)
+            {
+                await HubService.StartSessionAsync(topic);
+            }
+        }
+
+        // Get or create message list for this topic
+        if (!_messagesByTopic.TryGetValue(topic.TopicId, out var messages))
+        {
+            messages = [];
+            _messagesByTopic[topic.TopicId] = messages;
+        }
+
+        messages.Add(new ChatMessageModel
+        {
+            Role = "user",
+            Content = message
+        });
+
+        _streamingTopics.Add(topic.TopicId);
+        _streamingMessageByTopic[topic.TopicId] = new ChatMessageModel { Role = "assistant" };
+        StateHasChanged();
+
+        // Run streaming in background
+        _ = StreamResponseAsync(topic, message);
+    }
+
+    private async Task StreamResponseAsync(StoredTopic topic, string message)
+    {
+        var streamingMessage = _streamingMessageByTopic[topic.TopicId]!;
+        var messages = _messagesByTopic[topic.TopicId];
+
+        try
+        {
+            await foreach (var chunk in HubService.SendMessageAsync(message))
+            {
+                if (chunk.Error is not null)
+                {
+                    streamingMessage.Content = chunk.Error;
+                    streamingMessage.IsError = true;
+                    break;
+                }
+
+                if (chunk.IsComplete)
+                {
+                    break;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    streamingMessage.Content = chunk.Content;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning))
+                {
+                    streamingMessage.Reasoning = chunk.Reasoning;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls))
+                {
+                    streamingMessage.ToolCalls = chunk.ToolCalls;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (!string.IsNullOrEmpty(streamingMessage.Content))
+            {
+                messages.Add(streamingMessage);
+            }
+
+            topic.LastMessageAt = DateTime.UtcNow;
+            await LocalStorage.SaveTopicsAsync(_topics);
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessageModel
+            {
+                Role = "assistant",
+                Content = $"Error: {ex.Message}",
+                IsError = true
+            });
+        }
+        finally
+        {
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleCancel()
+    {
+        if (_selectedTopic is not null)
+        {
+            await HubService.CancelAsync();
+            _streamingTopics.Remove(_selectedTopic.TopicId);
+            _streamingMessageByTopic.Remove(_selectedTopic.TopicId);
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        HubService.OnStateChanged -= StateHasChanged;
+        HubService.OnReconnected -= HandleReconnected;
+    }
+
+}
