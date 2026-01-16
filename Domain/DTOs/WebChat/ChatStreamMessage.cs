@@ -8,4 +8,5 @@ public record ChatStreamMessage
     public bool IsComplete { get; init; }
     public string? Error { get; init; }
     public int MessageIndex { get; init; }
+    public long SequenceNumber { get; init; }
 }

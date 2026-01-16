@@ -56,6 +56,7 @@
     private readonly Dictionary<string, List<ChatMessageModel>> _messagesByTopic = new();
     private readonly Dictionary<string, ChatMessageModel?> _streamingMessageByTopic = new();
     private readonly HashSet<string> _streamingTopics = new();
+    private readonly HashSet<string> _resumingTopics = new();
 
     // Auto-scroll tracking
     private ElementReference _messagesArea;
@@ -83,6 +84,12 @@
         if (_agents.Count > 0)
         {
             _selectedAgentId = _agents[0].Id;
+        }
+
+        // Check for any active streams after page refresh
+        foreach (var topic in _topics)
+        {
+            _ = TryResumeStreamAsync(topic);
         }
 
         StateHasChanged();
@@ -114,6 +121,12 @@
         if (_selectedTopic is not null)
         {
             await HubService.StartSessionAsync(_selectedTopic);
+        }
+
+        // Check for any active streams after reconnection
+        foreach (var topic in _topics)
+        {
+            _ = TryResumeStreamAsync(topic);
         }
     }
 
@@ -329,6 +342,184 @@
             {
                 Role = "assistant",
                 Content = $"Error: {ex.Message}",
+                IsError = true
+            });
+        }
+        finally
+        {
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task TryResumeStreamAsync(StoredTopic topic)
+    {
+        // Prevent concurrent resume attempts for the same topic
+        if (!_resumingTopics.Add(topic.TopicId))
+        {
+            return;
+        }
+
+        try
+        {
+            // Skip if already streaming this topic
+            if (_streamingTopics.Contains(topic.TopicId))
+            {
+                return;
+            }
+
+            var state = await HubService.GetStreamStateAsync(topic.TopicId);
+            if (state is null || (!state.IsProcessing && state.BufferedMessages.Count == 0))
+            {
+                return;
+            }
+
+            // Ensure we have a session
+            await HubService.StartSessionAsync(topic);
+
+            // Ensure we have a message list for this topic
+            if (!_messagesByTopic.ContainsKey(topic.TopicId))
+            {
+                var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+                _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+                {
+                    Role = h.Role,
+                    Content = h.Content
+                }).ToList();
+            }
+
+            // Restore streaming state from buffer
+            _streamingTopics.Add(topic.TopicId);
+            var streamingMessage = RebuildFromBuffer(state.BufferedMessages);
+            _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+
+            await InvokeAsync(StateHasChanged);
+
+            // Continue streaming in background, passing lastSequenceNumber to skip duplicates
+            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageIndex, state.LastSequenceNumber);
+        }
+        finally
+        {
+            _resumingTopics.Remove(topic.TopicId);
+        }
+    }
+
+    private static ChatMessageModel RebuildFromBuffer(IReadOnlyList<ChatStreamMessage> bufferedMessages)
+    {
+        var streamingMessage = new ChatMessageModel { Role = "assistant" };
+
+        foreach (var msg in bufferedMessages.Where(m => !m.IsComplete && m.Error is null))
+        {
+            AccumulateChunk(streamingMessage, msg);
+        }
+
+        return streamingMessage;
+    }
+
+    private static void AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
+    {
+        if (!string.IsNullOrEmpty(chunk.Content))
+        {
+            streamingMessage.Content = string.IsNullOrEmpty(streamingMessage.Content)
+                ? chunk.Content
+                : streamingMessage.Content + "\n\n" + chunk.Content;
+        }
+
+        if (!string.IsNullOrEmpty(chunk.Reasoning))
+        {
+            streamingMessage.Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                ? chunk.Reasoning
+                : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning;
+        }
+
+        if (!string.IsNullOrEmpty(chunk.ToolCalls))
+        {
+            streamingMessage.ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                ? chunk.ToolCalls
+                : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls;
+        }
+    }
+
+    private static bool HasContent(ChatMessageModel msg)
+    {
+        return !string.IsNullOrEmpty(msg.Content) ||
+               !string.IsNullOrEmpty(msg.ToolCalls) ||
+               !string.IsNullOrEmpty(msg.Reasoning);
+    }
+
+    private async Task ResumeStreamResponseAsync(
+        StoredTopic topic,
+        ChatMessageModel streamingMessage,
+        int startMessageIndex,
+        long lastSeenSequence)
+    {
+        var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        var currentMessageIndex = startMessageIndex;
+
+        try
+        {
+            await foreach (var chunk in HubService.ResumeStreamAsync(topic.TopicId))
+            {
+                // Skip messages we've already processed from the buffer
+                if (chunk.SequenceNumber <= lastSeenSequence)
+                {
+                    continue;
+                }
+
+                if (chunk.Error is not null)
+                {
+                    streamingMessage.Content = chunk.Error;
+                    streamingMessage.IsError = true;
+                    break;
+                }
+
+                if (chunk.IsComplete)
+                {
+                    break;
+                }
+
+                // Handle message turn changes
+                if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
+                {
+                    if (HasContent(streamingMessage))
+                    {
+                        messages.Add(streamingMessage);
+                    }
+
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                }
+
+                currentMessageIndex = chunk.MessageIndex;
+                AccumulateChunk(streamingMessage, chunk);
+
+                await InvokeAsync(async () =>
+                {
+                    await CheckAndUpdateAutoScroll();
+                    StateHasChanged();
+                });
+            }
+
+            // Finalize message
+            if (HasContent(streamingMessage))
+            {
+                messages.Add(streamingMessage);
+            }
+
+            topic.LastMessageAt = DateTime.UtcNow;
+            await HubService.SaveTopicAsync(topic.ToMetadata());
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessageModel
+            {
+                Role = "assistant",
+                Content = $"Error resuming stream: {ex.Message}",
                 IsError = true
             });
         }

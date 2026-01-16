@@ -131,6 +131,41 @@ public sealed class ChatHubService : IAsyncDisposable
         }
     }
 
+    public async Task<StreamState?> GetStreamStateAsync(string topicId)
+    {
+        if (_hubConnection is null)
+        {
+            return null;
+        }
+
+        return await _hubConnection.InvokeAsync<StreamState?>("GetStreamState", topicId);
+    }
+
+    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
+    {
+        if (_hubConnection is null)
+        {
+            yield break;
+        }
+
+        var stream = _hubConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
+
+        await foreach (var item in stream)
+        {
+            yield return item;
+        }
+    }
+
+    public async Task<bool> IsProcessingAsync(string topicId)
+    {
+        if (_hubConnection is null)
+        {
+            return false;
+        }
+
+        return await _hubConnection.InvokeAsync<bool>("IsProcessing", topicId);
+    }
+
     public async Task CancelAsync()
     {
         if (_hubConnection is null || CurrentTopic is null)

@@ -61,6 +61,50 @@ public sealed class ChatHub(
         return messengerClient.IsProcessing(topicId);
     }
 
+    public StreamState? GetStreamState(string topicId)
+    {
+        return messengerClient.GetStreamState(topicId);
+    }
+
+    public async IAsyncEnumerable<ChatStreamMessage> ResumeStream(
+        string topicId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var state = messengerClient.GetStreamState(topicId);
+        if (state is null)
+        {
+            yield break;
+        }
+
+        // Replay buffered messages first (client will deduplicate by sequence number)
+        foreach (var msg in state.BufferedMessages)
+        {
+            yield return msg;
+        }
+
+        // If not still processing, we're done
+        if (!state.IsProcessing)
+        {
+            yield break;
+        }
+
+        // Subscribe to live updates
+        var liveStream = messengerClient.SubscribeToStream(topicId, cancellationToken);
+        if (liveStream is null)
+        {
+            yield break;
+        }
+
+        await foreach (var msg in liveStream)
+        {
+            yield return msg;
+            if (msg.IsComplete || msg.Error is not null)
+            {
+                break;
+            }
+        }
+    }
+
     public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,

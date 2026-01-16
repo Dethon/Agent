@@ -14,9 +14,80 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     private readonly Channel<ChatPrompt> _promptChannel = Channel.CreateUnbounded<ChatPrompt>();
     private readonly ConcurrentDictionary<string, WebChatSession> _sessions = new();
     private readonly ConcurrentDictionary<long, string> _chatToTopic = new();
-    private readonly ConcurrentDictionary<string, Channel<ChatStreamMessage>> _responseChannels = new();
+    private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
+    private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
+    private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private int _messageIdCounter;
+
+    private sealed class StreamBuffer
+    {
+        private readonly List<ChatStreamMessage> _messages = [];
+        private readonly object _lock = new();
+        private const int MaxBufferSize = 100;
+
+        public void Add(ChatStreamMessage message)
+        {
+            lock (_lock)
+            {
+                if (_messages.Count >= MaxBufferSize)
+                {
+                    _messages.RemoveAt(0);
+                }
+
+                _messages.Add(message);
+            }
+        }
+
+        public IReadOnlyList<ChatStreamMessage> GetAll()
+        {
+            lock (_lock)
+            {
+                return [.. _messages];
+            }
+        }
+    }
+
+    private sealed class BroadcastChannel<T>
+    {
+        private readonly List<Channel<T>> _subscribers = [];
+        private readonly object _lock = new();
+
+        public ChannelReader<T> Subscribe()
+        {
+            var channel = Channel.CreateUnbounded<T>();
+            lock (_lock)
+            {
+                _subscribers.Add(channel);
+            }
+
+            return channel.Reader;
+        }
+
+        public async Task WriteAsync(T item, CancellationToken ct)
+        {
+            List<Channel<T>> subs;
+            lock (_lock)
+            {
+                subs = [.. _subscribers];
+            }
+
+            await Task.WhenAll(subs.Select(s => s.Writer.WriteAsync(item, ct).AsTask()));
+        }
+
+        public void Complete()
+        {
+            lock (_lock)
+            {
+                foreach (var s in _subscribers)
+                {
+                    s.Writer.TryComplete();
+                }
+
+                _subscribers.Clear();
+            }
+        }
+    }
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout,
@@ -47,22 +118,42 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             return;
         }
 
+        // Assign sequence number for deduplication
+        var sequenceNumber = _sequenceCounters.AddOrUpdate(topicId, 1, (_, seq) => seq + 1);
+
         var streamMessage = new ChatStreamMessage
         {
             Content = responseMessage.Message,
             Reasoning = responseMessage.Reasoning,
             ToolCalls = responseMessage.CalledTools,
             IsComplete = responseMessage.IsComplete,
-            MessageIndex = responseMessage.MessageIndex
+            MessageIndex = responseMessage.MessageIndex,
+            SequenceNumber = sequenceNumber
         };
 
-        await channel.Writer.WriteAsync(streamMessage, cancellationToken);
+        // Buffer the message for late-joining clients
+        if (!_streamBuffers.TryGetValue(topicId, out var buffer))
+        {
+            buffer = new StreamBuffer();
+            _streamBuffers[topicId] = buffer;
+        }
+
+        buffer.Add(streamMessage);
+
+        await channel.WriteAsync(streamMessage, cancellationToken);
 
         if (responseMessage.IsComplete)
         {
-            channel.Writer.Complete();
+            channel.Complete();
             _responseChannels.TryRemove(topicId, out _);
             _cancellationTokens.TryRemove(topicId, out _);
+
+            // Keep buffer briefly for clients reconnecting right as stream ends
+            _ = Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(__ =>
+            {
+                _streamBuffers.TryRemove(topicId, out _);
+                _sequenceCounters.TryRemove(topicId, out _);
+            });
         }
     }
 
@@ -99,8 +190,11 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
 
         if (_responseChannels.TryRemove(topicId, out var channel))
         {
-            channel.Writer.Complete();
+            channel.Complete();
         }
+
+        _streamBuffers.TryRemove(topicId, out _);
+        _sequenceCounters.TryRemove(topicId, out _);
 
         if (!_cancellationTokens.TryRemove(topicId, out var cts))
         {
@@ -123,8 +217,12 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             return AsyncEnumerable.Empty<ChatStreamMessage>();
         }
 
-        var responseChannel = Channel.CreateUnbounded<ChatStreamMessage>();
-        _responseChannels[topicId] = responseChannel;
+        var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
+        _responseChannels[topicId] = broadcastChannel;
+
+        // Clear any stale buffer and sequence counter from previous request
+        _streamBuffers.TryRemove(topicId, out _);
+        _sequenceCounters.TryRemove(topicId, out _);
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _cancellationTokens[topicId] = cts;
@@ -142,12 +240,39 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
         };
 
         _promptChannel.Writer.TryWrite(prompt);
-        return responseChannel.Reader.ReadAllAsync(cts.Token);
+        return broadcastChannel.Subscribe().ReadAllAsync(cts.Token);
     }
 
     public bool IsProcessing(string topicId)
     {
         return _responseChannels.ContainsKey(topicId);
+    }
+
+    public StreamState? GetStreamState(string topicId)
+    {
+        var isProcessing = _responseChannels.ContainsKey(topicId);
+
+        if (!_streamBuffers.TryGetValue(topicId, out var buffer))
+        {
+            return isProcessing ? new StreamState(true, [], 0, 0) : null;
+        }
+
+        var messages = buffer.GetAll();
+        var lastIndex = messages.LastOrDefault()?.MessageIndex ?? 0;
+        var lastSequence = messages.LastOrDefault()?.SequenceNumber ?? 0;
+
+        return new StreamState(isProcessing, messages, lastIndex, lastSequence);
+    }
+
+    public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(string topicId, CancellationToken cancellationToken)
+    {
+        if (!_responseChannels.TryGetValue(topicId, out var channel))
+        {
+            return null;
+        }
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        return channel.Subscribe().ReadAllAsync(cts.Token);
     }
 
     public void CancelProcessing(string topicId)
@@ -160,8 +285,11 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
 
         if (_responseChannels.TryRemove(topicId, out var channel))
         {
-            channel.Writer.Complete();
+            channel.Complete();
         }
+
+        _streamBuffers.TryRemove(topicId, out _);
+        _sequenceCounters.TryRemove(topicId, out _);
     }
 
     public void Dispose()
@@ -170,7 +298,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
 
         foreach (var channel in _responseChannels.Values)
         {
-            channel.Writer.Complete();
+            channel.Complete();
         }
 
         foreach (var cts in _cancellationTokens.Values)
