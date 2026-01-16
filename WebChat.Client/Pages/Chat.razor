@@ -413,7 +413,25 @@
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
 
-        foreach (var msg in bufferedMessages.Where(m => !m.IsComplete && m.Error is null))
+        if (bufferedMessages.Count == 0)
+        {
+            return streamingMessage;
+        }
+
+        // Find the latest message turn (highest MessageIndex)
+        var latestMessageIndex = bufferedMessages.Max(m => m.MessageIndex);
+
+        // Check if this message turn is already complete (has an IsComplete marker)
+        var isLatestComplete = bufferedMessages.Any(m => m.MessageIndex == latestMessageIndex && m.IsComplete);
+        if (isLatestComplete)
+        {
+            // All messages are complete, nothing to rebuild
+            return streamingMessage;
+        }
+
+        // Only rebuild from chunks of the current (incomplete) message turn
+        foreach (var msg in bufferedMessages.Where(m =>
+                     m.MessageIndex == latestMessageIndex && !m.IsComplete && m.Error is null))
         {
             AccumulateChunk(streamingMessage, msg);
         }
