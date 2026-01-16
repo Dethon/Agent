@@ -23,7 +23,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     private sealed class StreamBuffer
     {
         private readonly List<ChatStreamMessage> _messages = [];
-        private readonly object _lock = new();
+        private readonly Lock _lock = new();
         private const int MaxBufferSize = 100;
 
         public void Add(ChatStreamMessage message)
@@ -51,7 +51,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     private sealed class BroadcastChannel<T>
     {
         private readonly List<Channel<T>> _subscribers = [];
-        private readonly object _lock = new();
+        private readonly Lock _lock = new();
 
         public ChannelReader<T> Subscribe()
         {
@@ -149,11 +149,11 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             _cancellationTokens.TryRemove(topicId, out _);
 
             // Keep buffer briefly for clients reconnecting right as stream ends
-            _ = Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(__ =>
+            _ = Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ContinueWith(__ =>
             {
                 _streamBuffers.TryRemove(topicId, out _);
                 _sequenceCounters.TryRemove(topicId, out _);
-            });
+            }, cancellationToken);
         }
     }
 
