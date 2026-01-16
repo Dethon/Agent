@@ -43,6 +43,11 @@ public sealed class FakeAgentFactory : IAgentFactory
         _responseQueue.Enqueue(new QueuedResponse { Reasoning = reasoning });
     }
 
+    public void EnqueueError(string errorMessage)
+    {
+        _responseQueue.Enqueue(new QueuedResponse { Error = errorMessage });
+    }
+
     public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
     {
         var responses = new List<QueuedResponse>();

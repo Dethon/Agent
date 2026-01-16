@@ -274,4 +274,50 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             messages.Last().IsComplete.ShouldBeTrue($"Session {topicId} should complete");
         }
     }
+
+    [Fact]
+    public async Task SendMessage_AfterDeleteTopic_ReturnsSessionNotFoundError()
+    {
+        // Arrange
+        var topicId = Guid.NewGuid().ToString();
+        var chatId = Random.Shared.NextInt64(10000, 99999);
+        var threadId = Random.Shared.NextInt64(20000, 29999);
+
+        // Save topic and start session
+        var topic = new TopicMetadata(
+            topicId,
+            chatId,
+            threadId,
+            "test-agent",
+            "Topic to Delete Then Message",
+            DateTimeOffset.UtcNow,
+            null);
+
+        await _connection.InvokeAsync("SaveTopic", topic);
+        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+
+        // Delete the topic (which ends the session)
+        await _connection.InvokeAsync("DeleteTopic", topicId, chatId, threadId);
+
+        // Act - Try to send message to deleted topic
+        var messages = new List<ChatStreamMessage>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
+                           "SendMessage", topicId, "Message to deleted topic", cts.Token))
+        {
+            messages.Add(msg);
+            if (msg.IsComplete || msg.Error is not null)
+            {
+                break;
+            }
+        }
+
+        // Assert - Should receive error about session not found
+        messages.Count.ShouldBe(1);
+        var errorMessage = messages[0];
+        errorMessage.Error.ShouldNotBeNull();
+        errorMessage.Error.ShouldContain("Session not found");
+        errorMessage.IsComplete.ShouldBeTrue();
+    }
 }
