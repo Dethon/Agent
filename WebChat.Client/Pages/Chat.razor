@@ -3,6 +3,8 @@
 @inject IJSRuntime Js
 @implements IDisposable
 
+<ApprovalModal ApprovalRequest="_currentApprovalRequest" OnResponded="HandleApprovalResponded"/>
+
 <div class="chat-layout">
     <TopicList Topics="@_topics"
                SelectedTopic="@_selectedTopic"
@@ -97,6 +99,9 @@
     // Auto-scroll tracking
     private ElementReference _messagesArea;
     private bool _shouldAutoScroll = true;
+
+    // Tool approval tracking
+    private ToolApprovalRequestMessage? _currentApprovalRequest;
 
     private List<ChatMessageModel> CurrentMessages =>
         _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs)
@@ -321,6 +326,14 @@
         {
             await foreach (var chunk in HubService.SendMessageAsync(message))
             {
+                // Handle approval requests
+                if (chunk.ApprovalRequest is not null)
+                {
+                    _currentApprovalRequest = chunk.ApprovalRequest;
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
                 if (chunk.Error is not null)
                 {
                     streamingMessage.Content = chunk.Error;
@@ -462,6 +475,13 @@
                         Content = state.CurrentPrompt
                     });
                 }
+            }
+
+            // Check for pending approval directly from server (more reliable than buffer check)
+            var pendingApproval = await HubService.GetPendingApprovalForTopicAsync(topic.TopicId);
+            if (pendingApproval is not null)
+            {
+                _currentApprovalRequest = pendingApproval;
             }
 
             // Get all known content from history for deduplication
@@ -623,6 +643,14 @@
         {
             await foreach (var chunk in HubService.ResumeStreamAsync(topic.TopicId))
             {
+                // Handle approval requests
+                if (chunk.ApprovalRequest is not null)
+                {
+                    _currentApprovalRequest = chunk.ApprovalRequest;
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
                 if (chunk.Error is not null)
                 {
                     streamingMessage.Content = chunk.Error;
@@ -727,6 +755,13 @@
             _streamingMessageByTopic.Remove(_selectedTopic.TopicId);
             StateHasChanged();
         }
+    }
+
+    private Task HandleApprovalResponded()
+    {
+        _currentApprovalRequest = null;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     public void Dispose()

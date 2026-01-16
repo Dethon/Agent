@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -19,6 +21,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
     private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
+    private readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
     private int _messageIdCounter;
     private bool _disposed;
 
@@ -196,6 +199,20 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
         _sequenceCounters.TryRemove(topicId, out _);
         _currentPrompts.TryRemove(topicId, out _);
 
+        // Cancel any pending approvals for this topic
+        var expiredApprovals = _pendingApprovals
+            .Where(kv => kv.Value.TopicId == topicId)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        foreach (var approvalId in expiredApprovals)
+        {
+            if (_pendingApprovals.TryRemove(approvalId, out var context))
+            {
+                context.TrySetResult(ToolApprovalResult.Rejected);
+            }
+        }
+
         if (!_cancellationTokens.TryRemove(topicId, out var cts))
         {
             return;
@@ -290,6 +307,194 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
         _streamBuffers.TryRemove(topicId, out _);
         _sequenceCounters.TryRemove(topicId, out _);
         _currentPrompts.TryRemove(topicId, out _);
+    }
+
+    public string? GetTopicIdByChatId(long chatId)
+    {
+        return _chatToTopic.GetValueOrDefault(chatId);
+    }
+
+    public bool IsApprovalPending(string approvalId)
+    {
+        return _pendingApprovals.ContainsKey(approvalId);
+    }
+
+    public ToolApprovalRequestMessage? GetPendingApprovalForTopic(string topicId)
+    {
+        var pending = _pendingApprovals
+            .FirstOrDefault(kv => kv.Value.TopicId == topicId);
+
+        if (pending.Key is null)
+        {
+            return null;
+        }
+
+        return new ToolApprovalRequestMessage(pending.Key, pending.Value.Requests);
+    }
+
+    public async Task<ToolApprovalResult> RequestApprovalAsync(
+        string topicId,
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        if (!_responseChannels.TryGetValue(topicId, out var channel))
+        {
+            logger.LogWarning("RequestApprovalAsync: topicId {TopicId} not found in _responseChannels", topicId);
+            return ToolApprovalResult.Rejected;
+        }
+
+        var approvalId = Guid.NewGuid().ToString("N")[..8];
+
+        var context = new ApprovalContext
+        {
+            TopicId = topicId,
+            Requests = requests
+        };
+
+        _pendingApprovals[approvalId] = context;
+
+        try
+        {
+            var sequenceNumber = _sequenceCounters.AddOrUpdate(topicId, 1, (_, seq) => seq + 1);
+            var approvalMessage = new ChatStreamMessage
+            {
+                ApprovalRequest = new ToolApprovalRequestMessage(approvalId, requests),
+                SequenceNumber = sequenceNumber
+            };
+
+            if (!_streamBuffers.TryGetValue(topicId, out var buffer))
+            {
+                buffer = new StreamBuffer();
+                _streamBuffers[topicId] = buffer;
+            }
+
+            buffer.Add(approvalMessage);
+            await channel.WriteAsync(approvalMessage, cancellationToken);
+
+            var result = await context.WaitForApprovalAsync(cancellationToken);
+
+            // Send tool calls info after approval is granted
+            if (result is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember)
+            {
+                var toolCallsSequence = _sequenceCounters.AddOrUpdate(topicId, 1, (_, seq) => seq + 1);
+                var toolCallsMessage = new ChatStreamMessage
+                {
+                    ToolCalls = FormatToolCalls(requests),
+                    SequenceNumber = toolCallsSequence
+                };
+
+                buffer.Add(toolCallsMessage);
+                await channel.WriteAsync(toolCallsMessage, cancellationToken);
+            }
+
+            return result;
+        }
+        finally
+        {
+            _pendingApprovals.TryRemove(approvalId, out _);
+        }
+    }
+
+    public bool RespondToApproval(string approvalId, ToolApprovalResult result)
+    {
+        if (!_pendingApprovals.TryRemove(approvalId, out var context))
+        {
+            logger.LogWarning("RespondToApproval: approvalId {ApprovalId} not found or already processed", approvalId);
+            return false;
+        }
+
+        return context.TrySetResult(result);
+    }
+
+    public async Task NotifyAutoApprovedAsync(
+        string topicId,
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        if (!_responseChannels.TryGetValue(topicId, out var channel))
+        {
+            logger.LogWarning("NotifyAutoApprovedAsync: topicId {TopicId} not found", topicId);
+            return;
+        }
+
+        var sequenceNumber = _sequenceCounters.AddOrUpdate(topicId, 1, (_, seq) => seq + 1);
+        var toolCallsText = FormatToolCalls(requests);
+
+        var message = new ChatStreamMessage
+        {
+            ToolCalls = toolCallsText,
+            SequenceNumber = sequenceNumber
+        };
+
+        if (!_streamBuffers.TryGetValue(topicId, out var buffer))
+        {
+            buffer = new StreamBuffer();
+            _streamBuffers[topicId] = buffer;
+        }
+
+        buffer.Add(message);
+        await channel.WriteAsync(message, cancellationToken);
+    }
+
+    private static string FormatToolCalls(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        var sb = new StringBuilder();
+
+        foreach (var request in requests)
+        {
+            var toolName = request.ToolName.Split(':').Last();
+            sb.AppendLine($"🔧 {toolName}");
+
+            if (request.Arguments.Count <= 0)
+            {
+                continue;
+            }
+
+            foreach (var (key, value) in request.Arguments)
+            {
+                var formattedValue = FormatArgumentValue(value);
+                if (formattedValue.Length > 100)
+                {
+                    formattedValue = formattedValue[..100] + "...";
+                }
+
+                sb.AppendLine($"  {key}: {formattedValue}");
+            }
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string FormatArgumentValue(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            string s => s.Replace("\n", " ").Replace("\r", ""),
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString()?.Replace("\n", " ") ?? "",
+            JsonElement je => je.GetRawText(),
+            _ => value.ToString() ?? ""
+        };
+    }
+
+    private sealed class ApprovalContext
+    {
+        private readonly TaskCompletionSource<ToolApprovalResult> _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public required string TopicId { get; init; }
+        public required IReadOnlyList<ToolApprovalRequest> Requests { get; init; }
+
+        public bool TrySetResult(ToolApprovalResult result)
+        {
+            return _tcs.TrySetResult(result);
+        }
+
+        public Task<ToolApprovalResult> WaitForApprovalAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
+            return _tcs.Task;
+        }
     }
 
     public void Dispose()

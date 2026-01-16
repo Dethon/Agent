@@ -1,25 +1,20 @@
 using System.Net.Http.Json;
+using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatHubService : IAsyncDisposable
+public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
 {
     private HubConnection? _hubConnection;
-    private readonly HttpClient _httpClient;
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
     public StoredTopic? CurrentTopic { get; private set; }
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;
-
-    public ChatHubService(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
 
     public async Task ConnectAsync()
     {
@@ -28,7 +23,7 @@ public sealed class ChatHubService : IAsyncDisposable
             return;
         }
 
-        var config = await _httpClient.GetFromJsonAsync<AppConfig>("/api/config");
+        var config = await httpClient.GetFromJsonAsync<AppConfig>("/api/config");
         var agentUrl = config?.AgentUrl ?? "http://localhost:5000";
         var hubUrl = $"{agentUrl.TrimEnd('/')}/hubs/chat";
 
@@ -196,6 +191,36 @@ public sealed class ChatHubService : IAsyncDisposable
     {
         CurrentTopic = null;
         OnStateChanged?.Invoke();
+    }
+
+    public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
+    {
+        if (_hubConnection is null)
+        {
+            return false;
+        }
+
+        return await _hubConnection.InvokeAsync<bool>("RespondToApproval", approvalId, result);
+    }
+
+    public async Task<bool> IsApprovalPendingAsync(string approvalId)
+    {
+        if (_hubConnection is null)
+        {
+            return false;
+        }
+
+        return await _hubConnection.InvokeAsync<bool>("IsApprovalPending", approvalId);
+    }
+
+    public async Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopicAsync(string topicId)
+    {
+        if (_hubConnection is null)
+        {
+            return null;
+        }
+
+        return await _hubConnection.InvokeAsync<ToolApprovalRequestMessage?>("GetPendingApprovalForTopic", topicId);
     }
 
     public async ValueTask DisposeAsync()

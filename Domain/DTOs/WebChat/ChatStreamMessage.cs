@@ -9,4 +9,5 @@ public record ChatStreamMessage
     public string? Error { get; init; }
     public int MessageIndex { get; init; }
     public long SequenceNumber { get; init; }
+    public ToolApprovalRequestMessage? ApprovalRequest { get; init; }
 }

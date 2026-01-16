@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging;
@@ -89,6 +90,13 @@ public sealed class ChatHub(
             yield break;
         }
 
+        // Check for any pending approval directly (more reliable than buffer check)
+        var pendingApproval = messengerClient.GetPendingApprovalForTopic(topicId);
+        if (pendingApproval is not null)
+        {
+            yield return new ChatStreamMessage { ApprovalRequest = pendingApproval };
+        }
+
         await foreach (var msg in liveStream)
         {
             yield return msg;
@@ -144,5 +152,20 @@ public sealed class ChatHub(
     public async Task SaveTopic(TopicMetadata topic)
     {
         await threadStateStore.SaveTopicAsync(topic);
+    }
+
+    public bool RespondToApproval(string approvalId, ToolApprovalResult result)
+    {
+        return messengerClient.RespondToApproval(approvalId, result);
+    }
+
+    public bool IsApprovalPending(string approvalId)
+    {
+        return messengerClient.IsApprovalPending(approvalId);
+    }
+
+    public ToolApprovalRequestMessage? GetPendingApprovalForTopic(string topicId)
+    {
+        return messengerClient.GetPendingApprovalForTopic(topicId);
     }
 }
