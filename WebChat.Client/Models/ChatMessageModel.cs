@@ -1,10 +1,10 @@
 namespace WebChat.Client.Models;
 
-public class ChatMessageModel
+public record ChatMessageModel
 {
-    public string Role { get; set; } = "user";
-    public string Content { get; set; } = "";
-    public string? Reasoning { get; set; }
-    public string? ToolCalls { get; set; }
-    public bool IsError { get; set; }
+    public string Role { get; init; } = "user";
+    public string Content { get; init; } = "";
+    public string? Reasoning { get; init; }
+    public string? ToolCalls { get; init; }
+    public bool IsError { get; init; }
 }

@@ -336,8 +336,11 @@
 
                 if (chunk.Error is not null)
                 {
-                    streamingMessage.Content = chunk.Error;
-                    streamingMessage.IsError = true;
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = chunk.Error,
+                        IsError = true
+                    };
                     break;
                 }
 
@@ -359,23 +362,32 @@
 
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
-                    streamingMessage.Content = string.IsNullOrEmpty(streamingMessage.Content)
-                        ? chunk.Content
-                        : streamingMessage.Content + "\n\n" + chunk.Content;
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = string.IsNullOrEmpty(streamingMessage.Content)
+                            ? chunk.Content
+                            : streamingMessage.Content + "\n\n" + chunk.Content
+                    };
                 }
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning))
                 {
-                    streamingMessage.Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
-                        ? chunk.Reasoning
-                        : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning;
+                    streamingMessage = streamingMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning
+                    };
                 }
 
                 if (!string.IsNullOrEmpty(chunk.ToolCalls))
                 {
-                    streamingMessage.ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
-                        ? chunk.ToolCalls
-                        : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls;
+                    streamingMessage = streamingMessage with
+                    {
+                        ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                            ? chunk.ToolCalls
+                            : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls
+                    };
                 }
 
                 await InvokeAsync(async () =>
@@ -394,7 +406,8 @@
                 || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
                 || !string.IsNullOrEmpty(streamingMessage.Reasoning))
             {
-                messages.Add(streamingMessage);
+                // Clone to ensure different reference from streaming display
+                messages.Add(streamingMessage with { });
             }
 
             topic.LastMessageAt = DateTime.UtcNow;
@@ -543,7 +556,7 @@
                 var completedMessage = new ChatMessageModel { Role = "assistant" };
                 foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
                 {
-                    AccumulateChunk(completedMessage, chunk);
+                    streamingMessage = AccumulateChunk(completedMessage, chunk);
                 }
 
                 // Strip any content already in history
@@ -559,7 +572,7 @@
                 // This turn is incomplete - it's the streaming message
                 foreach (var chunk in chunks.Where(m => m.Error is null))
                 {
-                    AccumulateChunk(streamingMessage, chunk);
+                    streamingMessage = AccumulateChunk(streamingMessage, chunk);
                 }
             }
         }
@@ -575,48 +588,65 @@
         }
 
         // Remove any history content that appears in this message
-        foreach (var known in historyContent)
+        foreach (var known in historyContent.Where(known => message.Content.Contains(known)))
         {
-            if (message.Content.Contains(known))
+            message = message with
             {
-                message.Content = message.Content.Replace(known, "").Trim();
-            }
+                Content = message.Content.Replace(known, "").Trim()
+            };
         }
 
         // Clean up any leftover separators
         while (message.Content.StartsWith("\n\n"))
         {
-            message.Content = message.Content[2..];
+            message = message with
+            {
+                Content = message.Content[2..]
+            };
         }
 
         while (message.Content.EndsWith("\n\n"))
         {
-            message.Content = message.Content[..^2];
+            message = message with
+            {
+                Content = message.Content[..^2]
+            };
         }
     }
 
-    private static void AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
+    private static ChatMessageModel AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
     {
         if (!string.IsNullOrEmpty(chunk.Content))
         {
-            streamingMessage.Content = string.IsNullOrEmpty(streamingMessage.Content)
-                ? chunk.Content
-                : streamingMessage.Content + "\n\n" + chunk.Content;
+            return streamingMessage with
+            {
+                Content = string.IsNullOrEmpty(streamingMessage.Content)
+                    ? chunk.Content
+                    : streamingMessage.Content + "\n\n" + chunk.Content
+            };
         }
 
         if (!string.IsNullOrEmpty(chunk.Reasoning))
         {
-            streamingMessage.Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
-                ? chunk.Reasoning
-                : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning;
+            return streamingMessage with
+            {
+                Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                    ? chunk.Reasoning
+                    : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning
+            };
         }
 
         if (!string.IsNullOrEmpty(chunk.ToolCalls))
         {
-            streamingMessage.ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
-                ? chunk.ToolCalls
-                : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls;
+            return streamingMessage with
+            {
+                ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                    ? chunk.ToolCalls
+                    : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls
+            };
         }
+
+        return streamingMessage;
     }
 
     private static bool HasContent(ChatMessageModel msg)
@@ -653,8 +683,11 @@
 
                 if (chunk.Error is not null)
                 {
-                    streamingMessage.Content = chunk.Error;
-                    streamingMessage.IsError = true;
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = chunk.Error,
+                        IsError = true
+                    };
                     break;
                 }
 
@@ -682,21 +715,22 @@
 
                 if (!string.IsNullOrEmpty(chunk.Content) && !knownContent.Contains(chunk.Content))
                 {
-                    AccumulateChunk(streamingMessage, new ChatStreamMessage { Content = chunk.Content });
-                    knownContent = streamingMessage.Content ?? "";
+                    streamingMessage = AccumulateChunk(
+                        streamingMessage, new ChatStreamMessage { Content = chunk.Content });
+                    knownContent = streamingMessage.Content;
                     isNew = true;
                 }
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
                 {
-                    AccumulateChunk(streamingMessage, new ChatStreamMessage { Reasoning = chunk.Reasoning });
+                    streamingMessage = AccumulateChunk(streamingMessage, new ChatStreamMessage { Reasoning = chunk.Reasoning });
                     knownReasoning = streamingMessage.Reasoning ?? "";
                     isNew = true;
                 }
 
                 if (!string.IsNullOrEmpty(chunk.ToolCalls) && !knownToolCalls.Contains(chunk.ToolCalls))
                 {
-                    AccumulateChunk(streamingMessage, new ChatStreamMessage { ToolCalls = chunk.ToolCalls });
+                    streamingMessage = AccumulateChunk(streamingMessage, new ChatStreamMessage { ToolCalls = chunk.ToolCalls });
                     knownToolCalls = streamingMessage.ToolCalls ?? "";
                     isNew = true;
                 }
@@ -716,10 +750,10 @@
                 }
             }
 
-            // Finalize message
+            // Finalize message - clone to ensure different reference from streaming display
             if (HasContent(streamingMessage))
             {
-                messages.Add(streamingMessage);
+                messages.Add(streamingMessage with { });
             }
 
             topic.LastMessageAt = DateTime.UtcNow;
