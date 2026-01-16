@@ -128,6 +128,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             Content = responseMessage.Message,
             Reasoning = responseMessage.Reasoning,
             ToolCalls = responseMessage.CalledTools,
+            Error = responseMessage.Error,
             IsComplete = responseMessage.IsComplete,
             MessageIndex = responseMessage.MessageIndex,
             SequenceNumber = sequenceNumber

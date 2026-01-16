@@ -79,44 +79,22 @@ public class ChatMonitor(
                         return AsyncEnumerable.Empty<AiResponse>();
                     default:
                         // Append IsComplete after each agent run finishes
-                        return agent
-                            .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                            .ToUpdateAiResponsePairs()
-                            .Where(y => y.Item2 is not null)
-                            .Select(y => y.Item2)
-                            .Cast<AiResponse>()
-                            .Append(new AiResponse { IsComplete = true });
+                        // Wrap in error handling to convert exceptions to error responses
+                        return WrapWithErrorHandling(
+                            agent
+                                .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
+                                .ToUpdateAiResponsePairs()
+                                .Where(y => y.Item2 is not null)
+                                .Select(y => y.Item2)
+                                .Cast<AiResponse>(),
+                            linkedCt);
                 }
             })
             .Merge(linkedCt);
 
-        var enumerator = aiResponses.WithCancellation(ct).GetAsyncEnumerator();
-        try
+        await foreach (var response in aiResponses.WithCancellation(ct))
         {
-            while (true)
-            {
-                bool hasNext;
-                try
-                {
-                    hasNext = await enumerator.MoveNextAsync();
-                }
-                catch (OperationCanceledException)
-                {
-                    // Ignore cancellation to keep the monitor loop alive for other threads
-                    break;
-                }
-
-                if (!hasNext)
-                {
-                    break;
-                }
-
-                yield return (agentKey, enumerator.Current);
-            }
-        }
-        finally
-        {
-            await enumerator.DisposeAsync();
+            yield return (agentKey, response);
         }
     }
 
@@ -153,7 +131,7 @@ public class ChatMonitor(
             {
                 await chatMessengerClient.SendResponse(
                     agentKey.ChatId,
-                    new ChatResponseMessage { IsComplete = true },
+                    new ChatResponseMessage { IsComplete = true, Error = response.Error },
                     agentKey.ThreadId,
                     agentKey.BotTokenHash,
                     ct);
@@ -182,6 +160,59 @@ public class ChatMonitor(
                     "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
                     agentKey.ChatId, agentKey.ThreadId, ex.Message);
             }
+        }
+    }
+
+    private static async IAsyncEnumerable<AiResponse> WrapWithErrorHandling(
+        IAsyncEnumerable<AiResponse> source,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var enumerator = source.GetAsyncEnumerator(ct);
+        AiResponse? errorResponse = null;
+        try
+        {
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    errorResponse = new AiResponse
+                    {
+                        Error = $"An error occurred: {ex.Message}",
+                        IsComplete = true
+                    };
+                    break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+
+        if (errorResponse is not null)
+        {
+            yield return errorResponse;
+        }
+        else
+        {
+            // Append completion marker if no error
+            yield return new AiResponse { IsComplete = true };
         }
     }
 }

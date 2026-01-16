@@ -334,22 +334,24 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     }
 
     [Fact]
-    public async Task SendMessage_WhenAgentThrowsError_StreamEndsGracefully()
+    public async Task SendMessage_WhenAgentThrowsError_StreamsErrorMessage()
     {
         // Arrange
         var topicId = Guid.NewGuid().ToString();
         var chatId = Random.Shared.NextInt64(10000, 99999);
         var threadId = Random.Shared.NextInt64(20000, 29999);
 
-        fixture.FakeAgentFactory.EnqueueError("Simulated agent failure");
-
+        // Start session first, then enqueue error right before sending
+        // This minimizes window for other tests to interfere with the queue
         await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
 
-        var messages = new List<ChatStreamMessage>();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        Exception? caughtException = null;
+        // Enqueue error right before sending to minimize race conditions
+        fixture.FakeAgentFactory.EnqueueError("Simulated agent failure");
 
-        // Act - When agent throws, the stream may end via completion or cancellation
+        var messages = new List<ChatStreamMessage>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        // Act
         try
         {
             await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
@@ -362,16 +364,21 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
                 }
             }
         }
-        catch (OperationCanceledException ex)
+        catch (OperationCanceledException) when (messages.Count == 0)
         {
-            // Stream was cancelled due to error - this is acceptable behavior
-            caughtException = ex;
+            // If we got no messages and timed out, the error response wasn't delivered
+            // This is a test infrastructure issue, not a product bug
+            throw new InvalidOperationException(
+                "Timed out waiting for error response. No messages received. " +
+                "The ChatMonitor may not have processed the prompt in time.");
         }
 
-        // Assert - Stream should end (either via completion, error message, or cancellation)
-        // The important thing is that it doesn't hang forever
-        var streamEnded = messages.Any(m => m.IsComplete || m.Error is not null) || caughtException is not null;
-        streamEnded.ShouldBeTrue("Stream should end when agent throws an error");
+        // Assert - Error should be propagated through the stream
+        messages.ShouldNotBeEmpty("Should have received at least one message");
+        var lastMessage = messages.Last();
+        lastMessage.IsComplete.ShouldBeTrue();
+        lastMessage.Error.ShouldNotBeNull();
+        lastMessage.Error.ShouldContain("error occurred");
     }
 
     [Fact]
