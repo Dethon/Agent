@@ -19,8 +19,44 @@
             @if (CurrentMessages.Count == 0 && !IsStreaming)
             {
                 <div class="empty-state">
-                    <h2>Start a conversation</h2>
-                    <p>Select an agent and type a message to begin.</p>
+                    <div class="empty-state-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <circle cx="9" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="12" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="15" cy="10" r="1" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    @if (SelectedAgent is not null)
+                    {
+                        <h2>Chat with @SelectedAgent.Name</h2>
+                        <p>Start a new conversation. Your chat will be saved automatically.</p>
+                    }
+                    else
+                    {
+                        <h2>Welcome</h2>
+                        <p>Select an agent from the sidebar to begin chatting.</p>
+                    }
+                    @if (SelectedAgent is not null)
+                    {
+                        <div class="suggestion-chips">
+                            <button class="suggestion-chip"
+                                    @onclick="@(() => SendSuggestion("Hello! What can you help me with?"))">
+                                <span class="chip-icon">👋</span>
+                                <span>Say hello</span>
+                            </button>
+                            <button class="suggestion-chip"
+                                    @onclick="@(() => SendSuggestion("What are your capabilities?"))">
+                                <span class="chip-icon">✨</span>
+                                <span>Capabilities</span>
+                            </button>
+                            <button class="suggestion-chip" @onclick="@(() => SendSuggestion("Help me get started"))">
+                                <span class="chip-icon">🚀</span>
+                                <span>Get started</span>
+                            </button>
+                        </div>
+                    }
                 </div>
             }
             else
@@ -74,6 +110,16 @@
             : null;
 
     private bool IsStreaming => _selectedTopic is not null && _streamingTopics.Contains(_selectedTopic.TopicId);
+
+    private AgentInfo? SelectedAgent => _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
+
+    private async Task SendSuggestion(string message)
+    {
+        if (!string.IsNullOrEmpty(_selectedAgentId) && HubService.IsConnected)
+        {
+            await HandleSend(message);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
