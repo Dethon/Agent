@@ -6,5 +6,11 @@
   "background_color": "#1a1a2e",
   "theme_color": "#1a1a2e",
   "prefer_related_applications": false,
-  "icons": []
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
 }

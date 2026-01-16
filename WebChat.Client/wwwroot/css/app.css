@@ -84,6 +84,12 @@ html, body {
     gap: 0.5rem;
 }
 
+.header-logo {
+    height: 28px;
+    width: auto;
+    display: block;
+}
+
 .connection-status {
     display: flex;
     align-items: center;
