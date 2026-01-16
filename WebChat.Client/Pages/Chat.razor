@@ -229,15 +229,25 @@
 
     private async Task HandleTopicDeleted(StoredTopic topic)
     {
+        // First cancel if streaming (same as cancel button)
+        if (_streamingTopics.Contains(topic.TopicId))
+        {
+            await HubService.CancelTopicAsync(topic.TopicId);
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+        }
+
+        // Then delete on server
         await HubService.DeleteTopicAsync(topic);
+
+        // Update local state
         _topics.RemoveAll(t => t.TopicId == topic.TopicId);
         _messagesByTopic.Remove(topic.TopicId);
-        _streamingMessageByTopic.Remove(topic.TopicId);
-        _streamingTopics.Remove(topic.TopicId);
 
         if (_selectedTopic?.TopicId == topic.TopicId)
         {
             _selectedTopic = null;
+            _currentApprovalRequest = null;
         }
 
         StateHasChanged();

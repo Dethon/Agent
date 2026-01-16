@@ -171,6 +171,16 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
         await _hubConnection.InvokeAsync("CancelTopic", CurrentTopic.TopicId);
     }
 
+    public async Task CancelTopicAsync(string topicId)
+    {
+        if (_hubConnection is null)
+        {
+            return;
+        }
+
+        await _hubConnection.InvokeAsync("CancelTopic", topicId);
+    }
+
     public async Task DeleteTopicAsync(StoredTopic topic)
     {
         if (_hubConnection is null)
