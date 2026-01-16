@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Domain.DTOs;
 
 namespace Domain.Extensions;
 
@@ -150,6 +151,58 @@ public static class IAsyncEnumerableExtensions
         await foreach (var item in stream.WithCancellation(ct))
         {
             await writer.WriteAsync(item, ct);
+        }
+    }
+
+    public static async IAsyncEnumerable<AiResponse> WithErrorHandling(
+        this IAsyncEnumerable<AiResponse> source,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var enumerator = source.GetAsyncEnumerator(ct);
+        AiResponse? errorResponse = null;
+        try
+        {
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    errorResponse = new AiResponse
+                    {
+                        Error = $"An error occurred: {ex.Message}",
+                        IsComplete = true
+                    };
+                    break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+
+        if (errorResponse is not null)
+        {
+            yield return errorResponse;
+        }
+        else
+        {
+            yield return new AiResponse { IsComplete = true };
         }
     }
 }

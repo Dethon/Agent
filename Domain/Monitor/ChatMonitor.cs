@@ -78,16 +78,15 @@ public class ChatMonitor(
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<AiResponse>();
                     default:
-                        // Append IsComplete after each agent run finishes
                         // Wrap in error handling to convert exceptions to error responses
-                        return WrapWithErrorHandling(
-                            agent
-                                .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                                .ToUpdateAiResponsePairs()
-                                .Where(y => y.Item2 is not null)
-                                .Select(y => y.Item2)
-                                .Cast<AiResponse>(),
-                            linkedCt);
+                        // and append IsComplete marker at end
+                        return agent
+                            .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
+                            .ToUpdateAiResponsePairs()
+                            .Where(y => y.Item2 is not null)
+                            .Select(y => y.Item2)
+                            .Cast<AiResponse>()
+                            .WithErrorHandling(linkedCt);
                 }
             })
             .Merge(linkedCt);
@@ -160,59 +159,6 @@ public class ChatMonitor(
                     "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
                     agentKey.ChatId, agentKey.ThreadId, ex.Message);
             }
-        }
-    }
-
-    private static async IAsyncEnumerable<AiResponse> WrapWithErrorHandling(
-        IAsyncEnumerable<AiResponse> source,
-        [EnumeratorCancellation] CancellationToken ct)
-    {
-        var enumerator = source.GetAsyncEnumerator(ct);
-        AiResponse? errorResponse = null;
-        try
-        {
-            while (true)
-            {
-                bool hasNext;
-                try
-                {
-                    hasNext = await enumerator.MoveNextAsync();
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    errorResponse = new AiResponse
-                    {
-                        Error = $"An error occurred: {ex.Message}",
-                        IsComplete = true
-                    };
-                    break;
-                }
-
-                if (!hasNext)
-                {
-                    break;
-                }
-
-                yield return enumerator.Current;
-            }
-        }
-        finally
-        {
-            await enumerator.DisposeAsync();
-        }
-
-        if (errorResponse is not null)
-        {
-            yield return errorResponse;
-        }
-        else
-        {
-            // Append completion marker if no error
-            yield return new AiResponse { IsComplete = true };
         }
     }
 }
