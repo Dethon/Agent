@@ -397,6 +397,22 @@
             _streamingTopics.Add(topic.TopicId);
             var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
 
+            // Restore user prompt if not already in messages
+            if (!string.IsNullOrEmpty(state.CurrentPrompt))
+            {
+                var promptExists = messages.Any(m =>
+                    m.Role == "user" && m.Content == state.CurrentPrompt);
+
+                if (!promptExists)
+                {
+                    messages.Add(new ChatMessageModel
+                    {
+                        Role = "user",
+                        Content = state.CurrentPrompt
+                    });
+                }
+            }
+
             // Get all known content from history for deduplication
             var historyContent = messages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
