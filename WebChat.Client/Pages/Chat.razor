@@ -63,10 +63,15 @@
     private bool _shouldAutoScroll = true;
 
     private List<ChatMessageModel> CurrentMessages =>
-        _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs) ? msgs : [];
+        _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs)
+            ? msgs
+            : [];
 
     private ChatMessageModel? CurrentStreamingMessage =>
-        _selectedTopic is not null && _streamingMessageByTopic.TryGetValue(_selectedTopic.TopicId, out var msg) ? msg : null;
+        _selectedTopic is not null &&
+        _streamingMessageByTopic.TryGetValue(_selectedTopic.TopicId, out var msg)
+            ? msg
+            : null;
 
     private bool IsStreaming => _selectedTopic is not null && _streamingTopics.Contains(_selectedTopic.TopicId);
 
@@ -277,11 +282,6 @@
                     break;
                 }
 
-                if (chunk.IsComplete)
-                {
-                    break;
-                }
-
                 // New message turn - save current and start fresh
                 if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
                 {
@@ -324,6 +324,11 @@
                     await CheckAndUpdateAutoScroll();
                     StateHasChanged();
                 });
+
+                if (chunk.IsComplete)
+                {
+                    break;
+                }
             }
 
             if (!string.IsNullOrEmpty(streamingMessage.Content)
@@ -374,7 +379,7 @@
             }
 
             var state = await HubService.GetStreamStateAsync(topic.TopicId);
-            if (state is null || (!state.IsProcessing && state.BufferedMessages.Count == 0))
+            if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
             {
                 return;
             }
@@ -470,7 +475,7 @@
             {
                 // This turn is complete - add to completed turns
                 var completedMessage = new ChatMessageModel { Role = "assistant" };
-                foreach (var chunk in chunks.Where(m => !m.IsComplete && m.Error is null))
+                foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
                 {
                     AccumulateChunk(completedMessage, chunk);
                 }
@@ -579,11 +584,6 @@
                     break;
                 }
 
-                if (chunk.IsComplete)
-                {
-                    break;
-                }
-
                 // Handle message turn changes
                 if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
                 {
@@ -634,6 +634,11 @@
                         await CheckAndUpdateAutoScroll();
                         StateHasChanged();
                     });
+                }
+
+                if (chunk.IsComplete)
+                {
+                    break;
                 }
             }
 
