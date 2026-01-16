@@ -400,7 +400,7 @@
             // Get all known content from history for deduplication
             var historyContent = messages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
-                .Select(m => m.Content!)
+                .Select(m => m.Content)
                 .ToHashSet();
 
             var (completedTurns, streamingMessage) = RebuildFromBuffer(state.BufferedMessages, historyContent);
@@ -548,7 +548,7 @@
         var currentMessageIndex = startMessageIndex;
 
         // Track content for deduplication - skip chunks already in streaming message
-        var knownContent = streamingMessage.Content ?? "";
+        var knownContent = streamingMessage.Content;
         var knownReasoning = streamingMessage.Reasoning ?? "";
         var knownToolCalls = streamingMessage.ToolCalls ?? "";
 
