@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using WebChat.Client.Services;
 
 namespace WebChat.Client.Models;
 
@@ -6,6 +7,7 @@ public class StoredTopic
 {
     public string TopicId { get; set; } = "";
     public long ChatId { get; set; }
+    public long ThreadId { get; set; }
     public string AgentId { get; set; } = "";
     public string Name { get; set; } = "New Chat";
     public DateTime CreatedAt { get; set; }
@@ -13,10 +15,12 @@ public class StoredTopic
 
     public static StoredTopic FromMetadata(TopicMetadata metadata)
     {
+        // Always derive ChatId and ThreadId from TopicId for consistency
         return new StoredTopic
         {
             TopicId = metadata.TopicId,
-            ChatId = metadata.ChatId,
+            ChatId = ChatHubService.GetChatIdForTopic(metadata.TopicId),
+            ThreadId = ChatHubService.GetThreadIdForTopic(metadata.TopicId),
             AgentId = metadata.AgentId,
             Name = metadata.Name,
             CreatedAt = metadata.CreatedAt.UtcDateTime,
@@ -29,6 +33,7 @@ public class StoredTopic
         return new TopicMetadata(
             TopicId,
             ChatId,
+            ThreadId,
             AgentId,
             Name,
             new DateTimeOffset(CreatedAt, TimeSpan.Zero),

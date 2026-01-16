@@ -26,7 +26,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         return new FakeAgentThread();
     }
 
-    public override Task<AgentRunResponse> RunAsync(
+    protected override Task<AgentRunResponse> RunCoreAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -35,7 +35,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         return Task.FromResult(new AgentRunResponse());
     }
 
-    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+    protected override async IAsyncEnumerable<AgentRunResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,

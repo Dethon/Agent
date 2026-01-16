@@ -27,15 +27,15 @@ public sealed class ChatHub(
         return agents.Any(a => a.Id == agentId);
     }
 
-    public bool StartSession(string agentId, string topicId, long chatId)
+    public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId);
+        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId);
     }
 
-    public IReadOnlyList<ChatHistoryMessage> GetHistory(long chatId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(long chatId, long threadId)
     {
-        var agentKey = new AgentKey(chatId, 0);
-        var messages = threadStateStore.GetMessages(agentKey.ToString());
+        var agentKey = new AgentKey(chatId, threadId);
+        var messages = await threadStateStore.GetMessagesAsync(agentKey.ToString());
 
         if (messages is null)
         {
@@ -94,11 +94,11 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
-    public async Task DeleteTopic(string topicId, long chatId)
+    public async Task DeleteTopic(string topicId, long chatId, long threadId)
     {
         messengerClient.EndSession(topicId);
 
-        var agentKey = new AgentKey(chatId, 0);
+        var agentKey = new AgentKey(chatId, threadId);
         await threadStateStore.DeleteAsync(agentKey);
         await threadStateStore.DeleteTopicAsync(topicId);
     }

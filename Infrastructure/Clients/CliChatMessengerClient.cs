@@ -29,7 +29,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        RestoreHistoryOnceAsync();
+        await RestoreHistoryOnceAsync();
         var enumerable = _router.ReadPrompts(cancellationToken).ToAsyncEnumerable();
         await foreach (var prompt in enumerable.WithCancellation(cancellationToken))
         {
@@ -62,7 +62,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _router.Dispose();
     }
 
-    private void RestoreHistoryOnceAsync()
+    private async Task RestoreHistoryOnceAsync()
     {
         if (_historyRestored || _threadStateStore is null)
         {
@@ -72,7 +72,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _historyRestored = true;
 
         var agentKey = new AgentKey(_router.ChatId, _router.ThreadId);
-        var history = _threadStateStore.GetMessages(agentKey.ToString());
+        var history = await _threadStateStore.GetMessagesAsync(agentKey.ToString());
         if (history is not { Length: > 0 })
         {
             return;

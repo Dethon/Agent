@@ -77,9 +77,9 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
         return Task.FromResult(true);
     }
 
-    public bool StartSession(string topicId, string agentId, long chatId)
+    public bool StartSession(string topicId, string agentId, long chatId, long threadId)
     {
-        var session = new WebChatSession(agentId, chatId);
+        var session = new WebChatSession(agentId, chatId, threadId);
         _sessions[topicId] = session;
         _chatToTopic[chatId] = topicId;
         return true;
@@ -135,7 +135,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
         {
             Prompt = message,
             ChatId = session.ChatId,
-            ThreadId = 0,
+            ThreadId = (int)session.ThreadId,
             MessageId = messageId,
             Sender = sender,
             BotTokenHash = session.AgentId
@@ -181,4 +181,4 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     }
 }
 
-public record WebChatSession(string AgentId, long ChatId);
+public record WebChatSession(string AgentId, long ChatId, long ThreadId);

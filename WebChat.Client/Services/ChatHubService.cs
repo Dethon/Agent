@@ -75,7 +75,8 @@ public sealed class ChatHubService : IAsyncDisposable
         }
 
         var success =
-            await _hubConnection.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId);
+            await _hubConnection.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId,
+                topic.ThreadId);
         if (success)
         {
             CurrentTopic = topic;
@@ -85,14 +86,14 @@ public sealed class ChatHubService : IAsyncDisposable
         return success;
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)
     {
         if (_hubConnection is null)
         {
             return [];
         }
 
-        return await _hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId);
+        return await _hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId, threadId);
     }
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
@@ -147,7 +148,7 @@ public sealed class ChatHubService : IAsyncDisposable
             return;
         }
 
-        await _hubConnection.InvokeAsync("DeleteTopic", topic.TopicId, topic.ChatId);
+        await _hubConnection.InvokeAsync("DeleteTopic", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         if (CurrentTopic?.TopicId == topic.TopicId)
         {
@@ -175,10 +176,38 @@ public sealed class ChatHubService : IAsyncDisposable
         return Guid.NewGuid().ToString("N");
     }
 
-    public static long GetChatIdForAgent(string agentId)
+    /// <summary>
+    ///     Derives a deterministic ChatId from a TopicId.
+    ///     Each topic gets its own unique ChatId for proper message routing.
+    /// </summary>
+    public static long GetChatIdForTopic(string topicId)
     {
-        var hash = agentId.Aggregate(0L, (current, c) => (current * 31) + c);
-        return hash & 0x7FFFFFFF;
+        return GetDeterministicHash(topicId, seed: 0x1234);
+    }
+
+    /// <summary>
+    ///     Derives a deterministic ThreadId from a TopicId.
+    ///     Used for conversation state persistence.
+    ///     Returns a value that fits in int (for ChatPrompt compatibility).
+    /// </summary>
+    public static long GetThreadIdForTopic(string topicId)
+    {
+        return GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF; // Fit in positive int
+    }
+
+    private static long GetDeterministicHash(string input, long seed)
+    {
+        // FNV-1a hash algorithm - deterministic across sessions
+        const long fnvPrime = 0x100000001b3;
+        var hash = unchecked((long)0xcbf29ce484222325) ^ seed;
+
+        foreach (var c in input)
+        {
+            hash ^= c;
+            hash = unchecked(hash * fnvPrime);
+        }
+
+        return hash & 0x7FFFFFFFFFFFFFFF; // Ensure positive
     }
 }
 

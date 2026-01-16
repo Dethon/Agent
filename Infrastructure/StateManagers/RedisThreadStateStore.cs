@@ -18,9 +18,9 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         await _db.KeyDeleteAsync(key.ToString());
     }
 
-    public ChatMessage[]? GetMessages(string key)
+    public async Task<ChatMessage[]?> GetMessagesAsync(string key)
     {
-        var value = _db.StringGet(key);
+        var value = await _db.StringGetAsync(key);
         return value.HasValue
             ? JsonSerializer.Deserialize<StoreState>(value.ToString())?.Messages
             : null;

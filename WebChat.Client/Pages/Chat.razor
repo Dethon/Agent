@@ -146,7 +146,7 @@
         if (!_messagesByTopic.ContainsKey(topic.TopicId))
         {
             await HubService.StartSessionAsync(topic);
-            var history = await HubService.GetHistoryAsync(topic.ChatId);
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
             _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
             {
                 Role = h.Role,
@@ -193,10 +193,12 @@
         if (_selectedTopic is null)
         {
             var topicName = message.Length > 50 ? message[..50] + "..." : message;
+            var topicId = ChatHubService.GenerateTopicId();
             topic = new StoredTopic
             {
-                TopicId = ChatHubService.GenerateTopicId(),
-                ChatId = ChatHubService.GetChatIdForAgent(_selectedAgentId),
+                TopicId = topicId,
+                ChatId = ChatHubService.GetChatIdForTopic(topicId),
+                ThreadId = ChatHubService.GetThreadIdForTopic(topicId),
                 AgentId = _selectedAgentId,
                 Name = topicName,
                 CreatedAt = DateTime.UtcNow
