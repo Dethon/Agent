@@ -2,7 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.ToolApproval;
 
 public sealed class AutoToolApprovalHandler : IToolApprovalHandler
 {

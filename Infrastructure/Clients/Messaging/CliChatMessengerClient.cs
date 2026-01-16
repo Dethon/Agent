@@ -4,7 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.CliGui.Abstractions;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Messaging;
 
 public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {

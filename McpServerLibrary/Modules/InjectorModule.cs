@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using Domain.Contracts;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Torrent;
 using Infrastructure.Extensions;
 using McpServerLibrary.Settings;
 using Microsoft.Extensions.DependencyInjection;

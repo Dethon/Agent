@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Browser;
 
 public class CapSolverClient(HttpClient httpClient, string apiKey) : ICaptchaSolver
 {

@@ -5,7 +5,7 @@ using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Microsoft.Playwright;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Browser;
 
 public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? cdpEndpoint = null)
     : IWebBrowser, IAsyncDisposable

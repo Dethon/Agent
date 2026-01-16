@@ -1,7 +1,8 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.ToolApproval;
 using Shouldly;
 using Telegram.Bot;
 using Telegram.Bot.Types;

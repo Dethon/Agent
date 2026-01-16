@@ -1,5 +1,5 @@
 using Domain.Contracts;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Browser;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure;

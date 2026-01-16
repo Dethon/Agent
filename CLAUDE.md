@@ -46,7 +46,11 @@ Quick reference for finding code:
 | Agent implementations    | `Infrastructure/Agents/*.cs`              |
 | MCP integration          | `Infrastructure/Agents/Mcp/*.cs`          |
 | Chat clients             | `Infrastructure/Agents/ChatClients/*.cs`  |
-| External service clients | `Infrastructure/Clients/*.cs`             |
+| External service clients | `Infrastructure/Clients/**/*.cs`          |
+| Tool approval handlers   | `Infrastructure/Clients/ToolApproval/*.cs`|
+| Messaging clients        | `Infrastructure/Clients/Messaging/*.cs`   |
+| Torrent clients          | `Infrastructure/Clients/Torrent/*.cs`     |
+| Browser clients          | `Infrastructure/Clients/Browser/*.cs`     |
 | CLI UI components        | `Infrastructure/CliGui/**/*.cs`           |
 | CLI abstractions         | `Infrastructure/CliGui/Abstractions/*.cs` |
 | CLI routing              | `Infrastructure/CliGui/Routing/*.cs`      |
@@ -78,7 +82,7 @@ Agents are defined as configuration data, allowing a single container to run mul
 
 - **AgentDefinition** (`Domain/DTOs/AgentDefinition.cs`) - Defines an agent with name, model, MCP endpoints, whitelist patterns, and custom instructions
 - **MultiAgentFactory** (`Infrastructure/Agents/MultiAgentFactory.cs`) - Creates agents based on definitions, resolves agent from bot token hash
-- **TelegramChatClient** (`Infrastructure/Clients/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
+- **TelegramChatClient** (`Infrastructure/Clients/Messaging/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
 
 Agent routing:
 - **Telegram**: Each bot token maps to one agent via SHA256 hash matching

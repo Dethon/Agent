@@ -3,7 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
 using Infrastructure.Agents;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;

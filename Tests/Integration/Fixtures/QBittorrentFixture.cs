@@ -1,7 +1,7 @@
 using System.Net;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Torrent;
 
 namespace Tests.Integration.Fixtures;
 

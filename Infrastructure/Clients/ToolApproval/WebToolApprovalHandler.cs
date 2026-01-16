@@ -3,8 +3,9 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Clients.Messaging;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.ToolApproval;
 
 public sealed class WebToolApprovalHandler(
     WebChatMessengerClient messengerClient,

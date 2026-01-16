@@ -6,7 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Messaging;
 
 public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logger)
     : IChatMessengerClient, IDisposable

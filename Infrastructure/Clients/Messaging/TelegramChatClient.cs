@@ -2,13 +2,14 @@ using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Infrastructure.Clients.ToolApproval;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Message = Telegram.Bot.Types.Message;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Messaging;
 
 public class TelegramChatClient(
     IEnumerable<string> botTokens,

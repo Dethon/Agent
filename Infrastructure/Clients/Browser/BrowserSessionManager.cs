@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using JetBrains.Annotations;
 using Microsoft.Playwright;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Browser;
 
 public class BrowserSessionManager : IAsyncDisposable
 {

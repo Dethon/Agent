@@ -1,7 +1,7 @@
 using Domain.Contracts;
 using Microsoft.Playwright;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Browser;
 
 public class ModalDismisser
 {

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Telegram.Bot;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Messaging;
 
 public static class TelegramBotHelper
 {

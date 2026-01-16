@@ -5,7 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Polly;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Torrent;
 
 public class QBittorrentDownloadClient(
     HttpClient client,

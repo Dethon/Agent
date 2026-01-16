@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;

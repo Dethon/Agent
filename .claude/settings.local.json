@@ -15,7 +15,8 @@
       "Bash(dotnet tool restore:*)",
       "Bash(dotnet msbuild:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git mv:*)"
     ]
   }
 }

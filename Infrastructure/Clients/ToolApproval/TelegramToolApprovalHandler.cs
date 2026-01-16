@@ -4,12 +4,13 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Clients.Messaging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.ToolApproval;
 
 public sealed class TelegramToolApprovalHandler(
     ITelegramBotClient client,

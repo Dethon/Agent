@@ -1,5 +1,5 @@
 using Domain.DTOs;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;

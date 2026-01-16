@@ -3,7 +3,7 @@ using System.Xml.Linq;
 using Domain.Contracts;
 using Domain.DTOs;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Torrent;
 
 public class JackettSearchClient(HttpClient client, string apiKey) : ISearchClient
 {

@@ -4,7 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.Hosting;
 
-namespace Infrastructure.Clients;
+namespace Infrastructure.Clients.Messaging;
 
 public sealed class OneShotChatMessengerClient(
     string prompt,
