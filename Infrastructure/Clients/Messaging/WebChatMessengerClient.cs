@@ -20,6 +20,7 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
     private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private int _messageIdCounter;
+    private bool _disposed;
 
     private sealed class StreamBuffer
     {
@@ -301,6 +302,13 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
         _promptChannel.Writer.Complete();
 
         foreach (var channel in _responseChannels.Values)
