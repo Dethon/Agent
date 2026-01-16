@@ -12,7 +12,7 @@ namespace Tests.Unit.Infrastructure;
 public class RedisChatMessageStoreTests
 {
     [Fact]
-    public void Create_WithStringKey_UsesKeyDirectly()
+    public async Task InvokingAsync_WithStringKey_UsesKeyDirectly()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
@@ -26,15 +26,17 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
+        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+
         // Act
-        RedisChatMessageStore.Create(mockStore.Object, ctx);
+        await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
     }
 
     [Fact]
-    public void Create_WithUndefinedState_UsesGuidKey()
+    public async Task InvokingAsync_WithUndefinedState_UsesGuidKey()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
@@ -46,8 +48,10 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
+        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+
         // Act
-        RedisChatMessageStore.Create(mockStore.Object, ctx);
+        await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(It.Is<string>(k => IsGuid(k))), Times.Once);
