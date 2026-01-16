@@ -395,13 +395,31 @@
 
             // Restore streaming state from buffer
             _streamingTopics.Add(topic.TopicId);
-            var streamingMessage = RebuildFromBuffer(state.BufferedMessages);
+            var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+
+            // Get all known content from history for deduplication
+            var historyContent = messages
+                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
+                .Select(m => m.Content!)
+                .ToHashSet();
+
+            var (completedTurns, streamingMessage) = RebuildFromBuffer(state.BufferedMessages, historyContent);
+
+            // Add completed turns (already deduplicated by RebuildFromBuffer)
+            foreach (var turn in completedTurns.Where(HasContent))
+            {
+                messages.Add(turn);
+            }
+
+            // Strip known content from streaming message
+            StripKnownContent(streamingMessage, historyContent);
+
             _streamingMessageByTopic[topic.TopicId] = streamingMessage;
 
             await InvokeAsync(StateHasChanged);
 
-            // Continue streaming in background, passing lastSequenceNumber to skip duplicates
-            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageIndex, state.LastSequenceNumber);
+            // Continue streaming
+            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageIndex);
         }
         finally
         {
@@ -409,34 +427,85 @@
         }
     }
 
-    private static ChatMessageModel RebuildFromBuffer(IReadOnlyList<ChatStreamMessage> bufferedMessages)
+    private static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
+        IReadOnlyList<ChatStreamMessage> bufferedMessages,
+        HashSet<string> historyContent)
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
+        var completedTurns = new List<ChatMessageModel>();
 
         if (bufferedMessages.Count == 0)
         {
-            return streamingMessage;
+            return (completedTurns, streamingMessage);
         }
 
-        // Find the latest message turn (highest MessageIndex)
-        var latestMessageIndex = bufferedMessages.Max(m => m.MessageIndex);
+        // Group messages by MessageIndex and process each turn
+        var turnGroups = bufferedMessages
+            .GroupBy(m => m.MessageIndex)
+            .OrderBy(g => g.Key)
+            .ToList();
 
-        // Check if this message turn is already complete (has an IsComplete marker)
-        var isLatestComplete = bufferedMessages.Any(m => m.MessageIndex == latestMessageIndex && m.IsComplete);
-        if (isLatestComplete)
+        foreach (var turnGroup in turnGroups)
         {
-            // All messages are complete, nothing to rebuild
-            return streamingMessage;
+            var chunks = turnGroup.ToList();
+            var isComplete = chunks.Any(m => m.IsComplete);
+
+            if (isComplete)
+            {
+                // This turn is complete - add to completed turns
+                var completedMessage = new ChatMessageModel { Role = "assistant" };
+                foreach (var chunk in chunks.Where(m => !m.IsComplete && m.Error is null))
+                {
+                    AccumulateChunk(completedMessage, chunk);
+                }
+
+                // Strip any content already in history
+                StripKnownContent(completedMessage, historyContent);
+
+                if (HasContent(completedMessage))
+                {
+                    completedTurns.Add(completedMessage);
+                }
+            }
+            else
+            {
+                // This turn is incomplete - it's the streaming message
+                foreach (var chunk in chunks.Where(m => m.Error is null))
+                {
+                    AccumulateChunk(streamingMessage, chunk);
+                }
+            }
         }
 
-        // Only rebuild from chunks of the current (incomplete) message turn
-        foreach (var msg in bufferedMessages.Where(m =>
-                     m.MessageIndex == latestMessageIndex && !m.IsComplete && m.Error is null))
+        return (completedTurns, streamingMessage);
+    }
+
+    private static void StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
+    {
+        if (string.IsNullOrEmpty(message.Content))
         {
-            AccumulateChunk(streamingMessage, msg);
+            return;
         }
 
-        return streamingMessage;
+        // Remove any history content that appears in this message
+        foreach (var known in historyContent)
+        {
+            if (message.Content.Contains(known))
+            {
+                message.Content = message.Content.Replace(known, "").Trim();
+            }
+        }
+
+        // Clean up any leftover separators
+        while (message.Content.StartsWith("\n\n"))
+        {
+            message.Content = message.Content[2..];
+        }
+
+        while (message.Content.EndsWith("\n\n"))
+        {
+            message.Content = message.Content[..^2];
+        }
     }
 
     private static void AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
@@ -473,22 +542,20 @@
     private async Task ResumeStreamResponseAsync(
         StoredTopic topic,
         ChatMessageModel streamingMessage,
-        int startMessageIndex,
-        long lastSeenSequence)
+        int startMessageIndex)
     {
         var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         var currentMessageIndex = startMessageIndex;
+
+        // Track content for deduplication - skip chunks already in streaming message
+        var knownContent = streamingMessage.Content ?? "";
+        var knownReasoning = streamingMessage.Reasoning ?? "";
+        var knownToolCalls = streamingMessage.ToolCalls ?? "";
 
         try
         {
             await foreach (var chunk in HubService.ResumeStreamAsync(topic.TopicId))
             {
-                // Skip messages we've already processed from the buffer
-                if (chunk.SequenceNumber <= lastSeenSequence)
-                {
-                    continue;
-                }
-
                 if (chunk.Error is not null)
                 {
                     streamingMessage.Content = chunk.Error;
@@ -511,16 +578,47 @@
 
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+
+                    // Reset tracking for new message
+                    knownContent = "";
+                    knownReasoning = "";
+                    knownToolCalls = "";
                 }
 
                 currentMessageIndex = chunk.MessageIndex;
-                AccumulateChunk(streamingMessage, chunk);
 
-                await InvokeAsync(async () =>
+                // Skip chunks whose content is already known
+                var isNew = false;
+
+                if (!string.IsNullOrEmpty(chunk.Content) && !knownContent.Contains(chunk.Content))
                 {
-                    await CheckAndUpdateAutoScroll();
-                    StateHasChanged();
-                });
+                    AccumulateChunk(streamingMessage, new ChatStreamMessage { Content = chunk.Content });
+                    knownContent = streamingMessage.Content ?? "";
+                    isNew = true;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
+                {
+                    AccumulateChunk(streamingMessage, new ChatStreamMessage { Reasoning = chunk.Reasoning });
+                    knownReasoning = streamingMessage.Reasoning ?? "";
+                    isNew = true;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls) && !knownToolCalls.Contains(chunk.ToolCalls))
+                {
+                    AccumulateChunk(streamingMessage, new ChatStreamMessage { ToolCalls = chunk.ToolCalls });
+                    knownToolCalls = streamingMessage.ToolCalls ?? "";
+                    isNew = true;
+                }
+
+                if (isNew)
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        await CheckAndUpdateAutoScroll();
+                        StateHasChanged();
+                    });
+                }
             }
 
             // Finalize message

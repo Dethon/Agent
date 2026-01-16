@@ -76,19 +76,13 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Replay buffered messages first (client will deduplicate by sequence number)
-        foreach (var msg in state.BufferedMessages)
-        {
-            yield return msg;
-        }
-
-        // If not still processing, we're done
+        // If not still processing, nothing to stream
         if (!state.IsProcessing)
         {
             yield break;
         }
 
-        // Subscribe to live updates
+        // Subscribe to live updates only - client already has buffer content
         var liveStream = messengerClient.SubscribeToStream(topicId, cancellationToken);
         if (liveStream is null)
         {
