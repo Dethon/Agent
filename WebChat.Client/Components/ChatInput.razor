@@ -11,7 +11,7 @@
 
     private async Task HandleSubmit()
     {
-        if (string.IsNullOrWhiteSpace(_inputText) || IsStreaming || Disabled)
+        if (string.IsNullOrWhiteSpace(_inputText) || Disabled)
         {
             return;
         }
@@ -53,12 +53,9 @@
             Cancel
         </button>
     }
-    else
-    {
-        <button class="btn btn-primary"
-                @onclick="HandleSubmit"
-                disabled="@(Disabled || string.IsNullOrWhiteSpace(_inputText))">
-            Send
-        </button>
-    }
+    <button class="btn btn-primary"
+            @onclick="HandleSubmit"
+            disabled="@(Disabled || string.IsNullOrWhiteSpace(_inputText))">
+        Send
+    </button>
 </div>
