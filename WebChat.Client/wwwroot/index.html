@@ -4,11 +4,34 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta content="light dark" name="color-scheme"/>
     <title>Agent Chat</title>
     <base href="/"/>
+
+    <!-- Preconnect for performance -->
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin href="https://fonts.gstatic.com" rel="preconnect"/>
+
+    <!-- Inter font for modern typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet"/>
+
     <link href="css/app.css" rel="stylesheet"/>
     <link href="manifest.webmanifest" rel="manifest"/>
     <link href="favicon.svg" rel="icon" type="image/svg+xml"/>
+
+    <!-- Early theme initialization to prevent flash -->
+    <script>
+        (function () {
+            var theme = localStorage.getItem('theme');
+            if (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                theme = 'dark';
+            }
+            if (theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+    </script>
 </head>
 
 <body>
