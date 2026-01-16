@@ -150,14 +150,9 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
             channel.Complete();
             _responseChannels.TryRemove(topicId, out _);
             _cancellationTokens.TryRemove(topicId, out _);
-
-            // Keep buffer and prompt briefly for clients reconnecting right as stream ends
-            _ = Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ContinueWith(__ =>
-            {
-                _streamBuffers.TryRemove(topicId, out _);
-                _sequenceCounters.TryRemove(topicId, out _);
-                _currentPrompts.TryRemove(topicId, out _);
-            }, cancellationToken);
+            _streamBuffers.TryRemove(topicId, out _);
+            _sequenceCounters.TryRemove(topicId, out _);
+            _currentPrompts.TryRemove(topicId, out _);
         }
     }
 
@@ -274,13 +269,9 @@ public sealed class WebChatMessengerClient(ILogger<WebChatMessengerClient> logge
 
     public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(string topicId, CancellationToken cancellationToken)
     {
-        if (!_responseChannels.TryGetValue(topicId, out var channel))
-        {
-            return null;
-        }
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        return channel.Subscribe().ReadAllAsync(cts.Token);
+        return !_responseChannels.TryGetValue(topicId, out var channel)
+            ? null
+            : channel.Subscribe().ReadAllAsync(cancellationToken);
     }
 
     public void CancelProcessing(string topicId)

@@ -35,3 +35,4 @@ public interface IHttpService { }
 - Use `record` types for DTOs
 - Interfaces should be minimal and focused
 - No state management - that's Infrastructure's job
+- Only define interfaces for services that Domain needs to consume; single-implementation services used only by Agent layer do not need interfaces here

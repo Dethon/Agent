@@ -16,7 +16,11 @@
       "Bash(dotnet msbuild:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh repo view:*)"
     ]
   }
 }
