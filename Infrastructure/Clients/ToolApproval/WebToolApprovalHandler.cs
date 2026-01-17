@@ -6,32 +6,34 @@ using Infrastructure.Clients.Messaging;
 namespace Infrastructure.Clients.ToolApproval;
 
 public sealed class WebToolApprovalHandler(
-    WebChatMessengerClient messengerClient,
+    WebChatApprovalManager approvalManager,
     string topicId) : IToolApprovalHandler
 {
     public Task<ToolApprovalResult> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        return messengerClient.RequestApprovalAsync(topicId, requests, cancellationToken);
+        return approvalManager.RequestApprovalAsync(topicId, requests, cancellationToken);
     }
 
     public Task NotifyAutoApprovedAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        return messengerClient.NotifyAutoApprovedAsync(topicId, requests, cancellationToken);
+        return approvalManager.NotifyAutoApprovedAsync(topicId, requests, cancellationToken);
     }
 }
 
-public sealed class WebToolApprovalHandlerFactory(WebChatMessengerClient messengerClient) : IToolApprovalHandlerFactory
+public sealed class WebToolApprovalHandlerFactory(
+    WebChatApprovalManager approvalManager,
+    WebChatSessionManager sessionManager) : IToolApprovalHandlerFactory
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
-        var topicId = messengerClient.GetTopicIdByChatId(agentKey.ChatId)
+        var topicId = sessionManager.GetTopicIdByChatId(agentKey.ChatId)
                       ?? throw new InvalidOperationException(
                           $"No active topic found for chatId {agentKey.ChatId}");
 
-        return new WebToolApprovalHandler(messengerClient, topicId);
+        return new WebToolApprovalHandler(approvalManager, topicId);
     }
 }

@@ -82,7 +82,10 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         // Add fake agent factory
         builder.Services.AddSingleton<IAgentFactory>(FakeAgentFactory);
 
-        // Add web chat messenger client
+        // Add web chat components
+        builder.Services.AddSingleton<WebChatSessionManager>();
+        builder.Services.AddSingleton<WebChatStreamManager>();
+        builder.Services.AddSingleton<WebChatApprovalManager>();
         builder.Services.AddSingleton<WebChatMessengerClient>();
         builder.Services.AddSingleton<IChatMessengerClient>(sp =>
             sp.GetRequiredService<WebChatMessengerClient>());

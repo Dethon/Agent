@@ -139,10 +139,15 @@ public static class InjectorModule
         private IServiceCollection AddWebClient()
         {
             return services
+                .AddSingleton<WebChatSessionManager>()
+                .AddSingleton<WebChatStreamManager>()
+                .AddSingleton<WebChatApprovalManager>()
                 .AddSingleton<WebChatMessengerClient>()
                 .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>())
                 .AddSingleton<IToolApprovalHandlerFactory>(sp =>
-                    new WebToolApprovalHandlerFactory(sp.GetRequiredService<WebChatMessengerClient>()));
+                    new WebToolApprovalHandlerFactory(
+                        sp.GetRequiredService<WebChatApprovalManager>(),
+                        sp.GetRequiredService<WebChatSessionManager>()));
         }
     }
 }
