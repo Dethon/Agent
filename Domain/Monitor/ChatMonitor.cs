@@ -22,34 +22,24 @@ public class ChatMonitor(
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
                 .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
-                .Merge(cancellationToken)
-                .Select((x, i) => (x.Item1, x.Item2, i));
+                .Merge(cancellationToken);
 
-            await foreach (var (key, aiResponse, i) in responses)
+            try
             {
-                try
-                {
-                    await SendResponse(key, aiResponse, i, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    if (logger.IsEnabled(LogLevel.Error))
-                    {
-                        logger.LogError(ex, "Inner ChatMonitor exception: {exceptionMessage}", ex.Message);
-                    }
-                }
+                await chatMessengerClient.ProcessResponseStreamAsync(responses, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Inner ChatMonitor exception: {exceptionMessage}", ex.Message);
             }
         }
         catch (Exception ex)
         {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
-            }
+            logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AiResponse)> ProcessChatThread(
+    private async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> ProcessChatThread(
         AgentKey agentKey,
         IAsyncGrouping<AgentKey, ChatPrompt> group,
         [EnumeratorCancellation] CancellationToken ct)
@@ -73,19 +63,13 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<AiResponse>();
+                        return AsyncEnumerable.Empty<AgentRunResponseUpdate>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<AiResponse>();
+                        return AsyncEnumerable.Empty<AgentRunResponseUpdate>();
                     default:
-                        // Wrap in error handling to convert exceptions to error responses
-                        // and append IsComplete marker at end
                         return agent
                             .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                            .ToUpdateAiResponsePairs()
-                            .Where(y => y.Item2 is not null)
-                            .Select(y => y.Item2)
-                            .Cast<AiResponse>()
                             .WithErrorHandling(linkedCt);
                 }
             })
@@ -111,54 +95,7 @@ public class ChatMonitor(
 
         var threadId = await chatMessengerClient.CreateThread(
             prompt.ChatId, prompt.Prompt, prompt.BotTokenHash, cancellationToken);
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = prompt.Prompt.TrimStart('/'),
-            Bold = true
-        };
-        await chatMessengerClient.SendResponse(
-            prompt.ChatId, responseMessage, threadId, prompt.BotTokenHash, cancellationToken);
 
         return new AgentKey(prompt.ChatId, threadId, prompt.BotTokenHash);
-    }
-
-    private async Task SendResponse(AgentKey agentKey, AiResponse response, int idx, CancellationToken ct)
-    {
-        try
-        {
-            if (response.IsComplete)
-            {
-                await chatMessengerClient.SendResponse(
-                    agentKey.ChatId,
-                    new ChatResponseMessage { IsComplete = true, Error = response.Error },
-                    agentKey.ThreadId,
-                    agentKey.BotTokenHash,
-                    ct);
-                return;
-            }
-
-            if (string.IsNullOrEmpty(response.Content) && string.IsNullOrEmpty(response.Reasoning))
-            {
-                return;
-            }
-
-            var responseMessage = new ChatResponseMessage
-            {
-                Message = response.Content,
-                Reasoning = response.Reasoning,
-                MessageIndex = idx
-            };
-            await chatMessengerClient.SendResponse(
-                agentKey.ChatId, responseMessage, agentKey.ThreadId, agentKey.BotTokenHash, ct);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex,
-                    "Error writing response ChatId: {chatId}, ThreadId: {threadId}: {exceptionMessage}",
-                    agentKey.ChatId, agentKey.ThreadId, ex.Message);
-            }
-        }
     }
 }

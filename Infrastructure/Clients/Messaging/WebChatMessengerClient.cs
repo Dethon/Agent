@@ -1,8 +1,12 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Channels;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
@@ -27,35 +31,53 @@ public sealed class WebChatMessengerClient(
         }
     }
 
-    public async Task SendResponse(
-        long chatId,
-        ChatResponseMessage responseMessage,
-        long? threadId,
-        string? botTokenHash,
+    public async Task ProcessResponseStreamAsync(
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
         CancellationToken cancellationToken)
     {
-        var topicId = sessionManager.GetTopicIdByChatId(chatId);
-        if (topicId is null)
+        await foreach (var (key, update) in updates.WithCancellation(cancellationToken))
         {
-            logger.LogWarning("SendResponse: chatId {ChatId} not found in sessions", chatId);
-            return;
-        }
+            var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
+            if (topicId is null)
+            {
+                logger.LogWarning("ProcessResponseStreamAsync: chatId {ChatId} not found", key.ChatId);
+                continue;
+            }
 
-        var streamMessage = new ChatStreamMessage
-        {
-            Content = responseMessage.Message,
-            Reasoning = responseMessage.Reasoning,
-            ToolCalls = responseMessage.CalledTools,
-            Error = responseMessage.Error,
-            IsComplete = responseMessage.IsComplete,
-            MessageIndex = responseMessage.MessageIndex
-        };
+            try
+            {
+                foreach (var content in update.Contents)
+                {
+                    var msg = content switch
+                    {
+                        TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
+                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId },
+                        TextReasoningContent rc when !string.IsNullOrEmpty(rc.Text) =>
+                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId },
+                        ErrorContent ec =>
+                            new ChatStreamMessage { IsComplete = true, Error = ec.Message },
+                        FunctionCallContent fc =>
+                            new ChatStreamMessage
+                            {
+                                ToolCalls = $"{fc.Name}({JsonSerializer.Serialize(fc.Arguments)})",
+                                MessageId = update.MessageId
+                            },
+                        _ => null
+                    };
 
-        await streamManager.WriteMessageAsync(topicId, streamMessage, cancellationToken);
-
-        if (responseMessage.IsComplete)
-        {
-            streamManager.CompleteStream(topicId);
+                    if (msg is not null)
+                    {
+                        await streamManager.WriteMessageAsync(topicId, msg, cancellationToken);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                await streamManager.WriteMessageAsync(
+                    topicId,
+                    new ChatStreamMessage { IsComplete = true, Error = ex.Message, MessageId = update.MessageId },
+                    CancellationToken.None);
+            }
         }
     }
 

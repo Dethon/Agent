@@ -7,7 +7,7 @@ public record ChatStreamMessage
     public string? ToolCalls { get; init; }
     public bool IsComplete { get; init; }
     public string? Error { get; init; }
-    public int MessageIndex { get; init; }
+    public string? MessageId { get; init; }
     public long SequenceNumber { get; init; }
     public ToolApprovalRequestMessage? ApprovalRequest { get; init; }
 }

@@ -96,9 +96,9 @@ internal static class MonitorTestMocks
         }
 
         mock.Setup(c =>
-            c.SendResponse(
+            c.ProcessResponseStreamAsync(
                 It.IsAny<long>(),
-                It.IsAny<ChatResponseMessage>(),
+                It.IsAny<IAsyncEnumerable<AgentRunResponseUpdate>>(),
                 It.IsAny<long?>(),
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()
@@ -125,23 +125,12 @@ internal static class MonitorTestMocks
 public class ChatMonitorTests
 {
     [Fact]
-    public async Task Monitor_WhenAgentCompletes_SendsIsCompleteResponse()
+    public async Task Monitor_WhenAgentCompletes_CallsProcessResponseStreamAsync()
     {
         // Arrange
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt() };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var capturedResponses = new List<ChatResponseMessage>();
-        chatMessengerClient.Setup(c =>
-                c.SendResponse(
-                    It.IsAny<long>(),
-                    It.IsAny<ChatResponseMessage>(),
-                    It.IsAny<long?>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<CancellationToken>()))
-            .Callback<long, ChatResponseMessage, long?, string?, CancellationToken>((_, response, _, _, _) =>
-                capturedResponses.Add(response))
-            .Returns(Task.CompletedTask);
 
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -152,8 +141,14 @@ public class ChatMonitorTests
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - Should have at least one IsComplete response
-        capturedResponses.ShouldContain(r => r.IsComplete);
+        // Assert - ProcessResponseStreamAsync should be called
+        chatMessengerClient.Verify(c =>
+            c.ProcessResponseStreamAsync(
+                It.IsAny<long>(),
+                It.IsAny<IAsyncEnumerable<AgentRunResponseUpdate>>(),
+                It.IsAny<long?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

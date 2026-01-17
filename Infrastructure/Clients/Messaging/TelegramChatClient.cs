@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
 using Infrastructure.Clients.ToolApproval;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -57,12 +59,32 @@ public class TelegramChatClient(
         }
     }
 
-    public async Task SendResponse(
-        long chatId, ChatResponseMessage responseMessage, long? threadId, string? botTokenHash,
+    public async Task ProcessResponseStreamAsync(
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
         CancellationToken cancellationToken)
     {
         var client = GetClientByHash(botTokenHash);
-        await SendResponseWithClient(client, chatId, responseMessage, threadId, cancellationToken);
+
+        var responses = updates.ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!);
+
+        await foreach (var response in responses.WithCancellation(cancellationToken))
+        {
+            if (response.IsComplete)
+            {
+                continue;
+            }
+
+            await SendResponseWithClient(client, chatId,
+                new ChatResponseMessage
+                {
+                    Message = response.Content,
+                    Reasoning = response.Reasoning,
+                    CalledTools = response.ToolCalls
+                },
+                threadId, cancellationToken);
+        }
     }
 
     public async Task<int> CreateThread(long chatId, string name, string? botTokenHash,
@@ -76,6 +98,15 @@ public class TelegramChatClient(
             iconCustomEmojiId: icon,
             cancellationToken: cancellationToken
         );
+
+        var echoMessage = name.TrimStart('/');
+        await client.SendMessage(
+            chatId,
+            $"<b>{echoMessage.HtmlSanitize().Left(4000)}</b>",
+            ParseMode.Html,
+            messageThreadId: thread.MessageThreadId,
+            cancellationToken: cancellationToken);
+
         return thread.MessageThreadId;
     }
 

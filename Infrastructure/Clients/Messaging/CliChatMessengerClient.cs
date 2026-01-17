@@ -1,8 +1,11 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.CliGui.Abstractions;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Clients.Messaging;
 
@@ -37,12 +40,50 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         }
     }
 
-    public Task SendResponse(
-        long chatId, ChatResponseMessage responseMessage, long? threadId, string? botTokenHash,
+    public async Task ProcessResponseStreamAsync(
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
         CancellationToken cancellationToken)
     {
-        _router.SendResponse(responseMessage);
-        return Task.CompletedTask;
+        string? currentMessageId = null;
+        var messageIndex = 0;
+
+        await foreach (var update in updates.WithCancellation(cancellationToken))
+        {
+            if (update.MessageId is not null && update.MessageId != currentMessageId)
+            {
+                if (currentMessageId is not null)
+                {
+                    messageIndex++;
+                }
+
+                currentMessageId = update.MessageId;
+            }
+
+            foreach (var content in update.Contents)
+            {
+                var msg = content switch
+                {
+                    TextContent tc => new ChatResponseMessage { Message = tc.Text, MessageIndex = messageIndex },
+                    TextReasoningContent rc => new ChatResponseMessage
+                    {
+                        Reasoning = rc.Text, MessageIndex = messageIndex
+                    },
+                    FunctionCallContent fc => new ChatResponseMessage
+                    {
+                        CalledTools = $"{fc.Name}({JsonSerializer.Serialize(fc.Arguments)})",
+                        MessageIndex = messageIndex
+                    },
+                    _ => null
+                };
+
+                if (msg is not null)
+                {
+                    _router.SendResponse(msg);
+                }
+            }
+        }
+
+        _router.SendResponse(new ChatResponseMessage { IsComplete = true, MessageIndex = messageIndex });
     }
 
     public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)

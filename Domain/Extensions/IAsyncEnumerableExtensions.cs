@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
-using Domain.DTOs;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Extensions;
 
@@ -154,12 +155,12 @@ public static class IAsyncEnumerableExtensions
         }
     }
 
-    public static async IAsyncEnumerable<AiResponse> WithErrorHandling(
-        this IAsyncEnumerable<AiResponse> source,
+    public static async IAsyncEnumerable<AgentRunResponseUpdate> WithErrorHandling(
+        this IAsyncEnumerable<AgentRunResponseUpdate> source,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var enumerator = source.GetAsyncEnumerator(ct);
-        AiResponse? errorResponse = null;
+        AgentRunResponseUpdate? errorResponse = null;
         try
         {
             while (true)
@@ -175,10 +176,9 @@ public static class IAsyncEnumerableExtensions
                 }
                 catch (Exception ex)
                 {
-                    errorResponse = new AiResponse
+                    errorResponse = new AgentRunResponseUpdate
                     {
-                        Error = $"An error occurred: {ex.Message}",
-                        IsComplete = true
+                        Contents = [new ErrorContent($"An error occurred: {ex.Message}")]
                     };
                     break;
                 }
@@ -199,10 +199,6 @@ public static class IAsyncEnumerableExtensions
         if (errorResponse is not null)
         {
             yield return errorResponse;
-        }
-        else
-        {
-            yield return new AiResponse { IsComplete = true };
         }
     }
 }

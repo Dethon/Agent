@@ -330,7 +330,7 @@
     {
         var streamingMessage = _streamingMessageByTopic[topic.TopicId]!;
         var messages = _messagesByTopic[topic.TopicId];
-        var currentMessageIndex = 0;
+        string? currentMessageId = null;
 
         try
         {
@@ -355,7 +355,7 @@
                 }
 
                 // New message turn - save current and start fresh
-                if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
+                if (chunk.MessageId != currentMessageId && currentMessageId is not null)
                 {
                     if (!string.IsNullOrEmpty(streamingMessage.Content)
                         || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
@@ -368,7 +368,7 @@
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
                 }
 
-                currentMessageIndex = chunk.MessageIndex;
+                currentMessageId = chunk.MessageId;
 
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
@@ -376,7 +376,7 @@
                     {
                         Content = string.IsNullOrEmpty(streamingMessage.Content)
                             ? chunk.Content
-                            : streamingMessage.Content + "\n\n" + chunk.Content
+                            : streamingMessage.Content + chunk.Content
                     };
                 }
 
@@ -386,7 +386,7 @@
                     {
                         Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
                             ? chunk.Reasoning
-                            : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning
+                            : streamingMessage.Reasoning + chunk.Reasoning
                     };
                 }
 
@@ -396,7 +396,7 @@
                     {
                         ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
                             ? chunk.ToolCalls
-                            : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls
+                            : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
                     };
                 }
 
@@ -528,7 +528,7 @@
             await InvokeAsync(StateHasChanged);
 
             // Continue streaming
-            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageIndex);
+            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {
@@ -550,7 +550,7 @@
 
         // Group messages by MessageIndex and process each turn
         var turnGroups = bufferedMessages
-            .GroupBy(m => m.MessageIndex)
+            .GroupBy(m => m.MessageId)
             .OrderBy(g => g.Key)
             .ToList();
 
@@ -563,10 +563,9 @@
             {
                 // This turn is complete - add to completed turns
                 var completedMessage = new ChatMessageModel { Role = "assistant" };
-                foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
-                {
-                    completedMessage = AccumulateChunk(completedMessage, chunk);
-                }
+                completedMessage = chunks
+                    .Where(m => m is { IsComplete: false, Error: null })
+                    .Aggregate(completedMessage, AccumulateChunk);
 
                 // Strip any content already in history
                 completedMessage = StripKnownContent(completedMessage, historyContent);
@@ -579,10 +578,9 @@
             else
             {
                 // This turn is incomplete - it's the streaming message
-                foreach (var chunk in chunks.Where(m => m.Error is null))
-                {
-                    streamingMessage = AccumulateChunk(streamingMessage, chunk);
-                }
+                streamingMessage = chunks
+                    .Where(m => m.Error is null)
+                    .Aggregate(streamingMessage, AccumulateChunk);
             }
         }
 
@@ -605,23 +603,6 @@
             };
         }
 
-        // Clean up any leftover separators
-        while (message.Content.StartsWith("\n\n"))
-        {
-            message = message with
-            {
-                Content = message.Content[2..]
-            };
-        }
-
-        while (message.Content.EndsWith("\n\n"))
-        {
-            message = message with
-            {
-                Content = message.Content[..^2]
-            };
-        }
-
         return message;
     }
 
@@ -633,7 +614,7 @@
             {
                 Content = string.IsNullOrEmpty(streamingMessage.Content)
                     ? chunk.Content
-                    : streamingMessage.Content + "\n\n" + chunk.Content
+                    : streamingMessage.Content + chunk.Content
             };
         }
 
@@ -643,7 +624,7 @@
             {
                 Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
                     ? chunk.Reasoning
-                    : streamingMessage.Reasoning + "\n-----\n" + chunk.Reasoning
+                    : streamingMessage.Reasoning + chunk.Reasoning
             };
         }
 
@@ -653,7 +634,7 @@
             {
                 ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
                     ? chunk.ToolCalls
-                    : streamingMessage.ToolCalls + "\n-----\n" + chunk.ToolCalls
+                    : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
             };
         }
 
@@ -670,10 +651,10 @@
     private async Task ResumeStreamResponseAsync(
         StoredTopic topic,
         ChatMessageModel streamingMessage,
-        int startMessageIndex)
+        string startMessageIndex)
     {
         var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        var currentMessageIndex = startMessageIndex;
+        var currentMessageId = startMessageIndex;
 
         // Track content for deduplication - skip chunks already in streaming message
         var knownContent = streamingMessage.Content;
@@ -703,7 +684,7 @@
                 }
 
                 // Handle message turn changes
-                if (chunk.MessageIndex > currentMessageIndex && currentMessageIndex > 0)
+                if (chunk.MessageId != currentMessageId && currentMessageId is not null)
                 {
                     if (HasContent(streamingMessage))
                     {
@@ -719,7 +700,7 @@
                     knownToolCalls = "";
                 }
 
-                currentMessageIndex = chunk.MessageIndex;
+                currentMessageId = chunk.MessageId;
 
                 // Skip chunks whose content is already known
                 var isNew = false;

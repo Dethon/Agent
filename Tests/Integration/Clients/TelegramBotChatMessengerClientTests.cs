@@ -1,4 +1,6 @@
 using Domain.DTOs;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -127,7 +129,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
     }
 
     [Fact]
-    public async Task SendResponse_WithMessage_SendsMessageToChat()
+    public async Task ProcessResponseStreamAsync_WithMessage_SendsMessageToChat()
     {
         // Arrange
         fixture.Reset();
@@ -136,19 +138,15 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Test response",
-            Bold = false
-        };
+        var updates = CreateUpdatesWithContent("Test response");
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
-    public async Task SendResponse_WithBoldMessage_SendsBoldFormattedMessage()
+    public async Task ProcessResponseStreamAsync_WithToolCalls_SendsToolCallsMessage()
     {
         // Arrange
         fixture.Reset();
@@ -157,40 +155,15 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Bold response",
-            Bold = true
-        };
+        var updates = CreateUpdatesWithContentAndToolCall("Response", "test_tool", new { param = "value" });
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
-    public async Task SendResponse_WithToolCalls_SendsToolCallsMessage()
-    {
-        // Arrange
-        fixture.Reset();
-        var client = fixture.CreateClient();
-        const long chatId = 12345L;
-
-        fixture.SetupSendMessage(chatId);
-
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Response with tools",
-            CalledTools = """{"tool": "test", "args": {"param": "value"}}"""
-        };
-
-        // Act & Assert - Should not throw
-        await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task SendResponse_WithThreadId_SendsMessageToThread()
+    public async Task ProcessResponseStreamAsync_WithThreadId_SendsMessageToThread()
     {
         // Arrange
         fixture.Reset();
@@ -200,14 +173,11 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Thread response"
-        };
+        var updates = CreateUpdatesWithContent("Thread response");
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, threadId, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(chatId, updates, threadId, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
@@ -221,6 +191,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupGetForumTopicIconStickers();
         fixture.SetupCreateForumTopic(chatId, expectedThreadId);
+        fixture.SetupSendMessage(chatId);
 
         // Act
         var threadId = await client.CreateThread(chatId, "Test Topic", fixture.BotTokenHash, CancellationToken.None);
@@ -268,7 +239,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
     }
 
     [Fact]
-    public async Task SendResponse_WithReasoning_WhenShowReasoningTrue_SendsReasoningMessage()
+    public async Task ProcessResponseStreamAsync_WithReasoning_WhenShowReasoningTrue_SendsReasoningMessage()
     {
         // Arrange
         fixture.Reset();
@@ -277,19 +248,15 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Result",
-            Reasoning = "Thinking about the problem..."
-        };
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...");
 
-        // Act & Assert - Should not throw (reasoning message + content message = 2 calls)
+        // Act & Assert - Should not throw (reasoning message + content message)
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
     }
 
     [Fact]
-    public async Task SendResponse_WithReasoning_WhenShowReasoningFalse_OmitsReasoningMessage()
+    public async Task ProcessResponseStreamAsync_WithReasoning_WhenShowReasoningFalse_OmitsReasoningMessage()
     {
         // Arrange
         fixture.Reset();
@@ -298,14 +265,67 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var responseMessage = new ChatResponseMessage
-        {
-            Message = "Result",
-            Reasoning = "Thinking about the problem..."
-        };
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...");
 
-        // Act & Assert - Should not throw (only content message = 1 call)
+        // Act & Assert - Should not throw (only content message)
         await Should.NotThrowAsync(() =>
-            client.SendResponse(chatId, responseMessage, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
+    }
+
+    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContent(string content)
+    {
+        await Task.CompletedTask;
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextContent(content)]
+        };
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new UsageContent()]
+        };
+    }
+
+    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContentAndReasoning(
+        string content, string reasoning)
+    {
+        await Task.CompletedTask;
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextReasoningContent(reasoning)]
+        };
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextContent(content)]
+        };
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new UsageContent()]
+        };
+    }
+
+    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContentAndToolCall(
+        string content, string toolName, object args)
+    {
+        await Task.CompletedTask;
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextContent(content)]
+        };
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new FunctionCallContent("call-1", toolName, args as IDictionary<string, object>)]
+        };
+        yield return new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new UsageContent()]
+        };
     }
 }

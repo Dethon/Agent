@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using System.Text;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.Hosting;
 
 namespace Infrastructure.Clients.Messaging;
@@ -15,7 +17,6 @@ public sealed class OneShotChatMessengerClient(
     private bool _responseStarted;
     private readonly StringBuilder _responseBuilder = new();
     private readonly StringBuilder _reasoningBuilder = new();
-    private Timer? _completionTimer;
     private readonly Lock _lock = new();
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
@@ -38,33 +39,41 @@ public sealed class OneShotChatMessengerClient(
         };
     }
 
-    public Task SendResponse(
-        long chatId, ChatResponseMessage responseMessage, long? threadId, string? botTokenHash,
+    public async Task ProcessResponseStreamAsync(
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
         CancellationToken cancellationToken)
     {
-        lock (_lock)
+        var responses = AsyncEnumerable
+            .Where<(AgentRunResponseUpdate, AiResponse?)>(updates.ToUpdateAiResponsePairs(), x => x.Item2 is not null)
+            .Select(x => x.Item2!);
+
+        await foreach (var response in responses.WithCancellation(cancellationToken))
         {
-            _responseStarted = true;
-            _completionTimer?.Dispose();
-            _completionTimer = null;
-
-            if (!string.IsNullOrEmpty(responseMessage.Message))
+            if (response.IsComplete)
             {
-                _responseBuilder.Append(responseMessage.Message);
+                CompleteResponse();
+                continue;
             }
 
-            if (showReasoning && !string.IsNullOrEmpty(responseMessage.Reasoning))
+            lock (_lock)
             {
-                _reasoningBuilder.Append(responseMessage.Reasoning);
+                _responseStarted = true;
+
+                if (!string.IsNullOrEmpty(response.Content))
+                {
+                    _responseBuilder.Append(response.Content);
+                }
+
+                if (showReasoning && !string.IsNullOrEmpty(response.Reasoning))
+                {
+                    _reasoningBuilder.Append(response.Reasoning);
+                }
+
+                FlushOutput();
             }
-
-            FlushOutput();
-
-            // Start/reset completion timer after each response chunk
-            _completionTimer = new Timer(_ => CompleteResponse(), null, 500, Timeout.Infinite);
         }
 
-        return Task.CompletedTask;
+        CompleteResponse();
     }
 
     public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
@@ -106,6 +115,7 @@ public sealed class OneShotChatMessengerClient(
                 return;
             }
 
+            _responseStarted = false;
             FlushOutput();
             Console.WriteLine();
             lifetime.StopApplication();
