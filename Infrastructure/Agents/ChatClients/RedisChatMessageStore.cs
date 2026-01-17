@@ -40,7 +40,8 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var allMessages = context.ChatMessageStoreMessages
+        var existingMessages = await store.GetMessagesAsync(key) ?? [];
+        var allMessages = existingMessages
             .Concat(context.RequestMessages)
             .Concat(context.ResponseMessages ?? [])
             .ToArray();
