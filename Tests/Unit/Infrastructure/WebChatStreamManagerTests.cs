@@ -73,7 +73,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task GetStreamState_AfterComplete_ReturnsNull()
+    public async Task GetStreamState_AfterComplete_ReturnsStateWithIsProcessingFalse()
     {
         // Arrange
         const string topicId = "test-topic";
@@ -91,8 +91,10 @@ public sealed class WebChatStreamManagerTests : IDisposable
         _manager.CompleteStream(topicId);
         var state = _manager.GetStreamState(topicId);
 
-        // Assert - After completion, buffer is cleaned up
-        state.ShouldBeNull();
+        // Assert - After completion, buffer is preserved for resume but IsProcessing is false
+        state.ShouldNotBeNull();
+        state.IsProcessing.ShouldBeFalse();
+        state.BufferedMessages.ShouldNotBeEmpty();
     }
 
     [Fact]

@@ -67,7 +67,11 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
             channel.Complete();
         }
 
-        CleanupStreamState(topicId);
+        // Only clean up the CTS, keep buffer for stream resume
+        if (_cancellationTokens.TryRemove(topicId, out var cts))
+        {
+            cts.Dispose();
+        }
     }
 
     public void CancelStream(string topicId)

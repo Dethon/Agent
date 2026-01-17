@@ -33,8 +33,8 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
     [Fact]
     public async Task GetStreamState_EndpointWorks()
     {
-        // Arrange - Note: Testing exact mid-stream state is timing-dependent.
-        // This test verifies the endpoint works and returns null after completion.
+        // Arrange - This test verifies the endpoint works and returns correct state after completion.
+        // After completion, IsProcessing is false but buffer is preserved for reconnection.
         var topicId = Guid.NewGuid().ToString();
         var chatId = Random.Shared.NextInt64(10000, 99999);
         var threadId = Random.Shared.NextInt64(20000, 29999);
@@ -55,14 +55,16 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
             }
         }
 
-        // Wait for buffer cleanup (5 seconds delay in WebChatMessengerClient)
-        await Task.Delay(TimeSpan.FromSeconds(6), CancellationToken.None);
+        // Small delay to ensure completion
+        await Task.Delay(100, CancellationToken.None);
 
-        // Act - After cleanup, state should be null
+        // Act - After completion, state shows IsProcessing=false but buffer is preserved
         var state = await _connection.InvokeAsync<StreamState?>("GetStreamState", topicId, CancellationToken.None);
 
-        // Assert
-        state.ShouldBeNull();
+        // Assert - State exists with IsProcessing=false after completion
+        state.ShouldNotBeNull();
+        state.IsProcessing.ShouldBeFalse();
+        state.BufferedMessages.ShouldNotBeEmpty();
     }
 
     [Fact]

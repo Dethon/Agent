@@ -201,4 +201,41 @@ public static class IAsyncEnumerableExtensions
             yield return errorResponse;
         }
     }
+
+    /// <summary>
+    ///     Wraps an async enumerable to gracefully handle OperationCanceledException.
+    ///     When cancellation occurs, the enumeration simply ends without throwing.
+    /// </summary>
+    public static async IAsyncEnumerable<T> IgnoreCancellation<T>(
+        this IAsyncEnumerable<T> source,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var enumerator = source.GetAsyncEnumerator(ct);
+        try
+        {
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
 }

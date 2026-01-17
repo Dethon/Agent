@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging;
 using Microsoft.AspNetCore.SignalR;
@@ -97,7 +98,7 @@ public sealed class ChatHub(
             yield return new ChatStreamMessage { ApprovalRequest = pendingApproval };
         }
 
-        await foreach (var msg in liveStream)
+        await foreach (var msg in liveStream.IgnoreCancellation(cancellationToken))
         {
             yield return msg;
             if (msg.IsComplete || msg.Error is not null)
@@ -124,7 +125,7 @@ public sealed class ChatHub(
 
         var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, "web-user", cancellationToken);
 
-        await foreach (var msg in responses)
+        await foreach (var msg in responses.IgnoreCancellation())
         {
             yield return msg;
             if (msg.IsComplete || msg.Error is not null)

@@ -35,7 +35,7 @@ public sealed class WebChatMessengerClient(
         IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, aiResponse) in updates.WithCancellation(cancellationToken))
         {
             var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
             if (topicId is null)
@@ -70,6 +70,16 @@ public sealed class WebChatMessengerClient(
                         await streamManager.WriteMessageAsync(topicId, msg, cancellationToken);
                     }
                 }
+
+                // When aiResponse is present, the message is complete
+                if (aiResponse is not null)
+                {
+                    await streamManager.WriteMessageAsync(
+                        topicId,
+                        new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
+                        cancellationToken);
+                    streamManager.CompleteStream(topicId);
+                }
             }
             catch (Exception ex)
             {
@@ -77,6 +87,7 @@ public sealed class WebChatMessengerClient(
                     topicId,
                     new ChatStreamMessage { IsComplete = true, Error = ex.Message, MessageId = update.MessageId },
                     CancellationToken.None);
+                streamManager.CompleteStream(topicId);
             }
         }
     }
