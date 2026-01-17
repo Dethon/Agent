@@ -18,6 +18,10 @@
     [Parameter] public bool IsStreaming { get; set; }
 
     private string? _deleteConfirmTopicId;
+    private bool _dropdownOpen;
+    private ElementReference _dropdownRef;
+
+    private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
 
     private async Task HandleTopicClick(StoredTopic topic)
     {
@@ -48,28 +52,51 @@
         await OnTopicDeleted.InvokeAsync(topic);
     }
 
-    private async Task HandleAgentChange(ChangeEventArgs e)
+    private void ToggleDropdown()
     {
-        var value = e.Value?.ToString();
-        if (!string.IsNullOrEmpty(value))
+        _dropdownOpen = !_dropdownOpen;
+    }
+
+    private async Task SelectAgent(string agentId)
+    {
+        _dropdownOpen = false;
+        if (agentId != SelectedAgentId)
         {
-            await OnAgentChanged.InvokeAsync(value);
+            await OnAgentChanged.InvokeAsync(agentId);
         }
+    }
+
+    private void CloseDropdown()
+    {
+        _dropdownOpen = false;
     }
 
 }
 
 <div class="topic-sidebar">
     <div class="sidebar-header">
-        <div class="agent-select-wrapper">
-            <select class="agent-select"
-                    value="@SelectedAgentId"
-                    @onchange="HandleAgentChange">
-                @foreach (var agent in Agents)
-                {
-                    <option value="@agent.Id">@agent.Name</option>
-                }
-            </select>
+        <div class="custom-dropdown @(_dropdownOpen ? "open" : "")" @ref="_dropdownRef">
+            <button class="dropdown-trigger" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
+                <span class="dropdown-value">@SelectedAgentName</span>
+                <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            @if (_dropdownOpen)
+            {
+                <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
+                <div class="dropdown-menu">
+                    @foreach (var agent in Agents)
+                    {
+                        <div class="dropdown-item @(agent.Id == SelectedAgentId ? "selected" : "")"
+                             @onclick="() => SelectAgent(agent.Id)">
+                            @agent.Name
+                        </div>
+                    }
+                </div>
+            }
         </div>
         <button class="new-topic-btn" @onclick="HandleNewTopic">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
