@@ -311,6 +311,14 @@
             _messagesByTopic[topic.TopicId] = messages;
         }
 
+        // If there's an existing streaming message with content, save it to completed messages
+        if (_streamingMessageByTopic.TryGetValue(topic.TopicId, out var existingStreamingMessage)
+            && existingStreamingMessage is not null
+            && HasContent(existingStreamingMessage))
+        {
+            messages.Add(existingStreamingMessage with { }); // Clone to avoid reference issues
+        }
+
         messages.Add(new ChatMessageModel
         {
             Role = "user",
