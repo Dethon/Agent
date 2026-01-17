@@ -518,13 +518,10 @@
             var (completedTurns, streamingMessage) = RebuildFromBuffer(state.BufferedMessages, historyContent);
 
             // Add completed turns (already deduplicated by RebuildFromBuffer)
-            foreach (var turn in completedTurns.Where(HasContent))
-            {
-                messages.Add(turn);
-            }
+            messages.AddRange(completedTurns.Where(HasContent));
 
             // Strip known content from streaming message
-            StripKnownContent(streamingMessage, historyContent);
+            streamingMessage = StripKnownContent(streamingMessage, historyContent);
 
             _streamingMessageByTopic[topic.TopicId] = streamingMessage;
 
@@ -568,11 +565,11 @@
                 var completedMessage = new ChatMessageModel { Role = "assistant" };
                 foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
                 {
-                    streamingMessage = AccumulateChunk(completedMessage, chunk);
+                    completedMessage = AccumulateChunk(completedMessage, chunk);
                 }
 
                 // Strip any content already in history
-                StripKnownContent(completedMessage, historyContent);
+                completedMessage = StripKnownContent(completedMessage, historyContent);
 
                 if (HasContent(completedMessage))
                 {
@@ -592,14 +589,14 @@
         return (completedTurns, streamingMessage);
     }
 
-    private static void StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
+    private static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
     {
         if (string.IsNullOrEmpty(message.Content))
         {
-            return;
+            return message;
         }
 
-        // Remove any history content that appears in this message
+        // Remove any history content that appears in this message (substring deduplication)
         foreach (var known in historyContent.Where(known => message.Content.Contains(known)))
         {
             message = message with
@@ -624,6 +621,8 @@
                 Content = message.Content[..^2]
             };
         }
+
+        return message;
     }
 
     private static ChatMessageModel AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
