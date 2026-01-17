@@ -39,7 +39,7 @@ public class ChatMonitor(
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> ProcessChatThread(
+    private async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> ProcessChatThread(
         AgentKey agentKey,
         IAsyncGrouping<AgentKey, ChatPrompt> group,
         [EnumeratorCancellation] CancellationToken ct)
@@ -63,21 +63,22 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<AgentRunResponseUpdate>();
+                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<AgentRunResponseUpdate>();
+                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
                     default:
                         return agent
                             .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
-                            .WithErrorHandling(linkedCt);
+                            .WithErrorHandling(linkedCt)
+                            .ToUpdateAiResponsePairs();
                 }
             })
             .Merge(linkedCt);
 
-        await foreach (var response in aiResponses.WithCancellation(ct))
+        await foreach (var (update, aiResponse) in aiResponses.WithCancellation(ct))
         {
-            yield return (agentKey, response);
+            yield return (agentKey, update, aiResponse);
         }
     }
 

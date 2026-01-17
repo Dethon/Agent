@@ -40,12 +40,12 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        var responses = AsyncEnumerable
-            .Where<(AgentRunResponseUpdate, AiResponse?)>(updates.ToUpdateAiResponsePairs(), x => x.Item2 is not null)
-            .Select(x => x.Item2!);
+        var responses = updates
+            .Where(x => x.Item3 is not null)
+            .Select(x => x.Item3!);
 
         await foreach (var response in responses.WithCancellation(cancellationToken))
         {

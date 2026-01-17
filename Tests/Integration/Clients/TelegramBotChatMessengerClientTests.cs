@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Domain.Agents;
 using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -138,11 +140,11 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContent("Test response");
+        var updates = CreateUpdatesWithContent("Test response", chatId, null, fixture.BotTokenHash);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
     [Fact]
@@ -155,11 +157,12 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContentAndToolCall("Response", "test_tool", new { param = "value" });
+        var updates = CreateUpdatesWithContentAndToolCall("Response", "test_tool", new { param = "value" }, chatId,
+            null, fixture.BotTokenHash);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
     [Fact]
@@ -173,11 +176,11 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContent("Thread response");
+        var updates = CreateUpdatesWithContent("Thread response", chatId, threadId, fixture.BotTokenHash);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
-            client.ProcessResponseStreamAsync(chatId, updates, threadId, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
     [Fact]
@@ -248,11 +251,12 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...");
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...", chatId, null,
+            fixture.BotTokenHash);
 
         // Act & Assert - Should not throw (reasoning message + content message)
         await Should.NotThrowAsync(() =>
-            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
     [Fact]
@@ -265,67 +269,75 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...");
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...", chatId, null,
+            fixture.BotTokenHash);
 
         // Act & Assert - Should not throw (only content message)
         await Should.NotThrowAsync(() =>
-            client.ProcessResponseStreamAsync(chatId, updates, null, fixture.BotTokenHash, CancellationToken.None));
+            client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
-    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContent(string content)
+    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
+        string content, long chatId, long? threadId, string? botTokenHash)
     {
+        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
         await Task.CompletedTask;
-        yield return new AgentRunResponseUpdate
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        };
-        yield return new AgentRunResponseUpdate
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        };
+        }, new AiResponse { Content = content });
     }
 
-    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContentAndReasoning(
-        string content, string reasoning)
+    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+        CreateUpdatesWithContentAndReasoning(
+            string content, string reasoning, long chatId, long? threadId, string? botTokenHash)
     {
+        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
         await Task.CompletedTask;
-        yield return new AgentRunResponseUpdate
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
-        };
-        yield return new AgentRunResponseUpdate
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        };
-        yield return new AgentRunResponseUpdate
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        };
+        }, new AiResponse { Content = content, Reasoning = reasoning });
     }
 
-    private static async IAsyncEnumerable<AgentRunResponseUpdate> CreateUpdatesWithContentAndToolCall(
-        string content, string toolName, object args)
+    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+        CreateUpdatesWithContentAndToolCall(
+            string content, string toolName, object args, long chatId, long? threadId, string? botTokenHash)
     {
+        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
+        var toolCalls = $"{toolName}({JsonSerializer.Serialize(args)})";
         await Task.CompletedTask;
-        yield return new AgentRunResponseUpdate
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        };
-        yield return new AgentRunResponseUpdate
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
-            Contents = [new FunctionCallContent("call-1", toolName, args as IDictionary<string, object>)]
-        };
-        yield return new AgentRunResponseUpdate
+            Contents = [new FunctionCallContent("call-1", toolName, args as IDictionary<string, object?>)]
+        }, new AiResponse { Content = content, ToolCalls = toolCalls });
+        yield return (key, new AgentRunResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        };
+        }, null);
     }
 }

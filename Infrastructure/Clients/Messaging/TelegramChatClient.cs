@@ -60,30 +60,29 @@ public class TelegramChatClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        var client = GetClientByHash(botTokenHash);
+        var responses = updates
+            .Where(x => x.Item3 is not null)
+            .Select(x => (x.Item1, x.Item3!));
 
-        var responses = updates.ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!);
-
-        await foreach (var response in responses.WithCancellation(cancellationToken))
+        await foreach (var (key, response) in responses.WithCancellation(cancellationToken))
         {
             if (response.IsComplete)
             {
                 continue;
             }
 
-            await SendResponseWithClient(client, chatId,
+            var client = GetClientByHash(key.BotTokenHash);
+            await SendResponseWithClient(client, key.ChatId,
                 new ChatResponseMessage
                 {
                     Message = response.Content,
                     Reasoning = response.Reasoning,
                     CalledTools = response.ToolCalls
                 },
-                threadId, cancellationToken);
+                key.ThreadId, cancellationToken);
         }
     }
 

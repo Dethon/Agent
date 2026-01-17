@@ -24,7 +24,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
         var messageWithReasoning = new ChatStreamMessage
         {
             Reasoning = "Let me think about this...",
-            MessageIndex = 1
+            MessageId = "1"
         };
 
         // Act
@@ -47,13 +47,13 @@ public sealed class WebChatStreamManagerTests : IDisposable
         var reasoningMessage = new ChatStreamMessage
         {
             Reasoning = "Step 1: Analyze...",
-            MessageIndex = 1
+            MessageId = "1"
         };
 
         var contentMessage = new ChatStreamMessage
         {
             Content = "Here is my answer.",
-            MessageIndex = 2
+            MessageId = "2"
         };
 
         // Act
@@ -82,7 +82,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
         var message = new ChatStreamMessage
         {
             Content = "Hello",
-            MessageIndex = 1
+            MessageId = "1"
         };
 
         await _manager.WriteMessageAsync(topicId, message, CancellationToken.None);
@@ -102,8 +102,8 @@ public sealed class WebChatStreamManagerTests : IDisposable
         const string topicId = "test-topic";
         _manager.CreateStream(topicId, "test prompt", CancellationToken.None);
 
-        var reasoningMsg = new ChatStreamMessage { Reasoning = "Thinking...", MessageIndex = 1 };
-        var contentMsg = new ChatStreamMessage { Content = "Answer", MessageIndex = 2 };
+        var reasoningMsg = new ChatStreamMessage { Reasoning = "Thinking...", MessageId = "1" };
+        var contentMsg = new ChatStreamMessage { Content = "Answer", MessageId = "2" };
 
         await _manager.WriteMessageAsync(topicId, reasoningMsg, CancellationToken.None);
         await _manager.WriteMessageAsync(topicId, contentMsg, CancellationToken.None);

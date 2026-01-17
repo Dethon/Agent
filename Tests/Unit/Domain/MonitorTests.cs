@@ -97,10 +97,7 @@ internal static class MonitorTestMocks
 
         mock.Setup(c =>
             c.ProcessResponseStreamAsync(
-                It.IsAny<long>(),
-                It.IsAny<IAsyncEnumerable<AgentRunResponseUpdate>>(),
-                It.IsAny<long?>(),
-                It.IsAny<string?>(),
+                It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
                 It.IsAny<CancellationToken>()
             )).Returns(Task.CompletedTask);
         return mock;
@@ -144,10 +141,7 @@ public class ChatMonitorTests
         // Assert - ProcessResponseStreamAsync should be called
         chatMessengerClient.Verify(c =>
             c.ProcessResponseStreamAsync(
-                It.IsAny<long>(),
-                It.IsAny<IAsyncEnumerable<AgentRunResponseUpdate>>(),
-                It.IsAny<long?>(),
-                It.IsAny<string?>(),
+                It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
                 It.IsAny<CancellationToken>()), Times.Once);
     }
 

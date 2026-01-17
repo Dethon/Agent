@@ -98,13 +98,13 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
 
         if (!_streamBuffers.TryGetValue(topicId, out var buffer))
         {
-            return isProcessing ? new StreamState(true, [], 0, currentPrompt) : null;
+            return isProcessing ? new StreamState(true, [], string.Empty, currentPrompt) : null;
         }
 
         var messages = buffer.GetAll();
-        var lastIndex = messages.LastOrDefault()?.MessageIndex ?? 0;
+        var lastMessageId = messages.LastOrDefault()?.MessageId ?? string.Empty;
 
-        return new StreamState(isProcessing, messages, lastIndex, currentPrompt);
+        return new StreamState(isProcessing, messages, lastMessageId, currentPrompt);
     }
 
     private void CleanupStreamState(string topicId)

@@ -32,10 +32,10 @@ public sealed class WebChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
         {
             var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
             if (topicId is null)

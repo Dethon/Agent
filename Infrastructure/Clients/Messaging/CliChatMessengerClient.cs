@@ -41,13 +41,13 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate)> updates,
+        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
         string? currentMessageId = null;
         var messageIndex = 0;
 
-        await foreach (var update in updates.WithCancellation(cancellationToken))
+        await foreach (var (_, update, _) in updates.WithCancellation(cancellationToken))
         {
             if (update.MessageId is not null && update.MessageId != currentMessageId)
             {
