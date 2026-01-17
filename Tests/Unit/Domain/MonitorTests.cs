@@ -96,10 +96,16 @@ internal static class MonitorTestMocks
         }
 
         mock.Setup(c =>
-            c.ProcessResponseStreamAsync(
-                It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
-                It.IsAny<CancellationToken>()
-            )).Returns(Task.CompletedTask);
+                c.ProcessResponseStreamAsync(
+                    It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
+                    It.IsAny<CancellationToken>()
+                ))
+            .Returns(async (IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+                CancellationToken ct) =>
+            {
+                // Must consume the enumerable to drive the lazy streaming pipeline
+                await foreach (var _ in updates.WithCancellation(ct)) { }
+            });
         return mock;
     }
 
