@@ -225,6 +225,9 @@
 
         _shouldAutoScroll = true; // Scroll to bottom when switching topics
         StateHasChanged();
+
+        // Subscribe to any active stream for this topic
+        _ = TryResumeStreamAsync(topic);
     }
 
     private async Task HandleTopicDeleted(StoredTopic topic)
@@ -726,6 +729,7 @@
         var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         var currentMessageId = startMessageIndex;
         var needsReasoningSeparator = false;
+        var receivedNewContent = false;
 
         // Track content for deduplication - skip chunks already in streaming message
         var knownContent = streamingMessage.Content;
@@ -811,6 +815,7 @@
 
                 if (isNew)
                 {
+                    receivedNewContent = true;
                     await InvokeAsync(async () =>
                     {
                         await CheckAndUpdateAutoScroll();
@@ -827,8 +832,12 @@
                 messages.Add(streamingMessage with { });
             }
 
-            topic.LastMessageAt = DateTime.UtcNow;
-            await HubService.SaveTopicAsync(topic.ToMetadata());
+            // Only update LastMessageAt if we actually received new content from the stream
+            if (receivedNewContent)
+            {
+                topic.LastMessageAt = DateTime.UtcNow;
+                await HubService.SaveTopicAsync(topic.ToMetadata());
+            }
         }
         catch (Exception ex)
         {
