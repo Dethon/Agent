@@ -647,7 +647,16 @@
             return message;
         }
 
+        // Check if buffer content is a subset of any history content
+        // This handles the case where user disconnected mid-stream and buffer has incomplete content
+        // while history has the complete content after stream finished
+        if (historyContent.Any(known => known.Contains(message.Content)))
+        {
+            return message with { Content = "" };
+        }
+
         // Remove any history content that appears in this message (substring deduplication)
+        // This handles the case where buffer has more content than was in history
         foreach (var known in historyContent.Where(known => message.Content.Contains(known)))
         {
             message = message with
