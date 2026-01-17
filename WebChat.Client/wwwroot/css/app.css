@@ -873,7 +873,7 @@ html, body {
 
 .chat-input {
     width: 100%;
-    height: 48px;
+    min-height: 48px;
     max-height: 200px;
     padding: 0.85rem 1rem 0.65rem;
     background-color: var(--input-bg);
@@ -884,9 +884,10 @@ html, body {
     resize: none;
     font-family: inherit;
     line-height: 1.4;
-    transition: all var(--transition-normal);
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
     box-sizing: border-box;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .chat-input:hover {
@@ -906,6 +907,30 @@ html, body {
 .chat-input:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+.chat-input::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-input::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 3px;
+}
+
+.chat-input::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.chat-input::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+/* Firefox scrollbar */
+.chat-input {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
 
 /* ===================================
@@ -1211,7 +1236,8 @@ html, body {
     }
 
     .chat-input {
-        height: 42px;
+        min-height: 42px;
+        max-height: 150px;
         padding: 0.7rem 1rem 0.55rem;
     }
 }

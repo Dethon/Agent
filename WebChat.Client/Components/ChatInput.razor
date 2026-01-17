@@ -1,3 +1,5 @@
+@inject IJSRuntime Js
+
 @code {
     [Parameter] public EventCallback<string> OnSend { get; set; }
 
@@ -8,6 +10,7 @@
     [Parameter] public bool Disabled { get; set; }
 
     private string _inputText = "";
+    private ElementReference _textareaRef;
 
     private async Task HandleSubmit()
     {
@@ -18,12 +21,16 @@
 
         var message = _inputText;
         _inputText = "";
+
+        // Reset textarea height after clearing text
+        await Js.InvokeVoidAsync("chatInput.reset", _textareaRef);
+
         await OnSend.InvokeAsync(message);
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !e.ShiftKey)
+        if (e is { Key: "Enter", ShiftKey: false })
         {
             await HandleSubmit();
         }
@@ -38,7 +45,8 @@
 
 <div class="input-container">
     <div class="input-wrapper">
-        <textarea class="chat-input"
+        <textarea @ref="_textareaRef"
+                  class="chat-input"
                   placeholder="Type your message..."
                   @bind="_inputText"
                   @bind:event="oninput"

@@ -64,6 +64,33 @@ document.addEventListener('keydown', function (e) {
     }
 });
 
+// Auto-resize textarea utilities
+window.chatInput = {
+    // Auto-resize textarea to fit content
+    autoResize: function (element) {
+        if (!element) return;
+
+        // Reset height to auto to get the correct scrollHeight
+        element.style.height = 'auto';
+
+        // Set the height to match content (respects max-height from CSS)
+        element.style.height = element.scrollHeight + 'px';
+    },
+
+    // Reset textarea to minimum height
+    reset: function (element) {
+        if (!element) return;
+        element.style.height = 'auto';
+    }
+};
+
+// Auto-resize on input event
+document.addEventListener('input', function (e) {
+    if (e.target.classList.contains('chat-input')) {
+        window.chatInput.autoResize(e.target);
+    }
+});
+
 // ===================================
 // Chat Scroll Utilities
 // ===================================
