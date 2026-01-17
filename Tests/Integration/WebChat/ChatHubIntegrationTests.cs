@@ -454,4 +454,125 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             await connection2.DisposeAsync();
         }
     }
+
+    [Fact]
+    public async Task GetStreamState_AfterReasoningStreamed_BufferContainsReasoning()
+    {
+        // Arrange
+        var topicId = Guid.NewGuid().ToString();
+        var chatId = Random.Shared.NextInt64(10000, 99999);
+        var threadId = Random.Shared.NextInt64(20000, 29999);
+
+        // Enqueue reasoning first, then MANY content chunks to keep stream alive
+        fixture.FakeAgentFactory.EnqueueReasoning("Step 1: Analyze the question...");
+        fixture.FakeAgentFactory.EnqueueReasoning("Step 2: Consider the options...");
+        for (var i = 0; i < 20; i++)
+        {
+            fixture.FakeAgentFactory.EnqueueResponses($"Content chunk {i}. ");
+        }
+
+        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+
+        var receivedMessages = new List<ChatStreamMessage>();
+        StreamState? capturedStreamState = null;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        // Act - Start streaming and capture buffer state after reasoning is received
+        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
+                           "SendMessage", topicId, "What is the answer?", cts.Token))
+        {
+            receivedMessages.Add(msg);
+
+            // After receiving reasoning, capture the buffer state while stream is still active
+            if (!string.IsNullOrEmpty(msg.Reasoning) && capturedStreamState is null)
+            {
+                // Small delay to ensure buffer is updated
+                await Task.Delay(50, CancellationToken.None);
+                capturedStreamState = await _connection.InvokeAsync<StreamState>(
+                    "GetStreamState", topicId, CancellationToken.None);
+            }
+
+            if (msg.IsComplete || msg.Error is not null)
+            {
+                break;
+            }
+        }
+
+        // Assert - Verify reasoning was in both live stream and buffer
+        var liveReasoningMessages = receivedMessages.Where(m => !string.IsNullOrEmpty(m.Reasoning)).ToList();
+        liveReasoningMessages.ShouldNotBeEmpty("Live stream should have reasoning messages");
+
+        capturedStreamState.ShouldNotBeNull("Should have captured stream state while processing");
+        capturedStreamState.BufferedMessages.ShouldNotBeEmpty("Buffer should not be empty");
+
+        var bufferedReasoningMessages = capturedStreamState.BufferedMessages
+            .Where(m => !string.IsNullOrEmpty(m.Reasoning))
+            .ToList();
+        bufferedReasoningMessages.ShouldNotBeEmpty("Buffer should contain reasoning messages");
+    }
+
+    [Fact]
+    public async Task ResumeStream_AfterDisconnect_CanRetrieveBufferedReasoning()
+    {
+        // Arrange
+        var topicId = Guid.NewGuid().ToString();
+        var chatId = Random.Shared.NextInt64(10000, 99999);
+        var threadId = Random.Shared.NextInt64(20000, 29999);
+
+        // Queue many responses to ensure we have time to "disconnect" mid-stream
+        fixture.FakeAgentFactory.EnqueueReasoning("Thinking step 1...");
+        fixture.FakeAgentFactory.EnqueueReasoning("Thinking step 2...");
+        for (var i = 0; i < 30; i++)
+        {
+            fixture.FakeAgentFactory.EnqueueResponses($"Content chunk {i}. ");
+        }
+
+        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+
+        StreamState? capturedState = null;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        // Start streaming and capture buffer after reasoning
+        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
+                           "SendMessage", topicId, "Generate response", cts.Token))
+        {
+            // After receiving reasoning, capture buffer from "second connection"
+            if (!string.IsNullOrEmpty(msg.Reasoning) && capturedState is null)
+            {
+                await Task.Delay(20, CancellationToken.None);
+
+                var connection2 = fixture.CreateHubConnection();
+                await connection2.StartAsync(CancellationToken.None);
+                try
+                {
+                    capturedState = await connection2.InvokeAsync<StreamState>(
+                        "GetStreamState", topicId, CancellationToken.None);
+                }
+                finally
+                {
+                    await connection2.DisposeAsync();
+                }
+            }
+
+            if (msg.IsComplete || msg.Error is not null)
+            {
+                break;
+            }
+        }
+
+        // Assert
+        capturedState.ShouldNotBeNull("Should have captured stream state");
+        capturedState.BufferedMessages.ShouldNotBeEmpty("Buffer should not be empty");
+
+        // Check that buffer contains reasoning
+        var hasBufferedReasoning = capturedState.BufferedMessages.Any(m => !string.IsNullOrEmpty(m.Reasoning));
+
+        // Log what we got for debugging
+        var reasoningMsgs = capturedState.BufferedMessages.Where(m => !string.IsNullOrEmpty(m.Reasoning)).ToList();
+        var contentMsgs = capturedState.BufferedMessages.Where(m => !string.IsNullOrEmpty(m.Content)).ToList();
+
+        hasBufferedReasoning.ShouldBeTrue(
+            $"Buffer should contain reasoning. Got {capturedState.BufferedMessages.Count} messages: " +
+            $"{reasoningMsgs.Count} with reasoning, {contentMsgs.Count} with content");
+    }
 }

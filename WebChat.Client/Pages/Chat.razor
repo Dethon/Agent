@@ -629,7 +629,7 @@
     {
         if (!string.IsNullOrEmpty(chunk.Content))
         {
-            return streamingMessage with
+            streamingMessage = streamingMessage with
             {
                 Content = string.IsNullOrEmpty(streamingMessage.Content)
                     ? chunk.Content
@@ -639,7 +639,7 @@
 
         if (!string.IsNullOrEmpty(chunk.Reasoning))
         {
-            return streamingMessage with
+            streamingMessage = streamingMessage with
             {
                 Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
                     ? chunk.Reasoning
@@ -649,7 +649,7 @@
 
         if (!string.IsNullOrEmpty(chunk.ToolCalls))
         {
-            return streamingMessage with
+            streamingMessage = streamingMessage with
             {
                 ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
                     ? chunk.ToolCalls
