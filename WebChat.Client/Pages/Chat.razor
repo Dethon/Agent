@@ -400,6 +400,8 @@
                     };
                 }
 
+                _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+
                 await InvokeAsync(async () =>
                 {
                     await CheckAndUpdateAutoScroll();
