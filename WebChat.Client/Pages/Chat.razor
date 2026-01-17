@@ -354,16 +354,12 @@
                     break;
                 }
 
-                // New message turn - save current and start fresh
-                if (chunk.MessageId != currentMessageId && currentMessageId is not null)
-                {
-                    if (!string.IsNullOrEmpty(streamingMessage.Content)
-                        || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
-                        || !string.IsNullOrEmpty(streamingMessage.Reasoning))
-                    {
-                        messages.Add(streamingMessage);
-                    }
+                var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
+                // Open new bubble when MessageId changes AND current message has Content
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                {
+                    messages.Add(streamingMessage);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
                 }
@@ -382,11 +378,15 @@
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning))
                 {
+                    // Use separator when reasoning comes from a new message turn
+                    var separator = isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning)
+                        ? "\n-----\n"
+                        : "";
                     streamingMessage = streamingMessage with
                     {
                         Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
                             ? chunk.Reasoning
-                            : streamingMessage.Reasoning + chunk.Reasoning
+                            : streamingMessage.Reasoning + separator + chunk.Reasoning
                     };
                 }
 
@@ -538,50 +538,97 @@
         IReadOnlyList<ChatStreamMessage> bufferedMessages,
         HashSet<string> historyContent)
     {
-        var streamingMessage = new ChatMessageModel { Role = "assistant" };
+        var currentMessage = new ChatMessageModel { Role = "assistant" };
         var completedTurns = new List<ChatMessageModel>();
 
         if (bufferedMessages.Count == 0)
         {
-            return (completedTurns, streamingMessage);
+            return (completedTurns, currentMessage);
         }
 
-        // Group messages by MessageIndex and process each turn
+        // Group messages by MessageId and process each turn
         var turnGroups = bufferedMessages
             .GroupBy(m => m.MessageId)
             .OrderBy(g => g.Key)
             .ToList();
 
+        var isFirstGroup = true;
         foreach (var turnGroup in turnGroups)
         {
             var chunks = turnGroup.ToList();
             var isComplete = chunks.Any(m => m.IsComplete);
 
-            if (isComplete)
+            // Open new bubble when MessageId changes AND current message has Content
+            if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Content))
             {
-                // This turn is complete - add to completed turns
-                var completedMessage = new ChatMessageModel { Role = "assistant" };
-                completedMessage = chunks
-                    .Where(m => m is { IsComplete: false, Error: null })
-                    .Aggregate(completedMessage, AccumulateChunk);
-
-                // Strip any content already in history
-                completedMessage = StripKnownContent(completedMessage, historyContent);
-
-                if (HasContent(completedMessage))
+                // Strip any content already in history before adding
+                var strippedMessage = StripKnownContent(currentMessage, historyContent);
+                if (HasContent(strippedMessage))
                 {
-                    completedTurns.Add(completedMessage);
+                    completedTurns.Add(strippedMessage);
+                }
+
+                currentMessage = new ChatMessageModel { Role = "assistant" };
+            }
+
+            var isNewTurn = !isFirstGroup;
+            isFirstGroup = false;
+
+            // Accumulate chunks into current message
+            foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
+            {
+                // Check if this is a new turn for reasoning separator
+                var needsReasoningSeparator = !string.IsNullOrEmpty(chunk.Reasoning)
+                                              && !string.IsNullOrEmpty(currentMessage.Reasoning)
+                                              && isNewTurn;
+
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    currentMessage = currentMessage with
+                    {
+                        Content = string.IsNullOrEmpty(currentMessage.Content)
+                            ? chunk.Content
+                            : currentMessage.Content + chunk.Content
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning))
+                {
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    currentMessage = currentMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(currentMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : currentMessage.Reasoning + separator + chunk.Reasoning
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls))
+                {
+                    currentMessage = currentMessage with
+                    {
+                        ToolCalls = string.IsNullOrEmpty(currentMessage.ToolCalls)
+                            ? chunk.ToolCalls
+                            : currentMessage.ToolCalls + "\n" + chunk.ToolCalls
+                    };
                 }
             }
-            else
+
+            // If complete, finalize this message
+            if (isComplete)
             {
-                // This turn is incomplete - it's the streaming message
-                streamingMessage = chunks
-                    .Where(m => m.Error is null)
-                    .Aggregate(streamingMessage, AccumulateChunk);
+                var strippedMessage = StripKnownContent(currentMessage, historyContent);
+                if (HasContent(strippedMessage))
+                {
+                    completedTurns.Add(strippedMessage);
+                }
+
+                currentMessage = new ChatMessageModel { Role = "assistant" };
             }
         }
 
+        // Remaining message is the streaming message
+        var streamingMessage = StripKnownContent(currentMessage, historyContent);
         return (completedTurns, streamingMessage);
     }
 
@@ -681,14 +728,12 @@
                     break;
                 }
 
-                // Handle message turn changes
-                if (chunk.MessageId != currentMessageId && currentMessageId is not null)
-                {
-                    if (HasContent(streamingMessage))
-                    {
-                        messages.Add(streamingMessage);
-                    }
+                var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
+                // Open new bubble when MessageId changes AND current message has Content
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                {
+                    messages.Add(streamingMessage);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
 
@@ -713,7 +758,16 @@
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
                 {
-                    streamingMessage = AccumulateChunk(streamingMessage, new ChatStreamMessage { Reasoning = chunk.Reasoning });
+                    // Use separator when reasoning comes from a new message turn
+                    var separator = isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning)
+                        ? "\n-----\n"
+                        : "";
+                    streamingMessage = streamingMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : streamingMessage.Reasoning + separator + chunk.Reasoning
+                    };
                     knownReasoning = streamingMessage.Reasoning ?? "";
                     isNew = true;
                 }

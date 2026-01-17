@@ -14,6 +14,7 @@ public sealed class WebChatMessengerClient(
     WebChatSessionManager sessionManager,
     WebChatStreamManager streamManager,
     WebChatApprovalManager approvalManager,
+    ChatThreadResolver threadResolver,
     ILogger<WebChatMessengerClient> logger) : IChatMessengerClient, IDisposable
 {
     private readonly Channel<ChatPrompt> _promptChannel = Channel.CreateUnbounded<ChatPrompt>();
@@ -115,6 +116,13 @@ public sealed class WebChatMessengerClient(
 
     public void EndSession(string topicId)
     {
+        // Get session before removing it so we can cancel the agent
+        if (sessionManager.TryGetSession(topicId, out var session) && session is not null)
+        {
+            var agentKey = new AgentKey(session.ChatId, session.ThreadId, session.AgentId);
+            threadResolver.Cancel(agentKey);
+        }
+
         sessionManager.EndSession(topicId);
         streamManager.CancelStream(topicId);
         approvalManager.CancelPendingApprovalsForTopic(topicId);
@@ -172,6 +180,12 @@ public sealed class WebChatMessengerClient(
 
     public void CancelProcessing(string topicId)
     {
+        if (sessionManager.TryGetSession(topicId, out var session) && session is not null)
+        {
+            var agentKey = new AgentKey(session.ChatId, session.ThreadId, session.AgentId);
+            threadResolver.Cancel(agentKey);
+        }
+
         streamManager.CancelStream(topicId);
     }
 
