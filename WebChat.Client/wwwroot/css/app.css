@@ -847,6 +847,7 @@ html, body {
     font-family: inherit;
     line-height: 1.5;
     transition: all var(--transition-normal);
+    box-sizing: border-box;
 }
 
 .chat-input:hover {
@@ -874,8 +875,9 @@ html, body {
 
 .btn {
     padding: 0.875rem 1.5rem;
-    border: none;
-    border-radius: 12px;
+    min-height: 48px;
+    border: 1px solid transparent;
+    border-radius: 14px;
     font-size: 0.9375rem;
     font-weight: 600;
     cursor: pointer;
@@ -884,6 +886,7 @@ html, body {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    box-sizing: border-box;
 }
 
 .btn-primary {
@@ -1165,6 +1168,11 @@ html, body {
 
     .btn {
         padding: 0.75rem 1rem;
+        min-height: 42px;
+    }
+
+    .chat-input {
+        min-height: 42px;
     }
 }
 
