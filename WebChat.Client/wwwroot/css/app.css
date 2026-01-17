@@ -652,6 +652,19 @@ html, body {
     transform: scale(0.95);
 }
 
+[data-theme="dark"] .new-topic-btn {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    box-shadow: none;
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .new-topic-btn:hover:not(:disabled) {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    box-shadow: none;
+}
+
 [data-theme="dark"] .confirm-delete-btn {
     box-shadow: 0 2px 8px rgba(239, 68, 68, 0.4);
 }
@@ -1056,6 +1069,18 @@ html, body {
 .btn-secondary:hover {
     background-color: var(--border-color);
     border-color: var(--text-muted);
+}
+
+[data-theme="dark"] .btn-primary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .btn-primary:hover:not(:disabled) {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    box-shadow: none;
 }
 
 /* ===================================
@@ -1602,6 +1627,18 @@ select:focus:not(:focus-visible) {
 
 .btn-always:hover:not(:disabled) {
     background: var(--accent-subtle);
+}
+
+[data-theme="dark"] .btn-approve {
+    background: var(--bg-tertiary);
+    color: var(--success);
+    border: 1px solid var(--success);
+    box-shadow: none;
+}
+
+[data-theme="dark"] .btn-approve:hover:not(:disabled) {
+    background: rgba(74, 222, 128, 0.15);
+    box-shadow: none;
 }
 
 @media (max-width: 480px) {
