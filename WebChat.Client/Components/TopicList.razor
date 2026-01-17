@@ -19,7 +19,7 @@
 
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
-    private ElementReference _dropdownRef;
+    public ElementReference DropdownRef { get; private set; }
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
 
@@ -75,7 +75,7 @@
 
 <div class="topic-sidebar">
     <div class="sidebar-header">
-        <div class="custom-dropdown @(_dropdownOpen ? "open" : "")" @ref="_dropdownRef">
+        <div class="custom-dropdown @(_dropdownOpen ? "open" : "")" @ref="DropdownRef">
             <button class="dropdown-trigger" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
                 <span class="dropdown-value">@SelectedAgentName</span>
                 <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
