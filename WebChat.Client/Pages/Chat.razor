@@ -331,6 +331,7 @@
         var streamingMessage = _streamingMessageByTopic[topic.TopicId]!;
         var messages = _messagesByTopic[topic.TopicId];
         string? currentMessageId = null;
+        var needsReasoningSeparator = false;
 
         try
         {
@@ -362,6 +363,12 @@
                     messages.Add(streamingMessage);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                    needsReasoningSeparator = false;
+                }
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                {
+                    // Mark that next reasoning should have separator (staying in same bubble)
+                    needsReasoningSeparator = true;
                 }
 
                 currentMessageId = chunk.MessageId;
@@ -378,10 +385,8 @@
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning))
                 {
-                    // Use separator when reasoning comes from a new message turn
-                    var separator = isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning)
-                        ? "\n-----\n"
-                        : "";
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
                     streamingMessage = streamingMessage with
                     {
                         Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
@@ -553,6 +558,8 @@
             .ToList();
 
         var isFirstGroup = true;
+        var needsReasoningSeparator = false;
+
         foreach (var turnGroup in turnGroups)
         {
             var chunks = turnGroup.ToList();
@@ -569,19 +576,19 @@
                 }
 
                 currentMessage = new ChatMessageModel { Role = "assistant" };
+                needsReasoningSeparator = false;
+            }
+            else if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Reasoning))
+            {
+                // Mark that next reasoning should have separator (staying in same bubble)
+                needsReasoningSeparator = true;
             }
 
-            var isNewTurn = !isFirstGroup;
             isFirstGroup = false;
 
             // Accumulate chunks into current message
             foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
             {
-                // Check if this is a new turn for reasoning separator
-                var needsReasoningSeparator = !string.IsNullOrEmpty(chunk.Reasoning)
-                                              && !string.IsNullOrEmpty(currentMessage.Reasoning)
-                                              && isNewTurn;
-
                 if (!string.IsNullOrEmpty(chunk.Content))
                 {
                     currentMessage = currentMessage with
@@ -595,6 +602,7 @@
                 if (!string.IsNullOrEmpty(chunk.Reasoning))
                 {
                     var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
                     currentMessage = currentMessage with
                     {
                         Reasoning = string.IsNullOrEmpty(currentMessage.Reasoning)
@@ -700,6 +708,7 @@
     {
         var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         var currentMessageId = startMessageIndex;
+        var needsReasoningSeparator = false;
 
         // Track content for deduplication - skip chunks already in streaming message
         var knownContent = streamingMessage.Content;
@@ -736,11 +745,17 @@
                     messages.Add(streamingMessage);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                    needsReasoningSeparator = false;
 
                     // Reset tracking for new message
                     knownContent = "";
                     knownReasoning = "";
                     knownToolCalls = "";
+                }
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                {
+                    // Mark that next reasoning should have separator (staying in same bubble)
+                    needsReasoningSeparator = true;
                 }
 
                 currentMessageId = chunk.MessageId;
@@ -758,10 +773,8 @@
 
                 if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
                 {
-                    // Use separator when reasoning comes from a new message turn
-                    var separator = isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning)
-                        ? "\n-----\n"
-                        : "";
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
                     streamingMessage = streamingMessage with
                     {
                         Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
