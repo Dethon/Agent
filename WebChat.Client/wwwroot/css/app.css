@@ -873,9 +873,9 @@ html, body {
 
 .chat-input {
     width: 100%;
-    min-height: 48px;
+    height: 48px;
     max-height: 200px;
-    padding: 0.875rem 1rem;
+    padding: 0.85rem 1rem 0.65rem;
     background-color: var(--input-bg);
     border: 1px solid var(--input-border);
     border-radius: 14px;
@@ -883,9 +883,10 @@ html, body {
     font-size: 0.9375rem;
     resize: none;
     font-family: inherit;
-    line-height: 1.5;
+    line-height: 1.4;
     transition: all var(--transition-normal);
     box-sizing: border-box;
+    overflow: hidden;
 }
 
 .chat-input:hover {
@@ -913,7 +914,7 @@ html, body {
 
 .btn {
     padding: 0.875rem 1.5rem;
-    min-height: 48px;
+    height: 48px;
     border: 1px solid transparent;
     border-radius: 14px;
     font-size: 0.9375rem;
@@ -1206,11 +1207,12 @@ html, body {
 
     .btn {
         padding: 0.75rem 1rem;
-        min-height: 42px;
+        height: 42px;
     }
 
     .chat-input {
-        min-height: 42px;
+        height: 42px;
+        padding: 0.7rem 1rem 0.55rem;
     }
 }
 
