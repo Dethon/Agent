@@ -71,7 +71,10 @@ public class ChatMonitor(
                         return agent
                             .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
-                            .ToUpdateAiResponsePairs();
+                            .ToUpdateAiResponsePairs()
+                            .Append((
+                                new AgentRunResponseUpdate { Contents = [new StreamCompleteContent()] },
+                                null));
                 }
             })
             .Merge(linkedCt);

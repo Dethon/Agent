@@ -408,10 +408,8 @@
                     StateHasChanged();
                 });
 
-                if (chunk.IsComplete)
-                {
-                    break;
-                }
+                // Note: IsComplete signals an individual message is done, not the entire stream.
+                // The stream continues until the async enumerable completes (e.g., for tool calls + follow-up)
             }
 
             if (!string.IsNullOrEmpty(streamingMessage.Content)
@@ -736,10 +734,7 @@
                     });
                 }
 
-                if (chunk.IsComplete)
-                {
-                    break;
-                }
+                // Note: IsComplete signals an individual message is done, not the entire stream
             }
 
             // Finalize message - clone to ensure different reference from streaming display

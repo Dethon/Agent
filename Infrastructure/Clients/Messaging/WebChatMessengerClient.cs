@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
@@ -35,7 +34,7 @@ public sealed class WebChatMessengerClient(
         IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, aiResponse) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
         {
             var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
             if (topicId is null)
@@ -48,6 +47,13 @@ public sealed class WebChatMessengerClient(
             {
                 foreach (var content in update.Contents)
                 {
+                    // StreamCompleteContent signals that this topic's agent turn is done
+                    if (content is StreamCompleteContent)
+                    {
+                        streamManager.CompleteStream(topicId);
+                        continue;
+                    }
+
                     var msg = content switch
                     {
                         TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
@@ -56,12 +62,6 @@ public sealed class WebChatMessengerClient(
                             new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId },
                         ErrorContent ec =>
                             new ChatStreamMessage { IsComplete = true, Error = ec.Message },
-                        FunctionCallContent fc =>
-                            new ChatStreamMessage
-                            {
-                                ToolCalls = $"{fc.Name}({JsonSerializer.Serialize(fc.Arguments)})",
-                                MessageId = update.MessageId
-                            },
                         _ => null
                     };
 
@@ -71,15 +71,15 @@ public sealed class WebChatMessengerClient(
                     }
                 }
 
-                // When aiResponse is present, the message is complete
-                if (aiResponse is not null)
-                {
-                    await streamManager.WriteMessageAsync(
-                        topicId,
-                        new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
-                        cancellationToken);
-                    streamManager.CompleteStream(topicId);
-                }
+                // When aiResponse is present, the individual message is complete
+                // Note: Do NOT complete the stream here - multiple messages may follow (e.g., tool calls then response)
+                // if (aiResponse is not null)
+                // {
+                //     await streamManager.WriteMessageAsync(
+                //         topicId,
+                //         new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
+                //         cancellationToken);
+                // }
             }
             catch (Exception ex)
             {
