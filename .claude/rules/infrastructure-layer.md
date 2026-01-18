@@ -30,7 +30,8 @@ using Domain.Contracts;
 ## Patterns
 
 - Use primary constructors for dependency injection
-- Implement Domain interfaces
+- Implement Domain interfaces when the service is consumed by Domain
+- Services with a single expected implementation do not require an interface unless Domain needs to use them
 - Handle external failures gracefully with proper error messages
 - Use `async`/`await` throughout
 - Use `CancellationToken` for all async operations

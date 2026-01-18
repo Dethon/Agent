@@ -56,7 +56,7 @@ public sealed class McpAgent : DisposableAgent
                 }
             },
             Description = description,
-            ChatMessageStoreFactory = ctx => RedisChatMessageStore.CreateAsync(stateStore, ctx)
+            ChatMessageStoreFactory = ctx => RedisChatMessageStore.Create(stateStore, ctx)
         });
     }
 
@@ -102,30 +102,31 @@ public sealed class McpAgent : DisposableAgent
         JsonSerializerOptions? jsonSerializerOptions = null)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        if (!serializedThread.TryGetProperty("StoreState", StringComparison.InvariantCultureIgnoreCase, out _))
+        if (serializedThread.TryGetProperty("StoreState", StringComparison.InvariantCultureIgnoreCase, out _))
         {
-            var json = new JsonObject
-            {
-                ["StoreState"] = serializedThread.ToJsonNode()
-            };
-            serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
+            return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
         }
 
+        var json = new JsonObject
+        {
+            ["StoreState"] = serializedThread.ToJsonNode()
+        };
+        serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
         return _innerAgent.DeserializeThread(serializedThread, jsonSerializerOptions);
     }
 
-    public override async Task<AgentRunResponse> RunAsync(
+    protected override async Task<AgentRunResponse> RunCoreAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        var response = RunStreamingAsync(messages, thread, options, cancellationToken);
+        var response = RunCoreStreamingAsync(messages, thread, options, cancellationToken);
         return (await response.ToArrayAsync(cancellationToken)).ToAgentRunResponse();
     }
 
-    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+    protected override async IAsyncEnumerable<AgentRunResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,

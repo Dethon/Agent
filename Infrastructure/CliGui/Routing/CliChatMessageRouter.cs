@@ -162,11 +162,13 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
 
     private void OnInputReceived(string input)
     {
-        if (!_commandHandler.TryHandleCommand(input))
+        if (_commandHandler.TryHandleCommand(input))
         {
-            _terminalAdapter.ShowThinkingIndicator();
-            _inputQueue.Add(input);
+            return;
         }
+
+        _terminalAdapter.ShowThinkingIndicator();
+        _inputQueue.Add(input);
     }
 
     private void OnShutdownRequested()

@@ -1,23 +1,26 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs.WebChat;
 using Microsoft.Extensions.AI;
 using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration) : IThreadStateStore
+public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan expiration)
+    : IThreadStateStore
 {
+    private readonly IDatabase _db = redis.GetDatabase();
+    private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
+
     public async Task DeleteAsync(AgentKey key)
     {
-        var db = redis.GetDatabase();
-        await db.KeyDeleteAsync(key.ToString());
+        await _db.KeyDeleteAsync(key.ToString());
     }
 
-    public ChatMessage[]? GetMessages(string key)
+    public async Task<ChatMessage[]?> GetMessagesAsync(string key)
     {
-        var db = redis.GetDatabase();
-        var value = db.StringGet(key);
+        var value = await _db.StringGetAsync(key);
         return value.HasValue
             ? JsonSerializer.Deserialize<StoreState>(value.ToString())?.Messages
             : null;
@@ -25,9 +28,46 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
 
     public async Task SetMessagesAsync(string key, ChatMessage[] messages)
     {
-        var db = redis.GetDatabase();
         var json = JsonSerializer.Serialize(new StoreState { Messages = messages });
-        await db.StringSetAsync(key, json, expiration);
+        await _db.StringSetAsync(key, json, expiration);
+    }
+
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
+    {
+        var topics = new List<TopicMetadata>();
+
+        await foreach (var key in _server.KeysAsync(pattern: "topic:*"))
+        {
+            var json = await _db.StringGetAsync(key);
+            if (json.IsNullOrEmpty)
+            {
+                continue;
+            }
+
+            var topic = JsonSerializer.Deserialize<TopicMetadata>(json.ToString());
+            if (topic is not null)
+            {
+                topics.Add(topic);
+            }
+        }
+
+        return topics.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt).ToList();
+    }
+
+    public async Task SaveTopicAsync(TopicMetadata topic)
+    {
+        var json = JsonSerializer.Serialize(topic);
+        await _db.StringSetAsync(TopicKey(topic.TopicId), json, expiration);
+    }
+
+    public async Task DeleteTopicAsync(string topicId)
+    {
+        await _db.KeyDeleteAsync(TopicKey(topicId));
+    }
+
+    private static string TopicKey(string topicId)
+    {
+        return $"topic:{topicId}";
     }
 
     private sealed class StoreState

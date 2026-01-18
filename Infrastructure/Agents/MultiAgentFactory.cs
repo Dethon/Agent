@@ -3,6 +3,7 @@ using System.Text;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -22,14 +23,30 @@ public sealed class MultiAgentFactory(
             throw new InvalidOperationException("No agents configured.");
         }
 
-        var agent = string.IsNullOrEmpty(botTokenHash)
-            ? agents[0]  // CLI mode - use first agent
-            : agents.FirstOrDefault(a => a.TelegramBotToken is not null && 
-                                         ComputeHash(a.TelegramBotToken) == botTokenHash);
-        
-        _ = agent ?? throw new InvalidOperationException($"No agent found for bot token hash '{botTokenHash}'.");
+        AgentDefinition? agent;
+        if (string.IsNullOrEmpty(botTokenHash))
+        {
+            agent = agents[0]; // CLI mode - use first agent
+        }
+        else
+        {
+            // Try matching by Telegram bot token hash first, then by agent ID (for web chat)
+            agent = agents.FirstOrDefault(a =>
+                a.TelegramBotToken is not null &&
+                ComputeHash(a.TelegramBotToken) == botTokenHash);
+            agent ??= agents.FirstOrDefault(a => a.Id == botTokenHash);
+        }
+
+        _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{botTokenHash}'.");
 
         return CreateFromDefinition(agentKey, userId, agent);
+    }
+
+    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    {
+        return registryOptions.CurrentValue.Agents
+            .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
+            .ToList();
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition)
@@ -51,7 +68,7 @@ public sealed class MultiAgentFactory(
             userId,
             definition.CustomInstructions);
     }
-    
+
     private static string ComputeHash(string token)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));

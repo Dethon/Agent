@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Extensions;
 
@@ -88,6 +90,38 @@ public static class IAsyncEnumerableExtensions
         {
             return new[] { source, right }.ToAsyncEnumerable().Merge(ct);
         }
+
+        public async IAsyncEnumerable<TSource> IgnoreCancellation(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var enumerator = source.GetAsyncEnumerator(ct);
+            try
+            {
+                while (true)
+                {
+                    bool hasNext;
+                    try
+                    {
+                        hasNext = await enumerator.MoveNextAsync();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
+                    if (!hasNext)
+                    {
+                        break;
+                    }
+
+                    yield return enumerator.Current;
+                }
+            }
+            finally
+            {
+                await enumerator.DisposeAsync();
+            }
+        }
     }
 
     public static IAsyncEnumerable<T> Merge<T>(this IEnumerable<IAsyncEnumerable<T>> sources, CancellationToken ct)
@@ -150,6 +184,53 @@ public static class IAsyncEnumerableExtensions
         await foreach (var item in stream.WithCancellation(ct))
         {
             await writer.WriteAsync(item, ct);
+        }
+    }
+
+    public static async IAsyncEnumerable<AgentRunResponseUpdate> WithErrorHandling(
+        this IAsyncEnumerable<AgentRunResponseUpdate> source,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var enumerator = source.GetAsyncEnumerator(ct);
+        AgentRunResponseUpdate? errorResponse = null;
+        try
+        {
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    errorResponse = new AgentRunResponseUpdate
+                    {
+                        Contents = [new ErrorContent($"An error occurred: {ex.Message}")]
+                    };
+                    break;
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+
+        if (errorResponse is not null)
+        {
+            yield return errorResponse;
         }
     }
 }

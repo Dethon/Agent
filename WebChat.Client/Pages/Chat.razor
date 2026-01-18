@@ -1,0 +1,1174 @@
+@page "/"
+@inject ChatHubService HubService
+@inject IJSRuntime Js
+@implements IDisposable
+
+<ApprovalModal ApprovalRequest="_currentApprovalRequest" OnResponded="HandleApprovalResponded"/>
+
+<div class="chat-layout">
+    <TopicList Topics="@_topics"
+               SelectedTopic="@_selectedTopic"
+               Agents="@_agents"
+               SelectedAgentId="@_selectedAgentId"
+               OnTopicSelected="HandleTopicSelected"
+               OnTopicDeleted="HandleTopicDeleted"
+               OnNewTopic="HandleNewTopic"
+               OnAgentChanged="HandleAgentChanged"
+               IsStreaming="@IsStreaming"
+               UnreadCounts="@ComputedUnreadCounts"
+               StreamingTopics="@_streamingTopics"/>
+
+    <div class="chat-container">
+        <div class="messages-area" @ref="_messagesArea">
+            @if (CurrentMessages.Count == 0 && !IsStreaming)
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                            <circle cx="9" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="12" cy="10" r="1" fill="currentColor"/>
+                            <circle cx="15" cy="10" r="1" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    @if (SelectedAgent is not null)
+                    {
+                        <h2>Chat with @SelectedAgent.Name</h2>
+                        <p>Start a new conversation. Your chat will be saved automatically.</p>
+                    }
+                    else
+                    {
+                        <h2>Welcome</h2>
+                        <p>Select an agent from the sidebar to begin chatting.</p>
+                    }
+                    @if (SelectedAgent is not null)
+                    {
+                        <div class="suggestion-chips">
+                            <button class="suggestion-chip"
+                                    @onclick="@(() => SendSuggestion("Hello! What can you help me with?"))">
+                                <span class="chip-icon">👋</span>
+                                <span>Say hello</span>
+                            </button>
+                            <button class="suggestion-chip"
+                                    @onclick="@(() => SendSuggestion("What are your capabilities?"))">
+                                <span class="chip-icon">✨</span>
+                                <span>Capabilities</span>
+                            </button>
+                            <button class="suggestion-chip" @onclick="@(() => SendSuggestion("Help me get started"))">
+                                <span class="chip-icon">🚀</span>
+                                <span>Get started</span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @foreach (var message in CurrentMessages)
+                {
+                    <ChatMessage Message="@message"/>
+                }
+
+                @if (IsStreaming && CurrentStreamingMessage is not null)
+                {
+                    <ChatMessage Message="@CurrentStreamingMessage" IsStreaming="true"/>
+                }
+            }
+        </div>
+
+        @if (HubService.IsReconnecting)
+        {
+            <div class="connection-status reconnecting">
+                <span class="status-icon">⟳</span>
+                <span>Reconnecting...</span>
+            </div>
+        }
+        else if (!HubService.IsConnected)
+        {
+            <div class="connection-status disconnected">
+                <span class="status-icon">○</span>
+                <span>Disconnected</span>
+            </div>
+        }
+
+        <div class="input-area">
+            <ChatInput OnSend="HandleSend"
+                       OnCancel="HandleCancel"
+                       IsStreaming="IsStreaming"
+                       Disabled="string.IsNullOrEmpty(_selectedAgentId) || !HubService.IsConnected"/>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<AgentInfo> _agents = [];
+    private List<StoredTopic> _topics = [];
+    private StoredTopic? _selectedTopic;
+    private string? _selectedAgentId;
+
+    // Per-topic message storage for background streaming
+    private readonly Dictionary<string, List<ChatMessageModel>> _messagesByTopic = new();
+    private readonly Dictionary<string, ChatMessageModel?> _streamingMessageByTopic = new();
+    private readonly HashSet<string> _streamingTopics = new();
+    private readonly HashSet<string> _resumingTopics = new();
+    private readonly Dictionary<string, int> _lastSeenMessageCountByTopic = new();
+
+    // Auto-scroll tracking
+    private ElementReference _messagesArea;
+    private bool _shouldAutoScroll = true;
+
+    // Render throttling for streaming
+    private DateTime _lastRenderTime = DateTime.MinValue;
+    private const int RenderThrottleMs = 50;
+    private bool _renderPending;
+
+    // Tool approval tracking
+    private ToolApprovalRequestMessage? _currentApprovalRequest;
+
+
+    private List<ChatMessageModel> CurrentMessages =>
+        _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs)
+            ? msgs
+            : [];
+
+    private ChatMessageModel? CurrentStreamingMessage =>
+        _selectedTopic is not null &&
+        _streamingMessageByTopic.TryGetValue(_selectedTopic.TopicId, out var msg)
+            ? msg
+            : null;
+
+    private bool IsStreaming => _selectedTopic is not null && _streamingTopics.Contains(_selectedTopic.TopicId);
+
+    private AgentInfo? SelectedAgent => _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
+
+    private Dictionary<string, int> ComputedUnreadCounts =>
+        _messagesByTopic
+            .Where(kvp => kvp.Key != _selectedTopic?.TopicId)
+            .Select(kvp => (kvp.Key, AssistantCount: GetAssistantMessageCount(kvp.Key), LastRead: GetLastReadCount(kvp.Key)))
+            .Where(t => t.AssistantCount > t.LastRead)
+            .ToDictionary(t => t.Key, t => t.AssistantCount - t.LastRead);
+
+    private int GetAssistantMessageCount(string topicId)
+    {
+        var count = _messagesByTopic.GetValueOrDefault(topicId)?.Count(m => m.Role != "user") ?? 0;
+
+        // Also count streaming message if it has content
+        if (_streamingMessageByTopic.TryGetValue(topicId, out var streaming) &&
+            streaming is not null &&
+            !string.IsNullOrEmpty(streaming.Content))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    private int GetLastReadCount(string topicId)
+    {
+        // Use session cache if available, otherwise fall back to persisted value
+        if (_lastSeenMessageCountByTopic.TryGetValue(topicId, out var cached))
+        {
+            return cached;
+        }
+
+        return _topics.FirstOrDefault(t => t.TopicId == topicId)?.LastReadMessageCount ?? 0;
+    }
+
+    private async Task SendSuggestion(string message)
+    {
+        if (!string.IsNullOrEmpty(_selectedAgentId) && HubService.IsConnected)
+        {
+            await HandleSend(message);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        HubService.OnStateChanged += StateHasChanged;
+        HubService.OnReconnected += HandleReconnected;
+        HubService.OnReconnecting += StateHasChanged;
+        HubService.OnTopicChanged += HandleTopicChangedNotification;
+        HubService.OnStreamChanged += HandleStreamChangedNotification;
+        HubService.OnNewMessage += HandleNewMessageNotification;
+        HubService.OnApprovalResolved += HandleApprovalResolvedNotification;
+        HubService.OnToolCalls += HandleToolCallsNotification;
+
+        await HubService.ConnectAsync();
+        _agents = (await HubService.GetAgentsAsync()).ToList();
+
+        var serverTopics = await HubService.GetAllTopicsAsync();
+        _topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
+
+        if (_agents.Count > 0)
+        {
+            _selectedAgentId = _agents[0].Id;
+        }
+
+        // Load history for all topics to compute unread counts, and resume any active streams
+        foreach (var topic in _topics)
+        {
+            _ = LoadTopicHistoryAsync(topic);
+        }
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shouldAutoScroll)
+        {
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea);
+        }
+    }
+
+    private async Task CheckAndUpdateAutoScroll()
+    {
+        try
+        {
+            _shouldAutoScroll = await Js.InvokeAsync<bool>("chatScroll.isAtBottom", _messagesArea);
+        }
+        catch
+        {
+            // JS interop might fail during initialization
+            _shouldAutoScroll = true;
+        }
+    }
+
+    private async Task ThrottledRenderAsync()
+    {
+        var now = DateTime.UtcNow;
+        var elapsed = (now - _lastRenderTime).TotalMilliseconds;
+
+        if (elapsed >= RenderThrottleMs)
+        {
+            _lastRenderTime = now;
+            _renderPending = false;
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
+        }
+        else if (!_renderPending)
+        {
+            _renderPending = true;
+            var delay = RenderThrottleMs - (int)elapsed;
+            _ = Task.Delay(delay).ContinueWith(async _ =>
+            {
+                if (_renderPending)
+                {
+                    _renderPending = false;
+                    _lastRenderTime = DateTime.UtcNow;
+                    await InvokeAsync(async () =>
+                    {
+                        await CheckAndUpdateAutoScroll();
+                        StateHasChanged();
+                    });
+                }
+            });
+        }
+    }
+
+    private async Task HandleReconnected()
+    {
+        if (_selectedTopic is not null)
+        {
+            await HubService.StartSessionAsync(_selectedTopic);
+        }
+
+        // Check for any active streams after reconnection
+        foreach (var topic in _topics)
+        {
+            _ = TryResumeStreamAsync(topic);
+        }
+    }
+
+    private Task HandleAgentChanged(string agentId)
+    {
+        if (_selectedAgentId == agentId)
+        {
+            return Task.CompletedTask;
+        }
+
+        _selectedAgentId = agentId;
+        _selectedTopic = null;
+        HubService.ClearCurrentTopic();
+        StateHasChanged();
+
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleTopicSelected(StoredTopic topic)
+    {
+        if (_selectedTopic?.TopicId == topic.TopicId)
+        {
+            return;
+        }
+
+        // Mark the old topic as seen before switching away
+        if (_selectedTopic is not null)
+        {
+            await MarkTopicAsSeenAsync(_selectedTopic.TopicId);
+        }
+
+        _selectedTopic = topic;
+        _selectedAgentId = topic.AgentId;
+
+        // Load messages if not already cached
+        if (!_messagesByTopic.ContainsKey(topic.TopicId))
+        {
+            await HubService.StartSessionAsync(topic);
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+        }
+
+        // Mark all current messages as seen
+        await MarkTopicAsSeenAsync(topic.TopicId);
+
+        _shouldAutoScroll = true; // Scroll to bottom when switching topics
+        StateHasChanged();
+
+        // Subscribe to any active stream for this topic
+        _ = TryResumeStreamAsync(topic);
+    }
+
+    private async Task MarkTopicAsSeenAsync(string topicId)
+    {
+        var assistantCount = GetAssistantMessageCount(topicId);
+        _lastSeenMessageCountByTopic[topicId] = assistantCount;
+
+        // Persist to server for cross-device sync
+        var topic = _topics.FirstOrDefault(t => t.TopicId == topicId);
+        if (topic is not null && topic.LastReadMessageCount != assistantCount)
+        {
+            topic.LastReadMessageCount = assistantCount;
+            await HubService.SaveTopicAsync(topic.ToMetadata());
+        }
+    }
+
+    private async Task HandleTopicDeleted(StoredTopic topic)
+    {
+        // First cancel if streaming (same as cancel button)
+        if (_streamingTopics.Contains(topic.TopicId))
+        {
+            await HubService.CancelTopicAsync(topic.TopicId);
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+        }
+
+        // Then delete on server
+        await HubService.DeleteTopicAsync(topic);
+
+        // Update local state
+        _topics.RemoveAll(t => t.TopicId == topic.TopicId);
+        _messagesByTopic.Remove(topic.TopicId);
+
+        if (_selectedTopic?.TopicId == topic.TopicId)
+        {
+            _selectedTopic = null;
+            _currentApprovalRequest = null;
+        }
+
+        StateHasChanged();
+    }
+
+    private Task HandleNewTopic()
+    {
+        _selectedTopic = null;
+        HubService.ClearCurrentTopic();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleSend(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || _selectedAgentId is null)
+        {
+            return;
+        }
+
+        StoredTopic topic;
+        if (_selectedTopic is null)
+        {
+            var topicName = message.Length > 50 ? message[..50] + "..." : message;
+            var topicId = ChatHubService.GenerateTopicId();
+            topic = new StoredTopic
+            {
+                TopicId = topicId,
+                ChatId = ChatHubService.GetChatIdForTopic(topicId),
+                ThreadId = ChatHubService.GetThreadIdForTopic(topicId),
+                AgentId = _selectedAgentId,
+                Name = topicName,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var success = await HubService.StartSessionAsync(topic);
+            if (!success)
+            {
+                return;
+            }
+
+            _selectedTopic = topic;
+            _topics.Add(topic);
+            _messagesByTopic[topic.TopicId] = [];
+            await HubService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+            StateHasChanged();
+        }
+        else
+        {
+            topic = _selectedTopic;
+            if (HubService.CurrentTopic?.TopicId != topic.TopicId)
+            {
+                await HubService.StartSessionAsync(topic);
+            }
+        }
+
+        // Get or create message list for this topic
+        if (!_messagesByTopic.TryGetValue(topic.TopicId, out var messages))
+        {
+            messages = [];
+            _messagesByTopic[topic.TopicId] = messages;
+        }
+
+        // If there's an existing streaming message with content, save it to completed messages
+        if (_streamingMessageByTopic.TryGetValue(topic.TopicId, out var existingStreamingMessage)
+            && existingStreamingMessage is not null
+            && HasContent(existingStreamingMessage))
+        {
+            messages.Add(existingStreamingMessage with { }); // Clone to avoid reference issues
+        }
+
+        messages.Add(new ChatMessageModel
+        {
+            Role = "user",
+            Content = message
+        });
+
+        _streamingTopics.Add(topic.TopicId);
+        _streamingMessageByTopic[topic.TopicId] = new ChatMessageModel { Role = "assistant" };
+        _shouldAutoScroll = true; // Always scroll when user sends a message
+        StateHasChanged();
+
+        // Run streaming in background
+        _ = StreamResponseAsync(topic, message);
+    }
+
+    private async Task StreamResponseAsync(StoredTopic topic, string message)
+    {
+        var streamingMessage = _streamingMessageByTopic[topic.TopicId]!;
+        var messages = _messagesByTopic[topic.TopicId];
+        string? currentMessageId = null;
+        var needsReasoningSeparator = false;
+
+        try
+        {
+            await foreach (var chunk in HubService.SendMessageAsync(message))
+            {
+                // Handle approval requests
+                if (chunk.ApprovalRequest is not null)
+                {
+                    _currentApprovalRequest = chunk.ApprovalRequest;
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
+                if (chunk.Error is not null)
+                {
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = chunk.Error,
+                        IsError = true
+                    };
+                    break;
+                }
+
+                var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
+
+                // Open new bubble when MessageId changes AND current message has Content
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                {
+                    messages.Add(streamingMessage);
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                    needsReasoningSeparator = false;
+                }
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                {
+                    // Mark that next reasoning should have separator (staying in same bubble)
+                    needsReasoningSeparator = true;
+                }
+
+                currentMessageId = chunk.MessageId;
+
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = string.IsNullOrEmpty(streamingMessage.Content)
+                            ? chunk.Content
+                            : streamingMessage.Content + chunk.Content
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning))
+                {
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
+                    streamingMessage = streamingMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : streamingMessage.Reasoning + separator + chunk.Reasoning
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls))
+                {
+                    streamingMessage = streamingMessage with
+                    {
+                        ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                            ? chunk.ToolCalls
+                            : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
+                    };
+                }
+
+                _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+
+                await ThrottledRenderAsync();
+            }
+
+            if (!string.IsNullOrEmpty(streamingMessage.Content)
+                || !string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                || !string.IsNullOrEmpty(streamingMessage.Reasoning))
+            {
+                // Clone to ensure different reference from streaming display
+                messages.Add(streamingMessage with { });
+            }
+
+            topic.LastMessageAt = DateTime.UtcNow;
+            await HubService.SaveTopicAsync(topic.ToMetadata());
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessageModel
+            {
+                Role = "assistant",
+                Content = $"Error: {ex.Message}",
+                IsError = true
+            });
+        }
+        finally
+        {
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task LoadTopicHistoryAsync(StoredTopic topic)
+    {
+        if (!_messagesByTopic.ContainsKey(topic.TopicId))
+        {
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        // Also try to resume any active streams
+        _ = TryResumeStreamAsync(topic);
+    }
+
+    private async Task TryResumeStreamAsync(StoredTopic topic)
+    {
+        // Prevent concurrent resume attempts for the same topic
+        if (!_resumingTopics.Add(topic.TopicId))
+        {
+            return;
+        }
+
+        try
+        {
+            // Skip if already streaming this topic
+            if (_streamingTopics.Contains(topic.TopicId))
+            {
+                return;
+            }
+
+            var state = await HubService.GetStreamStateAsync(topic.TopicId);
+            if (state is null || state is { IsProcessing: false, BufferedMessages.Count: 0 })
+            {
+                return;
+            }
+
+            // Ensure we have a session
+            await HubService.StartSessionAsync(topic);
+
+            // Ensure we have a message list for this topic
+            if (!_messagesByTopic.ContainsKey(topic.TopicId))
+            {
+                var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+                _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+                {
+                    Role = h.Role,
+                    Content = h.Content
+                }).ToList();
+                await InvokeAsync(StateHasChanged);
+            }
+
+            // Restore streaming state from buffer
+            _streamingTopics.Add(topic.TopicId);
+            if (!_messagesByTopic.TryGetValue(topic.TopicId, out var messages))
+            {
+                messages = [];
+                _messagesByTopic[topic.TopicId] = messages;
+            }
+
+            // Restore user prompt if not already in messages
+            if (!string.IsNullOrEmpty(state.CurrentPrompt))
+            {
+                var promptExists = messages.Any(m =>
+                    m.Role == "user" && m.Content == state.CurrentPrompt);
+
+                if (!promptExists)
+                {
+                    messages.Add(new ChatMessageModel
+                    {
+                        Role = "user",
+                        Content = state.CurrentPrompt
+                    });
+                }
+            }
+
+            // Check for pending approval directly from server (more reliable than buffer check)
+            var pendingApproval = await HubService.GetPendingApprovalForTopicAsync(topic.TopicId);
+            if (pendingApproval is not null)
+            {
+                _currentApprovalRequest = pendingApproval;
+            }
+
+            // Get all known content from history for deduplication
+            var historyContent = messages
+                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
+                .Select(m => m.Content)
+                .ToHashSet();
+
+            var (completedTurns, streamingMessage) = RebuildFromBuffer(state.BufferedMessages, historyContent);
+
+            // Add completed turns (already deduplicated by RebuildFromBuffer)
+            messages.AddRange(completedTurns.Where(HasContent));
+
+            // Strip known content from streaming message
+            streamingMessage = StripKnownContent(streamingMessage, historyContent);
+
+            _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+
+            await InvokeAsync(StateHasChanged);
+
+            // Continue streaming
+            await ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
+        }
+        finally
+        {
+            _resumingTopics.Remove(topic.TopicId);
+        }
+    }
+
+    private static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
+        IReadOnlyList<ChatStreamMessage> bufferedMessages,
+        HashSet<string> historyContent)
+    {
+        var currentMessage = new ChatMessageModel { Role = "assistant" };
+        var completedTurns = new List<ChatMessageModel>();
+
+        if (bufferedMessages.Count == 0)
+        {
+            return (completedTurns, currentMessage);
+        }
+
+        // Group messages by MessageId and process each turn
+        var turnGroups = bufferedMessages
+            .GroupBy(m => m.MessageId)
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var isFirstGroup = true;
+        var needsReasoningSeparator = false;
+
+        foreach (var turnGroup in turnGroups)
+        {
+            var chunks = turnGroup.ToList();
+            var isComplete = chunks.Any(m => m.IsComplete);
+
+            // Open new bubble when MessageId changes AND current message has Content
+            if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Content))
+            {
+                // Strip any content already in history before adding
+                var strippedMessage = StripKnownContent(currentMessage, historyContent);
+                if (HasContent(strippedMessage))
+                {
+                    completedTurns.Add(strippedMessage);
+                }
+
+                currentMessage = new ChatMessageModel { Role = "assistant" };
+                needsReasoningSeparator = false;
+            }
+            else if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Reasoning))
+            {
+                // Mark that next reasoning should have separator (staying in same bubble)
+                needsReasoningSeparator = true;
+            }
+
+            isFirstGroup = false;
+
+            // Accumulate chunks into current message
+            foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
+            {
+                if (!string.IsNullOrEmpty(chunk.Content))
+                {
+                    currentMessage = currentMessage with
+                    {
+                        Content = string.IsNullOrEmpty(currentMessage.Content)
+                            ? chunk.Content
+                            : currentMessage.Content + chunk.Content
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning))
+                {
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
+                    currentMessage = currentMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(currentMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : currentMessage.Reasoning + separator + chunk.Reasoning
+                    };
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls))
+                {
+                    currentMessage = currentMessage with
+                    {
+                        ToolCalls = string.IsNullOrEmpty(currentMessage.ToolCalls)
+                            ? chunk.ToolCalls
+                            : currentMessage.ToolCalls + "\n" + chunk.ToolCalls
+                    };
+                }
+            }
+
+            // If complete, finalize this message
+            if (isComplete)
+            {
+                var strippedMessage = StripKnownContent(currentMessage, historyContent);
+                if (HasContent(strippedMessage))
+                {
+                    completedTurns.Add(strippedMessage);
+                }
+
+                currentMessage = new ChatMessageModel { Role = "assistant" };
+            }
+        }
+
+        // Remaining message is the streaming message
+        var streamingMessage = StripKnownContent(currentMessage, historyContent);
+        return (completedTurns, streamingMessage);
+    }
+
+    private static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
+    {
+        if (string.IsNullOrEmpty(message.Content))
+        {
+            return message;
+        }
+
+        // Check if buffer content is a subset of any history content
+        // This handles the case where user disconnected mid-stream and buffer has incomplete content
+        // while history has the complete content after stream finished
+        if (historyContent.Any(known => known.Contains(message.Content)))
+        {
+            return message with { Content = "" };
+        }
+
+        // Remove any history content that appears in this message (substring deduplication)
+        // This handles the case where buffer has more content than was in history
+        foreach (var known in historyContent.Where(known => message.Content.Contains(known)))
+        {
+            message = message with
+            {
+                Content = message.Content.Replace(known, "").Trim()
+            };
+        }
+
+        return message;
+    }
+
+    private static ChatMessageModel AccumulateChunk(ChatMessageModel streamingMessage, ChatStreamMessage chunk)
+    {
+        if (!string.IsNullOrEmpty(chunk.Content))
+        {
+            streamingMessage = streamingMessage with
+            {
+                Content = string.IsNullOrEmpty(streamingMessage.Content)
+                    ? chunk.Content
+                    : streamingMessage.Content + chunk.Content
+            };
+        }
+
+        if (!string.IsNullOrEmpty(chunk.Reasoning))
+        {
+            streamingMessage = streamingMessage with
+            {
+                Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                    ? chunk.Reasoning
+                    : streamingMessage.Reasoning + chunk.Reasoning
+            };
+        }
+
+        if (!string.IsNullOrEmpty(chunk.ToolCalls))
+        {
+            streamingMessage = streamingMessage with
+            {
+                ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                    ? chunk.ToolCalls
+                    : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
+            };
+        }
+
+        return streamingMessage;
+    }
+
+    private static bool HasContent(ChatMessageModel msg)
+    {
+        return !string.IsNullOrEmpty(msg.Content) ||
+               !string.IsNullOrEmpty(msg.ToolCalls) ||
+               !string.IsNullOrEmpty(msg.Reasoning);
+    }
+
+    private async Task ResumeStreamResponseAsync(
+        StoredTopic topic,
+        ChatMessageModel streamingMessage,
+        string startMessageIndex)
+    {
+        var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        var currentMessageId = startMessageIndex;
+        var needsReasoningSeparator = false;
+        var receivedNewContent = false;
+
+        // Track content for deduplication - skip chunks already in streaming message
+        var knownContent = streamingMessage.Content;
+        var knownReasoning = streamingMessage.Reasoning ?? "";
+        var knownToolCalls = streamingMessage.ToolCalls ?? "";
+
+        try
+        {
+            await foreach (var chunk in HubService.ResumeStreamAsync(topic.TopicId))
+            {
+                // Handle approval requests
+                if (chunk.ApprovalRequest is not null)
+                {
+                    _currentApprovalRequest = chunk.ApprovalRequest;
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
+                if (chunk.Error is not null)
+                {
+                    streamingMessage = streamingMessage with
+                    {
+                        Content = chunk.Error,
+                        IsError = true
+                    };
+                    break;
+                }
+
+                var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
+
+                // Open new bubble when MessageId changes AND current message has Content
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                {
+                    messages.Add(streamingMessage);
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    _streamingMessageByTopic[topic.TopicId] = streamingMessage;
+                    needsReasoningSeparator = false;
+
+                    // Reset tracking for new message
+                    knownContent = "";
+                    knownReasoning = "";
+                    knownToolCalls = "";
+                }
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                {
+                    // Mark that next reasoning should have separator (staying in same bubble)
+                    needsReasoningSeparator = true;
+                }
+
+                currentMessageId = chunk.MessageId;
+
+                // Skip chunks whose content is already known
+                var isNew = false;
+
+                if (!string.IsNullOrEmpty(chunk.Content) && !knownContent.Contains(chunk.Content))
+                {
+                    streamingMessage = AccumulateChunk(
+                        streamingMessage, new ChatStreamMessage { Content = chunk.Content });
+                    knownContent = streamingMessage.Content;
+                    isNew = true;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
+                {
+                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
+                    needsReasoningSeparator = false;
+                    streamingMessage = streamingMessage with
+                    {
+                        Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
+                            ? chunk.Reasoning
+                            : streamingMessage.Reasoning + separator + chunk.Reasoning
+                    };
+                    knownReasoning = streamingMessage.Reasoning ?? "";
+                    isNew = true;
+                }
+
+                if (!string.IsNullOrEmpty(chunk.ToolCalls) && !knownToolCalls.Contains(chunk.ToolCalls))
+                {
+                    streamingMessage = AccumulateChunk(streamingMessage, new ChatStreamMessage { ToolCalls = chunk.ToolCalls });
+                    knownToolCalls = streamingMessage.ToolCalls ?? "";
+                    isNew = true;
+                }
+
+                if (isNew)
+                {
+                    receivedNewContent = true;
+                    await ThrottledRenderAsync();
+                }
+            }
+
+            // Finalize message - clone to ensure different reference from streaming display
+            if (HasContent(streamingMessage))
+            {
+                messages.Add(streamingMessage with { });
+            }
+
+            // Only update LastMessageAt if we actually received new content from the stream
+            if (receivedNewContent)
+            {
+                topic.LastMessageAt = DateTime.UtcNow;
+                await HubService.SaveTopicAsync(topic.ToMetadata());
+            }
+        }
+        catch (Exception ex)
+        {
+            messages.Add(new ChatMessageModel
+            {
+                Role = "assistant",
+                Content = $"Error resuming stream: {ex.Message}",
+                IsError = true
+            });
+        }
+        finally
+        {
+            _streamingTopics.Remove(topic.TopicId);
+            _streamingMessageByTopic.Remove(topic.TopicId);
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task HandleCancel()
+    {
+        if (_selectedTopic is not null)
+        {
+            await HubService.CancelTopicAsync(_selectedTopic.TopicId);
+            _streamingTopics.Remove(_selectedTopic.TopicId);
+            _streamingMessageByTopic.Remove(_selectedTopic.TopicId);
+            StateHasChanged();
+        }
+    }
+
+    private Task HandleApprovalResponded()
+    {
+        _currentApprovalRequest = null;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task HandleApprovalResolvedNotification(ApprovalResolvedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            // Dismiss modal if this is the current approval (resolved by another browser session)
+            if (_currentApprovalRequest?.ApprovalId == notification.ApprovalId)
+            {
+                _currentApprovalRequest = null;
+            }
+
+            // Add tool calls to the streaming message if present (for browsers that didn't initiate the approval)
+            if (!string.IsNullOrEmpty(notification.ToolCalls))
+            {
+                AddToolCallsToStreamingMessage(notification.TopicId, notification.ToolCalls);
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private Task HandleToolCallsNotification(ToolCallsNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            AddToolCallsToStreamingMessage(notification.TopicId, notification.ToolCalls);
+            StateHasChanged();
+        });
+    }
+
+    private void AddToolCallsToStreamingMessage(string topicId, string toolCalls)
+    {
+        if (!_streamingMessageByTopic.TryGetValue(topicId, out var streamingMessage))
+        {
+            // Create a streaming message if one doesn't exist
+            streamingMessage = new ChatMessageModel { Role = "assistant" };
+            _streamingMessageByTopic[topicId] = streamingMessage;
+            _streamingTopics.Add(topicId);
+        }
+
+        if (streamingMessage is null)
+        {
+            return;
+        }
+
+        // Avoid duplicates - check if these exact tool calls are already present
+        if (streamingMessage.ToolCalls?.Contains(toolCalls) == true)
+        {
+            return;
+        }
+
+        _streamingMessageByTopic[topicId] = streamingMessage with
+        {
+            ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                ? toolCalls
+                : streamingMessage.ToolCalls + "\n" + toolCalls
+        };
+    }
+
+    private Task HandleTopicChangedNotification(TopicChangedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            switch (notification.ChangeType)
+            {
+                case TopicChangeType.Created when notification.Topic is not null:
+                    // Only add if we don't already have it (e.g., we created it ourselves)
+                    if (_topics.All(t => t.TopicId != notification.TopicId))
+                    {
+                        var newTopic = StoredTopic.FromMetadata(notification.Topic);
+                        _topics.Add(newTopic);
+                        _ = LoadTopicHistoryAsync(newTopic);
+                    }
+                    break;
+                case TopicChangeType.Updated when notification.Topic is not null:
+                    var existingTopic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+                    if (existingTopic is not null)
+                    {
+                        existingTopic.Name = notification.Topic.Name;
+                        existingTopic.LastMessageAt = notification.Topic.LastMessageAt?.DateTime;
+                        existingTopic.LastReadMessageCount = notification.Topic.LastReadMessageCount;
+                    }
+                    break;
+                case TopicChangeType.Deleted:
+                    _topics.RemoveAll(t => t.TopicId == notification.TopicId);
+                    _messagesByTopic.Remove(notification.TopicId);
+                    _streamingMessageByTopic.Remove(notification.TopicId);
+                    _streamingTopics.Remove(notification.TopicId);
+                    if (_selectedTopic?.TopicId == notification.TopicId)
+                    {
+                        _selectedTopic = null;
+                        _currentApprovalRequest = null;
+                    }
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(notification.ChangeType), notification.ChangeType, "ChangeType not recognized");
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private Task HandleStreamChangedNotification(StreamChangedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            switch (notification.ChangeType)
+            {
+                case StreamChangeType.Started:
+                    // Try to resume the stream if we're not already subscribed
+                    // Note: Don't add to _streamingTopics here - TryResumeStreamAsync will do it
+                    // after successfully subscribing. Adding here would cause TryResumeStreamAsync
+                    // to return early thinking we're already subscribed.
+                    var topic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+                    if (topic is not null && !_resumingTopics.Contains(notification.TopicId))
+                    {
+                        _ = TryResumeStreamAsync(topic);
+                    }
+
+                    break;
+
+                case StreamChangeType.Cancelled:
+                case StreamChangeType.Completed:
+                    _streamingTopics.Remove(notification.TopicId);
+                    _streamingMessageByTopic.Remove(notification.TopicId);
+                    break;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleNewMessageNotification(NewMessageNotification notification)
+    {
+        // If we have this topic but aren't streaming it, refresh history to get new messages
+        var topic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+        if (topic is not null && !_streamingTopics.Contains(notification.TopicId))
+        {
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            await InvokeAsync(() =>
+            {
+                _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+                {
+                    Role = h.Role,
+                    Content = h.Content
+                }).ToList();
+                StateHasChanged();
+            });
+        }
+    }
+
+    public void Dispose()
+    {
+        HubService.OnStateChanged -= StateHasChanged;
+        HubService.OnReconnected -= HandleReconnected;
+        HubService.OnReconnecting -= StateHasChanged;
+        HubService.OnTopicChanged -= HandleTopicChangedNotification;
+        HubService.OnStreamChanged -= HandleStreamChangedNotification;
+        HubService.OnNewMessage -= HandleNewMessageNotification;
+        HubService.OnApprovalResolved -= HandleApprovalResolvedNotification;
+        HubService.OnToolCalls -= HandleToolCallsNotification;
+    }
+
+}

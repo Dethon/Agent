@@ -1,0 +1,211 @@
+@code {
+    [Parameter] public List<StoredTopic> Topics { get; set; } = [];
+
+    [Parameter] public StoredTopic? SelectedTopic { get; set; }
+
+    [Parameter] public List<AgentInfo> Agents { get; set; } = [];
+
+    [Parameter] public string? SelectedAgentId { get; set; }
+
+    [Parameter] public EventCallback<StoredTopic> OnTopicSelected { get; set; }
+
+    [Parameter] public EventCallback<StoredTopic> OnTopicDeleted { get; set; }
+
+    [Parameter] public EventCallback OnNewTopic { get; set; }
+
+    [Parameter] public EventCallback<string> OnAgentChanged { get; set; }
+
+    [Parameter] public bool IsStreaming { get; set; }
+
+    [Parameter] public Dictionary<string, int> UnreadCounts { get; set; } = new();
+
+    [Parameter] public HashSet<string> StreamingTopics { get; set; } = new();
+
+    private int GetUnreadCount(string topicId)
+    {
+        return UnreadCounts.GetValueOrDefault(topicId);
+    }
+
+    private bool IsTopicStreaming(string topicId)
+    {
+        return StreamingTopics.Contains(topicId);
+    }
+
+    private string? _deleteConfirmTopicId;
+    private bool _dropdownOpen;
+    public ElementReference DropdownRef { get; private set; }
+
+    private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
+
+    private async Task HandleTopicClick(StoredTopic topic)
+    {
+        if (SelectedTopic?.TopicId != topic.TopicId)
+        {
+            await OnTopicSelected.InvokeAsync(topic);
+        }
+    }
+
+    private async Task HandleNewTopic()
+    {
+        await OnNewTopic.InvokeAsync();
+    }
+
+    private void ShowDeleteConfirm(string topicId)
+    {
+        _deleteConfirmTopicId = topicId;
+    }
+
+    private void CancelDelete()
+    {
+        _deleteConfirmTopicId = null;
+    }
+
+    private async Task ConfirmDelete(StoredTopic topic)
+    {
+        _deleteConfirmTopicId = null;
+        await OnTopicDeleted.InvokeAsync(topic);
+    }
+
+    private void ToggleDropdown()
+    {
+        _dropdownOpen = !_dropdownOpen;
+    }
+
+    private async Task SelectAgent(string agentId)
+    {
+        _dropdownOpen = false;
+        if (agentId != SelectedAgentId)
+        {
+            await OnAgentChanged.InvokeAsync(agentId);
+        }
+    }
+
+    private void CloseDropdown()
+    {
+        _dropdownOpen = false;
+    }
+
+}
+
+<div class="topic-sidebar">
+    <div class="sidebar-header">
+        <div class="custom-dropdown @(_dropdownOpen ? "open" : "")" @ref="DropdownRef">
+            <button class="dropdown-trigger" @onclick="ToggleDropdown" @onclick:stopPropagation="true">
+                <span class="dropdown-value">@SelectedAgentName</span>
+                <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            @if (_dropdownOpen)
+            {
+                <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
+                <div class="dropdown-menu">
+                    @foreach (var agent in Agents)
+                    {
+                        <div class="dropdown-item @(agent.Id == SelectedAgentId ? "selected" : "")"
+                             @onclick="() => SelectAgent(agent.Id)">
+                            @agent.Name
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <button class="new-topic-btn" @onclick="HandleNewTopic">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            New Chat
+        </button>
+    </div>
+
+    <div class="topic-list">
+        @{
+            var filteredTopics = Topics
+                .Where(t => t.AgentId == SelectedAgentId)
+                .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
+                .ToList();
+        }
+        @if (filteredTopics.Count == 0)
+        {
+            <div class="no-topics">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>No conversations yet</span>
+                <span class="no-topics-hint">Click "New Chat" to start</span>
+            </div>
+        }
+        else
+        {
+            @foreach (var topic in filteredTopics)
+            {
+                var unreadCount = GetUnreadCount(topic.TopicId);
+                var isStreaming = IsTopicStreaming(topic.TopicId);
+                <div
+                    class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
+                    @onclick="() => HandleTopicClick(topic)">
+                    <div class="topic-content">
+                        <div class="topic-name-row">
+                            <div class="topic-name" data-tooltip="@topic.Name">@topic.Name</div>
+                            @if (isStreaming)
+                            {
+                                <div class="topic-streaming-indicator" title="Streaming...">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                            }
+                            @if (unreadCount > 0)
+                            {
+                                <div class="topic-unread-badge">@(unreadCount > 99 ? "99+" : unreadCount)</div>
+                            }
+                        </div>
+                        <div class="topic-meta">
+                            @(topic.LastMessageAt?.ToLocalTime().ToString("MMM d, h:mm tt") ?? topic.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt"))
+                        </div>
+                    </div>
+                    @if (_deleteConfirmTopicId == topic.TopicId)
+                    {
+                        <div class="delete-confirm">
+                            <button class="confirm-delete-btn" @onclick="() => ConfirmDelete(topic)"
+                                    @onclick:stopPropagation="true" title="Delete conversation">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                     stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path
+                                        d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                            <button class="cancel-delete-btn" @onclick="CancelDelete"
+                                    @onclick:stopPropagation="true" title="Cancel">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                     stroke-linejoin="round">
+                                    <line x1="18" y1="6" x2="6" y2="18"/>
+                                    <line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)"
+                                @onclick:stopPropagation="true">
+                            &times;
+                        </button>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+<div id="tooltip" class="tooltip"></div>

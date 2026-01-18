@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;

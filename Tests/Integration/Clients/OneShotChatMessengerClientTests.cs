@@ -1,5 +1,8 @@
+using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;
@@ -63,14 +66,13 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task SendResponse_WithMessage_AccumulatesContent()
+    public async Task ProcessResponseStreamAsync_WithMessage_AccumulatesContent()
     {
         // Arrange
         var lifetime = new Mock<IHostApplicationLifetime>();
         var client = new OneShotChatMessengerClient("test", false, lifetime.Object);
 
-        var response1 = new ChatResponseMessage { Message = "Hello " };
-        var response2 = new ChatResponseMessage { Message = "World" };
+        var updates = CreateUpdatesWithContent("Hello World");
 
         // Capture console output
         var originalOut = Console.Out;
@@ -80,13 +82,11 @@ public class OneShotChatMessengerClientTests
         try
         {
             // Act
-            await client.SendResponse(1, response1, 1, null, CancellationToken.None);
-            await client.SendResponse(1, response2, 1, null, CancellationToken.None);
+            await client.ProcessResponseStreamAsync(updates, CancellationToken.None);
 
             // Assert - Content should be written to console
             var output = sw.ToString();
-            output.ShouldContain("Hello ");
-            output.ShouldContain("World");
+            output.ShouldContain("Hello World");
         }
         finally
         {
@@ -95,17 +95,13 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task SendResponse_WithReasoning_WhenShowReasoningTrue_OutputsReasoning()
+    public async Task ProcessResponseStreamAsync_WithReasoning_WhenShowReasoningTrue_OutputsReasoning()
     {
         // Arrange
         var lifetime = new Mock<IHostApplicationLifetime>();
         var client = new OneShotChatMessengerClient("test", showReasoning: true, lifetime.Object);
 
-        var response = new ChatResponseMessage
-        {
-            Message = "Result",
-            Reasoning = "Thinking..."
-        };
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking...");
 
         var originalOut = Console.Out;
         await using var sw = new StringWriter();
@@ -114,7 +110,7 @@ public class OneShotChatMessengerClientTests
         try
         {
             // Act
-            await client.SendResponse(1, response, 1, null, CancellationToken.None);
+            await client.ProcessResponseStreamAsync(updates, CancellationToken.None);
 
             // Assert
             var output = sw.ToString();
@@ -128,17 +124,13 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task SendResponse_WithReasoning_WhenShowReasoningFalse_OmitsReasoning()
+    public async Task ProcessResponseStreamAsync_WithReasoning_WhenShowReasoningFalse_OmitsReasoning()
     {
         // Arrange
         var lifetime = new Mock<IHostApplicationLifetime>();
         var client = new OneShotChatMessengerClient("test", showReasoning: false, lifetime.Object);
 
-        var response = new ChatResponseMessage
-        {
-            Message = "Result",
-            Reasoning = "Thinking..."
-        };
+        var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking...");
 
         var originalOut = Console.Out;
         await using var sw = new StringWriter();
@@ -147,7 +139,7 @@ public class OneShotChatMessengerClientTests
         try
         {
             // Act
-            await client.SendResponse(1, response, 1, null, CancellationToken.None);
+            await client.ProcessResponseStreamAsync(updates, CancellationToken.None);
 
             // Assert
             var output = sw.ToString();
@@ -161,13 +153,13 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task SendResponse_AfterCompletionTimeout_StopsApplication()
+    public async Task ProcessResponseStreamAsync_AfterCompletion_StopsApplication()
     {
         // Arrange
         var lifetime = new Mock<IHostApplicationLifetime>();
         var client = new OneShotChatMessengerClient("test", false, lifetime.Object);
 
-        var response = new ChatResponseMessage { Message = "Done" };
+        var updates = CreateUpdatesWithContent("Done");
 
         var originalOut = Console.Out;
         Console.SetOut(new StringWriter());
@@ -175,47 +167,9 @@ public class OneShotChatMessengerClientTests
         try
         {
             // Act
-            await client.SendResponse(1, response, 1, null, CancellationToken.None);
+            await client.ProcessResponseStreamAsync(updates, CancellationToken.None);
 
-            // Wait for completion timer (500ms + some buffer)
-            await Task.Delay(700);
-
-            // Assert
-            lifetime.Verify(l => l.StopApplication(), Times.Once);
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-    }
-
-    [Fact]
-    public async Task SendResponse_WithMultipleChunks_ResetsCompletionTimer()
-    {
-        // Arrange
-        var lifetime = new Mock<IHostApplicationLifetime>();
-        var client = new OneShotChatMessengerClient("test", false, lifetime.Object);
-
-        var originalOut = Console.Out;
-        Console.SetOut(new StringWriter());
-
-        try
-        {
-            // Act - Send chunks with delays shorter than completion timeout
-            await client.SendResponse(1, new ChatResponseMessage { Message = "Chunk1" }, 1, null,
-                CancellationToken.None);
-            await Task.Delay(200);
-            await client.SendResponse(1, new ChatResponseMessage { Message = "Chunk2" }, 1, null,
-                CancellationToken.None);
-            await Task.Delay(200);
-            await client.SendResponse(1, new ChatResponseMessage { Message = "Chunk3" }, 1, null,
-                CancellationToken.None);
-
-            // Assert - Should not have stopped yet (timer resets with each chunk)
-            lifetime.Verify(l => l.StopApplication(), Times.Never);
-
-            // Wait for final completion
-            await Task.Delay(700);
+            // Assert - StopApplication should be called after stream completes
             lifetime.Verify(l => l.StopApplication(), Times.Once);
         }
         finally
@@ -250,5 +204,45 @@ public class OneShotChatMessengerClientTests
 
         // Assert
         exists.ShouldBeTrue();
+    }
+
+    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
+        string content)
+    {
+        var key = new AgentKey(1, 1);
+        await Task.CompletedTask;
+        yield return (key, new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextContent(content)]
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new UsageContent()]
+        }, new AiResponse { Content = content });
+    }
+
+    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+        CreateUpdatesWithContentAndReasoning(
+            string content, string reasoning)
+    {
+        var key = new AgentKey(1, 1);
+        await Task.CompletedTask;
+        yield return (key, new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextReasoningContent(reasoning)]
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new TextContent(content)]
+        }, null);
+        yield return (key, new AgentRunResponseUpdate
+        {
+            MessageId = "msg-1",
+            Contents = [new UsageContent()]
+        }, new AiResponse { Content = content, Reasoning = reasoning });
     }
 }

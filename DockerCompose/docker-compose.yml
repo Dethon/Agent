@@ -238,16 +238,15 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: agent
+    ports:
+      - "5000:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
-    command: [ "--chat", "Telegram", "--reasoning" ]
+    command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - AGENTS__0__TELEGRAMBOTTOKEN=${JACK__TELEGRAM__BOTTOKEN}
-      - AGENTS__1__TELEGRAMBOTTOKEN=${JONAS__TELEGRAM__BOTTOKEN}
     networks:
       - jackbot
     depends_on:
@@ -257,6 +256,26 @@ services:
       - mcp-memory
       - mcp-idealista
       - redis
+
+  webui:
+    image: webui:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: webui
+    ports:
+      - "5001:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: WebChat/Dockerfile
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - agent
 
 networks:
   jackbot:

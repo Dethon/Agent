@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains **Agent**, an AI-powered agent that manages a personal media library through Telegram chat,
+This repository contains **Agent**, an AI-powered agent that manages a personal media library through Telegram chat or web interface,
 using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ## Technology Stack
@@ -28,6 +28,8 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 | `McpServerMemory`        | Module         | MCP server for vector-based memory storage and recall       |
 | `McpServerIdealista`     | Module         | MCP server for Idealista real estate property search        |
 | `McpServerCommandRunner` | Module         | MCP server for CLI command execution                        |
+| `WebChat`                | Application    | Blazor WebAssembly host server                              |
+| `WebChat.Client`         | Application    | Blazor WebAssembly client for web-based chat                |
 | `Tests`                  | Testing        | Unit and integration tests                                  |
 | `DockerCompose`          | Deployment     | Docker Compose configuration                                |
 
@@ -46,7 +48,11 @@ Quick reference for finding code:
 | Agent implementations    | `Infrastructure/Agents/*.cs`              |
 | MCP integration          | `Infrastructure/Agents/Mcp/*.cs`          |
 | Chat clients             | `Infrastructure/Agents/ChatClients/*.cs`  |
-| External service clients | `Infrastructure/Clients/*.cs`             |
+| External service clients | `Infrastructure/Clients/**/*.cs`          |
+| Tool approval handlers   | `Infrastructure/Clients/ToolApproval/*.cs`|
+| Messaging clients        | `Infrastructure/Clients/Messaging/*.cs`   |
+| Torrent clients          | `Infrastructure/Clients/Torrent/*.cs`     |
+| Browser clients          | `Infrastructure/Clients/Browser/*.cs`     |
 | CLI UI components        | `Infrastructure/CliGui/**/*.cs`           |
 | CLI abstractions         | `Infrastructure/CliGui/Abstractions/*.cs` |
 | CLI routing              | `Infrastructure/CliGui/Routing/*.cs`      |
@@ -56,6 +62,10 @@ Quick reference for finding code:
 | State persistence        | `Infrastructure/StateManagers/*.cs`       |
 | MCP server tools         | `McpServer*/McpTools/*.cs`                |
 | MCP server prompts       | `McpServer*/McpPrompts/*.cs`              |
+| WebChat pages            | `WebChat.Client/Pages/*.razor`            |
+| WebChat components       | `WebChat.Client/Components/*.razor`       |
+| WebChat services         | `WebChat.Client/Services/*.cs`            |
+| WebChat hub              | `Agent/Hubs/*.cs`                         |
 | Unit tests               | `Tests/Unit/**/*Tests.cs`                 |
 | Integration tests        | `Tests/Integration/**/*Tests.cs`          |
 | Test fixtures            | `Tests/Integration/Fixtures/*.cs`         |
@@ -68,6 +78,8 @@ Dependencies flow inward: `Agent` → `Infrastructure` → `Domain`
 - **Infrastructure**: Implementations, external clients, state management
 - **Agent**: Bootstrapping, DI, configuration, application entry point
 
+**Interface policy**: Services with a single expected implementation do not require an interface unless the Domain layer needs to consume them. The Agent layer may directly depend on Infrastructure concrete types when no abstraction is needed.
+
 See `.claude/rules/` for layer-specific coding rules that apply automatically based on file paths.
 
 ## Key Components
@@ -78,11 +90,12 @@ Agents are defined as configuration data, allowing a single container to run mul
 
 - **AgentDefinition** (`Domain/DTOs/AgentDefinition.cs`) - Defines an agent with name, model, MCP endpoints, whitelist patterns, and custom instructions
 - **MultiAgentFactory** (`Infrastructure/Agents/MultiAgentFactory.cs`) - Creates agents based on definitions, resolves agent from bot token hash
-- **TelegramChatClient** (`Infrastructure/Clients/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
+- **TelegramChatClient** (`Infrastructure/Clients/Messaging/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
 
 Agent routing:
 - **Telegram**: Each bot token maps to one agent via SHA256 hash matching
 - **CLI**: Uses the first configured agent
+- **WebChat**: User selects agent from available list
 
 Configuration in `appsettings.json`:
 ```json
@@ -100,6 +113,22 @@ Configuration in `appsettings.json`:
   ]
 }
 ```
+
+### WebChat
+
+Browser-based chat interface using Blazor WebAssembly and SignalR:
+
+- **WebChat** - Static file host for the Blazor WebAssembly client
+- **WebChat.Client** - Blazor WebAssembly application with chat UI
+- **ChatHub** (`Agent/Hubs/ChatHub.cs`) - SignalR hub for real-time communication
+- **WebChatMessengerClient** (`Infrastructure/Clients/Messaging/WebChatMessengerClient.cs`) - Server-side message routing
+- **ChatHubService** (`WebChat.Client/Services/ChatHubService.cs`) - Client-side SignalR connection management
+
+Features:
+- Real-time message streaming with reconnection support
+- Topic-based conversations with server-side persistence
+- Stream resumption after disconnection (buffered messages + sequence tracking)
+- Multi-agent selection
 
 ### Message Streaming Pipeline
 
@@ -134,6 +163,7 @@ Tool execution requires user approval via `IToolApprovalHandler`:
 
 - `TelegramToolApprovalHandler` - Inline keyboard in Telegram
 - `CliToolApprovalHandler` - Modal dialog in CLI
+- `WebToolApprovalHandler` - SignalR-based approval for WebChat
 
 Results: `Approved`, `ApprovedAndRemember`, `Rejected`, `AutoApproved`
 

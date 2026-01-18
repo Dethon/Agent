@@ -1,10 +1,12 @@
+using System.Net;
 using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.ToolApproval;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -51,8 +53,15 @@ public class DependencyInjectionTests
         // Pre-register mocks before ConfigureJack so they take precedence
         var mockMultiplexer = new Mock<IConnectionMultiplexer>();
         var mockDatabase = new Mock<IDatabase>();
+        var mockServer = new Mock<IServer>();
+        var endpoint = new DnsEndPoint("localhost", 6379);
+
         mockMultiplexer.Setup(m => m.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(mockDatabase.Object);
+        mockMultiplexer.Setup(m => m.GetEndPoints(It.IsAny<bool>()))
+            .Returns([endpoint]);
+        mockMultiplexer.Setup(m => m.GetServer(endpoint, It.IsAny<object>()))
+            .Returns(mockServer.Object);
 
         // Remove existing registrations and add mocks
         var descriptorsToRemove = services
@@ -81,14 +90,13 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
         // Assert - core services
         provider.GetService<IAgentFactory>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
-        provider.GetService<AgentCleanupMonitor>().ShouldNotBeNull();
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
     }
@@ -106,7 +114,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -133,7 +141,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -165,7 +173,7 @@ public class DependencyInjectionTests
         };
 
         // Act
-        services.ConfigureJack(settings, cmdParams);
+        services.ConfigureAgents(settings, cmdParams);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
@@ -241,13 +249,13 @@ public class DependencyInjectionTests
     }
 
     [Fact]
-    public void GetCommandLineParams_WithNoOptions_DefaultsToTelegram()
+    public void GetCommandLineParams_WithNoOptions_DefaultsToWeb()
     {
         // Act
         var result = ConfigModule.GetCommandLineParams([]);
 
         // Assert
-        result.ChatInterface.ShouldBe(ChatInterface.Telegram);
+        result.ChatInterface.ShouldBe(ChatInterface.Web);
         result.Prompt.ShouldBeNull();
         result.ShowReasoning.ShouldBeFalse();
     }

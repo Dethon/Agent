@@ -1,0 +1,59 @@
+@code {
+    [Parameter] public List<AgentInfo> Agents { get; set; } = [];
+
+    [Parameter] public string? SelectedAgentId { get; set; }
+
+    [Parameter] public EventCallback<string> OnAgentSelected { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    private bool _dropdownOpen;
+
+    private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
+
+    private void ToggleDropdown()
+    {
+        if (!Disabled)
+        {
+            _dropdownOpen = !_dropdownOpen;
+        }
+    }
+
+    private async Task SelectAgent(string agentId)
+    {
+        _dropdownOpen = false;
+        if (agentId != SelectedAgentId)
+        {
+            await OnAgentSelected.InvokeAsync(agentId);
+        }
+    }
+
+    private void CloseDropdown()
+    {
+        _dropdownOpen = false;
+    }
+}
+
+<div class="custom-dropdown @(_dropdownOpen ? "open" : "") @(Disabled ? "disabled" : "")">
+    <button class="dropdown-trigger" @onclick="ToggleDropdown" @onclick:stopPropagation="true" disabled="@Disabled">
+        <span class="dropdown-value">@SelectedAgentName</span>
+        <svg class="dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+    </button>
+    @if (_dropdownOpen)
+    {
+        <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
+        <div class="dropdown-menu">
+            @foreach (var agent in Agents)
+            {
+                <div class="dropdown-item @(agent.Id == SelectedAgentId ? "selected" : "")"
+                     @onclick="() => SelectAgent(agent.Id)">
+                    @agent.Name
+                </div>
+            }
+        </div>
+    }
+</div>

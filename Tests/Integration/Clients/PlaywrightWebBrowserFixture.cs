@@ -2,7 +2,7 @@ using System.Text.Json;
 using Domain.Contracts;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Browser;
 
 namespace Tests.Integration.Clients;
 

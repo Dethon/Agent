@@ -1,7 +1,7 @@
 ---
 name: pr-review
 description: Review pull requests for architecture, patterns, and quality. Use when reviewing PRs or before merging.
-model: sonnet
+model: inherit
 tools: Read, Grep, Glob, Bash
 ---
 

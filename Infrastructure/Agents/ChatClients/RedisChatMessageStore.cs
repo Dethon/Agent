@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Text.Json;
 using Domain.Contracts;
 using Microsoft.Agents.AI;
@@ -9,14 +8,12 @@ namespace Infrastructure.Agents.ChatClients;
 public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatMessageStore
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private ImmutableList<ChatMessage> _messages = [];
 
-    public static RedisChatMessageStore CreateAsync(
+    public static RedisChatMessageStore Create(
         IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
     {
         var redisKey = ResolveRedisKey(ctx);
         var chatStore = new RedisChatMessageStore(store, redisKey);
-        chatStore.LoadFromStoreAsync();
         return chatStore;
     }
 
@@ -30,22 +27,28 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
         return Guid.NewGuid().ToString();
     }
 
-    public override Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult<IEnumerable<ChatMessage>>(_messages);
-    }
-
-    public override async Task AddMessagesAsync(
-        IEnumerable<ChatMessage> messages,
+    public override async ValueTask<IEnumerable<ChatMessage>> InvokingAsync(
+        InvokingContext context,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(messages);
+        return await store.GetMessagesAsync(key) ?? [];
+    }
 
+    public override async ValueTask InvokedAsync(
+        InvokedContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var existingMessages = await store.GetMessagesAsync(key) ?? [];
+        var allMessages = existingMessages
+            .Concat(context.RequestMessages)
+            .Concat(context.ResponseMessages ?? [])
+            .ToArray();
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            _messages = _messages.AddRange(messages);
-            await PersistToStoreAsync();
+            await store.SetMessagesAsync(key, allMessages);
         }
         finally
         {
@@ -56,16 +59,5 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
     public override JsonElement Serialize(JsonSerializerOptions? jsonSerializerOptions = null)
     {
         return JsonSerializer.SerializeToElement(key, jsonSerializerOptions);
-    }
-
-    private void LoadFromStoreAsync()
-    {
-        var messages = store.GetMessages(key) ?? [];
-        _messages = [.. messages];
-    }
-
-    private async Task PersistToStoreAsync()
-    {
-        await store.SetMessagesAsync(key, [.. _messages]);
     }
 }

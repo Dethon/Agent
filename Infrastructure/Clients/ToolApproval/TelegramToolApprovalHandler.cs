@@ -1,0 +1,302 @@
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs;
+using Infrastructure.Clients.Messaging;
+using Telegram.Bot;
+using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
+
+namespace Infrastructure.Clients.ToolApproval;
+
+public sealed class TelegramToolApprovalHandler(
+    ITelegramBotClient client,
+    long chatId,
+    int? threadId,
+    TimeSpan? timeout = null) : IToolApprovalHandler
+{
+    private const string ApproveCallbackPrefix = "tool_approve:";
+    private const string AlwaysCallbackPrefix = "tool_always:";
+    private const string RejectCallbackPrefix = "tool_reject:";
+
+    private static readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
+
+    private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromMinutes(2);
+
+    public async Task<ToolApprovalResult> RequestApprovalAsync(
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var approvalId = Guid.NewGuid().ToString("N")[..8];
+        var context = new ApprovalContext(requests);
+        _pendingApprovals[approvalId] = context;
+
+        try
+        {
+            var message = FormatApprovalMessage(requests);
+            var keyboard = CreateApprovalKeyboard(approvalId);
+
+            await client.SendMessage(
+                chatId,
+                message,
+                ParseMode.Html,
+                replyMarkup: keyboard,
+                messageThreadId: threadId,
+                cancellationToken: cancellationToken);
+
+            using var timeoutCts = new CancellationTokenSource(_timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, timeoutCts.Token);
+
+            try
+            {
+                return await context.WaitForApprovalAsync(linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                await SendTimeoutMessageAsync(cancellationToken);
+                return ToolApprovalResult.Rejected;
+            }
+        }
+        finally
+        {
+            _pendingApprovals.TryRemove(approvalId, out _);
+        }
+    }
+
+    public static async Task<bool> HandleCallbackQueryAsync(
+        ITelegramBotClient botClient,
+        CallbackQuery callbackQuery,
+        CancellationToken cancellationToken)
+    {
+        var data = callbackQuery.Data;
+        if (string.IsNullOrEmpty(data))
+        {
+            return false;
+        }
+
+        string? approvalId;
+        ToolApprovalResult result;
+
+        if (data.StartsWith(ApproveCallbackPrefix, StringComparison.Ordinal))
+        {
+            approvalId = data[ApproveCallbackPrefix.Length..];
+            result = ToolApprovalResult.Approved;
+        }
+        else if (data.StartsWith(AlwaysCallbackPrefix, StringComparison.Ordinal))
+        {
+            approvalId = data[AlwaysCallbackPrefix.Length..];
+            result = ToolApprovalResult.ApprovedAndRemember;
+        }
+        else if (data.StartsWith(RejectCallbackPrefix, StringComparison.Ordinal))
+        {
+            approvalId = data[RejectCallbackPrefix.Length..];
+            result = ToolApprovalResult.Rejected;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (!_pendingApprovals.TryGetValue(approvalId, out var context))
+        {
+            await botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                "This approval request has expired.",
+                cancellationToken: cancellationToken);
+            return true;
+        }
+
+        context.SetResult(result);
+
+        var responseText = result switch
+        {
+            ToolApprovalResult.Approved => "✅ Approved",
+            ToolApprovalResult.ApprovedAndRemember => "✅ Approved",
+            _ => "❌ Rejected"
+        };
+        await botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            responseText,
+            cancellationToken: cancellationToken);
+
+        if (callbackQuery.Message is not null)
+        {
+            var updatedMessage = FormatResultMessage(context.Requests, result);
+            await botClient.EditMessageText(
+                callbackQuery.Message.Chat.Id,
+                callbackQuery.Message.MessageId,
+                updatedMessage,
+                ParseMode.Html,
+                cancellationToken: cancellationToken);
+        }
+
+        return true;
+    }
+
+    public async Task NotifyAutoApprovedAsync(
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var message = FormatAutoApprovedMessage(requests);
+
+        await client.SendMessage(
+            chatId,
+            message,
+            ParseMode.Html,
+            messageThreadId: threadId,
+            cancellationToken: cancellationToken);
+    }
+
+    private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        var sb = new StringBuilder();
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName));
+        sb.AppendLine($"<b>🔧 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
+        sb.AppendLine();
+
+        foreach (var request in requests)
+        {
+            AppendToolDetails(sb, request);
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string FormatAutoApprovedMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        return FormatResultMessage(requests, ToolApprovalResult.Approved);
+    }
+
+    private static string FormatResultMessage(IReadOnlyList<ToolApprovalRequest> requests, ToolApprovalResult result)
+    {
+        var sb = new StringBuilder();
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split(':').Last()));
+        var (icon, label) = result switch
+        {
+            ToolApprovalResult.Approved => ("✅", "Approved"),
+            ToolApprovalResult.ApprovedAndRemember => ("✅", "Approved"),
+            _ => ("❌", "Rejected")
+        };
+        sb.AppendLine($"<b>{icon} {label}:</b> <code>{HtmlEncode(toolNames)}</code>");
+        foreach (var request in requests)
+        {
+            AppendToolDetails(sb, request);
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static void AppendToolDetails(StringBuilder sb, ToolApprovalRequest request)
+    {
+        if (request.Arguments.Count == 0)
+        {
+            return;
+        }
+
+        var details = new StringBuilder();
+        foreach (var (key, value) in request.Arguments)
+        {
+            var formattedValue = FormatArgumentValue(value);
+            if (formattedValue.Contains('\n'))
+            {
+                details.AppendLine($"<i>{HtmlEncode(key)}:</i>");
+                foreach (var line in formattedValue.Split(["\r\n", "\n"], StringSplitOptions.None))
+                {
+                    details.AppendLine($"  {HtmlEncode(line)}");
+                }
+            }
+            else
+            {
+                details.AppendLine($"<i>{HtmlEncode(key)}:</i> {HtmlEncode(formattedValue)}");
+            }
+        }
+
+        sb.AppendLine($"<blockquote expandable>{details.ToString().TrimEnd()}</blockquote>");
+    }
+
+    private static string FormatArgumentValue(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            string s => s,
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString() ?? "",
+            JsonElement { ValueKind: JsonValueKind.Array } je => FormatArray(je),
+            JsonElement je => je.GetRawText(),
+            _ => value.ToString() ?? ""
+        };
+    }
+
+    private static string FormatArray(JsonElement arrayElement)
+    {
+        var items = arrayElement.EnumerateArray().ToList();
+        return items.Count switch
+        {
+            0 => "[]",
+            1 => FormatArgumentValue(items[0]),
+            _ => string.Join("\n", items.Select(item => $"- {FormatArgumentValue(item)}"))
+        };
+    }
+
+    private static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)
+    {
+        return new InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton.WithCallbackData("✅ Approve", $"{ApproveCallbackPrefix}{approvalId}"),
+                InlineKeyboardButton.WithCallbackData("🔁 Always", $"{AlwaysCallbackPrefix}{approvalId}"),
+                InlineKeyboardButton.WithCallbackData("❌ Reject", $"{RejectCallbackPrefix}{approvalId}")
+            ]
+        ]);
+    }
+
+    private async Task SendTimeoutMessageAsync(CancellationToken cancellationToken)
+    {
+        await client.SendMessage(
+            chatId,
+            "⏱️ Tool approval timed out. Execution rejected.",
+            messageThreadId: threadId,
+            cancellationToken: cancellationToken);
+    }
+
+    private static string HtmlEncode(string text)
+    {
+        return text
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
+    }
+
+    private sealed class ApprovalContext(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        private readonly TaskCompletionSource<ToolApprovalResult> _tcs =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IReadOnlyList<ToolApprovalRequest> Requests => requests;
+
+        public void SetResult(ToolApprovalResult result)
+        {
+            _tcs.TrySetResult(result);
+        }
+
+        public Task<ToolApprovalResult> WaitForApprovalAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
+            return _tcs.Task;
+        }
+    }
+}
+
+public sealed class TelegramToolApprovalHandlerFactory(
+    IReadOnlyDictionary<string, ITelegramBotClient> botsByTokenHash) : IToolApprovalHandlerFactory
+{
+    public IToolApprovalHandler Create(AgentKey agentKey)
+    {
+        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.BotTokenHash);
+        return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
+    }
+}

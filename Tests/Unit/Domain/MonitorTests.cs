@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -25,7 +26,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         return new FakeAgentThread();
     }
 
-    public override Task<AgentRunResponse> RunAsync(
+    protected override Task<AgentRunResponse> RunCoreAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -34,7 +35,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         return Task.FromResult(new AgentRunResponse());
     }
 
-    public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+    protected override async IAsyncEnumerable<AgentRunResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -63,6 +64,11 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
     {
         return agent;
     }
+
+    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    {
+        return [];
+    }
 }
 
 internal static class MonitorTestMocks
@@ -90,13 +96,16 @@ internal static class MonitorTestMocks
         }
 
         mock.Setup(c =>
-            c.SendResponse(
-                It.IsAny<long>(),
-                It.IsAny<ChatResponseMessage>(),
-                It.IsAny<long?>(),
-                It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()
-            )).Returns(Task.CompletedTask);
+                c.ProcessResponseStreamAsync(
+                    It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
+                    It.IsAny<CancellationToken>()
+                ))
+            .Returns(async (IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+                CancellationToken ct) =>
+            {
+                // Must consume the enumerable to drive the lazy streaming pipeline
+                await foreach (var _ in updates.WithCancellation(ct)) { }
+            });
         return mock;
     }
 
@@ -119,23 +128,12 @@ internal static class MonitorTestMocks
 public class ChatMonitorTests
 {
     [Fact]
-    public async Task Monitor_WhenAgentCompletes_SendsIsCompleteResponse()
+    public async Task Monitor_WhenAgentCompletes_CallsProcessResponseStreamAsync()
     {
         // Arrange
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt() };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var capturedResponses = new List<ChatResponseMessage>();
-        chatMessengerClient.Setup(c =>
-                c.SendResponse(
-                    It.IsAny<long>(),
-                    It.IsAny<ChatResponseMessage>(),
-                    It.IsAny<long?>(),
-                    It.IsAny<string?>(),
-                    It.IsAny<CancellationToken>()))
-            .Callback<long, ChatResponseMessage, long?, string?, CancellationToken>((_, response, _, _, _) =>
-                capturedResponses.Add(response))
-            .Returns(Task.CompletedTask);
 
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -146,8 +144,11 @@ public class ChatMonitorTests
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - Should have at least one IsComplete response
-        capturedResponses.ShouldContain(r => r.IsComplete);
+        // Assert - ProcessResponseStreamAsync should be called
+        chatMessengerClient.Verify(c =>
+            c.ProcessResponseStreamAsync(
+                It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
+                It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

@@ -1,0 +1,80 @@
+@using Markdig
+@code {
+    [Parameter] public ChatMessageModel Message { get; set; } = new();
+    [Parameter] public bool IsStreaming { get; set; }
+
+    private bool _showReasoning;
+    private bool _showToolCalls;
+
+    // Static pipeline to avoid allocation on every render
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private static string RenderMarkdown(string? content)
+    {
+        return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
+    }
+
+    private string GetMessageClass()
+    {
+        var classes = new List<string> { "chat-message", Message.Role };
+        if (Message.IsError)
+        {
+            classes.Add("error");
+        }
+
+        return string.Join(" ", classes);
+    }
+
+}
+
+<div class="@GetMessageClass()">
+    @if (!string.IsNullOrEmpty(Message.Reasoning))
+    {
+        <div class="collapsible-block">
+            <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
+                <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
+                Reasoning
+            </button>
+            @if (_showReasoning)
+            {
+                <div class="collapsible-content">
+                    @Message.Reasoning
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Message.ToolCalls))
+    {
+        <div class="collapsible-block">
+            <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
+                <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
+                Tool calls
+            </button>
+            @if (_showToolCalls)
+            {
+                <div class="collapsible-content tool-calls-content">
+                    @Message.ToolCalls
+                </div>
+            }
+        </div>
+    }
+
+    <div class="message-content">
+        @((MarkupString)RenderMarkdown(Message.Content))
+    </div>
+
+    @if (IsStreaming)
+    {
+        <div class="streaming-indicator">
+            <div class="streaming-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <span>Thinking...</span>
+        </div>
+    }
+</div>

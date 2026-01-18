@@ -6,6 +6,7 @@
         <option name="services">
           <list>
             <option value="agent" />
+              <option value="webui"/>
             <option value="mcp-text" />
             <option value="mcp-websearch" />
             <option value="mcp-memory" />

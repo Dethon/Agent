@@ -1,16 +1,15 @@
 using Agent.App;
+using Agent.Hubs;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
-using Infrastructure.Clients;
+using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.ToolApproval;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -42,17 +41,25 @@ public static class InjectorModule
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
+            if (cmdParams.ChatInterface == ChatInterface.Web)
+            {
+                services = services.AddSignalR(options =>
+                {
+                    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                    options.ClientTimeoutInterval = TimeSpan.FromMinutes(5);
+                }).Services;
+            }
+
             services = services
                 .AddSingleton<ChatMonitor>()
-                .AddSingleton<AgentCleanupMonitor>()
-                .AddHostedService<ChatMonitoring>()
-                .AddHostedService<CleanupMonitoring>();
+                .AddHostedService<ChatMonitoring>();
 
             return cmdParams.ChatInterface switch
             {
                 ChatInterface.Cli => services.AddCliClient(settings, cmdParams),
                 ChatInterface.Telegram => services.AddTelegramClient(settings, cmdParams),
                 ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
+                ChatInterface.Web => services.AddWebClient(),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
@@ -110,6 +117,8 @@ public static class InjectorModule
             var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
 
             return services
+                .AddHostedService<CleanupMonitoring>()
+                .AddSingleton<AgentCleanupMonitor>()
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
                     botTokens,
@@ -130,6 +139,21 @@ public static class InjectorModule
                         cmdParams.ShowReasoning,
                         lifetime);
                 });
+        }
+
+        private IServiceCollection AddWebClient()
+        {
+            return services
+                .AddSingleton<INotifier, Notifier>()
+                .AddSingleton<WebChatSessionManager>()
+                .AddSingleton<WebChatStreamManager>()
+                .AddSingleton<WebChatApprovalManager>()
+                .AddSingleton<WebChatMessengerClient>()
+                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>())
+                .AddSingleton<IToolApprovalHandlerFactory>(sp =>
+                    new WebToolApprovalHandlerFactory(
+                        sp.GetRequiredService<WebChatApprovalManager>(),
+                        sp.GetRequiredService<WebChatSessionManager>()));
         }
     }
 }
