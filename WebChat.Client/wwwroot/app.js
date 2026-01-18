@@ -116,3 +116,23 @@ window.chatScroll = {
         }
     }
 };
+
+// ===================================
+// Element Utilities
+// ===================================
+
+window.getBoundingClientRect = function (element) {
+    if (!element) return {top: 0, left: 0, width: 0, height: 0};
+    const rect = element.getBoundingClientRect();
+    return {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+    };
+};
+
+window.isTextTruncated = function (element) {
+    if (!element) return false;
+    return element.scrollWidth > element.clientWidth;
+};
