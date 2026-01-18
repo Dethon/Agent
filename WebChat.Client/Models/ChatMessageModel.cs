@@ -7,4 +7,9 @@ public record ChatMessageModel
     public string? Reasoning { get; init; }
     public string? ToolCalls { get; init; }
     public bool IsError { get; init; }
+
+    public bool HasContent =>
+        !string.IsNullOrEmpty(Content) ||
+        !string.IsNullOrEmpty(ToolCalls) ||
+        !string.IsNullOrEmpty(Reasoning);
 }

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
+@using WebChat.Client.Contracts
 @implements IDisposable
-@inject ChatHubService HubService
+@inject IChatConnectionService ConnectionService
 @inject IJSRuntime Js
 
 <div class="main-layout">
@@ -10,8 +11,8 @@
         </div>
         <div class="header-right">
             <div class="connection-status">
-                <span class="status-dot @(HubService.IsConnected ? "connected" : "")"></span>
-                @(HubService.IsConnected ? "Connected" : "Disconnected")
+                <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>
+                @(ConnectionService.IsConnected ? "Connected" : "Disconnected")
             </div>
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
                 @if (_isDarkTheme)
@@ -52,7 +53,7 @@
 
     protected override Task OnInitializedAsync()
     {
-        HubService.OnStateChanged += StateHasChanged;
+        ConnectionService.OnStateChanged += StateHasChanged;
         return Task.CompletedTask;
     }
 
@@ -74,6 +75,6 @@
 
     public void Dispose()
     {
-        HubService.OnStateChanged -= StateHasChanged;
+        ConnectionService.OnStateChanged -= StateHasChanged;
     }
 }

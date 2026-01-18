@@ -1,0 +1,57 @@
+@inject IJSRuntime Js
+
+@code {
+    [Parameter] public IReadOnlyList<ChatMessageModel> Messages { get; set; } = [];
+    [Parameter] public ChatMessageModel? StreamingMessage { get; set; }
+    [Parameter] public bool IsStreaming { get; set; }
+    [Parameter] public AgentInfo? SelectedAgent { get; set; }
+    [Parameter] public EventCallback<string> OnSuggestionClicked { get; set; }
+
+    private ElementReference _messagesArea;
+    private bool _shouldAutoScroll = true;
+
+    public async Task CheckAndUpdateAutoScroll()
+    {
+        try
+        {
+            _shouldAutoScroll = await Js.InvokeAsync<bool>("chatScroll.isAtBottom", _messagesArea);
+        }
+        catch
+        {
+            _shouldAutoScroll = true;
+        }
+    }
+
+    public void SetShouldAutoScroll(bool value)
+    {
+        _shouldAutoScroll = value;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_shouldAutoScroll)
+        {
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea);
+        }
+    }
+
+}
+
+<div class="messages-area" @ref="_messagesArea">
+    @if (Messages.Count == 0 && !IsStreaming)
+    {
+        <EmptyState SelectedAgent="SelectedAgent" OnSuggestionClicked="OnSuggestionClicked"/>
+    }
+    else
+    {
+        @foreach (var message in Messages)
+        {
+            <ChatMessage Message="@message"/>
+        }
+
+        @if (IsStreaming && StreamingMessage is not null)
+        {
+            <ChatMessage Message="@StreamingMessage" IsStreaming="true"/>
+        }
+    }
+</div>
