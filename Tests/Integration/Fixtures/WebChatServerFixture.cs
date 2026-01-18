@@ -140,31 +140,12 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         }); // Note: No cancellation token here - we handle cancellation ourselves
     }
 
-    /// <summary>
-    ///     Creates a new SignalR hub connection configured for testing.
-    /// </summary>
     public HubConnection CreateHubConnection()
     {
         return new HubConnectionBuilder()
             .WithUrl(HubUrl)
             .WithAutomaticReconnect()
             .Build();
-    }
-
-    /// <summary>
-    ///     Gets access to the WebChatMessengerClient for verifying internal state.
-    /// </summary>
-    public WebChatMessengerClient GetMessengerClient()
-    {
-        return _host.Services.GetRequiredService<WebChatMessengerClient>();
-    }
-
-    /// <summary>
-    ///     Gets access to the thread state store for verifying persistence.
-    /// </summary>
-    public IThreadStateStore GetThreadStateStore()
-    {
-        return _host.Services.GetRequiredService<IThreadStateStore>();
     }
 
     public async Task DisposeAsync()
@@ -214,14 +195,37 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         {
             await _host.StopAsync(cts.Token);
         }
-        catch (OperationCanceledException)
+        catch
         {
-            // Host stop timed out
+            // Ignore host stop errors
         }
 
-        _monitorCts.Dispose();
-        _host.Dispose();
-        await RedisFixture.DisposeAsync();
+        try
+        {
+            _monitorCts.Dispose();
+        }
+        catch
+        {
+            // Ignore disposal errors
+        }
+
+        try
+        {
+            _host.Dispose();
+        }
+        catch
+        {
+            // Ignore disposal errors
+        }
+
+        try
+        {
+            await RedisFixture.DisposeAsync();
+        }
+        catch
+        {
+            // Ignore disposal errors
+        }
     }
 
     private static int GetAvailablePort()
