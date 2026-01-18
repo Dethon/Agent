@@ -6,18 +6,49 @@
     private bool _showReasoning;
     private bool _showToolCalls;
 
-    private string RenderMarkdown(string? content)
+    // Change tracking
+    private string? _lastContent;
+    private string? _lastReasoning;
+    private string? _lastToolCalls;
+    private bool _lastIsStreaming;
+    private bool _shouldRender = true;
+
+    protected override bool ShouldRender()
     {
-        if (string.IsNullOrEmpty(content))
+        if (!_shouldRender)
         {
-            return "";
+            return false;
         }
 
-        var pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .Build();
+        _shouldRender = false;
+        return true;
+    }
 
-        return Markdown.ToHtml(content, pipeline);
+    protected override void OnParametersSet()
+    {
+        if (Message.Content == _lastContent &&
+            Message.Reasoning == _lastReasoning &&
+            Message.ToolCalls == _lastToolCalls &&
+            IsStreaming == _lastIsStreaming)
+        {
+            return;
+        }
+
+        _lastContent = Message.Content;
+        _lastReasoning = Message.Reasoning;
+        _lastToolCalls = Message.ToolCalls;
+        _lastIsStreaming = IsStreaming;
+        _shouldRender = true;
+    }
+
+    // Static pipeline to avoid allocation on every render
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private static string RenderMarkdown(string? content)
+    {
+        return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
     }
 
     private string GetMessageClass()

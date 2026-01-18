@@ -103,8 +103,17 @@
     private ElementReference _messagesArea;
     private bool _shouldAutoScroll = true;
 
+    // Render throttling for streaming
+    private DateTime _lastRenderTime = DateTime.MinValue;
+    private const int RenderThrottleMs = 50;
+    private bool _renderPending;
+
     // Tool approval tracking
     private ToolApprovalRequestMessage? _currentApprovalRequest;
+
+    // Cached unread counts to avoid creating new dictionary on every render
+    private Dictionary<string, int> _cachedUnreadCounts = new();
+    private string? _lastSelectedTopicForUnread;
 
     private List<ChatMessageModel> CurrentMessages =>
         _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs)
@@ -121,12 +130,30 @@
 
     private AgentInfo? SelectedAgent => _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
 
-    private Dictionary<string, int> ComputedUnreadCounts =>
-        _messagesByTopic
-            .Where(kvp => kvp.Key != _selectedTopic?.TopicId) // Selected topic is always "seen"
+    private Dictionary<string, int> ComputedUnreadCounts
+    {
+        get
+        {
+            // Only recompute if selected topic changed (which affects "seen" status)
+            if (_lastSelectedTopicForUnread == _selectedTopic?.TopicId)
+            {
+                return _cachedUnreadCounts;
+            }
+
+            _lastSelectedTopicForUnread = _selectedTopic?.TopicId;
+            InvalidateUnreadCounts();
+            return _cachedUnreadCounts;
+        }
+    }
+
+    private void InvalidateUnreadCounts()
+    {
+        _cachedUnreadCounts = _messagesByTopic
+            .Where(kvp => kvp.Key != _selectedTopic?.TopicId)
             .Select(kvp => (kvp.Key, AssistantCount: GetAssistantMessageCount(kvp.Key), LastRead: GetLastReadCount(kvp.Key)))
             .Where(t => t.AssistantCount > t.LastRead)
             .ToDictionary(t => t.Key, t => t.AssistantCount - t.LastRead);
+    }
 
     private int GetAssistantMessageCount(string topicId)
     {
@@ -195,6 +222,41 @@
         {
             // JS interop might fail during initialization
             _shouldAutoScroll = true;
+        }
+    }
+
+    private async Task ThrottledRenderAsync()
+    {
+        var now = DateTime.UtcNow;
+        var elapsed = (now - _lastRenderTime).TotalMilliseconds;
+
+        if (elapsed >= RenderThrottleMs)
+        {
+            _lastRenderTime = now;
+            _renderPending = false;
+            await InvokeAsync(async () =>
+            {
+                await CheckAndUpdateAutoScroll();
+                StateHasChanged();
+            });
+        }
+        else if (!_renderPending)
+        {
+            _renderPending = true;
+            var delay = RenderThrottleMs - (int)elapsed;
+            _ = Task.Delay(delay).ContinueWith(async _ =>
+            {
+                if (_renderPending)
+                {
+                    _renderPending = false;
+                    _lastRenderTime = DateTime.UtcNow;
+                    await InvokeAsync(async () =>
+                    {
+                        await CheckAndUpdateAutoScroll();
+                        StateHasChanged();
+                    });
+                }
+            });
         }
     }
 
@@ -467,11 +529,7 @@
 
                 _streamingMessageByTopic[topic.TopicId] = streamingMessage;
 
-                await InvokeAsync(async () =>
-                {
-                    await CheckAndUpdateAutoScroll();
-                    StateHasChanged();
-                });
+                await ThrottledRenderAsync();
 
                 // Note: IsComplete signals an individual message is done, not the entire stream.
                 // The stream continues until the async enumerable completes (e.g., for tool calls + follow-up)
@@ -501,6 +559,7 @@
         {
             _streamingTopics.Remove(topic.TopicId);
             _streamingMessageByTopic.Remove(topic.TopicId);
+            InvalidateUnreadCounts();
             await InvokeAsync(async () =>
             {
                 await CheckAndUpdateAutoScroll();
@@ -865,11 +924,7 @@
                 if (isNew)
                 {
                     receivedNewContent = true;
-                    await InvokeAsync(async () =>
-                    {
-                        await CheckAndUpdateAutoScroll();
-                        StateHasChanged();
-                    });
+                    await ThrottledRenderAsync();
                 }
 
                 // Note: IsComplete signals an individual message is done, not the entire stream
@@ -901,6 +956,7 @@
         {
             _streamingTopics.Remove(topic.TopicId);
             _streamingMessageByTopic.Remove(topic.TopicId);
+            InvalidateUnreadCounts();
             await InvokeAsync(async () =>
             {
                 await CheckAndUpdateAutoScroll();

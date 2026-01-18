@@ -1,4 +1,5 @@
 @inject IJSRuntime Js
+@implements IDisposable
 
 @code {
     [Parameter] public List<StoredTopic> Topics { get; set; } = [];
@@ -22,6 +23,56 @@
     [Parameter] public Dictionary<string, int> UnreadCounts { get; set; } = new();
 
     [Parameter] public HashSet<string> StreamingTopics { get; set; } = new();
+
+    // Change tracking to prevent unnecessary renders
+    private int _lastTopicsCount;
+    private string? _lastSelectedTopicId;
+    private string? _lastSelectedAgentId;
+    private bool _lastIsStreaming;
+    private int _lastUnreadCountsHash;
+    private int _lastStreamingTopicsHash;
+    private bool _shouldRender = true;
+
+    protected override bool ShouldRender()
+    {
+        if (_shouldRender)
+        {
+            _shouldRender = false;
+            return true;
+        }
+
+        return false;
+    }
+
+    protected override void OnParametersSet()
+    {
+        var topicsCount = Topics.Count;
+        var selectedTopicId = SelectedTopic?.TopicId;
+        var unreadHash = UnreadCounts.Count == 0 ? 0 : UnreadCounts.Sum(kvp => kvp.Key.GetHashCode() ^ kvp.Value);
+        var streamingHash = StreamingTopics.Count == 0 ? 0 : StreamingTopics.Sum(s => s.GetHashCode());
+
+        if (topicsCount != _lastTopicsCount ||
+            selectedTopicId != _lastSelectedTopicId ||
+            SelectedAgentId != _lastSelectedAgentId ||
+            IsStreaming != _lastIsStreaming ||
+            unreadHash != _lastUnreadCountsHash ||
+            streamingHash != _lastStreamingTopicsHash)
+        {
+            _lastTopicsCount = topicsCount;
+            _lastSelectedTopicId = selectedTopicId;
+            _lastSelectedAgentId = SelectedAgentId;
+            _lastIsStreaming = IsStreaming;
+            _lastUnreadCountsHash = unreadHash;
+            _lastStreamingTopicsHash = streamingHash;
+            _shouldRender = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        // Clean up element references
+        _topicNameRefs.Clear();
+    }
 
     private int GetUnreadCount(string topicId)
     {
