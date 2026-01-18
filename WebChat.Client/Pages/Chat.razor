@@ -172,6 +172,9 @@
     {
         HubService.OnStateChanged += StateHasChanged;
         HubService.OnReconnected += HandleReconnected;
+        HubService.OnTopicChanged += HandleTopicChangedNotification;
+        HubService.OnStreamChanged += HandleStreamChangedNotification;
+        HubService.OnNewMessage += HandleNewMessageNotification;
 
         await HubService.ConnectAsync();
         _agents = (await HubService.GetAgentsAsync()).ToList();
@@ -395,7 +398,7 @@
             _selectedTopic = topic;
             _topics.Add(topic);
             _messagesByTopic[topic.TopicId] = [];
-            await HubService.SaveTopicAsync(topic.ToMetadata());
+            await HubService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
             StateHasChanged();
         }
         else
@@ -992,10 +995,111 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleTopicChangedNotification(TopicChangedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            switch (notification.ChangeType)
+            {
+                case TopicChangeType.Created when notification.Topic is not null:
+                    // Only add if we don't already have it (e.g., we created it ourselves)
+                    if (_topics.All(t => t.TopicId != notification.TopicId))
+                    {
+                        var newTopic = StoredTopic.FromMetadata(notification.Topic);
+                        _topics.Add(newTopic);
+                        _ = LoadTopicHistoryAsync(newTopic);
+                    }
+
+                    break;
+
+                case TopicChangeType.Updated when notification.Topic is not null:
+                    var existingTopic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+                    if (existingTopic is not null)
+                    {
+                        existingTopic.Name = notification.Topic.Name;
+                        existingTopic.LastMessageAt = notification.Topic.LastMessageAt?.DateTime;
+                        existingTopic.LastReadMessageCount = notification.Topic.LastReadMessageCount;
+                    }
+
+                    break;
+
+                case TopicChangeType.Deleted:
+                    _topics.RemoveAll(t => t.TopicId == notification.TopicId);
+                    _messagesByTopic.Remove(notification.TopicId);
+                    _streamingMessageByTopic.Remove(notification.TopicId);
+                    _streamingTopics.Remove(notification.TopicId);
+                    if (_selectedTopic?.TopicId == notification.TopicId)
+                    {
+                        _selectedTopic = null;
+                        _currentApprovalRequest = null;
+                    }
+
+                    break;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private Task HandleStreamChangedNotification(StreamChangedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            switch (notification.ChangeType)
+            {
+                case StreamChangeType.Started:
+                    _streamingTopics.Add(notification.TopicId);
+                    if (!_streamingMessageByTopic.ContainsKey(notification.TopicId))
+                    {
+                        _streamingMessageByTopic[notification.TopicId] = new ChatMessageModel { Role = "assistant" };
+                    }
+
+                    // Try to resume the stream if we're not already subscribed
+                    var topic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+                    if (topic is not null && !_resumingTopics.Contains(notification.TopicId))
+                    {
+                        _ = TryResumeStreamAsync(topic);
+                    }
+
+                    break;
+
+                case StreamChangeType.Cancelled:
+                case StreamChangeType.Completed:
+                    _streamingTopics.Remove(notification.TopicId);
+                    _streamingMessageByTopic.Remove(notification.TopicId);
+                    break;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleNewMessageNotification(NewMessageNotification notification)
+    {
+        // If we have this topic but aren't streaming it, refresh history to get new messages
+        var topic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
+        if (topic is not null && !_streamingTopics.Contains(notification.TopicId))
+        {
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            await InvokeAsync(() =>
+            {
+                _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+                {
+                    Role = h.Role,
+                    Content = h.Content
+                }).ToList();
+                StateHasChanged();
+            });
+        }
+    }
+
     public void Dispose()
     {
         HubService.OnStateChanged -= StateHasChanged;
         HubService.OnReconnected -= HandleReconnected;
+        HubService.OnTopicChanged -= HandleTopicChangedNotification;
+        HubService.OnStreamChanged -= HandleStreamChangedNotification;
+        HubService.OnNewMessage -= HandleNewMessageNotification;
     }
 
 }

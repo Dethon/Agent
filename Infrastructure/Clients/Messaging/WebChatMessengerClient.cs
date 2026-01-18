@@ -15,6 +15,7 @@ public sealed class WebChatMessengerClient(
     WebChatStreamManager streamManager,
     WebChatApprovalManager approvalManager,
     ChatThreadResolver threadResolver,
+    INotifier hubNotifier,
     ILogger<WebChatMessengerClient> logger) : IChatMessengerClient, IDisposable
 {
     private readonly Channel<ChatPrompt> _promptChannel = Channel.CreateUnbounded<ChatPrompt>();
@@ -52,6 +53,10 @@ public sealed class WebChatMessengerClient(
                     if (content is StreamCompleteContent)
                     {
                         streamManager.CompleteStream(topicId);
+                        _ = hubNotifier.NotifyStreamChangedAsync(
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken);
+                        _ = hubNotifier.NotifyNewMessageAsync(
+                            new NewMessageNotification(topicId), cancellationToken); // Count computed client-side
                         continue;
                     }
 
@@ -146,6 +151,9 @@ public sealed class WebChatMessengerClient(
         }
 
         var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, cancellationToken);
+
+        _ = hubNotifier.NotifyStreamChangedAsync(
+            new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);
 

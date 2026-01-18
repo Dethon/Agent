@@ -1,4 +1,5 @@
 using Agent.App;
+using Agent.Hubs;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
@@ -139,6 +140,7 @@ public static class InjectorModule
         private IServiceCollection AddWebClient()
         {
             return services
+                .AddSingleton<INotifier, Notifier>()
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()

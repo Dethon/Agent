@@ -16,7 +16,8 @@ public sealed class ChatHub(
     IAgentFactory agentFactory,
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     IThreadStateStore threadStateStore,
-    WebChatMessengerClient messengerClient) : Hub
+    WebChatMessengerClient messengerClient,
+    INotifier hubNotifier) : Hub
 {
     public IReadOnlyList<AgentInfo> GetAgents()
     {
@@ -135,10 +136,11 @@ public sealed class ChatHub(
         }
     }
 
-    public Task CancelTopic(string topicId)
+    public async Task CancelTopic(string topicId)
     {
         messengerClient.CancelProcessing(topicId);
-        return Task.CompletedTask;
+        await hubNotifier.NotifyStreamChangedAsync(
+            new StreamChangedNotification(StreamChangeType.Cancelled, topicId));
     }
 
     public async Task DeleteTopic(string topicId, long chatId, long threadId)
@@ -148,11 +150,18 @@ public sealed class ChatHub(
         var agentKey = new AgentKey(chatId, threadId);
         await threadStateStore.DeleteAsync(agentKey);
         await threadStateStore.DeleteTopicAsync(topicId);
+
+        await hubNotifier.NotifyTopicChangedAsync(
+            new TopicChangedNotification(TopicChangeType.Deleted, topicId));
     }
 
-    public async Task SaveTopic(TopicMetadata topic)
+    public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
         await threadStateStore.SaveTopicAsync(topic);
+
+        var changeType = isNew ? TopicChangeType.Created : TopicChangeType.Updated;
+        await hubNotifier.NotifyTopicChangedAsync(
+            new TopicChangedNotification(changeType, topic.TopicId, topic));
     }
 
     public bool RespondToApproval(string approvalId, ToolApprovalResult result)

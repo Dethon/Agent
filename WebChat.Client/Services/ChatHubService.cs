@@ -15,6 +15,9 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;
+    public event Func<TopicChangedNotification, Task>? OnTopicChanged;
+    public event Func<StreamChangedNotification, Task>? OnStreamChanged;
+    public event Func<NewMessageNotification, Task>? OnNewMessage;
 
     public async Task ConnectAsync()
     {
@@ -47,6 +50,30 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
 
             OnStateChanged?.Invoke();
         };
+
+        _hubConnection.On<TopicChangedNotification>("OnTopicChanged", async notification =>
+        {
+            if (OnTopicChanged is not null)
+            {
+                await OnTopicChanged.Invoke(notification);
+            }
+        });
+
+        _hubConnection.On<StreamChangedNotification>("OnStreamChanged", async notification =>
+        {
+            if (OnStreamChanged is not null)
+            {
+                await OnStreamChanged.Invoke(notification);
+            }
+        });
+
+        _hubConnection.On<NewMessageNotification>("OnNewMessage", async notification =>
+        {
+            if (OnNewMessage is not null)
+            {
+                await OnNewMessage.Invoke(notification);
+            }
+        });
 
         await _hubConnection.StartAsync();
         OnStateChanged?.Invoke();
@@ -101,14 +128,14 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
         return await _hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
     }
 
-    public async Task SaveTopicAsync(TopicMetadata topic)
+    public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
         if (_hubConnection is null)
         {
             return;
         }
 
-        await _hubConnection.InvokeAsync("SaveTopic", topic);
+        await _hubConnection.InvokeAsync("SaveTopic", topic, isNew);
     }
 
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string message)
