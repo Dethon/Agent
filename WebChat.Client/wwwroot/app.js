@@ -147,3 +147,78 @@ window.isTextTruncated = function (element) {
     const elementWidth = element.getBoundingClientRect().width;
     return textWidth > elementWidth;
 };
+
+// ===================================
+// Tooltip Management (throttled, no Blazor re-renders)
+// ===================================
+
+window.topicTooltip = {
+    _tooltipElement: null,
+    _currentTarget: null,
+    _lastUpdate: 0,
+    _throttleMs: 32, // ~30fps, sufficient for smooth tooltip movement
+    _mouseX: 0,
+    _mouseY: 0,
+    _animationFrame: null,
+
+    init: function (tooltipSelector) {
+        this._tooltipElement = document.querySelector(tooltipSelector);
+    },
+
+    show: function (text, targetElement) {
+        if (!this._tooltipElement) return;
+
+        this._tooltipElement.textContent = text;
+        this._tooltipElement.classList.add('visible');
+        this._currentTarget = targetElement;
+
+        // Add mousemove listener only when tooltip is visible
+        if (!this._boundMouseMove) {
+            this._boundMouseMove = this._onMouseMove.bind(this);
+        }
+        document.addEventListener('mousemove', this._boundMouseMove, {passive: true});
+    },
+
+    hide: function () {
+        if (!this._tooltipElement) return;
+
+        this._tooltipElement.classList.remove('visible');
+        this._currentTarget = null;
+
+        // Remove listener when not needed
+        if (this._boundMouseMove) {
+            document.removeEventListener('mousemove', this._boundMouseMove);
+        }
+        if (this._animationFrame) {
+            cancelAnimationFrame(this._animationFrame);
+            this._animationFrame = null;
+        }
+    },
+
+    _onMouseMove: function (e) {
+        this._mouseX = e.clientX;
+        this._mouseY = e.clientY;
+
+        // Throttle updates
+        const now = Date.now();
+        if (now - this._lastUpdate < this._throttleMs) {
+            // Schedule an update for the end of the throttle period if not already scheduled
+            if (!this._animationFrame) {
+                this._animationFrame = requestAnimationFrame(() => {
+                    this._updatePosition();
+                    this._animationFrame = null;
+                });
+            }
+            return;
+        }
+
+        this._lastUpdate = now;
+        this._updatePosition();
+    },
+
+    _updatePosition: function () {
+        if (!this._tooltipElement) return;
+        this._tooltipElement.style.left = (this._mouseX + 12) + 'px';
+        this._tooltipElement.style.top = (this._mouseY + 12) + 'px';
+    }
+};

@@ -35,11 +35,9 @@
 
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
-    private string? _tooltipText;
-    private double _tooltipX;
-    private double _tooltipY;
     private readonly Dictionary<string, ElementReference> _topicNameRefs = new();
     public ElementReference DropdownRef { get; private set; }
+    private bool _tooltipInitialized;
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
 
@@ -91,6 +89,15 @@
         _dropdownOpen = false;
     }
 
+    private async Task EnsureTooltipInitialized()
+    {
+        if (!_tooltipInitialized)
+        {
+            await Js.InvokeVoidAsync("topicTooltip.init", ".topic-tooltip");
+            _tooltipInitialized = true;
+        }
+    }
+
     private async Task ShowTooltip(string topicId, string text)
     {
         if (_topicNameRefs.TryGetValue(topicId, out var elementRef))
@@ -100,29 +107,23 @@
                 var isTruncated = await Js.InvokeAsync<bool>("isTextTruncated", elementRef);
                 if (isTruncated)
                 {
-                    _tooltipText = text;
+                    await EnsureTooltipInitialized();
+                    await Js.InvokeVoidAsync("topicTooltip.show", text, elementRef);
                 }
             }
             catch
             {
-                // Fallback: show tooltip anyway if JS fails
-                _tooltipText = text;
+                // Silently ignore - tooltip is non-critical
             }
         }
     }
 
-    private void UpdateTooltipPosition(MouseEventArgs e)
+    private async Task HideTooltip()
     {
-        if (_tooltipText != null)
+        if (_tooltipInitialized)
         {
-            _tooltipX = e.ClientX + 12;
-            _tooltipY = e.ClientY + 12;
+            await Js.InvokeVoidAsync("topicTooltip.hide");
         }
-    }
-
-    private void HideTooltip()
-    {
-        _tooltipText = null;
     }
 
 }
@@ -191,7 +192,6 @@
                     class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
                      @onclick="() => HandleTopicClick(topic)"
                      @onmouseenter="() => ShowTooltip(topic.TopicId, topic.Name)"
-                     @onmousemove="UpdateTooltipPosition"
                      @onmouseleave="HideTooltip">
                     <div class="topic-content">
                         <div class="topic-name-row">
@@ -252,7 +252,4 @@
     </div>
 </div>
 
-<div class="topic-tooltip @(_tooltipText != null ? "visible" : "")"
-     style="left: @(_tooltipX)px; top: @(_tooltipY)px;">
-    @_tooltipText
-</div>
+<div class="topic-tooltip"></div>
