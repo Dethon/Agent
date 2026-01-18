@@ -43,7 +43,11 @@ public static class InjectorModule
         {
             if (cmdParams.ChatInterface == ChatInterface.Web)
             {
-                services = services.AddSignalR().Services;
+                services = services.AddSignalR(options =>
+                {
+                    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+                    options.ClientTimeoutInterval = TimeSpan.FromMinutes(5);
+                }).Services;
             }
 
             services = services

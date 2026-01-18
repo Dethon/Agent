@@ -37,8 +37,8 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
             .WithAutomaticReconnect(new AggressiveRetryPolicy())
-            .WithServerTimeout(TimeSpan.FromSeconds(15))
-            .WithKeepAliveInterval(TimeSpan.FromSeconds(5))
+            .WithServerTimeout(TimeSpan.FromMinutes(3))
+            .WithKeepAliveInterval(TimeSpan.FromSeconds(10))
             .Build();
 
         _hubConnection.Closed += _ =>
