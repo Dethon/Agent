@@ -6,41 +6,6 @@
     private bool _showReasoning;
     private bool _showToolCalls;
 
-    // Change tracking
-    private string? _lastContent;
-    private string? _lastReasoning;
-    private string? _lastToolCalls;
-    private bool _lastIsStreaming;
-    private bool _shouldRender = true;
-
-    protected override bool ShouldRender()
-    {
-        if (!_shouldRender)
-        {
-            return false;
-        }
-
-        _shouldRender = false;
-        return true;
-    }
-
-    protected override void OnParametersSet()
-    {
-        if (Message.Content == _lastContent &&
-            Message.Reasoning == _lastReasoning &&
-            Message.ToolCalls == _lastToolCalls &&
-            IsStreaming == _lastIsStreaming)
-        {
-            return;
-        }
-
-        _lastContent = Message.Content;
-        _lastReasoning = Message.Reasoning;
-        _lastToolCalls = Message.ToolCalls;
-        _lastIsStreaming = IsStreaming;
-        _shouldRender = true;
-    }
-
     // Static pipeline to avoid allocation on every render
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()

@@ -555,35 +555,34 @@ html, body {
     color: var(--text-primary);
 }
 
-/* Topic Tooltip */
-.topic-tooltip {
-    position: fixed;
-    background: var(--bg-elevated);
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 400;
-    white-space: nowrap;
-    max-width: 300px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid var(--border-color);
-    z-index: 1000;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.topic-tooltip.visible {
-    opacity: 1;
-}
-
 .topic-meta {
     font-size: 0.75rem;
     color: var(--text-muted);
     margin-top: 0.25rem;
+}
+
+/* Tooltip */
+.tooltip {
+    position: fixed;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    padding: 0.375rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    max-width: 280px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 9999;
+    transition: opacity 0.15s;
+}
+
+.tooltip.visible {
+    opacity: 1;
 }
 
 /* Topic Name Row with Badge */

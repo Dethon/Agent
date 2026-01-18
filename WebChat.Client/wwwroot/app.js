@@ -133,50 +133,35 @@ window.getBoundingClientRect = function (element) {
 };
 
 // ===================================
-// Tooltip Management
+// Tooltip (lightweight)
 // ===================================
 
-window.topicTooltip = {
-    _tooltipElement: null,
-    _mouseX: 0,
-    _mouseY: 0,
+(function () {
+    let timeout;
+    const tooltip = () => document.getElementById('tooltip');
 
-    init: function (tooltipSelector) {
-        this._tooltipElement = document.querySelector(tooltipSelector);
-    },
+    document.addEventListener('mouseenter', e => {
+        const target = e.target.closest?.('[data-tooltip]');
+        if (!target) return;
 
-    show: function (text, mouseX, mouseY) {
-        if (!this._tooltipElement) return;
+        const x = e.clientX, y = e.clientY;
+        timeout = setTimeout(() => {
+            const tip = tooltip();
+            if (tip) {
+                tip.textContent = target.dataset.tooltip;
+                tip.style.left = (x) + 'px';
+                tip.style.top = (y - 24) + 'px';
+                tip.classList.add('visible');
+            }
+        }, 400);
+    }, true);
 
-        this._tooltipElement.textContent = text;
-        this._mouseX = mouseX;
-        this._mouseY = mouseY;
-        this._updatePosition();
-        this._tooltipElement.classList.add('visible');
-
-        if (!this._boundMouseMove) {
-            this._boundMouseMove = this._onMouseMove.bind(this);
+    document.addEventListener('mouseleave', e => {
+        if (e.target.closest?.('[data-tooltip]')) {
+            clearTimeout(timeout);
+            const tip = tooltip();
+            if (tip) tip.classList.remove('visible');
         }
-        document.addEventListener('mousemove', this._boundMouseMove, {passive: true});
-    },
+    }, true);
+})();
 
-    hide: function () {
-        if (!this._tooltipElement) return;
-        this._tooltipElement.classList.remove('visible');
-        if (this._boundMouseMove) {
-            document.removeEventListener('mousemove', this._boundMouseMove);
-        }
-    },
-
-    _onMouseMove: function (e) {
-        this._mouseX = e.clientX;
-        this._mouseY = e.clientY;
-        this._updatePosition();
-    },
-
-    _updatePosition: function () {
-        if (!this._tooltipElement) return;
-        this._tooltipElement.style.left = (this._mouseX + 12) + 'px';
-        this._tooltipElement.style.top = (this._mouseY + 12) + 'px';
-    }
-};

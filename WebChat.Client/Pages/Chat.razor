@@ -111,9 +111,6 @@
     // Tool approval tracking
     private ToolApprovalRequestMessage? _currentApprovalRequest;
 
-    // Cached unread counts to avoid creating new dictionary on every render
-    private Dictionary<string, int> _cachedUnreadCounts = new();
-    private string? _lastSelectedTopicForUnread;
 
     private List<ChatMessageModel> CurrentMessages =>
         _selectedTopic is not null && _messagesByTopic.TryGetValue(_selectedTopic.TopicId, out var msgs)
@@ -130,30 +127,12 @@
 
     private AgentInfo? SelectedAgent => _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
 
-    private Dictionary<string, int> ComputedUnreadCounts
-    {
-        get
-        {
-            // Only recompute if selected topic changed (which affects "seen" status)
-            if (_lastSelectedTopicForUnread == _selectedTopic?.TopicId)
-            {
-                return _cachedUnreadCounts;
-            }
-
-            _lastSelectedTopicForUnread = _selectedTopic?.TopicId;
-            InvalidateUnreadCounts();
-            return _cachedUnreadCounts;
-        }
-    }
-
-    private void InvalidateUnreadCounts()
-    {
-        _cachedUnreadCounts = _messagesByTopic
+    private Dictionary<string, int> ComputedUnreadCounts =>
+        _messagesByTopic
             .Where(kvp => kvp.Key != _selectedTopic?.TopicId)
             .Select(kvp => (kvp.Key, AssistantCount: GetAssistantMessageCount(kvp.Key), LastRead: GetLastReadCount(kvp.Key)))
             .Where(t => t.AssistantCount > t.LastRead)
             .ToDictionary(t => t.Key, t => t.AssistantCount - t.LastRead);
-    }
 
     private int GetAssistantMessageCount(string topicId)
     {
@@ -559,7 +538,6 @@
         {
             _streamingTopics.Remove(topic.TopicId);
             _streamingMessageByTopic.Remove(topic.TopicId);
-            InvalidateUnreadCounts();
             await InvokeAsync(async () =>
             {
                 await CheckAndUpdateAutoScroll();
@@ -602,6 +580,7 @@
                     Role = h.Role,
                     Content = h.Content
                 }).ToList();
+                await InvokeAsync(StateHasChanged);
             }
 
             // Restore streaming state from buffer
@@ -956,7 +935,6 @@
         {
             _streamingTopics.Remove(topic.TopicId);
             _streamingMessageByTopic.Remove(topic.TopicId);
-            InvalidateUnreadCounts();
             await InvokeAsync(async () =>
             {
                 await CheckAndUpdateAutoScroll();

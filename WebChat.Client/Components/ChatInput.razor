@@ -12,34 +12,6 @@
     private string _inputText = "";
     private ElementReference _textareaRef;
 
-    // Change tracking
-    private bool _lastIsStreaming;
-    private bool _lastDisabled;
-    private bool _shouldRender = true;
-
-    protected override bool ShouldRender()
-    {
-        if (!_shouldRender)
-        {
-            return false;
-        }
-
-        _shouldRender = false;
-        return true;
-    }
-
-    protected override void OnParametersSet()
-    {
-        if (IsStreaming == _lastIsStreaming && Disabled == _lastDisabled)
-        {
-            return;
-        }
-
-        _lastIsStreaming = IsStreaming;
-        _lastDisabled = Disabled;
-        _shouldRender = true;
-    }
-
     private async Task HandleSubmit()
     {
         if (string.IsNullOrWhiteSpace(_inputText) || Disabled)

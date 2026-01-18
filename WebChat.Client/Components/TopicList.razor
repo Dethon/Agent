@@ -1,6 +1,3 @@
-@inject IJSRuntime Js
-@implements IDisposable
-
 @code {
     [Parameter] public List<StoredTopic> Topics { get; set; } = [];
 
@@ -24,59 +21,6 @@
 
     [Parameter] public HashSet<string> StreamingTopics { get; set; } = new();
 
-    // Change tracking to prevent unnecessary renders
-    private int _lastTopicsCount;
-    private string? _lastSelectedTopicId;
-    private string? _lastSelectedAgentId;
-    private bool _lastIsStreaming;
-    private int _lastUnreadCountsHash;
-    private int _lastStreamingTopicsHash;
-    private bool _shouldRender = true;
-
-    protected override bool ShouldRender()
-    {
-        if (!_shouldRender)
-        {
-            return false;
-        }
-
-        _shouldRender = false;
-        return true;
-
-    }
-
-    protected override void OnParametersSet()
-    {
-        var topicsCount = Topics.Count;
-        var selectedTopicId = SelectedTopic?.TopicId;
-        var unreadHash = UnreadCounts.Count == 0 ? 0 : UnreadCounts.Sum(kvp => kvp.Key.GetHashCode() ^ kvp.Value);
-        var streamingHash = StreamingTopics.Count == 0 ? 0 : StreamingTopics.Sum(s => s.GetHashCode());
-
-        if (topicsCount == _lastTopicsCount &&
-            selectedTopicId == _lastSelectedTopicId &&
-            SelectedAgentId == _lastSelectedAgentId &&
-            IsStreaming == _lastIsStreaming &&
-            unreadHash == _lastUnreadCountsHash &&
-            streamingHash == _lastStreamingTopicsHash)
-        {
-            return;
-        }
-
-        _lastTopicsCount = topicsCount;
-        _lastSelectedTopicId = selectedTopicId;
-        _lastSelectedAgentId = SelectedAgentId;
-        _lastIsStreaming = IsStreaming;
-        _lastUnreadCountsHash = unreadHash;
-        _lastStreamingTopicsHash = streamingHash;
-        _shouldRender = true;
-    }
-
-    public void Dispose()
-    {
-        _tooltipDelayCts?.Cancel();
-        _tooltipDelayCts?.Dispose();
-    }
-
     private int GetUnreadCount(string topicId)
     {
         return UnreadCounts.GetValueOrDefault(topicId);
@@ -90,9 +34,6 @@
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
     public ElementReference DropdownRef { get; private set; }
-    private bool _tooltipInitialized;
-    private CancellationTokenSource? _tooltipDelayCts;
-    private const int TooltipDelayMs = 400;
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
 
@@ -112,32 +53,27 @@
     private void ShowDeleteConfirm(string topicId)
     {
         _deleteConfirmTopicId = topicId;
-        _shouldRender = true;
     }
 
     private void CancelDelete()
     {
         _deleteConfirmTopicId = null;
-        _shouldRender = true;
     }
 
     private async Task ConfirmDelete(StoredTopic topic)
     {
         _deleteConfirmTopicId = null;
-        _shouldRender = true;
         await OnTopicDeleted.InvokeAsync(topic);
     }
 
     private void ToggleDropdown()
     {
         _dropdownOpen = !_dropdownOpen;
-        _shouldRender = true;
     }
 
     private async Task SelectAgent(string agentId)
     {
         _dropdownOpen = false;
-        _shouldRender = true;
         if (agentId != SelectedAgentId)
         {
             await OnAgentChanged.InvokeAsync(agentId);
@@ -147,64 +83,6 @@
     private void CloseDropdown()
     {
         _dropdownOpen = false;
-        _shouldRender = true;
-    }
-
-    private async Task EnsureTooltipInitialized()
-    {
-        if (!_tooltipInitialized)
-        {
-            await Js.InvokeVoidAsync("topicTooltip.init", ".topic-tooltip");
-            _tooltipInitialized = true;
-        }
-    }
-
-    private async Task ShowTooltip(string text, MouseEventArgs e)
-    {
-        // Cancel any pending tooltip
-        if (_tooltipDelayCts != null)
-        {
-            await _tooltipDelayCts.CancelAsync();
-        }
-
-        _tooltipDelayCts = new CancellationTokenSource();
-        var token = _tooltipDelayCts.Token;
-
-        try
-        {
-            await Task.Delay(TooltipDelayMs, token);
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
-
-            await EnsureTooltipInitialized();
-            // ReSharper disable once MethodSupportsCancellation
-            await Js.InvokeVoidAsync("topicTooltip.show", text, e.ClientX, e.ClientY);
-        }
-        catch (TaskCanceledException)
-        {
-            // Expected when mouse leaves before delay completes
-        }
-        catch
-        {
-            // Silently ignore other errors - tooltip is non-critical
-        }
-    }
-
-    private async Task HideTooltip()
-    {
-        if (_tooltipDelayCts != null)
-        {
-            await _tooltipDelayCts.CancelAsync();
-        }
-
-        _tooltipDelayCts = null;
-
-        if (_tooltipInitialized)
-        {
-            await Js.InvokeVoidAsync("topicTooltip.hide");
-        }
     }
 
 }
@@ -272,8 +150,7 @@
                 <div
                     class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
                      @onclick="() => HandleTopicClick(topic)"
-                    @onmouseenter="e => ShowTooltip(topic.Name, e)"
-                     @onmouseleave="HideTooltip">
+                    data-tooltip="@topic.Name">
                     <div class="topic-content">
                         <div class="topic-name-row">
                             <div class="topic-name">@topic.Name</div>
@@ -333,4 +210,4 @@
     </div>
 </div>
 
-<div class="topic-tooltip"></div>
+<div id="tooltip" class="tooltip"></div>
