@@ -77,6 +77,21 @@
             }
         </div>
 
+        @if (HubService.IsReconnecting)
+        {
+            <div class="connection-status reconnecting">
+                <span class="status-icon">⟳</span>
+                <span>Reconnecting...</span>
+            </div>
+        }
+        else if (!HubService.IsConnected)
+        {
+            <div class="connection-status disconnected">
+                <span class="status-icon">○</span>
+                <span>Disconnected</span>
+            </div>
+        }
+
         <div class="input-area">
             <ChatInput OnSend="HandleSend"
                        OnCancel="HandleCancel"
@@ -172,6 +187,7 @@
     {
         HubService.OnStateChanged += StateHasChanged;
         HubService.OnReconnected += HandleReconnected;
+        HubService.OnReconnecting += StateHasChanged;
         HubService.OnTopicChanged += HandleTopicChangedNotification;
         HubService.OnStreamChanged += HandleStreamChangedNotification;
         HubService.OnNewMessage += HandleNewMessageNotification;
@@ -1097,6 +1113,7 @@
     {
         HubService.OnStateChanged -= StateHasChanged;
         HubService.OnReconnected -= HandleReconnected;
+        HubService.OnReconnecting -= StateHasChanged;
         HubService.OnTopicChanged -= HandleTopicChangedNotification;
         HubService.OnStreamChanged -= HandleStreamChangedNotification;
         HubService.OnNewMessage -= HandleNewMessageNotification;

@@ -11,10 +11,12 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
     private HubConnection? _hubConnection;
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
+    public bool IsReconnecting => _hubConnection?.State == HubConnectionState.Reconnecting;
     public StoredTopic? CurrentTopic { get; private set; }
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;
+    public event Action? OnReconnecting;
     public event Func<TopicChangedNotification, Task>? OnTopicChanged;
     public event Func<StreamChangedNotification, Task>? OnStreamChanged;
     public event Func<NewMessageNotification, Task>? OnNewMessage;
@@ -32,11 +34,20 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
-            .WithAutomaticReconnect()
+            .WithAutomaticReconnect(new AggressiveRetryPolicy())
+            .WithServerTimeout(TimeSpan.FromSeconds(15))
+            .WithKeepAliveInterval(TimeSpan.FromSeconds(5))
             .Build();
 
         _hubConnection.Closed += _ =>
         {
+            OnStateChanged?.Invoke();
+            return Task.CompletedTask;
+        };
+
+        _hubConnection.Reconnecting += _ =>
+        {
+            OnReconnecting?.Invoke();
             OnStateChanged?.Invoke();
             return Task.CompletedTask;
         };
@@ -96,14 +107,15 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
             return false;
         }
 
-        var success =
-            await _hubConnection.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId,
-                topic.ThreadId);
-        if (success)
+        var success = await _hubConnection.InvokeAsync<bool>(
+            "StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId);
+        if (!success)
         {
-            CurrentTopic = topic;
-            OnStateChanged?.Invoke();
+            return success;
         }
+
+        CurrentTopic = topic;
+        OnStateChanged?.Invoke();
 
         return success;
     }
@@ -273,20 +285,11 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
         return Guid.NewGuid().ToString("N");
     }
 
-    /// <summary>
-    ///     Derives a deterministic ChatId from a TopicId.
-    ///     Each topic gets its own unique ChatId for proper message routing.
-    /// </summary>
     public static long GetChatIdForTopic(string topicId)
     {
         return GetDeterministicHash(topicId, seed: 0x1234);
     }
 
-    /// <summary>
-    ///     Derives a deterministic ThreadId from a TopicId.
-    ///     Used for conversation state persistence.
-    ///     Returns a value that fits in int (for ChatPrompt compatibility).
-    /// </summary>
     public static long GetThreadIdForTopic(string topicId)
     {
         return GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF; // Fit in positive int
@@ -309,3 +312,23 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
 }
 
 internal record AppConfig(string? AgentUrl);
+
+internal sealed class AggressiveRetryPolicy : IRetryPolicy
+{
+    private static readonly TimeSpan[] _retryDelays =
+    [
+        TimeSpan.Zero,
+        TimeSpan.FromSeconds(1),
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5)
+    ];
+
+    private static readonly TimeSpan _maxDelay = TimeSpan.FromSeconds(10);
+
+    public TimeSpan? NextRetryDelay(RetryContext retryContext)
+    {
+        // Never give up - always return a delay
+        var attempt = retryContext.PreviousRetryCount;
+        return attempt < _retryDelays.Length ? _retryDelays[attempt] : _maxDelay;
+    }
+}

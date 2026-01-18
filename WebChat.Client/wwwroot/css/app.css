@@ -1046,6 +1046,48 @@ html, body {
 }
 
 /* ===================================
+   Connection Status Banner
+   =================================== */
+
+.chat-container > .connection-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    animation: statusSlideDown 0.2s ease-out;
+}
+
+@keyframes statusSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.chat-container > .connection-status.reconnecting {
+    background: linear-gradient(90deg, var(--accent-subtle) 0%, var(--accent-light) 100%);
+    color: var(--accent);
+    border-bottom: 1px solid var(--accent);
+}
+
+.chat-container > .connection-status.reconnecting .status-icon {
+    animation: spin 1s linear infinite;
+}
+
+.chat-container > .connection-status.disconnected {
+    background: var(--error-bg);
+    color: var(--error);
+    border-bottom: 1px solid var(--error-border);
+}
+
+/* ===================================
    Input Area
    =================================== */
 
