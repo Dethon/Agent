@@ -136,7 +136,17 @@
 
     private int GetAssistantMessageCount(string topicId)
     {
-        return _messagesByTopic.GetValueOrDefault(topicId)?.Count(m => m.Role != "user") ?? 0;
+        var count = _messagesByTopic.GetValueOrDefault(topicId)?.Count(m => m.Role != "user") ?? 0;
+
+        // Also count streaming message if it has content
+        if (_streamingMessageByTopic.TryGetValue(topicId, out var streaming) &&
+            streaming is not null &&
+            !string.IsNullOrEmpty(streaming.Content))
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private int GetLastReadCount(string topicId)
@@ -602,7 +612,11 @@
 
             // Restore streaming state from buffer
             _streamingTopics.Add(topic.TopicId);
-            var messages = _messagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+            if (!_messagesByTopic.TryGetValue(topic.TopicId, out var messages))
+            {
+                messages = [];
+                _messagesByTopic[topic.TopicId] = messages;
+            }
 
             // Restore user prompt if not already in messages
             if (!string.IsNullOrEmpty(state.CurrentPrompt))
