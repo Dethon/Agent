@@ -35,13 +35,14 @@
 
     protected override bool ShouldRender()
     {
-        if (_shouldRender)
+        if (!_shouldRender)
         {
-            _shouldRender = false;
-            return true;
+            return false;
         }
 
-        return false;
+        _shouldRender = false;
+        return true;
+
     }
 
     protected override void OnParametersSet()
@@ -51,27 +52,29 @@
         var unreadHash = UnreadCounts.Count == 0 ? 0 : UnreadCounts.Sum(kvp => kvp.Key.GetHashCode() ^ kvp.Value);
         var streamingHash = StreamingTopics.Count == 0 ? 0 : StreamingTopics.Sum(s => s.GetHashCode());
 
-        if (topicsCount != _lastTopicsCount ||
-            selectedTopicId != _lastSelectedTopicId ||
-            SelectedAgentId != _lastSelectedAgentId ||
-            IsStreaming != _lastIsStreaming ||
-            unreadHash != _lastUnreadCountsHash ||
-            streamingHash != _lastStreamingTopicsHash)
+        if (topicsCount == _lastTopicsCount &&
+            selectedTopicId == _lastSelectedTopicId &&
+            SelectedAgentId == _lastSelectedAgentId &&
+            IsStreaming == _lastIsStreaming &&
+            unreadHash == _lastUnreadCountsHash &&
+            streamingHash == _lastStreamingTopicsHash)
         {
-            _lastTopicsCount = topicsCount;
-            _lastSelectedTopicId = selectedTopicId;
-            _lastSelectedAgentId = SelectedAgentId;
-            _lastIsStreaming = IsStreaming;
-            _lastUnreadCountsHash = unreadHash;
-            _lastStreamingTopicsHash = streamingHash;
-            _shouldRender = true;
+            return;
         }
+
+        _lastTopicsCount = topicsCount;
+        _lastSelectedTopicId = selectedTopicId;
+        _lastSelectedAgentId = SelectedAgentId;
+        _lastIsStreaming = IsStreaming;
+        _lastUnreadCountsHash = unreadHash;
+        _lastStreamingTopicsHash = streamingHash;
+        _shouldRender = true;
     }
 
     public void Dispose()
     {
-        // Clean up element references
-        _topicNameRefs.Clear();
+        _tooltipDelayCts?.Cancel();
+        _tooltipDelayCts?.Dispose();
     }
 
     private int GetUnreadCount(string topicId)
@@ -86,9 +89,10 @@
 
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
-    private readonly Dictionary<string, ElementReference> _topicNameRefs = new();
     public ElementReference DropdownRef { get; private set; }
     private bool _tooltipInitialized;
+    private CancellationTokenSource? _tooltipDelayCts;
+    private const int TooltipDelayMs = 400;
 
     private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
 
@@ -108,27 +112,32 @@
     private void ShowDeleteConfirm(string topicId)
     {
         _deleteConfirmTopicId = topicId;
+        _shouldRender = true;
     }
 
     private void CancelDelete()
     {
         _deleteConfirmTopicId = null;
+        _shouldRender = true;
     }
 
     private async Task ConfirmDelete(StoredTopic topic)
     {
         _deleteConfirmTopicId = null;
+        _shouldRender = true;
         await OnTopicDeleted.InvokeAsync(topic);
     }
 
     private void ToggleDropdown()
     {
         _dropdownOpen = !_dropdownOpen;
+        _shouldRender = true;
     }
 
     private async Task SelectAgent(string agentId)
     {
         _dropdownOpen = false;
+        _shouldRender = true;
         if (agentId != SelectedAgentId)
         {
             await OnAgentChanged.InvokeAsync(agentId);
@@ -138,6 +147,7 @@
     private void CloseDropdown()
     {
         _dropdownOpen = false;
+        _shouldRender = true;
     }
 
     private async Task EnsureTooltipInitialized()
@@ -149,28 +159,48 @@
         }
     }
 
-    private async Task ShowTooltip(string topicId, string text)
+    private async Task ShowTooltip(string text, MouseEventArgs e)
     {
-        if (_topicNameRefs.TryGetValue(topicId, out var elementRef))
+        // Cancel any pending tooltip
+        if (_tooltipDelayCts != null)
         {
-            try
+            await _tooltipDelayCts.CancelAsync();
+        }
+
+        _tooltipDelayCts = new CancellationTokenSource();
+        var token = _tooltipDelayCts.Token;
+
+        try
+        {
+            await Task.Delay(TooltipDelayMs, token);
+            if (token.IsCancellationRequested)
             {
-                var isTruncated = await Js.InvokeAsync<bool>("isTextTruncated", elementRef);
-                if (isTruncated)
-                {
-                    await EnsureTooltipInitialized();
-                    await Js.InvokeVoidAsync("topicTooltip.show", text, elementRef);
-                }
+                return;
             }
-            catch
-            {
-                // Silently ignore - tooltip is non-critical
-            }
+
+            await EnsureTooltipInitialized();
+            // ReSharper disable once MethodSupportsCancellation
+            await Js.InvokeVoidAsync("topicTooltip.show", text, e.ClientX, e.ClientY);
+        }
+        catch (TaskCanceledException)
+        {
+            // Expected when mouse leaves before delay completes
+        }
+        catch
+        {
+            // Silently ignore other errors - tooltip is non-critical
         }
     }
 
     private async Task HideTooltip()
     {
+        if (_tooltipDelayCts != null)
+        {
+            await _tooltipDelayCts.CancelAsync();
+        }
+
+        _tooltipDelayCts = null;
+
         if (_tooltipInitialized)
         {
             await Js.InvokeVoidAsync("topicTooltip.hide");
@@ -242,11 +272,11 @@
                 <div
                     class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
                      @onclick="() => HandleTopicClick(topic)"
-                     @onmouseenter="() => ShowTooltip(topic.TopicId, topic.Name)"
+                    @onmouseenter="e => ShowTooltip(topic.Name, e)"
                      @onmouseleave="HideTooltip">
                     <div class="topic-content">
                         <div class="topic-name-row">
-                            <div class="topic-name" @ref="_topicNameRefs[topic.TopicId]">@topic.Name</div>
+                            <div class="topic-name">@topic.Name</div>
                             @if (isStreaming)
                             {
                                 <div class="topic-streaming-indicator" title="Streaming...">
