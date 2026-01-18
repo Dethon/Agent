@@ -149,11 +149,10 @@
                 var isStreaming = IsTopicStreaming(topic.TopicId);
                 <div
                     class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
-                     @onclick="() => HandleTopicClick(topic)"
-                    data-tooltip="@topic.Name">
+                    @onclick="() => HandleTopicClick(topic)">
                     <div class="topic-content">
                         <div class="topic-name-row">
-                            <div class="topic-name">@topic.Name</div>
+                            <div class="topic-name" data-tooltip="@topic.Name">@topic.Name</div>
                             @if (isStreaming)
                             {
                                 <div class="topic-streaming-indicator" title="Streaming...">

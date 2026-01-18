@@ -174,10 +174,10 @@
             _selectedAgentId = _agents[0].Id;
         }
 
-        // Check for any active streams after page refresh
+        // Load history for all topics to compute unread counts, and resume any active streams
         foreach (var topic in _topics)
         {
-            _ = TryResumeStreamAsync(topic);
+            _ = LoadTopicHistoryAsync(topic);
         }
 
         StateHasChanged();
@@ -544,6 +544,23 @@
                 StateHasChanged();
             });
         }
+    }
+
+    private async Task LoadTopicHistoryAsync(StoredTopic topic)
+    {
+        if (!_messagesByTopic.ContainsKey(topic.TopicId))
+        {
+            var history = await HubService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            _messagesByTopic[topic.TopicId] = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        // Also try to resume any active streams
+        _ = TryResumeStreamAsync(topic);
     }
 
     private async Task TryResumeStreamAsync(StoredTopic topic)
