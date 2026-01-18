@@ -123,6 +123,7 @@
 
     private Dictionary<string, int> ComputedUnreadCounts =>
         _messagesByTopic
+            .Where(kvp => kvp.Key != _selectedTopic?.TopicId) // Selected topic is always "seen"
             .Where(kvp => kvp.Value.Count > _lastSeenMessageCountByTopic.GetValueOrDefault(kvp.Key))
             .ToDictionary(
                 kvp => kvp.Key,
@@ -216,6 +217,12 @@
         if (_selectedTopic?.TopicId == topic.TopicId)
         {
             return;
+        }
+
+        // Mark the old topic as seen before switching away
+        if (_selectedTopic is not null)
+        {
+            MarkTopicAsSeen(_selectedTopic.TopicId);
         }
 
         _selectedTopic = topic;

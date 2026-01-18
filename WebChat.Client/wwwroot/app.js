@@ -134,5 +134,16 @@ window.getBoundingClientRect = function (element) {
 
 window.isTextTruncated = function (element) {
     if (!element) return false;
-    return element.scrollWidth > element.clientWidth;
+    // Use canvas to measure actual text width - Range.getBoundingClientRect() gets clipped by overflow:hidden
+    const text = element.textContent || element.innerText;
+    if (!text) return false;
+
+    const style = window.getComputedStyle(element);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+    const textWidth = ctx.measureText(text).width;
+    const elementWidth = element.getBoundingClientRect().width;
+    return textWidth > elementWidth;
 };
