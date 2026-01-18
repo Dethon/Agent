@@ -67,7 +67,7 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         builder.Services
             .AddLogging()
             .AddCors()
-            .AddSignalR();
+            .AddSignalR(options => options.EnableDetailedErrors = true);
 
         // Add Redis connection
         builder.Services.AddSingleton(RedisFixture.Connection);

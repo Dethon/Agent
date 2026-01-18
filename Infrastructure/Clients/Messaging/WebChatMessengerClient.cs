@@ -52,6 +52,10 @@ public sealed class WebChatMessengerClient(
                     // StreamCompleteContent signals that this topic's agent turn is done
                     if (content is StreamCompleteContent)
                     {
+                        await streamManager.WriteMessageAsync(
+                            topicId,
+                            new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
+                            cancellationToken);
                         streamManager.CompleteStream(topicId);
                         _ = hubNotifier.NotifyStreamChangedAsync(
                             new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken);

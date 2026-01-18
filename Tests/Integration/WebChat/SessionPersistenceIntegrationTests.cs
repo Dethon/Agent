@@ -49,7 +49,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             null);
 
         // Act
-        await _connection.InvokeAsync("SaveTopic", topic);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
         var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
 
         // Assert
@@ -97,7 +97,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             DateTimeOffset.UtcNow,
             null);
 
-        await _connection.InvokeAsync("SaveTopic", topic);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
         await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
 
         // Act
@@ -191,7 +191,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             lastMessageAt);
 
         // Act
-        await _connection.InvokeAsync("SaveTopic", topic);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
         var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
 
         // Assert
@@ -293,7 +293,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             DateTimeOffset.UtcNow,
             null);
 
-        await _connection.InvokeAsync("SaveTopic", topic);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
         await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
 
         // Delete the topic (which ends the session)
