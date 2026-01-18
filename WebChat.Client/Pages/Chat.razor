@@ -15,7 +15,7 @@
                OnNewTopic="HandleNewTopic"
                OnAgentChanged="HandleAgentChanged"
                IsStreaming="@IsStreaming"
-               UnreadCounts="@_unreadCountsByTopic"
+               UnreadCounts="@ComputedUnreadCounts"
                StreamingTopics="@_streamingTopics"/>
 
     <div class="chat-container">
@@ -97,7 +97,7 @@
     private readonly Dictionary<string, ChatMessageModel?> _streamingMessageByTopic = new();
     private readonly HashSet<string> _streamingTopics = new();
     private readonly HashSet<string> _resumingTopics = new();
-    private readonly Dictionary<string, int> _unreadCountsByTopic = new();
+    private readonly Dictionary<string, int> _lastSeenMessageCountByTopic = new();
 
     // Auto-scroll tracking
     private ElementReference _messagesArea;
@@ -120,6 +120,13 @@
     private bool IsStreaming => _selectedTopic is not null && _streamingTopics.Contains(_selectedTopic.TopicId);
 
     private AgentInfo? SelectedAgent => _agents.FirstOrDefault(a => a.Id == _selectedAgentId);
+
+    private Dictionary<string, int> ComputedUnreadCounts =>
+        _messagesByTopic
+            .Where(kvp => kvp.Value.Count > _lastSeenMessageCountByTopic.GetValueOrDefault(kvp.Key))
+            .ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.Count - _lastSeenMessageCountByTopic.GetValueOrDefault(kvp.Key));
 
     private async Task SendSuggestion(string message)
     {
@@ -214,9 +221,6 @@
         _selectedTopic = topic;
         _selectedAgentId = topic.AgentId;
 
-        // Clear unread count when selecting topic
-        _unreadCountsByTopic.Remove(topic.TopicId);
-
         // Load messages if not already cached
         if (!_messagesByTopic.ContainsKey(topic.TopicId))
         {
@@ -229,11 +233,20 @@
             }).ToList();
         }
 
+        // Mark all current messages as seen
+        MarkTopicAsSeen(topic.TopicId);
+
         _shouldAutoScroll = true; // Scroll to bottom when switching topics
         StateHasChanged();
 
         // Subscribe to any active stream for this topic
         _ = TryResumeStreamAsync(topic);
+    }
+
+    private void MarkTopicAsSeen(string topicId)
+    {
+        var messageCount = _messagesByTopic.GetValueOrDefault(topicId)?.Count ?? 0;
+        _lastSeenMessageCountByTopic[topicId] = messageCount;
     }
 
     private async Task HandleTopicDeleted(StoredTopic topic)
@@ -378,7 +391,6 @@
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
                 {
                     messages.Add(streamingMessage);
-                    IncrementUnreadIfNotSelected(topic.TopicId);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
                     needsReasoningSeparator = false;
@@ -441,7 +453,6 @@
             {
                 // Clone to ensure different reference from streaming display
                 messages.Add(streamingMessage with { });
-                IncrementUnreadIfNotSelected(topic.TopicId);
             }
 
             topic.LastMessageAt = DateTime.UtcNow;
@@ -455,7 +466,6 @@
                 Content = $"Error: {ex.Message}",
                 IsError = true
             });
-            IncrementUnreadIfNotSelected(topic.TopicId);
         }
         finally
         {
@@ -730,14 +740,6 @@
                !string.IsNullOrEmpty(msg.Reasoning);
     }
 
-    private void IncrementUnreadIfNotSelected(string topicId)
-    {
-        if (_selectedTopic?.TopicId != topicId)
-        {
-            _unreadCountsByTopic[topicId] = _unreadCountsByTopic.GetValueOrDefault(topicId) + 1;
-        }
-    }
-
     private async Task ResumeStreamResponseAsync(
         StoredTopic topic,
         ChatMessageModel streamingMessage,
@@ -781,7 +783,6 @@
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
                 {
                     messages.Add(streamingMessage);
-                    IncrementUnreadIfNotSelected(topic.TopicId);
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     _streamingMessageByTopic[topic.TopicId] = streamingMessage;
                     needsReasoningSeparator = false;
@@ -848,7 +849,6 @@
             if (HasContent(streamingMessage))
             {
                 messages.Add(streamingMessage with { });
-                IncrementUnreadIfNotSelected(topic.TopicId);
             }
 
             // Only update LastMessageAt if we actually received new content from the stream
@@ -866,7 +866,6 @@
                 Content = $"Error resuming stream: {ex.Message}",
                 IsError = true
             });
-            IncrementUnreadIfNotSelected(topic.TopicId);
         }
         finally
         {
