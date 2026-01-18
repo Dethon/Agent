@@ -208,26 +208,6 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
         }
     }
 
-    public async Task<bool> IsProcessingAsync(string topicId)
-    {
-        if (_hubConnection is null)
-        {
-            return false;
-        }
-
-        return await _hubConnection.InvokeAsync<bool>("IsProcessing", topicId);
-    }
-
-    public async Task CancelAsync()
-    {
-        if (_hubConnection is null || CurrentTopic is null)
-        {
-            return;
-        }
-
-        await _hubConnection.InvokeAsync("CancelTopic", CurrentTopic.TopicId);
-    }
-
     public async Task CancelTopicAsync(string topicId)
     {
         if (_hubConnection is null)
@@ -267,17 +247,7 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
             return false;
         }
 
-        return await _hubConnection.InvokeAsync<bool>("RespondToApproval", approvalId, result);
-    }
-
-    public async Task<bool> IsApprovalPendingAsync(string approvalId)
-    {
-        if (_hubConnection is null)
-        {
-            return false;
-        }
-
-        return await _hubConnection.InvokeAsync<bool>("IsApprovalPending", approvalId);
+        return await _hubConnection.InvokeAsync<bool>("RespondToApprovalAsync", approvalId, result);
     }
 
     public async Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopicAsync(string topicId)

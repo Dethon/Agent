@@ -126,7 +126,7 @@ public sealed class ChatHub(
 
         var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, "web-user", cancellationToken);
 
-        await foreach (var msg in responses.IgnoreCancellation())
+        await foreach (var msg in responses.IgnoreCancellation(ct: cancellationToken))
         {
             yield return msg;
             if (msg.IsComplete || msg.Error is not null)
@@ -164,9 +164,9 @@ public sealed class ChatHub(
             new TopicChangedNotification(changeType, topic.TopicId, topic));
     }
 
-    public bool RespondToApproval(string approvalId, ToolApprovalResult result)
+    public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
-        return messengerClient.RespondToApproval(approvalId, result);
+        return messengerClient.RespondToApprovalAsync(approvalId, result);
     }
 
     public bool IsApprovalPending(string approvalId)

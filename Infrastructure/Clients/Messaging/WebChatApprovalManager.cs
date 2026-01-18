@@ -4,6 +4,7 @@ using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
@@ -78,11 +79,12 @@ public sealed class WebChatApprovalManager(
 
         // Also broadcast as notification to ensure all browsers receive it
         // (handles race condition where browser subscribes after this message is sent)
-        _ = notifier.NotifyToolCallsAsync(
-            new ToolCallsNotification(topicId, formattedToolCalls), cancellationToken);
+        await notifier.NotifyToolCallsAsync(
+                new ToolCallsNotification(topicId, formattedToolCalls), cancellationToken)
+            .SafeAwaitAsync(logger, "Failed to notify tool calls for topic {TopicId}", topicId);
     }
 
-    public bool RespondToApproval(string approvalId, ToolApprovalResult result)
+    public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
         if (!_pendingApprovals.TryRemove(approvalId, out var context))
         {
@@ -96,8 +98,9 @@ public sealed class WebChatApprovalManager(
             : null;
 
         // Broadcast to all clients so other browsers can dismiss their approval modals and show tool calls
-        _ = notifier.NotifyApprovalResolvedAsync(
-            new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls));
+        await notifier.NotifyApprovalResolvedAsync(
+                new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls))
+            .SafeAwaitAsync(logger, "Failed to notify approval resolved for topic {TopicId}", context.TopicId);
 
         var success = context.TrySetResult(result);
         context.Dispose();

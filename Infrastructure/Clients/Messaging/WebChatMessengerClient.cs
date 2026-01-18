@@ -4,6 +4,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Infrastructure.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -57,10 +58,12 @@ public sealed class WebChatMessengerClient(
                             new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
                             cancellationToken);
                         streamManager.CompleteStream(topicId);
-                        _ = hubNotifier.NotifyStreamChangedAsync(
-                            new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken);
-                        _ = hubNotifier.NotifyNewMessageAsync(
-                            new NewMessageNotification(topicId), cancellationToken); // Count computed client-side
+                        await hubNotifier.NotifyStreamChangedAsync(
+                                new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
+                            .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+                        await hubNotifier.NotifyNewMessageAsync(
+                                new NewMessageNotification(topicId), cancellationToken)
+                            .SafeAwaitAsync(logger, "Failed to notify new message for topic {TopicId}", topicId);
                         continue;
                     }
 
@@ -142,22 +145,23 @@ public sealed class WebChatMessengerClient(
         return sessionManager.GetTopicIdByChatId(chatId);
     }
 
-    public IAsyncEnumerable<ChatStreamMessage> EnqueuePromptAndGetResponses(
+    public async IAsyncEnumerable<ChatStreamMessage> EnqueuePromptAndGetResponses(
         string topicId,
         string message,
         string sender,
-        CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
         {
             logger.LogWarning("EnqueuePromptAndGetResponses: session not found for topicId={TopicId}", topicId);
-            return AsyncEnumerable.Empty<ChatStreamMessage>();
+            yield break;
         }
 
         var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, cancellationToken);
 
-        _ = hubNotifier.NotifyStreamChangedAsync(
-            new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken);
+        await hubNotifier.NotifyStreamChangedAsync(
+                new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
+            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);
 
@@ -172,7 +176,11 @@ public sealed class WebChatMessengerClient(
         };
 
         _promptChannel.Writer.TryWrite(prompt);
-        return broadcastChannel.Subscribe().ReadAllAsync(linkedToken);
+
+        await foreach (var msg in broadcastChannel.Subscribe().ReadAllAsync(linkedToken))
+        {
+            yield return msg;
+        }
     }
 
     public bool IsProcessing(string topicId)
@@ -211,9 +219,9 @@ public sealed class WebChatMessengerClient(
         return approvalManager.GetPendingApprovalForTopic(topicId);
     }
 
-    public bool RespondToApproval(string approvalId, ToolApprovalResult result)
+    public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
-        return approvalManager.RespondToApproval(approvalId, result);
+        return approvalManager.RespondToApprovalAsync(approvalId, result);
     }
 
     public void Dispose()
