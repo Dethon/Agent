@@ -19,6 +19,20 @@
 
     [Parameter] public bool IsStreaming { get; set; }
 
+    [Parameter] public Dictionary<string, int> UnreadCounts { get; set; } = new();
+
+    [Parameter] public HashSet<string> StreamingTopics { get; set; } = new();
+
+    private int GetUnreadCount(string topicId)
+    {
+        return UnreadCounts.GetValueOrDefault(topicId);
+    }
+
+    private bool IsTopicStreaming(string topicId)
+    {
+        return StreamingTopics.Contains(topicId);
+    }
+
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
     private string? _tooltipText;
@@ -171,13 +185,30 @@
         {
             @foreach (var topic in filteredTopics)
             {
-                <div class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "")"
+                var unreadCount = GetUnreadCount(topic.TopicId);
+                var isStreaming = IsTopicStreaming(topic.TopicId);
+                <div
+                    class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
                      @onclick="() => HandleTopicClick(topic)"
                      @onmouseenter="() => ShowTooltip(topic.TopicId, topic.Name)"
                      @onmousemove="UpdateTooltipPosition"
                      @onmouseleave="HideTooltip">
                     <div class="topic-content">
-                        <div class="topic-name" @ref="_topicNameRefs[topic.TopicId]">@topic.Name</div>
+                        <div class="topic-name-row">
+                            <div class="topic-name" @ref="_topicNameRefs[topic.TopicId]">@topic.Name</div>
+                            @if (isStreaming)
+                            {
+                                <div class="topic-streaming-indicator" title="Streaming...">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                            }
+                            @if (unreadCount > 0)
+                            {
+                                <div class="topic-unread-badge">@(unreadCount > 99 ? "99+" : unreadCount)</div>
+                            }
+                        </div>
                         <div class="topic-meta">
                             @(topic.LastMessageAt?.ToLocalTime().ToString("MMM d, h:mm tt") ?? topic.CreatedAt.ToLocalTime().ToString("MMM d, h:mm tt"))
                         </div>
