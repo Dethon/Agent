@@ -128,7 +128,6 @@
                 .Where(t => t.AgentId == SelectedAgentId)
                 .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
                 .ToList();
-            Console.WriteLine($"[TopicList] Total topics: {Topics.Count}, Filtered for agent '{SelectedAgentId}': {filteredTopics.Count}");
         }
         @if (filteredTopics.Count == 0)
         {
