@@ -12,6 +12,7 @@ public class StoredTopic
     public string Name { get; set; } = "New Chat";
     public DateTime CreatedAt { get; set; }
     public DateTime? LastMessageAt { get; set; }
+    public int LastReadMessageCount { get; set; }
 
     public static StoredTopic FromMetadata(TopicMetadata metadata)
     {
@@ -24,7 +25,8 @@ public class StoredTopic
             AgentId = metadata.AgentId,
             Name = metadata.Name,
             CreatedAt = metadata.CreatedAt.UtcDateTime,
-            LastMessageAt = metadata.LastMessageAt?.UtcDateTime
+            LastMessageAt = metadata.LastMessageAt?.UtcDateTime,
+            LastReadMessageCount = metadata.LastReadMessageCount
         };
     }
 
@@ -37,6 +39,7 @@ public class StoredTopic
             AgentId,
             Name,
             new DateTimeOffset(CreatedAt, TimeSpan.Zero),
-            LastMessageAt.HasValue ? new DateTimeOffset(LastMessageAt.Value, TimeSpan.Zero) : null);
+            LastMessageAt.HasValue ? new DateTimeOffset(LastMessageAt.Value, TimeSpan.Zero) : null,
+            LastReadMessageCount);
     }
 }

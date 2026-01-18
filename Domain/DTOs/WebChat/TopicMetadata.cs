@@ -7,4 +7,5 @@ public record TopicMetadata(
     string AgentId,
     string Name,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? LastMessageAt);
+    DateTimeOffset? LastMessageAt,
+    int LastReadMessageCount = 0);
