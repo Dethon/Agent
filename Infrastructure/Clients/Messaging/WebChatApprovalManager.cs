@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging;
@@ -9,6 +10,7 @@ namespace Infrastructure.Clients.Messaging;
 
 public sealed class WebChatApprovalManager(
     WebChatStreamManager streamManager,
+    INotifier notifier,
     ILogger<WebChatApprovalManager> logger)
 {
     private readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
@@ -65,12 +67,19 @@ public sealed class WebChatApprovalManager(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
+        var formattedToolCalls = FormatToolCalls(requests);
+
         var message = new ChatStreamMessage
         {
-            ToolCalls = FormatToolCalls(requests)
+            ToolCalls = formattedToolCalls
         };
 
         await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
+
+        // Also broadcast as notification to ensure all browsers receive it
+        // (handles race condition where browser subscribes after this message is sent)
+        _ = notifier.NotifyToolCallsAsync(
+            new ToolCallsNotification(topicId, formattedToolCalls), cancellationToken);
     }
 
     public bool RespondToApproval(string approvalId, ToolApprovalResult result)
@@ -80,6 +89,15 @@ public sealed class WebChatApprovalManager(
             logger.LogWarning("RespondToApproval: approvalId {ApprovalId} not found or already processed", approvalId);
             return false;
         }
+
+        // Include formatted tool calls in notification if approved, so all browsers can display them
+        var toolCalls = result is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember
+            ? FormatToolCalls(context.Requests)
+            : null;
+
+        // Broadcast to all clients so other browsers can dismiss their approval modals and show tool calls
+        _ = notifier.NotifyApprovalResolvedAsync(
+            new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls));
 
         var success = context.TrySetResult(result);
         context.Dispose();

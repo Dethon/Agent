@@ -20,6 +20,8 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
     public event Func<TopicChangedNotification, Task>? OnTopicChanged;
     public event Func<StreamChangedNotification, Task>? OnStreamChanged;
     public event Func<NewMessageNotification, Task>? OnNewMessage;
+    public event Func<ApprovalResolvedNotification, Task>? OnApprovalResolved;
+    public event Func<ToolCallsNotification, Task>? OnToolCalls;
 
     public async Task ConnectAsync()
     {
@@ -83,6 +85,22 @@ public sealed class ChatHubService(HttpClient httpClient) : IAsyncDisposable
             if (OnNewMessage is not null)
             {
                 await OnNewMessage.Invoke(notification);
+            }
+        });
+
+        _hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", async notification =>
+        {
+            if (OnApprovalResolved is not null)
+            {
+                await OnApprovalResolved.Invoke(notification);
+            }
+        });
+
+        _hubConnection.On<ToolCallsNotification>("OnToolCalls", async notification =>
+        {
+            if (OnToolCalls is not null)
+            {
+                await OnToolCalls.Invoke(notification);
             }
         });
 

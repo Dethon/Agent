@@ -25,3 +25,12 @@ public record StreamChangedNotification(
 
 public record NewMessageNotification(
     string TopicId);
+
+public record ApprovalResolvedNotification(
+    string TopicId,
+    string ApprovalId,
+    string? ToolCalls = null);
+
+public record ToolCallsNotification(
+    string TopicId,
+    string ToolCalls);

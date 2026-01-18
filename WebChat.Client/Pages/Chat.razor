@@ -191,6 +191,8 @@
         HubService.OnTopicChanged += HandleTopicChangedNotification;
         HubService.OnStreamChanged += HandleStreamChangedNotification;
         HubService.OnNewMessage += HandleNewMessageNotification;
+        HubService.OnApprovalResolved += HandleApprovalResolvedNotification;
+        HubService.OnToolCalls += HandleToolCallsNotification;
 
         await HubService.ConnectAsync();
         _agents = (await HubService.GetAgentsAsync()).ToList();
@@ -1011,6 +1013,64 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleApprovalResolvedNotification(ApprovalResolvedNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            // Dismiss modal if this is the current approval (resolved by another browser session)
+            if (_currentApprovalRequest?.ApprovalId == notification.ApprovalId)
+            {
+                _currentApprovalRequest = null;
+            }
+
+            // Add tool calls to the streaming message if present (for browsers that didn't initiate the approval)
+            if (!string.IsNullOrEmpty(notification.ToolCalls))
+            {
+                AddToolCallsToStreamingMessage(notification.TopicId, notification.ToolCalls);
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private Task HandleToolCallsNotification(ToolCallsNotification notification)
+    {
+        return InvokeAsync(() =>
+        {
+            AddToolCallsToStreamingMessage(notification.TopicId, notification.ToolCalls);
+            StateHasChanged();
+        });
+    }
+
+    private void AddToolCallsToStreamingMessage(string topicId, string toolCalls)
+    {
+        if (!_streamingMessageByTopic.TryGetValue(topicId, out var streamingMessage))
+        {
+            // Create a streaming message if one doesn't exist
+            streamingMessage = new ChatMessageModel { Role = "assistant" };
+            _streamingMessageByTopic[topicId] = streamingMessage;
+            _streamingTopics.Add(topicId);
+        }
+
+        if (streamingMessage is null)
+        {
+            return;
+        }
+
+        // Avoid duplicates - check if these exact tool calls are already present
+        if (streamingMessage.ToolCalls?.Contains(toolCalls) == true)
+        {
+            return;
+        }
+
+        _streamingMessageByTopic[topicId] = streamingMessage with
+        {
+            ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
+                ? toolCalls
+                : streamingMessage.ToolCalls + "\n" + toolCalls
+        };
+    }
+
     private Task HandleTopicChangedNotification(TopicChangedNotification notification)
     {
         return InvokeAsync(() =>
@@ -1062,13 +1122,10 @@
             switch (notification.ChangeType)
             {
                 case StreamChangeType.Started:
-                    _streamingTopics.Add(notification.TopicId);
-                    if (!_streamingMessageByTopic.ContainsKey(notification.TopicId))
-                    {
-                        _streamingMessageByTopic[notification.TopicId] = new ChatMessageModel { Role = "assistant" };
-                    }
-
                     // Try to resume the stream if we're not already subscribed
+                    // Note: Don't add to _streamingTopics here - TryResumeStreamAsync will do it
+                    // after successfully subscribing. Adding here would cause TryResumeStreamAsync
+                    // to return early thinking we're already subscribed.
                     var topic = _topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
                     if (topic is not null && !_resumingTopics.Contains(notification.TopicId))
                     {
@@ -1115,6 +1172,8 @@
         HubService.OnTopicChanged -= HandleTopicChangedNotification;
         HubService.OnStreamChanged -= HandleStreamChangedNotification;
         HubService.OnNewMessage -= HandleNewMessageNotification;
+        HubService.OnApprovalResolved -= HandleApprovalResolvedNotification;
+        HubService.OnToolCalls -= HandleToolCallsNotification;
     }
 
 }

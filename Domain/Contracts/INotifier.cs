@@ -10,4 +10,10 @@ public interface INotifier
         CancellationToken cancellationToken = default);
 
     Task NotifyNewMessageAsync(NewMessageNotification notification, CancellationToken cancellationToken = default);
+
+    Task NotifyApprovalResolvedAsync(ApprovalResolvedNotification notification,
+        CancellationToken cancellationToken = default);
+
+    Task NotifyToolCallsAsync(ToolCallsNotification notification,
+        CancellationToken cancellationToken = default);
 }

@@ -26,4 +26,18 @@ public sealed class Notifier(IHubContext<ChatHub> hubContext) : INotifier
     {
         await hubContext.Clients.All.SendAsync("OnNewMessage", notification, cancellationToken);
     }
+
+    public async Task NotifyApprovalResolvedAsync(
+        ApprovalResolvedNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        await hubContext.Clients.All.SendAsync("OnApprovalResolved", notification, cancellationToken);
+    }
+
+    public async Task NotifyToolCallsAsync(
+        ToolCallsNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        await hubContext.Clients.All.SendAsync("OnToolCalls", notification, cancellationToken);
+    }
 }
