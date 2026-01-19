@@ -1,7 +1,7 @@
 # Requirements: WebChat Stack Refactoring
 
 **Defined:** 2026-01-19
-**Core Value:** State flows in one direction — down from stores, up via events
+**Core Value:** State flows in one direction - down from stores, up via events
 
 ## v1 Requirements
 
@@ -11,7 +11,7 @@ Requirements for the refactoring. Each maps to roadmap phases.
 
 - [ ] **STATE-01**: Consolidated state stores replace scattered state across ChatStateManager, StreamingCoordinator, StreamResumeService
 - [ ] **STATE-02**: State represented as immutable C# record types with structural equality
-- [ ] **STATE-03**: Action → Reducer → State → UI unidirectional flow pattern implemented
+- [ ] **STATE-03**: Action -> Reducer -> State -> UI unidirectional flow pattern implemented
 - [ ] **STATE-04**: State selectors with memoization for derived state
 - [ ] **STATE-05**: StoreSubscriberComponent base class for components that subscribe to state
 
@@ -25,9 +25,9 @@ Requirements for the refactoring. Each maps to roadmap phases.
 
 ### Streaming Performance
 
-- [ ] **PERF-01**: Selective re-rendering — streaming state notifications separate from topic state
+- [ ] **PERF-01**: Selective re-rendering - streaming state notifications separate from topic state
 - [ ] **PERF-02**: Preserved 50ms throttled rendering to prevent UI freeze during streaming
-- [ ] **PERF-03**: Thread-safe state mutations — all state access wrapped in InvokeAsync
+- [ ] **PERF-03**: Thread-safe state mutations - all state access wrapped in InvokeAsync
 
 ### SignalR Integration
 
@@ -87,37 +87,37 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STATE-01 | TBD | Pending |
-| STATE-02 | TBD | Pending |
-| STATE-03 | TBD | Pending |
-| STATE-04 | TBD | Pending |
-| STATE-05 | TBD | Pending |
-| SLICE-01 | TBD | Pending |
-| SLICE-02 | TBD | Pending |
-| SLICE-03 | TBD | Pending |
-| SLICE-04 | TBD | Pending |
-| SLICE-05 | TBD | Pending |
-| PERF-01 | TBD | Pending |
-| PERF-02 | TBD | Pending |
-| PERF-03 | TBD | Pending |
-| HUB-01 | TBD | Pending |
-| HUB-02 | TBD | Pending |
-| HUB-03 | TBD | Pending |
-| COMP-01 | TBD | Pending |
-| COMP-02 | TBD | Pending |
-| COMP-03 | TBD | Pending |
-| ARCH-01 | TBD | Pending |
-| ARCH-02 | TBD | Pending |
-| ARCH-03 | TBD | Pending |
-| CLEAN-01 | TBD | Pending |
-| CLEAN-02 | TBD | Pending |
-| CLEAN-03 | TBD | Pending |
+| STATE-01 | Phase 1 | Pending |
+| STATE-02 | Phase 1 | Pending |
+| STATE-03 | Phase 1 | Pending |
+| STATE-04 | Phase 1 | Pending |
+| STATE-05 | Phase 1 | Pending |
+| SLICE-01 | Phase 2 | Pending |
+| SLICE-02 | Phase 2 | Pending |
+| SLICE-03 | Phase 2 | Pending |
+| SLICE-04 | Phase 2 | Pending |
+| SLICE-05 | Phase 2 | Pending |
+| PERF-01 | Phase 3 | Pending |
+| PERF-02 | Phase 3 | Pending |
+| PERF-03 | Phase 3 | Pending |
+| HUB-01 | Phase 4 | Pending |
+| HUB-02 | Phase 4 | Pending |
+| HUB-03 | Phase 4 | Pending |
+| COMP-01 | Phase 5 | Pending |
+| COMP-02 | Phase 5 | Pending |
+| COMP-03 | Phase 5 | Pending |
+| ARCH-01 | Phase 6 | Pending |
+| ARCH-02 | Phase 6 | Pending |
+| ARCH-03 | Phase 6 | Pending |
+| CLEAN-01 | Phase 7 | Pending |
+| CLEAN-02 | Phase 7 | Pending |
+| CLEAN-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 25 total
-- Mapped to phases: 0
-- Unmapped: 25 ⚠️
+- Mapped to phases: 25
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-19*
-*Last updated: 2026-01-19 after initial definition*
+*Last updated: 2026-01-19 after roadmap creation*
