@@ -1,5 +1,5 @@
 using Domain.DTOs.WebChat;
-using WebChat.Client.Services;
+using WebChat.Client.Services.Utilities;
 
 namespace WebChat.Client.Models;
 
@@ -16,12 +16,11 @@ public class StoredTopic
 
     public static StoredTopic FromMetadata(TopicMetadata metadata)
     {
-        // Always derive ChatId and ThreadId from TopicId for consistency
         return new StoredTopic
         {
             TopicId = metadata.TopicId,
-            ChatId = ChatHubService.GetChatIdForTopic(metadata.TopicId),
-            ThreadId = ChatHubService.GetThreadIdForTopic(metadata.TopicId),
+            ChatId = TopicIdGenerator.GetChatIdForTopic(metadata.TopicId),
+            ThreadId = TopicIdGenerator.GetThreadIdForTopic(metadata.TopicId),
             AgentId = metadata.AgentId,
             Name = metadata.Name,
             CreatedAt = metadata.CreatedAt.UtcDateTime,

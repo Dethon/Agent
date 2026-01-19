@@ -1,0 +1,320 @@
+@page "/"
+@inject IChatConnectionService ConnectionService
+@inject IChatSessionService SessionService
+@inject IChatStateManager StateManager
+@inject IAgentService AgentService
+@inject ITopicService TopicService
+@inject IChatMessagingService MessagingService
+@inject IStreamingCoordinator StreamingCoordinator
+@inject StreamResumeService StreamResumeService
+@inject SignalREventSubscriber EventSubscriber
+@inject ILocalStorageService LocalStorage
+@using WebChat.Client.Contracts
+@using WebChat.Client.Services.Streaming
+@using WebChat.Client.Services.Utilities
+@implements IDisposable
+
+<ApprovalModal ApprovalRequest="@StateManager.CurrentApprovalRequest" OnResponded="HandleApprovalResponded"/>
+
+<div class="chat-layout">
+    <TopicList Topics="@StateManager.Topics.ToList()"
+               SelectedTopic="@StateManager.SelectedTopic"
+               Agents="@StateManager.Agents.ToList()"
+               SelectedAgentId="@StateManager.SelectedAgentId"
+               OnTopicSelected="HandleTopicSelected"
+               OnTopicDeleted="HandleTopicDeleted"
+               OnNewTopic="HandleNewTopic"
+               OnAgentChanged="HandleAgentChanged"
+               IsStreaming="@StateManager.IsCurrentTopicStreaming"
+               UnreadCounts="@StateManager.UnreadCounts.ToDictionary()"
+               StreamingTopics="@StateManager.StreamingTopics.ToHashSet()"/>
+
+    <div class="chat-container">
+        <MessageList @ref="_messageList"
+                     Messages="@StateManager.CurrentMessages"
+                     StreamingMessage="@StateManager.CurrentStreamingMessage"
+                     IsStreaming="@StateManager.IsCurrentTopicStreaming"
+                     SelectedAgent="@SelectedAgent"
+                     OnSuggestionClicked="SendSuggestion"/>
+
+        <ConnectionStatus IsConnected="@ConnectionService.IsConnected"
+                          IsReconnecting="@ConnectionService.IsReconnecting"/>
+
+        <div class="input-area">
+            <ChatInput OnSend="HandleSend"
+                       OnCancel="HandleCancel"
+                       IsStreaming="@StateManager.IsCurrentTopicStreaming"
+                       Disabled="@(string.IsNullOrEmpty(StateManager.SelectedAgentId) || !ConnectionService.IsConnected)"/>
+        </div>
+    </div>
+</div>
+
+@code {
+    private MessageList? _messageList;
+    private Action? _stateChangedHandler;
+
+    private AgentInfo? SelectedAgent => StateManager.Agents.FirstOrDefault(a => a.Id == StateManager.SelectedAgentId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stateChangedHandler = () => InvokeAsync(StateHasChanged);
+        StateManager.OnStateChanged += _stateChangedHandler;
+        ConnectionService.OnStateChanged += StateHasChanged;
+        ConnectionService.OnReconnected += HandleReconnected;
+        ConnectionService.OnReconnecting += StateHasChanged;
+
+        await ConnectionService.ConnectAsync();
+        EventSubscriber.Subscribe();
+        StreamResumeService.SetRenderCallback(InvokeRender);
+
+        var agents = await AgentService.GetAgentsAsync();
+        StateManager.SetAgents(agents);
+
+        if (agents.Count > 0)
+        {
+            var savedAgentId = await LocalStorage.GetAsync("selectedAgentId");
+            var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
+            var agentToSelect = savedAgent ?? agents[0];
+            StateManager.SelectAgent(agentToSelect.Id);
+
+            if (savedAgent is null)
+            {
+                await LocalStorage.SetAsync("selectedAgentId", agentToSelect.Id);
+            }
+        }
+
+        var serverTopics = await TopicService.GetAllTopicsAsync();
+        foreach (var topicMetadata in serverTopics)
+        {
+            var topic = StoredTopic.FromMetadata(topicMetadata);
+            StateManager.AddTopic(topic);
+            _ = LoadTopicHistoryAsync(topic);
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task InvokeRender()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (_messageList is not null)
+            {
+                await _messageList.CheckAndUpdateAutoScroll();
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task HandleReconnected()
+    {
+        if (StateManager.SelectedTopic is not null)
+        {
+            await SessionService.StartSessionAsync(StateManager.SelectedTopic);
+        }
+
+        foreach (var topic in StateManager.Topics)
+        {
+            _ = StreamResumeService.TryResumeStreamAsync(topic);
+        }
+    }
+
+    private async Task HandleAgentChanged(string agentId)
+    {
+        if (StateManager.SelectedAgentId == agentId)
+        {
+            return;
+        }
+
+        StateManager.SelectAgent(agentId);
+        SessionService.ClearSession();
+        await LocalStorage.SetAsync("selectedAgentId", agentId);
+    }
+
+    private async Task HandleTopicSelected(StoredTopic topic)
+    {
+        if (StateManager.SelectedTopic?.TopicId == topic.TopicId)
+        {
+            return;
+        }
+
+        if (StateManager.SelectedTopic is not null)
+        {
+            await MarkTopicAsSeenAsync(StateManager.SelectedTopic.TopicId);
+        }
+
+        StateManager.SelectTopic(topic);
+
+        if (!StateManager.HasMessagesForTopic(topic.TopicId))
+        {
+            await SessionService.StartSessionAsync(topic);
+            var history = await TopicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            var messages = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+            StateManager.SetMessagesForTopic(topic.TopicId, messages);
+        }
+
+        await MarkTopicAsSeenAsync(topic.TopicId);
+        _messageList?.SetShouldAutoScroll(true);
+        StateHasChanged();
+
+        _ = StreamResumeService.TryResumeStreamAsync(topic);
+    }
+
+    private async Task MarkTopicAsSeenAsync(string topicId)
+    {
+        var assistantCount = StateManager.GetAssistantMessageCount(topicId);
+        var topic = StateManager.GetTopicById(topicId);
+        var previousCount = topic?.LastReadMessageCount ?? 0;
+
+        StateManager.MarkTopicAsSeen(topicId, assistantCount);
+
+        if (topic is not null && previousCount != assistantCount)
+        {
+            await TopicService.SaveTopicAsync(topic.ToMetadata());
+        }
+    }
+
+    private async Task HandleTopicDeleted(StoredTopic topic)
+    {
+        if (StateManager.IsTopicStreaming(topic.TopicId))
+        {
+            await MessagingService.CancelTopicAsync(topic.TopicId);
+            StateManager.StopStreaming(topic.TopicId);
+        }
+
+        await TopicService.DeleteTopicAsync(topic.TopicId, topic.ChatId, topic.ThreadId);
+        StateManager.RemoveTopic(topic.TopicId);
+
+        if (StateManager.SelectedTopic?.TopicId == topic.TopicId)
+        {
+            StateManager.SelectTopic(null);
+            StateManager.SetApprovalRequest(null);
+        }
+    }
+
+    private Task HandleNewTopic()
+    {
+        StateManager.SelectTopic(null);
+        SessionService.ClearSession();
+        return Task.CompletedTask;
+    }
+
+    private async Task SendSuggestion(string message)
+    {
+        if (!string.IsNullOrEmpty(StateManager.SelectedAgentId) && ConnectionService.IsConnected)
+        {
+            await HandleSend(message);
+        }
+    }
+
+    private async Task HandleSend(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || StateManager.SelectedAgentId is null)
+        {
+            return;
+        }
+
+        StoredTopic topic;
+        if (StateManager.SelectedTopic is null)
+        {
+            var topicName = message.Length > 50 ? message[..50] + "..." : message;
+            var topicId = TopicIdGenerator.GenerateTopicId();
+            topic = new StoredTopic
+            {
+                TopicId = topicId,
+                ChatId = TopicIdGenerator.GetChatIdForTopic(topicId),
+                ThreadId = TopicIdGenerator.GetThreadIdForTopic(topicId),
+                AgentId = StateManager.SelectedAgentId,
+                Name = topicName,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var success = await SessionService.StartSessionAsync(topic);
+            if (!success)
+            {
+                return;
+            }
+
+            StateManager.SelectTopic(topic);
+            StateManager.AddTopic(topic);
+            StateManager.SetMessagesForTopic(topic.TopicId, []);
+            await TopicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+        }
+        else
+        {
+            topic = StateManager.SelectedTopic;
+            if (SessionService.CurrentTopic?.TopicId != topic.TopicId)
+            {
+                await SessionService.StartSessionAsync(topic);
+            }
+        }
+
+        var existingStreamingMessage = StateManager.GetStreamingMessageForTopic(topic.TopicId);
+        if (existingStreamingMessage is not null && existingStreamingMessage.HasContent)
+        {
+            StateManager.AddMessage(topic.TopicId, existingStreamingMessage with { });
+        }
+
+        StateManager.AddMessage(topic.TopicId, new ChatMessageModel
+        {
+            Role = "user",
+            Content = message
+        });
+
+        StateManager.StartStreaming(topic.TopicId);
+        _messageList?.SetShouldAutoScroll(true);
+        StateHasChanged();
+
+        _ = StreamingCoordinator.StreamResponseAsync(topic, message, InvokeRender);
+    }
+
+    private async Task HandleCancel()
+    {
+        if (StateManager.SelectedTopic is not null)
+        {
+            await MessagingService.CancelTopicAsync(StateManager.SelectedTopic.TopicId);
+            StateManager.StopStreaming(StateManager.SelectedTopic.TopicId);
+        }
+    }
+
+    private Task HandleApprovalResponded()
+    {
+        StateManager.SetApprovalRequest(null);
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadTopicHistoryAsync(StoredTopic topic)
+    {
+        if (!StateManager.HasMessagesForTopic(topic.TopicId))
+        {
+            var history = await TopicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            var messages = history.Select(h => new ChatMessageModel
+            {
+                Role = h.Role,
+                Content = h.Content
+            }).ToList();
+            StateManager.SetMessagesForTopic(topic.TopicId, messages);
+            await InvokeAsync(StateHasChanged);
+        }
+
+        _ = StreamResumeService.TryResumeStreamAsync(topic);
+    }
+
+    public void Dispose()
+    {
+        if (_stateChangedHandler is not null)
+        {
+            StateManager.OnStateChanged -= _stateChangedHandler;
+        }
+
+        ConnectionService.OnStateChanged -= StateHasChanged;
+        ConnectionService.OnReconnected -= HandleReconnected;
+        ConnectionService.OnReconnecting -= StateHasChanged;
+    }
+
+}

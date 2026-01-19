@@ -17,5 +17,6 @@ RUN dotnet publish "./WebChat.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p
 
 FROM base AS final
 WORKDIR /app
+ENV ASPNETCORE_ENVIRONMENT=Production
 COPY --from=build /app/publish .
 ENTRYPOINT ["dotnet", "WebChat.dll"]

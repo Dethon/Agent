@@ -21,7 +21,8 @@
       "Bash(gh pr diff:*)",
       "Bash(gh pr list:*)",
       "Bash(gh repo view:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git ls-tree:*)"
     ]
   }
 }

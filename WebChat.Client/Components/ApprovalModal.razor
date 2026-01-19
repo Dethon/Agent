@@ -1,6 +1,7 @@
 @using System.Text.Json
 @using Domain.DTOs
-@inject ChatHubService HubService
+@using WebChat.Client.Contracts
+@inject IApprovalService ApprovalService
 
 @if (ApprovalRequest is not null)
 {
@@ -80,7 +81,7 @@
 
         try
         {
-            await HubService.RespondToApprovalAsync(ApprovalRequest.ApprovalId, result);
+            await ApprovalService.RespondToApprovalAsync(ApprovalRequest.ApprovalId, result);
             await OnResponded.InvokeAsync();
         }
         finally

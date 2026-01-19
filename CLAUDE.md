@@ -63,8 +63,9 @@ Quick reference for finding code:
 | MCP server tools         | `McpServer*/McpTools/*.cs`                |
 | MCP server prompts       | `McpServer*/McpPrompts/*.cs`              |
 | WebChat pages            | `WebChat.Client/Pages/*.razor`            |
-| WebChat components       | `WebChat.Client/Components/*.razor`       |
-| WebChat services         | `WebChat.Client/Services/*.cs`            |
+| WebChat components       | `WebChat.Client/Components/**/*.razor`    |
+| WebChat contracts        | `WebChat.Client/Contracts/*.cs`           |
+| WebChat services         | `WebChat.Client/Services/**/*.cs`         |
 | WebChat hub              | `Agent/Hubs/*.cs`                         |
 | Unit tests               | `Tests/Unit/**/*Tests.cs`                 |
 | Integration tests        | `Tests/Integration/**/*Tests.cs`          |
@@ -122,7 +123,7 @@ Browser-based chat interface using Blazor WebAssembly and SignalR:
 - **WebChat.Client** - Blazor WebAssembly application with chat UI
 - **ChatHub** (`Agent/Hubs/ChatHub.cs`) - SignalR hub for real-time communication
 - **WebChatMessengerClient** (`Infrastructure/Clients/Messaging/WebChatMessengerClient.cs`) - Server-side message routing
-- **ChatHubService** (`WebChat.Client/Services/ChatHubService.cs`) - Client-side SignalR connection management
+- **ChatConnectionService** (`WebChat.Client/Services/ChatConnectionService.cs`) - Client-side SignalR connection management
 
 Features:
 - Real-time message streaming with reconnection support

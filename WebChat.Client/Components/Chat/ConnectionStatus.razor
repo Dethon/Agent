@@ -1,0 +1,19 @@
+@code {
+    [Parameter] public bool IsConnected { get; set; }
+    [Parameter] public bool IsReconnecting { get; set; }
+}
+
+@if (IsReconnecting)
+{
+    <div class="connection-status reconnecting">
+        <span class="status-icon">⟳</span>
+        <span>Reconnecting...</span>
+    </div>
+}
+else if (!IsConnected)
+{
+    <div class="connection-status disconnected">
+        <span class="status-icon">○</span>
+        <span>Disconnected</span>
+    </div>
+}
