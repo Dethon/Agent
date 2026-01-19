@@ -17,14 +17,15 @@ This roadmap transforms the WebChat stack from scattered bidirectional state man
 
 **Dependencies:** None (foundation phase)
 
-**Plans:** 2 plans
+**Plans:** 3 plans
 
 Plans:
 - [ ] 01-01-PLAN.md - Core infrastructure (System.Reactive, IAction, Store)
 - [ ] 01-02-PLAN.md - Dispatch and subscription (IDispatcher, Dispatcher, StoreSubscriberComponent)
+- [ ] 01-03-PLAN.md - Memoized selectors (Selector<TState, TResult>)
 
 **Requirements:**
-- STATE-01: Consolidated state stores replace scattered state
+- STATE-01: Consolidated state stores replace scattered state (infrastructure in Phase 1; concrete stores in Phase 2)
 - STATE-02: State represented as immutable C# record types
 - STATE-03: Action -> Reducer -> State -> UI unidirectional flow pattern
 - STATE-04: State selectors with memoization for derived state
@@ -36,6 +37,8 @@ Plans:
 3. Derived state (selectors) returns cached value when underlying state unchanged
 4. StoreSubscriberComponent automatically subscribes/unsubscribes on lifecycle events
 5. Existing functionality continues working (stores are additive, not replacing yet)
+
+**Note on STATE-01:** Phase 1 creates the infrastructure (Store<TState>, Dispatcher, etc.) that enables consolidated stores. The actual consolidated feature stores (TopicsStore, MessagesStore, etc.) are created in Phase 2 when specific state slices are implemented.
 
 ---
 
