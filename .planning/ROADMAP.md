@@ -20,9 +20,9 @@ This roadmap transforms the WebChat stack from scattered bidirectional state man
 **Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md - Core infrastructure (System.Reactive, IAction, Store)
-- [ ] 01-02-PLAN.md - Dispatch and subscription (IDispatcher, Dispatcher, StoreSubscriberComponent)
-- [ ] 01-03-PLAN.md - Memoized selectors (Selector<TState, TResult>)
+- [x] 01-01-PLAN.md - Core infrastructure (System.Reactive, IAction, Store)
+- [x] 01-02-PLAN.md - Dispatch and subscription (IDispatcher, Dispatcher, StoreSubscriberComponent)
+- [x] 01-03-PLAN.md - Memoized selectors (Selector<TState, TResult>)
 
 **Requirements:**
 - STATE-01: Consolidated state stores replace scattered state (infrastructure in Phase 1; concrete stores in Phase 2)
@@ -165,7 +165,7 @@ Plans:
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 1 | State Foundation | 5 | Planned |
+| 1 | State Foundation | 5 | ✓ Complete |
 | 2 | State Slices | 5 | Pending |
 | 3 | Streaming Performance | 3 | Pending |
 | 4 | SignalR Integration | 3 | Pending |
@@ -193,4 +193,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20*
+*Last updated: 2026-01-20 (Phase 1 complete)*
