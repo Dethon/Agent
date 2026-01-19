@@ -6,6 +6,7 @@ using WebChat.Client.Services;
 using WebChat.Client.Services.Handlers;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -27,6 +28,10 @@ builder.Services.AddScoped<IApprovalService, ApprovalService>();
 // State management
 builder.Services.AddScoped<IChatStateManager, ChatStateManager>();
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
+
+// State infrastructure (Phase 1)
+builder.Services.AddScoped<Dispatcher>();
+builder.Services.AddScoped<IDispatcher>(sp => sp.GetRequiredService<Dispatcher>());
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
