@@ -1,5 +1,3 @@
 {
-  "enabledPlugins": {
-    "csharp-lsp@claude-plugins-official": true
-  }
+  "enabledPlugins": {}
 }
