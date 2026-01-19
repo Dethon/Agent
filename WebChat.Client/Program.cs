@@ -26,6 +26,7 @@ builder.Services.AddScoped<IApprovalService, ApprovalService>();
 
 // State management
 builder.Services.AddScoped<IChatStateManager, ChatStateManager>();
+builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();

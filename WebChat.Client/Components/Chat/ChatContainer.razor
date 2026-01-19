@@ -8,6 +8,7 @@
 @inject IStreamingCoordinator StreamingCoordinator
 @inject StreamResumeService StreamResumeService
 @inject SignalREventSubscriber EventSubscriber
+@inject ILocalStorageService LocalStorage
 @using WebChat.Client.Contracts
 @using WebChat.Client.Services.Streaming
 @using WebChat.Client.Services.Utilities
@@ -50,12 +51,14 @@
 
 @code {
     private MessageList? _messageList;
+    private Action? _stateChangedHandler;
 
     private AgentInfo? SelectedAgent => StateManager.Agents.FirstOrDefault(a => a.Id == StateManager.SelectedAgentId);
 
     protected override async Task OnInitializedAsync()
     {
-        StateManager.OnStateChanged += StateHasChanged;
+        _stateChangedHandler = () => InvokeAsync(StateHasChanged);
+        StateManager.OnStateChanged += _stateChangedHandler;
         ConnectionService.OnStateChanged += StateHasChanged;
         ConnectionService.OnReconnected += HandleReconnected;
         ConnectionService.OnReconnecting += StateHasChanged;
@@ -69,7 +72,15 @@
 
         if (agents.Count > 0)
         {
-            StateManager.SelectAgent(agents[0].Id);
+            var savedAgentId = await LocalStorage.GetAsync("selectedAgentId");
+            var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
+            var agentToSelect = savedAgent ?? agents[0];
+            StateManager.SelectAgent(agentToSelect.Id);
+
+            if (savedAgent is null)
+            {
+                await LocalStorage.SetAsync("selectedAgentId", agentToSelect.Id);
+            }
         }
 
         var serverTopics = await TopicService.GetAllTopicsAsync();
@@ -109,16 +120,16 @@
         }
     }
 
-    private Task HandleAgentChanged(string agentId)
+    private async Task HandleAgentChanged(string agentId)
     {
         if (StateManager.SelectedAgentId == agentId)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         StateManager.SelectAgent(agentId);
         SessionService.ClearSession();
-        return Task.CompletedTask;
+        await LocalStorage.SetAsync("selectedAgentId", agentId);
     }
 
     private async Task HandleTopicSelected(StoredTopic topic)
@@ -157,12 +168,13 @@
     private async Task MarkTopicAsSeenAsync(string topicId)
     {
         var assistantCount = StateManager.GetAssistantMessageCount(topicId);
+        var topic = StateManager.GetTopicById(topicId);
+        var previousCount = topic?.LastReadMessageCount ?? 0;
+
         StateManager.MarkTopicAsSeen(topicId, assistantCount);
 
-        var topic = StateManager.GetTopicById(topicId);
-        if (topic is not null && topic.LastReadMessageCount != assistantCount)
+        if (topic is not null && previousCount != assistantCount)
         {
-            topic.LastReadMessageCount = assistantCount;
             await TopicService.SaveTopicAsync(topic.ToMetadata());
         }
     }
@@ -295,7 +307,11 @@
 
     public void Dispose()
     {
-        StateManager.OnStateChanged -= StateHasChanged;
+        if (_stateChangedHandler is not null)
+        {
+            StateManager.OnStateChanged -= _stateChangedHandler;
+        }
+
         ConnectionService.OnStateChanged -= StateHasChanged;
         ConnectionService.OnReconnected -= HandleReconnected;
         ConnectionService.OnReconnecting -= StateHasChanged;
