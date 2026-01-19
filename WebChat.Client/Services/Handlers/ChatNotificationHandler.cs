@@ -42,7 +42,9 @@ public sealed class ChatNotificationHandler(
 
             default:
                 throw new ArgumentOutOfRangeException(
-                    nameof(notification.ChangeType), notification.ChangeType, "ChangeType not recognized");
+                    nameof(notification),
+                    notification,
+                    "Cannot handle topic change notification");
         }
 
         return Task.CompletedTask;
