@@ -48,6 +48,13 @@ Plans:
 
 **Dependencies:** Phase 1 (State Foundation)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md - Topics and Messages state slices (TopicsStore, MessagesStore)
+- [ ] 02-02-PLAN.md - Streaming and Connection state slices (StreamingStore, ConnectionStore)
+- [ ] 02-03-PLAN.md - Approval state slice and DI registration (ApprovalStore, Program.cs)
+
 **Requirements:**
 - SLICE-01: TopicsState slice for topic list and selection
 - SLICE-02: MessagesState slice for message history per topic
@@ -165,8 +172,8 @@ Plans:
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 1 | State Foundation | 5 | ✓ Complete |
-| 2 | State Slices | 5 | Pending |
+| 1 | State Foundation | 5 | Complete |
+| 2 | State Slices | 5 | Planned |
 | 3 | Streaming Performance | 3 | Pending |
 | 4 | SignalR Integration | 3 | Pending |
 | 5 | Component Architecture | 3 | Pending |
@@ -193,4 +200,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 1 complete)*
+*Last updated: 2026-01-20 (Phase 2 planned)*
