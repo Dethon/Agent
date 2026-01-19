@@ -1,12 +1,13 @@
 # Jack - AI Media Library Agent
 
-An AI-powered agent that manages a personal media library through Telegram chat, using OpenRouter LLMs and the Model
-Context Protocol (MCP).
+An AI-powered agent that manages a personal media library through Telegram chat, web interface, or CLI terminal,
+using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ## Features
 
 - **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Dual Interface** - Chat via Telegram bot or local CLI terminal
+- **Triple Interface** - Chat via Telegram bot, web browser, or local CLI terminal
+- **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
@@ -21,22 +22,26 @@ Context Protocol (MCP).
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Telegram Bot  │────▶│                 │◀────│   CLI Terminal  │
-└─────────────────┘     │   Jack/Jonas    │     └─────────────────┘
-                        │   (AI Agents)   │
-                        └────────┬────────┘
-                                 │
-       ┌─────────────┬───────────┼───────────┬─────────────┬─────────────┐
-       ▼             ▼           ▼           ▼             ▼             ▼
-┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐
-│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │MCP Idealista│ │   Redis    │
-└─────┬──────┘ └────────────┘ └────────────┘ └─────┬──────┘ └─────┬──────┘ │(Persistence)│
-      │                                            │              │        └────────────┘
-┌─────┴──────┐                               ┌─────┴──────┐ ┌─────┴──────┐
-│ qBittorrent│                               │Redis Vector│ │ Idealista  │
-│  Jackett   │                               │   Store    │ │    API     │
-│    Plex    │                               └────────────┘ └────────────┘
+┌─────────────────┐        ┌─────────────────┐     ┌─────────────────┐
+│   Telegram Bot  │───────▶│                 │◀────│   CLI Terminal  │
+└─────────────────┘        │   Jack/Jonas    │     └─────────────────┘
+        ┌─────────────────▶│   (AI Agents)   │
+        │                  └────────┬────────┘
+┌───────┴───────┐                   │
+│    WebChat    │                   │
+│ (Blazor WASM) │                   │
+└───────────────┘                   │
+                                    │
+      ┌──────────────┬──────────────┼───────────────┬───────────────┬───────────────┐
+      ▼              ▼              ▼               ▼               ▼               ▼
+┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────┐ ┌─────────────┐ ┌─────────────┐
+│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │MCP Idealista│ │    Redis    │
+└─────┬──────┘ └────────────┘ └─────────────┘ └─────┬──────┘ └──────┬──────┘ │(Persistence)│
+      │                                             │               │        └─────────────┘
+┌─────┴──────┐                                ┌─────┴──────┐  ┌─────┴──────┐
+│ qBittorrent│                                │Redis Vector│  │ Idealista  │
+│  Jackett   │                                │   Store    │  │    API     │
+│    Plex    │                                └────────────┘  └────────────┘
 │ FileBrowser│
 └────────────┘
 ```
@@ -70,6 +75,7 @@ Agents are defined as configuration data, each with:
 
 Agent routing:
 - **Telegram**: Each bot token maps to one agent (bot token hash matching)
+- **WebChat**: User selects agent from available list in the UI
 - **CLI**: Uses the first configured agent
 
 ## Projects
@@ -85,6 +91,8 @@ Agent routing:
 | `McpServerMemory`        | MCP server for vector-based memory storage and recall           |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpServerCommandRunner` | MCP server for CLI command execution                            |
+| `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
+| `WebChat.Client`         | Blazor WebAssembly client with chat UI and SignalR integration  |
 | `DockerCompose`          | Docker Compose configuration for the full stack                 |
 | `Tests`                  | Unit and integration tests                                      |
 
@@ -163,6 +171,7 @@ docker compose up -d
 
 | Service        | Port  | Description                    |
 |----------------|-------|--------------------------------|
+| WebChat        | 5001  | Browser-based chat interface   |
 | Redis          | 6379  | Conversation state persistence |
 | qBittorrent    | 8001  | Torrent client WebUI           |
 | FileBrowser    | 8002  | File management WebUI          |
@@ -175,6 +184,22 @@ docker compose up -d
 | MCP Idealista  | 6005  | Idealista property MCP server  |
 
 ## Usage
+
+### WebChat Interface
+
+Access the browser-based chat at `http://localhost:5001` after starting the Docker Compose stack.
+
+Features:
+- **Real-time streaming** - Messages stream as they're generated with automatic reconnection
+- **Topic management** - Organize conversations into topics with server-side persistence
+- **Multi-agent selection** - Switch between available agents from the UI
+- **Stream resumption** - Reconnects automatically and resumes from where you left off
+
+To run WebChat standalone (development):
+
+```bash
+dotnet run --project WebChat
+```
 
 ### CLI Interface
 
