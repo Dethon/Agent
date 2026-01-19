@@ -17,6 +17,12 @@ This roadmap transforms the WebChat stack from scattered bidirectional state man
 
 **Dependencies:** None (foundation phase)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md - Core infrastructure (System.Reactive, IAction, Store)
+- [ ] 01-02-PLAN.md - Dispatch and subscription (IDispatcher, Dispatcher, StoreSubscriberComponent)
+
 **Requirements:**
 - STATE-01: Consolidated state stores replace scattered state
 - STATE-02: State represented as immutable C# record types
@@ -156,7 +162,7 @@ This roadmap transforms the WebChat stack from scattered bidirectional state man
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 1 | State Foundation | 5 | Pending |
+| 1 | State Foundation | 5 | Planned |
 | 2 | State Slices | 5 | Pending |
 | 3 | Streaming Performance | 3 | Pending |
 | 4 | SignalR Integration | 3 | Pending |
@@ -184,4 +190,4 @@ This roadmap transforms the WebChat stack from scattered bidirectional state man
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-19*
+*Last updated: 2026-01-20*
