@@ -15,13 +15,13 @@
 ## Current Position
 
 **Phase:** 1 of 7 (State Foundation)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 01-01-PLAN.md
+**Last activity:** 2026-01-20 - Completed 01-02-PLAN.md
 
 **Progress:**
 ```
-Phase 1: [#--] State Foundation (1/3 plans)
+Phase 1: [##-] State Foundation (2/3 plans)
 Phase 2: [   ] State Slices
 Phase 3: [   ] Streaming Performance
 Phase 4: [   ] SignalR Integration
@@ -29,7 +29,7 @@ Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [#------] 1/21 plans complete (~5%)
+Overall: [##-----] 2/21 plans complete (~10%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [#------] 1/21 plans complete (~5%)
 |--------|-------|
 | Phases completed | 0/7 |
 | Requirements delivered | 0/25 |
-| Plans executed | 1 |
+| Plans executed | 2 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -52,6 +52,8 @@ Overall: [#------] 1/21 plans complete (~5%)
 | 7 phases (comprehensive) | Natural boundaries from 25 requirements across 7 categories | 2026-01-19 |
 | BehaviorSubject for Store | Replays current value to late subscribers, composable operators | 2026-01-20 |
 | IAction marker interface | Type-safe dispatch, enables pattern matching in reducers | 2026-01-20 |
+| RegisterHandler on concrete Dispatcher | Components inject IDispatcher (dispatch-only), stores inject Dispatcher for registration | 2026-01-20 |
+| Three Subscribe overloads | Basic, selector, selector+comparer covers 99% of use cases | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -75,24 +77,24 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Executed 01-01-PLAN.md - Core state infrastructure
+**Accomplished:** Executed 01-02-PLAN.md - Dispatch and subscription infrastructure
 **Completed:**
-- Installed System.Reactive 6.1.0
-- Created IAction marker interface
-- Created Store<TState> with BehaviorSubject
+- Created IDispatcher interface and Dispatcher implementation
+- Created StoreSubscriberComponent base class with CompositeDisposable
+- Registered Dispatcher in DI container
 
 ### For Next Session
 
 **Start with:**
-Execute 01-02-PLAN.md (StoreSubscriberComponent base class)
+Execute 01-03-PLAN.md (ChatStore creation)
 
 **Key context:**
-- Store<TState> is ready for component integration
-- StateObservable provides subscription target
-- CompositeDisposable available from System.Reactive
-- StoreSubscriberComponent will wrap InvokeAsync + StateHasChanged
+- Dispatcher ready for handler registration
+- StoreSubscriberComponent ready for component inheritance
+- Store<TState> from 01-01 provides reactive state foundation
+- Phase 1 completion requires ChatStore with Connection, Topics, Messages slices
 
-**Resume file:** `.planning/phases/01-state-foundation/01-02-PLAN.md`
+**Resume file:** `.planning/phases/01-state-foundation/01-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
