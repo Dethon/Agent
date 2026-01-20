@@ -18,3 +18,8 @@ public record StreamError(string TopicId, string Error) : IAction;
 public record StartResuming(string TopicId) : IAction;
 
 public record StopResuming(string TopicId) : IAction;
+
+// User-initiated actions dispatched from components
+public record SendMessage(string? TopicId, string Message) : IAction;
+
+public record CancelStreaming(string TopicId) : IAction;
