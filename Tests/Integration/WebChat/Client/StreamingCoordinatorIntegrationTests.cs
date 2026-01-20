@@ -3,8 +3,11 @@ using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Integration.WebChat.Client.Adapters;
 using WebChat.Client.Models;
-using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
 
 namespace Tests.Integration.WebChat.Client;
 
@@ -14,7 +17,10 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
     private HubConnection _connection = null!;
     private HubConnectionMessagingService _messagingService = null!;
     private HubConnectionTopicService _topicService = null!;
-    private ChatStateManager _stateManager = null!;
+    private Dispatcher _dispatcher = null!;
+    private TopicsStore _topicsStore = null!;
+    private MessagesStore _messagesStore = null!;
+    private StreamingStore _streamingStore = null!;
     private StreamingCoordinator _coordinator = null!;
 
     public async Task InitializeAsync()
@@ -24,12 +30,19 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         _messagingService = new HubConnectionMessagingService(_connection);
         _topicService = new HubConnectionTopicService(_connection);
-        _stateManager = new ChatStateManager();
-        _coordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
+        _dispatcher = new Dispatcher();
+        _topicsStore = new TopicsStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
+        _streamingStore = new StreamingStore(_dispatcher);
+        _coordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
     }
 
     public async Task DisposeAsync()
     {
+        _topicsStore.Dispose();
+        _messagesStore.Dispose();
+        _streamingStore.Dispose();
+
         try
         {
             await _connection.StopAsync();
@@ -54,7 +67,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
             Name = "Integration Test Topic",
             CreatedAt = DateTime.UtcNow
         };
-        _stateManager.AddTopic(topic);
+        _dispatcher.Dispatch(new AddTopic(topic));
         return topic;
     }
 
@@ -65,12 +78,12 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
     private void AddUserMessageAndStartStreaming(StoredTopic topic, string message)
     {
-        _stateManager.AddMessage(topic.TopicId, new ChatMessageModel
+        _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
         {
             Role = "user",
             Content = message
-        });
-        _stateManager.StartStreaming(topic.TopicId);
+        }));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
     }
 
     [Fact]
@@ -83,14 +96,14 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         fixture.FakeAgentFactory.EnqueueResponses("Hello", " from", " the", " server!");
 
         var receivedUpdates = 0;
-        _stateManager.OnStateChanged += () => receivedUpdates++;
+        using var subscription = _messagesStore.StateObservable.Subscribe(_ => receivedUpdates++);
 
         // Act - Add user message and start streaming (as the Blazor component does)
         AddUserMessageAndStartStreaming(topic, "Say hello");
         await _coordinator.StreamResponseAsync(topic, "Say hello", NoOpRender);
 
         // Assert
-        var messages = _stateManager.GetMessagesForTopic(topic.TopicId);
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.ShouldNotBeEmpty();
         messages.ShouldContain(m => m.Role == "user" && m.Content == "Say hello");
         messages.ShouldContain(m => m.Role == "assistant" && m.Content.Contains("Hello"));
@@ -112,7 +125,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         await _coordinator.StreamResponseAsync(topic, "What is the meaning of life?", NoOpRender);
 
         // Assert
-        var messages = _stateManager.GetMessagesForTopic(topic.TopicId);
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         var assistantMessage = messages.FirstOrDefault(m => m.Role == "assistant");
         assistantMessage.ShouldNotBeNull();
         assistantMessage.Reasoning.ShouldNotBeNull();
@@ -132,12 +145,14 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         AddUserMessageAndStartStreaming(topic, "Test");
 
         // Verify streaming is set before the await
-        _stateManager.IsTopicStreaming(topic.TopicId).ShouldBeTrue("Streaming should be set before call");
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId)
+            .ShouldBeTrue("Streaming should be set before call");
 
         await _coordinator.StreamResponseAsync(topic, "Test", NoOpRender);
 
         // Assert - Streaming should be cleared after completion
-        _stateManager.IsTopicStreaming(topic.TopicId).ShouldBeFalse("Streaming should be cleared after completion");
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId)
+            .ShouldBeFalse("Streaming should be cleared after completion");
     }
 
     [Fact]
@@ -154,8 +169,8 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         await _coordinator.StreamResponseAsync(topic, "Trigger error", NoOpRender);
 
         // Assert
-        _stateManager.IsTopicStreaming(topic.TopicId).ShouldBeFalse();
-        var messages = _stateManager.GetMessagesForTopic(topic.TopicId);
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         var lastMessage = messages.LastOrDefault(m => m.Role == "assistant");
         lastMessage.ShouldNotBeNull();
         lastMessage.Content.ShouldContain("error");
@@ -181,7 +196,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         await _coordinator.StreamResponseAsync(topic, "Second question", NoOpRender);
 
         // Assert - Verify we have the expected structure
-        var messages = _stateManager.GetMessagesForTopic(topic.TopicId);
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.Count.ShouldBe(4); // 2 user + 2 assistant
 
         // Verify user messages are in order
@@ -208,12 +223,12 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         AddUserMessageAndStartStreaming(topic, "Historical question");
         await _coordinator.StreamResponseAsync(topic, "Historical question", NoOpRender);
 
-        var historyCount = _stateManager.GetMessagesForTopic(topic.TopicId).Count;
+        var historyCount = (_messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? []).Count;
         historyCount.ShouldBe(2); // Verify we had messages
 
         // Clear local state to simulate fresh start
-        _stateManager.SetMessagesForTopic(topic.TopicId, []);
-        _stateManager.GetMessagesForTopic(topic.TopicId).Count.ShouldBe(0);
+        _dispatcher.Dispatch(new ClearMessages(topic.TopicId));
+        (_messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? []).Count.ShouldBe(0);
 
         // Queue new response
         fixture.FakeAgentFactory.EnqueueResponses("Fresh response.");
@@ -223,7 +238,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         await _coordinator.StreamResponseAsync(topic, "New question", NoOpRender);
 
         // Assert - Should have the new messages (assistant message content may vary due to shared fixture)
-        var messages = _stateManager.GetMessagesForTopic(topic.TopicId);
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.Count.ShouldBe(2); // 1 user + 1 assistant
         messages.ShouldContain(m => m.Role == "user" && m.Content == "New question");
         messages.ShouldContain(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content));
@@ -243,14 +258,14 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         }
 
         var messagesReceived = 0;
-        _stateManager.OnStateChanged += () =>
+        using var subscription = _streamingStore.StateObservable.Subscribe(state =>
         {
-            var streaming = _stateManager.GetStreamingMessageForTopic(topic.TopicId);
-            if (streaming?.Content.Length > 0)
+            var streaming = state.StreamingByTopic.GetValueOrDefault(topic.TopicId);
+            if (streaming?.Content?.Length > 0)
             {
                 messagesReceived++;
             }
-        };
+        });
 
         // Act - Start streaming in background
         AddUserMessageAndStartStreaming(topic, "Long message");
@@ -266,7 +281,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         await streamTask;
 
         // Assert
-        _stateManager.IsTopicStreaming(topic.TopicId).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         messagesReceived.ShouldBeLessThan(50, "Stream should have been cancelled before all messages");
     }
 }

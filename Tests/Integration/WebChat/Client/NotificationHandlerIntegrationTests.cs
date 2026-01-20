@@ -5,10 +5,12 @@ using Tests.Integration.Fixtures;
 using Tests.Integration.WebChat.Client.Adapters;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Handlers;
-using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
 
 namespace Tests.Integration.WebChat.Client;
 
@@ -19,12 +21,14 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
     private HubConnectionMessagingService _messagingService = null!;
     private HubConnectionTopicService _topicService = null!;
     private HubConnectionApprovalService _approvalService = null!;
-    private ChatStateManager _stateManager = null!;
+    private Dispatcher _dispatcher = null!;
+    private TopicsStore _topicsStore = null!;
+    private MessagesStore _messagesStore = null!;
+    private StreamingStore _streamingStore = null!;
+    private ApprovalStore _approvalStore = null!;
     private StreamingCoordinator _coordinator = null!;
     private StreamResumeService _resumeService = null!;
     private ChatNotificationHandler _handler = null!;
-    private Dispatcher _dispatcher = null!;
-    private StreamingStore _streamingStore = null!;
     private readonly List<IDisposable> _subscriptions = [];
 
     public async Task InitializeAsync()
@@ -34,19 +38,27 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         _messagingService = new HubConnectionMessagingService(_connection);
         _topicService = new HubConnectionTopicService(_connection);
         _approvalService = new HubConnectionApprovalService(_connection);
-        _stateManager = new ChatStateManager();
-        _coordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
         _dispatcher = new Dispatcher();
+        _topicsStore = new TopicsStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _approvalStore = new ApprovalStore(_dispatcher);
+        _coordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
-            _stateManager,
             _approvalService,
             _coordinator,
             _dispatcher,
+            _messagesStore,
             _streamingStore);
-        _handler = new ChatNotificationHandler(_stateManager, _topicService, _resumeService);
+        _handler = new ChatNotificationHandler(
+            _dispatcher,
+            _topicsStore,
+            _streamingStore,
+            _approvalStore,
+            _topicService,
+            _resumeService);
 
         await _connection.StartAsync();
     }
@@ -59,7 +71,10 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         }
 
         _subscriptions.Clear();
+        _topicsStore.Dispose();
+        _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _approvalStore.Dispose();
 
         try
         {
@@ -85,7 +100,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
             Name = "Notification Test Topic",
             CreatedAt = DateTime.UtcNow
         };
-        _stateManager.AddTopic(topic);
+        _dispatcher.Dispatch(new AddTopic(topic));
         return topic;
     }
 
@@ -96,12 +111,12 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
     private void AddUserMessageAndStartStreaming(StoredTopic topic, string message)
     {
-        _stateManager.AddMessage(topic.TopicId, new ChatMessageModel
+        _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
         {
             Role = "user",
             Content = message
-        });
-        _stateManager.StartStreaming(topic.TopicId);
+        }));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
     }
 
     private void RegisterNotificationHandlers()
@@ -142,7 +157,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         await Task.Delay(200);
 
         // Assert - Handler should have received notification and cleared state
-        _stateManager.IsTopicStreaming(topic.TopicId).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
     }
 
     [Fact]
@@ -184,7 +199,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         RegisterNotificationHandlers();
 
         // Start streaming manually (simulating mid-stream)
-        _stateManager.StartStreaming(topic.TopicId);
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
         // Simulate receiving a tool calls notification
         var notification = new ToolCallsNotification(topic.TopicId, "search_web: query");
@@ -193,10 +208,10 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         await _handler.HandleToolCallsAsync(notification);
 
         // Assert
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topic.TopicId);
-        streamingMsg.ShouldNotBeNull();
-        streamingMsg.ToolCalls.ShouldNotBeNull();
-        streamingMsg.ToolCalls.ShouldContain("search_web");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topic.TopicId);
+        streamingContent.ShouldNotBeNull();
+        streamingContent.ToolCalls.ShouldNotBeNull();
+        streamingContent.ToolCalls.ShouldContain("search_web");
     }
 
     [Fact]
@@ -245,22 +260,30 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
         try
         {
-            var stateManager2 = new ChatStateManager();
             var messagingService2 = new HubConnectionMessagingService(connection2);
             var topicService2 = new HubConnectionTopicService(connection2);
             var approvalService2 = new HubConnectionApprovalService(connection2);
-            var coordinator2 = new StreamingCoordinator(messagingService2, stateManager2, topicService2);
             var dispatcher2 = new Dispatcher();
+            var topicsStore2 = new TopicsStore(dispatcher2);
+            var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
+            var approvalStore2 = new ApprovalStore(dispatcher2);
+            var coordinator2 = new StreamingCoordinator(messagingService2, dispatcher2, topicService2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
-                stateManager2,
                 approvalService2,
                 coordinator2,
                 dispatcher2,
+                messagesStore2,
                 streamingStore2);
-            var handler2 = new ChatNotificationHandler(stateManager2, topicService2, resumeService2);
+            var handler2 = new ChatNotificationHandler(
+                dispatcher2,
+                topicsStore2,
+                streamingStore2,
+                approvalStore2,
+                topicService2,
+                resumeService2);
 
             // Both clients register notification handlers
             RegisterNotificationHandlers();
@@ -284,7 +307,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
             // Create topic on client 1
             var topic = CreateAndRegisterTopic();
-            stateManager2.AddTopic(new StoredTopic
+            dispatcher2.Dispatch(new AddTopic(new StoredTopic
             {
                 TopicId = topic.TopicId,
                 ChatId = topic.ChatId,
@@ -292,7 +315,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
                 AgentId = topic.AgentId,
                 Name = topic.Name,
                 CreatedAt = topic.CreatedAt
-            });
+            }));
 
             await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
@@ -305,6 +328,12 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
             // Assert - Client 2 received notifications
             client2Notifications.ShouldNotBeEmpty("Client 2 should have received notifications");
+
+            // Cleanup
+            topicsStore2.Dispose();
+            messagesStore2.Dispose();
+            streamingStore2.Dispose();
+            approvalStore2.Dispose();
         }
         finally
         {
@@ -322,14 +351,14 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
         // Set a pending approval
         var approvalRequest = new ToolApprovalRequestMessage("test-approval-id", []);
-        _stateManager.SetApprovalRequest(approvalRequest);
+        _dispatcher.Dispatch(new ShowApproval(topic.TopicId, approvalRequest));
 
         // Act - Simulate approval resolved notification
         var notification = new ApprovalResolvedNotification(topic.TopicId, "test-approval-id");
         await _handler.HandleApprovalResolvedAsync(notification);
 
         // Assert
-        _stateManager.CurrentApprovalRequest.ShouldBeNull();
+        _approvalStore.State.CurrentRequest.ShouldBeNull();
     }
 
     [Fact]
@@ -341,7 +370,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         RegisterNotificationHandlers();
 
         // Start streaming
-        _stateManager.StartStreaming(topic.TopicId);
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
         // Act - Approval resolved with tool calls
         var notification = new ApprovalResolvedNotification(
@@ -351,9 +380,9 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         await _handler.HandleApprovalResolvedAsync(notification);
 
         // Assert
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topic.TopicId);
-        streamingMsg.ShouldNotBeNull();
-        streamingMsg.ToolCalls.ShouldNotBeNull();
-        streamingMsg.ToolCalls.ShouldContain("executed_tool");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topic.TopicId);
+        streamingContent.ShouldNotBeNull();
+        streamingContent.ToolCalls.ShouldNotBeNull();
+        streamingContent.ToolCalls.ShouldContain("executed_tool");
     }
 }

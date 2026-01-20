@@ -3,47 +3,60 @@ using Shouldly;
 using Tests.Unit.WebChat.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Handlers;
-using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client;
 
 public sealed class ChatNotificationHandlerTests : IDisposable
 {
-    private readonly ChatStateManager _stateManager = new();
+    private readonly Dispatcher _dispatcher = new();
+    private readonly TopicsStore _topicsStore;
+    private readonly MessagesStore _messagesStore;
+    private readonly StreamingStore _streamingStore;
+    private readonly ApprovalStore _approvalStore;
     private readonly FakeTopicService _topicService = new();
     private readonly FakeChatMessagingService _messagingService = new();
     private readonly FakeApprovalService _approvalService = new();
-    private readonly Dispatcher _dispatcher = new();
-    private readonly StreamingStore _streamingStore;
     private readonly ChatNotificationHandler _handler;
 
     public ChatNotificationHandlerTests()
     {
+        _topicsStore = new TopicsStore(_dispatcher);
+        _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        var streamingCoordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
+        _approvalStore = new ApprovalStore(_dispatcher);
+        var streamingCoordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
         var streamResumeService = new StreamResumeService(
             _messagingService,
             _topicService,
-            _stateManager,
             _approvalService,
             streamingCoordinator,
             _dispatcher,
+            _messagesStore,
             _streamingStore);
         _handler = new ChatNotificationHandler(
-            _stateManager,
+            _dispatcher,
+            _topicsStore,
+            _streamingStore,
+            _approvalStore,
             _topicService,
             streamResumeService);
     }
 
     public void Dispose()
     {
+        _topicsStore.Dispose();
+        _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _approvalStore.Dispose();
     }
 
-    private static StoredTopic CreateTopic(string? topicId = null, string? agentId = null)
+    private StoredTopic CreateTopic(string? topicId = null, string? agentId = null)
     {
         return new StoredTopic
         {
@@ -79,7 +92,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
 
         await _handler.HandleTopicChangedAsync(notification);
 
-        var topic = _stateManager.GetTopicById(topicId);
+        var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
         topic.ShouldNotBeNull();
         topic.Name.ShouldBe("New Topic");
     }
@@ -89,14 +102,14 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     {
         var topicId = Guid.NewGuid().ToString();
         var existingTopic = CreateTopic(topicId: topicId);
-        _stateManager.AddTopic(existingTopic);
+        _dispatcher.Dispatch(new AddTopic(existingTopic));
 
         var metadata = CreateMetadata(topicId, "Duplicate");
         var notification = new TopicChangedNotification(TopicChangeType.Created, topicId, metadata);
 
         await _handler.HandleTopicChangedAsync(notification);
 
-        _stateManager.Topics.Count.ShouldBe(1);
+        _topicsStore.State.Topics.Count.ShouldBe(1);
     }
 
     [Fact]
@@ -105,14 +118,14 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         var topicId = Guid.NewGuid().ToString();
         var existingTopic = CreateTopic(topicId: topicId);
         existingTopic.Name = "Old Name";
-        _stateManager.AddTopic(existingTopic);
+        _dispatcher.Dispatch(new AddTopic(existingTopic));
 
         var metadata = CreateMetadata(topicId, "Updated Name");
         var notification = new TopicChangedNotification(TopicChangeType.Updated, topicId, metadata);
 
         await _handler.HandleTopicChangedAsync(notification);
 
-        var topic = _stateManager.GetTopicById(topicId);
+        var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
         topic!.Name.ShouldBe("Updated Name");
     }
 
@@ -125,7 +138,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
 
         await _handler.HandleTopicChangedAsync(notification);
 
-        var topic = _stateManager.GetTopicById(topicId);
+        var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
         topic.ShouldNotBeNull();
     }
 
@@ -134,13 +147,13 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     {
         var topicId = Guid.NewGuid().ToString();
         var existingTopic = CreateTopic(topicId: topicId);
-        _stateManager.AddTopic(existingTopic);
+        _dispatcher.Dispatch(new AddTopic(existingTopic));
 
         var notification = new TopicChangedNotification(TopicChangeType.Deleted, topicId);
 
         await _handler.HandleTopicChangedAsync(notification);
 
-        _stateManager.GetTopicById(topicId).ShouldBeNull();
+        _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId).ShouldBeNull();
     }
 
     [Fact]
@@ -167,7 +180,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleStreamChangedAsync_Started_WhenNotResuming_TriggersResume()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _stateManager.AddTopic(topic);
+        _dispatcher.Dispatch(new AddTopic(topic));
 
         // Set up stream state so resume has something to process
         _messagingService.SetStreamState("topic-1", new StreamState(
@@ -185,15 +198,15 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         await Task.Delay(100);
 
         // Resume was triggered - verify by checking the state was processed
-        _stateManager.IsTopicResuming("topic-1").ShouldBeFalse(); // Resume completed
+        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse(); // Resume completed
     }
 
     [Fact]
     public async Task HandleStreamChangedAsync_Started_WhenAlreadyResuming_DoesNotDuplicateResume()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _stateManager.AddTopic(topic);
-        _stateManager.TryStartResuming("topic-1");
+        _dispatcher.Dispatch(new AddTopic(topic));
+        _dispatcher.Dispatch(new StartResuming("topic-1"));
 
         var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
 
@@ -201,7 +214,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         await Task.Delay(50);
 
         // Should still be resuming (the handler didn't start a new resume)
-        _stateManager.IsTopicResuming("topic-1").ShouldBeTrue();
+        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeTrue();
     }
 
     [Fact]
@@ -216,26 +229,26 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleStreamChangedAsync_Cancelled_StopsStreaming()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new StreamChangedNotification(StreamChangeType.Cancelled, topicId);
 
         await _handler.HandleStreamChangedAsync(notification);
 
-        _stateManager.IsTopicStreaming(topicId).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topicId).ShouldBeFalse();
     }
 
     [Fact]
     public async Task HandleStreamChangedAsync_Completed_StopsStreaming()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId);
 
         await _handler.HandleStreamChangedAsync(notification);
 
-        _stateManager.IsTopicStreaming(topicId).ShouldBeFalse();
+        _streamingStore.State.StreamingTopics.Contains(topicId).ShouldBeFalse();
     }
 
     [Fact]
@@ -254,7 +267,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleNewMessageAsync_WhenNotStreaming_LoadsMessages()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _stateManager.AddTopic(topic);
+        _dispatcher.Dispatch(new AddTopic(topic));
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
             new ChatHistoryMessage("user", "Hello"),
             new ChatHistoryMessage("assistant", "Hi there"));
@@ -266,7 +279,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         // Give fire-and-forget task time to execute
         await Task.Delay(50);
 
-        var messages = _stateManager.GetMessagesForTopic("topic-1");
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
         messages.Count.ShouldBe(2);
     }
 
@@ -274,8 +287,8 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleNewMessageAsync_WhenStreaming_DoesNotLoad()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _stateManager.AddTopic(topic);
-        _stateManager.StartStreaming("topic-1");
+        _dispatcher.Dispatch(new AddTopic(topic));
+        _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
             new ChatHistoryMessage("user", "Hello"));
 
@@ -285,7 +298,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         await Task.Delay(50);
 
         // Messages should not be loaded because topic is streaming
-        _stateManager.HasMessagesForTopic("topic-1").ShouldBeFalse();
+        _messagesStore.State.MessagesByTopic.ContainsKey("topic-1").ShouldBeFalse();
     }
 
     [Fact]
@@ -300,7 +313,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleNewMessageAsync_LoadsFromTopicService_UpdatesState()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _stateManager.AddTopic(topic);
+        _dispatcher.Dispatch(new AddTopic(topic));
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
             new ChatHistoryMessage("user", "Question"),
             new ChatHistoryMessage("assistant", "Answer"));
@@ -310,7 +323,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         await _handler.HandleNewMessageAsync(notification);
         await Task.Delay(50);
 
-        var messages = _stateManager.GetMessagesForTopic("topic-1");
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
         messages.ShouldContain(m => m.Role == "user" && m.Content == "Question");
         messages.ShouldContain(m => m.Role == "assistant" && m.Content == "Answer");
     }
@@ -323,69 +336,68 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     public async Task HandleApprovalResolvedAsync_WithMatchingRequest_ClearsApproval()
     {
         var approvalRequest = new ToolApprovalRequestMessage("approval-1", []);
-        _stateManager.SetApprovalRequest(approvalRequest);
+        _dispatcher.Dispatch(new ShowApproval("topic-1", approvalRequest));
 
         var notification = new ApprovalResolvedNotification("topic-1", "approval-1");
 
         await _handler.HandleApprovalResolvedAsync(notification);
 
-        _stateManager.CurrentApprovalRequest.ShouldBeNull();
+        _approvalStore.State.CurrentRequest.ShouldBeNull();
     }
 
     [Fact]
     public async Task HandleApprovalResolvedAsync_WithMismatchedRequest_DoesNotClear()
     {
         var approvalRequest = new ToolApprovalRequestMessage("approval-1", []);
-        _stateManager.SetApprovalRequest(approvalRequest);
+        _dispatcher.Dispatch(new ShowApproval("topic-1", approvalRequest));
 
         var notification = new ApprovalResolvedNotification("topic-1", "different-approval");
 
         await _handler.HandleApprovalResolvedAsync(notification);
 
-        _stateManager.CurrentApprovalRequest.ShouldNotBeNull();
+        _approvalStore.State.CurrentRequest.ShouldNotBeNull();
     }
 
     [Fact]
-    public async Task HandleApprovalResolvedAsync_WithToolCalls_AddsToStreamingMessage()
+    public async Task HandleApprovalResolvedAsync_WithToolCalls_AddsToStreamingState()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new ApprovalResolvedNotification(topicId, "approval-1", "executed_tool_1");
 
         await _handler.HandleApprovalResolvedAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg!.ToolCalls.ShouldBe("executed_tool_1");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent?.ToolCalls.ShouldBe("executed_tool_1");
     }
 
     [Fact]
-    public async Task HandleApprovalResolvedAsync_WithoutToolCalls_DoesNotModifyMessage()
+    public async Task HandleApprovalResolvedAsync_WithoutToolCalls_DoesNotModifyStreaming()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
-        _stateManager.UpdateStreamingMessage(topicId, new ChatMessageModel { Content = "Test" });
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new ApprovalResolvedNotification(topicId, "approval-1");
 
         await _handler.HandleApprovalResolvedAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg!.ToolCalls.ShouldBeNull();
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent?.ToolCalls.ShouldBeNull();
     }
 
     [Fact]
-    public async Task HandleApprovalResolvedAsync_WithEmptyToolCalls_DoesNotModifyMessage()
+    public async Task HandleApprovalResolvedAsync_WithEmptyToolCalls_DoesNotModifyStreaming()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new ApprovalResolvedNotification(topicId, "approval-1", "");
 
         await _handler.HandleApprovalResolvedAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg!.ToolCalls.ShouldBeNull();
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent?.ToolCalls.ShouldBeNull();
     }
 
     #endregion
@@ -393,36 +405,36 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     #region Tool Calls Notifications
 
     [Fact]
-    public async Task HandleToolCallsAsync_AddsToStreamingMessage()
+    public async Task HandleToolCallsAsync_AddsToStreamingState()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
+        _dispatcher.Dispatch(new StreamStarted(topicId));
 
         var notification = new ToolCallsNotification(topicId, "new_tool_call");
 
         await _handler.HandleToolCallsAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg!.ToolCalls.ShouldBe("new_tool_call");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent?.ToolCalls.ShouldBe("new_tool_call");
     }
 
     [Fact]
     public async Task HandleToolCallsAsync_AppendsToExisting()
     {
         var topicId = "topic-1";
-        _stateManager.StartStreaming(topicId);
-        _stateManager.AddToolCallsToStreamingMessage(topicId, "existing_tool");
+        _dispatcher.Dispatch(new StreamStarted(topicId));
+        _dispatcher.Dispatch(new StreamChunk(topicId, null, null, "existing_tool", null));
 
         var notification = new ToolCallsNotification(topicId, "new_tool");
 
         await _handler.HandleToolCallsAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg!.ToolCalls.ShouldBe("existing_tool\nnew_tool");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent?.ToolCalls.ShouldBe("existing_tool\nnew_tool");
     }
 
     [Fact]
-    public async Task HandleToolCallsAsync_CreatesStreamingMessageIfNeeded()
+    public async Task HandleToolCallsAsync_CreatesStreamingEntryIfNeeded()
     {
         var topicId = "topic-1";
         // Not streaming yet
@@ -431,9 +443,9 @@ public sealed class ChatNotificationHandlerTests : IDisposable
 
         await _handler.HandleToolCallsAsync(notification);
 
-        var streamingMsg = _stateManager.GetStreamingMessageForTopic(topicId);
-        streamingMsg.ShouldNotBeNull();
-        streamingMsg.ToolCalls.ShouldBe("tool_call");
+        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        streamingContent.ShouldNotBeNull();
+        streamingContent.ToolCalls.ShouldBe("tool_call");
     }
 
     #endregion

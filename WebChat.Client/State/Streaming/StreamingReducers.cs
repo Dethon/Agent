@@ -48,9 +48,9 @@ public static class StreamingReducers
 
         var updated = existing with
         {
-            Content = AccumulateString(existing.Content, chunk.Content),
-            Reasoning = AccumulateString(existing.Reasoning, chunk.Reasoning),
-            ToolCalls = AccumulateString(existing.ToolCalls, chunk.ToolCalls),
+            Content = AccumulateString(existing.Content, chunk.Content, null),
+            Reasoning = AccumulateString(existing.Reasoning, chunk.Reasoning, null),
+            ToolCalls = AccumulateString(existing.ToolCalls, chunk.ToolCalls, "\n"),
             CurrentMessageId = chunk.MessageId ?? existing.CurrentMessageId
         };
 
@@ -60,7 +60,7 @@ public static class StreamingReducers
         };
     }
 
-    private static string AccumulateString(string? existing, string? addition)
+    private static string AccumulateString(string? existing, string? addition, string? separator)
     {
         if (string.IsNullOrEmpty(addition))
             return existing ?? "";
@@ -68,7 +68,7 @@ public static class StreamingReducers
         if (string.IsNullOrEmpty(existing))
             return addition;
 
-        return existing + addition;
+        return existing + (separator ?? "") + addition;
     }
 
     private static IReadOnlyDictionary<string, StreamingContent> SetError(
