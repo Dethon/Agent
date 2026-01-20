@@ -1,53 +1,62 @@
+@inherits StoreSubscriberComponent
+@inject TopicsStore TopicsStore
+@inject StreamingStore StreamingStore
+@inject IDispatcher Dispatcher
+
 @code {
-    [Parameter] public List<StoredTopic> Topics { get; set; } = [];
-
-    [Parameter] public StoredTopic? SelectedTopic { get; set; }
-
-    [Parameter] public List<AgentInfo> Agents { get; set; } = [];
-
-    [Parameter] public string? SelectedAgentId { get; set; }
-
-    [Parameter] public EventCallback<StoredTopic> OnTopicSelected { get; set; }
-
-    [Parameter] public EventCallback<StoredTopic> OnTopicDeleted { get; set; }
-
-    [Parameter] public EventCallback OnNewTopic { get; set; }
-
-    [Parameter] public EventCallback<string> OnAgentChanged { get; set; }
-
-    [Parameter] public bool IsStreaming { get; set; }
-
-    [Parameter] public Dictionary<string, int> UnreadCounts { get; set; } = new();
-
-    [Parameter] public HashSet<string> StreamingTopics { get; set; } = new();
-
-    private int GetUnreadCount(string topicId)
-    {
-        return UnreadCounts.GetValueOrDefault(topicId);
-    }
-
-    private bool IsTopicStreaming(string topicId)
-    {
-        return StreamingTopics.Contains(topicId);
-    }
+    private IReadOnlyList<StoredTopic> _topics = [];
+    private string? _selectedTopicId;
+    private IReadOnlyList<AgentInfo> _agents = [];
+    private string? _selectedAgentId;
+    private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
+    private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();
 
     private string? _deleteConfirmTopicId;
     private bool _dropdownOpen;
     public ElementReference DropdownRef { get; private set; }
 
-    private string SelectedAgentName => Agents.FirstOrDefault(a => a.Id == SelectedAgentId)?.Name ?? "Select Agent";
-
-    private async Task HandleTopicClick(StoredTopic topic)
+    protected override void OnInitialized()
     {
-        if (SelectedTopic?.TopicId != topic.TopicId)
+        Subscribe(TopicsStore.StateObservable,
+            state => state.Topics,
+            topics => _topics = topics);
+        Subscribe(TopicsStore.StateObservable,
+            state => state.SelectedTopicId,
+            id => _selectedTopicId = id);
+        Subscribe(TopicsStore.StateObservable,
+            state => state.Agents,
+            agents => _agents = agents);
+        Subscribe(TopicsStore.StateObservable,
+            state => state.SelectedAgentId,
+            id => _selectedAgentId = id);
+        Subscribe(StreamingStore.StateObservable,
+            state => state.StreamingTopics,
+            ids => _streamingTopics = ids);
+    }
+
+    private string SelectedAgentName => _agents.FirstOrDefault(a => a.Id == _selectedAgentId)?.Name ?? "Select Agent";
+
+    private int GetUnreadCount(string topicId)
+    {
+        return _unreadCounts.GetValueOrDefault(topicId);
+    }
+
+    private bool IsTopicStreaming(string topicId)
+    {
+        return _streamingTopics.Contains(topicId);
+    }
+
+    private void HandleTopicClick(StoredTopic topic)
+    {
+        if (_selectedTopicId != topic.TopicId)
         {
-            await OnTopicSelected.InvokeAsync(topic);
+            Dispatcher.Dispatch(new SelectTopic(topic.TopicId));
         }
     }
 
-    private async Task HandleNewTopic()
+    private void HandleNewTopic()
     {
-        await OnNewTopic.InvokeAsync();
+        Dispatcher.Dispatch(new CreateNewTopic());
     }
 
     private void ShowDeleteConfirm(string topicId)
@@ -60,10 +69,10 @@
         _deleteConfirmTopicId = null;
     }
 
-    private async Task ConfirmDelete(StoredTopic topic)
+    private void ConfirmDelete(StoredTopic topic)
     {
         _deleteConfirmTopicId = null;
-        await OnTopicDeleted.InvokeAsync(topic);
+        Dispatcher.Dispatch(new RemoveTopic(topic.TopicId));
     }
 
     private void ToggleDropdown()
@@ -71,12 +80,12 @@
         _dropdownOpen = !_dropdownOpen;
     }
 
-    private async Task SelectAgent(string agentId)
+    private void SelectAgent(string agentId)
     {
         _dropdownOpen = false;
-        if (agentId != SelectedAgentId)
+        if (agentId != _selectedAgentId)
         {
-            await OnAgentChanged.InvokeAsync(agentId);
+            Dispatcher.Dispatch(new SelectAgent(agentId));
         }
     }
 
@@ -84,7 +93,6 @@
     {
         _dropdownOpen = false;
     }
-
 }
 
 <div class="topic-sidebar">
@@ -102,9 +110,9 @@
             {
                 <div class="dropdown-backdrop" @onclick="CloseDropdown"></div>
                 <div class="dropdown-menu">
-                    @foreach (var agent in Agents)
+                    @foreach (var agent in _agents)
                     {
-                        <div class="dropdown-item @(agent.Id == SelectedAgentId ? "selected" : "")"
+                        <div class="dropdown-item @(agent.Id == _selectedAgentId ? "selected" : "")"
                              @onclick="() => SelectAgent(agent.Id)">
                             @agent.Name
                         </div>
@@ -124,8 +132,8 @@
 
     <div class="topic-list">
         @{
-            var filteredTopics = Topics
-                .Where(t => t.AgentId == SelectedAgentId)
+            var filteredTopics = _topics
+                .Where(t => t.AgentId == _selectedAgentId)
                 .OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt)
                 .ToList();
         }
@@ -147,7 +155,7 @@
                 var unreadCount = GetUnreadCount(topic.TopicId);
                 var isStreaming = IsTopicStreaming(topic.TopicId);
                 <div
-                    class="topic-item @(SelectedTopic?.TopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
+                    class="topic-item @(_selectedTopicId == topic.TopicId ? "selected" : "") @(unreadCount > 0 ? "has-unread" : "") @(isStreaming ? "is-streaming" : "")"
                     @onclick="() => HandleTopicClick(topic)">
                     <div class="topic-content">
                         <div class="topic-name-row">
