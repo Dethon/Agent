@@ -28,6 +28,12 @@
         {
             classes.Add("streaming-cursor");
         }
+        // Compact styling when only showing thinking indicator
+        if (IsStreaming && string.IsNullOrEmpty(Message.Content) &&
+            string.IsNullOrEmpty(Message.Reasoning) && string.IsNullOrEmpty(Message.ToolCalls))
+        {
+            classes.Add("thinking-only");
+        }
 
         return string.Join(" ", classes);
     }

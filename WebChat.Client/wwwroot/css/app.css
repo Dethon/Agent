@@ -1426,8 +1426,12 @@ html, body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 1rem 1.25rem;
     color: var(--text-secondary);
+}
+
+/* Compact bubble when only showing thinking indicator */
+.chat-message.thinking-only {
+    padding: 0.625rem 1rem;
 }
 
 .typing-indicator .typing-dots {
