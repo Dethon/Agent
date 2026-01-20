@@ -39,6 +39,9 @@ public sealed class TopicsStore : IDisposable
 
         dispatcher.RegisterHandler<TopicsError>(action =>
             _store.Dispatch(action, TopicsReducers.Reduce));
+
+        dispatcher.RegisterHandler<CreateNewTopic>(action =>
+            _store.Dispatch(action, TopicsReducers.Reduce));
     }
 
     /// <summary>

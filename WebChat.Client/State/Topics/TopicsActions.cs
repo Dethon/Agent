@@ -51,3 +51,8 @@ public record SelectAgent(string AgentId) : IAction;
 /// Set an error state for topics.
 /// </summary>
 public record TopicsError(string Message) : IAction;
+
+/// <summary>
+/// Create a new topic (deselect current topic for new conversation).
+/// </summary>
+public record CreateNewTopic : IAction;

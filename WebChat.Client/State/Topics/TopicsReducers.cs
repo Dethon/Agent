@@ -71,6 +71,11 @@ public static class TopicsReducers
             IsLoading = false
         },
 
+        CreateNewTopic => state with
+        {
+            SelectedTopicId = null
+        },
+
         _ => state
     };
 }
