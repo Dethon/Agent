@@ -15,9 +15,9 @@
 ## Current Position
 
 **Phase:** 7 of 7 (Cleanup and Verification)
-**Plan:** 1 of 3 complete
+**Plan:** 2 of 3 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 07-01-PLAN.md
+**Last activity:** 2026-01-20 - Completed 07-02-PLAN.md
 
 **Progress:**
 ```
@@ -27,9 +27,9 @@ Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
 Phase 4: [####] SignalR Integration (4/4 plans) VERIFIED
 Phase 5: [######] Component Architecture (6/6 plans) VERIFIED
 Phase 6: [##] Clean Architecture (2/2 plans) VERIFIED
-Phase 7: [#  ] Cleanup and Verification (1/3 plans)
+Phase 7: [## ] Cleanup and Verification (2/3 plans)
 
-Overall: [######################] 22/24 plans complete (~92%)
+Overall: [#######################] 23/24 plans complete (~96%)
 ```
 
 ## Performance Metrics
@@ -37,8 +37,8 @@ Overall: [######################] 22/24 plans complete (~92%)
 | Metric | Value |
 |--------|-------|
 | Phases completed | 6/7 |
-| Requirements delivered | 22/25 |
-| Plans executed | 22 |
+| Requirements delivered | 23/25 |
+| Plans executed | 23 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -84,6 +84,8 @@ Overall: [######################] 22/24 plans complete (~92%)
 | Single method interface for hub sender | SendAsync(methodName, notification, ct) covers all notification types | 2026-01-20 |
 | Migrate StreamingCoordinator early | Required for compilation after deleting IChatStateManager | 2026-01-20 |
 | Newline separator for ToolCalls | Matches original ChatStateManager behavior | 2026-01-20 |
+| Static utility for buffer rebuild | Pure functions extracted to BufferRebuildUtility for reuse | 2026-01-20 |
+| Remove render callback pattern | Components subscribe to stores directly, no callback needed | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -108,29 +110,30 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Plan 07-01 complete (ChatStateManager Cleanup)
+**Accomplished:** Plan 07-02 complete (StreamingCoordinator deletion)
 **Completed:**
-- Deleted ChatStateManager.cs and IChatStateManager.cs
-- Migrated ChatNotificationHandler to use stores
-- Migrated StreamResumeService to use stores
-- Migrated StreamingCoordinator to use stores (early - was planned for 07-02)
-- Updated all related tests to use store-based infrastructure
-- Fixed StreamingReducers ToolCalls separator
-- All 668 unit tests passing
+- Created BufferRebuildUtility with pure buffer rebuild functions
+- Created IStreamingService/StreamingService for streaming operations
+- Deleted StreamingCoordinator.cs and IStreamingCoordinator.cs
+- Migrated SendMessageEffect and StreamResumeService to new abstractions
+- Migrated all tests to use StreamingService
+- Removed SetRenderCallback (no longer needed with stores)
+- All 664 tests passing
 
 ### For Next Session
 
 **Start with:**
-Plan 07-02 - Migrate StreamingCoordinator (simplified - already done)
+Plan 07-03 - Final Verification
 
 **Key context:**
-- ChatStateManager removed, all consumers use stores
-- StreamingCoordinator already migrated in Plan 07-01
-- Plan 07-02 scope reduced - just verify/cleanup
-- Test infrastructure established for store-based testing
+- All old state management classes removed
+- All consumers use Flux stores
+- BufferRebuildUtility contains pure functions for buffer rebuild
+- StreamingService handles streaming with store-based dispatch
+- Test suite complete at 664 tests
 
-**Resume file:** `.planning/phases/07-cleanup-verification/07-02-PLAN.md` (when available)
+**Resume file:** `.planning/phases/07-cleanup-verification/07-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-20 16:32 UTC*
+*Last updated: 2026-01-20 16:50 UTC*
