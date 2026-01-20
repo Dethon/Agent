@@ -21,8 +21,8 @@
 
 **Progress:**
 ```
-Phase 1: [###] State Foundation (3/3 plans) VERIFIED
-Phase 2: [###] State Slices (3/3 plans) COMPLETE
+Phase 1: [✓✓✓] State Foundation (3/3 plans) VERIFIED ✓
+Phase 2: [✓✓✓] State Slices (3/3 plans) VERIFIED ✓
 Phase 3: [   ] Streaming Performance
 Phase 4: [   ] SignalR Integration
 Phase 5: [   ] Component Architecture
@@ -94,7 +94,7 @@ None currently.
 ### For Next Session
 
 **Start with:**
-Execute Phase 3 (Streaming Performance)
+`/gsd:discuss-phase 3` — gather context for Streaming Performance phase
 
 **Key context:**
 - All 5 state slices complete: Topics, Messages, Streaming, Connection, Approval
