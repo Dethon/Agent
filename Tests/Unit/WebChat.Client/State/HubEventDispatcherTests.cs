@@ -1,6 +1,7 @@
 using Domain.DTOs.WebChat;
 using Moq;
 using Shouldly;
+using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
@@ -11,15 +12,33 @@ using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
 
-public sealed class HubEventDispatcherTests
+public sealed class HubEventDispatcherTests : IDisposable
 {
     private readonly Mock<IDispatcher> _mockDispatcher;
+    private readonly Dispatcher _realDispatcher;
+    private readonly TopicsStore _topicsStore;
+    private readonly StreamingStore _streamingStore;
+    private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly HubEventDispatcher _sut;
 
     public HubEventDispatcherTests()
     {
         _mockDispatcher = new Mock<IDispatcher>();
-        _sut = new HubEventDispatcher(_mockDispatcher.Object);
+        _realDispatcher = new Dispatcher();
+        _topicsStore = new TopicsStore(_realDispatcher);
+        _streamingStore = new StreamingStore(_realDispatcher);
+        _mockStreamResumeService = new Mock<IStreamResumeService>();
+        _sut = new HubEventDispatcher(
+            _mockDispatcher.Object,
+            _topicsStore,
+            _streamingStore,
+            _mockStreamResumeService.Object);
+    }
+
+    public void Dispose()
+    {
+        _topicsStore.Dispose();
+        _streamingStore.Dispose();
     }
 
     private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
@@ -64,8 +83,9 @@ public sealed class HubEventDispatcherTests
     }
 
     [Fact]
-    public void HandleStreamChanged_Started_DispatchesStreamStarted()
+    public void HandleStreamChanged_Started_TopicNotFound_DispatchesStreamStarted()
     {
+        // Topic not in store, so StreamStarted should be dispatched
         var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
 
         _sut.HandleStreamChanged(notification);
@@ -73,6 +93,33 @@ public sealed class HubEventDispatcherTests
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<StreamStarted>(a => a.TopicId == "topic-1")),
             Times.Once);
+    }
+
+    [Fact]
+    public void HandleStreamChanged_Started_TopicFound_CallsStreamResume()
+    {
+        // Add topic to store so TryResumeStreamAsync is called
+        var topic = new StoredTopic
+        {
+            TopicId = "topic-1",
+            ChatId = 123,
+            ThreadId = 456,
+            AgentId = "agent-1",
+            Name = "Test Topic"
+        };
+        _realDispatcher.Dispatch(new AddTopic(topic));
+
+        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+
+        _sut.HandleStreamChanged(notification);
+
+        _mockStreamResumeService.Verify(
+            s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-1")),
+            Times.Once);
+        // StreamStarted should NOT be dispatched when topic is found
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.IsAny<StreamStarted>()),
+            Times.Never);
     }
 
     [Fact]

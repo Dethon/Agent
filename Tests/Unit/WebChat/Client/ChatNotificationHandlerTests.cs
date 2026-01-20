@@ -30,7 +30,7 @@ public sealed class ChatNotificationHandlerTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
+        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
         var streamResumeService = new StreamResumeService(
             _messagingService,
             _topicService,

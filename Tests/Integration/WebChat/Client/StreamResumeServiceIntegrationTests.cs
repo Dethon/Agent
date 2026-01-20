@@ -37,7 +37,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
+        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -185,7 +185,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var topicsStore2 = new TopicsStore(dispatcher2);
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
-            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2);
+            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,

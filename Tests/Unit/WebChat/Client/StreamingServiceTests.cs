@@ -28,7 +28,7 @@ public sealed class StreamingServiceTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
     }
 
     public void Dispose()

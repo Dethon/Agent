@@ -43,7 +43,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
+        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -263,7 +263,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
             var approvalStore2 = new ApprovalStore(dispatcher2);
-            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2);
+            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
