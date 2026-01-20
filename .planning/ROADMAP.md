@@ -130,7 +130,7 @@ Plans:
 
 **Dependencies:** Phase 4 (SignalR Integration)
 
-**Plans:** 5 plans
+**Plans:** 6 plans
 
 Plans:
 - [ ] 05-01-PLAN.md - Leaf components (ConnectionStatus, ChatInput) migrate to stores
@@ -138,6 +138,7 @@ Plans:
 - [ ] 05-03-PLAN.md - TopicList migrates to store subscriptions
 - [ ] 05-04-PLAN.md - Effect classes (SendMessageEffect, TopicSelectionEffect, TopicDeleteEffect)
 - [ ] 05-05-PLAN.md - ChatContainer simplification with InitializationEffect
+- [ ] 05-06-PLAN.md - MessageList migrates to store subscriptions
 
 **Requirements:**
 - COMP-01: Components dispatch actions only, render from store state
@@ -146,7 +147,7 @@ Plans:
 
 **Success Criteria:**
 1. ChatContainer.razor reduced from 320 lines to under 100 lines
-2. Message list, input, sidebar, header are separate components
+2. Message list, input, sidebar, header (ConnectionStatus) are separate components
 3. Components contain no business logic - all decisions made in reducers or effects
 4. Each component clearly shows: what store(s) it subscribes to, what actions it dispatches
 
@@ -224,4 +225,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 5 planned)*
+*Last updated: 2026-01-20 (Phase 5 revised - added 05-06 for MessageList migration)*
