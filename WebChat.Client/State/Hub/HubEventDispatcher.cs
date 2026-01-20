@@ -1,7 +1,6 @@
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
-using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -53,6 +52,7 @@ public sealed class HubEventDispatcher(
                     // Topic not found or already resuming - just update store state
                     dispatcher.Dispatch(new StreamStarted(notification.TopicId));
                 }
+
                 break;
             case StreamChangeType.Completed:
                 dispatcher.Dispatch(new StreamCompleted(notification.TopicId));
@@ -79,34 +79,22 @@ public sealed class HubEventDispatcher(
 
         if (!string.IsNullOrEmpty(notification.ToolCalls))
         {
-            // Accumulate tool calls since reducer replaces (StreamingService sends accumulated content)
-            var accumulatedToolCalls = AccumulateToolCalls(notification.TopicId, notification.ToolCalls);
             dispatcher.Dispatch(new StreamChunk(
                 notification.TopicId,
                 Content: null,
                 Reasoning: null,
-                ToolCalls: accumulatedToolCalls,
+                ToolCalls: notification.ToolCalls,
                 MessageId: null));
         }
     }
 
     public void HandleToolCalls(ToolCallsNotification notification)
     {
-        // Accumulate tool calls since reducer replaces (StreamingService sends accumulated content)
-        var accumulatedToolCalls = AccumulateToolCalls(notification.TopicId, notification.ToolCalls);
         dispatcher.Dispatch(new StreamChunk(
             notification.TopicId,
             Content: null,
             Reasoning: null,
-            ToolCalls: accumulatedToolCalls,
+            ToolCalls: notification.ToolCalls,
             MessageId: null));
-    }
-
-    private string AccumulateToolCalls(string topicId, string newToolCalls)
-    {
-        var existing = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
-        return string.IsNullOrEmpty(existing?.ToolCalls)
-            ? newToolCalls
-            : existing.ToolCalls + "\n" + newToolCalls;
     }
 }
