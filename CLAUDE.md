@@ -35,7 +35,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ## File Patterns
 
-Quick reference for finding code:
+Quick reference for finding code files:
 
 | What                     | Where                                     |
 |--------------------------|-------------------------------------------|
