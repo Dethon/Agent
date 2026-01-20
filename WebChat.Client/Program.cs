@@ -45,6 +45,9 @@ builder.Services.AddScoped<StreamingStore>();
 builder.Services.AddScoped<ConnectionStore>();
 builder.Services.AddScoped<ApprovalStore>();
 
+// State coordination (Phase 3)
+builder.Services.AddScoped<RenderCoordinator>();
+
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
 builder.Services.AddScoped<StreamResumeService>();
