@@ -15,21 +15,21 @@
 ## Current Position
 
 **Phase:** 4 of 7 (SignalR Integration) - COMPLETE
-**Plan:** 3 of 3 complete
+**Plan:** 4 of 4 complete
 **Status:** Phase complete
-**Last activity:** 2026-01-20 - Completed 04-03-PLAN.md
+**Last activity:** 2026-01-20 - Completed 04-04-PLAN.md
 
 **Progress:**
 ```
 Phase 1: [###] State Foundation (3/3 plans) VERIFIED
 Phase 2: [###] State Slices (3/3 plans) VERIFIED
 Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
-Phase 4: [###] SignalR Integration (3/3 plans) VERIFIED
+Phase 4: [####] SignalR Integration (4/4 plans) VERIFIED
 Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [############--] 12/21 plans complete (~57%)
+Overall: [#############-] 13/22 plans complete (~59%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [############--] 12/21 plans complete (~57%)
 |--------|-------|
 | Phases completed | 4/7 |
 | Requirements delivered | 16/25 |
-| Plans executed | 12 |
+| Plans executed | 13 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -69,6 +69,8 @@ Overall: [############--] 12/21 plans complete (~57%)
 | Synchronous dispatch in HubEventDispatcher | SignalR handlers are sync since reducers are pure, no async work | 2026-01-20 |
 | Effect pattern for reconnection | ReconnectionEffect subscribes to store, detects state transitions, triggers side effects | 2026-01-20 |
 | Fire-and-forget resumption | Session restart and stream resumption are async but effect runs synchronously | 2026-01-20 |
+| IDisposable tracking for SignalR | HubConnection.On() returns IDisposable - track in list for proper cleanup | 2026-01-20 |
+| Idempotent subscription pattern | Subscribe() checks IsSubscribed before registering to prevent duplicates | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -97,6 +99,7 @@ None currently.
 - Plan 01: HubEventDispatcher bridges SignalR notifications to store actions
 - Plan 02: ConnectionEventDispatcher bridges HubConnection events to ConnectionStore
 - Plan 03: ReconnectionEffect handles stream resumption through stores
+- Plan 04: SignalREventSubscriber with IDisposable tracking and idempotent subscription
 
 ### For Next Session
 
@@ -108,6 +111,7 @@ None currently.
 - ReconnectionEffect demonstrates effect pattern for side effects
 - StreamResumeService now dispatches actions
 - ChatContainer simplified - reconnection handling removed
+- SignalREventSubscriber tracks subscription disposables for proper cleanup
 - Phase 5 will migrate remaining ChatStateManager usage to stores
 
 **Resume file:** `.planning/phases/05-component-architecture/05-01-PLAN.md`
