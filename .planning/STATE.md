@@ -66,6 +66,7 @@ Overall: [##########----] 11/21 plans complete (~52%)
 | TopicId over StreamingMessage prop | Store-based data flow eliminates prop drilling causing cascade re-renders | 2026-01-20 |
 | ConnectionEventDispatcher as concrete | No interface needed for internal wiring between service and dispatcher | 2026-01-20 |
 | Backward compatibility for events | Keep existing events during incremental migration to stores | 2026-01-20 |
+| Synchronous dispatch in HubEventDispatcher | SignalR handlers are sync since reducers are pure, no async work | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -89,9 +90,9 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 4 Plan 02 complete (SignalR Event Dispatcher)
+**Accomplished:** Phase 4 Plan 01 complete (Hub Event Dispatcher)
 **Completed:**
-- Plan 01: Hub event dispatching foundation (assumed complete)
+- Plan 01: HubEventDispatcher bridges SignalR notifications to store actions
 - Plan 02: ConnectionEventDispatcher bridges HubConnection events to ConnectionStore
 
 ### For Next Session
@@ -100,9 +101,9 @@ None currently.
 `/gsd:execute-phase 4` to complete SignalR Integration phase (Plan 03)
 
 **Key context:**
-- ConnectionEventDispatcher operational
-- SignalR lifecycle events dispatch to ConnectionStore
-- Backward compatibility maintained for existing event subscribers
+- HubEventDispatcher transforms 5 notification types to actions
+- ConnectionEventDispatcher handles connection lifecycle
+- SignalREventSubscriber now uses IHubEventDispatcher
 - Plan 03 focuses on stream resumption integration
 
 **Resume file:** `.planning/phases/04-signalr-integration/04-03-PLAN.md`
