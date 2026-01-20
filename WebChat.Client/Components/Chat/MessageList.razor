@@ -2,7 +2,7 @@
 
 @code {
     [Parameter] public IReadOnlyList<ChatMessageModel> Messages { get; set; } = [];
-    [Parameter] public ChatMessageModel? StreamingMessage { get; set; }
+    [Parameter] public string TopicId { get; set; } = "";
     [Parameter] public bool IsStreaming { get; set; }
     [Parameter] public AgentInfo? SelectedAgent { get; set; }
     [Parameter] public EventCallback<string> OnSuggestionClicked { get; set; }
@@ -31,7 +31,7 @@
     {
         if (_shouldAutoScroll)
         {
-            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea);
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, true);
         }
     }
 
@@ -49,9 +49,9 @@
             <ChatMessage Message="@message"/>
         }
 
-        @if (IsStreaming && StreamingMessage is not null)
+        @if (IsStreaming && !string.IsNullOrEmpty(TopicId))
         {
-            <ChatMessage Message="@StreamingMessage" IsStreaming="true"/>
+            <StreamingMessageDisplay TopicId="@TopicId"/>
         }
     }
 </div>
