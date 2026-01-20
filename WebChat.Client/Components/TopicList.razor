@@ -1,6 +1,7 @@
 @inherits StoreSubscriberComponent
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject MessagesStore MessagesStore
 @inject IDispatcher Dispatcher
 
 @code {
@@ -32,6 +33,30 @@
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
             ids => _streamingTopics = ids);
+        Subscribe(MessagesStore.StateObservable,
+            state => ComputeUnreadCounts(state, TopicsStore.State),
+            counts => _unreadCounts = counts);
+    }
+
+    private static IReadOnlyDictionary<string, int> ComputeUnreadCounts(
+        MessagesState messagesState,
+        TopicsState topicsState)
+    {
+        var result = new Dictionary<string, int>();
+        foreach (var topic in topicsState.Topics)
+        {
+            if (topic.TopicId == topicsState.SelectedTopicId) continue;
+
+            var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+            var assistantCount = messages.Count(m => m.Role != "user");
+            var lastRead = topic.LastReadMessageCount;
+
+            if (assistantCount > lastRead)
+            {
+                result[topic.TopicId] = assistantCount - lastRead;
+            }
+        }
+        return result;
     }
 
     private string SelectedAgentName => _agents.FirstOrDefault(a => a.Id == _selectedAgentId)?.Name ?? "Select Agent";
