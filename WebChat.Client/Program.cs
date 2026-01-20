@@ -17,6 +17,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 
 // Hub event dispatching (Phase 4)
 builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
+builder.Services.AddScoped<ConnectionEventDispatcher>();
 
 // Connection services (ChatConnectionService is the concrete type needed by dependent services)
 builder.Services.AddScoped<ChatConnectionService>();
