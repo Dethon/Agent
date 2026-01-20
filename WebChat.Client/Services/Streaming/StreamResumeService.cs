@@ -10,10 +10,10 @@ namespace WebChat.Client.Services.Streaming;
 public sealed class StreamResumeService(
     IChatMessagingService messagingService,
     ITopicService topicService,
-    IChatStateManager stateManager,
     IApprovalService approvalService,
     IStreamingCoordinator streamingCoordinator,
     IDispatcher dispatcher,
+    MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
     private Func<Task>? _renderCallback;
@@ -47,7 +47,7 @@ public sealed class StreamResumeService(
                 return;
             }
 
-            if (!stateManager.HasMessagesForTopic(topic.TopicId))
+            if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
                 var messages = history.Select(h => new ChatMessageModel
@@ -60,7 +60,8 @@ public sealed class StreamResumeService(
             }
 
             dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-            var existingMessages = stateManager.GetMessagesForTopic(topic.TopicId);
+            var existingMessages = messagesStore.State.MessagesByTopic
+                .GetValueOrDefault(topic.TopicId) ?? [];
 
             if (!string.IsNullOrEmpty(state.CurrentPrompt))
             {
@@ -69,11 +70,11 @@ public sealed class StreamResumeService(
 
                 if (!promptExists)
                 {
-                    existingMessages.Add(new ChatMessageModel
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
                     {
                         Role = "user",
                         Content = state.CurrentPrompt
-                    });
+                    }));
                 }
             }
 
@@ -83,6 +84,10 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
 
+            // Re-read after potential AddMessage dispatch
+            existingMessages = messagesStore.State.MessagesByTopic
+                .GetValueOrDefault(topic.TopicId) ?? [];
+
             var historyContent = existingMessages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
                 .Select(m => m.Content)
@@ -91,7 +96,10 @@ public sealed class StreamResumeService(
             var (completedTurns, streamingMessage) = streamingCoordinator.RebuildFromBuffer(
                 state.BufferedMessages, historyContent);
 
-            existingMessages.AddRange(completedTurns.Where(t => t.HasContent));
+            foreach (var turn in completedTurns.Where(t => t.HasContent))
+            {
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
+            }
 
             streamingMessage = streamingCoordinator.StripKnownContent(streamingMessage, historyContent);
             dispatcher.Dispatch(new StreamChunk(

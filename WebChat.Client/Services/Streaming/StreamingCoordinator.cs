@@ -1,12 +1,16 @@
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.Services.Streaming;
 
 public sealed class StreamingCoordinator(
     IChatMessagingService messagingService,
-    IChatStateManager stateManager,
+    IDispatcher dispatcher,
     ITopicService topicService) : IStreamingCoordinator
 {
     private DateTime _lastRenderTime = DateTime.MinValue;
@@ -16,9 +20,7 @@ public sealed class StreamingCoordinator(
 
     public async Task StreamResponseAsync(StoredTopic topic, string message, Func<Task> onRender)
     {
-        var messages = stateManager.GetMessagesForTopic(topic.TopicId);
-        var streamingMessage = stateManager.GetStreamingMessageForTopic(topic.TopicId) ??
-                               new ChatMessageModel { Role = "assistant" };
+        var streamingMessage = new ChatMessageModel { Role = "assistant" };
         string? currentMessageId = null;
         var needsReasoningSeparator = false;
 
@@ -28,7 +30,7 @@ public sealed class StreamingCoordinator(
             {
                 if (chunk.ApprovalRequest is not null)
                 {
-                    stateManager.SetApprovalRequest(chunk.ApprovalRequest);
+                    dispatcher.Dispatch(new ShowApproval(topic.TopicId, chunk.ApprovalRequest));
                     await onRender();
                     continue;
                 }
@@ -40,7 +42,12 @@ public sealed class StreamingCoordinator(
                         Content = chunk.Error,
                         IsError = true
                     };
-                    stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                    dispatcher.Dispatch(new StreamChunk(
+                        topic.TopicId,
+                        streamingMessage.Content,
+                        streamingMessage.Reasoning,
+                        streamingMessage.ToolCalls,
+                        currentMessageId));
                     break;
                 }
 
@@ -48,9 +55,9 @@ public sealed class StreamingCoordinator(
 
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
                 {
-                    messages.Add(streamingMessage);
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                    dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
                 }
                 else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
@@ -61,14 +68,19 @@ public sealed class StreamingCoordinator(
                 currentMessageId = chunk.MessageId;
 
                 streamingMessage = AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
-                stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                dispatcher.Dispatch(new StreamChunk(
+                    topic.TopicId,
+                    streamingMessage.Content,
+                    streamingMessage.Reasoning,
+                    streamingMessage.ToolCalls,
+                    currentMessageId));
 
                 await ThrottledRenderAsync(onRender);
             }
 
             if (streamingMessage.HasContent)
             {
-                messages.Add(streamingMessage with { });
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
             }
 
             topic.LastMessageAt = DateTime.UtcNow;
@@ -76,11 +88,11 @@ public sealed class StreamingCoordinator(
         }
         catch (Exception ex)
         {
-            messages.Add(CreateErrorMessage($"Error: {ex.Message}"));
+            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error: {ex.Message}")));
         }
         finally
         {
-            stateManager.StopStreaming(topic.TopicId);
+            dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
             await onRender();
         }
     }
@@ -91,7 +103,6 @@ public sealed class StreamingCoordinator(
         string startMessageId,
         Func<Task> onRender)
     {
-        var messages = stateManager.GetMessagesForTopic(topic.TopicId);
         var currentMessageId = startMessageId;
         var needsReasoningSeparator = false;
         var receivedNewContent = false;
@@ -106,7 +117,7 @@ public sealed class StreamingCoordinator(
             {
                 if (chunk.ApprovalRequest is not null)
                 {
-                    stateManager.SetApprovalRequest(chunk.ApprovalRequest);
+                    dispatcher.Dispatch(new ShowApproval(topic.TopicId, chunk.ApprovalRequest));
                     await onRender();
                     continue;
                 }
@@ -118,7 +129,12 @@ public sealed class StreamingCoordinator(
                         Content = chunk.Error,
                         IsError = true
                     };
-                    stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                    dispatcher.Dispatch(new StreamChunk(
+                        topic.TopicId,
+                        streamingMessage.Content,
+                        streamingMessage.Reasoning,
+                        streamingMessage.ToolCalls,
+                        currentMessageId));
                     break;
                 }
 
@@ -126,9 +142,9 @@ public sealed class StreamingCoordinator(
 
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
                 {
-                    messages.Add(streamingMessage);
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                    dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
 
                     knownContent = "";
@@ -185,14 +201,19 @@ public sealed class StreamingCoordinator(
                 if (isNew)
                 {
                     receivedNewContent = true;
-                    stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+                    dispatcher.Dispatch(new StreamChunk(
+                        topic.TopicId,
+                        streamingMessage.Content,
+                        streamingMessage.Reasoning,
+                        streamingMessage.ToolCalls,
+                        currentMessageId));
                     await ThrottledRenderAsync(onRender);
                 }
             }
 
             if (streamingMessage.HasContent)
             {
-                messages.Add(streamingMessage with { });
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
             }
 
             if (receivedNewContent)
@@ -203,11 +224,11 @@ public sealed class StreamingCoordinator(
         }
         catch (Exception ex)
         {
-            messages.Add(CreateErrorMessage($"Error resuming stream: {ex.Message}"));
+            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error resuming stream: {ex.Message}")));
         }
         finally
         {
-            stateManager.StopStreaming(topic.TopicId);
+            dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
             await onRender();
         }
     }
