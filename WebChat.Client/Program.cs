@@ -52,6 +52,9 @@ builder.Services.AddScoped<ApprovalStore>();
 // State coordination (Phase 3)
 builder.Services.AddScoped<RenderCoordinator>();
 
+// State effects (Phase 4)
+builder.Services.AddScoped<ReconnectionEffect>();
+
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
 builder.Services.AddScoped<StreamResumeService>();
@@ -59,6 +62,11 @@ builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<Str
 
 // Notification handling
 builder.Services.AddScoped<IChatNotificationHandler, ChatNotificationHandler>();
-builder.Services.AddScoped<SignalREventSubscriber>();
+builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+// Activate effects that need to run at startup
+_ = app.Services.GetRequiredService<ReconnectionEffect>();
+
+await app.RunAsync();
