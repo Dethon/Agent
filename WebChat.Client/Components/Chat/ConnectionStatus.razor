@@ -11,11 +11,13 @@
 
     protected override void OnInitialized()
     {
-        Subscribe(ConnectionStore.StateObservable, state => state.Status, status =>
-        {
-            _isConnected = status == ConnStatus.Connected;
-            _isReconnecting = status == ConnStatus.Reconnecting;
-        });
+        Subscribe(ConnectionStore.StateObservable, state => state.Status, OnStatusChanged);
+    }
+
+    private void OnStatusChanged(ConnStatus status)
+    {
+        _isConnected = status == ConnStatus.Connected;
+        _isReconnecting = status == ConnStatus.Reconnecting;
     }
 }
 

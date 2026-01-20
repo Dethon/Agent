@@ -1,9 +1,15 @@
 @using System.Text.Json
 @using Domain.DTOs
+@using Domain.DTOs.WebChat
 @using WebChat.Client.Contracts
+@using WebChat.Client.State
+@using WebChat.Client.State.Approval
+@inherits StoreSubscriberComponent
+@inject ApprovalStore ApprovalStore
+@inject IDispatcher Dispatcher
 @inject IApprovalService ApprovalService
 
-@if (ApprovalRequest is not null)
+@if (_approvalRequest is not null)
 {
     <div class="approval-modal-overlay">
         <div class="approval-modal">
@@ -12,7 +18,7 @@
             </div>
 
             <div class="approval-content">
-                @foreach (var request in ApprovalRequest.Requests)
+                @foreach (var request in _approvalRequest.Requests)
                 {
                     <div class="tool-request">
                         <div class="tool-name">@FormatToolName(request.ToolName)</div>
@@ -48,41 +54,34 @@
 }
 
 @code {
-    [Parameter] public ToolApprovalRequestMessage? ApprovalRequest { get; set; }
-
-    [Parameter] public EventCallback OnResponded { get; set; }
-
+    private ToolApprovalRequestMessage? _approvalRequest;
     private bool _isResponding;
 
-    private async Task HandleApprove()
+    protected override void OnInitialized()
     {
-        await RespondAsync(ToolApprovalResult.Approved);
+        Subscribe(ApprovalStore.StateObservable,
+            state => state.CurrentRequest,
+            request => _approvalRequest = request);
     }
 
-    private async Task HandleAlways()
-    {
-        await RespondAsync(ToolApprovalResult.ApprovedAndRemember);
-    }
+    private async Task HandleApprove() => await RespondAsync(ToolApprovalResult.Approved);
 
-    private async Task HandleReject()
-    {
-        await RespondAsync(ToolApprovalResult.Rejected);
-    }
+    private async Task HandleAlways() => await RespondAsync(ToolApprovalResult.ApprovedAndRemember);
+
+    private async Task HandleReject() => await RespondAsync(ToolApprovalResult.Rejected);
 
     private async Task RespondAsync(ToolApprovalResult result)
     {
-        if (ApprovalRequest is null || _isResponding)
-        {
+        if (_approvalRequest is null || _isResponding)
             return;
-        }
 
         _isResponding = true;
         StateHasChanged();
 
         try
         {
-            await ApprovalService.RespondToApprovalAsync(ApprovalRequest.ApprovalId, result);
-            await OnResponded.InvokeAsync();
+            await ApprovalService.RespondToApprovalAsync(_approvalRequest.ApprovalId, result);
+            Dispatcher.Dispatch(new ClearApproval());
         }
         finally
         {
@@ -90,10 +89,7 @@
         }
     }
 
-    private static string FormatToolName(string toolName)
-    {
-        return toolName.Split(':').Last();
-    }
+    private static string FormatToolName(string toolName) => toolName.Split(':').Last();
 
     private static string FormatValue(object? value)
     {
@@ -101,13 +97,10 @@
         {
             null => "null",
             string s => s,
-            JsonElement { ValueKind: JsonValueKind.String } je =>
-                je.GetString() ?? "",
+            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString() ?? "",
             JsonElement je => je.GetRawText(),
             _ => value.ToString() ?? ""
         };
-
         return formatted.Length > 500 ? formatted[..500] + "..." : formatted;
     }
-
 }
