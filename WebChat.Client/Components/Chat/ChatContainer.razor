@@ -7,7 +7,7 @@
 @inject IChatMessagingService MessagingService
 @inject IStreamingCoordinator StreamingCoordinator
 @inject StreamResumeService StreamResumeService
-@inject SignalREventSubscriber EventSubscriber
+@inject ISignalREventSubscriber EventSubscriber
 @inject ILocalStorageService LocalStorage
 @using WebChat.Client.Contracts
 @using WebChat.Client.Services.Streaming
@@ -60,7 +60,6 @@
         _stateChangedHandler = () => InvokeAsync(StateHasChanged);
         StateManager.OnStateChanged += _stateChangedHandler;
         ConnectionService.OnStateChanged += StateHasChanged;
-        ConnectionService.OnReconnected += HandleReconnected;
         ConnectionService.OnReconnecting += StateHasChanged;
 
         await ConnectionService.ConnectAsync();
@@ -105,19 +104,6 @@
 
             StateHasChanged();
         });
-    }
-
-    private async Task HandleReconnected()
-    {
-        if (StateManager.SelectedTopic is not null)
-        {
-            await SessionService.StartSessionAsync(StateManager.SelectedTopic);
-        }
-
-        foreach (var topic in StateManager.Topics)
-        {
-            _ = StreamResumeService.TryResumeStreamAsync(topic);
-        }
     }
 
     private async Task HandleAgentChanged(string agentId)
@@ -313,7 +299,6 @@
         }
 
         ConnectionService.OnStateChanged -= StateHasChanged;
-        ConnectionService.OnReconnected -= HandleReconnected;
         ConnectionService.OnReconnecting -= StateHasChanged;
     }
 

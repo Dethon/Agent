@@ -7,6 +7,8 @@ using WebChat.Client.Models;
 using WebChat.Client.Services.Handlers;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
+using WebChat.Client.State.Streaming;
 
 namespace Tests.Integration.WebChat.Client;
 
@@ -21,6 +23,8 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
     private StreamingCoordinator _coordinator = null!;
     private StreamResumeService _resumeService = null!;
     private ChatNotificationHandler _handler = null!;
+    private Dispatcher _dispatcher = null!;
+    private StreamingStore _streamingStore = null!;
     private readonly List<IDisposable> _subscriptions = [];
 
     public async Task InitializeAsync()
@@ -32,12 +36,16 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         _approvalService = new HubConnectionApprovalService(_connection);
         _stateManager = new ChatStateManager();
         _coordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
+        _dispatcher = new Dispatcher();
+        _streamingStore = new StreamingStore(_dispatcher);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _stateManager,
             _approvalService,
-            _coordinator);
+            _coordinator,
+            _dispatcher,
+            _streamingStore);
         _handler = new ChatNotificationHandler(_stateManager, _topicService, _resumeService);
 
         await _connection.StartAsync();
@@ -51,6 +59,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         }
 
         _subscriptions.Clear();
+        _streamingStore.Dispose();
 
         try
         {
@@ -241,12 +250,16 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
             var topicService2 = new HubConnectionTopicService(connection2);
             var approvalService2 = new HubConnectionApprovalService(connection2);
             var coordinator2 = new StreamingCoordinator(messagingService2, stateManager2, topicService2);
+            var dispatcher2 = new Dispatcher();
+            var streamingStore2 = new StreamingStore(dispatcher2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
                 stateManager2,
                 approvalService2,
-                coordinator2);
+                coordinator2,
+                dispatcher2,
+                streamingStore2);
             var handler2 = new ChatNotificationHandler(stateManager2, topicService2, resumeService2);
 
             // Both clients register notification handlers

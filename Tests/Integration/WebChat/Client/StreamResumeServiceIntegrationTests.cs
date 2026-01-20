@@ -5,6 +5,8 @@ using Tests.Integration.WebChat.Client.Adapters;
 using WebChat.Client.Models;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
+using WebChat.Client.State.Streaming;
 
 namespace Tests.Integration.WebChat.Client;
 
@@ -18,6 +20,8 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     private ChatStateManager _stateManager = null!;
     private StreamingCoordinator _coordinator = null!;
     private StreamResumeService _resumeService = null!;
+    private Dispatcher _dispatcher = null!;
+    private StreamingStore _streamingStore = null!;
 
     public async Task InitializeAsync()
     {
@@ -29,16 +33,22 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _approvalService = new HubConnectionApprovalService(_connection);
         _stateManager = new ChatStateManager();
         _coordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
+        _dispatcher = new Dispatcher();
+        _streamingStore = new StreamingStore(_dispatcher);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _stateManager,
             _approvalService,
-            _coordinator);
+            _coordinator,
+            _dispatcher,
+            _streamingStore);
     }
 
     public async Task DisposeAsync()
     {
+        _streamingStore.Dispose();
+
         try
         {
             await _connection.StopAsync();
@@ -189,12 +199,16 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var approvalService2 = new HubConnectionApprovalService(connection2);
             var stateManager2 = new ChatStateManager();
             var coordinator2 = new StreamingCoordinator(messagingService2, stateManager2, topicService2);
+            var dispatcher2 = new Dispatcher();
+            var streamingStore2 = new StreamingStore(dispatcher2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
                 stateManager2,
                 approvalService2,
-                coordinator2);
+                coordinator2,
+                dispatcher2,
+                streamingStore2);
 
             // Create topics for each client
             var topic1 = CreateAndRegisterTopic();
