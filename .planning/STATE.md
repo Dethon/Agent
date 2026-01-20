@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 3 - Streaming Performance COMPLETE
+**Current Focus:** Phase 4 - SignalR Integration IN PROGRESS
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,22 +14,22 @@
 
 ## Current Position
 
-**Phase:** 3 of 7 (Streaming Performance) - COMPLETE
-**Plan:** 3 of 3 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-20 - Completed 03-03-PLAN.md
+**Phase:** 4 of 7 (SignalR Integration) - IN PROGRESS
+**Plan:** 2 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 04-02-PLAN.md
 
 **Progress:**
 ```
 Phase 1: [###] State Foundation (3/3 plans) VERIFIED
 Phase 2: [###] State Slices (3/3 plans) VERIFIED
 Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
-Phase 4: [   ] SignalR Integration
+Phase 4: [##-] SignalR Integration (2/3 plans)
 Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [#########-----] 9/21 plans complete (~43%)
+Overall: [##########----] 11/21 plans complete (~52%)
 ```
 
 ## Performance Metrics
@@ -37,8 +37,8 @@ Overall: [#########-----] 9/21 plans complete (~43%)
 | Metric | Value |
 |--------|-------|
 | Phases completed | 3/7 |
-| Requirements delivered | 13/25 |
-| Plans executed | 9 |
+| Requirements delivered | 14/25 |
+| Plans executed | 11 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -64,6 +64,8 @@ Overall: [#########-----] 9/21 plans complete (~43%)
 | Centralized throttling | RenderCoordinator is single point where Sample is applied | 2026-01-20 |
 | StreamingMessageDisplay isolation | Child component subscribes to store directly, preventing parent re-renders | 2026-01-20 |
 | TopicId over StreamingMessage prop | Store-based data flow eliminates prop drilling causing cascade re-renders | 2026-01-20 |
+| ConnectionEventDispatcher as concrete | No interface needed for internal wiring between service and dispatcher | 2026-01-20 |
+| Backward compatibility for events | Keep existing events during incremental migration to stores | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -87,25 +89,23 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 3 complete (Streaming Performance)
+**Accomplished:** Phase 4 Plan 02 complete (SignalR Event Dispatcher)
 **Completed:**
-- Plan 01: RenderCoordinator with 50ms Sample-based throttling
-- Plan 02: Visual feedback CSS (cursor, typing indicator)
-- Plan 03: StreamingMessageDisplay with isolated rendering and smooth auto-scroll
+- Plan 01: Hub event dispatching foundation (assumed complete)
+- Plan 02: ConnectionEventDispatcher bridges HubConnection events to ConnectionStore
 
 ### For Next Session
 
 **Start with:**
-`/gsd:execute-phase 4` to begin SignalR Integration phase
+`/gsd:execute-phase 4` to complete SignalR Integration phase (Plan 03)
 
 **Key context:**
-- All streaming performance infrastructure complete
-- RenderCoordinator provides throttled observables
-- StreamingMessageDisplay isolates streaming renders
-- Visual feedback CSS ready
-- Phase 4 focuses on SignalR reconnection and stream resumption
+- ConnectionEventDispatcher operational
+- SignalR lifecycle events dispatch to ConnectionStore
+- Backward compatibility maintained for existing event subscribers
+- Plan 03 focuses on stream resumption integration
 
-**Resume file:** `.planning/phases/04-signalr-integration/04-01-PLAN.md`
+**Resume file:** `.planning/phases/04-signalr-integration/04-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
