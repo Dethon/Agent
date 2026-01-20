@@ -64,7 +64,8 @@ public static class TopicsReducers
 
         SelectAgent a => state with
         {
-            SelectedAgentId = a.AgentId
+            SelectedAgentId = a.AgentId,
+            SelectedTopicId = null // Clear topic selection when switching agents
         },
 
         TopicsError a => state with
