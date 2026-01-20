@@ -103,6 +103,14 @@ Plans:
 
 **Dependencies:** Phase 3 (Streaming Performance)
 
+**Plans:** 4 plans
+
+Plans:
+- [ ] 04-01-PLAN.md - HubEventDispatcher (transforms SignalR notifications to store actions)
+- [ ] 04-02-PLAN.md - ConnectionEventDispatcher (connection lifecycle events to ConnectionStore)
+- [ ] 04-03-PLAN.md - ReconnectionEffect (stream resumption on reconnect)
+- [ ] 04-04-PLAN.md - Subscription lifecycle management (disposable tracking, duplicate prevention)
+
 **Requirements:**
 - HUB-01: HubEventDispatcher routes SignalR events to store actions
 - HUB-02: Reconnection preserves streaming state and resumes properly
@@ -182,7 +190,7 @@ Plans:
 | 1 | State Foundation | 5 | Complete |
 | 2 | State Slices | 5 | Complete |
 | 3 | Streaming Performance | 3 | Complete |
-| 4 | SignalR Integration | 3 | Pending |
+| 4 | SignalR Integration | 3 | Planned |
 | 5 | Component Architecture | 3 | Pending |
 | 6 | Clean Architecture | 3 | Pending |
 | 7 | Cleanup and Verification | 3 | Pending |
@@ -207,4 +215,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 3 complete)*
+*Last updated: 2026-01-20 (Phase 4 planned)*
