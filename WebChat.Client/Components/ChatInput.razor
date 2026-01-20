@@ -1,12 +1,15 @@
 @using WebChat.Client.State
 @using WebChat.Client.State.Topics
 @using WebChat.Client.State.Streaming
+@using WebChat.Client.State.Connection
+@using ConnStatus = WebChat.Client.State.Connection.ConnectionStatus
 @inherits StoreSubscriberComponent
 
 @inject IJSRuntime Js
 @inject IDispatcher Dispatcher
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject ConnectionStore ConnectionStore
 
 @code {
     private string _inputText = "";
@@ -14,6 +17,7 @@
     private string? _topicId;
     private string? _selectedAgentId;
     private bool _isStreaming;
+    private bool _isConnected;
     private bool _disabled;
 
     protected override void OnInitialized()
@@ -29,11 +33,17 @@
         {
             _isStreaming = _topicId is not null && streamingTopics.Contains(_topicId);
         });
+
+        Subscribe(ConnectionStore.StateObservable, state => state.Status, status =>
+        {
+            _isConnected = status == ConnStatus.Connected;
+            UpdateDisabledState();
+        });
     }
 
     private void UpdateDisabledState()
     {
-        _disabled = string.IsNullOrEmpty(_selectedAgentId);
+        _disabled = string.IsNullOrEmpty(_selectedAgentId) || !_isConnected;
     }
 
     private async Task HandleSubmit()
