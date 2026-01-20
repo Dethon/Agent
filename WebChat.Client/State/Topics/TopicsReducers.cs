@@ -30,11 +30,13 @@ public static class TopicsReducers
             SelectedTopicId = a.TopicId
         },
 
-        AddTopic a => state with
-        {
-            Topics = state.Topics.Append(a.Topic).ToList(),
-            Error = null // Auto-clear on success
-        },
+        AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
+            ? state  // Topic already exists, ignore duplicate
+            : state with
+            {
+                Topics = state.Topics.Append(a.Topic).ToList(),
+                Error = null // Auto-clear on success
+            },
 
         UpdateTopic a => state with
         {
