@@ -12,12 +12,16 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Hub;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+
+// Hub event dispatching (Phase 4)
+builder.Services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
 
 // Connection services (ChatConnectionService is the concrete type needed by dependent services)
 builder.Services.AddScoped<ChatConnectionService>();
