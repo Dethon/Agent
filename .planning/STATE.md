@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 5 - Component Architecture (complete)
+**Current Focus:** Phase 6 - Clean Architecture (in progress)
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,10 +14,10 @@
 
 ## Current Position
 
-**Phase:** 5 of 7 (Component Architecture)
-**Plan:** 6 of 6 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-20 - Completed 05-05-PLAN.md
+**Phase:** 6 of 7 (Clean Architecture)
+**Plan:** 2 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 06-02-PLAN.md
 
 **Progress:**
 ```
@@ -26,10 +26,10 @@ Phase 2: [###] State Slices (3/3 plans) VERIFIED
 Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
 Phase 4: [####] SignalR Integration (4/4 plans) VERIFIED
 Phase 5: [######] Component Architecture (6/6 plans) VERIFIED
-Phase 6: [   ] Clean Architecture
+Phase 6: [##_] Clean Architecture (2/3 plans)
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [##################] 19/22 plans complete (~86%)
+Overall: [####################] 21/25 plans complete (~84%)
 ```
 
 ## Performance Metrics
@@ -37,8 +37,8 @@ Overall: [##################] 19/22 plans complete (~86%)
 | Metric | Value |
 |--------|-------|
 | Phases completed | 5/7 |
-| Requirements delivered | 20/25 |
-| Plans executed | 19 |
+| Requirements delivered | 21/25 |
+| Plans executed | 21 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -78,6 +78,8 @@ Overall: [##################] 19/22 plans complete (~86%)
 | Reuse MessagesLoaded action | Existing action sufficient for setting messages; no need for redundant SetMessages | 2026-01-20 |
 | Initialize action dispatch | Decouples startup from component; effect handles async initialization | 2026-01-20 |
 | Store subscription for agent changes | Effect pattern better for detecting state transitions vs action handler | 2026-01-20 |
+| Extension methods in Extensions folder | Matches pattern from Agent/Modules/InjectorModule.cs | 2026-01-20 |
+| ReconnectionEffect in State.Hub namespace | Located separately from other effects, requires explicit import | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -85,6 +87,7 @@ Overall: [##################] 19/22 plans complete (~86%)
 - [ ] Document current approval flow step-by-step before Phase 4
 - [ ] Complete state field audit from StreamingCoordinator before Phase 4
 - [ ] Measure current streaming performance for comparison
+- [ ] Fix pre-existing test failures in StreamResumeServiceTests
 
 ### Blockers
 
@@ -95,33 +98,31 @@ None currently.
 - **Memory leaks:** Every `+=` event subscription must have corresponding `-=` in Dispose
 - **InvokeAsync:** All state mutations must be wrapped, not just StateHasChanged calls
 - **Throttle pattern:** Preserve 50ms throttle for streaming updates to prevent UI freeze
+- **Pre-existing test failures:** StreamResumeServiceTests has 2 failing tests (not related to this refactoring)
 
 ## Session Continuity
 
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Plan 05-05 complete (Container component migration)
+**Accomplished:** Plan 06-02 complete (Store Registration)
 **Completed:**
-- InitializationEffect for app startup: SignalR, agents, topics
-- AgentSelectionEffect for agent change side effects
-- ChatContainer simplified from 305 to 28 lines
-- All child components receive no props
-- All effects registered and eagerly instantiated
+- ServiceCollectionExtensions with AddWebChatStores() and AddWebChatEffects()
+- Program.cs simplified to use extension methods
+- Layer compliance verified via grep (no cross-layer references)
 
 ### For Next Session
 
 **Start with:**
-Phase 6 - Clean Architecture
+Plan 06-03 - ChatHub Audit
 
 **Key context:**
-- Phase 5 complete - all components migrated to store pattern
-- ChatContainer is thin composition root
-- All business logic in effects
-- No prop drilling anywhere
+- Store registration now consolidated in extension methods
+- Layer compliance verified: stores only reference Domain/DTOs
+- No Infrastructure or Agent references from WebChat.Client
 
-**Resume file:** `.planning/phases/06-clean-architecture/06-01-PLAN.md` (when available)
+**Resume file:** `.planning/phases/06-clean-architecture/06-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-20 13:42 UTC*
+*Last updated: 2026-01-20 14:15 UTC*
