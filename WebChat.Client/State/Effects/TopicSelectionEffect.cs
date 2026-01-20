@@ -54,12 +54,18 @@ public sealed class TopicSelectionEffect : IDisposable
         {
             await _sessionService.StartSessionAsync(topic);
             var history = await _topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
-            var messages = history.Select(h => new ChatMessageModel
+
+            // Re-check after async work - SendMessageEffect might have added messages
+            var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
+            if (currentMessages.Count == 0)
             {
-                Role = h.Role,
-                Content = h.Content
-            }).ToList();
-            _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
+                var messages = history.Select(h => new ChatMessageModel
+                {
+                    Role = h.Role,
+                    Content = h.Content
+                }).ToList();
+                _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
+            }
         }
 
         // Mark messages as read by updating LastReadMessageCount
