@@ -1,11 +1,15 @@
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
+using WebChat.Client.State.Hub;
 
 namespace WebChat.Client.Services;
 
-public sealed class ChatConnectionService(HttpClient httpClient) : IChatConnectionService
+public sealed class ChatConnectionService(
+    HttpClient httpClient,
+    ConnectionEventDispatcher connectionEventDispatcher) : IChatConnectionService
 {
+    private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
     public bool IsReconnecting => HubConnection?.State == HubConnectionState.Reconnecting;
 
@@ -33,30 +37,34 @@ public sealed class ChatConnectionService(HttpClient httpClient) : IChatConnecti
             .WithKeepAliveInterval(TimeSpan.FromSeconds(10))
             .Build();
 
-        HubConnection.Closed += _ =>
+        HubConnection.Closed += exception =>
         {
+            _connectionEventDispatcher.HandleClosed(exception);
             OnStateChanged?.Invoke();
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnecting += _ =>
+        HubConnection.Reconnecting += exception =>
         {
+            _connectionEventDispatcher.HandleReconnecting(exception);
             OnReconnecting?.Invoke();
             OnStateChanged?.Invoke();
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnected += async _ =>
+        HubConnection.Reconnected += async connectionId =>
         {
+            _connectionEventDispatcher.HandleReconnected(connectionId);
             if (OnReconnected is not null)
             {
                 await OnReconnected.Invoke();
             }
-
             OnStateChanged?.Invoke();
         };
 
+        _connectionEventDispatcher.HandleConnecting();
         await HubConnection.StartAsync();
+        _connectionEventDispatcher.HandleConnected();
         OnStateChanged?.Invoke();
     }
 
