@@ -104,7 +104,7 @@ None currently.
 ### For Next Session
 
 **Start with:**
-`/gsd:execute-phase 5` to begin Component Architecture phase
+`/gsd:discuss-phase 5` to gather context for Component Architecture phase
 
 **Key context:**
 - SignalR integration complete - notifications flow through stores
