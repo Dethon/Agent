@@ -83,7 +83,8 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         builder.Services.AddSingleton<IAgentFactory>(FakeAgentFactory);
 
         // Add web chat components
-        builder.Services.AddSingleton<INotifier, Notifier>();
+        builder.Services.AddSingleton<IHubNotificationSender, HubNotificationAdapter>();
+        builder.Services.AddSingleton<INotifier, HubNotifier>();
         builder.Services.AddSingleton<WebChatSessionManager>();
         builder.Services.AddSingleton<WebChatStreamManager>();
         builder.Services.AddSingleton<WebChatApprovalManager>();

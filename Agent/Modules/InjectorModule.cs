@@ -12,6 +12,7 @@ using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using HubNotifier = Infrastructure.Clients.Messaging.HubNotifier;
 
 namespace Agent.Modules;
 
@@ -144,7 +145,8 @@ public static class InjectorModule
         private IServiceCollection AddWebClient()
         {
             return services
-                .AddSingleton<INotifier, Notifier>()
+                .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
+                .AddSingleton<INotifier, HubNotifier>()
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()
