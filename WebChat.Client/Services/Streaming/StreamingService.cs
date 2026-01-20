@@ -4,6 +4,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -14,7 +15,8 @@ namespace WebChat.Client.Services.Streaming;
 public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,
-    ITopicService topicService) : IStreamingService
+    ITopicService topicService,
+    TopicsStore topicsStore) : IStreamingService
 {
     public async Task StreamResponseAsync(StoredTopic topic, string message)
     {
@@ -81,8 +83,14 @@ public sealed class StreamingService(
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
             }
 
-            topic.LastMessageAt = DateTime.UtcNow;
-            await topicService.SaveTopicAsync(topic.ToMetadata());
+            // Fetch current topic from store to get latest LastReadMessageCount
+            // Don't mutate the store object - create metadata with updated LastMessageAt
+            var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
+            if (currentTopic is not null)
+            {
+                var metadata = currentTopic.ToMetadata() with { LastMessageAt = DateTimeOffset.UtcNow };
+                await topicService.SaveTopicAsync(metadata);
+            }
         }
         catch (Exception ex)
         {
@@ -193,8 +201,14 @@ public sealed class StreamingService(
 
             if (receivedNewContent)
             {
-                topic.LastMessageAt = DateTime.UtcNow;
-                await topicService.SaveTopicAsync(topic.ToMetadata());
+                // Fetch current topic from store to get latest LastReadMessageCount
+                // Don't mutate the store object - create metadata with updated LastMessageAt
+                var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
+                if (currentTopic is not null)
+                {
+                    var metadata = currentTopic.ToMetadata() with { LastMessageAt = DateTimeOffset.UtcNow };
+                    await topicService.SaveTopicAsync(metadata);
+                }
             }
         }
         catch (Exception ex)
