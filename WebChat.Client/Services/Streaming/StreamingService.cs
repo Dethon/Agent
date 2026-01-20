@@ -103,9 +103,11 @@ public sealed class StreamingService(
         var needsReasoningSeparator = false;
         var receivedNewContent = false;
 
-        var knownContent = streamingMessage.Content;
-        var knownReasoning = streamingMessage.Reasoning ?? "";
-        var knownToolCalls = streamingMessage.ToolCalls ?? "";
+        // Track the exact length of content we've already processed from the buffer
+        // to avoid duplicate display. Live stream chunks are appended beyond this point.
+        var processedContentLength = streamingMessage.Content?.Length ?? 0;
+        var processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
+        var processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
 
         try
         {
@@ -145,9 +147,10 @@ public sealed class StreamingService(
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
 
-                    knownContent = "";
-                    knownReasoning = "";
-                    knownToolCalls = "";
+                    // Reset processed lengths for new message turn
+                    processedContentLength = 0;
+                    processedReasoningLength = 0;
+                    processedToolCallsLength = 0;
                 }
                 else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning) && chunkStartsNewMessage)
                 {
@@ -156,45 +159,20 @@ public sealed class StreamingService(
 
                 currentMessageId = chunk.MessageId;
 
-                var isNew = false;
+                // Accumulate new chunks from the live stream
+                // Use simple accumulation - live stream chunks are new content
+                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
 
-                if (!string.IsNullOrEmpty(chunk.Content) && !knownContent.Contains(chunk.Content))
-                {
-                    streamingMessage = streamingMessage with
-                    {
-                        Content = string.IsNullOrEmpty(streamingMessage.Content)
-                            ? chunk.Content
-                            : streamingMessage.Content + chunk.Content
-                    };
-                    knownContent = streamingMessage.Content;
-                    isNew = true;
-                }
+                // Check if we have new content beyond what was in the buffer
+                var hasNewContent = (streamingMessage.Content?.Length ?? 0) > processedContentLength;
+                var hasNewReasoning = (streamingMessage.Reasoning?.Length ?? 0) > processedReasoningLength;
+                var hasNewToolCalls = (streamingMessage.ToolCalls?.Length ?? 0) > processedToolCallsLength;
+                var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls;
 
-                if (!string.IsNullOrEmpty(chunk.Reasoning) && !knownReasoning.Contains(chunk.Reasoning))
-                {
-                    var separator = needsReasoningSeparator ? "\n-----\n" : "";
-                    needsReasoningSeparator = false;
-                    streamingMessage = streamingMessage with
-                    {
-                        Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
-                            ? chunk.Reasoning
-                            : streamingMessage.Reasoning + separator + chunk.Reasoning
-                    };
-                    knownReasoning = streamingMessage.Reasoning ?? "";
-                    isNew = true;
-                }
-
-                if (!string.IsNullOrEmpty(chunk.ToolCalls) && !knownToolCalls.Contains(chunk.ToolCalls))
-                {
-                    streamingMessage = streamingMessage with
-                    {
-                        ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
-                            ? chunk.ToolCalls
-                            : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
-                    };
-                    knownToolCalls = streamingMessage.ToolCalls ?? "";
-                    isNew = true;
-                }
+                // Update processed lengths
+                processedContentLength = streamingMessage.Content?.Length ?? 0;
+                processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
+                processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
 
                 if (isNew)
                 {
