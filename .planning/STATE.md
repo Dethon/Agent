@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 3 - Streaming Performance (Ready to start)
+**Current Focus:** Phase 3 - Streaming Performance (In progress)
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,22 +14,22 @@
 
 ## Current Position
 
-**Phase:** 2 of 7 (State Slices) - COMPLETE
-**Plan:** 3 of 3 complete
-**Status:** Phase 2 complete
-**Last activity:** 2026-01-20 - Completed 02-03-PLAN.md
+**Phase:** 3 of 7 (Streaming Performance) - IN PROGRESS
+**Plan:** 2 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 03-02-PLAN.md
 
 **Progress:**
 ```
-Phase 1: [✓✓✓] State Foundation (3/3 plans) VERIFIED ✓
-Phase 2: [✓✓✓] State Slices (3/3 plans) VERIFIED ✓
-Phase 3: [   ] Streaming Performance
+Phase 1: [###] State Foundation (3/3 plans) VERIFIED
+Phase 2: [###] State Slices (3/3 plans) VERIFIED
+Phase 3: [##-] Streaming Performance (2/3 plans)
 Phase 4: [   ] SignalR Integration
 Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [######-] 6/21 plans complete (~29%)
+Overall: [########------] 8/21 plans complete (~38%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [######-] 6/21 plans complete (~29%)
 |--------|-------|
 | Phases completed | 2/7 |
 | Requirements delivered | 10/25 |
-| Plans executed | 6 |
+| Plans executed | 8 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -55,11 +55,11 @@ Overall: [######-] 6/21 plans complete (~29%)
 | RegisterHandler on concrete Dispatcher | Components inject IDispatcher (dispatch-only), stores inject Dispatcher for registration | 2026-01-20 |
 | Three Subscribe overloads | Basic, selector, selector+comparer covers 99% of use cases | 2026-01-20 |
 | Reference equality for selector memoization | C# records create new instances on with mutations | 2026-01-20 |
-| Static Selector factory class | Cleaner API with Selector.Create instead of new Selector<T,R> | 2026-01-20 |
 | Per-topic streaming | Dictionary<string, StreamingContent> keyed by TopicId for concurrent streams | 2026-01-20 |
 | Connection metadata | Include LastConnected and ReconnectAttempts for debugging/UI feedback | 2026-01-20 |
 | Domain type reuse for approvals | ApprovalState uses ToolApprovalRequestMessage from Domain directly | 2026-01-20 |
 | Topic-scoped approvals | TopicId in ApprovalState enables topic-specific modal handling | 2026-01-20 |
+| CSS-only visual feedback | Blinking cursor and typing indicator use CSS animations for hardware acceleration | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -83,27 +83,25 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 2 complete (State Slices)
+**Accomplished:** Phase 3 Plan 02 complete (Streaming Visual Feedback)
 **Completed:**
-- Created ApprovalState slice (4 files, 4 action handlers)
-- Registered all 5 feature stores in DI container
-- Added 12 unit tests for ApprovalStore
-- All 73 state store tests passing
-- Phase 2 verified: 22 slice files, 33 action handlers, 5 stores injectable
+- Added CSS animations for streaming cursor, typing indicator, error recovery styling
+- Updated ChatMessage component with conditional streaming-cursor class
+- Typing indicator shows only while waiting for first token
+- All visual feedback is CSS-based (hardware-accelerated)
 
 ### For Next Session
 
 **Start with:**
-`/gsd:discuss-phase 3` — gather context for Streaming Performance phase
+`/gsd:execute-phase 3` to continue with plan 03 (auto-scroll and smart anchoring)
 
 **Key context:**
-- All 5 state slices complete: Topics, Messages, Streaming, Connection, Approval
-- All stores registered in Program.cs and injectable
-- StreamingState ready for Phase 3 throttled UI updates
-- ConnectionState ready for Phase 4 SignalR integration
-- 73 unit tests covering all state stores
+- Visual feedback ready: blinking cursor, typing indicator, error recovery styling
+- Error recovery CSS classes defined (component wiring in Phase 4)
+- ChatMessage applies streaming-cursor based on IsStreaming and content state
+- Phase 3 Plan 03 ready: auto-scroll with user scroll detection
 
-**Resume file:** `.planning/phases/03-streaming-performance/`
+**Resume file:** `.planning/phases/03-streaming-performance/03-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
