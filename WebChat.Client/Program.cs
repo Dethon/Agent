@@ -13,6 +13,7 @@ using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Effects;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -52,8 +53,11 @@ builder.Services.AddScoped<ApprovalStore>();
 // State coordination (Phase 3)
 builder.Services.AddScoped<RenderCoordinator>();
 
-// State effects (Phase 4)
+// State effects (Phase 4 & 5)
 builder.Services.AddScoped<ReconnectionEffect>();
+builder.Services.AddScoped<SendMessageEffect>();
+builder.Services.AddScoped<TopicSelectionEffect>();
+builder.Services.AddScoped<TopicDeleteEffect>();
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
@@ -68,5 +72,8 @@ var app = builder.Build();
 
 // Activate effects that need to run at startup
 _ = app.Services.GetRequiredService<ReconnectionEffect>();
+_ = app.Services.GetRequiredService<SendMessageEffect>();
+_ = app.Services.GetRequiredService<TopicSelectionEffect>();
+_ = app.Services.GetRequiredService<TopicDeleteEffect>();
 
 await app.RunAsync();
