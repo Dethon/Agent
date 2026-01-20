@@ -32,7 +32,7 @@
     <div class="chat-container">
         <MessageList @ref="_messageList"
                      Messages="@StateManager.CurrentMessages"
-                     StreamingMessage="@StateManager.CurrentStreamingMessage"
+                     TopicId="@(StateManager.SelectedTopic?.TopicId ?? "")"
                      IsStreaming="@StateManager.IsCurrentTopicStreaming"
                      SelectedAgent="@SelectedAgent"
                      OnSuggestionClicked="SendSuggestion"/>
