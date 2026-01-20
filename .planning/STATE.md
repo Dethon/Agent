@@ -15,9 +15,9 @@
 ## Current Position
 
 **Phase:** 5 of 7 (Component Architecture)
-**Plan:** 1 of 6 complete
+**Plan:** 2 of 6 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 05-01-PLAN.md
+**Last activity:** 2026-01-20 - Completed 05-06-PLAN.md
 
 **Progress:**
 ```
@@ -25,11 +25,11 @@ Phase 1: [###] State Foundation (3/3 plans) VERIFIED
 Phase 2: [###] State Slices (3/3 plans) VERIFIED
 Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
 Phase 4: [####] SignalR Integration (4/4 plans) VERIFIED
-Phase 5: [#     ] Component Architecture (1/6 plans)
+Phase 5: [##    ] Component Architecture (2/6 plans)
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [##############--] 14/22 plans complete (~64%)
+Overall: [###############-] 15/22 plans complete (~68%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [##############--] 14/22 plans complete (~64%)
 |--------|-------|
 | Phases completed | 4/7 |
 | Requirements delivered | 17/25 |
-| Plans executed | 14 |
+| Plans executed | 15 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -72,6 +72,7 @@ Overall: [##############--] 14/22 plans complete (~64%)
 | IDisposable tracking for SignalR | HubConnection.On() returns IDisposable - track in list for proper cleanup | 2026-01-20 |
 | Idempotent subscription pattern | Subscribe() checks IsSubscribed before registering to prevent duplicates | 2026-01-20 |
 | Type alias for enum conflict | ConnectionStatus.razor name conflicts with ConnectionStatus enum; use alias | 2026-01-20 |
+| Call UpdateStreamingStatus on topic change | Streaming status depends on current topic; must re-evaluate when selection changes | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -95,22 +96,24 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Plan 05-01 complete (Leaf Components migration)
+**Accomplished:** Plan 05-06 complete (MessageList store migration)
 **Completed:**
-- ConnectionStatus migrated to store subscription pattern
-- ChatInput migrated to store subscription and action dispatch
-- SendMessage and CancelStreaming actions added
+- MessageList migrated from parameters to multi-store subscriptions
+- Subscribes to MessagesStore, TopicsStore, StreamingStore
+- Dispatches SendMessage action for suggestion clicks
+- No [Parameter] attributes remain
+- UpdateMessages and UpdateStreamingStatus patterns established
 
 ### For Next Session
 
 **Start with:**
-Continue Phase 5 - Plan 02 (MessageList component migration)
+Continue Phase 5 - remaining component migrations
 
 **Key context:**
-- Leaf components (ConnectionStatus, ChatInput) now use store subscriptions
-- SendMessage and CancelStreaming actions dispatch from ChatInput
-- StoreSubscriberComponent pattern established for component migration
-- Use type alias when component name conflicts with enum name
+- MessageList now subscribes directly to stores (no prop drilling)
+- Multi-store subscription pattern demonstrated
+- Topic-dependent state update pattern (call update methods when topic changes)
+- SendMessage action handles suggestion clicks
 
 **Resume file:** `.planning/phases/05-component-architecture/05-02-PLAN.md`
 
