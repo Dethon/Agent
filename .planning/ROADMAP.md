@@ -162,8 +162,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md - INotifier migration to Infrastructure layer
-- [ ] 06-02-PLAN.md - Store and effect registration consolidation
+- [x] 06-01-PLAN.md - INotifier migration to Infrastructure layer
+- [x] 06-02-PLAN.md - Store and effect registration consolidation
 
 **Requirements:**
 - ARCH-01: INotifier implementation moved from Agent/Hubs to Infrastructure
@@ -208,7 +208,7 @@ Plans:
 | 3 | Streaming Performance | 3 | Complete |
 | 4 | SignalR Integration | 3 | Complete |
 | 5 | Component Architecture | 3 | Complete |
-| 6 | Clean Architecture | 3 | Pending |
+| 6 | Clean Architecture | 3 | Complete |
 | 7 | Cleanup and Verification | 3 | Pending |
 
 **Total:** 25 requirements across 7 phases
@@ -231,4 +231,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 6 planned)*
+*Last updated: 2026-01-20 (Phase 6 complete)*

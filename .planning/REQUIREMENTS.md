@@ -43,9 +43,9 @@ Requirements for the refactoring. Each maps to roadmap phases.
 
 ### Clean Architecture
 
-- [ ] **ARCH-01**: INotifier implementation moved from Agent/Hubs to Infrastructure
-- [ ] **ARCH-02**: State stores registered in proper layer (Infrastructure or WebChat.Client)
-- [ ] **ARCH-03**: No layer violations in refactored code
+- [x] **ARCH-01**: INotifier implementation moved from Agent/Hubs to Infrastructure
+- [x] **ARCH-02**: State stores registered in proper layer (Infrastructure or WebChat.Client)
+- [x] **ARCH-03**: No layer violations in refactored code
 
 ### Cleanup
 
@@ -106,9 +106,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-01 | Phase 5 | Complete |
 | COMP-02 | Phase 5 | Complete |
 | COMP-03 | Phase 5 | Complete |
-| ARCH-01 | Phase 6 | Pending |
-| ARCH-02 | Phase 6 | Pending |
-| ARCH-03 | Phase 6 | Pending |
+| ARCH-01 | Phase 6 | Complete |
+| ARCH-02 | Phase 6 | Complete |
+| ARCH-03 | Phase 6 | Complete |
 | CLEAN-01 | Phase 7 | Pending |
 | CLEAN-02 | Phase 7 | Pending |
 | CLEAN-03 | Phase 7 | Pending |
@@ -120,4 +120,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 5 complete)*
+*Last updated: 2026-01-20 (Phase 6 complete)*
