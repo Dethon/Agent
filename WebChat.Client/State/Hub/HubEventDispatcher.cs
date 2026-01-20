@@ -11,35 +11,44 @@ public sealed class HubEventDispatcher(IDispatcher dispatcher) : IHubEventDispat
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
     {
-        var action = notification.ChangeType switch
+        switch (notification.ChangeType)
         {
-            TopicChangeType.Created when notification.Topic is not null
-                => (IAction)new AddTopic(StoredTopic.FromMetadata(notification.Topic)),
-            TopicChangeType.Updated when notification.Topic is not null
-                => new UpdateTopic(StoredTopic.FromMetadata(notification.Topic)),
-            TopicChangeType.Deleted
-                => new RemoveTopic(notification.TopicId),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(notification),
-                notification.ChangeType,
-                "Invalid TopicChangeType or missing Topic")
-        };
-        dispatcher.Dispatch(action);
+            case TopicChangeType.Created when notification.Topic is not null:
+                dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(notification.Topic)));
+                break;
+            case TopicChangeType.Updated when notification.Topic is not null:
+                dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(notification.Topic)));
+                break;
+            case TopicChangeType.Deleted:
+                dispatcher.Dispatch(new RemoveTopic(notification.TopicId));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(notification),
+                    notification.ChangeType,
+                    "Invalid TopicChangeType or missing Topic");
+        }
     }
 
     public void HandleStreamChanged(StreamChangedNotification notification)
     {
-        var action = notification.ChangeType switch
+        switch (notification.ChangeType)
         {
-            StreamChangeType.Started => (IAction)new StreamStarted(notification.TopicId),
-            StreamChangeType.Completed => new StreamCompleted(notification.TopicId),
-            StreamChangeType.Cancelled => new StreamCancelled(notification.TopicId),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(notification),
-                notification.ChangeType,
-                "Invalid StreamChangeType")
-        };
-        dispatcher.Dispatch(action);
+            case StreamChangeType.Started:
+                dispatcher.Dispatch(new StreamStarted(notification.TopicId));
+                break;
+            case StreamChangeType.Completed:
+                dispatcher.Dispatch(new StreamCompleted(notification.TopicId));
+                break;
+            case StreamChangeType.Cancelled:
+                dispatcher.Dispatch(new StreamCancelled(notification.TopicId));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(notification),
+                    notification.ChangeType,
+                    "Invalid StreamChangeType");
+        }
     }
 
     public void HandleNewMessage(NewMessageNotification notification)

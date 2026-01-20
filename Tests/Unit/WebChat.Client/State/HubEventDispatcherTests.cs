@@ -1,0 +1,168 @@
+using Domain.DTOs.WebChat;
+using Moq;
+using Shouldly;
+using WebChat.Client.Models;
+using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Hub;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
+
+namespace Tests.Unit.WebChat.Client.State;
+
+public sealed class HubEventDispatcherTests
+{
+    private readonly Mock<IDispatcher> _mockDispatcher;
+    private readonly HubEventDispatcher _sut;
+
+    public HubEventDispatcherTests()
+    {
+        _mockDispatcher = new Mock<IDispatcher>();
+        _sut = new HubEventDispatcher(_mockDispatcher.Object);
+    }
+
+    private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
+        new(topicId, 123L, 456L, "agent-1", "Test Topic", DateTimeOffset.UtcNow, null, 0);
+
+    [Fact]
+    public void HandleTopicChanged_Created_DispatchesAddTopic()
+    {
+        var metadata = CreateTopicMetadata("topic-1");
+        var notification = new TopicChangedNotification(TopicChangeType.Created, "topic-1", metadata);
+
+        _sut.HandleTopicChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<AddTopic>(a => a.Topic.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleTopicChanged_Updated_DispatchesUpdateTopic()
+    {
+        var metadata = CreateTopicMetadata("topic-1");
+        var notification = new TopicChangedNotification(TopicChangeType.Updated, "topic-1", metadata);
+
+        _sut.HandleTopicChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<UpdateTopic>(a => a.Topic.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleTopicChanged_Deleted_DispatchesRemoveTopic()
+    {
+        var notification = new TopicChangedNotification(TopicChangeType.Deleted, "topic-1");
+
+        _sut.HandleTopicChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<RemoveTopic>(a => a.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleStreamChanged_Started_DispatchesStreamStarted()
+    {
+        var notification = new StreamChangedNotification(StreamChangeType.Started, "topic-1");
+
+        _sut.HandleStreamChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<StreamStarted>(a => a.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleStreamChanged_Completed_DispatchesStreamCompleted()
+    {
+        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1");
+
+        _sut.HandleStreamChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<StreamCompleted>(a => a.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleStreamChanged_Cancelled_DispatchesStreamCancelled()
+    {
+        var notification = new StreamChangedNotification(StreamChangeType.Cancelled, "topic-1");
+
+        _sut.HandleStreamChanged(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<StreamCancelled>(a => a.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleNewMessage_DispatchesLoadMessages()
+    {
+        var notification = new NewMessageNotification("topic-1");
+
+        _sut.HandleNewMessage(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<LoadMessages>(a => a.TopicId == "topic-1")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleApprovalResolved_DispatchesApprovalResolved()
+    {
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", null);
+
+        _sut.HandleApprovalResolved(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<ApprovalResolved>(a => a.ApprovalId == "approval-123")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleApprovalResolved_WithToolCalls_DispatchesStreamChunk()
+    {
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output");
+
+        _sut.HandleApprovalResolved(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<StreamChunk>(a =>
+                a.TopicId == "topic-1" &&
+                a.ToolCalls == "tool output")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleApprovalResolved_WithoutToolCalls_DoesNotDispatchStreamChunk()
+    {
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", null);
+
+        _sut.HandleApprovalResolved(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.IsAny<StreamChunk>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public void HandleToolCalls_DispatchesStreamChunk()
+    {
+        var notification = new ToolCallsNotification("topic-1", "tool output");
+
+        _sut.HandleToolCalls(notification);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<StreamChunk>(a =>
+                a.TopicId == "topic-1" &&
+                a.ToolCalls == "tool output" &&
+                a.Content == null &&
+                a.Reasoning == null &&
+                a.MessageId == null)),
+            Times.Once);
+    }
+}
