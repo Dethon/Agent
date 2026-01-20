@@ -1,18 +1,22 @@
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
+using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
 
 namespace WebChat.Client.Services;
 
 public sealed class SignalREventSubscriber(
     ChatConnectionService connectionService,
-    IHubEventDispatcher hubEventDispatcher)
+    IHubEventDispatcher hubEventDispatcher) : ISignalREventSubscriber
 {
-    private bool _subscribed;
+    private readonly List<IDisposable> _subscriptions = new();
+    private bool _disposed;
+
+    public bool IsSubscribed { get; private set; }
 
     public void Subscribe()
     {
-        if (_subscribed)
+        if (IsSubscribed || _disposed)
         {
             return;
         }
@@ -23,31 +27,57 @@ public sealed class SignalREventSubscriber(
             return;
         }
 
-        hubConnection.On<TopicChangedNotification>("OnTopicChanged", notification =>
-        {
-            hubEventDispatcher.HandleTopicChanged(notification);
-        });
+        _subscriptions.Add(
+            hubConnection.On<TopicChangedNotification>("OnTopicChanged", notification =>
+            {
+                hubEventDispatcher.HandleTopicChanged(notification);
+            }));
 
-        hubConnection.On<StreamChangedNotification>("OnStreamChanged", notification =>
-        {
-            hubEventDispatcher.HandleStreamChanged(notification);
-        });
+        _subscriptions.Add(
+            hubConnection.On<StreamChangedNotification>("OnStreamChanged", notification =>
+            {
+                hubEventDispatcher.HandleStreamChanged(notification);
+            }));
 
-        hubConnection.On<NewMessageNotification>("OnNewMessage", notification =>
-        {
-            hubEventDispatcher.HandleNewMessage(notification);
-        });
+        _subscriptions.Add(
+            hubConnection.On<NewMessageNotification>("OnNewMessage", notification =>
+            {
+                hubEventDispatcher.HandleNewMessage(notification);
+            }));
 
-        hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", notification =>
-        {
-            hubEventDispatcher.HandleApprovalResolved(notification);
-        });
+        _subscriptions.Add(
+            hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", notification =>
+            {
+                hubEventDispatcher.HandleApprovalResolved(notification);
+            }));
 
-        hubConnection.On<ToolCallsNotification>("OnToolCalls", notification =>
-        {
-            hubEventDispatcher.HandleToolCalls(notification);
-        });
+        _subscriptions.Add(
+            hubConnection.On<ToolCallsNotification>("OnToolCalls", notification =>
+            {
+                hubEventDispatcher.HandleToolCalls(notification);
+            }));
 
-        _subscribed = true;
+        IsSubscribed = true;
+    }
+
+    public void Unsubscribe()
+    {
+        foreach (var subscription in _subscriptions)
+        {
+            subscription.Dispose();
+        }
+        _subscriptions.Clear();
+        IsSubscribed = false;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Unsubscribe();
+        _disposed = true;
     }
 }
