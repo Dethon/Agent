@@ -5,30 +5,42 @@ using WebChat.Client.Models;
 using WebChat.Client.Services.Handlers;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
+using WebChat.Client.State.Streaming;
 
 namespace Tests.Unit.WebChat.Client;
 
-public sealed class ChatNotificationHandlerTests
+public sealed class ChatNotificationHandlerTests : IDisposable
 {
     private readonly ChatStateManager _stateManager = new();
     private readonly FakeTopicService _topicService = new();
     private readonly FakeChatMessagingService _messagingService = new();
     private readonly FakeApprovalService _approvalService = new();
+    private readonly Dispatcher _dispatcher = new();
+    private readonly StreamingStore _streamingStore;
     private readonly ChatNotificationHandler _handler;
 
     public ChatNotificationHandlerTests()
     {
+        _streamingStore = new StreamingStore(_dispatcher);
         var streamingCoordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
         var streamResumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _stateManager,
             _approvalService,
-            streamingCoordinator);
+            streamingCoordinator,
+            _dispatcher,
+            _streamingStore);
         _handler = new ChatNotificationHandler(
             _stateManager,
             _topicService,
             streamResumeService);
+    }
+
+    public void Dispose()
+    {
+        _streamingStore.Dispose();
     }
 
     private static StoredTopic CreateTopic(string? topicId = null, string? agentId = null)

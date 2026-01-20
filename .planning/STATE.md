@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 4 - SignalR Integration IN PROGRESS
+**Current Focus:** Phase 4 - SignalR Integration COMPLETE
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,31 +14,31 @@
 
 ## Current Position
 
-**Phase:** 4 of 7 (SignalR Integration) - IN PROGRESS
-**Plan:** 2 of 3 complete
-**Status:** In progress
-**Last activity:** 2026-01-20 - Completed 04-02-PLAN.md
+**Phase:** 4 of 7 (SignalR Integration) - COMPLETE
+**Plan:** 3 of 3 complete
+**Status:** Phase complete
+**Last activity:** 2026-01-20 - Completed 04-03-PLAN.md
 
 **Progress:**
 ```
 Phase 1: [###] State Foundation (3/3 plans) VERIFIED
 Phase 2: [###] State Slices (3/3 plans) VERIFIED
 Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
-Phase 4: [##-] SignalR Integration (2/3 plans)
+Phase 4: [###] SignalR Integration (3/3 plans) VERIFIED
 Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [##########----] 11/21 plans complete (~52%)
+Overall: [############--] 12/21 plans complete (~57%)
 ```
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 3/7 |
-| Requirements delivered | 14/25 |
-| Plans executed | 11 |
+| Phases completed | 4/7 |
+| Requirements delivered | 16/25 |
+| Plans executed | 12 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -67,6 +67,8 @@ Overall: [##########----] 11/21 plans complete (~52%)
 | ConnectionEventDispatcher as concrete | No interface needed for internal wiring between service and dispatcher | 2026-01-20 |
 | Backward compatibility for events | Keep existing events during incremental migration to stores | 2026-01-20 |
 | Synchronous dispatch in HubEventDispatcher | SignalR handlers are sync since reducers are pure, no async work | 2026-01-20 |
+| Effect pattern for reconnection | ReconnectionEffect subscribes to store, detects state transitions, triggers side effects | 2026-01-20 |
+| Fire-and-forget resumption | Session restart and stream resumption are async but effect runs synchronously | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -90,23 +92,25 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 4 Plan 01 complete (Hub Event Dispatcher)
+**Accomplished:** Phase 4 complete (SignalR Integration)
 **Completed:**
 - Plan 01: HubEventDispatcher bridges SignalR notifications to store actions
 - Plan 02: ConnectionEventDispatcher bridges HubConnection events to ConnectionStore
+- Plan 03: ReconnectionEffect handles stream resumption through stores
 
 ### For Next Session
 
 **Start with:**
-`/gsd:execute-phase 4` to complete SignalR Integration phase (Plan 03)
+`/gsd:execute-phase 5` to begin Component Architecture phase
 
 **Key context:**
-- HubEventDispatcher transforms 5 notification types to actions
-- ConnectionEventDispatcher handles connection lifecycle
-- SignalREventSubscriber now uses IHubEventDispatcher
-- Plan 03 focuses on stream resumption integration
+- SignalR integration complete - notifications flow through stores
+- ReconnectionEffect demonstrates effect pattern for side effects
+- StreamResumeService now dispatches actions
+- ChatContainer simplified - reconnection handling removed
+- Phase 5 will migrate remaining ChatStateManager usage to stores
 
-**Resume file:** `.planning/phases/04-signalr-integration/04-03-PLAN.md`
+**Resume file:** `.planning/phases/05-component-architecture/05-01-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*

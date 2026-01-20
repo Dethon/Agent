@@ -4,26 +4,38 @@ using Tests.Unit.WebChat.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State;
+using WebChat.Client.State.Streaming;
 
 namespace Tests.Unit.WebChat.Client;
 
-public sealed class StreamResumeServiceTests
+public sealed class StreamResumeServiceTests : IDisposable
 {
     private readonly FakeChatMessagingService _messagingService = new();
     private readonly FakeTopicService _topicService = new();
     private readonly ChatStateManager _stateManager = new();
     private readonly FakeApprovalService _approvalService = new();
+    private readonly Dispatcher _dispatcher = new();
+    private readonly StreamingStore _streamingStore;
     private readonly StreamResumeService _resumeService;
 
     public StreamResumeServiceTests()
     {
+        _streamingStore = new StreamingStore(_dispatcher);
         var streamingCoordinator = new StreamingCoordinator(_messagingService, _stateManager, _topicService);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _stateManager,
             _approvalService,
-            streamingCoordinator);
+            streamingCoordinator,
+            _dispatcher,
+            _streamingStore);
+    }
+
+    public void Dispose()
+    {
+        _streamingStore.Dispose();
     }
 
     private static StoredTopic CreateTopic(string? topicId = null)
