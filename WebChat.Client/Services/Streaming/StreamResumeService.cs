@@ -11,17 +11,11 @@ public sealed class StreamResumeService(
     IChatMessagingService messagingService,
     ITopicService topicService,
     IApprovalService approvalService,
-    IStreamingCoordinator streamingCoordinator,
+    IStreamingService streamingService,
     IDispatcher dispatcher,
     MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
-    private Func<Task>? _renderCallback;
-
-    public void SetRenderCallback(Func<Task> callback)
-    {
-        _renderCallback = callback;
-    }
 
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
@@ -56,7 +50,6 @@ public sealed class StreamResumeService(
                     Content = h.Content
                 }).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
-                await NotifyRender();
             }
 
             dispatcher.Dispatch(new StreamStarted(topic.TopicId));
@@ -93,7 +86,7 @@ public sealed class StreamResumeService(
                 .Select(m => m.Content)
                 .ToHashSet();
 
-            var (completedTurns, streamingMessage) = streamingCoordinator.RebuildFromBuffer(
+            var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(
                 state.BufferedMessages, historyContent);
 
             foreach (var turn in completedTurns.Where(t => t.HasContent))
@@ -101,7 +94,7 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
             }
 
-            streamingMessage = streamingCoordinator.StripKnownContent(streamingMessage, historyContent);
+            streamingMessage = BufferRebuildUtility.StripKnownContent(streamingMessage, historyContent);
             dispatcher.Dispatch(new StreamChunk(
                 topic.TopicId,
                 streamingMessage.Content,
@@ -109,22 +102,11 @@ public sealed class StreamResumeService(
                 streamingMessage.ToolCalls,
                 null));
 
-            await NotifyRender();
-
-            await streamingCoordinator.ResumeStreamResponseAsync(
-                topic, streamingMessage, state.CurrentMessageId, NotifyRender);
+            await streamingService.ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {
             dispatcher.Dispatch(new StopResuming(topic.TopicId));
-        }
-    }
-
-    private async Task NotifyRender()
-    {
-        if (_renderCallback is not null)
-        {
-            await _renderCallback();
         }
     }
 }

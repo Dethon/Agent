@@ -37,7 +37,7 @@ builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();
 
 // Streaming services
-builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
+builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 

@@ -1,6 +1,5 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
-using WebChat.Client.Services.Streaming;
 using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -16,20 +15,20 @@ public sealed class SendMessageEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
     private readonly IChatSessionService _sessionService;
-    private readonly IStreamingCoordinator _streamingCoordinator;
+    private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
         IChatSessionService sessionService,
-        IStreamingCoordinator streamingCoordinator,
+        IStreamingService streamingService,
         ITopicService topicService)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
         _sessionService = sessionService;
-        _streamingCoordinator = streamingCoordinator;
+        _streamingService = streamingService;
         _topicService = topicService;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
@@ -88,8 +87,8 @@ public sealed class SendMessageEffect : IDisposable
         _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
         // Kick off streaming (fire-and-forget)
-        // Pass no-op render callback since components subscribe to store directly
-        _ = _streamingCoordinator.StreamResponseAsync(topic, action.Message, () => Task.CompletedTask);
+        // Components subscribe to store directly, no render callback needed
+        _ = _streamingService.StreamResponseAsync(topic, action.Message);
     }
 
     public void Dispose()
