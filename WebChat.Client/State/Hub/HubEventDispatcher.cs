@@ -41,12 +41,17 @@ public sealed class HubEventDispatcher(
         switch (notification.ChangeType)
         {
             case StreamChangeType.Started:
-                dispatcher.Dispatch(new StreamStarted(notification.TopicId));
                 // Try to resume stream for this topic if we have it
+                // Don't dispatch StreamStarted here - TryResumeStreamAsync will do it
                 var topic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == notification.TopicId);
                 if (topic is not null && !streamingStore.State.ResumingTopics.Contains(notification.TopicId))
                 {
                     _ = streamResumeService.TryResumeStreamAsync(topic);
+                }
+                else
+                {
+                    // Topic not found or already resuming - just update store state
+                    dispatcher.Dispatch(new StreamStarted(notification.TopicId));
                 }
                 break;
             case StreamChangeType.Completed:
