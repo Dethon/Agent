@@ -1,5 +1,9 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -8,7 +12,9 @@ public sealed class StreamResumeService(
     ITopicService topicService,
     IChatStateManager stateManager,
     IApprovalService approvalService,
-    IStreamingCoordinator streamingCoordinator) : IStreamResumeService
+    IStreamingCoordinator streamingCoordinator,
+    IDispatcher dispatcher,
+    StreamingStore streamingStore) : IStreamResumeService
 {
     private Func<Task>? _renderCallback;
 
@@ -19,14 +25,18 @@ public sealed class StreamResumeService(
 
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
-        if (!stateManager.TryStartResuming(topic.TopicId))
+        // Check if already resuming via store state
+        if (streamingStore.State.ResumingTopics.Contains(topic.TopicId))
         {
             return;
         }
 
+        dispatcher.Dispatch(new StartResuming(topic.TopicId));
+
         try
         {
-            if (stateManager.IsTopicStreaming(topic.TopicId))
+            // Check if topic is already streaming via store
+            if (streamingStore.State.StreamingTopics.Contains(topic.TopicId))
             {
                 return;
             }
@@ -45,11 +55,11 @@ public sealed class StreamResumeService(
                     Role = h.Role,
                     Content = h.Content
                 }).ToList();
-                stateManager.SetMessagesForTopic(topic.TopicId, messages);
+                dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
                 await NotifyRender();
             }
 
-            stateManager.StartStreaming(topic.TopicId);
+            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
             var existingMessages = stateManager.GetMessagesForTopic(topic.TopicId);
 
             if (!string.IsNullOrEmpty(state.CurrentPrompt))
@@ -70,7 +80,7 @@ public sealed class StreamResumeService(
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
             if (pendingApproval is not null)
             {
-                stateManager.SetApprovalRequest(pendingApproval);
+                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
 
             var historyContent = existingMessages
@@ -84,7 +94,12 @@ public sealed class StreamResumeService(
             existingMessages.AddRange(completedTurns.Where(t => t.HasContent));
 
             streamingMessage = streamingCoordinator.StripKnownContent(streamingMessage, historyContent);
-            stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+            dispatcher.Dispatch(new StreamChunk(
+                topic.TopicId,
+                streamingMessage.Content,
+                streamingMessage.Reasoning,
+                streamingMessage.ToolCalls,
+                null));
 
             await NotifyRender();
 
@@ -93,7 +108,7 @@ public sealed class StreamResumeService(
         }
         finally
         {
-            stateManager.StopResuming(topic.TopicId);
+            dispatcher.Dispatch(new StopResuming(topic.TopicId));
         }
     }
 
