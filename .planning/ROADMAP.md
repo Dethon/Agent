@@ -119,7 +119,7 @@ Plans:
 **Success Criteria:**
 1. All SignalR hub events (message received, streaming started, etc.) create actions, not direct state mutations
 2. After reconnection, user sees streaming resume exactly where it left off
-3. Navigating away and back does not create duplicate event subscriptions
+3. Navigating away and back does not create duplicate event substitutions
 4. No memory leaks from orphaned event handlers (verified via browser dev tools)
 
 ---
@@ -129,6 +129,15 @@ Plans:
 **Goal:** Components are thin render layers that dispatch actions and consume store state.
 
 **Dependencies:** Phase 4 (SignalR Integration)
+
+**Plans:** 5 plans
+
+Plans:
+- [ ] 05-01-PLAN.md - Leaf components (ConnectionStatus, ChatInput) migrate to stores
+- [ ] 05-02-PLAN.md - ApprovalModal migrates to store subscription
+- [ ] 05-03-PLAN.md - TopicList migrates to store subscriptions
+- [ ] 05-04-PLAN.md - Effect classes (SendMessageEffect, TopicSelectionEffect, TopicDeleteEffect)
+- [ ] 05-05-PLAN.md - ChatContainer simplification with InitializationEffect
 
 **Requirements:**
 - COMP-01: Components dispatch actions only, render from store state
@@ -191,7 +200,7 @@ Plans:
 | 2 | State Slices | 5 | Complete |
 | 3 | Streaming Performance | 3 | Complete |
 | 4 | SignalR Integration | 3 | Complete |
-| 5 | Component Architecture | 3 | Pending |
+| 5 | Component Architecture | 3 | Planned |
 | 6 | Clean Architecture | 3 | Pending |
 | 7 | Cleanup and Verification | 3 | Pending |
 
@@ -215,4 +224,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 4 complete)*
+*Last updated: 2026-01-20 (Phase 5 planned)*
