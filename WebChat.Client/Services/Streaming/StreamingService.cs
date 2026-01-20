@@ -54,7 +54,8 @@ public sealed class StreamingService(
 
                 // Only finalize current message if new chunk starts actual message content
                 // Tool calls (no content/reasoning) shouldn't split the message
-                var chunkStartsNewMessage = !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
+                var chunkStartsNewMessage =
+                    !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
@@ -69,7 +70,8 @@ public sealed class StreamingService(
 
                 currentMessageId = chunk.MessageId;
 
-                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
+                streamingMessage =
+                    BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
                 dispatcher.Dispatch(new StreamChunk(
                     topic.TopicId,
                     streamingMessage.Content,
@@ -113,7 +115,7 @@ public sealed class StreamingService(
 
         // Track the exact length of content we've already processed from the buffer
         // to avoid duplicate display. Live stream chunks are appended beyond this point.
-        var processedContentLength = streamingMessage.Content?.Length ?? 0;
+        var processedContentLength = streamingMessage.Content.Length;
         var processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
         var processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
 
@@ -147,7 +149,8 @@ public sealed class StreamingService(
 
                 // Only finalize current message if new chunk starts actual message content
                 // Tool calls (no content/reasoning) shouldn't split the message
-                var chunkStartsNewMessage = !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
+                var chunkStartsNewMessage =
+                    !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
@@ -169,16 +172,17 @@ public sealed class StreamingService(
 
                 // Accumulate new chunks from the live stream
                 // Use simple accumulation - live stream chunks are new content
-                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
+                streamingMessage =
+                    BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
 
                 // Check if we have new content beyond what was in the buffer
-                var hasNewContent = (streamingMessage.Content?.Length ?? 0) > processedContentLength;
+                var hasNewContent = streamingMessage.Content.Length > processedContentLength;
                 var hasNewReasoning = (streamingMessage.Reasoning?.Length ?? 0) > processedReasoningLength;
                 var hasNewToolCalls = (streamingMessage.ToolCalls?.Length ?? 0) > processedToolCallsLength;
                 var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls;
 
                 // Update processed lengths
-                processedContentLength = streamingMessage.Content?.Length ?? 0;
+                processedContentLength = streamingMessage.Content.Length;
                 processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
                 processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
 
@@ -213,7 +217,8 @@ public sealed class StreamingService(
         }
         catch (Exception ex)
         {
-            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error resuming stream: {ex.Message}")));
+            dispatcher.Dispatch(new AddMessage(topic.TopicId,
+                CreateErrorMessage($"Error resuming stream: {ex.Message}")));
         }
         finally
         {

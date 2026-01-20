@@ -81,7 +81,7 @@ public class ApprovalStoreTests : IDisposable
     [Fact]
     public void ApprovalResolved_ClearsAllState()
     {
-        var request = CreateRequest("approval-1");
+        var request = CreateRequest();
         _dispatcher.Dispatch(new ShowApproval("topic-1", request));
         _dispatcher.Dispatch(new ApprovalResponding());
         _dispatcher.Dispatch(new ApprovalResolved("approval-1", "tool output"));

@@ -1,6 +1,4 @@
-using System.Reactive.Subjects;
 using Moq;
-using Shouldly;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;

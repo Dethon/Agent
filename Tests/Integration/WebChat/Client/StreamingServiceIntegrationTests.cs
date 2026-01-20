@@ -256,7 +256,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         using var subscription = _streamingStore.StateObservable.Subscribe(state =>
         {
             var streaming = state.StreamingByTopic.GetValueOrDefault(topic.TopicId);
-            if (streaming?.Content?.Length > 0)
+            if (streaming?.Content.Length > 0)
             {
                 messagesReceived++;
             }

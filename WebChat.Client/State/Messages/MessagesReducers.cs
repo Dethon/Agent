@@ -70,7 +70,9 @@ public static class MessagesReducers
         ChatMessageModel updatedMessage)
     {
         if (!messagesByTopic.TryGetValue(topicId, out var messages))
+        {
             return messagesByTopic;
+        }
 
         // Note: ChatMessageModel doesn't have a MessageId field currently
         // This action is designed for future use when message identity is needed

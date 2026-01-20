@@ -4,7 +4,7 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public class SelectorTests
 {
-    private sealed record TestState(int Value, string Name);
+    private sealed record TestState(int Value);
 
     [Fact]
     public void Select_ReturnsCachedValue_WhenStateUnchanged()
@@ -16,7 +16,7 @@ public class SelectorTests
             computeCount++;
             return s.Value * 2;
         });
-        var state = new TestState(5, "test");
+        var state = new TestState(5);
 
         // Act
         var result1 = selector.Select(state);
@@ -38,8 +38,8 @@ public class SelectorTests
             computeCount++;
             return s.Value * 2;
         });
-        var state1 = new TestState(5, "test");
-        var state2 = state1 with { Value = 10 };
+        var state1 = new TestState(5);
+        var state2 = new TestState(10);
 
         // Act
         var result1 = selector.Select(state1);
@@ -61,7 +61,7 @@ public class SelectorTests
             computeCount++;
             return s.Value;
         });
-        var state = new TestState(5, "test");
+        var state = new TestState(5);
 
         // Act
         selector.Select(state);
@@ -78,7 +78,7 @@ public class SelectorTests
         // Arrange
         var firstSelector = Selector.Create((TestState s) => s.Value);
         var composedSelector = Selector.Compose(firstSelector, v => v * 3);
-        var state = new TestState(4, "test");
+        var state = new TestState(4);
 
         // Act
         var result = composedSelector.Select(state);

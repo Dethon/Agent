@@ -5,9 +5,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-/// <summary>
-/// Handles Initialize action: connects SignalR, loads agents and topics.
-/// </summary>
 public sealed class InitializationEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;

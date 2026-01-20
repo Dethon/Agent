@@ -1,6 +1,5 @@
 using Domain.DTOs.WebChat;
 using Shouldly;
-using System.Reactive.Linq;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Topics;
@@ -203,7 +202,6 @@ public class TopicsStoreTests : IDisposable
     public void UnhandledAction_ReturnsStateUnchanged()
     {
         // Arrange - capture initial state reference
-        var initialState = _store.State;
 
         // Act - dispatch an action not registered with this store
         // Using a custom test action

@@ -75,7 +75,10 @@ public sealed class SendMessageEffect : IDisposable
             };
 
             var success = await _sessionService.StartSessionAsync(topic);
-            if (!success) return;
+            if (!success)
+            {
+                return;
+            }
 
             _dispatcher.Dispatch(new AddTopic(topic));
             _dispatcher.Dispatch(new SelectTopic(topic.TopicId));

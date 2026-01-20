@@ -4,7 +4,6 @@ using WebChat.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Services;
-using WebChat.Client.Services.Handlers;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
@@ -43,7 +42,6 @@ builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 
 // Notification handling
-builder.Services.AddScoped<IChatNotificationHandler, ChatNotificationHandler>();
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
 
 var app = builder.Build();

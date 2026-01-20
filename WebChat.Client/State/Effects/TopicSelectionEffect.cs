@@ -1,6 +1,5 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
-using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
 
@@ -38,7 +37,10 @@ public sealed class TopicSelectionEffect : IDisposable
 
     private void HandleSelectTopic(SelectTopic action)
     {
-        if (action.TopicId is null) return;
+        if (action.TopicId is null)
+        {
+            return;
+        }
 
         _ = HandleSelectTopicAsync(action.TopicId);
     }
@@ -46,7 +48,10 @@ public sealed class TopicSelectionEffect : IDisposable
     private async Task HandleSelectTopicAsync(string topicId)
     {
         var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
-        if (topic is null) return;
+        if (topic is null)
+        {
+            return;
+        }
 
         // Check if messages already loaded
         var hasMessages = _messagesStore.State.MessagesByTopic.ContainsKey(topicId);

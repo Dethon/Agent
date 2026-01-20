@@ -10,7 +10,7 @@ namespace WebChat.Client.State;
 /// </summary>
 public sealed class RenderCoordinator : IDisposable
 {
-    private static readonly TimeSpan RenderInterval = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan _renderInterval = TimeSpan.FromMilliseconds(50);
     private readonly StreamingStore _streamingStore;
 
     public RenderCoordinator(StreamingStore streamingStore)
@@ -29,7 +29,7 @@ public sealed class RenderCoordinator : IDisposable
 
         return _streamingStore.StateObservable
             .Select(StreamingSelectors.SelectStreamingContent(topicId))
-            .Sample(RenderInterval)
+            .Sample(_renderInterval)
             .DistinctUntilChanged();
     }
 
@@ -43,7 +43,7 @@ public sealed class RenderCoordinator : IDisposable
 
         return _streamingStore.StateObservable
             .Select(StreamingSelectors.SelectIsStreaming(topicId))
-            .Sample(RenderInterval)
+            .Sample(_renderInterval)
             .DistinctUntilChanged();
     }
 

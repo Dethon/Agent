@@ -1,5 +1,4 @@
 using WebChat.Client.Contracts;
-using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Topics;
 

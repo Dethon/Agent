@@ -1,5 +1,4 @@
 using Shouldly;
-using System.Reactive.Linq;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
@@ -34,7 +33,7 @@ public class MessagesStoreTests : IDisposable
 
         // Assert
         _store.State.MessagesByTopic.TryGetValue("topic-1", out var topicMessages).ShouldBeTrue();
-        topicMessages!.Count.ShouldBe(2);
+        topicMessages.Count.ShouldBe(2);
         topicMessages[0].Content.ShouldBe("Hello");
         topicMessages[1].Content.ShouldBe("Hi there");
     }
@@ -73,11 +72,12 @@ public class MessagesStoreTests : IDisposable
     public void AddMessage_CreatesListForNewTopic()
     {
         // Act
-        _dispatcher.Dispatch(new AddMessage("new-topic", new ChatMessageModel { Role = "user", Content = "First message" }));
+        _dispatcher.Dispatch(new AddMessage("new-topic",
+            new ChatMessageModel { Role = "user", Content = "First message" }));
 
         // Assert
         _store.State.MessagesByTopic.TryGetValue("new-topic", out var messages).ShouldBeTrue();
-        messages!.Count.ShouldBe(1);
+        messages.Count.ShouldBe(1);
         messages[0].Content.ShouldBe("First message");
     }
 
@@ -106,7 +106,6 @@ public class MessagesStoreTests : IDisposable
     {
         // Arrange
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-        var stateBefore = _store.State;
 
         // Act
         _dispatcher.Dispatch(new RemoveLastMessage("topic-1"));
@@ -118,9 +117,6 @@ public class MessagesStoreTests : IDisposable
     [Fact]
     public void RemoveLastMessage_NoopForNonExistentTopic()
     {
-        // Arrange
-        var stateBefore = _store.State;
-
         // Act
         _dispatcher.Dispatch(new RemoveLastMessage("non-existent"));
 
@@ -185,7 +181,8 @@ public class MessagesStoreTests : IDisposable
         // Act
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", topic1Messages));
         _dispatcher.Dispatch(new MessagesLoaded("topic-2", topic2Messages));
-        _dispatcher.Dispatch(new AddMessage("topic-1", new ChatMessageModel { Role = "assistant", Content = "Reply 1" }));
+        _dispatcher.Dispatch(
+            new AddMessage("topic-1", new ChatMessageModel { Role = "assistant", Content = "Reply 1" }));
 
         // Assert
         _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2);

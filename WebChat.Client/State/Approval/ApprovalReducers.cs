@@ -4,7 +4,7 @@ public static class ApprovalReducers
 {
     public static ApprovalState Reduce(ApprovalState state, IAction action) => action switch
     {
-        ShowApproval show => state with
+        ShowApproval show => new ApprovalState
         {
             CurrentRequest = show.Request,
             TopicId = show.TopicId,

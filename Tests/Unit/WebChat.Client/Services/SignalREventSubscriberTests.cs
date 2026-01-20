@@ -1,21 +1,11 @@
-using Moq;
 using Shouldly;
 using WebChat.Client.Contracts;
-using WebChat.Client.Services;
-using WebChat.Client.State.Hub;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
 public sealed class SignalREventSubscriberTests : IDisposable
 {
-    private readonly TestableSignalREventSubscriber _sut;
-    private readonly Mock<IHubEventDispatcher> _mockHubEventDispatcher;
-
-    public SignalREventSubscriberTests()
-    {
-        _mockHubEventDispatcher = new Mock<IHubEventDispatcher>();
-        _sut = new TestableSignalREventSubscriber(_mockHubEventDispatcher.Object);
-    }
+    private readonly TestableSignalREventSubscriber _sut = new();
 
     public void Dispose()
     {
@@ -135,15 +125,9 @@ public sealed class SignalREventSubscriberTests : IDisposable
 
 internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
 {
-    private readonly IHubEventDispatcher _hubEventDispatcher;
     private readonly List<MockDisposable> _subscriptions = new();
     private bool _disposed;
     private bool _hubConnectionIsNull;
-
-    public TestableSignalREventSubscriber(IHubEventDispatcher hubEventDispatcher)
-    {
-        _hubEventDispatcher = hubEventDispatcher;
-    }
 
     public bool IsSubscribed { get; private set; }
     public int SubscriptionCount => _subscriptions.Count;
@@ -166,11 +150,11 @@ internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
             return;
         }
 
-        _subscriptions.Add(new MockDisposable("OnTopicChanged"));
-        _subscriptions.Add(new MockDisposable("OnStreamChanged"));
-        _subscriptions.Add(new MockDisposable("OnNewMessage"));
-        _subscriptions.Add(new MockDisposable("OnApprovalResolved"));
-        _subscriptions.Add(new MockDisposable("OnToolCalls"));
+        _subscriptions.Add(new MockDisposable());
+        _subscriptions.Add(new MockDisposable());
+        _subscriptions.Add(new MockDisposable());
+        _subscriptions.Add(new MockDisposable());
+        _subscriptions.Add(new MockDisposable());
 
         IsSubscribed = true;
     }
@@ -182,6 +166,7 @@ internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
         {
             subscription.Dispose();
         }
+
         _subscriptions.Clear();
         IsSubscribed = false;
     }
@@ -197,9 +182,8 @@ internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
         _disposed = true;
     }
 
-    private sealed class MockDisposable(string name) : IDisposable
+    private sealed class MockDisposable : IDisposable
     {
-        public string Name { get; } = name;
         public bool IsDisposed { get; private set; }
 
         public void Dispose()

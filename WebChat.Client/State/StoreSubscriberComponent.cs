@@ -23,7 +23,11 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
         {
             InvokeAsync(() =>
             {
-                if (_disposed) return;
+                if (_disposed)
+                {
+                    return;
+                }
+
                 onNext(value);
                 StateHasChanged();
             });
@@ -47,7 +51,11 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
             {
                 InvokeAsync(() =>
                 {
-                    if (_disposed) return;
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
                     onNext(value);
                     StateHasChanged();
                 });
@@ -72,7 +80,11 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
             {
                 InvokeAsync(() =>
                 {
-                    if (_disposed) return;
+                    if (_disposed)
+                    {
+                        return;
+                    }
+
                     onNext(value);
                     StateHasChanged();
                 });
@@ -91,7 +103,11 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
         {
             InvokeAsync(() =>
             {
-                if (_disposed) return;
+                if (_disposed)
+                {
+                    return;
+                }
+
                 onNext(value);
                 StateHasChanged();
             });
@@ -110,7 +126,11 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
 
     public virtual void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
         _subscriptions.Dispose();
         GC.SuppressFinalize(this);

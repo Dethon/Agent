@@ -1,6 +1,5 @@
 using Domain.DTOs.WebChat;
 using Moq;
-using Shouldly;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -42,12 +41,12 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
-        new(topicId, 123L, 456L, "agent-1", "Test Topic", DateTimeOffset.UtcNow, null, 0);
+        new(topicId, 123L, 456L, "agent-1", "Test Topic", DateTimeOffset.UtcNow, null);
 
     [Fact]
     public void HandleTopicChanged_Created_DispatchesAddTopic()
     {
-        var metadata = CreateTopicMetadata("topic-1");
+        var metadata = CreateTopicMetadata();
         var notification = new TopicChangedNotification(TopicChangeType.Created, "topic-1", metadata);
 
         _sut.HandleTopicChanged(notification);
@@ -60,7 +59,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleTopicChanged_Updated_DispatchesUpdateTopic()
     {
-        var metadata = CreateTopicMetadata("topic-1");
+        var metadata = CreateTopicMetadata();
         var notification = new TopicChangedNotification(TopicChangeType.Updated, "topic-1", metadata);
 
         _sut.HandleTopicChanged(notification);
@@ -161,7 +160,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleApprovalResolved_DispatchesApprovalResolved()
     {
-        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", null);
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123");
 
         _sut.HandleApprovalResolved(notification);
 
@@ -187,7 +186,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleApprovalResolved_WithoutToolCalls_DoesNotDispatchStreamChunk()
     {
-        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", null);
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123");
 
         _sut.HandleApprovalResolved(notification);
 
