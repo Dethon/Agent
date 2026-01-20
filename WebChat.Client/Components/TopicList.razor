@@ -97,7 +97,7 @@
     private void ConfirmDelete(StoredTopic topic)
     {
         _deleteConfirmTopicId = null;
-        Dispatcher.Dispatch(new RemoveTopic(topic.TopicId));
+        Dispatcher.Dispatch(new RemoveTopic(topic.TopicId, topic.ChatId, topic.ThreadId));
     }
 
     private void ToggleDropdown()

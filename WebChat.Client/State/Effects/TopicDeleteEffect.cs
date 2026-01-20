@@ -34,32 +34,30 @@ public sealed class TopicDeleteEffect : IDisposable
 
     private void HandleRemoveTopic(RemoveTopic action)
     {
-        _ = HandleRemoveTopicAsync(action.TopicId);
+        _ = HandleRemoveTopicAsync(action);
     }
 
-    private async Task HandleRemoveTopicAsync(string topicId)
+    private async Task HandleRemoveTopicAsync(RemoveTopic action)
     {
-        var topic = _topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId);
-        if (topic is null) return;
-
         // Cancel any active streaming
-        if (_streamingStore.State.StreamingByTopic.ContainsKey(topicId))
+        if (_streamingStore.State.StreamingByTopic.ContainsKey(action.TopicId))
         {
-            await _messagingService.CancelTopicAsync(topicId);
-            _dispatcher.Dispatch(new StreamCancelled(topicId));
+            await _messagingService.CancelTopicAsync(action.TopicId);
+            _dispatcher.Dispatch(new StreamCancelled(action.TopicId));
         }
 
-        // Delete from server
-        await _topicService.DeleteTopicAsync(topicId, topic.ChatId, topic.ThreadId);
+        // Delete from server only if ChatId/ThreadId provided (client-initiated delete)
+        // When server sends delete notification, these are null (already deleted server-side)
+        if (action.ChatId.HasValue && action.ThreadId.HasValue)
+        {
+            await _topicService.DeleteTopicAsync(action.TopicId, action.ChatId.Value, action.ThreadId.Value);
+        }
 
         // Clear approval if this was the selected topic
-        if (_topicsStore.State.SelectedTopicId == topicId)
+        if (_topicsStore.State.SelectedTopicId == action.TopicId)
         {
             _dispatcher.Dispatch(new ClearApproval());
         }
-
-        // Note: The reducer handles removing from state when RemoveTopic is dispatched
-        // The effect handles the async side effects (cancel, delete from server)
     }
 
     public void Dispose()

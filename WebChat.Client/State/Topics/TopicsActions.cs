@@ -33,9 +33,10 @@ public record AddTopic(StoredTopic Topic) : IAction;
 public record UpdateTopic(StoredTopic Topic) : IAction;
 
 /// <summary>
-/// Remove a topic by ID.
+/// Remove a topic by ID. ChatId and ThreadId are optional - if provided, deletes from server.
+/// When triggered by server notification, these are null (server already deleted).
 /// </summary>
-public record RemoveTopic(string TopicId) : IAction;
+public record RemoveTopic(string TopicId, long? ChatId = null, long? ThreadId = null) : IAction;
 
 /// <summary>
 /// Set the available agents.
