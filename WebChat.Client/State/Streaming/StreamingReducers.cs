@@ -15,7 +15,7 @@ public static class StreamingReducers
 
         StreamChunk a => state with
         {
-            StreamingByTopic = AccumulateChunk(state.StreamingByTopic, a)
+            StreamingByTopic = UpdateStreamingContent(state.StreamingByTopic, a)
         },
 
         StreamCompleted a => RemoveStreaming(state, a.TopicId),
@@ -40,17 +40,19 @@ public static class StreamingReducers
         _ => state
     };
 
-    private static IReadOnlyDictionary<string, StreamingContent> AccumulateChunk(
+    private static IReadOnlyDictionary<string, StreamingContent> UpdateStreamingContent(
         IReadOnlyDictionary<string, StreamingContent> streamingByTopic,
         StreamChunk chunk)
     {
         var existing = streamingByTopic.GetValueOrDefault(chunk.TopicId) ?? new StreamingContent();
 
+        // StreamChunk contains the FULL accumulated content from the service,
+        // so we replace (not accumulate) the state
         var updated = existing with
         {
-            Content = AccumulateString(existing.Content, chunk.Content, null),
-            Reasoning = AccumulateString(existing.Reasoning, chunk.Reasoning, null),
-            ToolCalls = AccumulateString(existing.ToolCalls, chunk.ToolCalls, "\n"),
+            Content = chunk.Content ?? existing.Content,
+            Reasoning = chunk.Reasoning ?? existing.Reasoning,
+            ToolCalls = chunk.ToolCalls ?? existing.ToolCalls,
             CurrentMessageId = chunk.MessageId ?? existing.CurrentMessageId
         };
 
@@ -58,17 +60,6 @@ public static class StreamingReducers
         {
             [chunk.TopicId] = updated
         };
-    }
-
-    private static string AccumulateString(string? existing, string? addition, string? separator)
-    {
-        if (string.IsNullOrEmpty(addition))
-            return existing ?? "";
-
-        if (string.IsNullOrEmpty(existing))
-            return addition;
-
-        return existing + (separator ?? "") + addition;
     }
 
     private static IReadOnlyDictionary<string, StreamingContent> SetError(
