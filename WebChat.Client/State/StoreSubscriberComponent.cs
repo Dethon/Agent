@@ -80,6 +80,34 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
         _subscriptions.Add(subscription);
     }
 
+    /// <summary>
+    /// Subscribe to an already-throttled observable (e.g., from RenderCoordinator).
+    /// Only marshals to UI thread via InvokeAsync - does NOT apply additional throttling.
+    /// Use this for observables that already have Sample applied by RenderCoordinator.
+    /// </summary>
+    protected void SubscribeWithInvoke<T>(IObservable<T> throttledObservable, Action<T> onNext)
+    {
+        var subscription = throttledObservable.Subscribe(value =>
+        {
+            InvokeAsync(() =>
+            {
+                if (_disposed) return;
+                onNext(value);
+                StateHasChanged();
+            });
+        });
+        _subscriptions.Add(subscription);
+    }
+
+    /// <summary>
+    /// Clear all current subscriptions. Use when component needs to re-subscribe
+    /// (e.g., when TopicId parameter changes).
+    /// </summary>
+    protected void ClearSubscriptions()
+    {
+        _subscriptions.Clear();
+    }
+
     public virtual void Dispose()
     {
         if (_disposed) return;
