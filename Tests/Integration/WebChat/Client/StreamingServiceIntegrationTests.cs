@@ -11,7 +11,7 @@ using WebChat.Client.State.Topics;
 
 namespace Tests.Integration.WebChat.Client;
 
-public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fixture)
+public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixture)
     : IClassFixture<WebChatServerFixture>, IAsyncLifetime
 {
     private HubConnection _connection = null!;
@@ -21,7 +21,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
     private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
-    private StreamingCoordinator _coordinator = null!;
+    private StreamingService _service = null!;
 
     public async Task InitializeAsync()
     {
@@ -34,7 +34,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _coordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService);
     }
 
     public async Task DisposeAsync()
@@ -71,11 +71,6 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         return topic;
     }
 
-    private static Task NoOpRender()
-    {
-        return Task.CompletedTask;
-    }
-
     private void AddUserMessageAndStartStreaming(StoredTopic topic, string message)
     {
         _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
@@ -100,7 +95,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act - Add user message and start streaming (as the Blazor component does)
         AddUserMessageAndStartStreaming(topic, "Say hello");
-        await _coordinator.StreamResponseAsync(topic, "Say hello", NoOpRender);
+        await _service.StreamResponseAsync(topic, "Say hello");
 
         // Assert
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
@@ -122,7 +117,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act
         AddUserMessageAndStartStreaming(topic, "What is the meaning of life?");
-        await _coordinator.StreamResponseAsync(topic, "What is the meaning of life?", NoOpRender);
+        await _service.StreamResponseAsync(topic, "What is the meaning of life?");
 
         // Assert
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
@@ -148,7 +143,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId)
             .ShouldBeTrue("Streaming should be set before call");
 
-        await _coordinator.StreamResponseAsync(topic, "Test", NoOpRender);
+        await _service.StreamResponseAsync(topic, "Test");
 
         // Assert - Streaming should be cleared after completion
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId)
@@ -166,7 +161,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act
         AddUserMessageAndStartStreaming(topic, "Trigger error");
-        await _coordinator.StreamResponseAsync(topic, "Trigger error", NoOpRender);
+        await _service.StreamResponseAsync(topic, "Trigger error");
 
         // Assert
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
@@ -187,13 +182,13 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act - First message
         AddUserMessageAndStartStreaming(topic, "First question");
-        await _coordinator.StreamResponseAsync(topic, "First question", NoOpRender);
+        await _service.StreamResponseAsync(topic, "First question");
 
         fixture.FakeAgentFactory.EnqueueResponses("Second response.");
 
         // Act - Second message
         AddUserMessageAndStartStreaming(topic, "Second question");
-        await _coordinator.StreamResponseAsync(topic, "Second question", NoOpRender);
+        await _service.StreamResponseAsync(topic, "Second question");
 
         // Assert - Verify we have the expected structure
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
@@ -221,7 +216,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
         // First message to establish some history
         fixture.FakeAgentFactory.EnqueueResponses("Historical response.");
         AddUserMessageAndStartStreaming(topic, "Historical question");
-        await _coordinator.StreamResponseAsync(topic, "Historical question", NoOpRender);
+        await _service.StreamResponseAsync(topic, "Historical question");
 
         var historyCount = (_messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? []).Count;
         historyCount.ShouldBe(2); // Verify we had messages
@@ -235,7 +230,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act
         AddUserMessageAndStartStreaming(topic, "New question");
-        await _coordinator.StreamResponseAsync(topic, "New question", NoOpRender);
+        await _service.StreamResponseAsync(topic, "New question");
 
         // Assert - Should have the new messages (assistant message content may vary due to shared fixture)
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
@@ -269,7 +264,7 @@ public sealed class StreamingCoordinatorIntegrationTests(WebChatServerFixture fi
 
         // Act - Start streaming in background
         AddUserMessageAndStartStreaming(topic, "Long message");
-        var streamTask = _coordinator.StreamResponseAsync(topic, "Long message", NoOpRender);
+        var streamTask = _service.StreamResponseAsync(topic, "Long message");
 
         // Wait for some messages to arrive
         await Task.Delay(100);

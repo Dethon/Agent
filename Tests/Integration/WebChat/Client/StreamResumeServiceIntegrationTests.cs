@@ -22,7 +22,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
-    private StreamingCoordinator _coordinator = null!;
+    private StreamingService _streamingService = null!;
     private StreamResumeService _resumeService = null!;
 
     public async Task InitializeAsync()
@@ -37,12 +37,12 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _coordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
+        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _approvalService,
-            _coordinator,
+            _streamingService,
             _dispatcher,
             _messagesStore,
             _streamingStore);
@@ -82,11 +82,6 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         return topic;
     }
 
-    private static Task NoOpRender()
-    {
-        return Task.CompletedTask;
-    }
-
     private void AddUserMessageAndStartStreaming(StoredTopic topic, string message)
     {
         _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
@@ -122,7 +117,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         // Complete a stream first
         fixture.FakeAgentFactory.EnqueueResponses("Completed response.");
         AddUserMessageAndStartStreaming(topic, "Question");
-        await _coordinator.StreamResponseAsync(topic, "Question", NoOpRender);
+        await _streamingService.StreamResponseAsync(topic, "Question");
 
         // Verify completion
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
@@ -162,7 +157,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         // Complete a stream to establish some state
         fixture.FakeAgentFactory.EnqueueResponses("Historical answer.");
         AddUserMessageAndStartStreaming(topic, "Historical question");
-        await _coordinator.StreamResponseAsync(topic, "Historical question", NoOpRender);
+        await _streamingService.StreamResponseAsync(topic, "Historical question");
 
         // Clear local state (simulating reconnection)
         _dispatcher.Dispatch(new ClearMessages(topic.TopicId));
@@ -172,22 +167,6 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
 
         // Assert - Resuming should be cleared (no active stream to resume)
         _streamingStore.State.ResumingTopics.Contains(topic.TopicId).ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task SetRenderCallback_IsCalledDuringResume()
-    {
-        // Arrange
-        var topic = CreateAndRegisterTopic();
-        await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
-
-        _resumeService.SetRenderCallback(() => Task.CompletedTask);
-
-        // Act
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        // Assert - Callback may or may not be called depending on resume path
-        // Just verify no exception
     }
 
     [Fact]
@@ -206,12 +185,12 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var topicsStore2 = new TopicsStore(dispatcher2);
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
-            var coordinator2 = new StreamingCoordinator(messagingService2, dispatcher2, topicService2);
+            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
                 approvalService2,
-                coordinator2,
+                streamingService2,
                 dispatcher2,
                 messagesStore2,
                 streamingStore2);
@@ -237,14 +216,14 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             // Stream on first client
             fixture.FakeAgentFactory.EnqueueResponses("Client 1 response.");
             AddUserMessageAndStartStreaming(topic1, "Client 1 question");
-            await _coordinator.StreamResponseAsync(topic1, "Client 1 question", NoOpRender);
+            await _streamingService.StreamResponseAsync(topic1, "Client 1 question");
 
             // Stream on second client
             fixture.FakeAgentFactory.EnqueueResponses("Client 2 response.");
             dispatcher2.Dispatch(new AddMessage(topic2.TopicId,
                 new ChatMessageModel { Role = "user", Content = "Client 2 question" }));
             dispatcher2.Dispatch(new StreamStarted(topic2.TopicId));
-            await coordinator2.StreamResponseAsync(topic2, "Client 2 question", NoOpRender);
+            await streamingService2.StreamResponseAsync(topic2, "Client 2 question");
 
             // Act - Both clients try resume
             await _resumeService.TryResumeStreamAsync(topic1);

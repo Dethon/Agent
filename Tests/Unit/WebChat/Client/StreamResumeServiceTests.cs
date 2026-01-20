@@ -26,12 +26,12 @@ public sealed class StreamResumeServiceTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        var streamingCoordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
+        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _approvalService,
-            streamingCoordinator,
+            streamingService,
             _dispatcher,
             _messagesStore,
             _streamingStore);
@@ -360,68 +360,6 @@ public sealed class StreamResumeServiceTests : IDisposable
         await _resumeService.TryResumeStreamAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
-    }
-
-    #endregion
-
-    #region Render Callback Tests
-
-    [Fact]
-    public async Task TryResumeStreamAsync_CallsRenderCallback()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
-            "msg-1",
-            null));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-
-        var renderCallCount = 0;
-        _resumeService.SetRenderCallback(() =>
-        {
-            renderCallCount++;
-            return Task.CompletedTask;
-        });
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        renderCallCount.ShouldBeGreaterThan(0);
-    }
-
-    [Fact]
-    public async Task TryResumeStreamAsync_WithoutRenderCallback_DoesNotThrow()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
-            "msg-1",
-            null));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-
-        await Should.NotThrowAsync(() => _resumeService.TryResumeStreamAsync(topic));
-    }
-
-    [Fact]
-    public void SetRenderCallback_StoresCallback()
-    {
-        var callbackCalled = false;
-
-        _resumeService.SetRenderCallback(() =>
-        {
-            callbackCalled = true;
-            return Task.CompletedTask;
-        });
-
-        // Callback is stored but not called until resume
-        callbackCalled.ShouldBeFalse();
     }
 
     #endregion

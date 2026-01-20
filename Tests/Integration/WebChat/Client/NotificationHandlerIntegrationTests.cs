@@ -26,7 +26,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
     private ApprovalStore _approvalStore = null!;
-    private StreamingCoordinator _coordinator = null!;
+    private StreamingService _streamingService = null!;
     private StreamResumeService _resumeService = null!;
     private ChatNotificationHandler _handler = null!;
     private readonly List<IDisposable> _subscriptions = [];
@@ -43,12 +43,12 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        _coordinator = new StreamingCoordinator(_messagingService, _dispatcher, _topicService);
+        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _approvalService,
-            _coordinator,
+            _streamingService,
             _dispatcher,
             _messagesStore,
             _streamingStore);
@@ -104,11 +104,6 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
         return topic;
     }
 
-    private static Task NoOpRender()
-    {
-        return Task.CompletedTask;
-    }
-
     private void AddUserMessageAndStartStreaming(StoredTopic topic, string message)
     {
         _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
@@ -151,7 +146,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
         // Act - Add user message, start streaming, then stream
         AddUserMessageAndStartStreaming(topic, "Test");
-        await _coordinator.StreamResponseAsync(topic, "Test", NoOpRender);
+        await _streamingService.StreamResponseAsync(topic, "Test");
 
         // Give notification time to propagate
         await Task.Delay(200);
@@ -180,7 +175,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
         // Act - Complete a stream
         AddUserMessageAndStartStreaming(topic, "Initial question");
-        await _coordinator.StreamResponseAsync(topic, "Initial question", NoOpRender);
+        await _streamingService.StreamResponseAsync(topic, "Initial question");
 
         // Give notification time to propagate
         await Task.Delay(200);
@@ -243,7 +238,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
         // Act
         AddUserMessageAndStartStreaming(topic, "Question");
-        await _coordinator.StreamResponseAsync(topic, "Question", NoOpRender);
+        await _streamingService.StreamResponseAsync(topic, "Question");
         await Task.Delay(300);
 
         // Assert - Should have received notifications in order
@@ -268,12 +263,12 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
             var approvalStore2 = new ApprovalStore(dispatcher2);
-            var coordinator2 = new StreamingCoordinator(messagingService2, dispatcher2, topicService2);
+            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
                 approvalService2,
-                coordinator2,
+                streamingService2,
                 dispatcher2,
                 messagesStore2,
                 streamingStore2);
@@ -323,7 +318,7 @@ public sealed class NotificationHandlerIntegrationTests(WebChatServerFixture fix
 
             // Act - Client 1 sends message
             AddUserMessageAndStartStreaming(topic, "Broadcast question");
-            await _coordinator.StreamResponseAsync(topic, "Broadcast question", NoOpRender);
+            await _streamingService.StreamResponseAsync(topic, "Broadcast question");
             await Task.Delay(300);
 
             // Assert - Client 2 received notifications
