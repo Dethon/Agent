@@ -50,14 +50,16 @@ public sealed class StreamingService(
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
-                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                // Only finalize current message if new chunk has content (starting a new response)
+                // Tool calls arriving (no content) shouldn't split the message
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && !string.IsNullOrEmpty(chunk.Content))
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
                 }
-                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning) && !string.IsNullOrEmpty(chunk.Content))
                 {
                     needsReasoningSeparator = true;
                 }
@@ -132,7 +134,9 @@ public sealed class StreamingService(
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
-                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content))
+                // Only finalize current message if new chunk has content (starting a new response)
+                // Tool calls arriving (no content) shouldn't split the message
+                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && !string.IsNullOrEmpty(chunk.Content))
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
@@ -143,7 +147,7 @@ public sealed class StreamingService(
                     knownReasoning = "";
                     knownToolCalls = "";
                 }
-                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning))
+                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning) && !string.IsNullOrEmpty(chunk.Content))
                 {
                     needsReasoningSeparator = true;
                 }
