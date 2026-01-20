@@ -40,22 +40,24 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamChunk_AccumulatesContent()
+    public void StreamChunk_ReplacesContentWithFullAccumulatedValue()
     {
+        // The service accumulates content and sends full value in each chunk
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello ", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "World", null, null, "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", null, null, "msg-1"));
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Hello World");
     }
 
     [Fact]
-    public void StreamChunk_AccumulatesReasoningSeparatelyFromContent()
+    public void StreamChunk_ReplacesReasoningAndContentSeparately()
     {
+        // The service accumulates and sends full values in each chunk
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", "Thinking ", null, "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", " World", "about this", null, "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", "Thinking about this", null, "msg-1"));
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Hello World");
@@ -63,11 +65,12 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamChunk_AccumulatesToolCallsSeparately()
+    public void StreamChunk_ReplacesToolCallsWithFullValue()
     {
+        // The service accumulates and sends full values in each chunk
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Content", null, "tool1()", "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", null, null, "tool2()", "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Content", null, "tool1()\ntool2()", "msg-1"));
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Content");

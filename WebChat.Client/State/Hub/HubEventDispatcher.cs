@@ -79,22 +79,34 @@ public sealed class HubEventDispatcher(
 
         if (!string.IsNullOrEmpty(notification.ToolCalls))
         {
+            // Accumulate tool calls since reducer replaces (StreamingService sends accumulated content)
+            var accumulatedToolCalls = AccumulateToolCalls(notification.TopicId, notification.ToolCalls);
             dispatcher.Dispatch(new StreamChunk(
                 notification.TopicId,
                 Content: null,
                 Reasoning: null,
-                ToolCalls: notification.ToolCalls,
+                ToolCalls: accumulatedToolCalls,
                 MessageId: null));
         }
     }
 
     public void HandleToolCalls(ToolCallsNotification notification)
     {
+        // Accumulate tool calls since reducer replaces (StreamingService sends accumulated content)
+        var accumulatedToolCalls = AccumulateToolCalls(notification.TopicId, notification.ToolCalls);
         dispatcher.Dispatch(new StreamChunk(
             notification.TopicId,
             Content: null,
             Reasoning: null,
-            ToolCalls: notification.ToolCalls,
+            ToolCalls: accumulatedToolCalls,
             MessageId: null));
+    }
+
+    private string AccumulateToolCalls(string topicId, string newToolCalls)
+    {
+        var existing = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        return string.IsNullOrEmpty(existing?.ToolCalls)
+            ? newToolCalls
+            : existing.ToolCalls + "\n" + newToolCalls;
     }
 }

@@ -419,13 +419,15 @@ public sealed class ChatNotificationHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleToolCallsAsync_AppendsToExisting()
+    public async Task HandleToolCallsAsync_ReplacesToolCalls()
     {
+        // The store now replaces content (accumulation happens in the streaming service)
         var topicId = "topic-1";
         _dispatcher.Dispatch(new StreamStarted(topicId));
         _dispatcher.Dispatch(new StreamChunk(topicId, null, null, "existing_tool", null));
 
-        var notification = new ToolCallsNotification(topicId, "new_tool");
+        // Server sends full accumulated tool calls in notification
+        var notification = new ToolCallsNotification(topicId, "existing_tool\nnew_tool");
 
         await _handler.HandleToolCallsAsync(notification);
 

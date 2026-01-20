@@ -91,6 +91,7 @@ public sealed class StreamingServiceTests : IDisposable
     {
         var topic = CreateTopic();
         topic.LastMessageAt = null;
+        _dispatcher.Dispatch(new AddTopic(topic)); // Add to store so service can fetch it
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
@@ -98,7 +99,9 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.StreamResponseAsync(topic, "test");
 
-        topic.LastMessageAt.ShouldNotBeNull();
+        // Check the saved metadata has updated timestamp
+        _topicService.SavedTopics.Count.ShouldBe(1);
+        _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
     }
 
     [Fact]
@@ -305,22 +308,21 @@ public sealed class StreamingServiceTests : IDisposable
     {
         var topic = CreateTopic();
         topic.LastMessageAt = new DateTime(2024, 1, 1);
-        var originalTime = topic.LastMessageAt;
+        _dispatcher.Dispatch(new AddTopic(topic)); // Add to store so service can fetch it
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [
             new ChatMessageModel { Role = "assistant", Content = "Known" }
         ]));
         _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
+        // Stream completes immediately without any new content
         var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Known" };
         _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "Known", MessageId = "msg-1" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
-        // Timestamp should not change if no new content
-        topic.LastMessageAt.ShouldBe(originalTime);
+        // Timestamp should not change if no new content - no save should occur
         _topicService.SavedTopics.ShouldBeEmpty();
     }
 
@@ -329,6 +331,7 @@ public sealed class StreamingServiceTests : IDisposable
     {
         var topic = CreateTopic();
         topic.LastMessageAt = new DateTime(2024, 1, 1);
+        _dispatcher.Dispatch(new AddTopic(topic)); // Add to store so service can fetch it
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
 
@@ -340,9 +343,10 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
-        topic.LastMessageAt.ShouldNotBeNull();
-        topic.LastMessageAt.Value.ShouldBeGreaterThan(new DateTime(2024, 1, 1));
+        // Check saved metadata has updated timestamp
         _topicService.SavedTopics.Count.ShouldBe(1);
+        _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
+        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
     [Fact]
