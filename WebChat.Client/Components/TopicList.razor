@@ -33,8 +33,13 @@
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
             ids => _streamingTopics = ids);
+        // Unread counts depend on both MessagesStore and TopicsStore
+        // Subscribe to both to ensure recomputation when either changes
         Subscribe(MessagesStore.StateObservable,
             state => ComputeUnreadCounts(state, TopicsStore.State),
+            counts => _unreadCounts = counts);
+        Subscribe(TopicsStore.StateObservable,
+            state => ComputeUnreadCounts(MessagesStore.State, state),
             counts => _unreadCounts = counts);
     }
 
