@@ -62,8 +62,37 @@ public sealed class TopicSelectionEffect : IDisposable
             _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
         }
 
+        // Mark messages as read by updating LastReadMessageCount
+        await MarkTopicAsReadAsync(topic);
+
         // Try to resume any active streaming
         _ = _streamResumeService.TryResumeStreamAsync(topic);
+    }
+
+    private async Task MarkTopicAsReadAsync(StoredTopic topic)
+    {
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+        var assistantCount = messages.Count(m => m.Role != "user");
+
+        if (assistantCount > topic.LastReadMessageCount)
+        {
+            // Update local state
+            var updatedTopic = new StoredTopic
+            {
+                TopicId = topic.TopicId,
+                ChatId = topic.ChatId,
+                ThreadId = topic.ThreadId,
+                AgentId = topic.AgentId,
+                Name = topic.Name,
+                CreatedAt = topic.CreatedAt,
+                LastMessageAt = topic.LastMessageAt,
+                LastReadMessageCount = assistantCount
+            };
+            _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
+
+            // Persist to server
+            await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
+        }
     }
 
     public void Dispose()
