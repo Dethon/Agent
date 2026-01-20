@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 2 - State Slices (Ready to plan)
+**Current Focus:** Phase 2 - State Slices (In progress)
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,22 +14,22 @@
 
 ## Current Position
 
-**Phase:** 1 of 7 (State Foundation) - COMPLETE
-**Plan:** 3 of 3 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-20 - Completed 01-03-PLAN.md
+**Phase:** 2 of 7 (State Slices) - IN PROGRESS
+**Plan:** 2 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 02-02-PLAN.md
 
 **Progress:**
 ```
-Phase 1: [✓✓✓] State Foundation (3/3 plans) VERIFIED ✓
-Phase 2: [   ] State Slices (ready to plan)
+Phase 1: [###] State Foundation (3/3 plans) VERIFIED
+Phase 2: [##-] State Slices (2/3 plans)
 Phase 3: [   ] Streaming Performance
 Phase 4: [   ] SignalR Integration
 Phase 5: [   ] Component Architecture
 Phase 6: [   ] Clean Architecture
 Phase 7: [   ] Cleanup and Verification
 
-Overall: [###----] 3/21 plans complete (~14%)
+Overall: [#####--] 5/21 plans complete (~24%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [###----] 3/21 plans complete (~14%)
 |--------|-------|
 | Phases completed | 1/7 |
 | Requirements delivered | 5/25 |
-| Plans executed | 3 |
+| Plans executed | 5 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -56,6 +56,8 @@ Overall: [###----] 3/21 plans complete (~14%)
 | Three Subscribe overloads | Basic, selector, selector+comparer covers 99% of use cases | 2026-01-20 |
 | Reference equality for selector memoization | C# records create new instances on with mutations | 2026-01-20 |
 | Static Selector factory class | Cleaner API with Selector.Create instead of new Selector<T,R> | 2026-01-20 |
+| Per-topic streaming | Dictionary<string, StreamingContent> keyed by TopicId for concurrent streams | 2026-01-20 |
+| Connection metadata | Include LastConnected and ReconnectAttempts for debugging/UI feedback | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -79,24 +81,25 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 1 execution and verification complete
+**Accomplished:** Phase 2 Plan 02 (Streaming and Connection State) complete
 **Completed:**
-- Executed all 3 plans (01-01, 01-02, 01-03)
-- Verified 13/13 must-haves against codebase
-- Created VERIFICATION.md confirming phase goal achieved
-- **Phase 1 State Foundation VERIFIED ✓**
+- Created StreamingState slice (4 files, 7 action handlers)
+- Created ConnectionState slice (4 files, 7 action handlers)
+- Added 32 unit tests for both stores
+- All tests passing
 
 ### For Next Session
 
 **Start with:**
-`/gsd:discuss-phase 2` — gather context for State Slices phase
+Execute 02-03-PLAN.md (ApprovalState slice)
 
 **Key context:**
-- State foundation complete and verified: Store<TState>, Dispatcher, StoreSubscriberComponent, Selector
-- All infrastructure ready for building concrete feature stores
-- Phase 2 will create ConnectionStore, TopicsStore, MessagesStore, StreamingStore, ApprovalStore
+- 4 of 5 state slices now complete: Topics, Messages, Streaming, Connection
+- ApprovalState remaining for Phase 2 completion
+- StreamingState ready for Phase 3 throttled UI updates
+- ConnectionState ready for Phase 4 SignalR integration
 
-**Resume file:** `.planning/phases/02-state-slices/` (next phase)
+**Resume file:** `.planning/phases/02-state-slices/02-03-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
