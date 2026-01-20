@@ -71,7 +71,7 @@ public class StreamingStoreTests : IDisposable
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Content");
-        content.ToolCalls.ShouldBe("tool1()tool2()");
+        content.ToolCalls.ShouldBe("tool1()\ntool2()");
     }
 
     [Fact]
