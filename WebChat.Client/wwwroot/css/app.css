@@ -1405,12 +1405,21 @@ html, body {
    Streaming Cursor
    =================================== */
 
-.streaming-cursor .message-content::after {
+/* Target the last element inside message-content so cursor appears inline */
+.streaming-cursor .message-content > *:last-child::after {
     content: "|";
     color: var(--accent);
     font-weight: bold;
     animation: cursor-blink 1s step-end infinite;
     margin-left: 2px;
+}
+
+/* Fallback for empty content or plain text */
+.streaming-cursor .message-content:empty::after {
+    content: "|";
+    color: var(--accent);
+    font-weight: bold;
+    animation: cursor-blink 1s step-end infinite;
 }
 
 @keyframes cursor-blink {
