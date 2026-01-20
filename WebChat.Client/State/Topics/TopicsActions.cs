@@ -56,3 +56,8 @@ public record TopicsError(string Message) : IAction;
 /// Create a new topic (deselect current topic for new conversation).
 /// </summary>
 public record CreateNewTopic : IAction;
+
+/// <summary>
+/// Triggers app initialization (load agents, topics).
+/// </summary>
+public record Initialize : IAction;

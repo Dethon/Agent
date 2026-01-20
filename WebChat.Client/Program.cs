@@ -58,6 +58,7 @@ builder.Services.AddScoped<ReconnectionEffect>();
 builder.Services.AddScoped<SendMessageEffect>();
 builder.Services.AddScoped<TopicSelectionEffect>();
 builder.Services.AddScoped<TopicDeleteEffect>();
+builder.Services.AddScoped<InitializationEffect>();
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
@@ -75,5 +76,6 @@ _ = app.Services.GetRequiredService<ReconnectionEffect>();
 _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
+_ = app.Services.GetRequiredService<InitializationEffect>();
 
 await app.RunAsync();
