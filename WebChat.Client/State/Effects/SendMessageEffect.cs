@@ -8,7 +8,7 @@ using WebChat.Client.State.Topics;
 namespace WebChat.Client.State.Effects;
 
 /// <summary>
-/// Handles SendMessage action coordination: topic creation, session start, streaming.
+/// Handles SendMessage and CancelStreaming actions: topic creation, session start, streaming.
 /// </summary>
 public sealed class SendMessageEffect : IDisposable
 {
@@ -17,26 +17,41 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
+    private readonly IChatMessagingService _messagingService;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
         IChatSessionService sessionService,
         IStreamingService streamingService,
-        ITopicService topicService)
+        ITopicService topicService,
+        IChatMessagingService messagingService)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
         _sessionService = sessionService;
         _streamingService = streamingService;
         _topicService = topicService;
+        _messagingService = messagingService;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
+        dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
     }
 
     private void HandleSendMessage(SendMessage action)
     {
         _ = HandleSendMessageAsync(action);
+    }
+
+    private void HandleCancelStreaming(CancelStreaming action)
+    {
+        _ = HandleCancelStreamingAsync(action.TopicId);
+    }
+
+    private async Task HandleCancelStreamingAsync(string topicId)
+    {
+        await _messagingService.CancelTopicAsync(topicId);
+        _dispatcher.Dispatch(new StreamCancelled(topicId));
     }
 
     private async Task HandleSendMessageAsync(SendMessage action)
