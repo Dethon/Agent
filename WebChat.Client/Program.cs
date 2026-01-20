@@ -59,6 +59,7 @@ builder.Services.AddScoped<SendMessageEffect>();
 builder.Services.AddScoped<TopicSelectionEffect>();
 builder.Services.AddScoped<TopicDeleteEffect>();
 builder.Services.AddScoped<InitializationEffect>();
+builder.Services.AddScoped<AgentSelectionEffect>();
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
@@ -77,5 +78,6 @@ _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
+_ = app.Services.GetRequiredService<AgentSelectionEffect>();
 
 await app.RunAsync();
