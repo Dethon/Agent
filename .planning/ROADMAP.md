@@ -159,6 +159,12 @@ Plans:
 
 **Dependencies:** Phase 1 (can run partially in parallel with other phases, completed here)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md - INotifier migration to Infrastructure layer
+- [ ] 06-02-PLAN.md - Store and effect registration consolidation
+
 **Requirements:**
 - ARCH-01: INotifier implementation moved from Agent/Hubs to Infrastructure
 - ARCH-02: State stores registered in proper layer
@@ -225,4 +231,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 5 complete)*
+*Last updated: 2026-01-20 (Phase 6 planned)*
