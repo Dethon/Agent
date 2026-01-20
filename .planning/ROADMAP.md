@@ -185,6 +185,13 @@ Plans:
 
 **Dependencies:** Phase 5 (Component Architecture), Phase 6 (Clean Architecture)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 07-01-PLAN.md - Delete ChatStateManager and migrate consumers to stores
+- [ ] 07-02-PLAN.md - Delete StreamingCoordinator, extract reusable logic
+- [ ] 07-03-PLAN.md - Dead code sweep and manual verification
+
 **Requirements:**
 - CLEAN-01: ChatStateManager deleted (replaced by stores)
 - CLEAN-02: StreamingCoordinator deleted (logic moved to StreamingState + reducers)
@@ -231,4 +238,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 6 complete)*
+*Last updated: 2026-01-20 (Phase 7 planned)*
