@@ -2,18 +2,13 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using WebChat.Client;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Handlers;
 using WebChat.Client.Services.State;
 using WebChat.Client.Services.Streaming;
-using WebChat.Client.State;
-using WebChat.Client.State.Topics;
-using WebChat.Client.State.Messages;
-using WebChat.Client.State.Streaming;
-using WebChat.Client.State.Connection;
-using WebChat.Client.State.Approval;
-using WebChat.Client.State.Hub;
 using WebChat.Client.State.Effects;
+using WebChat.Client.State.Hub;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -39,27 +34,9 @@ builder.Services.AddScoped<IApprovalService, ApprovalService>();
 builder.Services.AddScoped<IChatStateManager, ChatStateManager>();
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 
-// State infrastructure (Phase 1)
-builder.Services.AddScoped<Dispatcher>();
-builder.Services.AddScoped<IDispatcher>(sp => sp.GetRequiredService<Dispatcher>());
-
-// State stores (Phase 2)
-builder.Services.AddScoped<TopicsStore>();
-builder.Services.AddScoped<MessagesStore>();
-builder.Services.AddScoped<StreamingStore>();
-builder.Services.AddScoped<ConnectionStore>();
-builder.Services.AddScoped<ApprovalStore>();
-
-// State coordination (Phase 3)
-builder.Services.AddScoped<RenderCoordinator>();
-
-// State effects (Phase 4 & 5)
-builder.Services.AddScoped<ReconnectionEffect>();
-builder.Services.AddScoped<SendMessageEffect>();
-builder.Services.AddScoped<TopicSelectionEffect>();
-builder.Services.AddScoped<TopicDeleteEffect>();
-builder.Services.AddScoped<InitializationEffect>();
-builder.Services.AddScoped<AgentSelectionEffect>();
+// State stores and effects (Phase 1-5)
+builder.Services.AddWebChatStores();
+builder.Services.AddWebChatEffects();
 
 // Streaming services
 builder.Services.AddScoped<IStreamingCoordinator, StreamingCoordinator>();
