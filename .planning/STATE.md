@@ -17,7 +17,7 @@
 **Phase:** 5 of 7 (Component Architecture)
 **Plan:** 1 of 6 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 05-02-PLAN.md
+**Last activity:** 2026-01-20 - Completed 05-01-PLAN.md
 
 **Progress:**
 ```
@@ -71,7 +71,7 @@ Overall: [##############--] 14/22 plans complete (~64%)
 | Fire-and-forget resumption | Session restart and stream resumption are async but effect runs synchronously | 2026-01-20 |
 | IDisposable tracking for SignalR | HubConnection.On() returns IDisposable - track in list for proper cleanup | 2026-01-20 |
 | Idempotent subscription pattern | Subscribe() checks IsSubscribed before registering to prevent duplicates | 2026-01-20 |
-| Named method over inline lambda | Razor compiler issues with multi-statement lambda blocks; extract to named method | 2026-01-20 |
+| Type alias for enum conflict | ConnectionStatus.razor name conflicts with ConnectionStatus enum; use alias | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -95,24 +95,24 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Plan 05-02 complete (ApprovalModal store migration)
+**Accomplished:** Plan 05-01 complete (Leaf Components migration)
 **Completed:**
-- ApprovalModal migrated to store subscription pattern
-- RespondToApproval action added for future Effect usage
-- Fixed ConnectionStatus.razor lambda syntax (blocking issue)
+- ConnectionStatus migrated to store subscription pattern
+- ChatInput migrated to store subscription and action dispatch
+- SendMessage and CancelStreaming actions added
 
 ### For Next Session
 
 **Start with:**
-Continue Phase 5 - Component Architecture
+Continue Phase 5 - Plan 02 (MessageList component migration)
 
 **Key context:**
-- ApprovalModal now self-contained, subscribes to ApprovalStore
-- RespondToApproval action available for future ApprovalEffect
-- Razor files need named methods instead of multi-statement inline lambdas
-- ConnectionStatus also migrated (was uncommitted from 05-01)
+- Leaf components (ConnectionStatus, ChatInput) now use store subscriptions
+- SendMessage and CancelStreaming actions dispatch from ChatInput
+- StoreSubscriberComponent pattern established for component migration
+- Use type alias when component name conflicts with enum name
 
-**Resume file:** `.planning/phases/05-component-architecture/05-03-PLAN.md`
+**Resume file:** `.planning/phases/05-component-architecture/05-02-PLAN.md`
 
 ---
 *State initialized: 2026-01-19*
