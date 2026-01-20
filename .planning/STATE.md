@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 6 - Clean Architecture (complete)
+**Current Focus:** Phase 7 - Cleanup and Verification (in progress)
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -14,10 +14,10 @@
 
 ## Current Position
 
-**Phase:** 6 of 7 (Clean Architecture)
-**Plan:** 2 of 2 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-20 - Completed 06-01-PLAN.md
+**Phase:** 7 of 7 (Cleanup and Verification)
+**Plan:** 1 of 3 complete
+**Status:** In progress
+**Last activity:** 2026-01-20 - Completed 07-01-PLAN.md
 
 **Progress:**
 ```
@@ -27,9 +27,9 @@ Phase 3: [###] Streaming Performance (3/3 plans) VERIFIED
 Phase 4: [####] SignalR Integration (4/4 plans) VERIFIED
 Phase 5: [######] Component Architecture (6/6 plans) VERIFIED
 Phase 6: [##] Clean Architecture (2/2 plans) VERIFIED
-Phase 7: [   ] Cleanup and Verification
+Phase 7: [#  ] Cleanup and Verification (1/3 plans)
 
-Overall: [#####################] 21/24 plans complete (~88%)
+Overall: [######################] 22/24 plans complete (~92%)
 ```
 
 ## Performance Metrics
@@ -38,7 +38,7 @@ Overall: [#####################] 21/24 plans complete (~88%)
 |--------|-------|
 | Phases completed | 6/7 |
 | Requirements delivered | 22/25 |
-| Plans executed | 21 |
+| Plans executed | 22 |
 | Blockers encountered | 0 |
 
 ## Accumulated Context
@@ -82,6 +82,8 @@ Overall: [#####################] 21/24 plans complete (~88%)
 | ReconnectionEffect in State.Hub namespace | Located separately from other effects, requires explicit import | 2026-01-20 |
 | Adapter pattern for SignalR | IHubNotificationSender abstracts hub context, enables INotifier in Infrastructure | 2026-01-20 |
 | Single method interface for hub sender | SendAsync(methodName, notification, ct) covers all notification types | 2026-01-20 |
+| Migrate StreamingCoordinator early | Required for compilation after deleting IChatStateManager | 2026-01-20 |
+| Newline separator for ToolCalls | Matches original ChatStateManager behavior | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -89,7 +91,7 @@ Overall: [#####################] 21/24 plans complete (~88%)
 - [ ] Document current approval flow step-by-step before Phase 4
 - [ ] Complete state field audit from StreamingCoordinator before Phase 4
 - [ ] Measure current streaming performance for comparison
-- [ ] Fix pre-existing test failures in StreamResumeServiceTests
+- [x] Fix pre-existing test failures in StreamResumeServiceTests
 
 ### Blockers
 
@@ -100,33 +102,35 @@ None currently.
 - **Memory leaks:** Every `+=` event subscription must have corresponding `-=` in Dispose
 - **InvokeAsync:** All state mutations must be wrapped, not just StateHasChanged calls
 - **Throttle pattern:** Preserve 50ms throttle for streaming updates to prevent UI freeze
-- **Pre-existing test failures:** StreamResumeServiceTests has 2 failing tests (not related to this refactoring)
 
 ## Session Continuity
 
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Plan 06-01 complete (INotifier Migration)
+**Accomplished:** Plan 07-01 complete (ChatStateManager Cleanup)
 **Completed:**
-- IHubNotificationSender interface in Domain/Contracts
-- HubNotifier implementation in Infrastructure/Clients/Messaging
-- HubNotificationAdapter in Agent/Hubs (SignalR wrapper)
-- Layer compliance verified: no cross-layer references
+- Deleted ChatStateManager.cs and IChatStateManager.cs
+- Migrated ChatNotificationHandler to use stores
+- Migrated StreamResumeService to use stores
+- Migrated StreamingCoordinator to use stores (early - was planned for 07-02)
+- Updated all related tests to use store-based infrastructure
+- Fixed StreamingReducers ToolCalls separator
+- All 668 unit tests passing
 
 ### For Next Session
 
 **Start with:**
-Phase 7 - Cleanup and Verification
+Plan 07-02 - Migrate StreamingCoordinator (simplified - already done)
 
 **Key context:**
-- Phase 6 complete - all clean architecture requirements satisfied
-- INotifier in Infrastructure, HubNotificationAdapter in Agent
-- Store registration consolidated in extension methods
-- Layer compliance verified via grep (no violations)
+- ChatStateManager removed, all consumers use stores
+- StreamingCoordinator already migrated in Plan 07-01
+- Plan 07-02 scope reduced - just verify/cleanup
+- Test infrastructure established for store-based testing
 
-**Resume file:** `.planning/phases/07-cleanup-verification/07-01-PLAN.md` (when available)
+**Resume file:** `.planning/phases/07-cleanup-verification/07-02-PLAN.md` (when available)
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-20 14:45 UTC*
+*Last updated: 2026-01-20 16:32 UTC*
