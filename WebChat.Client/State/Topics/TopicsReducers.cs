@@ -1,15 +1,7 @@
 namespace WebChat.Client.State.Topics;
 
-/// <summary>
-/// Pure reducer functions for TopicsState.
-/// All mutations create new collections - never mutate existing state.
-/// </summary>
 public static class TopicsReducers
 {
-    /// <summary>
-    /// Reduce TopicsState based on the dispatched action.
-    /// Returns unchanged state for unhandled actions.
-    /// </summary>
     public static TopicsState Reduce(TopicsState state, IAction action) => action switch
     {
         LoadTopics => state with
@@ -31,7 +23,7 @@ public static class TopicsReducers
         },
 
         AddTopic a => state.Topics.Any(t => t.TopicId == a.Topic.TopicId)
-            ? state  // Topic already exists, ignore duplicate
+            ? state // Topic already exists, ignore duplicate
             : state with
             {
                 Topics = state.Topics.Append(a.Topic).ToList(),

@@ -2,16 +2,8 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Messages;
 
-/// <summary>
-/// Pure reducer functions for MessagesState.
-/// All mutations create new collections - never mutate existing state.
-/// </summary>
 public static class MessagesReducers
 {
-    /// <summary>
-    /// Reduce MessagesState based on the dispatched action.
-    /// Returns unchanged state for unhandled actions.
-    /// </summary>
     public static MessagesState Reduce(MessagesState state, IAction action) => action switch
     {
         LoadMessages => state, // No-op, handled by effect/component

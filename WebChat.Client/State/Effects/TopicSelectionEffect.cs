@@ -5,9 +5,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-/// <summary>
-/// Handles SelectTopic action: loads history, starts session, resumes streaming.
-/// </summary>
 public sealed class TopicSelectionEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;

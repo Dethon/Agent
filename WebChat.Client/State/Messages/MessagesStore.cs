@@ -1,9 +1,5 @@
 namespace WebChat.Client.State.Messages;
 
-/// <summary>
-/// Store for message state management.
-/// Wraps Store&lt;MessagesState&gt; and registers action handlers with the Dispatcher.
-/// </summary>
 public sealed class MessagesStore : IDisposable
 {
     private readonly Store<MessagesState> _store;
@@ -32,14 +28,10 @@ public sealed class MessagesStore : IDisposable
             _store.Dispatch(action, MessagesReducers.Reduce));
     }
 
-    /// <summary>
-    /// Current state value for synchronous reads.
-    /// </summary>
+
     public MessagesState State => _store.State;
 
-    /// <summary>
-    /// Observable state stream for subscriptions.
-    /// </summary>
+
     public IObservable<MessagesState> StateObservable => _store.StateObservable;
 
     public void Dispose() => _store.Dispose();

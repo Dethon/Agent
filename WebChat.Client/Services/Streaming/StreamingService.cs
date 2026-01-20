@@ -8,10 +8,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
 
-/// <summary>
-/// Service for streaming AI responses. Uses store actions for all state updates.
-/// Throttling is handled by RenderCoordinator in components, not here.
-/// </summary>
 public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,

@@ -3,18 +3,8 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.Services.Streaming;
 
-/// <summary>
-/// Pure utility functions for rebuilding streaming state from buffered messages.
-/// Used during stream reconnection to reconcile server buffer with client history.
-/// </summary>
 public static class BufferRebuildUtility
 {
-    /// <summary>
-    /// Reconstructs chat messages from a server buffer, separating completed turns from in-progress streaming.
-    /// </summary>
-    /// <param name="bufferedMessages">Messages buffered on the server during disconnection</param>
-    /// <param name="historyContent">Content already displayed to the user (to avoid duplicates)</param>
-    /// <returns>Completed message turns and the current streaming message state</returns>
     public static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
         IReadOnlyList<ChatStreamMessage> bufferedMessages,
         HashSet<string> historyContent)
@@ -79,12 +69,7 @@ public static class BufferRebuildUtility
         return (completedTurns, streamingMessage);
     }
 
-    /// <summary>
-    /// Removes content that already exists in history to prevent duplicate display.
-    /// </summary>
-    /// <param name="message">Message to process</param>
-    /// <param name="historyContent">Content already displayed to the user</param>
-    /// <returns>Message with known content removed</returns>
+
     public static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
     {
         if (string.IsNullOrEmpty(message.Content))
@@ -110,9 +95,6 @@ public static class BufferRebuildUtility
         return content != message.Content ? message with { Content = content } : message;
     }
 
-    /// <summary>
-    /// Accumulates a stream chunk into the current message state.
-    /// </summary>
     internal static ChatMessageModel AccumulateChunk(
         ChatMessageModel streamingMessage,
         ChatStreamMessage chunk,

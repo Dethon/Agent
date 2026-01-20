@@ -3,9 +3,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-/// <summary>
-/// Handles SelectAgent action side effects: clear session, save to localStorage.
-/// </summary>
 public sealed class AgentSelectionEffect : IDisposable
 {
     private readonly IDisposable _subscription;
@@ -33,6 +30,7 @@ public sealed class AgentSelectionEffect : IDisposable
             _sessionService.ClearSession();
             _ = _localStorage.SetAsync("selectedAgentId", state.SelectedAgentId ?? "");
         }
+
         _previousAgentId = state.SelectedAgentId;
     }
 

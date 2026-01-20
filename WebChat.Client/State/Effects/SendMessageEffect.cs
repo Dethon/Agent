@@ -7,9 +7,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-/// <summary>
-/// Handles SendMessage and CancelStreaming actions: topic creation, session start, streaming.
-/// </summary>
 public sealed class SendMessageEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;

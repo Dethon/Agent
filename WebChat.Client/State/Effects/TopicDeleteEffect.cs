@@ -5,9 +5,6 @@ using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
 
-/// <summary>
-/// Handles RemoveTopic action: cancels streaming, deletes from server, clears approval.
-/// </summary>
 public sealed class TopicDeleteEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
