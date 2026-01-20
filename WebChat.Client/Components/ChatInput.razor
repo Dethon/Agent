@@ -27,11 +27,12 @@
             _topicId = tuple.SelectedTopicId;
             _selectedAgentId = tuple.SelectedAgentId;
             UpdateDisabledState();
+            UpdateStreamingStatus();
         });
 
-        Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, streamingTopics =>
+        Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, _ =>
         {
-            _isStreaming = _topicId is not null && streamingTopics.Contains(_topicId);
+            UpdateStreamingStatus();
         });
 
         Subscribe(ConnectionStore.StateObservable, state => state.Status, status =>
@@ -39,6 +40,11 @@
             _isConnected = status == ConnStatus.Connected;
             UpdateDisabledState();
         });
+    }
+
+    private void UpdateStreamingStatus()
+    {
+        _isStreaming = _topicId is not null && StreamingStore.State.StreamingTopics.Contains(_topicId);
     }
 
     private void UpdateDisabledState()
