@@ -1,12 +1,12 @@
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
-using WebChat.Client.Contracts;
+using WebChat.Client.State.Hub;
 
 namespace WebChat.Client.Services;
 
 public sealed class SignalREventSubscriber(
     ChatConnectionService connectionService,
-    IChatNotificationHandler notificationHandler)
+    IHubEventDispatcher hubEventDispatcher)
 {
     private bool _subscribed;
 
@@ -23,29 +23,29 @@ public sealed class SignalREventSubscriber(
             return;
         }
 
-        hubConnection.On<TopicChangedNotification>("OnTopicChanged", async notification =>
+        hubConnection.On<TopicChangedNotification>("OnTopicChanged", notification =>
         {
-            await notificationHandler.HandleTopicChangedAsync(notification);
+            hubEventDispatcher.HandleTopicChanged(notification);
         });
 
-        hubConnection.On<StreamChangedNotification>("OnStreamChanged", async notification =>
+        hubConnection.On<StreamChangedNotification>("OnStreamChanged", notification =>
         {
-            await notificationHandler.HandleStreamChangedAsync(notification);
+            hubEventDispatcher.HandleStreamChanged(notification);
         });
 
-        hubConnection.On<NewMessageNotification>("OnNewMessage", async notification =>
+        hubConnection.On<NewMessageNotification>("OnNewMessage", notification =>
         {
-            await notificationHandler.HandleNewMessageAsync(notification);
+            hubEventDispatcher.HandleNewMessage(notification);
         });
 
-        hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", async notification =>
+        hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", notification =>
         {
-            await notificationHandler.HandleApprovalResolvedAsync(notification);
+            hubEventDispatcher.HandleApprovalResolved(notification);
         });
 
-        hubConnection.On<ToolCallsNotification>("OnToolCalls", async notification =>
+        hubConnection.On<ToolCallsNotification>("OnToolCalls", notification =>
         {
-            await notificationHandler.HandleToolCallsAsync(notification);
+            hubEventDispatcher.HandleToolCalls(notification);
         });
 
         _subscribed = true;
