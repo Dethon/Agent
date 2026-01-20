@@ -133,12 +133,12 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
-- [ ] 05-01-PLAN.md - Leaf components (ConnectionStatus, ChatInput) migrate to stores
-- [ ] 05-02-PLAN.md - ApprovalModal migrates to store subscription
-- [ ] 05-03-PLAN.md - TopicList migrates to store subscriptions
-- [ ] 05-04-PLAN.md - Effect classes (SendMessageEffect, TopicSelectionEffect, TopicDeleteEffect)
-- [ ] 05-05-PLAN.md - ChatContainer simplification with InitializationEffect
-- [ ] 05-06-PLAN.md - MessageList migrates to store subscriptions
+- [x] 05-01-PLAN.md - Leaf components (ConnectionStatus, ChatInput) migrate to stores
+- [x] 05-02-PLAN.md - ApprovalModal migrates to store subscription
+- [x] 05-03-PLAN.md - TopicList migrates to store subscriptions
+- [x] 05-04-PLAN.md - Effect classes (SendMessageEffect, TopicSelectionEffect, TopicDeleteEffect)
+- [x] 05-05-PLAN.md - ChatContainer simplification with InitializationEffect
+- [x] 05-06-PLAN.md - MessageList migrates to store subscriptions
 
 **Requirements:**
 - COMP-01: Components dispatch actions only, render from store state
@@ -201,7 +201,7 @@ Plans:
 | 2 | State Slices | 5 | Complete |
 | 3 | Streaming Performance | 3 | Complete |
 | 4 | SignalR Integration | 3 | Complete |
-| 5 | Component Architecture | 3 | Planned |
+| 5 | Component Architecture | 3 | Complete |
 | 6 | Clean Architecture | 3 | Pending |
 | 7 | Cleanup and Verification | 3 | Pending |
 
@@ -225,4 +225,4 @@ Plans:
 
 ---
 *Roadmap created: 2026-01-19*
-*Last updated: 2026-01-20 (Phase 5 revised - added 05-06 for MessageList migration)*
+*Last updated: 2026-01-20 (Phase 5 complete)*
