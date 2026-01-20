@@ -4,7 +4,7 @@
 
 **Core Value:** State flows in one direction - down from stores, up via events
 
-**Current Focus:** Phase 3 - Streaming Performance (In progress)
+**Current Focus:** Phase 3 - Streaming Performance (2/3 plans complete)
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition and constraints
@@ -17,7 +17,7 @@
 **Phase:** 3 of 7 (Streaming Performance) - IN PROGRESS
 **Plan:** 2 of 3 complete
 **Status:** In progress
-**Last activity:** 2026-01-20 - Completed 03-02-PLAN.md
+**Last activity:** 2026-01-20 - Completed 03-01-PLAN.md
 
 **Progress:**
 ```
@@ -60,6 +60,8 @@ Overall: [########------] 8/21 plans complete (~38%)
 | Domain type reuse for approvals | ApprovalState uses ToolApprovalRequestMessage from Domain directly | 2026-01-20 |
 | Topic-scoped approvals | TopicId in ApprovalState enables topic-specific modal handling | 2026-01-20 |
 | CSS-only visual feedback | Blinking cursor and typing indicator use CSS animations for hardware acceleration | 2026-01-20 |
+| Sample over Throttle | Rx.NET Throttle is debounce; Sample emits at fixed intervals for render ticks | 2026-01-20 |
+| Centralized throttling | RenderCoordinator is single point where Sample is applied | 2026-01-20 |
 
 ### TODOs (Accumulated)
 
@@ -83,12 +85,12 @@ None currently.
 ### Last Session
 
 **Date:** 2026-01-20
-**Accomplished:** Phase 3 Plan 02 complete (Streaming Visual Feedback)
+**Accomplished:** Phase 3 Plan 01 complete (Render Coordination)
 **Completed:**
-- Added CSS animations for streaming cursor, typing indicator, error recovery styling
-- Updated ChatMessage component with conditional streaming-cursor class
-- Typing indicator shows only while waiting for first token
-- All visual feedback is CSS-based (hardware-accelerated)
+- Created RenderCoordinator with 50ms Sample-based throttling
+- Created StreamingSelectors for topic-scoped content selection
+- Added SubscribeWithInvoke and ClearSubscriptions to StoreSubscriberComponent
+- 9 unit tests for RenderCoordinator
 
 ### For Next Session
 
@@ -96,10 +98,11 @@ None currently.
 `/gsd:execute-phase 3` to continue with plan 03 (auto-scroll and smart anchoring)
 
 **Key context:**
-- Visual feedback ready: blinking cursor, typing indicator, error recovery styling
-- Error recovery CSS classes defined (component wiring in Phase 4)
-- ChatMessage applies streaming-cursor based on IsStreaming and content state
-- Phase 3 Plan 03 ready: auto-scroll with user scroll detection
+- RenderCoordinator ready for throttled streaming subscriptions
+- StreamingSelectors enable topic-specific content selection
+- SubscribeWithInvoke for consuming pre-throttled observables
+- Visual feedback CSS ready (plan 02)
+- Phase 3 Plan 03 remaining: auto-scroll with user scroll detection
 
 **Resume file:** `.planning/phases/03-streaming-performance/03-03-PLAN.md`
 
