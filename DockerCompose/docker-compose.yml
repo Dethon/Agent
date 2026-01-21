@@ -271,6 +271,13 @@ services:
       dockerfile: WebChat/Dockerfile
     env_file:
       - .env
+    environment:
+      - USERS__0__ID=${USERS__0__ID:-Alice}
+      - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/alice.png}
+      - USERS__1__ID=${USERS__1__ID:-Bob}
+      - USERS__1__AVATARURL=${USERS__1__AVATARURL:-avatars/bob.png}
+      - USERS__2__ID=${USERS__2__ID:-Charlie}
+      - USERS__2__AVATARURL=${USERS__2__AVATARURL:-avatars/charlie.png}
     restart: unless-stopped
     networks:
       - jackbot
