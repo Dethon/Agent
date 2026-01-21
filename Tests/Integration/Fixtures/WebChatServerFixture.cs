@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
 using Agent.Hubs;
-using Agent.Services;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -15,9 +14,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Moq;
 using StackExchange.Redis;
 
 namespace Tests.Integration.Fixtures;
@@ -97,17 +94,6 @@ public sealed class WebChatServerFixture : IAsyncLifetime
 
         // Add tool approval (auto-approve for tests)
         builder.Services.AddSingleton<IToolApprovalHandlerFactory>(new AutoApproveToolHandlerFactory());
-
-        // Add UserConfigService with mock IWebHostEnvironment (returns test users)
-        var usersJson = """[{"id":"alice","username":"Alice","avatarUrl":"/avatars/alice.png"},{"id":"bob","username":"Bob","avatarUrl":"/avatars/bob.png"},{"id":"test-user","username":"Test User","avatarUrl":"/avatars/test.png"}]""";
-        var mockFileInfo = new Mock<IFileInfo>();
-        mockFileInfo.Setup(f => f.Exists).Returns(true);
-        mockFileInfo.Setup(f => f.CreateReadStream()).Returns(() => new MemoryStream(System.Text.Encoding.UTF8.GetBytes(usersJson)));
-        var mockFileProvider = new Mock<IFileProvider>();
-        mockFileProvider.Setup(p => p.GetFileInfo(It.IsAny<string>())).Returns(mockFileInfo.Object);
-        var mockWebHostEnv = new Mock<IWebHostEnvironment>();
-        mockWebHostEnv.Setup(e => e.WebRootFileProvider).Returns(mockFileProvider.Object);
-        builder.Services.AddSingleton(new UserConfigService(mockWebHostEnv.Object));
 
         // Add chat thread resolver and monitor (but NOT as hosted service - we manage it manually)
         builder.Services.AddSingleton<ChatThreadResolver>();
