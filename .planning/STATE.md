@@ -18,25 +18,25 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 ## Current Position
 
 **Milestone:** v1.1 Users in Web UI
-**Phase:** 8 - User Identity (not started)
-**Plan:** Not started
-**Status:** Roadmap created, ready for planning
-**Last activity:** 2026-01-21 — Roadmap created
+**Phase:** 8 of 3 (User Identity)
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-01-21 — Completed 08-01-PLAN.md
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [░░░░░░░░░░░░░░░░░░░░░░░░] 0% (roadmap ready)
+v1.1 Users in Web UI: [████░░░░░░░░░░░░░░░░░░░░] 17% (1/6 plans)
 
-Phase 8: User Identity      [░░░░░░░░] 0/3 requirements
-Phase 9: Message Attribution [░░░░░░░░] 0/3 requirements
-Phase 10: Backend Integration [░░░░░░░░] 0/3 requirements
+Phase 8: User Identity       [████░░░░] 1/2 plans complete
+Phase 9: Message Attribution [░░░░░░░░] 0/? plans
+Phase 10: Backend Integration [░░░░░░░░] 0/? plans
 ```
 
 ## Phase Summary
 
 | Phase | Goal | Requirements | Status |
 |-------|------|--------------|--------|
-| 8 | Users can establish their identity | USER-01, USER-02, USER-03 | Pending |
+| 8 | Users can establish their identity | USER-01, USER-02, USER-03 | In Progress |
 | 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | Pending |
 | 10 | Backend knows who is sending messages | BACK-01, BACK-02, BACK-03 | Pending |
 
@@ -63,10 +63,22 @@ Phase 10: Backend Integration [░░░░░░░░] 0/3 requirements
 - Avatars are hardcoded lookup, not user-selected
 - Username stored in localStorage (client-side only)
 
+**From 08-01:**
+- UserConfig record type with Id, Username, AvatarUrl properties
+- UserIdentityStore follows TopicsStore pattern (Dispatcher.RegisterHandler)
+- Three predefined users (Alice, Bob, Charlie) in users.json
+- Avatar images stored in wwwroot/avatars/
+
+## Session Continuity
+
+**Last session:** 2026-01-21T02:16:50Z
+**Stopped at:** Completed 08-01-PLAN.md
+**Resume file:** .planning/phases/08-user-identity/08-02-PLAN.md
+
 ## Next Steps
 
-1. `/gsd:plan-phase 8` - Create execution plan for User Identity phase
+1. Execute 08-02-PLAN.md - User picker UI component
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — v1.1 roadmap created*
+*Last updated: 2026-01-21 — Completed 08-01-PLAN.md*
