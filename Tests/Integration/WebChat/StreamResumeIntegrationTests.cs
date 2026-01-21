@@ -14,6 +14,9 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
     {
         _connection = fixture.CreateHubConnection();
         await _connection.StartAsync();
+
+        // Register user (required by ChatHub before sending messages)
+        await _connection.InvokeAsync("RegisterUser", "test-user");
     }
 
     public async Task DisposeAsync()
@@ -47,7 +50,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         // Consume the stream
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate messages", cts.Token))
+                           "SendMessage", topicId, "Generate messages", "test-user", cts.Token))
         {
             if (msg.IsComplete || msg.Error is not null)
             {
@@ -82,7 +85,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         // Complete the stream
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate response", cts.Token))
+                           "SendMessage", topicId, "Generate response", "test-user", cts.Token))
         {
             if (msg.IsComplete || msg.Error is not null)
             {
@@ -126,7 +129,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         // Act
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate messages", cts.Token))
+                           "SendMessage", topicId, "Generate messages", "test-user", cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
