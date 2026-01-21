@@ -43,11 +43,12 @@ Plans:
 
 **Dependencies:** Phase 8 (needs username and avatar from identity)
 
-**Plans:** 2 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Data model and avatar component (ChatMessageModel sender fields, AvatarHelper, AvatarImage component)
-- [ ] 09-02-PLAN.md — Message UI integration (ChatMessage avatar layout, MessageList grouping, own message styling)
+- [x] 09-01-PLAN.md — Data model and avatar component (ChatMessageModel sender fields, AvatarHelper, AvatarImage component)
+- [x] 09-02-PLAN.md — Message UI integration (ChatMessage avatar layout, MessageList grouping, own message styling)
+- [ ] 09-03-PLAN.md — Gap closure: Wire sender identity into message creation
 
 **Requirements:**
 - MSG-01: Messages display sender's username
@@ -86,7 +87,7 @@ Plans:
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | User Identity | USER-01, USER-02, USER-03 | Complete |
-| 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Planned |
+| 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Gap Closure |
 | 10 | Backend Integration | BACK-01, BACK-02, BACK-03 | Pending |
 
 **Parallelization Note:** Phases 9 and 10 both depend on Phase 8 but are independent of each other. They could potentially be executed in parallel after Phase 8 completes.
