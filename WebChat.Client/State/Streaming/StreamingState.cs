@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace WebChat.Client.State.Streaming;
 
 public sealed record StreamingContent
@@ -11,10 +13,11 @@ public sealed record StreamingContent
 
 public sealed record StreamingState
 {
-    public IReadOnlyDictionary<string, StreamingContent> StreamingByTopic { get; init; }
-        = new Dictionary<string, StreamingContent>();
-    public IReadOnlySet<string> StreamingTopics { get; init; } = new HashSet<string>();
-    public IReadOnlySet<string> ResumingTopics { get; init; } = new HashSet<string>();
+    public ImmutableDictionary<string, StreamingContent> StreamingByTopic { get; init; }
+        = ImmutableDictionary<string, StreamingContent>.Empty;
+
+    public ImmutableHashSet<string> StreamingTopics { get; init; } = [];
+    public ImmutableHashSet<string> ResumingTopics { get; init; } = [];
 
     public static StreamingState Initial => new();
 }

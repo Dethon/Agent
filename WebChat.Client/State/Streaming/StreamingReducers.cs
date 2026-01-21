@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace WebChat.Client.State.Streaming;
 
 public static class StreamingReducers
@@ -6,11 +8,8 @@ public static class StreamingReducers
     {
         StreamStarted a => state with
         {
-            StreamingTopics = new HashSet<string>(state.StreamingTopics) { a.TopicId },
-            StreamingByTopic = new Dictionary<string, StreamingContent>(state.StreamingByTopic)
-            {
-                [a.TopicId] = new()
-            }
+            StreamingTopics = state.StreamingTopics.Add(a.TopicId),
+            StreamingByTopic = state.StreamingByTopic.SetItem(a.TopicId, new StreamingContent())
         },
 
         StreamChunk a => state with
@@ -29,19 +28,19 @@ public static class StreamingReducers
 
         StartResuming a => state with
         {
-            ResumingTopics = new HashSet<string>(state.ResumingTopics) { a.TopicId }
+            ResumingTopics = state.ResumingTopics.Add(a.TopicId)
         },
 
         StopResuming a => state with
         {
-            ResumingTopics = new HashSet<string>(state.ResumingTopics.Where(t => t != a.TopicId))
+            ResumingTopics = state.ResumingTopics.Remove(a.TopicId)
         },
 
         _ => state
     };
 
-    private static IReadOnlyDictionary<string, StreamingContent> UpdateStreamingContent(
-        IReadOnlyDictionary<string, StreamingContent> streamingByTopic,
+    private static ImmutableDictionary<string, StreamingContent> UpdateStreamingContent(
+        ImmutableDictionary<string, StreamingContent> streamingByTopic,
         StreamChunk chunk)
     {
         var existing = streamingByTopic.GetValueOrDefault(chunk.TopicId) ?? new StreamingContent();
@@ -56,33 +55,23 @@ public static class StreamingReducers
             CurrentMessageId = chunk.MessageId ?? existing.CurrentMessageId
         };
 
-        return new Dictionary<string, StreamingContent>(streamingByTopic)
-        {
-            [chunk.TopicId] = updated
-        };
+        return streamingByTopic.SetItem(chunk.TopicId, updated);
     }
 
-    private static IReadOnlyDictionary<string, StreamingContent> SetError(
-        IReadOnlyDictionary<string, StreamingContent> streamingByTopic,
+    private static ImmutableDictionary<string, StreamingContent> SetError(
+        ImmutableDictionary<string, StreamingContent> streamingByTopic,
         string topicId)
     {
         var existing = streamingByTopic.GetValueOrDefault(topicId) ?? new StreamingContent();
-
-        return new Dictionary<string, StreamingContent>(streamingByTopic)
-        {
-            [topicId] = existing with { IsError = true }
-        };
+        return streamingByTopic.SetItem(topicId, existing with { IsError = true });
     }
 
     private static StreamingState RemoveStreaming(StreamingState state, string topicId)
     {
-        var newStreamingByTopic = new Dictionary<string, StreamingContent>(state.StreamingByTopic);
-        newStreamingByTopic.Remove(topicId);
-
         return state with
         {
-            StreamingTopics = new HashSet<string>(state.StreamingTopics.Where(t => t != topicId)),
-            StreamingByTopic = newStreamingByTopic
+            StreamingTopics = state.StreamingTopics.Remove(topicId),
+            StreamingByTopic = state.StreamingByTopic.Remove(topicId)
         };
     }
 }
