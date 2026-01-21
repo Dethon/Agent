@@ -4,6 +4,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.UserIdentity;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 
@@ -25,6 +26,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<StreamingStore>();
             services.AddScoped<ConnectionStore>();
             services.AddScoped<ApprovalStore>();
+            services.AddScoped<UserIdentityStore>();
 
             // State coordination
             services.AddScoped<RenderCoordinator>();
@@ -40,6 +42,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicDeleteEffect>();
             services.AddScoped<InitializationEffect>();
             services.AddScoped<AgentSelectionEffect>();
+            services.AddScoped<UserIdentityEffect>();
 
             return services;
         }
