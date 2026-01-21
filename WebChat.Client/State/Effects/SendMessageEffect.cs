@@ -104,9 +104,7 @@ public sealed class SendMessageEffect : IDisposable
         {
             Role = "user",
             Content = action.Message,
-            SenderId = currentUser?.Id,
-            SenderUsername = currentUser?.Username,
-            SenderAvatarUrl = currentUser?.AvatarUrl
+            SenderId = currentUser?.Id
         }));
 
         // Start streaming

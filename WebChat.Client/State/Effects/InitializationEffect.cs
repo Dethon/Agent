@@ -102,9 +102,7 @@ public sealed class InitializationEffect : IDisposable
         {
             Role = h.Role,
             Content = h.Content,
-            SenderId = h.SenderId,
-            SenderUsername = h.SenderUsername,
-            SenderAvatarUrl = h.SenderAvatarUrl
+            SenderId = h.SenderId
         }).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
 
