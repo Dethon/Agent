@@ -6,7 +6,7 @@ public record UserConfig(string Id, string AvatarUrl);
 
 public class UserConfigService(IWebHostEnvironment env)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
@@ -20,7 +20,7 @@ public class UserConfigService(IWebHostEnvironment env)
         }
 
         using var stream = fileInfo.CreateReadStream();
-        return JsonSerializer.Deserialize<List<UserConfig>>(stream, JsonOptions) ?? [];
+        return JsonSerializer.Deserialize<List<UserConfig>>(stream, _jsonOptions) ?? [];
     });
 
     public UserConfig? GetUserById(string userId)
