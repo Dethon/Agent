@@ -198,13 +198,24 @@ Features:
 
 #### User Identity Configuration
 
-WebChat supports multiple user identities configured via `users.json`:
+WebChat supports multiple user identities configured via `WebChat/appsettings.json` or environment variables:
 
+**appsettings.json:**
 ```json
-[
-  { "id": "Alice", "avatarUrl": "avatars/alice.png" },
-  { "id": "Bob", "avatarUrl": "avatars/bob.png" }
-]
+{
+  "Users": [
+    { "Id": "Alice", "AvatarUrl": "avatars/alice.png" },
+    { "Id": "Bob", "AvatarUrl": "avatars/bob.png" }
+  ]
+}
+```
+
+**Environment variables (Docker Compose):**
+```env
+USERS__0__ID=Alice
+USERS__0__AVATARURL=avatars/alice.png
+USERS__1__ID=Bob
+USERS__1__AVATARURL=avatars/bob.png
 ```
 
 Place avatar images in `WebChat.Client/wwwroot/avatars/`. Selected identity persists in browser local storage.

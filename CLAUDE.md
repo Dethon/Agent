@@ -66,7 +66,6 @@ Quick reference for finding code files:
 | App bootstrapping        | `Agent/App/*.cs`                          |
 | App DI modules           | `Agent/Modules/*.cs`                      |
 | App settings             | `Agent/Settings/*.cs`                     |
-| App services             | `Agent/Services/*.cs`                     |
 | WebChat hub              | `Agent/Hubs/*.cs`                         |
 | WebChat pages            | `WebChat.Client/Pages/*.razor`            |
 | WebChat components       | `WebChat.Client/Components/**/*.razor`    |
@@ -149,20 +148,22 @@ Client-side state management uses a Redux-like pattern (`WebChat.Client/State/`)
 
 ### User Identity System
 
-WebChat supports multiple user identities with avatars:
+WebChat supports multiple user identities with avatars, configured via environment variables:
 
+- **ConfigService** (`WebChat.Client/Services/ConfigService.cs`) - Fetches and caches app config including users
 - **UserIdentityStore** (`WebChat.Client/State/UserIdentity/`) - Client-side state for user selection
-- **UserIdentityEffect** (`WebChat.Client/State/Effects/UserIdentityEffect.cs`) - Loads users and persists selection to local storage
+- **UserIdentityEffect** (`WebChat.Client/State/Effects/UserIdentityEffect.cs`) - Loads users from config and persists selection to local storage
 - **UserIdentityPicker** (`WebChat.Client/Components/UserIdentityPicker.razor`) - Dropdown for identity selection
 - **AvatarImage** (`WebChat.Client/Components/AvatarImage.razor`) - Avatar display with fallback to initials
-- **UserConfigService** (`Agent/Services/UserConfigService.cs`) - Server-side user lookup
 
-Configuration via `users.json` in wwwroot:
+Configuration via `WebChat/appsettings.json` or environment variables:
 ```json
-[
-  { "id": "Alice", "avatarUrl": "avatars/alice.png" }
-]
+{
+  "Users": [{ "Id": "Alice", "AvatarUrl": "avatars/alice.png" }]
+}
 ```
+
+Environment override: `USERS__0__ID=Alice`, `USERS__0__AVATARURL=avatars/alice.png`
 
 ### Message Streaming Pipeline
 
