@@ -43,16 +43,22 @@ Plans:
 
 **Dependencies:** Phase 8 (needs username and avatar from identity)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Data model and avatar component (ChatMessageModel sender fields, AvatarHelper, AvatarImage component)
+- [ ] 09-02-PLAN.md — Message UI integration (ChatMessage avatar layout, MessageList grouping, own message styling)
+
 **Requirements:**
 - MSG-01: Messages display sender's username
 - MSG-02: Messages display sender's avatar (from lookup)
 - MSG-03: User's own messages visually distinguished from others
 
 **Success Criteria:**
-1. Each message shows the sender's username
-2. Each message shows the sender's avatar image
-3. User's own messages appear visually different (alignment, color, or styling)
-4. Agent messages remain visually distinct from user messages
+1. Each message shows the sender's username (on hover)
+2. Each message shows the sender's avatar image (left of bubble)
+3. User's own messages appear visually different (green gradient background)
+4. Agent messages remain visually distinct from user messages (full-width, no avatar)
 
 ---
 
@@ -80,7 +86,7 @@ Plans:
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | User Identity | USER-01, USER-02, USER-03 | Complete |
-| 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Pending |
+| 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Planned |
 | 10 | Backend Integration | BACK-01, BACK-02, BACK-03 | Pending |
 
 **Parallelization Note:** Phases 9 and 10 both depend on Phase 8 but are independent of each other. They could potentially be executed in parallel after Phase 8 completes.
