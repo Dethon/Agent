@@ -1,16 +1,33 @@
----
+﻿---
 phase: 10-backend-integration
-verified: 2026-01-21T04:47:33Z
+verified: 2026-01-21T05:24:36Z
 status: passed
-score: 4/4 must-haves verified
+score: 5/5 must-haves verified
+re_verification: true
+previous_verification:
+  verified: 2026-01-21T04:47:33Z
+  status: passed
+  score: 4/4
+gaps_closed:
+  - Loaded history messages show correct sender attribution after page refresh
+gaps_remaining: []
+regressions: []
 ---
 
-# Phase 10: Backend Integration Verification Report
+# Phase 10: Backend Integration Re-Verification Report
 
 **Phase Goal:** Backend knows who is sending messages for personalized responses.
-**Verified:** 2026-01-21T04:47:33Z
+**Verified:** 2026-01-21T05:24:36Z
 **Status:** passed
-**Re-verification:** No - initial verification
+**Re-verification:** Yes - after UAT gap closure (plan 10-03)
+
+## Re-Verification Summary
+
+This is a re-verification after UAT Test 4 found a gap: loaded history messages showed ? for sender instead of actual sender identity. Plan 10-03 was executed to close this gap by persisting sender metadata with messages and extracting it when loading history.
+
+**Previous verification:** 2026-01-21T04:47:33Z (status: passed, 4/4 truths)
+**Gap closure plan:** 10-03-PLAN.md (executed 2026-01-21)
+**Current verification:** All 5 truths now verified (original 4 + 1 new from gap closure)
 
 ## Goal Achievement
 
@@ -18,49 +35,49 @@ score: 4/4 must-haves verified
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | SignalR connection includes username in handshake/registration | VERIFIED | `RegisterUser` method in `ChatHub.cs:33-44` stores userId/username in `Context.Items`; `InitializationEffect.cs:89-95` calls `RegisterUser` after connection |
-| 2 | Messages sent to server include sender's username | VERIFIED | `StreamingService.cs:27-28` gets `senderId` from `UserIdentityStore.State.SelectedUserId` and passes to `SendMessageAsync`; `ChatMessagingService.cs:17` passes `senderId` to hub |
-| 3 | Agent responses address user by name when contextually appropriate | VERIFIED | `McpAgent.cs:176-178` adds "You are chatting with {_userId}." to prompt when userId is present |
-| 4 | Agent maintains awareness of who it's talking to across conversation | VERIFIED | `_userId` is stored in `McpAgent` constructor and used for all prompts in that agent instance; `Context.Items` persists across the SignalR connection |
+| 1 | SignalR connection includes username in handshake/registration | VERIFIED (regression check) | RegisterUser method in ChatHub.cs:33-44 stores userId/username in Context.Items; InitializationEffect.cs:55,58 calls RegisterUserAsync after connection and on reconnection |
+| 2 | Messages sent to server include sender username | VERIFIED (regression check) | StreamingService.cs:27-28 gets senderId from UserIdentityStore; ChatMessagingService.cs:17 passes senderId to hub |
+| 3 | Agent responses address user by name when contextually appropriate | VERIFIED (regression check) | McpAgent.cs:176-178 adds username to prompt context |
+| 4 | Agent maintains awareness of who it is talking to across conversation | VERIFIED (regression check) | userId stored in McpAgent constructor and used for all prompts; Context.Items persists across SignalR connection |
+| 5 | Loaded history messages show correct sender attribution after page refresh | VERIFIED (gap closure) | NEW: Sender metadata stored in ChatMessage.AdditionalProperties, extracted in GetHistory, mapped in client effects |
 
-**Score:** 4/4 truths verified
+**Score:** 5/5 truths verified
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `Agent/Hubs/ChatHub.cs` | RegisterUser method, registration guard, Context.Items | VERIFIED | Lines 24-31: IsRegistered, GetRegisteredUsername helpers; Lines 33-44: RegisterUser method; Lines 142-150: registration guard |
-| `Agent/Services/UserConfigService.cs` | Server-side user lookup from users.json | VERIFIED | 35 lines, GetUserById and GetAllUsers methods, lazy loading |
-| `Agent/wwwroot/users.json` | Server-side copy of user definitions | VERIFIED | 5 lines, 3 users defined (alice, bob, charlie) |
-| `Infrastructure/Agents/McpAgent.cs` | Username in prompt context | VERIFIED | Lines 176-178: "You are chatting with {_userId}." prepended to prompts |
-| `WebChat.Client/Contracts/IChatConnectionService.cs` | HubConnection property exposed | VERIFIED | Line 8: `HubConnection? HubConnection { get; }` |
-| `WebChat.Client/Services/ChatConnectionService.cs` | HubConnection public property | VERIFIED | Line 16: `public HubConnection? HubConnection { get; private set; }` |
-| `WebChat.Client/Contracts/IChatMessagingService.cs` | senderId parameter on SendMessageAsync | VERIFIED | Line 7: `SendMessageAsync(string topicId, string message, string? senderId)` |
-| `WebChat.Client/Services/ChatMessagingService.cs` | Pass senderId to hub | VERIFIED | Line 17: `hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message, senderId)` |
-| `WebChat.Client/Services/Streaming/StreamingService.cs` | Get senderId from UserIdentityStore | VERIFIED | Lines 27-28: `var senderId = userIdentityStore.State.SelectedUserId;` |
-| `WebChat.Client/State/Effects/InitializationEffect.cs` | RegisterUser after connection and on reconnection | VERIFIED | Lines 54-58: calls RegisterUserAsync after connect and subscribes to OnReconnected |
+| Domain/DTOs/WebChat/ChatHistoryMessage.cs | Sender fields in DTO | VERIFIED (gap closure) | UPDATED: Record with 5 parameters |
+| Domain/Monitor/ChatMonitor.cs | Sender metadata in stored messages | VERIFIED (gap closure) | UPDATED: AdditionalProperties with SenderId, SenderUsername |
+| Agent/Hubs/ChatHub.cs | Sender extraction from stored messages | VERIFIED (gap closure) | UPDATED: GetHistory extracts sender fields |
+| WebChat.Client/State/Effects/TopicSelectionEffect.cs | Map sender fields when loading history | VERIFIED (gap closure) | UPDATED: Maps all sender fields |
+| WebChat.Client/State/Effects/InitializationEffect.cs | Map sender fields when loading history | VERIFIED (gap closure) | UPDATED: Maps all sender fields |
+| Agent/Hubs/ChatHub.cs | RegisterUser method | VERIFIED (regression) | Registration helpers and method |
+| Agent/Services/UserConfigService.cs | Server-side user lookup | VERIFIED (regression) | GetUserById and GetAllUsers |
+| Agent/wwwroot/users.json | Server-side user definitions | VERIFIED (regression) | 3 users defined |
+| Infrastructure/Agents/McpAgent.cs | Username in prompt context | VERIFIED (regression) | Personalization prompt |
+| WebChat.Client services | Connection and messaging | VERIFIED (regression) | All services wired |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| ChatHub.cs | UserConfigService | DI injection | WIRED | Line 22: `UserConfigService userConfigService` in constructor |
-| ChatHub.RegisterUser | Context.Items | per-connection storage | WIRED | Lines 41-42: `Context.Items["UserId"]`, `Context.Items["Username"]` |
-| ChatMessagingService | ChatHub.SendMessage | SignalR StreamAsync | WIRED | Line 17: passes senderId as third parameter |
-| ChatHub.SendMessage | EnqueuePromptAndGetResponses | GetRegisteredUsername | WIRED | Lines 164-165: username from Context.Items passed to messenger |
-| WebChatMessengerClient | ChatPrompt.Sender | EnqueuePromptAndGetResponses | WIRED | Line 169: `Sender = sender` in ChatPrompt |
-| ChatMonitor | IAgentFactory.Create | ChatPrompt.Sender as userId | WIRED | Line 48: `agentFactory.Create(agentKey, firstPrompt.Sender, ...)` |
-| MultiAgentFactory | McpAgent constructor | userId parameter | WIRED | Lines 62-69: `userId` passed to McpAgent constructor |
-| InitializationEffect | RegisterUser hub method | InvokeAsync | WIRED | Lines 92-95: `HubConnection.InvokeAsync("RegisterUser", userId)` |
-| ChatConnectionService.OnReconnected | RegisterUserAsync | event subscription | WIRED | Line 58: `_connectionService.OnReconnected += async () => await RegisterUserAsync()` |
+| ChatMonitor | ChatMessage.AdditionalProperties | Store sender metadata | WIRED (gap closure) | NEW: Creates AdditionalProperties with SenderId, SenderUsername |
+| ChatHub.GetHistory | ChatMessage.AdditionalProperties | Extract sender metadata | WIRED (gap closure) | NEW: Uses GetValueOrDefault to extract sender fields |
+| TopicSelectionEffect | ChatMessageModel | Map from ChatHistoryMessage | WIRED (gap closure) | NEW: Maps sender fields |
+| InitializationEffect | ChatMessageModel | Map from ChatHistoryMessage | WIRED (gap closure) | NEW: Maps sender fields |
+| ChatHub | UserConfigService | DI injection | WIRED (regression) | Constructor injection verified |
+| ChatHub.RegisterUser | Context.Items | Per-connection storage | WIRED (regression) | Stores userId and username |
+| ChatMessagingService | ChatHub.SendMessage | SignalR StreamAsync | WIRED (regression) | Passes senderId parameter |
+| ChatMonitor | McpAgent | Sender in prompt | WIRED (regression) | Passes sender to agent factory |
 
 ### Requirements Coverage
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | BACK-01: Username sent to backend on SignalR connection | SATISFIED | RegisterUser called after connect and on reconnect |
-| BACK-02: Username included in message payloads to server | SATISFIED | senderId passed through StreamingService -> ChatMessagingService -> ChatHub |
-| BACK-03: Agent prompts include username for personalization | SATISFIED | McpAgent.CreateRunOptions adds "You are chatting with {_userId}." |
+| BACK-02: Username included in message payloads to server | SATISFIED | senderId passed through StreamingService to ChatHub |
+| BACK-03: Agent prompts include username for personalization | SATISFIED | McpAgent adds username to prompts |
 
 ### Anti-Patterns Found
 
@@ -68,41 +85,89 @@ score: 4/4 must-haves verified
 |------|------|---------|----------|--------|
 | None | - | - | - | No anti-patterns detected |
 
+**Stub pattern scan:** No TODOs, no placeholders, all implementations substantive
+
+### Build and Test Status
+
+**Build:** PASSED
+- dotnet build Agent.sln: 0 warnings, 0 errors
+- Time: 6.19 seconds
+
+**Tests:** Updated for DTO signature change
+- StreamResumeServiceTests.cs updated with null sender fields (commit a912730)
+
+### Gap Closure Analysis
+
+**Original gap (from 10-UAT.md):**
+- Truth: Loaded history messages show sender attribution after page refresh
+- Status: failed
+- Reason: loaded history is attributed to user ?
+- Root cause: Sender metadata never persisted to Redis or returned via ChatHistoryMessage DTO
+
+**Gap closure implementation (plan 10-03):**
+1. Added SenderId, SenderUsername, SenderAvatarUrl to ChatHistoryMessage record
+2. Modified ChatMonitor to store sender in ChatMessage.AdditionalProperties
+3. Updated ChatHub.GetHistory to extract sender from AdditionalProperties
+4. Updated TopicSelectionEffect to map sender fields from history
+5. Updated InitializationEffect to map sender fields from history
+
+**Verification of gap closure:**
+- Level 1 (Exists): All 5 files modified as planned
+- Level 2 (Substantive): All implementations complete, no stubs
+- Level 3 (Wired): Full data flow verified
+
+**Gap status:** CLOSED
+
 ### Human Verification Required
 
-### 1. End-to-End Personalization Test
+#### 1. End-to-End Personalization Test
+**Test:** Log in as Alice, send What is my name?, observe agent response
+**Expected:** Agent addresses user by name
+**Why human:** Requires LLM response verification
 
-**Test:** Log in as a user (e.g., Alice), send a message asking "What's my name?", observe agent response.
-**Expected:** Agent should address user by name (e.g., "Alice, your name is...") or acknowledge it knows who it's talking to.
-**Why human:** Requires actual LLM response to verify natural language personalization.
+#### 2. Reconnection Identity Persistence
+**Test:** Connect as Alice, send message, disconnect network, reconnect, send message
+**Expected:** Agent still knows user is Alice after reconnection
+**Why human:** Requires network disruption simulation
 
-### 2. Reconnection Identity Persistence
+#### 3. Unregistered User Rejection
+**Test:** Use dev tools to call SendMessage without RegisterUser
+**Expected:** Error User not registered. Please call RegisterUser first.
+**Why human:** Requires SignalR manipulation
 
-**Test:** Connect as Alice, send a message, disconnect network briefly, reconnect, send another message.
-**Expected:** Agent should still know it's talking to Alice after reconnection (no "User not registered" error).
-**Why human:** Requires real network disruption and SignalR reconnection behavior.
-
-### 3. Unregistered User Rejection
-
-**Test:** Use browser dev tools to call SendMessage without first calling RegisterUser.
-**Expected:** Receive error response "User not registered. Please call RegisterUser first."
-**Why human:** Requires manual SignalR manipulation to bypass normal client flow.
+#### 4. History Sender Attribution After Refresh (UAT Test 4)
+**Test:** Select Alice, send message, refresh page, verify loaded message shows Alice username and avatar
+**Expected:** Loaded history messages display correct sender attribution
+**Why human:** Visual verification of UI after refresh
+**Status:** Ready for re-test (gap closure implemented)
 
 ---
 
 ## Summary
 
-All must-haves verified. The backend integration for user identity is complete:
+All must-haves verified. The backend integration for user identity is complete, including the gap closure for history sender attribution.
 
-1. **Server-side registration:** `UserConfigService` loads users.json, `RegisterUser` hub method validates and stores identity in `Context.Items`, `SendMessage` guards against unregistered connections.
+### Original Functionality
+1. Server-side registration via RegisterUser hub method
+2. Client-side identity flow through StreamingService to ChatHub
+3. Agent personalization via username in prompt context
 
-2. **Client-side identity flow:** `StreamingService` gets `senderId` from `UserIdentityStore`, passes through `ChatMessagingService` to hub; `InitializationEffect` registers after connection and re-registers on reconnection.
+### Gap Closure (plan 10-03)
+4. History sender persistence in ChatMessage.AdditionalProperties
+5. History sender extraction in ChatHub.GetHistory
+6. Client-side history mapping in both effects
 
-3. **Agent personalization:** Username flows through `WebChatMessengerClient` -> `ChatPrompt.Sender` -> `ChatMonitor` -> `MultiAgentFactory.Create` -> `McpAgent._userId` -> prompt context "You are chatting with {username}."
+### Success Criteria Status
+1. SignalR connection includes username in handshake/registration - VERIFIED
+2. Messages sent to server include sender username - VERIFIED
+3. Agent responses address user by name when contextually appropriate - VERIFIED
+4. Agent maintains awareness of who it is talking to across conversation - VERIFIED
+5. Loaded history messages show correct sender attribution after page refresh - VERIFIED (gap closed)
 
-Build passes with 0 errors and 0 warnings. No stub patterns or anti-patterns detected.
+Build passes with 0 errors and 0 warnings. No stub patterns detected. Ready for UAT Test 4 re-verification.
 
 ---
 
-*Verified: 2026-01-21T04:47:33Z*
+*Verified: 2026-01-21T05:24:36Z*
 *Verifier: Claude (gsd-verifier)*
+*Re-verification after gap closure: plan 10-03*
