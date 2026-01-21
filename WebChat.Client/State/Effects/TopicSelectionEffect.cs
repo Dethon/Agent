@@ -64,7 +64,10 @@ public sealed class TopicSelectionEffect : IDisposable
                 var messages = history.Select(h => new ChatMessageModel
                 {
                     Role = h.Role,
-                    Content = h.Content
+                    Content = h.Content,
+                    SenderId = h.SenderId,
+                    SenderUsername = h.SenderUsername,
+                    SenderAvatarUrl = h.SenderAvatarUrl
                 }).ToList();
                 _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
             }
