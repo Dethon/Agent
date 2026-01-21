@@ -152,7 +152,7 @@ public sealed class WebChatMessengerClient(
             yield break;
         }
 
-        var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, cancellationToken);
+        var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, sender, cancellationToken);
 
         await hubNotifier.NotifyStreamChangedAsync(
                 new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)

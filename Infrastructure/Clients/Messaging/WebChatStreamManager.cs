@@ -11,11 +11,13 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
     private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
+    private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private bool _disposed;
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) CreateStream(
         string topicId,
         string currentPrompt,
+        string? currentSenderId,
         CancellationToken parentToken)
     {
         var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
@@ -25,6 +27,10 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         _sequenceCounters.TryRemove(topicId, out _);
 
         _currentPrompts[topicId] = currentPrompt;
+        if (currentSenderId is not null)
+        {
+            _currentSenderIds[topicId] = currentSenderId;
+        }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
         _cancellationTokens[topicId] = cts;
@@ -95,16 +101,17 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     {
         var isProcessing = _responseChannels.ContainsKey(topicId);
         _currentPrompts.TryGetValue(topicId, out var currentPrompt);
+        _currentSenderIds.TryGetValue(topicId, out var currentSenderId);
 
         if (!_streamBuffers.TryGetValue(topicId, out var buffer))
         {
-            return isProcessing ? new StreamState(true, [], string.Empty, currentPrompt) : null;
+            return isProcessing ? new StreamState(true, [], string.Empty, currentPrompt, currentSenderId) : null;
         }
 
         var messages = buffer.GetAll();
         var lastMessageId = messages.LastOrDefault()?.MessageId ?? string.Empty;
 
-        return new StreamState(isProcessing, messages, lastMessageId, currentPrompt);
+        return new StreamState(isProcessing, messages, lastMessageId, currentPrompt, currentSenderId);
     }
 
     private void CleanupStreamState(string topicId)
@@ -112,6 +119,7 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         _streamBuffers.TryRemove(topicId, out _);
         _sequenceCounters.TryRemove(topicId, out _);
         _currentPrompts.TryRemove(topicId, out _);
+        _currentSenderIds.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {

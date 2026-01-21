@@ -19,7 +19,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", CancellationToken.None);
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var messageWithReasoning = new ChatStreamMessage
         {
@@ -42,7 +42,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", CancellationToken.None);
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var reasoningMessage = new ChatStreamMessage
         {
@@ -77,7 +77,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", CancellationToken.None);
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var message = new ChatStreamMessage
         {
@@ -100,7 +100,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", CancellationToken.None);
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var reasoningMsg = new ChatStreamMessage { Reasoning = "Thinking...", MessageId = "1" };
         var contentMsg = new ChatStreamMessage { Content = "Answer", MessageId = "2" };

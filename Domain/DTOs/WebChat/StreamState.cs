@@ -4,4 +4,5 @@ public record StreamState(
     bool IsProcessing,
     IReadOnlyList<ChatStreamMessage> BufferedMessages,
     string CurrentMessageId,
-    string? CurrentPrompt);
+    string? CurrentPrompt,
+    string? CurrentSenderId);

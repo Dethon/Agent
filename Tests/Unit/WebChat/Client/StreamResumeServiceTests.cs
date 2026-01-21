@@ -29,7 +29,8 @@ public sealed class StreamResumeServiceTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
-        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _userIdentityStore);
+        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore,
+            _userIdentityStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -89,7 +90,8 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "buffered" }],
             "msg-1",
-            "prompt"));
+            "prompt",
+            null));
 
         await _resumeService.TryResumeStreamAsync(topic);
 
@@ -111,7 +113,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     public async Task TryResumeStreamAsync_WhenNotProcessingAndNoBuffer_DoesNothing()
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _messagingService.SetStreamState("topic-1", new StreamState(false, [], "msg-1", null));
+        _messagingService.SetStreamState("topic-1", new StreamState(false, [], "msg-1", null, null));
 
         await _resumeService.TryResumeStreamAsync(topic);
 
@@ -136,6 +138,7 @@ public sealed class StreamResumeServiceTests : IDisposable
                 new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
             ],
             "msg-1",
+            null,
             null));
 
         await _resumeService.TryResumeStreamAsync(topic);
@@ -160,6 +163,7 @@ public sealed class StreamResumeServiceTests : IDisposable
                 new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
             ],
             "msg-1",
+            null,
             null));
 
         await _resumeService.TryResumeStreamAsync(topic);
@@ -187,7 +191,8 @@ public sealed class StreamResumeServiceTests : IDisposable
                 new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
             ],
             "msg-1",
-            "New user prompt"));
+            "New user prompt",
+            null));
 
         await _resumeService.TryResumeStreamAsync(topic);
 
@@ -209,7 +214,8 @@ public sealed class StreamResumeServiceTests : IDisposable
                 new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
             ],
             "msg-1",
-            "Same prompt"));
+            "Same prompt",
+            null));
 
         await _resumeService.TryResumeStreamAsync(topic);
 
@@ -232,6 +238,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "waiting", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         // Need to consume the stream
@@ -258,6 +265,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "buffered content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         // Stream continues from buffer
@@ -282,6 +290,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "Already known content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         _messagingService.EnqueueMessages(
@@ -308,6 +317,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         _messagingService.EnqueueMessages(
@@ -337,6 +347,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         _messagingService.EnqueueMessages(
@@ -356,6 +367,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         _messagingService.EnqueueMessages(
@@ -379,6 +391,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             true,
             [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
             "msg-1",
+            null,
             null));
 
         // Enqueue an error to trigger exception handling

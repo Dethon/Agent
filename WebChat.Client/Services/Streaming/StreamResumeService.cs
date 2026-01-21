@@ -16,7 +16,6 @@ public sealed class StreamResumeService(
     MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
-
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
         // Check if already resuming via store state
@@ -47,7 +46,8 @@ public sealed class StreamResumeService(
                 var messages = history.Select(h => new ChatMessageModel
                 {
                     Role = h.Role,
-                    Content = h.Content
+                    Content = h.Content,
+                    SenderId = h.SenderId
                 }).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
@@ -66,7 +66,8 @@ public sealed class StreamResumeService(
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
                     {
                         Role = "user",
-                        Content = state.CurrentPrompt
+                        Content = state.CurrentPrompt,
+                        SenderId = state.CurrentSenderId
                     }));
                 }
             }
