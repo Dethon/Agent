@@ -21,9 +21,9 @@ Requirements for Users in Web UI milestone.
 
 ### Backend Integration
 
-- [ ] **BACK-01**: Username sent to backend on SignalR connection
-- [ ] **BACK-02**: Username included in message payloads to server
-- [ ] **BACK-03**: Agent prompts include username for personalization
+- [x] **BACK-01**: Username sent to backend on SignalR connection
+- [x] **BACK-02**: Username included in message payloads to server
+- [x] **BACK-03**: Agent prompts include username for personalization
 
 ## Future Requirements
 
@@ -49,9 +49,9 @@ Requirements for Users in Web UI milestone.
 | MSG-01 | Phase 9 | Complete |
 | MSG-02 | Phase 9 | Complete |
 | MSG-03 | Phase 9 | Complete |
-| BACK-01 | Phase 10 | Pending |
-| BACK-02 | Phase 10 | Pending |
-| BACK-03 | Phase 10 | Pending |
+| BACK-01 | Phase 10 | Complete |
+| BACK-02 | Phase 10 | Complete |
+| BACK-03 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 9 total
