@@ -5,11 +5,17 @@ var app = builder.Build();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 
-app.MapGet("/api/config", (IConfiguration config) => new
+app.MapGet("/api/config", (IConfiguration config) =>
 {
-    AgentUrl = config["AgentUrl"] ?? "http://localhost:5000"
+    var users = config.GetSection("Users").Get<UserConfig[]>() ?? [];
+    return new AppConfig(
+        config["AgentUrl"] ?? "http://localhost:5000",
+        users);
 });
 
 app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
+
+record UserConfig(string Id, string AvatarUrl);
+record AppConfig(string AgentUrl, UserConfig[] Users);
