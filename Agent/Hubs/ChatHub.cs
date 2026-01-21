@@ -136,6 +136,7 @@ public sealed class ChatHub(
     public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
+        string? senderId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)
@@ -158,7 +159,10 @@ public sealed class ChatHub(
             yield break;
         }
 
-        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, "web-user", cancellationToken);
+        // Use registered username from Context.Items (validated during RegisterUser)
+        // rather than trusting client-provided senderId for agent personalization
+        var username = GetRegisteredUsername() ?? "Anonymous";
+        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, username, cancellationToken);
 
         await foreach (var msg in responses.IgnoreCancellation(ct: cancellationToken))
         {
