@@ -193,7 +193,21 @@ Features:
 - **Real-time streaming** - Messages stream as they're generated with automatic reconnection
 - **Topic management** - Organize conversations into topics with server-side persistence
 - **Multi-agent selection** - Switch between available agents from the UI
+- **User identity selection** - Switch between configured user identities with persistent avatars
 - **Stream resumption** - Reconnects automatically and resumes from where you left off
+
+#### User Identity Configuration
+
+WebChat supports multiple user identities configured via `users.json`:
+
+```json
+[
+  { "id": "Alice", "avatarUrl": "avatars/alice.png" },
+  { "id": "Bob", "avatarUrl": "avatars/bob.png" }
+]
+```
+
+Place avatar images in `WebChat.Client/wwwroot/avatars/`. Selected identity persists in browser local storage.
 
 To run WebChat standalone (development):
 
