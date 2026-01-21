@@ -6,8 +6,6 @@ public static class MessagesReducers
 {
     public static MessagesState Reduce(MessagesState state, IAction action) => action switch
     {
-        LoadMessages => state, // No-op, handled by effect/component
-
         MessagesLoaded a => state with
         {
             MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)

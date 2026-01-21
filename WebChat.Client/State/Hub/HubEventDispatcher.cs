@@ -2,7 +2,6 @@ using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State.Approval;
-using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -66,11 +65,6 @@ public sealed class HubEventDispatcher(
                     notification.ChangeType,
                     "Invalid StreamChangeType");
         }
-    }
-
-    public void HandleNewMessage(NewMessageNotification notification)
-    {
-        dispatcher.Dispatch(new LoadMessages(notification.TopicId));
     }
 
     public void HandleApprovalResolved(ApprovalResolvedNotification notification)

@@ -19,13 +19,6 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         await sender.SendAsync("OnStreamChanged", notification, cancellationToken);
     }
 
-    public async Task NotifyNewMessageAsync(
-        NewMessageNotification notification,
-        CancellationToken cancellationToken = default)
-    {
-        await sender.SendAsync("OnNewMessage", notification, cancellationToken);
-    }
-
     public async Task NotifyApprovalResolvedAsync(
         ApprovalResolvedNotification notification,
         CancellationToken cancellationToken = default)

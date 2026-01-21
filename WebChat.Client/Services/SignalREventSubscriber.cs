@@ -28,34 +28,20 @@ public sealed class SignalREventSubscriber(
         }
 
         _subscriptions.Add(
-            hubConnection.On<TopicChangedNotification>("OnTopicChanged", notification =>
-            {
-                hubEventDispatcher.HandleTopicChanged(notification);
-            }));
+            hubConnection.On<TopicChangedNotification>(
+                "OnTopicChanged", hubEventDispatcher.HandleTopicChanged));
 
         _subscriptions.Add(
-            hubConnection.On<StreamChangedNotification>("OnStreamChanged", notification =>
-            {
-                hubEventDispatcher.HandleStreamChanged(notification);
-            }));
+            hubConnection.On<StreamChangedNotification>(
+                "OnStreamChanged", hubEventDispatcher.HandleStreamChanged));
 
         _subscriptions.Add(
-            hubConnection.On<NewMessageNotification>("OnNewMessage", notification =>
-            {
-                hubEventDispatcher.HandleNewMessage(notification);
-            }));
+            hubConnection.On<ApprovalResolvedNotification>(
+                "OnApprovalResolved", hubEventDispatcher.HandleApprovalResolved));
 
         _subscriptions.Add(
-            hubConnection.On<ApprovalResolvedNotification>("OnApprovalResolved", notification =>
-            {
-                hubEventDispatcher.HandleApprovalResolved(notification);
-            }));
-
-        _subscriptions.Add(
-            hubConnection.On<ToolCallsNotification>("OnToolCalls", notification =>
-            {
-                hubEventDispatcher.HandleToolCalls(notification);
-            }));
+            hubConnection.On<ToolCallsNotification>(
+                "OnToolCalls", hubEventDispatcher.HandleToolCalls));
 
         IsSubscribed = true;
     }
@@ -66,6 +52,7 @@ public sealed class SignalREventSubscriber(
         {
             subscription.Dispose();
         }
+
         _subscriptions.Clear();
         IsSubscribed = false;
     }

@@ -43,7 +43,6 @@ public static class ServiceCollectionExtensions
             services.AddScoped<InitializationEffect>();
             services.AddScoped<AgentSelectionEffect>();
             services.AddScoped<UserIdentityEffect>();
-            services.AddScoped<MessagesEffect>();
 
             return services;
         }

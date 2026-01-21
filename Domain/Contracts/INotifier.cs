@@ -9,8 +9,6 @@ public interface INotifier
     Task NotifyStreamChangedAsync(StreamChangedNotification notification,
         CancellationToken cancellationToken = default);
 
-    Task NotifyNewMessageAsync(NewMessageNotification notification, CancellationToken cancellationToken = default);
-
     Task NotifyApprovalResolvedAsync(ApprovalResolvedNotification notification,
         CancellationToken cancellationToken = default);
 

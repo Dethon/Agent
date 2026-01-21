@@ -61,9 +61,6 @@ public sealed class WebChatMessengerClient(
                         await hubNotifier.NotifyStreamChangedAsync(
                                 new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
                             .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
-                        await hubNotifier.NotifyNewMessageAsync(
-                                new NewMessageNotification(topicId), cancellationToken)
-                            .SafeAwaitAsync(logger, "Failed to notify new message for topic {TopicId}", topicId);
                         continue;
                     }
 
@@ -83,16 +80,6 @@ public sealed class WebChatMessengerClient(
                         await streamManager.WriteMessageAsync(topicId, msg, cancellationToken);
                     }
                 }
-
-                // When aiResponse is present, the individual message is complete
-                // Note: Do NOT complete the stream here - multiple messages may follow (e.g., tool calls then response)
-                // if (aiResponse is not null)
-                // {
-                //     await streamManager.WriteMessageAsync(
-                //         topicId,
-                //         new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
-                //         cancellationToken);
-                // }
             }
             catch (Exception ex)
             {

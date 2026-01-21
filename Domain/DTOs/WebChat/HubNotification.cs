@@ -23,9 +23,6 @@ public record StreamChangedNotification(
     StreamChangeType ChangeType,
     string TopicId);
 
-public record NewMessageNotification(
-    string TopicId);
-
 public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,

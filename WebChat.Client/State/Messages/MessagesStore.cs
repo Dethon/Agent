@@ -9,9 +9,6 @@ public sealed class MessagesStore : IDisposable
         _store = new Store<MessagesState>(MessagesState.Initial);
 
         // Register handlers for all message actions
-        dispatcher.RegisterHandler<LoadMessages>(action =>
-            _store.Dispatch(action, MessagesReducers.Reduce));
-
         dispatcher.RegisterHandler<MessagesLoaded>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
 
