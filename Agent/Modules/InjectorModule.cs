@@ -1,5 +1,6 @@
 using Agent.App;
 using Agent.Hubs;
+using Agent.Services;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
@@ -145,6 +146,7 @@ public static class InjectorModule
         private IServiceCollection AddWebClient()
         {
             return services
+                .AddSingleton<UserConfigService>()
                 .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
                 .AddSingleton<INotifier, HubNotifier>()
                 .AddSingleton<WebChatSessionManager>()

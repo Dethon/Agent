@@ -1,0 +1,5 @@
+[
+  { "id": "alice", "username": "Alice", "avatarUrl": "avatars/alice.png" },
+  { "id": "bob", "username": "Bob", "avatarUrl": "avatars/bob.png" },
+  { "id": "charlie", "username": "Charlie", "avatarUrl": "avatars/charlie.png" }
+]
