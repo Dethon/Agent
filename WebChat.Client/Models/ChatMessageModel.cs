@@ -9,8 +9,6 @@ public record ChatMessageModel
     public bool IsError { get; init; }
 
     public string? SenderId { get; init; }
-    public string? SenderUsername { get; init; }
-    public string? SenderAvatarUrl { get; init; }
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
