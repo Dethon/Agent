@@ -69,13 +69,8 @@ public class ChatMonitor(
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
                     default:
-                        var userMessage = new ChatMessage(ChatRole.User, x.Prompt)
-                        {
-                            AdditionalProperties = new AdditionalPropertiesDictionary
-                            {
-                                ["SenderId"] = x.Sender
-                            }
-                        };
+                        var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
+                        userMessage.SetSenderId(x.Sender);
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)

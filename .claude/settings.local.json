@@ -25,7 +25,9 @@
       "Bash(git ls-tree:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:writing-plans)"
     ]
   }
 }
