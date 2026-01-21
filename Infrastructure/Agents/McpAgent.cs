@@ -173,12 +173,21 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
         var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
+        var userContext = !string.IsNullOrEmpty(_userId)
+            ? $"You are chatting with {_userId}."
+            : null;
+
         var prompts = session.ClientManager.Prompts
             .Prepend(BasePrompt.Instructions);
 
         if (!string.IsNullOrEmpty(_customInstructions))
         {
             prompts = prompts.Prepend(_customInstructions);
+        }
+
+        if (!string.IsNullOrEmpty(userContext))
+        {
+            prompts = prompts.Prepend(userContext);
         }
 
         prompts = prompts.Prepend(timeContext);

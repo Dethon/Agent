@@ -8,6 +8,7 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client;
 
@@ -19,6 +20,7 @@ public sealed class StreamingServiceTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly ApprovalStore _approvalStore;
+    private readonly UserIdentityStore _userIdentityStore;
     private readonly FakeTopicService _topicService = new();
     private readonly StreamingService _service;
 
@@ -28,7 +30,8 @@ public sealed class StreamingServiceTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+        _userIdentityStore = new UserIdentityStore(_dispatcher);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _userIdentityStore);
     }
 
     public void Dispose()
@@ -37,6 +40,7 @@ public sealed class StreamingServiceTests : IDisposable
         _messagesStore.Dispose();
         _streamingStore.Dispose();
         _approvalStore.Dispose();
+        _userIdentityStore.Dispose();
     }
 
     private StoredTopic CreateTopic(string? topicId = null)

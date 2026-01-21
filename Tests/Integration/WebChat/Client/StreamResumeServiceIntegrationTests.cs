@@ -8,6 +8,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Integration.WebChat.Client;
 
@@ -22,6 +23,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
+    private UserIdentityStore _userIdentityStore = null!;
     private StreamingService _streamingService = null!;
     private StreamResumeService _resumeService = null!;
 
@@ -30,6 +32,9 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _connection = fixture.CreateHubConnection();
         await _connection.StartAsync();
 
+        // Register user for tests (required by ChatHub)
+        await _connection.InvokeAsync("RegisterUser", "alice");
+
         _messagingService = new HubConnectionMessagingService(_connection);
         _topicService = new HubConnectionTopicService(_connection);
         _approvalService = new HubConnectionApprovalService(_connection);
@@ -37,7 +42,8 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+        _userIdentityStore = new UserIdentityStore(_dispatcher);
+        _streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _userIdentityStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -53,6 +59,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _userIdentityStore.Dispose();
 
         try
         {
@@ -176,6 +183,9 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         var connection2 = fixture.CreateHubConnection();
         await connection2.StartAsync();
 
+        // Register user for second connection
+        await connection2.InvokeAsync("RegisterUser", "bob");
+
         try
         {
             var messagingService2 = new HubConnectionMessagingService(connection2);
@@ -185,7 +195,8 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var topicsStore2 = new TopicsStore(dispatcher2);
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
-            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2);
+            var userIdentityStore2 = new UserIdentityStore(dispatcher2);
+            var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2, userIdentityStore2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
@@ -242,6 +253,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             topicsStore2.Dispose();
             messagesStore2.Dispose();
             streamingStore2.Dispose();
+            userIdentityStore2.Dispose();
         }
         finally
         {

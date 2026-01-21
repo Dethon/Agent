@@ -7,6 +7,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client;
 
@@ -19,6 +20,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly UserIdentityStore _userIdentityStore;
     private readonly StreamResumeService _resumeService;
 
     public StreamResumeServiceTests()
@@ -26,7 +28,8 @@ public sealed class StreamResumeServiceTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+        _userIdentityStore = new UserIdentityStore(_dispatcher);
+        var streamingService = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _userIdentityStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -42,6 +45,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _userIdentityStore.Dispose();
     }
 
     private StoredTopic CreateTopic(string? topicId = null)
