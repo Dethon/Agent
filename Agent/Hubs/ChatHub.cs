@@ -138,6 +138,16 @@ public sealed class ChatHub(
         string message,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!IsRegistered)
+        {
+            yield return new ChatStreamMessage
+            {
+                Error = "User not registered. Please call RegisterUser first.",
+                IsComplete = true
+            };
+            yield break;
+        }
+
         if (!messengerClient.TryGetSession(topicId, out _))
         {
             yield return new ChatStreamMessage
