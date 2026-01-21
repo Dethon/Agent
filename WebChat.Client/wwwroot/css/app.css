@@ -846,6 +846,10 @@ html, body {
     display: block; /* Agent messages don't need flex layout */
 }
 
+.message-wrapper.user {
+    flex-direction: row-reverse; /* Avatar on right for user messages */
+}
+
 .message-avatar-column {
     flex-shrink: 0;
     width: 28px;
@@ -895,6 +899,10 @@ html, body {
 .message-wrapper .chat-message {
     flex: 1;
     max-width: 75%;
+}
+
+.message-wrapper.user .chat-message {
+    flex: 0 1 auto; /* Don't grow, shrink if needed, natural width */
 }
 
 .message-wrapper.agent .chat-message {
