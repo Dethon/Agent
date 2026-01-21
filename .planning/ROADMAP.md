@@ -17,6 +17,12 @@ This milestone adds user identity to WebChat. Users set a username (persisted lo
 
 **Dependencies:** None (foundation phase)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — State management infrastructure (UserIdentityStore, UserConfig model, users.json config)
+- [ ] 08-02-PLAN.md — UI component and integration (UserIdentityPicker, Effect, header integration)
+
 **Requirements:**
 - USER-01: User can set username via compact picker UI
 - USER-02: Username persists in localStorage across sessions
@@ -73,7 +79,7 @@ This milestone adds user identity to WebChat. Users set a username (persisted lo
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 8 | User Identity | USER-01, USER-02, USER-03 | Pending |
+| 8 | User Identity | USER-01, USER-02, USER-03 | Planned |
 | 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Pending |
 | 10 | Backend Integration | BACK-01, BACK-02, BACK-03 | Pending |
 
