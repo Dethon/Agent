@@ -1,10 +1,12 @@
 @using Markdig
+@using WebChat.Client.State.UserIdentity
+@inject UserIdentityStore UserIdentityStore
+
 @code {
     [Parameter] public ChatMessageModel Message { get; set; } = new();
     [Parameter] public bool IsStreaming { get; set; }
     [Parameter] public bool ShowAvatar { get; set; }
     [Parameter] public bool IsOwnMessage { get; set; }
-    [Parameter] public string? CurrentUserId { get; set; }
 
     private bool _showReasoning;
     private bool _showToolCalls;
@@ -17,6 +19,17 @@
     private static string RenderMarkdown(string? content)
     {
         return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
+    }
+
+    private (string? AvatarUrl, string DisplayName) GetSenderInfo()
+    {
+        if (string.IsNullOrEmpty(Message.SenderId))
+            return (null, "Anonymous");
+
+        var user = UserIdentityStore.State.AvailableUsers
+            .FirstOrDefault(u => u.Id == Message.SenderId);
+
+        return (user?.AvatarUrl, Message.SenderId);
     }
 
     private string GetMessageClass()
@@ -62,7 +75,7 @@
 
     private string? GetTooltipText()
     {
-        return Message.Role == "user" ? Message.SenderUsername : null;
+        return Message.Role == "user" ? Message.SenderId : null;
     }
 
 }
@@ -70,11 +83,12 @@
 <div class="@GetMessageWrapperClass()">
     @if (Message.Role != "assistant")
     {
+        var (avatarUrl, displayName) = GetSenderInfo();
         <div class="message-avatar-column">
             @if (ShowAvatar)
             {
-                <AvatarImage Username="@Message.SenderUsername"
-                             AvatarUrl="@Message.SenderAvatarUrl"
+                <AvatarImage UserId="@displayName"
+                             AvatarUrl="@avatarUrl"
                              Size="28" />
             }
             else

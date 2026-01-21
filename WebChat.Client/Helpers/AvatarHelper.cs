@@ -14,13 +14,13 @@ public static class AvatarHelper
         "#85C1E2"
     ];
 
-    public static string GetColorForUsername(string? username)
+    public static string GetColorForUser(string? userId)
     {
-        if (string.IsNullOrEmpty(username))
+        if (string.IsNullOrEmpty(userId))
             return Colors[0];
 
         var hash = 0;
-        foreach (var c in username)
+        foreach (var c in userId)
         {
             hash = (hash * 31 + c) & 0x7FFFFFFF;
         }
@@ -28,12 +28,12 @@ public static class AvatarHelper
         return Colors[hash % Colors.Length];
     }
 
-    public static string GetInitials(string? username)
+    public static string GetInitials(string? userId)
     {
-        if (string.IsNullOrWhiteSpace(username))
+        if (string.IsNullOrWhiteSpace(userId))
             return "?";
 
-        var words = username.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var words = userId.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (words.Length == 0)
             return "?";
