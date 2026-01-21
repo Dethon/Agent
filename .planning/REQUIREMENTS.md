@@ -15,9 +15,9 @@ Requirements for Users in Web UI milestone.
 
 ### Message Attribution
 
-- [ ] **MSG-01**: Messages display sender's username
-- [ ] **MSG-02**: Messages display sender's avatar (from lookup)
-- [ ] **MSG-03**: User's own messages visually distinguished from others
+- [x] **MSG-01**: Messages display sender's username
+- [x] **MSG-02**: Messages display sender's avatar (from lookup)
+- [x] **MSG-03**: User's own messages visually distinguished from others
 
 ### Backend Integration
 
@@ -46,9 +46,9 @@ Requirements for Users in Web UI milestone.
 | USER-01 | Phase 8 | Complete |
 | USER-02 | Phase 8 | Complete |
 | USER-03 | Phase 8 | Complete |
-| MSG-01 | Phase 9 | Pending |
-| MSG-02 | Phase 9 | Pending |
-| MSG-03 | Phase 9 | Pending |
+| MSG-01 | Phase 9 | Complete |
+| MSG-02 | Phase 9 | Complete |
+| MSG-03 | Phase 9 | Complete |
 | BACK-01 | Phase 10 | Pending |
 | BACK-02 | Phase 10 | Pending |
 | BACK-03 | Phase 10 | Pending |

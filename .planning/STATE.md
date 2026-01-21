@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-01-21)
 
 **Core Value:** People can have personalized conversations with agents in shared topics
-**Current Focus:** Milestone v1.1 Users in Web UI — Phase 8 (User Identity) COMPLETE
+**Current Focus:** Milestone v1.1 Users in Web UI — Phase 9 (Message Attribution) COMPLETE
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition
@@ -19,16 +19,16 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 
 **Milestone:** v1.1 Users in Web UI
 **Phase:** 9 of 3 (Message Attribution) - COMPLETE
-**Plan:** 2 of 2 complete
+**Plan:** 3 of 3 complete
 **Status:** Phase complete
-**Last activity:** 2026-01-21 — Completed 09-02-PLAN.md
+**Last activity:** 2026-01-21 — Completed 09-03-PLAN.md (gap closure)
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [████████████████░░░░░░░░] 67% (4/6 plans)
+v1.1 Users in Web UI: [████████████████████░░░░] 71% (5/7 plans)
 
 Phase 8: User Identity       [████████] 2/2 plans complete
-Phase 9: Message Attribution [████████] 2/2 plans complete
+Phase 9: Message Attribution [████████] 3/3 plans complete
 Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 ```
 
@@ -51,10 +51,13 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 ## Phase 9 Success Criteria
 
 1. [x] Messages display sender's username (hover tooltip on message bubble)
-2. [x] Messages display sender's avatar (28px circular, left of bubble)
+2. [x] Messages display sender's avatar (28px circular, right of bubble for users)
 3. [x] User's own messages visually distinguished (green gradient vs purple)
 4. [x] Avatar grouping: first message in consecutive group shows avatar, others show placeholder
-5. [x] Agent messages: full-width, no avatar column, no hover username
+5. [x] Agent messages: full-width, no avatar column, left-aligned
+6. [x] User messages right-aligned with avatar on right
+
+**Known limitation:** Sender identity is local-only. Cross-client visibility and persistence deferred to Phase 10 (BACK-02).
 
 ## Accumulated Context
 
@@ -95,6 +98,11 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 - Own messages styled with green gradient (vs purple for other users)
 - Username tooltip on message bubble hover (title attribute)
 
+**From 09-03 (gap closure):**
+- SendMessageEffect injects UserIdentityStore and populates sender fields
+- User messages right-aligned with avatar on right (flex-direction: row-reverse)
+- Sender identity local-only; cross-client deferred to Phase 10
+
 ## Decisions Log
 
 | Phase-Plan | Decision | Rationale |
@@ -110,11 +118,14 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 | 09-02 | Message grouping checks SenderId and Role | Handles role switches mid-conversation |
 | 09-02 | Own messages use green gradient | Visual distinction from purple user messages |
 | 09-02 | Avatar size 28px | Within CONTEXT.md's 24-32px recommendation |
+| 09-03 | User messages right-aligned | Chat app convention (own on right) |
+| 09-03 | Local-only sender identity for Phase 9 | Backend changes deferred to Phase 10 |
+| 09-03 | Sender fields null when no user selected | Graceful fallback to initials avatar |
 
 ## Session Continuity
 
-**Last session:** 2026-01-21T03:10:47Z
-**Stopped at:** Completed 09-02-PLAN.md (Phase 9 COMPLETE)
+**Last session:** 2026-01-21
+**Stopped at:** Completed 09-03-PLAN.md (Phase 9 gap closure COMPLETE)
 **Resume file:** None
 
 ## Next Steps
@@ -125,4 +136,4 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — Completed 09-02-PLAN.md*
+*Last updated: 2026-01-21 — Completed 09-03-PLAN.md (Phase 9 COMPLETE)*
