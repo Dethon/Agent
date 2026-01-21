@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Agent.Services;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -17,8 +18,31 @@ public sealed class ChatHub(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
-    INotifier hubNotifier) : Hub
+    INotifier hubNotifier,
+    UserConfigService userConfigService) : Hub
 {
+    private bool IsRegistered => Context.Items.ContainsKey("UserId");
+
+    private string? GetRegisteredUsername()
+    {
+        return Context.Items.TryGetValue("Username", out var username)
+            ? username as string
+            : null;
+    }
+
+    public Task RegisterUser(string userId)
+    {
+        var user = userConfigService.GetUserById(userId);
+        if (user is null)
+        {
+            throw new HubException($"Invalid user ID: {userId}");
+        }
+
+        Context.Items["UserId"] = userId;
+        Context.Items["Username"] = user.Username;
+        return Task.CompletedTask;
+    }
+
     public IReadOnlyList<AgentInfo> GetAgents()
     {
         return agentFactory.GetAvailableAgents();
