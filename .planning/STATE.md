@@ -18,18 +18,18 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 ## Current Position
 
 **Milestone:** v1.1 Users in Web UI
-**Phase:** 8 of 3 (User Identity) - COMPLETE
-**Plan:** 2 of 2 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-21 — Completed 08-02-PLAN.md
+**Phase:** 9 of 3 (Message Attribution) - IN PROGRESS
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-01-21 — Completed 09-01-PLAN.md
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [████████░░░░░░░░░░░░░░░░] 33% (2/6 plans)
+v1.1 Users in Web UI: [████████████░░░░░░░░░░░░] 50% (3/6 plans)
 
 Phase 8: User Identity       [████████] 2/2 plans complete
-Phase 9: Message Attribution [░░░░░░░░] 0/? plans
-Phase 10: Backend Integration [░░░░░░░░] 0/? plans
+Phase 9: Message Attribution [████░░░░] 1/2 plans complete
+Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 ```
 
 ## Phase Summary
@@ -37,7 +37,7 @@ Phase 10: Backend Integration [░░░░░░░░] 0/? plans
 | Phase | Goal | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | Users can establish their identity | USER-01, USER-02, USER-03 | COMPLETE |
-| 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | Pending |
+| 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | IN PROGRESS |
 | 10 | Backend knows who is sending messages | BACK-01, BACK-02, BACK-03 | Pending |
 
 ## Phase 8 Success Criteria
@@ -75,6 +75,11 @@ Phase 10: Backend Integration [░░░░░░░░] 0/? plans
 - Selection persisted to localStorage with key "selectedUserId"
 - Component integrated into MainLayout header
 
+**From 09-01:**
+- ChatMessageModel has SenderId, SenderUsername, SenderAvatarUrl properties (nullable)
+- AvatarHelper provides deterministic color hashing and initials extraction
+- AvatarImage component with image/fallback rendering (colored circle with initials)
+
 ## Decisions Log
 
 | Phase-Plan | Decision | Rationale |
@@ -83,18 +88,22 @@ Phase 10: Backend Integration [░░░░░░░░] 0/? plans
 | 08-01 | Three predefined users | Sufficient for initial testing |
 | 08-02 | Effect loads on Initialize action | Same trigger as InitializationEffect |
 | 08-02 | localStorage key "selectedUserId" | Simple, descriptive key |
+| 09-01 | Sender fields nullable in ChatMessageModel | Agent messages have null sender (Role="assistant" distinguishes them) |
+| 09-01 | 8-color palette for avatar fallbacks | Visual variety while being memorable |
+| 09-01 | Initials: 1 char single word, 2 chars multi | Balances clarity and compactness |
 
 ## Session Continuity
 
-**Last session:** 2026-01-21T02:24:00Z
-**Stopped at:** Completed 08-02-PLAN.md
+**Last session:** 2026-01-21T03:03:31Z
+**Stopped at:** Completed 09-01-PLAN.md
 **Resume file:** None
 
 ## Next Steps
 
-1. Plan Phase 9 - Message Attribution
-2. Execute Phase 9 plans
+1. Execute 09-02-PLAN.md (Message UI integration)
+2. Complete Phase 9
+3. Plan and execute Phase 10 - Backend Integration
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — Completed 08-02-PLAN.md (Phase 8 complete)*
+*Last updated: 2026-01-21 — Completed 09-01-PLAN.md*
