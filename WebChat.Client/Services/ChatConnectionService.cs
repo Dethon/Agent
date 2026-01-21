@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -6,7 +5,7 @@ using WebChat.Client.State.Hub;
 namespace WebChat.Client.Services;
 
 public sealed class ChatConnectionService(
-    HttpClient httpClient,
+    ConfigService configService,
     ConnectionEventDispatcher connectionEventDispatcher) : IChatConnectionService
 {
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
@@ -26,8 +25,8 @@ public sealed class ChatConnectionService(
             return;
         }
 
-        var config = await httpClient.GetFromJsonAsync<AppConfig>("/api/config");
-        var agentUrl = config?.AgentUrl ?? "http://localhost:5000";
+        var config = await configService.GetConfigAsync();
+        var agentUrl = config.AgentUrl ?? "http://localhost:5000";
         var hubUrl = $"{agentUrl.TrimEnd('/')}/hubs/chat";
 
         HubConnection = new HubConnectionBuilder()
