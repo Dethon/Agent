@@ -9,9 +9,9 @@ Requirements for Users in Web UI milestone.
 
 ### User Identity
 
-- [ ] **USER-01**: User can set username via compact picker UI
-- [ ] **USER-02**: Username persists in localStorage across sessions
-- [ ] **USER-03**: Avatar determined by hardcoded username->avatar lookup
+- [x] **USER-01**: User can set username via compact picker UI
+- [x] **USER-02**: Username persists in localStorage across sessions
+- [x] **USER-03**: Avatar determined by hardcoded username->avatar lookup
 
 ### Message Attribution
 
@@ -43,9 +43,9 @@ Requirements for Users in Web UI milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| USER-01 | Phase 8 | Pending |
-| USER-02 | Phase 8 | Pending |
-| USER-03 | Phase 8 | Pending |
+| USER-01 | Phase 8 | Complete |
+| USER-02 | Phase 8 | Complete |
+| USER-03 | Phase 8 | Complete |
 | MSG-01 | Phase 9 | Pending |
 | MSG-02 | Phase 9 | Pending |
 | MSG-03 | Phase 9 | Pending |
