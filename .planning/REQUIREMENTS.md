@@ -11,7 +11,7 @@ Requirements for Users in Web UI milestone.
 
 - [ ] **USER-01**: User can set username via compact picker UI
 - [ ] **USER-02**: Username persists in localStorage across sessions
-- [ ] **USER-03**: Avatar determined by hardcoded username→avatar lookup
+- [ ] **USER-03**: Avatar determined by hardcoded username->avatar lookup
 
 ### Message Attribution
 
@@ -43,21 +43,21 @@ Requirements for Users in Web UI milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| USER-01 | TBD | Pending |
-| USER-02 | TBD | Pending |
-| USER-03 | TBD | Pending |
-| MSG-01 | TBD | Pending |
-| MSG-02 | TBD | Pending |
-| MSG-03 | TBD | Pending |
-| BACK-01 | TBD | Pending |
-| BACK-02 | TBD | Pending |
-| BACK-03 | TBD | Pending |
+| USER-01 | Phase 8 | Pending |
+| USER-02 | Phase 8 | Pending |
+| USER-03 | Phase 8 | Pending |
+| MSG-01 | Phase 9 | Pending |
+| MSG-02 | Phase 9 | Pending |
+| MSG-03 | Phase 9 | Pending |
+| BACK-01 | Phase 10 | Pending |
+| BACK-02 | Phase 10 | Pending |
+| BACK-03 | Phase 10 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-01-21*
-*Last updated: 2026-01-21 after initial definition*
+*Last updated: 2026-01-21 — phase mappings added*
