@@ -1,57 +1,88 @@
+@inherits StoreSubscriberComponent
+
+@inject MessagesStore MessagesStore
+@inject TopicsStore TopicsStore
+@inject StreamingStore StreamingStore
+@inject IDispatcher Dispatcher
 @inject IJSRuntime Js
 
 @code {
-    [Parameter] public IReadOnlyList<ChatMessageModel> Messages { get; set; } = [];
-    [Parameter] public ChatMessageModel? StreamingMessage { get; set; }
-    [Parameter] public bool IsStreaming { get; set; }
-    [Parameter] public AgentInfo? SelectedAgent { get; set; }
-    [Parameter] public EventCallback<string> OnSuggestionClicked { get; set; }
-
+    private IReadOnlyList<ChatMessageModel> _messages = [];
+    private string? _topicId;
+    private bool _isStreaming;
+    private AgentInfo? _selectedAgent;
     private ElementReference _messagesArea;
     private bool _shouldAutoScroll = true;
 
-    public async Task CheckAndUpdateAutoScroll()
+    protected override void OnInitialized()
     {
-        try
-        {
-            _shouldAutoScroll = await Js.InvokeAsync<bool>("chatScroll.isAtBottom", _messagesArea);
-        }
-        catch
-        {
-            _shouldAutoScroll = true;
-        }
+        // Subscribe to selected topic ID
+        Subscribe(TopicsStore.StateObservable,
+            state => state.SelectedTopicId,
+            id =>
+            {
+                _topicId = id;
+                UpdateMessages();
+                UpdateStreamingStatus();
+            });
+
+        // Subscribe to selected agent
+        Subscribe(TopicsStore.StateObservable,
+            state => state.Agents.FirstOrDefault(a => a.Id == state.SelectedAgentId),
+            agent => _selectedAgent = agent);
+
+        // Subscribe to messages for current topic
+        Subscribe(MessagesStore.StateObservable,
+            state => state,
+            _ => UpdateMessages());
+
+        // Subscribe to streaming status
+        Subscribe(StreamingStore.StateObservable,
+            state => state.StreamingTopics,
+            _ => UpdateStreamingStatus());
     }
 
-    public void SetShouldAutoScroll(bool value)
+    private void UpdateMessages()
     {
-        _shouldAutoScroll = value;
+        _messages = _topicId != null
+            ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
+            : [];
+    }
+
+    private void UpdateStreamingStatus()
+    {
+        _isStreaming = _topicId != null && StreamingStore.State.StreamingTopics.Contains(_topicId);
+    }
+
+    private void HandleSuggestionClicked(string suggestion)
+    {
+        Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_shouldAutoScroll)
         {
-            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea);
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, true);
         }
     }
-
 }
 
 <div class="messages-area" @ref="_messagesArea">
-    @if (Messages.Count == 0 && !IsStreaming)
+    @if (_messages.Count == 0 && !_isStreaming)
     {
-        <EmptyState SelectedAgent="SelectedAgent" OnSuggestionClicked="OnSuggestionClicked"/>
+        <EmptyState SelectedAgent="_selectedAgent" OnSuggestionClicked="HandleSuggestionClicked"/>
     }
     else
     {
-        @foreach (var message in Messages)
+        @foreach (var message in _messages)
         {
             <ChatMessage Message="@message"/>
         }
 
-        @if (IsStreaming && StreamingMessage is not null)
+        @if (_isStreaming && !string.IsNullOrEmpty(_topicId))
         {
-            <ChatMessage Message="@StreamingMessage" IsStreaming="true"/>
+            <StreamingMessageDisplay TopicId="@_topicId"/>
         }
     }
 </div>

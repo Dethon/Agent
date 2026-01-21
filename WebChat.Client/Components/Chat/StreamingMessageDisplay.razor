@@ -1,0 +1,45 @@
+@inherits StoreSubscriberComponent
+@inject RenderCoordinator RenderCoordinator
+
+@code {
+    [Parameter, EditorRequired] public string TopicId { get; set; } = "";
+
+    private StreamingContent? _streamingContent;
+    private string _previousTopicId = "";
+
+    protected override void OnParametersSet()
+    {
+        if (_previousTopicId != TopicId)
+        {
+            _previousTopicId = TopicId;
+            ResubscribeToTopic();
+        }
+    }
+
+    private void ResubscribeToTopic()
+    {
+        ClearSubscriptions();
+
+        if (string.IsNullOrEmpty(TopicId)) return;
+
+        SubscribeWithInvoke(
+            RenderCoordinator.CreateStreamingObservable(TopicId),
+            content => _streamingContent = content);
+    }
+}
+
+@if (_streamingContent is not null)
+{
+    <ChatMessage Message="@CreateMessageModel()" IsStreaming="true"/>
+}
+
+@code {
+    private ChatMessageModel CreateMessageModel() => new()
+    {
+        Role = "assistant",
+        Content = _streamingContent?.Content ?? "",
+        Reasoning = _streamingContent?.Reasoning,
+        ToolCalls = _streamingContent?.ToolCalls,
+        IsError = _streamingContent?.IsError ?? false
+    };
+}

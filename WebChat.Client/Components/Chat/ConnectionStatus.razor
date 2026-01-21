@@ -1,16 +1,32 @@
+@using ConnStatus = WebChat.Client.State.Connection.ConnectionStatus
+@inherits StoreSubscriberComponent
+
+@inject ConnectionStore ConnectionStore
+
 @code {
-    [Parameter] public bool IsConnected { get; set; }
-    [Parameter] public bool IsReconnecting { get; set; }
+    private bool _isConnected;
+    private bool _isReconnecting;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(ConnectionStore.StateObservable, state => state.Status, OnStatusChanged);
+    }
+
+    private void OnStatusChanged(ConnStatus status)
+    {
+        _isConnected = status == ConnStatus.Connected;
+        _isReconnecting = status == ConnStatus.Reconnecting;
+    }
 }
 
-@if (IsReconnecting)
+@if (_isReconnecting)
 {
     <div class="connection-status reconnecting">
         <span class="status-icon">⟳</span>
         <span>Reconnecting...</span>
     </div>
 }
-else if (!IsConnected)
+else if (!_isConnected)
 {
     <div class="connection-status disconnected">
         <span class="status-icon">○</span>

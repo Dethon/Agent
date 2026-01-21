@@ -1,32 +1,36 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.State;
+using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.Services.Streaming;
 
 public sealed class StreamResumeService(
     IChatMessagingService messagingService,
     ITopicService topicService,
-    IChatStateManager stateManager,
     IApprovalService approvalService,
-    IStreamingCoordinator streamingCoordinator) : IStreamResumeService
+    IStreamingService streamingService,
+    IDispatcher dispatcher,
+    MessagesStore messagesStore,
+    StreamingStore streamingStore) : IStreamResumeService
 {
-    private Func<Task>? _renderCallback;
-
-    public void SetRenderCallback(Func<Task> callback)
-    {
-        _renderCallback = callback;
-    }
 
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
-        if (!stateManager.TryStartResuming(topic.TopicId))
+        // Check if already resuming via store state
+        if (streamingStore.State.ResumingTopics.Contains(topic.TopicId))
         {
             return;
         }
 
+        dispatcher.Dispatch(new StartResuming(topic.TopicId));
+
         try
         {
-            if (stateManager.IsTopicStreaming(topic.TopicId))
+            // Check if topic is already streaming via store
+            if (streamingStore.State.StreamingTopics.Contains(topic.TopicId))
             {
                 return;
             }
@@ -37,7 +41,7 @@ public sealed class StreamResumeService(
                 return;
             }
 
-            if (!stateManager.HasMessagesForTopic(topic.TopicId))
+            if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
                 var messages = history.Select(h => new ChatMessageModel
@@ -45,12 +49,12 @@ public sealed class StreamResumeService(
                     Role = h.Role,
                     Content = h.Content
                 }).ToList();
-                stateManager.SetMessagesForTopic(topic.TopicId, messages);
-                await NotifyRender();
+                dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
 
-            stateManager.StartStreaming(topic.TopicId);
-            var existingMessages = stateManager.GetMessagesForTopic(topic.TopicId);
+            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+            var existingMessages = messagesStore.State.MessagesByTopic
+                .GetValueOrDefault(topic.TopicId) ?? [];
 
             if (!string.IsNullOrEmpty(state.CurrentPrompt))
             {
@@ -59,49 +63,50 @@ public sealed class StreamResumeService(
 
                 if (!promptExists)
                 {
-                    existingMessages.Add(new ChatMessageModel
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
                     {
                         Role = "user",
                         Content = state.CurrentPrompt
-                    });
+                    }));
                 }
             }
 
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
             if (pendingApproval is not null)
             {
-                stateManager.SetApprovalRequest(pendingApproval);
+                dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
+
+            // Re-read after potential AddMessage dispatch
+            existingMessages = messagesStore.State.MessagesByTopic
+                .GetValueOrDefault(topic.TopicId) ?? [];
 
             var historyContent = existingMessages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
                 .Select(m => m.Content)
                 .ToHashSet();
 
-            var (completedTurns, streamingMessage) = streamingCoordinator.RebuildFromBuffer(
+            var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(
                 state.BufferedMessages, historyContent);
 
-            existingMessages.AddRange(completedTurns.Where(t => t.HasContent));
+            foreach (var turn in completedTurns.Where(t => t.HasContent))
+            {
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
+            }
 
-            streamingMessage = streamingCoordinator.StripKnownContent(streamingMessage, historyContent);
-            stateManager.UpdateStreamingMessage(topic.TopicId, streamingMessage);
+            streamingMessage = BufferRebuildUtility.StripKnownContent(streamingMessage, historyContent);
+            dispatcher.Dispatch(new StreamChunk(
+                topic.TopicId,
+                streamingMessage.Content,
+                streamingMessage.Reasoning,
+                streamingMessage.ToolCalls,
+                null));
 
-            await NotifyRender();
-
-            await streamingCoordinator.ResumeStreamResponseAsync(
-                topic, streamingMessage, state.CurrentMessageId, NotifyRender);
+            await streamingService.ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {
-            stateManager.StopResuming(topic.TopicId);
-        }
-    }
-
-    private async Task NotifyRender()
-    {
-        if (_renderCallback is not null)
-        {
-            await _renderCallback();
+            dispatcher.Dispatch(new StopResuming(topic.TopicId));
         }
     }
 }

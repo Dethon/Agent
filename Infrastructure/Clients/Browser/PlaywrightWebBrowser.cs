@@ -494,7 +494,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         await _sessions.CloseAsync(sessionId);
     }
 
-    public async Task ClearCookiesAsync(CancellationToken ct = default)
+    public async Task ClearCookiesAsync()
     {
         if (_context == null)
         {

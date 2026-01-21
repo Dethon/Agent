@@ -1,20 +1,56 @@
+@using ConnStatus = WebChat.Client.State.Connection.ConnectionStatus
+@inherits StoreSubscriberComponent
+
 @inject IJSRuntime Js
+@inject IDispatcher Dispatcher
+@inject TopicsStore TopicsStore
+@inject StreamingStore StreamingStore
+@inject ConnectionStore ConnectionStore
 
 @code {
-    [Parameter] public EventCallback<string> OnSend { get; set; }
-
-    [Parameter] public EventCallback OnCancel { get; set; }
-
-    [Parameter] public bool IsStreaming { get; set; }
-
-    [Parameter] public bool Disabled { get; set; }
-
     private string _inputText = "";
     private ElementReference _textareaRef;
+    private string? _topicId;
+    private string? _selectedAgentId;
+    private bool _isStreaming;
+    private bool _isConnected;
+    private bool _disabled;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(TopicsStore.StateObservable, state => (state.SelectedTopicId, state.SelectedAgentId), tuple =>
+        {
+            _topicId = tuple.SelectedTopicId;
+            _selectedAgentId = tuple.SelectedAgentId;
+            UpdateDisabledState();
+            UpdateStreamingStatus();
+        });
+
+        Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, _ =>
+        {
+            UpdateStreamingStatus();
+        });
+
+        Subscribe(ConnectionStore.StateObservable, state => state.Status, status =>
+        {
+            _isConnected = status == ConnStatus.Connected;
+            UpdateDisabledState();
+        });
+    }
+
+    private void UpdateStreamingStatus()
+    {
+        _isStreaming = _topicId is not null && StreamingStore.State.StreamingTopics.Contains(_topicId);
+    }
+
+    private void UpdateDisabledState()
+    {
+        _disabled = string.IsNullOrEmpty(_selectedAgentId) || !_isConnected;
+    }
 
     private async Task HandleSubmit()
     {
-        if (string.IsNullOrWhiteSpace(_inputText) || Disabled)
+        if (string.IsNullOrWhiteSpace(_inputText) || _disabled)
         {
             return;
         }
@@ -25,7 +61,7 @@
         // Reset textarea height after clearing text
         await Js.InvokeVoidAsync("chatInput.reset", _textareaRef);
 
-        await OnSend.InvokeAsync(message);
+        Dispatcher.Dispatch(new SendMessage(_topicId, message));
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -36,11 +72,13 @@
         }
     }
 
-    private async Task HandleCancel()
+    private void HandleCancel()
     {
-        await OnCancel.InvokeAsync();
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new CancelStreaming(_topicId));
+        }
     }
-
 }
 
 <div class="input-container">
@@ -51,11 +89,11 @@
                   @bind="_inputText"
                   @bind:event="oninput"
                   @onkeydown="HandleKeyDown"
-                  disabled="@Disabled"
+                  disabled="@_disabled"
                   rows="1"></textarea>
     </div>
 
-    @if (IsStreaming)
+    @if (_isStreaming)
     {
         <button class="btn btn-secondary" @onclick="HandleCancel">
             Cancel
@@ -63,7 +101,7 @@
     }
     <button class="btn btn-primary"
             @onclick="HandleSubmit"
-            disabled="@(Disabled || string.IsNullOrWhiteSpace(_inputText))">
+            disabled="@(_disabled || string.IsNullOrWhiteSpace(_inputText))">
         Send
     </button>
 </div>

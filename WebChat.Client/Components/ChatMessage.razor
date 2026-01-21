@@ -23,6 +23,17 @@
         {
             classes.Add("error");
         }
+        // Add cursor class when actively streaming with content
+        if (IsStreaming && !string.IsNullOrEmpty(Message.Content))
+        {
+            classes.Add("streaming-cursor");
+        }
+        // Compact styling when only showing thinking indicator
+        if (IsStreaming && string.IsNullOrEmpty(Message.Content) &&
+            string.IsNullOrEmpty(Message.Reasoning) && string.IsNullOrEmpty(Message.ToolCalls))
+        {
+            classes.Add("thinking-only");
+        }
 
         return string.Join(" ", classes);
     }
@@ -66,10 +77,10 @@
         @((MarkupString)RenderMarkdown(Message.Content))
     </div>
 
-    @if (IsStreaming)
+    @if (IsStreaming && string.IsNullOrEmpty(Message.Content))
     {
-        <div class="streaming-indicator">
-            <div class="streaming-dots">
+        <div class="typing-indicator">
+            <div class="typing-dots">
                 <span></span>
                 <span></span>
                 <span></span>
