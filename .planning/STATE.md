@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-01-21)
 
 **Core Value:** People can have personalized conversations with agents in shared topics
-**Current Focus:** Milestone v1.1 Users in Web UI — Phase 9 (Message Attribution) COMPLETE
+**Current Focus:** Milestone v1.1 Users in Web UI — Phase 10 (Backend Integration) IN PROGRESS
 
 **Key Files:**
 - `.planning/PROJECT.md` - Project definition
@@ -18,18 +18,18 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 ## Current Position
 
 **Milestone:** v1.1 Users in Web UI
-**Phase:** 9 of 3 (Message Attribution) - COMPLETE
-**Plan:** 3 of 3 complete
-**Status:** Phase complete
-**Last activity:** 2026-01-21 — Completed 09-03-PLAN.md (gap closure)
+**Phase:** 10 of 3 (Backend Integration) - IN PROGRESS
+**Plan:** 1 of 2 complete
+**Status:** In progress
+**Last activity:** 2026-01-21 — Completed 10-01-PLAN.md (server registration)
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [████████████████████░░░░] 71% (5/7 plans)
+v1.1 Users in Web UI: [██████████████████████░░] 86% (6/7 plans)
 
 Phase 8: User Identity       [████████] 2/2 plans complete
 Phase 9: Message Attribution [████████] 3/3 plans complete
-Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
+Phase 10: Backend Integration [████░░░░] 1/2 plans complete
 ```
 
 ## Phase Summary
@@ -38,7 +38,7 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 |-------|------|--------------|--------|
 | 8 | Users can establish their identity | USER-01, USER-02, USER-03 | COMPLETE |
 | 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | COMPLETE |
-| 10 | Backend knows who is sending messages | BACK-01, BACK-02, BACK-03 | Pending |
+| 10 | Backend knows who is sending messages | BACK-01, BACK-02, BACK-03 | In Progress |
 
 ## Phase 8 Success Criteria
 
@@ -57,7 +57,12 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 5. [x] Agent messages: full-width, no avatar column, left-aligned
 6. [x] User messages right-aligned with avatar on right
 
-**Known limitation:** Sender identity is local-only. Cross-client visibility and persistence deferred to Phase 10 (BACK-02).
+## Phase 10 Success Criteria (Plan 01)
+
+1. [x] RegisterUser validates userId against server-side users.json
+2. [x] SendMessage rejects calls from unregistered connections
+3. [x] UserConfigService provides synchronous user lookup (lazy-loaded, cached)
+4. [x] Per-connection identity stored in Context.Items
 
 ## Accumulated Context
 
@@ -103,6 +108,12 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 - User messages right-aligned with avatar on right (flex-direction: row-reverse)
 - Sender identity local-only; cross-client deferred to Phase 10
 
+**From 10-01:**
+- UserConfigService loads users.json server-side with lazy initialization
+- RegisterUser hub method validates userId and stores in Context.Items
+- SendMessage guards against unregistered connections
+- Per-connection identity via Context.Items["UserId"] and Context.Items["Username"]
+
 ## Decisions Log
 
 | Phase-Plan | Decision | Rationale |
@@ -121,19 +132,21 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 | 09-03 | User messages right-aligned | Chat app convention (own on right) |
 | 09-03 | Local-only sender identity for Phase 9 | Backend changes deferred to Phase 10 |
 | 09-03 | Sender fields null when no user selected | Graceful fallback to initials avatar |
+| 10-01 | Lazy loading for users.json | Defer file read until first access |
+| 10-01 | Context.Items for identity storage | Per-connection state (not ambient/static) |
+| 10-01 | UserConfigService in AddWebClient only | Only needed for web chat interface |
 
 ## Session Continuity
 
 **Last session:** 2026-01-21
-**Stopped at:** Completed 09-03-PLAN.md (Phase 9 gap closure COMPLETE)
+**Stopped at:** Completed 10-01-PLAN.md (server registration)
 **Resume file:** None
 
 ## Next Steps
 
-1. Plan Phase 10 - Backend Integration (BACK-01, BACK-02, BACK-03)
-2. Execute Phase 10 plans
-3. Complete Milestone v1.1 Users in Web UI
+1. Execute 10-02-PLAN.md (client integration and agent personalization)
+2. Complete Milestone v1.1 Users in Web UI
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — Completed 09-03-PLAN.md (Phase 9 COMPLETE)*
+*Last updated: 2026-01-21 — Completed 10-01-PLAN.md (Phase 10 Plan 01 COMPLETE)*
