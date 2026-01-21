@@ -69,6 +69,12 @@ Plans:
 
 **Dependencies:** Phase 8 (needs username to send)
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Server-side user registration (RegisterUser hub method, Context.Items storage, registration guard)
+- [ ] 10-02-PLAN.md — Message flow and agent personalization (senderId in messages, reconnection handling, username in prompts)
+
 **Requirements:**
 - BACK-01: Username sent to backend on SignalR connection
 - BACK-02: Username included in message payloads to server
