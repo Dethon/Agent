@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 10-backend-integration
 source: [10-01-SUMMARY.md, 10-02-SUMMARY.md]
 started: 2026-01-21T05:00:00Z
@@ -45,7 +45,19 @@ skipped: 0
   reason: "User reported: it does for new messages, but loaded history is attributed to user ?"
   severity: major
   test: 4
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "Sender metadata never persisted to Redis or returned via ChatHistoryMessage DTO"
+  artifacts:
+    - path: "Domain/DTOs/WebChat/ChatHistoryMessage.cs"
+      issue: "Only has Role and Content - no sender fields"
+    - path: "Agent/Hubs/ChatHub.cs"
+      issue: "GetHistory creates ChatHistoryMessage without sender info"
+    - path: "WebChat.Client/State/Effects/TopicSelectionEffect.cs"
+      issue: "History loading doesn't map sender fields"
+    - path: "WebChat.Client/State/Effects/InitializationEffect.cs"
+      issue: "LoadTopicHistoryAsync doesn't populate sender fields"
+  missing:
+    - "Add SenderId, SenderUsername, SenderAvatarUrl to ChatHistoryMessage"
+    - "Extract sender from ChatMessage.AdditionalProperties in GetHistory"
+    - "Store sender in AdditionalProperties when creating user messages"
+    - "Map sender fields in client effects when loading history"
+  debug_session: ".planning/debug/chat-history-sender-attribution.md"
