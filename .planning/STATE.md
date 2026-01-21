@@ -19,17 +19,17 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 
 **Milestone:** v1.1 Users in Web UI
 **Phase:** 10 of 3 (Backend Integration) - COMPLETE
-**Plan:** 2 of 2 complete
-**Status:** Milestone complete
-**Last activity:** 2026-01-21 — Completed 10-02-PLAN.md (client integration and agent personalization)
+**Plan:** 3 of 3 complete (including gap closure)
+**Status:** Milestone complete with gap closure
+**Last activity:** 2026-01-21 — Completed 10-03-PLAN.md (history sender attribution gap closure)
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [████████████████████████] 100% (7/7 plans)
+v1.1 Users in Web UI: [████████████████████████] 100% (8/8 plans including gap closure)
 
 Phase 8: User Identity       [████████] 2/2 plans complete
 Phase 9: Message Attribution [████████] 3/3 plans complete
-Phase 10: Backend Integration [████████] 2/2 plans complete
+Phase 10: Backend Integration [████████] 3/3 plans complete (includes gap closure)
 ```
 
 ## Phase Summary
@@ -126,6 +126,13 @@ Phase 10: Backend Integration [████████] 2/2 plans complete
 - ChatHub.SendMessage uses GetRegisteredUsername() for agent (not client-provided senderId)
 - McpAgent includes "You are chatting with {username}." in prompt context
 
+**From 10-03 (gap closure):**
+- ChatHistoryMessage DTO includes SenderId, SenderUsername, SenderAvatarUrl fields
+- ChatMonitor stores sender metadata in ChatMessage.AdditionalProperties
+- ChatHub.GetHistory extracts sender from AdditionalProperties and returns in ChatHistoryMessage
+- TopicSelectionEffect and InitializationEffect map sender fields when loading history
+- Loaded history messages preserve sender attribution after page refresh
+
 ## Decisions Log
 
 | Phase-Plan | Decision | Rationale |
@@ -150,11 +157,14 @@ Phase 10: Backend Integration [████████] 2/2 plans complete
 | 10-02 | Use GetRegisteredUsername for agent | Validated identity from Context.Items, not client-provided |
 | 10-02 | Register user on connect and reconnect | Ensures identity persists across reconnections |
 | 10-02 | Natural agent personalization | Username context in prompt, no forced greeting patterns |
+| 10-03 | Store sender in AdditionalProperties | Microsoft.Extensions.AI.ChatMessage already has metadata dictionary |
+| 10-03 | Use x.Sender for SenderId and SenderUsername | Domain layer only has sender string, no user lookup |
+| 10-03 | Pass null for SenderAvatarUrl from Domain | Maintains layer separation, client has fallback logic |
 
 ## Session Continuity
 
 **Last session:** 2026-01-21
-**Stopped at:** Completed 10-02-PLAN.md (client integration and agent personalization)
+**Stopped at:** Completed 10-03-PLAN.md (history sender attribution gap closure)
 **Resume file:** None
 
 ## Milestone Complete
@@ -164,6 +174,8 @@ Milestone v1.1 Users in Web UI is now complete with all requirements satisfied:
 - MSG-01, MSG-02, MSG-03: Message attribution with avatars and styling
 - BACK-01, BACK-02, BACK-03: Backend integration with personalized agent responses
 
+**Gap Closure:** 10-03 resolved UAT Test 4 failure - loaded history now shows correct sender attribution after page refresh.
+
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — Completed 10-02-PLAN.md (Milestone v1.1 COMPLETE)*
+*Last updated: 2026-01-21 — Completed 10-03-PLAN.md (Milestone v1.1 COMPLETE with gap closure)*
