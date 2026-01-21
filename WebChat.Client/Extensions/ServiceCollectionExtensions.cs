@@ -1,3 +1,4 @@
+using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Connection;
@@ -30,6 +31,9 @@ public static class ServiceCollectionExtensions
 
             // State coordination
             services.AddScoped<RenderCoordinator>();
+
+            // Services
+            services.AddSingleton<ConfigService>();
 
             return services;
         }

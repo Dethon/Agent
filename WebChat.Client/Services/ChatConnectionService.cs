@@ -78,9 +78,6 @@ public sealed class ChatConnectionService(
     }
 }
 
-internal record AppConfig(string? AgentUrl, UserConfigDto[]? Users);
-internal record UserConfigDto(string Id, string AvatarUrl);
-
 internal sealed class AggressiveRetryPolicy : IRetryPolicy
 {
     private static readonly TimeSpan[] _retryDelays =
