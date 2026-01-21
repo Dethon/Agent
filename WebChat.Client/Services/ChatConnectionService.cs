@@ -44,7 +44,7 @@ public sealed class ChatConnectionService(
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnecting += exception =>
+        HubConnection.Reconnecting += _ =>
         {
             _connectionEventDispatcher.HandleReconnecting();
             OnReconnecting?.Invoke();
@@ -52,7 +52,7 @@ public sealed class ChatConnectionService(
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnected += async connectionId =>
+        HubConnection.Reconnected += async _ =>
         {
             _connectionEventDispatcher.HandleReconnected();
             if (OnReconnected is not null)

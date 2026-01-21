@@ -59,6 +59,7 @@ public static class MessagesReducers
         };
     }
 
+    // ReSharper disable UnusedParameter.Local
     private static IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> UpdateMessageInTopic(
         IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> messagesByTopic,
         string topicId,
@@ -78,4 +79,5 @@ public static class MessagesReducers
             [topicId] = messages.ToList() // No-op until MessageId is available
         };
     }
+    // ReSharper restore UnusedParameter.Local
 }
