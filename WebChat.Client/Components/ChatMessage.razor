@@ -2,6 +2,9 @@
 @code {
     [Parameter] public ChatMessageModel Message { get; set; } = new();
     [Parameter] public bool IsStreaming { get; set; }
+    [Parameter] public bool ShowAvatar { get; set; }
+    [Parameter] public bool IsOwnMessage { get; set; }
+    [Parameter] public string? CurrentUserId { get; set; }
 
     private bool _showReasoning;
     private bool _showToolCalls;
@@ -34,58 +37,96 @@
         {
             classes.Add("thinking-only");
         }
+        // Add own message class for user's messages
+        if (IsOwnMessage)
+        {
+            classes.Add("own");
+        }
 
         return string.Join(" ", classes);
     }
 
+    private string GetMessageWrapperClass()
+    {
+        var classes = new List<string> { "message-wrapper" };
+        if (Message.Role == "assistant")
+        {
+            classes.Add("agent");
+        }
+        return string.Join(" ", classes);
+    }
+
+    private string? GetTooltipText()
+    {
+        return Message.Role == "user" ? Message.SenderUsername : null;
+    }
+
 }
 
-<div class="@GetMessageClass()">
-    @if (!string.IsNullOrEmpty(Message.Reasoning))
+<div class="@GetMessageWrapperClass()">
+    @if (Message.Role != "assistant")
     {
-        <div class="collapsible-block">
-            <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
-                <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
-                Reasoning
-            </button>
-            @if (_showReasoning)
+        <div class="message-avatar-column">
+            @if (ShowAvatar)
             {
-                <div class="collapsible-content">
-                    @Message.Reasoning
-                </div>
+                <AvatarImage Username="@Message.SenderUsername"
+                             AvatarUrl="@Message.SenderAvatarUrl"
+                             Size="28" />
+            }
+            else
+            {
+                <div class="avatar-placeholder-space"></div>
             }
         </div>
     }
 
-    @if (!string.IsNullOrEmpty(Message.ToolCalls))
-    {
-        <div class="collapsible-block">
-            <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
-                <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
-                Tool calls
-            </button>
-            @if (_showToolCalls)
-            {
-                <div class="collapsible-content tool-calls-content">
-                    @Message.ToolCalls
-                </div>
-            }
-        </div>
-    }
-
-    <div class="message-content">
-        @((MarkupString)RenderMarkdown(Message.Content))
-    </div>
-
-    @if (IsStreaming && string.IsNullOrEmpty(Message.Content))
-    {
-        <div class="typing-indicator">
-            <div class="typing-dots">
-                <span></span>
-                <span></span>
-                <span></span>
+    <div class="@GetMessageClass()" title="@GetTooltipText()">
+        @if (!string.IsNullOrEmpty(Message.Reasoning))
+        {
+            <div class="collapsible-block">
+                <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
+                    <span class="toggle-icon">@(_showReasoning ? "▼" : "▶")</span>
+                    Reasoning
+                </button>
+                @if (_showReasoning)
+                {
+                    <div class="collapsible-content">
+                        @Message.Reasoning
+                    </div>
+                }
             </div>
-            <span>Thinking...</span>
+        }
+
+        @if (!string.IsNullOrEmpty(Message.ToolCalls))
+        {
+            <div class="collapsible-block">
+                <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
+                    <span class="toggle-icon">@(_showToolCalls ? "▼" : "▶")</span>
+                    Tool calls
+                </button>
+                @if (_showToolCalls)
+                {
+                    <div class="collapsible-content tool-calls-content">
+                        @Message.ToolCalls
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="message-content">
+            @((MarkupString)RenderMarkdown(Message.Content))
         </div>
-    }
+
+        @if (IsStreaming && string.IsNullOrEmpty(Message.Content))
+        {
+            <div class="typing-indicator">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span>Thinking...</span>
+            </div>
+        }
+    </div>
 </div>
