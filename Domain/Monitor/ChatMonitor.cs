@@ -73,8 +73,7 @@ public class ChatMonitor(
                         {
                             AdditionalProperties = new AdditionalPropertiesDictionary
                             {
-                                ["SenderId"] = x.Sender,
-                                ["SenderUsername"] = x.Sender
+                                ["SenderId"] = x.Sender
                             }
                         };
                         return agent
