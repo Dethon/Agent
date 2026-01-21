@@ -18,17 +18,17 @@ See: `.planning/PROJECT.md` (updated 2026-01-21)
 ## Current Position
 
 **Milestone:** v1.1 Users in Web UI
-**Phase:** 9 of 3 (Message Attribution) - IN PROGRESS
-**Plan:** 1 of 2 complete
-**Status:** In progress
-**Last activity:** 2026-01-21 — Completed 09-01-PLAN.md
+**Phase:** 9 of 3 (Message Attribution) - COMPLETE
+**Plan:** 2 of 2 complete
+**Status:** Phase complete
+**Last activity:** 2026-01-21 — Completed 09-02-PLAN.md
 
 **Progress:**
 ```
-v1.1 Users in Web UI: [████████████░░░░░░░░░░░░] 50% (3/6 plans)
+v1.1 Users in Web UI: [████████████████░░░░░░░░] 67% (4/6 plans)
 
 Phase 8: User Identity       [████████] 2/2 plans complete
-Phase 9: Message Attribution [████░░░░] 1/2 plans complete
+Phase 9: Message Attribution [████████] 2/2 plans complete
 Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 ```
 
@@ -37,7 +37,7 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 | Phase | Goal | Requirements | Status |
 |-------|------|--------------|--------|
 | 8 | Users can establish their identity | USER-01, USER-02, USER-03 | COMPLETE |
-| 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | IN PROGRESS |
+| 9 | Users can see who sent each message | MSG-01, MSG-02, MSG-03 | COMPLETE |
 | 10 | Backend knows who is sending messages | BACK-01, BACK-02, BACK-03 | Pending |
 
 ## Phase 8 Success Criteria
@@ -47,6 +47,14 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 3. [x] After selecting user, picker shows their avatar
 4. [x] Refreshing the page preserves the username (localStorage persistence)
 5. [x] Avatar is automatically determined based on username (users.json mapping)
+
+## Phase 9 Success Criteria
+
+1. [x] Messages display sender's username (hover tooltip on message bubble)
+2. [x] Messages display sender's avatar (28px circular, left of bubble)
+3. [x] User's own messages visually distinguished (green gradient vs purple)
+4. [x] Avatar grouping: first message in consecutive group shows avatar, others show placeholder
+5. [x] Agent messages: full-width, no avatar column, no hover username
 
 ## Accumulated Context
 
@@ -80,6 +88,13 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 - AvatarHelper provides deterministic color hashing and initials extraction
 - AvatarImage component with image/fallback rendering (colored circle with initials)
 
+**From 09-02:**
+- ChatMessage renders avatar column (28px) for user messages with grouping support
+- MessageList subscribes to UserIdentityStore and computes ShouldShowAvatar/IsOwnMessage
+- Message grouping: avatar shows only on first message in consecutive group from same sender
+- Own messages styled with green gradient (vs purple for other users)
+- Username tooltip on message bubble hover (title attribute)
+
 ## Decisions Log
 
 | Phase-Plan | Decision | Rationale |
@@ -91,19 +106,23 @@ Phase 10: Backend Integration [░░░░░░░░] 0/2 plans
 | 09-01 | Sender fields nullable in ChatMessageModel | Agent messages have null sender (Role="assistant" distinguishes them) |
 | 09-01 | 8-color palette for avatar fallbacks | Visual variety while being memorable |
 | 09-01 | Initials: 1 char single word, 2 chars multi | Balances clarity and compactness |
+| 09-02 | ChatMessage parameters: ShowAvatar, IsOwnMessage | Simpler than passing full user context |
+| 09-02 | Message grouping checks SenderId and Role | Handles role switches mid-conversation |
+| 09-02 | Own messages use green gradient | Visual distinction from purple user messages |
+| 09-02 | Avatar size 28px | Within CONTEXT.md's 24-32px recommendation |
 
 ## Session Continuity
 
-**Last session:** 2026-01-21T03:03:31Z
-**Stopped at:** Completed 09-01-PLAN.md
+**Last session:** 2026-01-21T03:10:47Z
+**Stopped at:** Completed 09-02-PLAN.md (Phase 9 COMPLETE)
 **Resume file:** None
 
 ## Next Steps
 
-1. Execute 09-02-PLAN.md (Message UI integration)
-2. Complete Phase 9
-3. Plan and execute Phase 10 - Backend Integration
+1. Plan Phase 10 - Backend Integration (BACK-01, BACK-02, BACK-03)
+2. Execute Phase 10 plans
+3. Complete Milestone v1.1 Users in Web UI
 
 ---
 *State initialized: 2026-01-19*
-*Last updated: 2026-01-21 — Completed 09-01-PLAN.md*
+*Last updated: 2026-01-21 — Completed 09-02-PLAN.md*
