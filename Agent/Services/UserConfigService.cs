@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Agent.Services;
 
-public record UserConfig(string Id, string Username, string AvatarUrl);
+public record UserConfig(string Id, string AvatarUrl);
 
 public class UserConfigService(IWebHostEnvironment env)
 {
