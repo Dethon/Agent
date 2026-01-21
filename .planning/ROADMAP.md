@@ -69,11 +69,12 @@ Plans:
 
 **Dependencies:** Phase 8 (needs username to send)
 
-**Plans:** 2 plans
+**Plans:** 3 plans
 
 Plans:
 - [x] 10-01-PLAN.md — Server-side user registration (RegisterUser hub method, Context.Items storage, registration guard)
 - [x] 10-02-PLAN.md — Message flow and agent personalization (senderId in messages, reconnection handling, username in prompts)
+- [ ] 10-03-PLAN.md — Gap closure: History sender attribution (persist sender in messages, extract in GetHistory)
 
 **Requirements:**
 - BACK-01: Username sent to backend on SignalR connection
@@ -85,6 +86,7 @@ Plans:
 2. Messages sent to server include sender's username
 3. Agent responses address user by name when contextually appropriate
 4. Agent maintains awareness of who it's talking to across conversation
+5. Loaded history messages show correct sender attribution after page refresh
 
 ---
 
@@ -94,7 +96,7 @@ Plans:
 |-------|------|--------------|--------|
 | 8 | User Identity | USER-01, USER-02, USER-03 | Complete |
 | 9 | Message Attribution | MSG-01, MSG-02, MSG-03 | Complete |
-| 10 | Backend Integration | BACK-01, BACK-02, BACK-03 | Complete |
+| 10 | Backend Integration | BACK-01, BACK-02, BACK-03 | In Progress (gap closure) |
 
 **Parallelization Note:** Phases 9 and 10 both depend on Phase 8 but are independent of each other. They could potentially be executed in parallel after Phase 8 completes.
 
