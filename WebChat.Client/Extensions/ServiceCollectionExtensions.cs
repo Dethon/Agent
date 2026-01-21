@@ -33,7 +33,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<RenderCoordinator>();
 
             // Services
-            services.AddSingleton<ConfigService>();
+            services.AddScoped<ConfigService>();
 
             return services;
         }
