@@ -4,7 +4,7 @@
     @if (!string.IsNullOrEmpty(AvatarUrl) && !_imageLoadFailed)
     {
         <img src="@AvatarUrl"
-             alt="@Username"
+             alt="@UserId"
              class="avatar-image"
              style="width: @(Size)px; height: @(Size)px; border-radius: 50%;"
              @onerror="HandleImageError" />
@@ -20,7 +20,7 @@
 
 @code {
     [Parameter]
-    public string? Username { get; set; }
+    public string? UserId { get; set; }
 
     [Parameter]
     public string? AvatarUrl { get; set; }
@@ -34,8 +34,8 @@
 
     protected override void OnParametersSet()
     {
-        _backgroundColor = AvatarHelper.GetColorForUsername(Username);
-        _initials = AvatarHelper.GetInitials(Username);
+        _backgroundColor = AvatarHelper.GetColorForUser(UserId);
+        _initials = AvatarHelper.GetInitials(UserId);
     }
 
     private void HandleImageError()
