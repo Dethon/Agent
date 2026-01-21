@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains **Agent**, an AI-powered agent that manages a personal media library through Telegram chat or web interface,
+This repository contains **Agent**, an AI-powered agent that manages a personal media library through Telegram chat, web interface, or CLI terminal,
 using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ## Technology Stack
@@ -53,6 +53,7 @@ Quick reference for finding code files:
 | Messaging clients        | `Infrastructure/Clients/Messaging/*.cs`   |
 | Torrent clients          | `Infrastructure/Clients/Torrent/*.cs`     |
 | Browser clients          | `Infrastructure/Clients/Browser/*.cs`     |
+| HTML processing          | `Infrastructure/HtmlProcessing/*.cs`      |
 | CLI UI components        | `Infrastructure/CliGui/**/*.cs`           |
 | CLI abstractions         | `Infrastructure/CliGui/Abstractions/*.cs` |
 | CLI routing              | `Infrastructure/CliGui/Routing/*.cs`      |
@@ -62,11 +63,18 @@ Quick reference for finding code files:
 | State persistence        | `Infrastructure/StateManagers/*.cs`       |
 | MCP server tools         | `McpServer*/McpTools/*.cs`                |
 | MCP server prompts       | `McpServer*/McpPrompts/*.cs`              |
+| App bootstrapping        | `Agent/App/*.cs`                          |
+| App DI modules           | `Agent/Modules/*.cs`                      |
+| App settings             | `Agent/Settings/*.cs`                     |
+| WebChat hub              | `Agent/Hubs/*.cs`                         |
 | WebChat pages            | `WebChat.Client/Pages/*.razor`            |
 | WebChat components       | `WebChat.Client/Components/**/*.razor`    |
 | WebChat contracts        | `WebChat.Client/Contracts/*.cs`           |
 | WebChat services         | `WebChat.Client/Services/**/*.cs`         |
-| WebChat hub              | `Agent/Hubs/*.cs`                         |
+| WebChat state stores     | `WebChat.Client/State/*/*.cs`             |
+| WebChat effects          | `WebChat.Client/State/Effects/*.cs`       |
+| WebChat hub dispatchers  | `WebChat.Client/State/Hub/*.cs`           |
+| WebChat models           | `WebChat.Client/Models/*.cs`              |
 | Unit tests               | `Tests/Unit/**/*Tests.cs`                 |
 | Integration tests        | `Tests/Integration/**/*Tests.cs`          |
 | Test fixtures            | `Tests/Integration/Fixtures/*.cs`         |
@@ -131,6 +139,11 @@ Features:
 - Stream resumption after disconnection (buffered messages + sequence tracking)
 - Multi-agent selection
 
+Client-side state management uses a Redux-like pattern (`WebChat.Client/State/`):
+- **Stores**: ApprovalStore, ConnectionStore, MessagesStore, StreamingStore, TopicsStore
+- **Effects**: Side effect handlers for async operations (agent selection, topic selection, message sending)
+- **HubEventDispatcher**: Routes SignalR events to appropriate state actions
+
 ### Message Streaming Pipeline
 
 The `ChatMonitor` uses a streaming pipeline to handle concurrent conversations:
@@ -177,9 +190,14 @@ Tools: `MemoryStoreTool`, `MemoryRecallTool`, `MemoryForgetTool`, `MemoryListToo
 
 ### Web Search
 
-`IWebSearchClient` → `BraveSearchClient` + `IWebFetcher` → `WebContentFetcher`
+`IWebSearchClient` → `BraveSearchClient` for web search queries
 
-WebFetch supports CSS selectors for targeting content, multiple output formats (text/markdown/html), and link extraction.
+### Web Browsing
+
+`IWebBrowser` → `PlaywrightWebBrowser` for persistent browser sessions
+
+WebBrowse supports CSS selectors for targeting content, markdown/html output formats, link extraction,
+automatic modal dismissal (cookie consent, age gates), lazy-load scrolling, and DOM stability waiting.
 
 ### Real Estate Search
 

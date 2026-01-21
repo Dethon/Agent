@@ -1,4 +1,4 @@
-# Jack - AI Media Library Agent
+# Agent - AI Media Library Agent
 
 An AI-powered agent that manages a personal media library through Telegram chat, web interface, or CLI terminal,
 using OpenRouter LLMs and the Model Context Protocol (MCP).
@@ -52,7 +52,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 |-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
 | **mcp-library**       | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files into library structure                                 |
 | **mcp-text**          | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate, Move, RemoveFile                                  | Manage a knowledge vault of markdown notes and text files                                                                        |
-| **mcp-websearch**     | WebSearch, WebFetch                                                                                                                             | Search the web and fetch content from URLs with CSS selectors, multiple output formats (text/markdown/html), and link extraction |
+| **mcp-websearch**     | WebSearch, WebBrowse, WebClick, WebInspect                                                                                                      | Search the web and browse pages with persistent browser sessions, modal auto-dismissal, and element interaction                  |
 | **mcp-memory**        | MemoryStore, MemoryRecall, MemoryForget, MemoryList, MemoryReflect                                                                              | Vector-based memory storage and retrieval using Redis                                                                            |
 | **mcp-idealista**     | IdealistaPropertySearch                                                                                                                         | Search real estate properties on Idealista (Spain, Italy, Portugal) with comprehensive filters                                   |
 | **mcp-commandrunner** | RunCommand, GetCliPlatform                                                                                                                      | Execute system commands (Not included in Docker Compose)                                                                         |
