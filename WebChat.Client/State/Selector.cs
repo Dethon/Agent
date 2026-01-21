@@ -1,7 +1,5 @@
 namespace WebChat.Client.State;
 
-/// <typeparam name="TState">The input state type</typeparam>
-/// <typeparam name="TResult">The derived result type</typeparam>
 public sealed class Selector<TState, TResult> where TState : class
 {
     private readonly Func<TState, TResult> _projector;
@@ -43,22 +41,12 @@ public sealed class Selector<TState, TResult> where TState : class
 
 public static class Selector
 {
-    /// <example>
-    /// var topicCountSelector = Selector.Create((TopicsState s) => s.Topics.Count);
-    /// int count = topicCountSelector.Select(store.State);
-    /// </example>
-    public static Selector<TState, TResult> Create<TState, TResult>(
-        Func<TState, TResult> projector) where TState : class
-        => new(projector);
+    public static Selector<TState, TResult> Create<TState, TResult>(Func<TState, TResult> projector)
+        where TState : class
+    {
+        return new Selector<TState, TResult>(projector);
+    }
 
-
-    /// <example>
-    /// var topicsSelector = Selector.Create((TopicsState s) => s.Topics);
-    /// var activeTopicsSelector = Selector.Compose(
-    ///     topicsSelector,
-    ///     topics => topics.Where(t => t.IsActive).ToList()
-    /// );
-    /// </example>
     public static Selector<TState, TFinal> Compose<TState, TIntermediate, TFinal>(
         Selector<TState, TIntermediate> first,
         Func<TIntermediate, TFinal> second) where TState : class

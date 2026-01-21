@@ -41,19 +41,4 @@ public class StoredTopic
             LastMessageAt.HasValue ? new DateTimeOffset(LastMessageAt.Value, TimeSpan.Zero) : null,
             LastReadMessageCount);
     }
-
-    public StoredTopic ApplyMetadata(TopicMetadata metadata)
-    {
-        return new StoredTopic
-        {
-            TopicId = TopicId,
-            ChatId = ChatId,
-            ThreadId = ThreadId,
-            AgentId = AgentId,
-            Name = metadata.Name,
-            CreatedAt = CreatedAt,
-            LastMessageAt = metadata.LastMessageAt?.DateTime,
-            LastReadMessageCount = metadata.LastReadMessageCount
-        };
-    }
 }

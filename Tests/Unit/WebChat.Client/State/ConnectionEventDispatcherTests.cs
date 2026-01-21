@@ -35,7 +35,7 @@ public sealed class ConnectionEventDispatcherTests
     [Fact]
     public void HandleReconnecting_DispatchesConnectionReconnecting()
     {
-        _sut.HandleReconnecting(new InvalidOperationException("Connection lost"));
+        _sut.HandleReconnecting();
 
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnecting>()), Times.Once);
     }
@@ -43,7 +43,7 @@ public sealed class ConnectionEventDispatcherTests
     [Fact]
     public void HandleReconnected_DispatchesConnectionReconnected()
     {
-        _sut.HandleReconnected("new-connection-id");
+        _sut.HandleReconnected();
 
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnected>()), Times.Once);
     }

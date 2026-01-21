@@ -9,7 +9,7 @@ public static class StreamingReducers
             StreamingTopics = new HashSet<string>(state.StreamingTopics) { a.TopicId },
             StreamingByTopic = new Dictionary<string, StreamingContent>(state.StreamingByTopic)
             {
-                [a.TopicId] = new StreamingContent()
+                [a.TopicId] = new()
             }
         },
 

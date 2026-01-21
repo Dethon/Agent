@@ -14,12 +14,12 @@ public sealed class ConnectionEventDispatcher(IDispatcher dispatcher)
         dispatcher.Dispatch(new ConnectionConnected());
     }
 
-    public void HandleReconnecting(Exception? exception)
+    public void HandleReconnecting()
     {
         dispatcher.Dispatch(new ConnectionReconnecting());
     }
 
-    public void HandleReconnected(string? connectionId)
+    public void HandleReconnected()
     {
         dispatcher.Dispatch(new ConnectionReconnected());
     }

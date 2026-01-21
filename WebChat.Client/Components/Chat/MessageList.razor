@@ -59,23 +59,6 @@
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
-    public async Task CheckAndUpdateAutoScroll()
-    {
-        try
-        {
-            _shouldAutoScroll = await Js.InvokeAsync<bool>("chatScroll.isAtBottom", _messagesArea);
-        }
-        catch
-        {
-            _shouldAutoScroll = true;
-        }
-    }
-
-    public void SetShouldAutoScroll(bool value)
-    {
-        _shouldAutoScroll = value;
-    }
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_shouldAutoScroll)

@@ -34,10 +34,4 @@ public sealed class WebChatSessionManager
     {
         return _chatToTopic.GetValueOrDefault(chatId);
     }
-
-    public WebChatSession? GetSessionByChatId(long chatId)
-    {
-        var topicId = GetTopicIdByChatId(chatId);
-        return topicId is null ? null : _sessions.GetValueOrDefault(topicId);
-    }
 }

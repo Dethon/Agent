@@ -9,26 +9,6 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
     private readonly CompositeDisposable _subscriptions = new();
     private bool _disposed;
 
-
-    protected void Subscribe<T>(IObservable<T> observable, Action<T> onNext)
-    {
-        var subscription = observable.Subscribe(value =>
-        {
-            InvokeAsync(() =>
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                onNext(value);
-                StateHasChanged();
-            });
-        });
-        _subscriptions.Add(subscription);
-    }
-
-
     protected void Subscribe<TState, TSelected>(
         IObservable<TState> stateObservable,
         Func<TState, TSelected> selector,
@@ -52,33 +32,6 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
             });
         _subscriptions.Add(subscription);
     }
-
-
-    protected void Subscribe<TState, TSelected>(
-        IObservable<TState> stateObservable,
-        Func<TState, TSelected> selector,
-        IEqualityComparer<TSelected> comparer,
-        Action<TSelected> onNext)
-    {
-        var subscription = stateObservable
-            .Select(selector)
-            .DistinctUntilChanged(comparer)
-            .Subscribe(value =>
-            {
-                InvokeAsync(() =>
-                {
-                    if (_disposed)
-                    {
-                        return;
-                    }
-
-                    onNext(value);
-                    StateHasChanged();
-                });
-            });
-        _subscriptions.Add(subscription);
-    }
-
 
     protected void SubscribeWithInvoke<T>(IObservable<T> throttledObservable, Action<T> onNext)
     {

@@ -140,11 +140,6 @@ public sealed class WebChatMessengerClient(
         approvalManager.CancelPendingApprovalsForTopic(topicId);
     }
 
-    public string? GetTopicIdByChatId(long chatId)
-    {
-        return sessionManager.GetTopicIdByChatId(chatId);
-    }
-
     public async IAsyncEnumerable<ChatStreamMessage> EnqueuePromptAndGetResponses(
         string topicId,
         string message,
