@@ -1,8 +1,11 @@
+@using WebChat.Client.State.UserIdentity
+
 @inherits StoreSubscriberComponent
 
 @inject MessagesStore MessagesStore
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
 
@@ -13,6 +16,7 @@
     private AgentInfo? _selectedAgent;
     private ElementReference _messagesArea;
     private bool _shouldAutoScroll = true;
+    private string? _currentUserId;
 
     protected override void OnInitialized()
     {
@@ -40,6 +44,11 @@
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
             _ => UpdateStreamingStatus());
+
+        // Subscribe to user identity
+        Subscribe(UserIdentityStore.StateObservable,
+            state => state.SelectedUserId,
+            userId => _currentUserId = userId);
     }
 
     private void UpdateMessages()
@@ -59,6 +68,25 @@
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
+    private bool ShouldShowAvatar(int index)
+    {
+        if (index == 0) return true;
+
+        var current = _messages[index];
+        var previous = _messages[index - 1];
+
+        // Show avatar if sender OR role changed
+        return current.SenderId != previous.SenderId
+            || current.Role != previous.Role;
+    }
+
+    private bool IsOwnMessage(ChatMessageModel message)
+    {
+        return message.Role == "user"
+            && !string.IsNullOrEmpty(message.SenderId)
+            && message.SenderId == _currentUserId;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_shouldAutoScroll)
@@ -75,9 +103,11 @@
     }
     else
     {
-        @foreach (var message in _messages)
+        @foreach (var (message, index) in _messages.Select((m, i) => (m, i)))
         {
-            <ChatMessage Message="@message"/>
+            <ChatMessage Message="@message"
+                         ShowAvatar="@ShouldShowAvatar(index)"
+                         IsOwnMessage="@IsOwnMessage(message)" />
         }
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))
