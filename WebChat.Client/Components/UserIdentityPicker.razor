@@ -6,10 +6,10 @@
 @inject IDispatcher Dispatcher
 
 <div class="user-identity-picker @(_dropdownOpen ? "open" : "")">
-    <button class="avatar-button" @onclick="ToggleDropdown" @onclick:stopPropagation="true" title="@(_selectedUser?.Username ?? "Select user")">
+    <button class="avatar-button" @onclick="ToggleDropdown" @onclick:stopPropagation="true" title="@(_selectedUser?.Id ?? "Select user")">
         @if (_selectedUser is not null)
         {
-            <img src="@_selectedUser.AvatarUrl" alt="@_selectedUser.Username" class="avatar-image" />
+            <img src="@_selectedUser.AvatarUrl" alt="@_selectedUser.Id" class="avatar-image" />
         }
         else
         {
@@ -25,8 +25,8 @@
             {
                 <div class="user-dropdown-item @(user.Id == _selectedUser?.Id ? "selected" : "")"
                      @onclick="() => SelectUser(user)">
-                    <img src="@user.AvatarUrl" alt="@user.Username" class="user-avatar-small" />
-                    <span>@user.Username</span>
+                    <img src="@user.AvatarUrl" alt="@user.Id" class="user-avatar-small" />
+                    <span>@user.Id</span>
                 </div>
             }
         </div>
