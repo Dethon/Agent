@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @using WebChat.Client.Contracts
+@using WebChat.Client.Components
 @implements IDisposable
 @inject IChatConnectionService ConnectionService
 @inject IJSRuntime Js
@@ -14,6 +15,7 @@
                 <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>
                 @(ConnectionService.IsConnected ? "Connected" : "Disconnected")
             </div>
+            <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
                 @if (_isDarkTheme)
                 {
