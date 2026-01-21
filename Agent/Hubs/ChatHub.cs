@@ -23,10 +23,10 @@ public sealed class ChatHub(
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
-    private string? GetRegisteredUsername()
+    private string? GetRegisteredUserId()
     {
-        return Context.Items.TryGetValue("Username", out var username)
-            ? username as string
+        return Context.Items.TryGetValue("UserId", out var userId)
+            ? userId as string
             : null;
     }
 
@@ -39,7 +39,6 @@ public sealed class ChatHub(
         }
 
         Context.Items["UserId"] = userId;
-        Context.Items["Username"] = user.Username;
         return Task.CompletedTask;
     }
 
@@ -74,9 +73,7 @@ public sealed class ChatHub(
             .Select(m => new ChatHistoryMessage(
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
-                m.AdditionalProperties?.GetValueOrDefault("SenderId") as string,
-                m.AdditionalProperties?.GetValueOrDefault("SenderUsername") as string,
-                m.AdditionalProperties?.GetValueOrDefault("SenderAvatarUrl") as string))
+                m.AdditionalProperties?.GetValueOrDefault("SenderId") as string))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }
@@ -162,10 +159,8 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Use registered username from Context.Items (validated during RegisterUser)
-        // rather than trusting client-provided senderId for agent personalization
-        var username = GetRegisteredUsername() ?? "Anonymous";
-        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, username, cancellationToken);
+        var userId = GetRegisteredUserId() ?? "Anonymous";
+        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, userId, cancellationToken);
 
         await foreach (var msg in responses.IgnoreCancellation(ct: cancellationToken))
         {
