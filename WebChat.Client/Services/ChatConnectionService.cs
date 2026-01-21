@@ -10,10 +10,10 @@ public sealed class ChatConnectionService(
     ConnectionEventDispatcher connectionEventDispatcher) : IChatConnectionService
 {
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
+    public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
     public bool IsReconnecting => HubConnection?.State == HubConnectionState.Reconnecting;
 
     internal HubConnection? HubConnection { get; private set; }
-    public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;

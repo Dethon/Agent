@@ -8,6 +8,11 @@ public class TrackedDownloadsManager(IMemoryCache cache) : ITrackedDownloadsMana
 {
     private readonly Lock _cacheLock = new();
 
+    private static string GetTrackedDownloadsKey(string sessionId)
+    {
+        return $"TrackedDownloads_{sessionId}";
+    }
+
     public int[]? Get(string sessionId)
     {
         return cache
@@ -33,10 +38,5 @@ public class TrackedDownloadsManager(IMemoryCache cache) : ITrackedDownloadsMana
     {
         var dict = cache.Get<ConcurrentDictionary<int, byte>>(GetTrackedDownloadsKey(sessionId));
         dict?.Remove(downloadId, out _);
-    }
-
-    private static string GetTrackedDownloadsKey(string sessionId)
-    {
-        return $"TrackedDownloads_{sessionId}";
     }
 }

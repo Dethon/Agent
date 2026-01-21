@@ -260,6 +260,13 @@ public class MemoryReflectTool(IMemoryStore store)
 
     private sealed class CategorizedMemories
     {
+        public List<MemoryEntry> Preferences { get; }
+        public List<MemoryEntry> Facts { get; }
+        public List<MemoryEntry> Skills { get; }
+        public List<MemoryEntry> Projects { get; }
+        public List<MemoryEntry> Personality { get; }
+        public List<MemoryEntry> Instructions { get; }
+
         public CategorizedMemories(List<MemoryEntry> memories)
         {
             Preferences = memories.Where(m => m.Category == MemoryCategory.Preference).ToList();
@@ -269,12 +276,5 @@ public class MemoryReflectTool(IMemoryStore store)
             Personality = memories.Where(m => m.Category == MemoryCategory.Personality).ToList();
             Instructions = memories.Where(m => m.Category == MemoryCategory.Instruction).ToList();
         }
-
-        public List<MemoryEntry> Preferences { get; }
-        public List<MemoryEntry> Facts { get; }
-        public List<MemoryEntry> Skills { get; }
-        public List<MemoryEntry> Projects { get; }
-        public List<MemoryEntry> Personality { get; }
-        public List<MemoryEntry> Instructions { get; }
     }
 }

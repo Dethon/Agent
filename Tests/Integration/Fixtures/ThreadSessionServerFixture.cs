@@ -83,13 +83,6 @@ public class ThreadSessionServerFixture : IAsyncLifetime
         McpEndpoint = $"http://localhost:{_port}/sse";
     }
 
-    public async Task DisposeAsync()
-    {
-        await _host.StopAsync();
-        _host.Dispose();
-        Cache.Dispose();
-    }
-
     private static ValueTask<ListResourcesResult> TestResourceListHandler(
         RequestContext<ListResourcesRequestParams> context, CancellationToken _)
     {
@@ -121,28 +114,18 @@ public class ThreadSessionServerFixture : IAsyncLifetime
         listener.Stop();
         return port;
     }
+
+    public async Task DisposeAsync()
+    {
+        await _host.StopAsync();
+        _host.Dispose();
+        Cache.Dispose();
+    }
 }
 
 public class TestDownloadClient : IDownloadClient
 {
     private readonly ConcurrentDictionary<int, DownloadItem> _downloads = new();
-
-    public Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
-    {
-        SetDownload(id, DownloadState.InProgress);
-        return Task.CompletedTask;
-    }
-
-    public Task Cleanup(int id, CancellationToken cancellationToken = default)
-    {
-        RemoveDownload(id);
-        return Task.CompletedTask;
-    }
-
-    public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
-    {
-        return Task.FromResult(_downloads.GetValueOrDefault(id));
-    }
 
     public void SetDownload(int id, DownloadState state, double progress = 0)
     {
@@ -163,6 +146,23 @@ public class TestDownloadClient : IDownloadClient
     private void RemoveDownload(int id)
     {
         _downloads.TryRemove(id, out _);
+    }
+
+    public Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default)
+    {
+        SetDownload(id, DownloadState.InProgress);
+        return Task.CompletedTask;
+    }
+
+    public Task Cleanup(int id, CancellationToken cancellationToken = default)
+    {
+        RemoveDownload(id);
+        return Task.CompletedTask;
+    }
+
+    public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_downloads.GetValueOrDefault(id));
     }
 }
 

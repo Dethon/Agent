@@ -44,8 +44,5 @@ public sealed class TopicsStore : IDisposable
 
     public IObservable<TopicsState> StateObservable => _store.StateObservable;
 
-    public void Dispose()
-    {
-        _store.Dispose();
-    }
+    public void Dispose() => _store.Dispose();
 }

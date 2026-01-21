@@ -14,23 +14,12 @@ internal sealed class ThreadSession : IAsyncDisposable
     private readonly ThreadSessionData _data;
     private int _isDisposed;
 
-    private ThreadSession(ThreadSessionData data)
-    {
-        _data = data;
-    }
-
     public McpClientManager ClientManager => _data.ClientManager;
     public McpResourceManager ResourceManager => _data.ResourceManager;
 
-    public async ValueTask DisposeAsync()
+    private ThreadSession(ThreadSessionData data)
     {
-        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
-        {
-            return;
-        }
-
-        await _data.ResourceManager.DisposeAsync();
-        await _data.ClientManager.DisposeAsync();
+        _data = data;
     }
 
     public static async Task<ThreadSession> CreateAsync(
@@ -45,6 +34,17 @@ internal sealed class ThreadSession : IAsyncDisposable
         var builder = new ThreadSessionBuilder(endpoints, name, description, agent, thread, userId);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+        {
+            return;
+        }
+
+        await _data.ResourceManager.DisposeAsync();
+        await _data.ClientManager.DisposeAsync();
     }
 }
 

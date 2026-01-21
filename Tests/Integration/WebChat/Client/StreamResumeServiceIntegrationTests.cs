@@ -14,16 +14,16 @@ namespace Tests.Integration.WebChat.Client;
 public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fixture)
     : IClassFixture<WebChatServerFixture>, IAsyncLifetime
 {
-    private HubConnectionApprovalService _approvalService = null!;
     private HubConnection _connection = null!;
-    private Dispatcher _dispatcher = null!;
-    private MessagesStore _messagesStore = null!;
     private HubConnectionMessagingService _messagingService = null!;
-    private StreamResumeService _resumeService = null!;
-    private StreamingService _streamingService = null!;
-    private StreamingStore _streamingStore = null!;
     private HubConnectionTopicService _topicService = null!;
+    private HubConnectionApprovalService _approvalService = null!;
+    private Dispatcher _dispatcher = null!;
     private TopicsStore _topicsStore = null!;
+    private MessagesStore _messagesStore = null!;
+    private StreamingStore _streamingStore = null!;
+    private StreamingService _streamingService = null!;
+    private StreamResumeService _resumeService = null!;
 
     public async Task InitializeAsync()
     {

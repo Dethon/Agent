@@ -2,7 +2,7 @@
 @inject RenderCoordinator RenderCoordinator
 
 @code {
-    [Parameter] [EditorRequired] public string TopicId { get; set; } = "";
+    [Parameter, EditorRequired] public string TopicId { get; set; } = "";
 
     private StreamingContent? _streamingContent;
     private string _previousTopicId = "";
@@ -26,7 +26,6 @@
             RenderCoordinator.CreateStreamingObservable(TopicId),
             content => _streamingContent = content);
     }
-
 }
 
 @if (_streamingContent is not null)
@@ -35,17 +34,12 @@
 }
 
 @code {
-
-    private ChatMessageModel CreateMessageModel()
+    private ChatMessageModel CreateMessageModel() => new()
     {
-        return new ChatMessageModel
-        {
-                Role = "assistant",
-                Content = _streamingContent?.Content ?? "",
-                Reasoning = _streamingContent?.Reasoning,
-                ToolCalls = _streamingContent?.ToolCalls,
-                IsError = _streamingContent?.IsError ?? false
-        };
-    }
-
+        Role = "assistant",
+        Content = _streamingContent?.Content ?? "",
+        Reasoning = _streamingContent?.Reasoning,
+        ToolCalls = _streamingContent?.ToolCalls,
+        IsError = _streamingContent?.IsError ?? false
+    };
 }

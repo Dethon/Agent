@@ -67,20 +67,6 @@ public sealed class TelegramToolApprovalHandler(
         }
     }
 
-    public async Task NotifyAutoApprovedAsync(
-        IReadOnlyList<ToolApprovalRequest> requests,
-        CancellationToken cancellationToken)
-    {
-        var message = FormatAutoApprovedMessage(requests);
-
-        await client.SendMessage(
-            chatId,
-            message,
-            ParseMode.Html,
-            messageThreadId: threadId,
-            cancellationToken: cancellationToken);
-    }
-
     public static async Task<bool> HandleCallbackQueryAsync(
         ITelegramBotClient botClient,
         CallbackQuery callbackQuery,
@@ -149,6 +135,20 @@ public sealed class TelegramToolApprovalHandler(
         }
 
         return true;
+    }
+
+    public async Task NotifyAutoApprovedAsync(
+        IReadOnlyList<ToolApprovalRequest> requests,
+        CancellationToken cancellationToken)
+    {
+        var message = FormatAutoApprovedMessage(requests);
+
+        await client.SendMessage(
+            chatId,
+            message,
+            ParseMode.Html,
+            messageThreadId: threadId,
+            cancellationToken: cancellationToken);
     }
 
     private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)

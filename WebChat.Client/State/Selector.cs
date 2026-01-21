@@ -3,9 +3,9 @@ namespace WebChat.Client.State;
 public sealed class Selector<TState, TResult> where TState : class
 {
     private readonly Func<TState, TResult> _projector;
+    private TState? _lastState;
     private TResult? _cachedResult;
     private bool _hasValue;
-    private TState? _lastState;
 
     public Selector(Func<TState, TResult> projector)
     {

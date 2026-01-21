@@ -5,9 +5,19 @@ namespace Tests.Unit.WebChat.Fixtures;
 
 public sealed class FakeTopicService : ITopicService
 {
-    private readonly HashSet<string> _deletedTopicIds = new();
     private readonly Dictionary<(long ChatId, long ThreadId), List<ChatHistoryMessage>> _history = new();
     private readonly List<TopicMetadata> _savedTopics = new();
+    private readonly HashSet<string> _deletedTopicIds = new();
+
+    public void SetHistory(long chatId, long threadId, params ChatHistoryMessage[] messages)
+    {
+        _history[(chatId, threadId)] = messages.ToList();
+    }
+
+    public void SetHistory(long chatId, long threadId, List<ChatHistoryMessage> messages)
+    {
+        _history[(chatId, threadId)] = messages;
+    }
 
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
@@ -33,15 +43,5 @@ public sealed class FakeTopicService : ITopicService
     {
         return Task.FromResult<IReadOnlyList<ChatHistoryMessage>>(
             _history.TryGetValue((chatId, threadId), out var h) ? h : []);
-    }
-
-    public void SetHistory(long chatId, long threadId, params ChatHistoryMessage[] messages)
-    {
-        _history[(chatId, threadId)] = messages.ToList();
-    }
-
-    public void SetHistory(long chatId, long threadId, List<ChatHistoryMessage> messages)
-    {
-        _history[(chatId, threadId)] = messages;
     }
 }

@@ -23,13 +23,11 @@
         {
             classes.Add("error");
         }
-
         // Add cursor class when actively streaming with content
         if (IsStreaming && !string.IsNullOrEmpty(Message.Content))
         {
             classes.Add("streaming-cursor");
         }
-
         // Compact styling when only showing thinking indicator
         if (IsStreaming && string.IsNullOrEmpty(Message.Content) &&
             string.IsNullOrEmpty(Message.Reasoning) && string.IsNullOrEmpty(Message.ToolCalls))

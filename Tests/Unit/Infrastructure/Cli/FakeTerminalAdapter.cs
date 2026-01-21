@@ -8,15 +8,15 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
 {
     private readonly List<ChatLine[]> _displayedMessages = [];
 
+    public event Action<string>? InputReceived;
+    public event Action? ShutdownRequested;
+
     public bool IsStarted { get; private set; }
     public bool IsStopped { get; private set; }
     public bool IsThinkingIndicatorVisible { get; private set; }
     public IReadOnlyList<ChatLine[]> DisplayedMessages => _displayedMessages;
 
     private static ToolApprovalResult NextApprovalResult => ToolApprovalResult.Approved;
-
-    public event Action<string>? InputReceived;
-    public event Action? ShutdownRequested;
 
     public void Start()
     {
@@ -63,8 +63,6 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
         IsThinkingIndicatorVisible = false;
     }
 
-    public void Dispose() { }
-
     public void SimulateInput(string input)
     {
         InputReceived?.Invoke(input);
@@ -74,4 +72,6 @@ internal sealed class FakeTerminalAdapter : ITerminalAdapter
     {
         ShutdownRequested?.Invoke();
     }
+
+    public void Dispose() { }
 }

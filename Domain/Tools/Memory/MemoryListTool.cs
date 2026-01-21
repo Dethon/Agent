@@ -156,6 +156,9 @@ public class MemoryListTool(IMemoryStore store)
 
     private sealed record SortParams
     {
+        public SortField Field { get; }
+        public bool Descending { get; }
+
         public SortParams(string sortBy, string order)
         {
             Field = sortBy.ToLowerInvariant() switch
@@ -166,21 +169,18 @@ public class MemoryListTool(IMemoryStore store)
             };
             Descending = order.Equals("desc", StringComparison.OrdinalIgnoreCase);
         }
-
-        public SortField Field { get; }
-        public bool Descending { get; }
     }
 
     private sealed record PaginationParams
     {
+        public int Page { get; }
+        public int PageSize { get; }
+
         public PaginationParams(int page, int pageSize)
         {
             Page = Math.Max(1, page);
             PageSize = Math.Clamp(pageSize, MinPageSize, MaxPageSize);
         }
-
-        public int Page { get; }
-        public int PageSize { get; }
     }
 
     private sealed record PagedResult(

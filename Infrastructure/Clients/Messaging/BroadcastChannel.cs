@@ -4,8 +4,8 @@ namespace Infrastructure.Clients.Messaging;
 
 public sealed class BroadcastChannel<T>
 {
-    private readonly Lock _lock = new();
     private readonly List<Channel<T>> _subscribers = [];
+    private readonly Lock _lock = new();
 
     public ChannelReader<T> Subscribe()
     {

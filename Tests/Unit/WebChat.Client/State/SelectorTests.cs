@@ -4,6 +4,8 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public class SelectorTests
 {
+    private sealed record TestState(int Value);
+
     [Fact]
     public void Select_ReturnsCachedValue_WhenStateUnchanged()
     {
@@ -84,6 +86,4 @@ public class SelectorTests
         // Assert
         Assert.Equal(12, result);
     }
-
-    private sealed record TestState(int Value);
 }

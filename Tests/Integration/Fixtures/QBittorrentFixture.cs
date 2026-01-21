@@ -38,11 +38,6 @@ public class QBittorrentFixture : IAsyncLifetime
         await WaitForContainerAndConfigure();
     }
 
-    public async Task DisposeAsync()
-    {
-        await _container.DisposeAsync();
-    }
-
     private async Task WaitForContainerAndConfigure()
     {
         // Wait for container logs to have the temporary password
@@ -146,5 +141,10 @@ public class QBittorrentFixture : IAsyncLifetime
         httpClient.DefaultRequestHeaders.Add("Referer", $"http://localhost:{WebUiPort}/");
 
         return new QBittorrentDownloadClient(httpClient, cookieContainer, Username, Password);
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _container.DisposeAsync();
     }
 }

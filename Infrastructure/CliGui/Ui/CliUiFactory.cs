@@ -4,12 +4,6 @@ namespace Infrastructure.CliGui.Ui;
 
 internal static class CliUiFactory
 {
-    public const string StatusBarDefault = "   /help · commands    /clear · reset    ↑↓ · scroll";
-    public const string StatusBarThinking = "   Press Esc to cancel";
-    public const string InputHintThinking = "Thinking... press Esc to cancel";
-
-    private const int MinInputHeight = 3;
-
     public static ColorScheme CreateBaseScheme()
     {
         return new ColorScheme
@@ -48,6 +42,10 @@ internal static class CliUiFactory
         };
     }
 
+    public const string StatusBarDefault = "   /help · commands    /clear · reset    ↑↓ · scroll";
+    public const string StatusBarThinking = "   Press Esc to cancel";
+    public const string InputHintThinking = "Thinking... press Esc to cancel";
+
     public static Label CreateStatusBar()
     {
         return new Label(StatusBarDefault)
@@ -61,6 +59,8 @@ internal static class CliUiFactory
             }
         };
     }
+
+    private const int MinInputHeight = 3;
 
     public static (FrameView frame, TextView input) CreateInputArea()
     {

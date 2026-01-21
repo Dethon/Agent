@@ -4,9 +4,9 @@ namespace Infrastructure.Clients.Messaging;
 
 internal sealed class StreamBuffer
 {
-    private const int MaxBufferSize = 100;
-    private readonly Lock _lock = new();
     private readonly List<ChatStreamMessage> _messages = [];
+    private readonly Lock _lock = new();
+    private const int MaxBufferSize = 100;
 
     public void Add(ChatStreamMessage message)
     {

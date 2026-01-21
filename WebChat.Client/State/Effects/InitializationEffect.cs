@@ -7,13 +7,13 @@ namespace WebChat.Client.State.Effects;
 
 public sealed class InitializationEffect : IDisposable
 {
-    private readonly IAgentService _agentService;
-    private readonly IChatConnectionService _connectionService;
     private readonly Dispatcher _dispatcher;
-    private readonly ISignalREventSubscriber _eventSubscriber;
-    private readonly ILocalStorageService _localStorage;
-    private readonly IStreamResumeService _streamResumeService;
+    private readonly IChatConnectionService _connectionService;
+    private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
+    private readonly ILocalStorageService _localStorage;
+    private readonly ISignalREventSubscriber _eventSubscriber;
+    private readonly IStreamResumeService _streamResumeService;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -33,11 +33,6 @@ public sealed class InitializationEffect : IDisposable
         _streamResumeService = streamResumeService;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
-    }
-
-    public void Dispose()
-    {
-        // No subscription to dispose
     }
 
     private void HandleInitialize(Initialize action)
@@ -91,5 +86,10 @@ public sealed class InitializationEffect : IDisposable
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
 
         _ = _streamResumeService.TryResumeStreamAsync(topic);
+    }
+
+    public void Dispose()
+    {
+        // No subscription to dispose
     }
 }

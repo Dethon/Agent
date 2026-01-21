@@ -12,6 +12,16 @@ public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
     private readonly string? _apiKey;
     private readonly string? _apiUrl;
 
+    public Task InitializeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Task.Delay(TimeSpan.FromMilliseconds(500)); // Rate limiting courtesy
+    }
+
     public OpenRouterEmbeddingServiceIntegrationTests()
     {
         var config = new ConfigurationBuilder()
@@ -24,16 +34,6 @@ public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
     }
 
     private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
-
-    public Task InitializeAsync()
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.Delay(TimeSpan.FromMilliseconds(500)); // Rate limiting courtesy
-    }
 
     private OpenRouterEmbeddingService CreateService()
     {
@@ -152,9 +152,19 @@ public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
 
 public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixture>, IAsyncLifetime
 {
+    private readonly RedisFixture _redisFixture;
     private readonly string? _apiKey;
     private readonly string? _apiUrl;
-    private readonly RedisFixture _redisFixture;
+
+    public Task InitializeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+    }
 
     public MemoryStoreWithEmbeddingsIntegrationTests(RedisFixture redisFixture)
     {
@@ -170,16 +180,6 @@ public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixt
     }
 
     private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
-
-    public Task InitializeAsync()
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
-    }
 
     private IEmbeddingService CreateEmbeddingService()
     {

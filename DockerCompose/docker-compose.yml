@@ -88,7 +88,7 @@ services:
       - jackbot
 #    depends_on:
 #      - flaresolverr
-  #  
+        
 #  flaresolverr:
 #    image: ghcr.io/flaresolverr/flaresolverr:latest
   #    logging:
@@ -126,7 +126,7 @@ services:
       - TZ=UTC
       - VERSION=docker
     restart: unless-stopped
-  
+    
   mcp-library:
     image: mcp-library:latest
     logging:

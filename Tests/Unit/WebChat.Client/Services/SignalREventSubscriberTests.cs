@@ -127,13 +127,16 @@ internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
 {
     private readonly List<MockDisposable> _subscriptions = new();
     private bool _disposed;
-
-    private int _disposedAndClearedCount;
     private bool _hubConnectionIsNull;
+
+    public bool IsSubscribed { get; private set; }
     public int SubscriptionCount => _subscriptions.Count;
     public int DisposedSubscriptionCount => _subscriptions.Count(s => s.IsDisposed) + _disposedAndClearedCount;
 
-    public bool IsSubscribed { get; private set; }
+    private int _disposedAndClearedCount;
+
+    public void SetHubConnectionNull() => _hubConnectionIsNull = true;
+    public void ResetDisposedCount() => _disposedAndClearedCount = 0;
 
     public void Subscribe()
     {
@@ -177,16 +180,6 @@ internal sealed class TestableSignalREventSubscriber : ISignalREventSubscriber
 
         Unsubscribe();
         _disposed = true;
-    }
-
-    public void SetHubConnectionNull()
-    {
-        _hubConnectionIsNull = true;
-    }
-
-    public void ResetDisposedCount()
-    {
-        _disposedAndClearedCount = 0;
     }
 
     private sealed class MockDisposable : IDisposable

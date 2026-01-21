@@ -8,11 +8,11 @@ namespace WebChat.Client.State.Effects;
 public sealed class TopicSelectionEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
+    private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly IChatSessionService _sessionService;
-    private readonly IStreamResumeService _streamResumeService;
     private readonly ITopicService _topicService;
-    private readonly TopicsStore _topicsStore;
+    private readonly IStreamResumeService _streamResumeService;
 
     public TopicSelectionEffect(
         Dispatcher dispatcher,
@@ -30,11 +30,6 @@ public sealed class TopicSelectionEffect : IDisposable
         _streamResumeService = streamResumeService;
 
         dispatcher.RegisterHandler<SelectTopic>(HandleSelectTopic);
-    }
-
-    public void Dispose()
-    {
-        // No subscription to dispose
     }
 
     private void HandleSelectTopic(SelectTopic action)
@@ -106,5 +101,10 @@ public sealed class TopicSelectionEffect : IDisposable
             // Persist to server
             await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
         }
+    }
+
+    public void Dispose()
+    {
+        // No subscription to dispose
     }
 }

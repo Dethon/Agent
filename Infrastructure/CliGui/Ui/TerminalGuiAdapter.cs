@@ -8,27 +8,36 @@ namespace Infrastructure.CliGui.Ui;
 
 public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
 {
-    private readonly CollapseStateManager _collapseState = new();
+    private static class Ui
+    {
+        public const int DefaultWidth = 80;
+        public const int MinInputHeight = 3; // 1 text line + frame borders
+        public const int MaxInputHeight = 10;
+
+        public static readonly TimeSpan CtrlCConfirmTimeout = TimeSpan.FromSeconds(2);
+        public static readonly TimeSpan EnterPasteBurst = TimeSpan.FromMilliseconds(75);
+    }
 
     private readonly ConcurrentQueue<ChatLine> _displayLines = new();
+    private readonly CollapseStateManager _collapseState = new();
 
     private ListView? _chatListView;
-    private int _currentInputHeight = Ui.MinInputHeight;
-    private ColorScheme? _inputColorScheme;
-    private TextView? _inputField;
     private FrameView? _inputFrame;
-    private ColorScheme? _inputHintColorScheme;
+    private TextView? _inputField;
+    private Label? _statusBar;
+    private ThinkingIndicator? _thinkingIndicator;
+
+    private Action<MouseEvent>? _previousRootMouseEvent;
 
     private bool _isRunning;
     private bool _isThinking;
+    private bool _resizeScheduled;
+    private int _currentInputHeight = Ui.MinInputHeight;
     private DateTime? _lastCtrlCUtc;
     private DateTime _lastKeyPressUtc;
-
-    private Action<MouseEvent>? _previousRootMouseEvent;
-    private bool _resizeScheduled;
     private string _savedInputText = "";
-    private Label? _statusBar;
-    private ThinkingIndicator? _thinkingIndicator;
+    private ColorScheme? _inputColorScheme;
+    private ColorScheme? _inputHintColorScheme;
 
     public event Action<string>? InputReceived;
     public event Action? ShutdownRequested;
@@ -121,12 +130,6 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         });
     }
 
-    public void Dispose()
-    {
-        _thinkingIndicator?.Dispose();
-        Stop();
-    }
-
     private void ShowInputHint()
     {
         if (_inputField is null)
@@ -156,6 +159,12 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
     private void UpdateStatusBar(string text)
     {
         _statusBar?.Text = text;
+    }
+
+    public void Dispose()
+    {
+        _thinkingIndicator?.Dispose();
+        Stop();
     }
 
     private void RunTerminalGui()
@@ -605,15 +614,5 @@ public sealed class TerminalGuiAdapter(string agentName) : ITerminalAdapter
         }
 
         _inputField?.SetFocus();
-    }
-
-    private static class Ui
-    {
-        public const int DefaultWidth = 80;
-        public const int MinInputHeight = 3; // 1 text line + frame borders
-        public const int MaxInputHeight = 10;
-
-        public static readonly TimeSpan CtrlCConfirmTimeout = TimeSpan.FromSeconds(2);
-        public static readonly TimeSpan EnterPasteBurst = TimeSpan.FromMilliseconds(75);
     }
 }

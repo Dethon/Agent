@@ -8,8 +8,8 @@ namespace Infrastructure.Agents.ChatClients;
 public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 {
     private readonly IToolApprovalHandler _approvalHandler;
-    private readonly HashSet<string> _dynamicallyApproved;
     private readonly ToolPatternMatcher _patternMatcher;
+    private readonly HashSet<string> _dynamicallyApproved;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,

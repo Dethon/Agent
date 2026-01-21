@@ -124,8 +124,8 @@ internal static class OpenRouterHttpHelpers
 
     private sealed class ReasoningTeeStream(Stream inner, ConcurrentQueue<string> queue) : Stream
     {
-        private readonly StringBuilder _buffer = new();
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
+        private readonly StringBuilder _buffer = new();
 
         public override bool CanRead => inner.CanRead;
         public override bool CanSeek => false;

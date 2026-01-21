@@ -4,8 +4,8 @@ namespace Infrastructure.Clients.Messaging;
 
 public sealed class WebChatSessionManager
 {
-    private readonly ConcurrentDictionary<long, string> _chatToTopic = new();
     private readonly ConcurrentDictionary<string, WebChatSession> _sessions = new();
+    private readonly ConcurrentDictionary<long, string> _chatToTopic = new();
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId)
     {

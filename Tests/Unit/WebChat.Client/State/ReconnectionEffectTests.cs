@@ -10,11 +10,11 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class ReconnectionEffectTests : IDisposable
 {
-    private readonly ConnectionStore _connectionStore;
     private readonly Dispatcher _dispatcher;
+    private readonly ConnectionStore _connectionStore;
+    private readonly TopicsStore _topicsStore;
     private readonly Mock<IChatSessionService> _mockSessionService;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
-    private readonly TopicsStore _topicsStore;
     private ReconnectionEffect? _sut;
 
     public ReconnectionEffectTests()
@@ -24,13 +24,6 @@ public sealed class ReconnectionEffectTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _mockSessionService = new Mock<IChatSessionService>();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
-    }
-
-    public void Dispose()
-    {
-        _sut?.Dispose();
-        _connectionStore.Dispose();
-        _topicsStore.Dispose();
     }
 
     private void CreateEffect()
@@ -147,5 +140,12 @@ public sealed class ReconnectionEffectTests : IDisposable
         _mockStreamResumeService.Verify(
             s => s.TryResumeStreamAsync(It.IsAny<StoredTopic>()),
             Times.Never);
+    }
+
+    public void Dispose()
+    {
+        _sut?.Dispose();
+        _connectionStore.Dispose();
+        _topicsStore.Dispose();
     }
 }

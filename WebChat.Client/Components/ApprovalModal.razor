@@ -61,20 +61,11 @@
             request => _approvalRequest = request);
     }
 
-    private async Task HandleApprove()
-    {
-        await RespondAsync(ToolApprovalResult.Approved);
-    }
+    private async Task HandleApprove() => await RespondAsync(ToolApprovalResult.Approved);
 
-    private async Task HandleAlways()
-    {
-        await RespondAsync(ToolApprovalResult.ApprovedAndRemember);
-    }
+    private async Task HandleAlways() => await RespondAsync(ToolApprovalResult.ApprovedAndRemember);
 
-    private async Task HandleReject()
-    {
-        await RespondAsync(ToolApprovalResult.Rejected);
-    }
+    private async Task HandleReject() => await RespondAsync(ToolApprovalResult.Rejected);
 
     private async Task RespondAsync(ToolApprovalResult result)
     {
@@ -95,10 +86,7 @@
         }
     }
 
-    private static string FormatToolName(string toolName)
-    {
-        return toolName.Split(':').Last();
-    }
+    private static string FormatToolName(string toolName) => toolName.Split(':').Last();
 
     private static string FormatValue(object? value)
     {
@@ -112,5 +100,4 @@
         };
         return formatted.Length > 500 ? formatted[..500] + "..." : formatted;
     }
-
 }

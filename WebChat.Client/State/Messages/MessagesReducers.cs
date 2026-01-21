@@ -4,60 +4,56 @@ namespace WebChat.Client.State.Messages;
 
 public static class MessagesReducers
 {
-    public static MessagesState Reduce(MessagesState state, IAction action)
+    public static MessagesState Reduce(MessagesState state, IAction action) => action switch
     {
-        return action switch
+        LoadMessages => state, // No-op, handled by effect/component
+
+        MessagesLoaded a => state with
         {
-            LoadMessages => state, // No-op, handled by effect/component
-
-            MessagesLoaded a => state with
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
             {
-                MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-                {
-                    [a.TopicId] = a.Messages
-                },
-                LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId }
+                [a.TopicId] = a.Messages
             },
+            LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId }
+        },
 
-            AddMessage a => state with
+        AddMessage a => state with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
+            {
+                [a.TopicId] = state.MessagesByTopic.GetValueOrDefault(a.TopicId, [])
+                    .Append(a.Message)
+                    .ToList()
+            }
+        },
+
+        UpdateMessage a => state with
+        {
+            MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
+        },
+
+        RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var messages) && messages.Count > 0 =>
+            state with
             {
                 MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
                 {
-                    [a.TopicId] = state.MessagesByTopic.GetValueOrDefault(a.TopicId, [])
-                        .Append(a.Message)
-                        .ToList()
+                    [a.TopicId] = messages.Take(messages.Count - 1).ToList()
                 }
             },
 
-            UpdateMessage a => state with
+        RemoveLastMessage => state, // No messages to remove
+
+        ClearMessages a => state with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
             {
-                MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
+                [a.TopicId] = []
             },
+            LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId))
+        },
 
-            RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var messages) &&
-                                     messages.Count > 0 =>
-                state with
-                {
-                    MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-                    {
-                        [a.TopicId] = messages.Take(messages.Count - 1).ToList()
-                    }
-                },
-
-            RemoveLastMessage => state, // No messages to remove
-
-            ClearMessages a => state with
-            {
-                MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-                {
-                    [a.TopicId] = []
-                },
-                LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId))
-            },
-
-            _ => state
-        };
-    }
+        _ => state
+    };
 
     // ReSharper disable UnusedParameter.Local
     private static IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> UpdateMessageInTopic(

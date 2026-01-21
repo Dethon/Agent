@@ -16,10 +16,7 @@ public class MessagesStoreTests : IDisposable
         _store = new MessagesStore(_dispatcher);
     }
 
-    public void Dispose()
-    {
-        _store.Dispose();
-    }
+    public void Dispose() => _store.Dispose();
 
     [Fact]
     public void MessagesLoaded_PopulatesMessagesByTopic()

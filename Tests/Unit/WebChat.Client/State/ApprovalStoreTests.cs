@@ -17,16 +17,10 @@ public class ApprovalStoreTests : IDisposable
         _store = new ApprovalStore(_dispatcher);
     }
 
-    public void Dispose()
-    {
-        _store.Dispose();
-    }
+    public void Dispose() => _store.Dispose();
 
-    private static ToolApprovalRequestMessage CreateRequest(string approvalId = "approval-1")
-    {
-        return new ToolApprovalRequestMessage(approvalId,
-            [new ToolApprovalRequest("Search", new Dictionary<string, object?> { ["query"] = "test" })]);
-    }
+    private static ToolApprovalRequestMessage CreateRequest(string approvalId = "approval-1") =>
+        new(approvalId, [new ToolApprovalRequest("Search", new Dictionary<string, object?> { ["query"] = "test" })]);
 
     [Fact]
     public void Initial_StateHasNoRequest()

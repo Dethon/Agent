@@ -11,24 +11,6 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
 
     public IEnumerable<AgentKey> AgentKeys => _contexts.Keys;
 
-    public void Dispose()
-    {
-        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
-        {
-            return;
-        }
-
-        lock (_lock)
-        {
-            foreach (var context in _contexts.Values)
-            {
-                context.Dispose();
-            }
-        }
-
-        _contexts.Clear();
-    }
-
     public ChatThreadContext Resolve(AgentKey key)
     {
         ObjectDisposedException.ThrowIf(_isDisposed != 0, this);
@@ -70,6 +52,24 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
             context.Dispose();
             await DeletePersistedStateAsync(key);
         }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.CompareExchange(ref _isDisposed, 1, 0) != 0)
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            foreach (var context in _contexts.Values)
+            {
+                context.Dispose();
+            }
+        }
+
+        _contexts.Clear();
     }
 
     private async Task DeletePersistedStateAsync(AgentKey key)

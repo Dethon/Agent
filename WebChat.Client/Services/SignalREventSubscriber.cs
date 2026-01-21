@@ -66,7 +66,6 @@ public sealed class SignalREventSubscriber(
         {
             subscription.Dispose();
         }
-
         _subscriptions.Clear();
         IsSubscribed = false;
     }

@@ -13,8 +13,8 @@ public sealed class OpenRouterChatClient : IChatClient
 {
     private readonly IChatClient _client;
     private readonly HttpClient _httpClient;
-    private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly HttpClientPipelineTransport _transport;
+    private readonly ConcurrentQueue<string> _reasoningQueue = new();
 
     public OpenRouterChatClient(string endpoint, string apiKey, string model)
     {

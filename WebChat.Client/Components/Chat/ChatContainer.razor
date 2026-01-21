@@ -2,27 +2,25 @@
 @inherits StoreSubscriberComponent
 @inject IDispatcher Dispatcher
 
-<ApprovalModal/>
+<ApprovalModal />
 
 <div class="chat-layout">
-    <TopicList/>
+    <TopicList />
 
     <div class="chat-container">
-        <MessageList/>
+        <MessageList />
 
-        <ConnectionStatus/>
+        <ConnectionStatus />
 
         <div class="input-area">
-            <ChatInput/>
+            <ChatInput />
         </div>
     </div>
 </div>
 
 @code {
-
     protected override void OnInitialized()
     {
         Dispatcher.Dispatch(new Initialize());
     }
-
 }

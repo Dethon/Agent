@@ -11,8 +11,8 @@ namespace Tests.Unit.Infrastructure;
 
 public class BraveSearchClientTests : IDisposable
 {
-    private readonly BraveSearchClient _client;
     private readonly WireMockServer _server;
+    private readonly BraveSearchClient _client;
 
     public BraveSearchClientTests()
     {
@@ -22,11 +22,6 @@ public class BraveSearchClientTests : IDisposable
             BaseAddress = new Uri(_server.Url!)
         };
         _client = new BraveSearchClient(httpClient, "test-api-key");
-    }
-
-    public void Dispose()
-    {
-        _server.Dispose();
     }
 
     [Fact]
@@ -247,5 +242,10 @@ public class BraveSearchClientTests : IDisposable
         // Act & Assert
         var query = new WebSearchQuery("test");
         await Should.ThrowAsync<HttpRequestException>(() => _client.SearchAsync(query));
+    }
+
+    public void Dispose()
+    {
+        _server.Dispose();
     }
 }

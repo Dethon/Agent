@@ -27,7 +27,7 @@ public class GroupByStreamingTests
         groups.Count.ShouldBe(1);
         groups[0].Key.ShouldBe("key");
     }
-
+    
     [Fact]
     public async Task GroupByStreaming_WithMultipleKeys_ReturnsMultipleGroups()
     {
@@ -115,7 +115,6 @@ public class GroupByStreamingTests
                 {
                     cts.Cancel();
                 }
-
                 return ValueTask.FromResult(x % 2);
             }, cts.Token);
 

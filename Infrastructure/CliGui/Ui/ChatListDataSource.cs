@@ -8,12 +8,12 @@ namespace Infrastructure.CliGui.Ui;
 
 internal sealed class ChatListDataSource : IListDataSource
 {
-    private readonly CollapseStateManager _collapseState;
     private readonly IReadOnlyList<ChatLine> _lines;
-    private int _currentWidth;
-    private int _lastWidth;
+    private readonly CollapseStateManager _collapseState;
 
     private List<WrappedLine>? _wrappedLines;
+    private int _lastWidth;
+    private int _currentWidth;
 
     public ChatListDataSource(
         IReadOnlyList<ChatLine> lines,
@@ -29,6 +29,17 @@ internal sealed class ChatListDataSource : IListDataSource
 
     public int Count => GetWrappedLines(_currentWidth).Count;
     public int Length => GetWrappedLines(_currentWidth).Count;
+
+    public ChatLine? GetSourceLineAt(int wrappedIndex)
+    {
+        var wrapped = GetWrappedLines(_currentWidth);
+        if (wrappedIndex < 0 || wrappedIndex >= wrapped.Count)
+        {
+            return null;
+        }
+
+        return wrapped[wrappedIndex].SourceLine;
+    }
 
     public bool IsMarked(int item)
     {
@@ -58,17 +69,6 @@ internal sealed class ChatListDataSource : IListDataSource
     public IList ToList()
     {
         return GetWrappedLines(_currentWidth).Select(l => l.Text).ToList();
-    }
-
-    public ChatLine? GetSourceLineAt(int wrappedIndex)
-    {
-        var wrapped = GetWrappedLines(_currentWidth);
-        if (wrappedIndex < 0 || wrappedIndex >= wrapped.Count)
-        {
-            return null;
-        }
-
-        return wrapped[wrappedIndex].SourceLine;
     }
 
     public void InvalidateCache()
