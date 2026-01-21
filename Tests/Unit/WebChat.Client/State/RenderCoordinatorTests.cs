@@ -6,9 +6,9 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public class RenderCoordinatorTests : IDisposable
 {
+    private readonly RenderCoordinator _coordinator;
     private readonly Dispatcher _dispatcher;
     private readonly StreamingStore _streamingStore;
-    private readonly RenderCoordinator _coordinator;
 
     public RenderCoordinatorTests()
     {

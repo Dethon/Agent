@@ -13,11 +13,11 @@ public sealed class OneShotChatMessengerClient(
     bool showReasoning,
     IHostApplicationLifetime lifetime) : IChatMessengerClient
 {
+    private readonly Lock _lock = new();
+    private readonly StringBuilder _reasoningBuilder = new();
+    private readonly StringBuilder _responseBuilder = new();
     private bool _promptSent;
     private bool _responseStarted;
-    private readonly StringBuilder _responseBuilder = new();
-    private readonly StringBuilder _reasoningBuilder = new();
-    private readonly Lock _lock = new();
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)

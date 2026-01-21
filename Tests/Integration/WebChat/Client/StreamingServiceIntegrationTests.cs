@@ -15,13 +15,13 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     : IClassFixture<WebChatServerFixture>, IAsyncLifetime
 {
     private HubConnection _connection = null!;
-    private HubConnectionMessagingService _messagingService = null!;
-    private HubConnectionTopicService _topicService = null!;
     private Dispatcher _dispatcher = null!;
-    private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
-    private StreamingStore _streamingStore = null!;
+    private HubConnectionMessagingService _messagingService = null!;
     private StreamingService _service = null!;
+    private StreamingStore _streamingStore = null!;
+    private HubConnectionTopicService _topicService = null!;
+    private TopicsStore _topicsStore = null!;
 
     public async Task InitializeAsync()
     {

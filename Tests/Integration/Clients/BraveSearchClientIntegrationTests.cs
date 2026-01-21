@@ -9,16 +9,6 @@ public class BraveSearchClientIntegrationTests : IAsyncLifetime
 {
     private readonly string? _apiKey;
 
-    public Task InitializeAsync()
-    {
-        return Task.CompletedTask;
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Task.Delay(TimeSpan.FromSeconds(1));
-    }
-
     public BraveSearchClientIntegrationTests()
     {
         var config = new ConfigurationBuilder()
@@ -30,6 +20,16 @@ public class BraveSearchClientIntegrationTests : IAsyncLifetime
     }
 
     private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
+
+    public Task InitializeAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(1));
+    }
 
     [SkippableFact]
     public async Task SearchAsync_WithRealApi_ReturnsResults()

@@ -17,7 +17,10 @@ public class TopicsStoreTests : IDisposable
         _store = new TopicsStore(_dispatcher);
     }
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 
     [Fact]
     public void TopicsLoaded_UpdatesTopicsList()

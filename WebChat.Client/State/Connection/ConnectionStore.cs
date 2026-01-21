@@ -28,5 +28,8 @@ public sealed class ConnectionStore : IDisposable
 
     public IObservable<ConnectionState> StateObservable => _store.StateObservable;
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 }

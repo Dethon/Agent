@@ -6,12 +6,33 @@ namespace Infrastructure.Clients.Messaging;
 
 public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) : IDisposable
 {
-    private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
-    private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
-    private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
+    private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
+    private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
+    private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
     private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (var channel in _responseChannels.Values)
+        {
+            channel.Complete();
+        }
+
+        foreach (var cts in _cancellationTokens.Values)
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+    }
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) CreateStream(
         string topicId,
@@ -115,27 +136,6 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {
-            cts.Dispose();
-        }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-
-        foreach (var channel in _responseChannels.Values)
-        {
-            channel.Complete();
-        }
-
-        foreach (var cts in _cancellationTokens.Values)
-        {
-            cts.Cancel();
             cts.Dispose();
         }
     }

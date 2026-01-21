@@ -14,11 +14,11 @@ namespace Tests.Unit.WebChat.Client.State;
 public sealed class HubEventDispatcherTests : IDisposable
 {
     private readonly Mock<IDispatcher> _mockDispatcher;
-    private readonly Dispatcher _realDispatcher;
-    private readonly TopicsStore _topicsStore;
-    private readonly StreamingStore _streamingStore;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
+    private readonly Dispatcher _realDispatcher;
+    private readonly StreamingStore _streamingStore;
     private readonly HubEventDispatcher _sut;
+    private readonly TopicsStore _topicsStore;
 
     public HubEventDispatcherTests()
     {
@@ -40,8 +40,10 @@ public sealed class HubEventDispatcherTests : IDisposable
         _streamingStore.Dispose();
     }
 
-    private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
-        new(topicId, 123L, 456L, "agent-1", "Test Topic", DateTimeOffset.UtcNow, null);
+    private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1")
+    {
+        return new TopicMetadata(topicId, 123L, 456L, "agent-1", "Test Topic", DateTimeOffset.UtcNow, null);
+    }
 
     [Fact]
     public void HandleTopicChanged_Created_DispatchesAddTopic()

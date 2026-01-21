@@ -12,7 +12,7 @@
     private bool _isStreaming;
     private AgentInfo? _selectedAgent;
     private ElementReference _messagesArea;
-    private bool _shouldAutoScroll = true;
+    private readonly bool _shouldAutoScroll = true;
 
     protected override void OnInitialized()
     {
@@ -66,6 +66,7 @@
             await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, true);
         }
     }
+
 }
 
 <div class="messages-area" @ref="_messagesArea">

@@ -15,7 +15,10 @@ public class ConnectionStoreTests : IDisposable
         _store = new ConnectionStore(_dispatcher);
     }
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 
     [Fact]
     public void InitialState_IsDisconnected()

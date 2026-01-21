@@ -14,6 +14,12 @@ public sealed class RenderCoordinator : IDisposable
         _streamingStore = streamingStore;
     }
 
+    public void Dispose()
+    {
+        // RenderCoordinator does not own any subscriptions - callers own their subscriptions.
+        // Dispose exists for consistency with other services and future extensibility.
+    }
+
 
     public IObservable<StreamingContent?> CreateStreamingObservable(string topicId)
     {
@@ -34,11 +40,5 @@ public sealed class RenderCoordinator : IDisposable
             .Select(StreamingSelectors.SelectIsStreaming(topicId))
             .Sample(_renderInterval)
             .DistinctUntilChanged();
-    }
-
-    public void Dispose()
-    {
-        // RenderCoordinator does not own any subscriptions - callers own their subscriptions.
-        // Dispose exists for consistency with other services and future extensibility.
     }
 }

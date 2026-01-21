@@ -12,6 +12,11 @@ internal sealed class ApprovalContext : IDisposable
     public required string TopicId { get; init; }
     public required IReadOnlyList<ToolApprovalRequest> Requests { get; init; }
 
+    public void Dispose()
+    {
+        _registration.Dispose();
+    }
+
     public bool TrySetResult(ToolApprovalResult result)
     {
         return _tcs.TrySetResult(result);
@@ -21,10 +26,5 @@ internal sealed class ApprovalContext : IDisposable
     {
         _registration = cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
         return _tcs.Task;
-    }
-
-    public void Dispose()
-    {
-        _registration.Dispose();
     }
 }

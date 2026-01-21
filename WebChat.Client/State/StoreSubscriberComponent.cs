@@ -9,6 +9,18 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
     private readonly CompositeDisposable _subscriptions = new();
     private bool _disposed;
 
+    public virtual void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _subscriptions.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
     protected void Subscribe<TState, TSelected>(
         IObservable<TState> stateObservable,
         Func<TState, TSelected> selector,
@@ -55,17 +67,5 @@ public abstract class StoreSubscriberComponent : ComponentBase, IDisposable
     protected void ClearSubscriptions()
     {
         _subscriptions.Clear();
-    }
-
-    public virtual void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _subscriptions.Dispose();
-        GC.SuppressFinalize(this);
     }
 }

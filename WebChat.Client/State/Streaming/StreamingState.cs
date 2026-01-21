@@ -13,6 +13,7 @@ public sealed record StreamingState
 {
     public IReadOnlyDictionary<string, StreamingContent> StreamingByTopic { get; init; }
         = new Dictionary<string, StreamingContent>();
+
     public IReadOnlySet<string> StreamingTopics { get; init; } = new HashSet<string>();
     public IReadOnlySet<string> ResumingTopics { get; init; } = new HashSet<string>();
 

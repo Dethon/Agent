@@ -26,6 +26,15 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         await TryInitializeContainerAsync();
     }
 
+    public async Task DisposeAsync()
+    {
+        await Browser.DisposeAsync();
+        if (_container != null)
+        {
+            await _container.DisposeAsync();
+        }
+    }
+
     private async Task<bool> TryInitializeLocalAsync()
     {
         try
@@ -147,15 +156,6 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 
         // Clear all cookies to ensure test isolation
         await Browser.ClearCookiesAsync();
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Browser.DisposeAsync();
-        if (_container != null)
-        {
-            await _container.DisposeAsync();
-        }
     }
 }
 

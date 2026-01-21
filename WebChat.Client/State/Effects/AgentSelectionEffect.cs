@@ -5,9 +5,9 @@ namespace WebChat.Client.State.Effects;
 
 public sealed class AgentSelectionEffect : IDisposable
 {
-    private readonly IDisposable _subscription;
-    private readonly IChatSessionService _sessionService;
     private readonly ILocalStorageService _localStorage;
+    private readonly IChatSessionService _sessionService;
+    private readonly IDisposable _subscription;
     private string? _previousAgentId;
 
     public AgentSelectionEffect(
@@ -22,6 +22,11 @@ public sealed class AgentSelectionEffect : IDisposable
         _subscription = topicsStore.StateObservable.Subscribe(HandleStateChange);
     }
 
+    public void Dispose()
+    {
+        _subscription.Dispose();
+    }
+
     private void HandleStateChange(TopicsState state)
     {
         if (state.SelectedAgentId != _previousAgentId && _previousAgentId is not null)
@@ -32,10 +37,5 @@ public sealed class AgentSelectionEffect : IDisposable
         }
 
         _previousAgentId = state.SelectedAgentId;
-    }
-
-    public void Dispose()
-    {
-        _subscription.Dispose();
     }
 }

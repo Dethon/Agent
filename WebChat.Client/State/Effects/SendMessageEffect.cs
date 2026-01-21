@@ -10,11 +10,11 @@ namespace WebChat.Client.State.Effects;
 public sealed class SendMessageEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly TopicsStore _topicsStore;
+    private readonly IChatMessagingService _messagingService;
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
-    private readonly IChatMessagingService _messagingService;
+    private readonly TopicsStore _topicsStore;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -33,6 +33,11 @@ public sealed class SendMessageEffect : IDisposable
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
+    }
+
+    public void Dispose()
+    {
+        // No subscription to dispose, handler is registered with dispatcher
     }
 
     private void HandleSendMessage(SendMessage action)
@@ -104,10 +109,5 @@ public sealed class SendMessageEffect : IDisposable
         // Kick off streaming (fire-and-forget)
         // Components subscribe to store directly, no render callback needed
         _ = _streamingService.StreamResponseAsync(topic, action.Message);
-    }
-
-    public void Dispose()
-    {
-        // No subscription to dispose, handler is registered with dispatcher
     }
 }

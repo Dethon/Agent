@@ -2,11 +2,11 @@
 
 public record ChatResponseMessage
 {
-    public string? Message;
-    public string? CalledTools;
-    public string? Reasoning;
-    public string? Error;
     public bool Bold;
+    public string? CalledTools;
+    public string? Error;
     public bool IsComplete;
+    public string? Message;
     public int MessageIndex;
+    public string? Reasoning;
 }

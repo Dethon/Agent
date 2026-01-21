@@ -6,11 +6,9 @@ namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpSubscriptionManager : IAsyncDisposable
 {
-    private int _isDisposed;
     private readonly CancellationTokenSource _disposalCts = new();
     private readonly ConcurrentDictionary<McpClient, HashSet<string>> _subscribedResources = [];
-    private event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
-    private event Func<bool, CancellationToken, Task>? ResourcesSynced;
+    private int _isDisposed;
 
     public McpSubscriptionManager(ResourceUpdateProcessor processor)
     {
@@ -35,6 +33,9 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
         _disposalCts.Dispose();
     }
+
+    private event Func<McpClient, JsonRpcNotification, CancellationToken, Task>? ResourceUpdated;
+    private event Func<bool, CancellationToken, Task>? ResourcesSynced;
 
     public void SubscribeToNotifications(IEnumerable<McpClient> clients)
     {

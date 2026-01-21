@@ -8,10 +8,6 @@ namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpClientManager : IAsyncDisposable
 {
-    public IReadOnlyList<McpClient> Clients { get; }
-    public IReadOnlyList<AITool> Tools { get; }
-    public IReadOnlyList<string> Prompts { get; }
-
     private bool _isDisposed;
 
     private McpClientManager(
@@ -22,6 +18,24 @@ internal sealed class McpClientManager : IAsyncDisposable
         Clients = clients;
         Tools = tools;
         Prompts = prompts;
+    }
+
+    public IReadOnlyList<McpClient> Clients { get; }
+    public IReadOnlyList<AITool> Tools { get; }
+    public IReadOnlyList<string> Prompts { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        foreach (var client in Clients)
+        {
+            await client.DisposeAsync();
+        }
     }
 
     public static async Task<McpClientManager> CreateAsync(
@@ -37,20 +51,6 @@ internal sealed class McpClientManager : IAsyncDisposable
         var prompts = await LoadPrompts(clientsWithEndpoints.Select(c => c.Client), userId, ct);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
         return new McpClientManager(clients, tools, prompts);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_isDisposed)
-        {
-            return;
-        }
-
-        _isDisposed = true;
-        foreach (var client in Clients)
-        {
-            await client.DisposeAsync();
-        }
     }
 
     private static async Task<(McpClient Client, string ServerName)[]> CreateClientsWithRetry(

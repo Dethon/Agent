@@ -5,11 +5,51 @@ namespace Tests.Unit.WebChat.Fixtures;
 
 public sealed class FakeChatMessagingService : IChatMessagingService
 {
+    private readonly HashSet<string> _cancelledTopics = new();
     private readonly Queue<ChatStreamMessage> _enqueuedMessages = new();
     private readonly Dictionary<string, StreamState> _streamStates = new();
-    private readonly HashSet<string> _cancelledTopics = new();
 
     public int StreamDelayMs { get; set; } = 0;
+
+    public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
+
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
+    {
+        while (_enqueuedMessages.TryDequeue(out var msg))
+        {
+            if (StreamDelayMs > 0)
+            {
+                await Task.Delay(StreamDelayMs);
+            }
+
+            yield return msg;
+        }
+    }
+
+    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
+    {
+        while (_enqueuedMessages.TryDequeue(out var msg))
+        {
+            if (StreamDelayMs > 0)
+            {
+                await Task.Delay(StreamDelayMs);
+            }
+
+            yield return msg;
+        }
+    }
+
+    public Task<StreamState?> GetStreamStateAsync(string topicId)
+    {
+        return Task.FromResult(
+            _streamStates.TryGetValue(topicId, out var state) ? state : null);
+    }
+
+    public Task CancelTopicAsync(string topicId)
+    {
+        _cancelledTopics.Add(topicId);
+        return Task.CompletedTask;
+    }
 
     public void EnqueueMessages(params ChatStreamMessage[] messages)
     {
@@ -52,45 +92,5 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public void ClearStreamState(string topicId)
     {
         _streamStates.Remove(topicId);
-    }
-
-    public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
-
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
-    {
-        while (_enqueuedMessages.TryDequeue(out var msg))
-        {
-            if (StreamDelayMs > 0)
-            {
-                await Task.Delay(StreamDelayMs);
-            }
-
-            yield return msg;
-        }
-    }
-
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
-    {
-        while (_enqueuedMessages.TryDequeue(out var msg))
-        {
-            if (StreamDelayMs > 0)
-            {
-                await Task.Delay(StreamDelayMs);
-            }
-
-            yield return msg;
-        }
-    }
-
-    public Task<StreamState?> GetStreamStateAsync(string topicId)
-    {
-        return Task.FromResult(
-            _streamStates.TryGetValue(topicId, out var state) ? state : null);
-    }
-
-    public Task CancelTopicAsync(string topicId)
-    {
-        _cancelledTopics.Add(topicId);
-        return Task.CompletedTask;
     }
 }

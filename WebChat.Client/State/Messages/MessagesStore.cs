@@ -34,5 +34,8 @@ public sealed class MessagesStore : IDisposable
 
     public IObservable<MessagesState> StateObservable => _store.StateObservable;
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 }

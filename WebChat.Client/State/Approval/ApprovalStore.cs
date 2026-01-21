@@ -22,5 +22,8 @@ public sealed class ApprovalStore : IDisposable
 
     public IObservable<ApprovalState> StateObservable => _store.StateObservable;
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 }

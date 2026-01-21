@@ -9,16 +9,6 @@ public sealed class FakeApprovalService : IApprovalService
     private readonly Dictionary<string, ToolApprovalRequestMessage> _pendingApprovals = new();
     private readonly List<(string ApprovalId, ToolApprovalResult Result)> _responses = new();
 
-    public void SetPendingApproval(string topicId, ToolApprovalRequestMessage approval)
-    {
-        _pendingApprovals[topicId] = approval;
-    }
-
-    public void ClearPendingApproval(string topicId)
-    {
-        _pendingApprovals.Remove(topicId);
-    }
-
     public IReadOnlyList<(string ApprovalId, ToolApprovalResult Result)> Responses => _responses;
 
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
@@ -31,5 +21,15 @@ public sealed class FakeApprovalService : IApprovalService
     {
         return Task.FromResult(
             _pendingApprovals.TryGetValue(topicId, out var approval) ? approval : null);
+    }
+
+    public void SetPendingApproval(string topicId, ToolApprovalRequestMessage approval)
+    {
+        _pendingApprovals[topicId] = approval;
+    }
+
+    public void ClearPendingApproval(string topicId)
+    {
+        _pendingApprovals.Remove(topicId);
     }
 }

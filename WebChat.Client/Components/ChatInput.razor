@@ -26,10 +26,7 @@
             UpdateStreamingStatus();
         });
 
-        Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, _ =>
-        {
-            UpdateStreamingStatus();
-        });
+        Subscribe(StreamingStore.StateObservable, state => state.StreamingTopics, _ => { UpdateStreamingStatus(); });
 
         Subscribe(ConnectionStore.StateObservable, state => state.Status, status =>
         {
@@ -79,6 +76,7 @@
             Dispatcher.Dispatch(new CancelStreaming(_topicId));
         }
     }
+
 }
 
 <div class="input-container">

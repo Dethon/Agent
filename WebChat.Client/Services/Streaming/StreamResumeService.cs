@@ -16,7 +16,6 @@ public sealed class StreamResumeService(
     MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
-
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
         // Check if already resuming via store state

@@ -29,6 +29,11 @@ public sealed class ReconnectionEffect : IDisposable
             });
     }
 
+    public void Dispose()
+    {
+        _subscription.Dispose();
+    }
+
     private static void HandleReconnected(
         TopicsStore topicsStore,
         IChatSessionService sessionService,
@@ -53,10 +58,5 @@ public sealed class ReconnectionEffect : IDisposable
         {
             _ = streamResumeService.TryResumeStreamAsync(topic);
         }
-    }
-
-    public void Dispose()
-    {
-        _subscription.Dispose();
     }
 }

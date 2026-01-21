@@ -12,14 +12,14 @@ namespace Tests.Unit.WebChat.Client;
 
 public sealed class StreamResumeServiceTests : IDisposable
 {
-    private readonly FakeChatMessagingService _messagingService = new();
-    private readonly FakeTopicService _topicService = new();
     private readonly FakeApprovalService _approvalService = new();
     private readonly Dispatcher _dispatcher = new();
-    private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
-    private readonly StreamingStore _streamingStore;
+    private readonly FakeChatMessagingService _messagingService = new();
     private readonly StreamResumeService _resumeService;
+    private readonly StreamingStore _streamingStore;
+    private readonly FakeTopicService _topicService = new();
+    private readonly TopicsStore _topicsStore;
 
     public StreamResumeServiceTests()
     {
@@ -59,6 +59,57 @@ public sealed class StreamResumeServiceTests : IDisposable
         _dispatcher.Dispatch(new AddTopic(topic));
         return topic;
     }
+
+    #region Approval Handling Tests
+
+    [Fact]
+    public async Task TryResumeStreamAsync_WithPendingApproval_SetsApprovalRequest()
+    {
+        var topic = CreateTopic(topicId: "topic-1");
+        var approval = new ToolApprovalRequestMessage("approval-1", []);
+        _approvalService.SetPendingApproval("topic-1", approval);
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true,
+            [new ChatStreamMessage { Content = "waiting", MessageId = "msg-1" }],
+            "msg-1",
+            null));
+
+        // Need to consume the stream
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "done", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        // At some point during resume, approval was set
+        // It may be cleared after stream completes, so we just verify no exception
+    }
+
+    #endregion
+
+    #region Exception Handling Tests
+
+    [Fact]
+    public async Task TryResumeStreamAsync_OnException_StopsResuming()
+    {
+        var topic = CreateTopic(topicId: "topic-1");
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true,
+            [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
+            "msg-1",
+            null));
+
+        // Enqueue an error to trigger exception handling
+        _messagingService.EnqueueError("Stream error");
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        // Even with error, resuming flag should be cleared
+        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
+    }
+
+    #endregion
 
     #region Resume Guard Tests
 
@@ -216,33 +267,6 @@ public sealed class StreamResumeServiceTests : IDisposable
 
     #endregion
 
-    #region Approval Handling Tests
-
-    [Fact]
-    public async Task TryResumeStreamAsync_WithPendingApproval_SetsApprovalRequest()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        var approval = new ToolApprovalRequestMessage("approval-1", []);
-        _approvalService.SetPendingApproval("topic-1", approval);
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "waiting", MessageId = "msg-1" }],
-            "msg-1",
-            null));
-
-        // Need to consume the stream
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Content = "done", MessageId = "msg-1" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        // At some point during resume, approval was set
-        // It may be cleared after stream completes, so we just verify no exception
-    }
-
-    #endregion
-
     #region Buffer Rebuild Tests
 
     [Fact]
@@ -360,30 +384,6 @@ public sealed class StreamResumeServiceTests : IDisposable
         await _resumeService.TryResumeStreamAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
-    }
-
-    #endregion
-
-    #region Exception Handling Tests
-
-    [Fact]
-    public async Task TryResumeStreamAsync_OnException_StopsResuming()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
-            "msg-1",
-            null));
-
-        // Enqueue an error to trigger exception handling
-        _messagingService.EnqueueError("Stream error");
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        // Even with error, resuming flag should be cleared
-        _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
     }
 
     #endregion

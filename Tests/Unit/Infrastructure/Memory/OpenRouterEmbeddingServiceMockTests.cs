@@ -23,6 +23,11 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         _service = new OpenRouterEmbeddingService(httpClient, "test-model");
     }
 
+    public void Dispose()
+    {
+        _server.Dispose();
+    }
+
     [Fact]
     public async Task GenerateEmbeddingAsync_WithValidText_ReturnsEmbedding()
     {
@@ -199,10 +204,5 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         _server.LogEntries.Count.ShouldBe(1);
         var body = _server.LogEntries.First().RequestMessage.Body!;
         body.ShouldContain("\"input\":[\"text1\",\"text2\"]");
-    }
-
-    public void Dispose()
-    {
-        _server.Dispose();
     }
 }

@@ -28,5 +28,8 @@ public sealed class StreamingStore : IDisposable
 
     public IObservable<StreamingState> StateObservable => _store.StateObservable;
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 }

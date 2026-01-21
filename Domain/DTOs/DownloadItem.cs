@@ -16,6 +16,19 @@ public record DownloadItem : SearchResult
 [PublicAPI]
 public record DownloadStatus
 {
+    public DownloadStatus(DownloadItem item)
+    {
+        Id = item.Id;
+        Title = item.Title;
+        State = item.State;
+        Progress = item.Progress;
+        DownSpeed = item.DownSpeed;
+        UpSpeed = item.UpSpeed;
+        Eta = item.Eta;
+        Seeders = item.Seeders ?? 0;
+        Peers = item.Peers ?? 0;
+    }
+
     public int Id { get; init; }
     public string Title { get; init; }
     public DownloadState State { get; init; }
@@ -29,19 +42,6 @@ public record DownloadStatus
     public double Eta { get; init; }
     public long Seeders { get; init; }
     public long Peers { get; init; }
-
-    public DownloadStatus(DownloadItem item)
-    {
-        Id = item.Id;
-        Title = item.Title;
-        State = item.State;
-        Progress = item.Progress;
-        DownSpeed = item.DownSpeed;
-        UpSpeed = item.UpSpeed;
-        Eta = item.Eta;
-        Seeders = item.Seeders ?? 0;
-        Peers = item.Peers ?? 0;
-    }
 }
 
 public enum DownloadState

@@ -22,9 +22,9 @@ namespace Tests.Integration.Fixtures;
 public sealed class WebChatServerFixture : IAsyncLifetime
 {
     private IHost _host = null!;
-    private int _port;
     private CancellationTokenSource _monitorCts = null!;
     private Task _monitorTask = null!;
+    private int _port;
 
     public FakeAgentFactory FakeAgentFactory { get; } = new();
     private RedisFixture RedisFixture { get; } = new();
@@ -141,14 +141,6 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         }); // Note: No cancellation token here - we handle cancellation ourselves
     }
 
-    public HubConnection CreateHubConnection()
-    {
-        return new HubConnectionBuilder()
-            .WithUrl(HubUrl)
-            .WithAutomaticReconnect()
-            .Build();
-    }
-
     public async Task DisposeAsync()
     {
         // Cancel the monitor task first - this allows it to exit gracefully
@@ -227,6 +219,14 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         {
             // Ignore disposal errors
         }
+    }
+
+    public HubConnection CreateHubConnection()
+    {
+        return new HubConnectionBuilder()
+            .WithUrl(HubUrl)
+            .WithAutomaticReconnect()
+            .Build();
     }
 
     private static int GetAvailablePort()

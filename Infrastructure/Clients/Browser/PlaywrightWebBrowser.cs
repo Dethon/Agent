@@ -10,14 +10,6 @@ namespace Infrastructure.Clients.Browser;
 public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? cdpEndpoint = null)
     : IWebBrowser, IAsyncDisposable
 {
-    private IPlaywright? _playwright;
-    private IBrowser? _browser;
-    private IBrowserContext? _context;
-    private readonly SemaphoreSlim _initLock = new(1, 1);
-    private readonly BrowserSessionManager _sessions = new();
-    private readonly ModalDismisser _modalDismisser = new();
-    private readonly Random _random = new();
-    private bool _initialized;
     private const int MaxCaptchaRetries = 2;
 
     private const string UserAgent =
@@ -42,6 +34,34 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                                                  : originalQuery(parameters)
                                          );
                                          """;
+
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    private readonly ModalDismisser _modalDismisser = new();
+    private readonly Random _random = new();
+    private readonly BrowserSessionManager _sessions = new();
+    private IBrowser? _browser;
+    private IBrowserContext? _context;
+    private bool _initialized;
+    private IPlaywright? _playwright;
+
+    public async ValueTask DisposeAsync()
+    {
+        await _sessions.DisposeAsync();
+
+        if (_context != null)
+        {
+            await _context.CloseAsync();
+        }
+
+        if (_browser != null)
+        {
+            await _browser.CloseAsync();
+        }
+
+        _playwright?.Dispose();
+        _initLock.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
@@ -779,24 +799,5 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 HttpOnly = true
             }
         ]);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _sessions.DisposeAsync();
-
-        if (_context != null)
-        {
-            await _context.CloseAsync();
-        }
-
-        if (_browser != null)
-        {
-            await _browser.CloseAsync();
-        }
-
-        _playwright?.Dispose();
-        _initLock.Dispose();
-        GC.SuppressFinalize(this);
     }
 }

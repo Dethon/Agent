@@ -17,9 +17,9 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     private const string TestBotToken = "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
     private const long TestChatId = 12345;
     private const int TestThreadId = 100;
+    private ITelegramBotClient _botClient = null!;
 
     private WireMockServer _server = null!;
-    private ITelegramBotClient _botClient = null!;
 
     public Task InitializeAsync()
     {

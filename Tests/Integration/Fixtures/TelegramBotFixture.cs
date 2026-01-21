@@ -9,8 +9,8 @@ namespace Tests.Integration.Fixtures;
 
 public class TelegramBotFixture : IAsyncLifetime
 {
-    private WireMockServer _server = null!;
     private const string TestBotToken = "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
+    private WireMockServer _server = null!;
 
     private string BaseUrl { get; set; } = null!;
     private static string BotToken => TestBotToken;
@@ -25,6 +25,13 @@ public class TelegramBotFixture : IAsyncLifetime
         // Setup default getMe response (required by TelegramBotClient)
         SetupGetMe();
 
+        return Task.CompletedTask;
+    }
+
+    public Task DisposeAsync()
+    {
+        _server.Stop();
+        _server.Dispose();
         return Task.CompletedTask;
     }
 
@@ -286,12 +293,5 @@ public class TelegramBotFixture : IAsyncLifetime
     {
         _server.Reset();
         SetupGetMe();
-    }
-
-    public Task DisposeAsync()
-    {
-        _server.Stop();
-        _server.Dispose();
-        return Task.CompletedTask;
     }
 }

@@ -8,9 +8,9 @@ public class JackettFixture : IAsyncLifetime
 {
     private const int JackettPort = 9117;
     private const string TestApiKey = "integrationtestapikey123";
+    private string? _configDir;
 
     private IContainer _container = null!;
-    private string? _configDir;
 
     private string ApiUrl { get; set; } = null!;
     private static string ApiKey => TestApiKey;
@@ -54,6 +54,19 @@ public class JackettFixture : IAsyncLifetime
         await WaitForApiReady();
     }
 
+    public async Task DisposeAsync()
+    {
+        await _container.DisposeAsync();
+        if (_configDir != null && Directory.Exists(_configDir))
+        {
+            try { Directory.Delete(_configDir, true); }
+            catch
+            {
+                /* ignore */
+            }
+        }
+    }
+
     private async Task WaitForApiReady()
     {
         using var httpClient = new HttpClient();
@@ -87,18 +100,5 @@ public class JackettFixture : IAsyncLifetime
             BaseAddress = new Uri(ApiUrl)
         };
         return new JackettSearchClient(httpClient, ApiKey);
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _container.DisposeAsync();
-        if (_configDir != null && Directory.Exists(_configDir))
-        {
-            try { Directory.Delete(_configDir, true); }
-            catch
-            {
-                /* ignore */
-            }
-        }
     }
 }

@@ -6,8 +6,15 @@ namespace Infrastructure.Clients.Browser;
 
 public class BrowserSessionManager : IAsyncDisposable
 {
-    private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
+
+    public async ValueTask DisposeAsync()
+    {
+        await CloseAllAsync();
+        _createLock.Dispose();
+        GC.SuppressFinalize(this);
+    }
 
     public async Task<BrowserSession> GetOrCreateAsync(
         string sessionId,
@@ -84,13 +91,6 @@ public class BrowserSessionManager : IAsyncDisposable
         {
             await session.Page.CloseAsync();
         }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await CloseAllAsync();
-        _createLock.Dispose();
-        GC.SuppressFinalize(this);
     }
 }
 

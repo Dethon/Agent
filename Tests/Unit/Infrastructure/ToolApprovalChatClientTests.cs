@@ -234,11 +234,6 @@ public class ToolApprovalChatClientTests
     {
         private readonly Queue<ChatResponse> _responses = new();
 
-        public void SetNextResponse(ChatResponse response)
-        {
-            _responses.Enqueue(response);
-        }
-
         public Task<ChatResponse> GetResponseAsync(
             IEnumerable<ChatMessage> messages,
             ChatOptions? options = null,
@@ -268,6 +263,11 @@ public class ToolApprovalChatClientTests
         public object? GetService(Type serviceType, object? serviceKey = null)
         {
             return null;
+        }
+
+        public void SetNextResponse(ChatResponse response)
+        {
+            _responses.Enqueue(response);
         }
     }
 }

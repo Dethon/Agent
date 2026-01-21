@@ -15,7 +15,10 @@ public class StreamingStoreTests : IDisposable
         _store = new StreamingStore(_dispatcher);
     }
 
-    public void Dispose() => _store.Dispose();
+    public void Dispose()
+    {
+        _store.Dispose();
+    }
 
     [Fact]
     public void StreamStarted_AddsTopicToStreamingTopics()

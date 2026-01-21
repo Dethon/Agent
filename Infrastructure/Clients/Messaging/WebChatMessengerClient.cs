@@ -20,8 +20,8 @@ public sealed class WebChatMessengerClient(
     ILogger<WebChatMessengerClient> logger) : IChatMessengerClient, IDisposable
 {
     private readonly Channel<ChatPrompt> _promptChannel = Channel.CreateUnbounded<ChatPrompt>();
-    private int _messageIdCounter;
     private bool _disposed;
+    private int _messageIdCounter;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout,
@@ -114,6 +114,18 @@ public sealed class WebChatMessengerClient(
         CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _promptChannel.Writer.Complete();
+        streamManager.Dispose();
     }
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId)
@@ -217,17 +229,5 @@ public sealed class WebChatMessengerClient(
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
         return approvalManager.RespondToApprovalAsync(approvalId, result);
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _promptChannel.Writer.Complete();
-        streamManager.Dispose();
     }
 }

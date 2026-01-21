@@ -2,43 +2,46 @@ namespace WebChat.Client.State.Streaming;
 
 public static class StreamingReducers
 {
-    public static StreamingState Reduce(StreamingState state, IAction action) => action switch
+    public static StreamingState Reduce(StreamingState state, IAction action)
     {
-        StreamStarted a => state with
+        return action switch
         {
-            StreamingTopics = new HashSet<string>(state.StreamingTopics) { a.TopicId },
-            StreamingByTopic = new Dictionary<string, StreamingContent>(state.StreamingByTopic)
+            StreamStarted a => state with
             {
-                [a.TopicId] = new()
-            }
-        },
+                StreamingTopics = new HashSet<string>(state.StreamingTopics) { a.TopicId },
+                StreamingByTopic = new Dictionary<string, StreamingContent>(state.StreamingByTopic)
+                {
+                    [a.TopicId] = new()
+                }
+            },
 
-        StreamChunk a => state with
-        {
-            StreamingByTopic = UpdateStreamingContent(state.StreamingByTopic, a)
-        },
+            StreamChunk a => state with
+            {
+                StreamingByTopic = UpdateStreamingContent(state.StreamingByTopic, a)
+            },
 
-        StreamCompleted a => RemoveStreaming(state, a.TopicId),
+            StreamCompleted a => RemoveStreaming(state, a.TopicId),
 
-        StreamCancelled a => RemoveStreaming(state, a.TopicId),
+            StreamCancelled a => RemoveStreaming(state, a.TopicId),
 
-        StreamError a => state with
-        {
-            StreamingByTopic = SetError(state.StreamingByTopic, a.TopicId)
-        },
+            StreamError a => state with
+            {
+                StreamingByTopic = SetError(state.StreamingByTopic, a.TopicId)
+            },
 
-        StartResuming a => state with
-        {
-            ResumingTopics = new HashSet<string>(state.ResumingTopics) { a.TopicId }
-        },
+            StartResuming a => state with
+            {
+                ResumingTopics = new HashSet<string>(state.ResumingTopics) { a.TopicId }
+            },
 
-        StopResuming a => state with
-        {
-            ResumingTopics = new HashSet<string>(state.ResumingTopics.Where(t => t != a.TopicId))
-        },
+            StopResuming a => state with
+            {
+                ResumingTopics = new HashSet<string>(state.ResumingTopics.Where(t => t != a.TopicId))
+            },
 
-        _ => state
-    };
+            _ => state
+        };
+    }
 
     private static IReadOnlyDictionary<string, StreamingContent> UpdateStreamingContent(
         IReadOnlyDictionary<string, StreamingContent> streamingByTopic,

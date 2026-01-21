@@ -12,9 +12,25 @@ namespace Tests.Integration.Fixtures;
 
 public sealed class FakeAgentFactory : IAgentFactory
 {
-    private readonly ConcurrentQueue<QueuedResponse> _responseQueue = new();
     private readonly List<AgentDefinition> _agents = [];
     private readonly int _responseDelayMs = 10;
+    private readonly ConcurrentQueue<QueuedResponse> _responseQueue = new();
+
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
+    {
+        var responses = new List<QueuedResponse>();
+        while (_responseQueue.TryDequeue(out var response))
+        {
+            responses.Add(response);
+        }
+
+        return new FakeDisposableAgent(responses, _responseDelayMs);
+    }
+
+    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    {
+        return _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
+    }
 
     public void ConfigureAgents(params AgentDefinition[] agents)
     {
@@ -46,22 +62,6 @@ public sealed class FakeAgentFactory : IAgentFactory
     public void EnqueueError(string errorMessage)
     {
         _responseQueue.Enqueue(new QueuedResponse { Error = errorMessage });
-    }
-
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
-    {
-        var responses = new List<QueuedResponse>();
-        while (_responseQueue.TryDequeue(out var response))
-        {
-            responses.Add(response);
-        }
-
-        return new FakeDisposableAgent(responses, _responseDelayMs);
-    }
-
-    public IReadOnlyList<AgentInfo> GetAvailableAgents()
-    {
-        return _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
     }
 
     private record QueuedResponse

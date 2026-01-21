@@ -15,9 +15,9 @@ namespace Tests.Integration.Fixtures;
 
 public class McpLibraryServerFixture : IAsyncLifetime
 {
+    private IMemoryCache _cache = null!;
     private IHost _host = null!;
     private int _port;
-    private IMemoryCache _cache = null!;
 
     private JackettFixture Jackett { get; } = new();
     private QBittorrentFixture QBittorrent { get; } = new();
@@ -73,6 +73,33 @@ public class McpLibraryServerFixture : IAsyncLifetime
         McpEndpoint = $"http://localhost:{_port}/sse";
     }
 
+    public async Task DisposeAsync()
+    {
+        await _host.StopAsync();
+        _host.Dispose();
+        _cache.Dispose();
+
+        await Jackett.DisposeAsync();
+        await QBittorrent.DisposeAsync();
+
+        try
+        {
+            if (Directory.Exists(LibraryPath))
+            {
+                Directory.Delete(LibraryPath, true);
+            }
+
+            if (Directory.Exists(DownloadPath))
+            {
+                Directory.Delete(DownloadPath, true);
+            }
+        }
+        catch
+        {
+            // Ignore cleanup errors
+        }
+    }
+
     private static int GetAvailablePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -120,32 +147,5 @@ public class McpLibraryServerFixture : IAsyncLifetime
     public bool FileExistsInDownloads(string relativePath)
     {
         return File.Exists(Path.Combine(DownloadPath, relativePath));
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _host.StopAsync();
-        _host.Dispose();
-        _cache.Dispose();
-
-        await Jackett.DisposeAsync();
-        await QBittorrent.DisposeAsync();
-
-        try
-        {
-            if (Directory.Exists(LibraryPath))
-            {
-                Directory.Delete(LibraryPath, true);
-            }
-
-            if (Directory.Exists(DownloadPath))
-            {
-                Directory.Delete(DownloadPath, true);
-            }
-        }
-        catch
-        {
-            // Ignore cleanup errors
-        }
     }
 }

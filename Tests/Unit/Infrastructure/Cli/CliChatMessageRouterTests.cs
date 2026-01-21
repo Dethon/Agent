@@ -9,8 +9,8 @@ namespace Tests.Unit.Infrastructure.Cli;
 [SuppressMessage("ReSharper", "AccessToDisposedClosure")]
 public class CliChatMessageRouterTests : IDisposable
 {
-    private readonly FakeTerminalAdapter _terminalAdapter = new();
     private readonly CliChatMessageRouter _router;
+    private readonly FakeTerminalAdapter _terminalAdapter = new();
 
     public CliChatMessageRouterTests()
     {

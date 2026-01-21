@@ -28,17 +28,6 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
                                          - Search markdown files: query="config", filePattern="*.md"
                                          """;
 
-    private record SearchParams(string Query, Regex? Pattern, int ContextLines, int MaxResults);
-
-    private record FileMatch(string File, IReadOnlyList<MatchResult> Matches);
-
-    private record MatchResult(
-        int LineNumber,
-        string Text,
-        string? Section,
-        IReadOnlyList<string>? ContextBefore,
-        IReadOnlyList<string>? ContextAfter);
-
     protected JsonNode Run(
         string query,
         bool regex = false,
@@ -257,4 +246,15 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     {
         return new JsonArray(items.Select(s => JsonValue.Create(s)).ToArray<JsonNode>());
     }
+
+    private record SearchParams(string Query, Regex? Pattern, int ContextLines, int MaxResults);
+
+    private record FileMatch(string File, IReadOnlyList<MatchResult> Matches);
+
+    private record MatchResult(
+        int LineNumber,
+        string Text,
+        string? Section,
+        IReadOnlyList<string>? ContextBefore,
+        IReadOnlyList<string>? ContextAfter);
 }

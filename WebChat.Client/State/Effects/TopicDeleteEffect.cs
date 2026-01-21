@@ -8,10 +8,10 @@ namespace WebChat.Client.State.Effects;
 public sealed class TopicDeleteEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly TopicsStore _topicsStore;
-    private readonly StreamingStore _streamingStore;
     private readonly IChatMessagingService _messagingService;
+    private readonly StreamingStore _streamingStore;
     private readonly ITopicService _topicService;
+    private readonly TopicsStore _topicsStore;
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
@@ -27,6 +27,11 @@ public sealed class TopicDeleteEffect : IDisposable
         _topicService = topicService;
 
         dispatcher.RegisterHandler<RemoveTopic>(HandleRemoveTopic);
+    }
+
+    public void Dispose()
+    {
+        // No subscription to dispose
     }
 
     private void HandleRemoveTopic(RemoveTopic action)
@@ -55,10 +60,5 @@ public sealed class TopicDeleteEffect : IDisposable
         {
             _dispatcher.Dispatch(new ClearApproval());
         }
-    }
-
-    public void Dispose()
-    {
-        // No subscription to dispose
     }
 }

@@ -5,8 +5,8 @@ namespace Tests.Integration.Infrastructure;
 
 public class LocalFileSystemClientTests : IDisposable
 {
-    private readonly string _testDir;
     private readonly LocalFileSystemClient _client = new();
+    private readonly string _testDir;
 
     public LocalFileSystemClientTests()
     {

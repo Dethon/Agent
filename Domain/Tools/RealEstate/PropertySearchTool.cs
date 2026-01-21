@@ -7,12 +7,6 @@ namespace Domain.Tools.RealEstate;
 
 public class PropertySearchTool(IIdealistaClient idealistaClient)
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     protected const string Name = "IdealistaPropertySearch";
 
     protected const string Description =
@@ -23,6 +17,12 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         Returns comprehensive property data for market analysis including price, location, size,
         rooms, description, condition, age, and URLs.
         """;
+
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     protected async Task<JsonNode> RunAsync(
         string country,

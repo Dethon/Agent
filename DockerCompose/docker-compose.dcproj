@@ -7,12 +7,12 @@
     </PropertyGroup>
     <ItemGroup>
         <None Include="docker-compose.override.yml"/>
-        <None Include="docker-compose.yml" />
+        <None Include="docker-compose.yml"/>
     </ItemGroup>
     <ItemGroup>
-      <Content Include="..\.dockerignore">
-        <Link>.dockerignore</Link>
-      </Content>
-      <Content Include=".env" />
+        <Content Include="..\.dockerignore">
+            <Link>.dockerignore</Link>
+        </Content>
+        <Content Include=".env"/>
     </ItemGroup>
 </Project>

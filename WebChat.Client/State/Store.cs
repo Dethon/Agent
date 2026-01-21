@@ -19,6 +19,11 @@ public sealed class Store<TState> : IDisposable where TState : class
 
     public IObservable<TState> StateObservable => _subject.AsObservable();
 
+    public void Dispose()
+    {
+        _subject.Dispose();
+    }
+
 
     public void Dispatch<TAction>(TAction action, Func<TState, TAction, TState> reducer)
         where TAction : IAction
@@ -26,6 +31,4 @@ public sealed class Store<TState> : IDisposable where TState : class
         var newState = reducer(State, action);
         _subject.OnNext(newState);
     }
-
-    public void Dispose() => _subject.Dispose();
 }

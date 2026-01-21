@@ -46,68 +46,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
-    #region FileSearch Tests
-
-    [Fact]
-    public async Task FileSearchTool_WithQuery_ReturnsResults()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act - search for something generic that Jackett might return results for
-        var result = await client.CallToolAsync(
-            "FileSearch",
-            new Dictionary<string, object?>
-            {
-                ["searchStrings"] = new[] { "test" }
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert - we can't guarantee results from Jackett without configured indexers,
-        // but the tool should execute without error
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("status");
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task FileSearchTool_WithEmptyQuery_ReturnsEmptyResults()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "FileSearch",
-            new Dictionary<string, object?>
-            {
-                ["searchStrings"] = Array.Empty<string>()
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("success");
-        content.ShouldContain("totalResults");
-
-        await client.DisposeAsync();
-    }
-
-    #endregion
-
     #region FileDownload Tests
 
     [Fact]
@@ -167,6 +105,106 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain("missing");
+
+        await client.DisposeAsync();
+    }
+
+    #endregion
+
+    #region ListFiles Tests
+
+    [Fact]
+    public async Task ListFilesTool_WithFiles_ReturnsFileList()
+    {
+        // Arrange
+        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie1.mkv"));
+        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie2.mp4"));
+
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        var filesTestPath = Path.Combine(fixture.LibraryPath, "FilesTest");
+
+        // Act
+        var result = await client.CallToolAsync(
+            "ListFiles",
+            new Dictionary<string, object?>
+            {
+                ["path"] = filesTestPath
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.ShouldNotBeNull();
+        var content = GetTextContent(result);
+        content.ShouldContain("movie1.mkv");
+        content.ShouldContain("movie2.mp4");
+
+        await client.DisposeAsync();
+    }
+
+    #endregion
+
+    #region FileSearch Tests
+
+    [Fact]
+    public async Task FileSearchTool_WithQuery_ReturnsResults()
+    {
+        // Arrange
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        // Act - search for something generic that Jackett might return results for
+        var result = await client.CallToolAsync(
+            "FileSearch",
+            new Dictionary<string, object?>
+            {
+                ["searchStrings"] = new[] { "test" }
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert - we can't guarantee results from Jackett without configured indexers,
+        // but the tool should execute without error
+        result.ShouldNotBeNull();
+        var content = GetTextContent(result);
+        content.ShouldContain("status");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FileSearchTool_WithEmptyQuery_ReturnsEmptyResults()
+    {
+        // Arrange
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        // Act
+        var result = await client.CallToolAsync(
+            "FileSearch",
+            new Dictionary<string, object?>
+            {
+                ["searchStrings"] = Array.Empty<string>()
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.ShouldNotBeNull();
+        var content = GetTextContent(result);
+        content.ShouldContain("success");
+        content.ShouldContain("totalResults");
 
         await client.DisposeAsync();
     }
@@ -297,44 +335,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var content = GetTextContent(result);
         content.ShouldContain("TestMovies");
         content.ShouldContain("TestSeries");
-
-        await client.DisposeAsync();
-    }
-
-    #endregion
-
-    #region ListFiles Tests
-
-    [Fact]
-    public async Task ListFilesTool_WithFiles_ReturnsFileList()
-    {
-        // Arrange
-        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie1.mkv"));
-        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie2.mp4"));
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        var filesTestPath = Path.Combine(fixture.LibraryPath, "FilesTest");
-
-        // Act
-        var result = await client.CallToolAsync(
-            "ListFiles",
-            new Dictionary<string, object?>
-            {
-                ["path"] = filesTestPath
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("movie1.mkv");
-        content.ShouldContain("movie2.mp4");
 
         await client.DisposeAsync();
     }

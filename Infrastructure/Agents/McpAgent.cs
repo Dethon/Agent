@@ -19,14 +19,11 @@ public sealed class McpAgent : DisposableAgent
     private readonly string[] _endpoints;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
-    private readonly string _userId;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
+    private readonly string _userId;
     private int _isDisposed;
-
-    public override string? Name => _innerAgent.Name;
-    public override string? Description => _innerAgent.Description;
 
     public McpAgent(
         string[] endpoints,
@@ -59,6 +56,9 @@ public sealed class McpAgent : DisposableAgent
             ChatMessageStoreFactory = ctx => RedisChatMessageStore.Create(stateStore, ctx)
         });
     }
+
+    public override string? Name => _innerAgent.Name;
+    public override string? Description => _innerAgent.Description;
 
     public override async ValueTask DisposeAsync()
     {

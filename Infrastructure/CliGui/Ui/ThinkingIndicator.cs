@@ -9,10 +9,15 @@ internal sealed class ThinkingIndicator(Label titleLabel, string agentName) : ID
 
     private readonly string _baseTitle = $"  ◆ {agentName}";
     private readonly Lock _lock = new();
-
-    private object? _timerToken;
     private int _frameIndex;
     private volatile bool _isVisible;
+
+    private object? _timerToken;
+
+    public void Dispose()
+    {
+        Hide();
+    }
 
     public void Show()
     {
@@ -107,10 +112,5 @@ internal sealed class ThinkingIndicator(Label titleLabel, string agentName) : ID
                 ? $"{_baseTitle}{new string(' ', padding)}{thinkingText}"
                 : $"{_baseTitle}  {thinkingText}";
         });
-    }
-
-    public void Dispose()
-    {
-        Hide();
     }
 }

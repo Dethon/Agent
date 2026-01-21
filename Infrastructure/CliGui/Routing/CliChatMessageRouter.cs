@@ -10,19 +10,16 @@ namespace Infrastructure.CliGui.Routing;
 
 public sealed class CliChatMessageRouter : ICliChatMessageRouter
 {
-    public long ChatId { get; }
-    public int ThreadId { get; }
-
     private readonly string _agentName;
-    private readonly string _userName;
-    private readonly ITerminalSession _terminalAdapter;
     private readonly CliCommandHandler _commandHandler;
     private readonly bool _showReasoning;
+    private readonly ITerminalSession _terminalAdapter;
+    private readonly string _userName;
 
     private BlockingCollection<string> _inputQueue = new();
-    private int _messageCounter;
     private bool _isRunning;
     private bool _isStarted;
+    private int _messageCounter;
 
     public CliChatMessageRouter(
         string agentName,
@@ -43,6 +40,9 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
         _terminalAdapter.InputReceived += OnInputReceived;
         _terminalAdapter.ShutdownRequested += OnShutdownRequested;
     }
+
+    public long ChatId { get; }
+    public int ThreadId { get; }
 
     public event Action? ShutdownRequested;
 
