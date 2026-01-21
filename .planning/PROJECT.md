@@ -1,60 +1,58 @@
-# WebChat Stack Refactoring
+# Agent WebChat
 
 ## What This Is
 
-A maintainability refactor of the WebChat stack (Blazor client and SignalR server) establishing unidirectional data flow with Flux-inspired state management. The refactor achieved code that's easier to follow, extend, and maintains Clean Architecture boundaries.
+A browser-based chat interface for interacting with AI agents. Users pick a username, join shared topics, and chat with agents that know who they're talking to. Built on Blazor WebAssembly with SignalR for real-time communication and Flux-inspired state management.
 
 ## Core Value
 
-State flows in one direction — down from stores, up via events — making it obvious where state lives and how changes propagate.
+People can have personalized conversations with agents in shared topics — the agent knows who's talking and responds accordingly.
 
-## Current State (v1.0 Shipped)
+## Current Milestone: v1.1 Users in Web UI
 
-**Shipped:** 2026-01-20
+**Goal:** Add user identity and shared conversations to WebChat.
 
-The WebChat stack now has:
-- 5 independent state stores (Topics, Messages, Streaming, Connection, Approval) with 34 action handlers
-- Store<T> infrastructure with BehaviorSubject for reactive subscriptions
-- HubEventDispatcher bridging SignalR events to typed store actions
-- 50ms throttled rendering via RenderCoordinator preventing UI freezes
-- ChatContainer reduced from 305 to 28 lines with effect-based coordination
-- INotifier properly layered in Infrastructure (adapter pattern)
-- ChatStateManager and StreamingCoordinator deleted (replaced by stores)
-
-**Stats:**
-- 4,324 lines C#/Razor in WebChat.Client
-- 7 phases, 24 plans executed
-- Net -172 LOC (cleaner code)
+**Target features:**
+- Lightweight user identity (username + avatar stored locally, no authentication)
+- User attribution on messages (see who sent each message)
+- Shared topics (all users see all topics, real-time message sync)
+- Agent personalization (username injected into prompts)
 
 ## Requirements
 
 ### Validated
 
-**v1.0 Refactoring Goals:**
-- ✓ Establish unidirectional data flow in WebChat.Client — v1.0
-- ✓ Refactor StreamingCoordinator to single-responsibility components — v1.0 (deleted, replaced by stores)
-- ✓ Consolidate scattered state into centralized stores — v1.0 (5 stores)
-- ✓ Move INotifier implementation from Agent to Infrastructure — v1.0 (adapter pattern)
-- ✓ Ensure all WebChat code respects Domain → Infrastructure → Agent layering — v1.0
+**v1.0 Refactoring (Shipped 2026-01-20):**
+- ✓ Unidirectional data flow in WebChat.Client — v1.0
+- ✓ 5 centralized state stores (Topics, Messages, Streaming, Connection, Approval) — v1.0
+- ✓ 50ms throttled rendering via RenderCoordinator — v1.0
+- ✓ HubEventDispatcher bridging SignalR to typed store actions — v1.0
+- ✓ Clean Architecture boundaries (INotifier in Infrastructure) — v1.0
 
 **Preserved Functionality:**
-- ✓ Real-time message streaming via SignalR — existing, preserved
-- ✓ Topic-based conversations with persistence — existing, preserved
-- ✓ Stream resumption after disconnection — existing, enhanced with ReconnectionEffect
-- ✓ Multi-agent selection — existing, preserved
-- ✓ Tool approval flow via WebChat — existing, preserved with ApprovalStore
-- ✓ Message history loading — existing, preserved
+- ✓ Real-time message streaming via SignalR
+- ✓ Topic-based conversations with persistence
+- ✓ Stream resumption after disconnection
+- ✓ Multi-agent selection
+- ✓ Tool approval flow
+- ✓ Message history loading
 
 ### Active
 
-(No active requirements — milestone complete)
+- [ ] User can set username (stored locally, persists across sessions)
+- [ ] User can select avatar from hardcoded options
+- [ ] Messages display sender's username and avatar
+- [ ] Topics are shared across all users
+- [ ] Messages broadcast to all users in a topic in real-time
+- [ ] Agent prompts include username for personalization
 
 ### Out of Scope
 
-- New WebChat features — this was refactoring, not feature work
-- Telegram or CLI interfaces — different codepaths, not affected
-- MCP server changes — orthogonal concern
-- Performance optimization beyond 50ms throttle — focus was structure
+- Authentication/passwords — lightweight identity only, no auth system
+- User accounts on server — usernames stored client-side only
+- Private topics — all topics visible to all users
+- Direct messaging between users — agent-mediated conversations only
+- Telegram or CLI user features — WebChat only for this milestone
 
 ## Key Decisions
 
@@ -82,4 +80,4 @@ The WebChat stack now has:
 - 2 flaky tests in StreamResumeServiceTests (pre-existing, not regressions)
 
 ---
-*Last updated: 2026-01-20 after v1.0 milestone*
+*Last updated: 2026-01-21 after v1.1 milestone started*
