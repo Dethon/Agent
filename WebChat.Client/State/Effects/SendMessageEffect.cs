@@ -4,6 +4,7 @@ using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
@@ -15,6 +16,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
     private readonly IChatMessagingService _messagingService;
+    private readonly UserIdentityStore _userIdentityStore;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -22,7 +24,8 @@ public sealed class SendMessageEffect : IDisposable
         IChatSessionService sessionService,
         IStreamingService streamingService,
         ITopicService topicService,
-        IChatMessagingService messagingService)
+        IChatMessagingService messagingService,
+        UserIdentityStore userIdentityStore)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -30,6 +33,7 @@ public sealed class SendMessageEffect : IDisposable
         _streamingService = streamingService;
         _topicService = topicService;
         _messagingService = messagingService;
+        _userIdentityStore = userIdentityStore;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
@@ -92,10 +96,17 @@ public sealed class SendMessageEffect : IDisposable
         }
 
         // Add user message
+        var identityState = _userIdentityStore.State;
+        var currentUser = identityState.AvailableUsers
+            .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
+
         _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
         {
             Role = "user",
-            Content = action.Message
+            Content = action.Message,
+            SenderId = currentUser?.Id,
+            SenderUsername = currentUser?.Username,
+            SenderAvatarUrl = currentUser?.AvatarUrl
         }));
 
         // Start streaming
