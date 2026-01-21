@@ -38,6 +38,12 @@ public sealed class InitializationEffect : IDisposable
         _userIdentityStore = userIdentityStore;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
+        dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
+    }
+
+    private void HandleSelectUser(SelectUser action)
+    {
+        _ = RegisterUserAsync(action.UserId);
     }
 
     private void HandleInitialize(Initialize action)
@@ -86,9 +92,9 @@ public sealed class InitializationEffect : IDisposable
         }
     }
 
-    private async Task RegisterUserAsync()
+    private async Task RegisterUserAsync(string? userId = null)
     {
-        var userId = _userIdentityStore.State.SelectedUserId;
+        userId ??= _userIdentityStore.State.SelectedUserId;
         if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
         {
             await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
