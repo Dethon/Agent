@@ -73,7 +73,10 @@ public sealed class ChatHub(
             .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
             .Select(m => new ChatHistoryMessage(
                 m.Role.Value,
-                string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text))))
+                string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
+                m.AdditionalProperties?.GetValueOrDefault("SenderId") as string,
+                m.AdditionalProperties?.GetValueOrDefault("SenderUsername") as string,
+                m.AdditionalProperties?.GetValueOrDefault("SenderAvatarUrl") as string))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }
