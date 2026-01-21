@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
@@ -14,6 +16,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
+    private readonly UserIdentityStore _userIdentityStore;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -22,7 +25,8 @@ public sealed class InitializationEffect : IDisposable
         ITopicService topicService,
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
-        IStreamResumeService streamResumeService)
+        IStreamResumeService streamResumeService,
+        UserIdentityStore userIdentityStore)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
@@ -31,6 +35,7 @@ public sealed class InitializationEffect : IDisposable
         _localStorage = localStorage;
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
+        _userIdentityStore = userIdentityStore;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
     }
@@ -45,6 +50,12 @@ public sealed class InitializationEffect : IDisposable
         // Connect to SignalR
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
+
+        // Register user after initial connection
+        await RegisterUserAsync();
+
+        // Re-register user on reconnection
+        _connectionService.OnReconnected += async () => await RegisterUserAsync();
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
@@ -72,6 +83,15 @@ public sealed class InitializationEffect : IDisposable
         foreach (var topic in topics)
         {
             _ = LoadTopicHistoryAsync(topic);
+        }
+    }
+
+    private async Task RegisterUserAsync()
+    {
+        var userId = _userIdentityStore.State.SelectedUserId;
+        if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
+        {
+            await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
         }
     }
 

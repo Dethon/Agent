@@ -5,6 +5,7 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -12,7 +13,8 @@ public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,
     ITopicService topicService,
-    TopicsStore topicsStore) : IStreamingService
+    TopicsStore topicsStore,
+    UserIdentityStore userIdentityStore) : IStreamingService
 {
     public async Task StreamResponseAsync(StoredTopic topic, string message)
     {
@@ -22,7 +24,8 @@ public sealed class StreamingService(
 
         try
         {
-            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message))
+            var senderId = userIdentityStore.State.SelectedUserId;
+            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message, senderId))
             {
                 if (chunk.ApprovalRequest is not null)
                 {
