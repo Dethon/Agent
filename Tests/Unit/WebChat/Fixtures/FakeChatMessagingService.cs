@@ -8,6 +8,8 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private readonly Queue<ChatStreamMessage> _enqueuedMessages = new();
     private readonly Dictionary<string, StreamState> _streamStates = new();
     private readonly HashSet<string> _cancelledTopics = new();
+    private bool _enqueueResult = true;
+    public void SetEnqueueResult(bool result) => _enqueueResult = result;
 
     public int StreamDelayMs { get; set; } = 0;
 
@@ -92,5 +94,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     {
         _cancelledTopics.Add(topicId);
         return Task.CompletedTask;
+    }
+
+    public Task<bool> EnqueueMessageAsync(string topicId, string message)
+    {
+        return Task.FromResult(_enqueueResult);
     }
 }

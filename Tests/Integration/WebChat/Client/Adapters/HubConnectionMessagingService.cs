@@ -31,4 +31,9 @@ public sealed class HubConnectionMessagingService(HubConnection connection) : IC
     {
         await connection.InvokeAsync("CancelTopic", topicId);
     }
+
+    public async Task<bool> EnqueueMessageAsync(string topicId, string message)
+    {
+        return await connection.InvokeAsync<bool>("EnqueueMessage", topicId, message);
+    }
 }

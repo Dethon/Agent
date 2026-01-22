@@ -59,4 +59,15 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
 
         await hubConnection.InvokeAsync("CancelTopic", topicId);
     }
+
+    public async Task<bool> EnqueueMessageAsync(string topicId, string message)
+    {
+        var hubConnection = connectionService.HubConnection;
+        if (hubConnection is null)
+        {
+            return false;
+        }
+
+        return await hubConnection.InvokeAsync<bool>("EnqueueMessage", topicId, message);
+    }
 }
