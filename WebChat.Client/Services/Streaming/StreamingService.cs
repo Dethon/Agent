@@ -85,6 +85,12 @@ public sealed class StreamingService(
                     break;
                 }
 
+                // Skip user messages - they're handled separately via UserMessageNotification
+                if (chunk.UserMessage is not null)
+                {
+                    continue;
+                }
+
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
                 // Only finalize current message if new chunk starts actual message content
@@ -178,6 +184,12 @@ public sealed class StreamingService(
                         streamingMessage.ToolCalls,
                         currentMessageId));
                     break;
+                }
+
+                // Skip user messages - they're handled separately via buffer rebuild
+                if (chunk.UserMessage is not null)
+                {
+                    continue;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
