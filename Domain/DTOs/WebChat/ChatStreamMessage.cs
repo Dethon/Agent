@@ -9,4 +9,5 @@ public record ChatStreamMessage
     public string? Error { get; init; }
     public string? MessageId { get; init; }
     public ToolApprovalRequestMessage? ApprovalRequest { get; init; }
+    public UserMessageInfo? UserMessage { get; init; }
 }
