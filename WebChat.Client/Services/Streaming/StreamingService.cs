@@ -5,7 +5,6 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
-using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -13,8 +12,7 @@ public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,
     ITopicService topicService,
-    TopicsStore topicsStore,
-    UserIdentityStore userIdentityStore) : IStreamingService
+    TopicsStore topicsStore) : IStreamingService
 {
     public async Task StreamResponseAsync(StoredTopic topic, string message)
     {
@@ -24,8 +22,7 @@ public sealed class StreamingService(
 
         try
         {
-            var senderId = userIdentityStore.State.SelectedUserId;
-            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message, senderId))
+            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message))
             {
                 if (chunk.ApprovalRequest is not null)
                 {
@@ -185,16 +182,18 @@ public sealed class StreamingService(
                 processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
                 processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
 
-                if (isNew)
+                if (!isNew)
                 {
-                    receivedNewContent = true;
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
+                    continue;
                 }
+
+                receivedNewContent = true;
+                dispatcher.Dispatch(new StreamChunk(
+                    topic.TopicId,
+                    streamingMessage.Content,
+                    streamingMessage.Reasoning,
+                    streamingMessage.ToolCalls,
+                    currentMessageId));
             }
 
             if (streamingMessage.HasContent)

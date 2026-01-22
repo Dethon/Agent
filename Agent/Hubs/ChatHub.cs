@@ -133,7 +133,6 @@ public sealed class ChatHub(
     public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
-        string? senderId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)

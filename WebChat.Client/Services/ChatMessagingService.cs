@@ -6,7 +6,7 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatMessagingService(ChatConnectionService connectionService) : IChatMessagingService
 {
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message, string? senderId)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -14,7 +14,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
             yield break;
         }
 
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message, senderId);
+        var stream = hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message);
 
         await foreach (var item in stream)
         {

@@ -56,7 +56,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message, string? senderId)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
     {
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
