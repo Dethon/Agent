@@ -165,6 +165,34 @@ public sealed class WebChatMessengerClient(
         }
     }
 
+    public bool EnqueuePrompt(string topicId, string message, string sender)
+    {
+        if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
+        {
+            return false;
+        }
+
+        if (!streamManager.TryIncrementPending(topicId))
+        {
+            return false;
+        }
+
+        var messageId = Interlocked.Increment(ref _messageIdCounter);
+
+        var prompt = new ChatPrompt
+        {
+            Prompt = message,
+            ChatId = session.ChatId,
+            ThreadId = (int)session.ThreadId,
+            MessageId = messageId,
+            Sender = sender,
+            BotTokenHash = session.AgentId
+        };
+
+        _promptChannel.Writer.TryWrite(prompt);
+        return true;
+    }
+
     public bool IsProcessing(string topicId)
     {
         return streamManager.IsStreaming(topicId);
