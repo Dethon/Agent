@@ -107,12 +107,8 @@ public sealed class SendMessageEffect : IDisposable
             SenderId = currentUser?.Id
         }));
 
-        // Start streaming
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
-        // Kick off streaming (fire-and-forget)
-        // Components subscribe to store directly, no render callback needed
-        _ = _streamingService.StreamResponseAsync(topic, action.Message);
+        // Delegate to streaming service (handles stream reuse internally)
+        _ = _streamingService.SendMessageAsync(topic, action.Message);
     }
 
     public void Dispose()
