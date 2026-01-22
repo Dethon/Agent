@@ -118,4 +118,66 @@ public sealed class WebChatStreamManagerTests : IDisposable
         state.BufferedMessages.ShouldContain(m => m.Reasoning == "Thinking...");
         state.BufferedMessages.ShouldContain(m => m.Content == "Answer");
     }
+
+    [Fact]
+    public void TryIncrementPending_WithActiveStream_ReturnsTrue()
+    {
+        const string topicId = "test-topic";
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+
+        var result = _manager.TryIncrementPending(topicId);
+
+        result.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void TryIncrementPending_WithNoStream_ReturnsFalse()
+    {
+        const string topicId = "nonexistent-topic";
+
+        var result = _manager.TryIncrementPending(topicId);
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void DecrementPendingAndCompleteIfZero_WhenCountReachesZero_CompletesStream()
+    {
+        const string topicId = "test-topic";
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.TryIncrementPending(topicId);
+
+        var completed = _manager.DecrementPendingAndCompleteIfZero(topicId);
+
+        completed.ShouldBeTrue();
+        _manager.IsStreaming(topicId).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void DecrementPendingAndCompleteIfZero_WhenCountAboveZero_KeepsStreamOpen()
+    {
+        const string topicId = "test-topic";
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.TryIncrementPending(topicId);
+        _manager.TryIncrementPending(topicId); // count = 2
+
+        var completed = _manager.DecrementPendingAndCompleteIfZero(topicId);
+
+        completed.ShouldBeFalse();
+        _manager.IsStreaming(topicId).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void CancelStream_ResetsPendingCount()
+    {
+        const string topicId = "test-topic";
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.TryIncrementPending(topicId);
+        _manager.TryIncrementPending(topicId);
+
+        _manager.CancelStream(topicId);
+
+        // After cancel, trying to increment should fail (no stream)
+        _manager.TryIncrementPending(topicId).ShouldBeFalse();
+    }
 }

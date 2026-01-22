@@ -12,6 +12,8 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
+    private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
+    private readonly object _streamLock = new();
     private bool _disposed;
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) CreateStream(
@@ -78,23 +80,71 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
 
     public void CancelStream(string topicId)
     {
-        if (_cancellationTokens.TryRemove(topicId, out var cts))
+        lock (_streamLock)
         {
-            cts.Cancel();
-            cts.Dispose();
-        }
+            if (_cancellationTokens.TryRemove(topicId, out var cts))
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
 
+            if (_responseChannels.TryRemove(topicId, out var channel))
+            {
+                channel.Complete();
+            }
+
+            CleanupStreamState(topicId);
+        }
+    }
+
+    public bool IsStreaming(string topicId)
+    {
+        return _responseChannels.ContainsKey(topicId);
+    }
+
+    public bool TryIncrementPending(string topicId)
+    {
+        lock (_streamLock)
+        {
+            if (!_responseChannels.ContainsKey(topicId))
+            {
+                return false;
+            }
+
+            _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
+            return true;
+        }
+    }
+
+    public bool DecrementPendingAndCompleteIfZero(string topicId)
+    {
+        lock (_streamLock)
+        {
+            if (!_pendingPromptCounts.TryGetValue(topicId, out var count))
+            {
+                return false;
+            }
+
+            var newCount = count - 1;
+            if (newCount <= 0)
+            {
+                CompleteStreamInternal(topicId);
+                return true;
+            }
+
+            _pendingPromptCounts[topicId] = newCount;
+            return false;
+        }
+    }
+
+    private void CompleteStreamInternal(string topicId)
+    {
         if (_responseChannels.TryRemove(topicId, out var channel))
         {
             channel.Complete();
         }
 
         CleanupStreamState(topicId);
-    }
-
-    public bool IsStreaming(string topicId)
-    {
-        return _responseChannels.ContainsKey(topicId);
     }
 
     public StreamState? GetStreamState(string topicId)
@@ -120,6 +170,7 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         _sequenceCounters.TryRemove(topicId, out _);
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
+        _pendingPromptCounts.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {
