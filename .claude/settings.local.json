@@ -27,7 +27,8 @@
       "Bash(git commit:*)",
       "Bash(grep:*)",
       "Skill(superpowers:brainstorming)",
-      "Skill(superpowers:writing-plans)"
+      "Skill(superpowers:writing-plans)",
+      "Bash(git fetch:*)"
     ]
   }
 }
