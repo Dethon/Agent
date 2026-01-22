@@ -168,6 +168,22 @@ public sealed class ChatHub(
         }
     }
 
+    public bool EnqueueMessage(string topicId, string message)
+    {
+        if (!IsRegistered)
+        {
+            return false;
+        }
+
+        if (!messengerClient.TryGetSession(topicId, out _))
+        {
+            return false;
+        }
+
+        var userId = GetRegisteredUserId() ?? "Anonymous";
+        return messengerClient.EnqueuePrompt(topicId, message, userId);
+    }
+
     public async Task CancelTopic(string topicId)
     {
         messengerClient.CancelProcessing(topicId);
