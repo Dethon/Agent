@@ -2,8 +2,10 @@ using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Hub;
 
@@ -11,6 +13,7 @@ public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
     StreamingStore streamingStore,
+    UserIdentityStore userIdentityStore,
     IStreamResumeService streamResumeService) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
@@ -90,5 +93,29 @@ public sealed class HubEventDispatcher(
             Reasoning: null,
             ToolCalls: notification.ToolCalls,
             MessageId: null));
+    }
+
+    public void HandleUserMessage(UserMessageNotification notification)
+    {
+        // Only add if we're watching this topic
+        var currentTopic = topicsStore.State.SelectedTopicId;
+        if (currentTopic != notification.TopicId)
+        {
+            return;
+        }
+
+        // Skip if message is from us (we already added it locally in SendMessageEffect)
+        var currentUserId = userIdentityStore.State.SelectedUserId;
+        if (notification.SenderId == currentUserId)
+        {
+            return;
+        }
+
+        dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
+        {
+            Role = "user",
+            Content = notification.Content,
+            SenderId = notification.SenderId
+        }));
     }
 }

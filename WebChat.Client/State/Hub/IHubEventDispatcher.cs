@@ -8,4 +8,5 @@ public interface IHubEventDispatcher
     void HandleStreamChanged(StreamChangedNotification notification);
     void HandleApprovalResolved(ApprovalResolvedNotification notification);
     void HandleToolCalls(ToolCallsNotification notification);
+    void HandleUserMessage(UserMessageNotification notification);
 }

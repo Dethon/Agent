@@ -43,6 +43,10 @@ public sealed class SignalREventSubscriber(
             hubConnection.On<ToolCallsNotification>(
                 "OnToolCalls", hubEventDispatcher.HandleToolCalls));
 
+        _subscriptions.Add(
+            hubConnection.On<UserMessageNotification>(
+                "OnUserMessage", hubEventDispatcher.HandleUserMessage));
+
         IsSubscribed = true;
     }
 
