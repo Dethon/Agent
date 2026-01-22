@@ -28,7 +28,11 @@
       "Bash(grep:*)",
       "Skill(superpowers:brainstorming)",
       "Skill(superpowers:writing-plans)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Bash(git show:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)"
     ]
   }
 }
