@@ -40,7 +40,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Url: "https://example.com",
                 Format: WebFetchOutputFormat.Markdown,
                 MaxLength: 5000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var result = await fixture.Browser.NavigateAsync(request);
 
             // Assert
@@ -72,7 +74,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Format: WebFetchOutputFormat.Markdown,
                 MaxLength: 10000,
                 IncludeLinks: true,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 8000,
+                DismissModals: false);
             var result = await fixture.Browser.NavigateAsync(request);
 
             // Assert
@@ -103,7 +107,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Selector: "#mw-content-text",
                 Format: WebFetchOutputFormat.Markdown,
                 MaxLength: 5000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 8000,
+                DismissModals: false);
             var result = await fixture.Browser.NavigateAsync(request);
 
             // Assert
@@ -129,7 +135,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var result1 = await fixture.Browser.NavigateAsync(request1);
             result1.Status.ShouldBe(BrowseStatus.Success);
 
@@ -138,7 +146,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://httpbin.org/html",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var result2 = await fixture.Browser.NavigateAsync(request2);
 
             // Assert - both navigations should work and session should persist
@@ -170,7 +180,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 2000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
             browseResult.Status.ShouldBe(BrowseStatus.Success);
 
@@ -179,7 +191,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Selector: "a",
                 WaitForNavigation: true,
-                WaitTimeoutMs: 10000);
+                WaitTimeoutMs: 5000);
             var clickResult = await fixture.Browser.ClickAsync(clickRequest);
 
             // Assert
@@ -206,7 +218,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://en.wikipedia.org/wiki/Main_Page",
                 MaxLength: 5000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 8000,
+                DismissModals: false);
             var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
             browseResult.Status.ShouldBe(BrowseStatus.Success);
 
@@ -216,7 +230,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Selector: "a",
                 Text: "About Wikipedia",
                 WaitForNavigation: true,
-                WaitTimeoutMs: 10000);
+                WaitTimeoutMs: 5000);
             var clickResult = await fixture.Browser.ClickAsync(clickRequest);
 
             // Assert - either success or element not found (text might change)
@@ -245,14 +259,16 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             await fixture.Browser.NavigateAsync(browseRequest);
 
             // Try to click a non-existent element
             var clickRequest = new ClickRequest(
                 SessionId: sessionId,
                 Selector: "#this-element-does-not-exist-xyz123",
-                WaitTimeoutMs: 3000);
+                WaitTimeoutMs: 2000);
             var clickResult = await fixture.Browser.ClickAsync(clickRequest);
 
             // Assert
@@ -295,7 +311,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 2000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             await fixture.Browser.NavigateAsync(browseRequest);
 
             // Get current page
@@ -335,7 +353,9 @@ public class PlaywrightWebBrowserIntegrationTests(
             SessionId: sessionId,
             Url: "https://example.com",
             MaxLength: 1000,
-            DismissModals: true);
+            WaitStrategy: WaitStrategy.DomContentLoaded,
+            WaitTimeoutMs: 5000,
+            DismissModals: false);
         await fixture.Browser.NavigateAsync(browseRequest);
 
         // Close session
@@ -375,6 +395,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://this-domain-definitely-does-not-exist-xyz123.com",
                 MaxLength: 1000,
+                WaitStrategy: WaitStrategy.DomContentLoaded,
                 WaitTimeoutMs: 5000);
             var result = await fixture.Browser.NavigateAsync(request);
 
@@ -402,7 +423,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId1,
                 Url: "https://example.com",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var result1 = await fixture.Browser.NavigateAsync(request1);
             result1.Status.ShouldBe(BrowseStatus.Success);
 
@@ -411,7 +434,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId2,
                 Url: "https://httpbin.org/html",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             var result2 = await fixture.Browser.NavigateAsync(request2);
             result2.Status.ShouldBe(BrowseStatus.Success);
 
@@ -442,7 +467,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://example.com",
                 MaxLength: 1000,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 5000,
+                DismissModals: false);
             await fixture.Browser.NavigateAsync(browseRequest);
 
             // Hover over a link
@@ -450,7 +477,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Selector: "a",
                 Action: ClickAction.Hover,
-                WaitTimeoutMs: 5000);
+                WaitTimeoutMs: 3000);
             var result = await fixture.Browser.ClickAsync(clickRequest);
 
             // Hover should succeed without navigation
@@ -476,9 +503,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://duckduckgo.com",
                 MaxLength: 5000,
-                DismissModals: true,
+                DismissModals: false,
                 WaitStrategy: WaitStrategy.NetworkIdle,
-                WaitTimeoutMs: 15000);
+                WaitTimeoutMs: 10000);
             var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
             browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
@@ -488,7 +515,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Selector: "input[name='q']",
                 Action: ClickAction.Fill,
                 InputValue: "playwright testing",
-                WaitTimeoutMs: 5000);
+                WaitTimeoutMs: 3000);
             var fillResult = await fixture.Browser.ClickAsync(fillRequest);
             fillResult.Status.ShouldBe(ClickStatus.Success);
 
@@ -499,7 +526,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Action: ClickAction.Press,
                 Key: "Enter",
                 WaitForNavigation: true,
-                WaitTimeoutMs: 15000);
+                WaitTimeoutMs: 10000);
             var pressResult = await fixture.Browser.ClickAsync(pressRequest);
 
             // Assert - form submission should work
@@ -528,9 +555,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Url: "https://duckduckgo.com",
                 MaxLength: 2000,
-                DismissModals: true,
+                DismissModals: false,
                 WaitStrategy: WaitStrategy.NetworkIdle,
-                WaitTimeoutMs: 15000);
+                WaitTimeoutMs: 10000);
             var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
             browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
@@ -540,7 +567,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Selector: "input[name='q']",
                 Action: ClickAction.Fill,
                 InputValue: "test query",
-                WaitTimeoutMs: 5000);
+                WaitTimeoutMs: 3000);
             var fillResult = await fixture.Browser.ClickAsync(fillRequest);
             fillResult.Status.ShouldBe(ClickStatus.Success);
 
@@ -549,7 +576,7 @@ public class PlaywrightWebBrowserIntegrationTests(
                 SessionId: sessionId,
                 Selector: "input[name='q']",
                 Action: ClickAction.Clear,
-                WaitTimeoutMs: 5000);
+                WaitTimeoutMs: 3000);
             var clearResult = await fixture.Browser.ClickAsync(clearRequest);
 
             // Assert - clear should succeed
@@ -579,7 +606,9 @@ public class PlaywrightWebBrowserIntegrationTests(
                 Format: WebFetchOutputFormat.Markdown,
                 MaxLength: 15000,
                 IncludeLinks: true,
-                DismissModals: true);
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 8000,
+                DismissModals: false);
             var result = await fixture.Browser.NavigateAsync(request);
 
             // Output for debugging
