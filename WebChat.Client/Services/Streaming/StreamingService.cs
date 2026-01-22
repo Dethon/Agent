@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -14,6 +15,44 @@ public sealed class StreamingService(
     ITopicService topicService,
     TopicsStore topicsStore) : IStreamingService
 {
+    private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
+    private readonly SemaphoreSlim _streamLock = new(1, 1);
+
+    public async Task SendMessageAsync(StoredTopic topic, string message)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
+                || task.IsCompleted;
+
+            if (isNewStream)
+            {
+                StartNewStream(topic, message);
+            }
+            else
+            {
+                var success = await messagingService.EnqueueMessageAsync(topic.TopicId, message);
+                if (!success)
+                {
+                    StartNewStream(topic, message);
+                }
+            }
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    private void StartNewStream(StoredTopic topic, string message)
+    {
+        dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+        var streamTask = StreamResponseAsync(topic, message);
+        _activeStreams[topic.TopicId] = streamTask;
+        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out Task? _));
+    }
+
     public async Task StreamResponseAsync(StoredTopic topic, string message)
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };

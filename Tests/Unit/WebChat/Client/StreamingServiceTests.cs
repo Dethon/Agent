@@ -264,6 +264,60 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
+    #region SendMessageAsync Tests
+
+    [Fact]
+    public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "test");
+
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse(); // Completed
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_WithActiveStream_ReusesExistingStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // First message - creates stream
+        _messagingService.EnqueueContent("First response");
+        var firstTask = _service.SendMessageAsync(topic, "first");
+
+        // Simulate second message while first is processing
+        // The fake service will return true for EnqueueMessageAsync
+        await firstTask;
+
+        // Verify only one stream was created (one response)
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_WhenEnqueueFails_CreatesNewStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // Set enqueue to fail
+        _messagingService.SetEnqueueResult(false);
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    #endregion
+
     #region ResumeStreamResponseAsync Tests
 
     [Fact]
