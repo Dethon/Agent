@@ -181,4 +181,26 @@ public sealed class WebChatStreamManagerTests : IDisposable
         // After cancel, trying to increment should fail (no stream)
         _manager.TryIncrementPending(topicId).ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task WriteMessageAsync_WithUserMessage_BuffersUserMessage()
+    {
+        const string topicId = "test-topic";
+        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+
+        var userMessage = new ChatStreamMessage
+        {
+            Content = "Hello from user",
+            UserMessage = new UserMessageInfo("alice")
+        };
+
+        await _manager.WriteMessageAsync(topicId, userMessage, CancellationToken.None);
+
+        var state = _manager.GetStreamState(topicId);
+        state.ShouldNotBeNull();
+        state.BufferedMessages.ShouldNotBeEmpty();
+        state.BufferedMessages[0].Content.ShouldBe("Hello from user");
+        state.BufferedMessages[0].UserMessage.ShouldNotBeNull();
+        state.BufferedMessages[0].UserMessage!.SenderId.ShouldBe("alice");
+    }
 }

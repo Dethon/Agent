@@ -157,6 +157,19 @@ public sealed class WebChatMessengerClient(
         var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, sender, cancellationToken);
         streamManager.TryIncrementPending(topicId);
 
+        // Write user message to buffer for other browsers to see on refresh
+        var userMessage = new ChatStreamMessage
+        {
+            Content = message,
+            UserMessage = new UserMessageInfo(sender)
+        };
+        await streamManager.WriteMessageAsync(topicId, userMessage, cancellationToken);
+
+        // Notify other browsers about the user message
+        await hubNotifier.NotifyUserMessageAsync(
+                new UserMessageNotification(topicId, message, sender), cancellationToken)
+            .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
+
         await hubNotifier.NotifyStreamChangedAsync(
                 new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
             .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
@@ -192,6 +205,21 @@ public sealed class WebChatMessengerClient(
         {
             return false;
         }
+
+        // Write user message to buffer for other browsers to see on refresh
+        var userMessage = new ChatStreamMessage
+        {
+            Content = message,
+            UserMessage = new UserMessageInfo(sender)
+        };
+        // Fire and forget - don't block the enqueue
+        _ = streamManager.WriteMessageAsync(topicId, userMessage, CancellationToken.None)
+            .SafeAwaitAsync(logger, "Failed to buffer user message for topic {TopicId}", topicId);
+
+        // Notify other browsers about the user message
+        _ = hubNotifier.NotifyUserMessageAsync(
+                new UserMessageNotification(topicId, message, sender), CancellationToken.None)
+            .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);
 
