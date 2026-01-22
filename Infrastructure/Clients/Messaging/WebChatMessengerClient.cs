@@ -50,19 +50,23 @@ public sealed class WebChatMessengerClient(
             {
                 foreach (var content in update.Contents)
                 {
-                    // StreamCompleteContent signals that this topic's agent turn is done
+                    // StreamCompleteContent signals that one prompt's agent turn is done
+                    // Only send IsComplete when ALL pending prompts are processed
                     if (content is StreamCompleteContent)
                     {
-                        await streamManager.WriteMessageAsync(
-                            topicId,
-                            new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
-                            cancellationToken);
-
-                        if (streamManager.DecrementPendingAndCompleteIfZero(topicId))
+                        if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
                         {
-                            await hubNotifier.NotifyStreamChangedAsync(
-                                    new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
-                                .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+                            var message = new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId };
+                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId);
+                            
+                            await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
+                            streamManager.CompleteStream(topicId);
+                            await hubNotifier
+                                .NotifyStreamChangedAsync(notification, cancellationToken)
+                                .SafeAwaitAsync(
+                                    logger, 
+                                    "Failed to notify stream completed for topic {TopicId}", 
+                                    topicId);
                         }
                         continue;
                     }
@@ -91,8 +95,10 @@ public sealed class WebChatMessengerClient(
                     new ChatStreamMessage { IsComplete = true, Error = ex.Message, MessageId = update.MessageId },
                     CancellationToken.None);
 
-                if (streamManager.DecrementPendingAndCompleteIfZero(topicId))
+                if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
                 {
+                    streamManager.CompleteStream(topicId);
+
                     await hubNotifier.NotifyStreamChangedAsync(
                             new StreamChangedNotification(StreamChangeType.Completed, topicId), CancellationToken.None)
                         .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);

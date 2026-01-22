@@ -119,7 +119,7 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         }
     }
 
-    public bool DecrementPendingAndCompleteIfZero(string topicId)
+    public bool DecrementPendingAndCheckIfShouldComplete(string topicId)
     {
         lock (_streamLock)
         {
@@ -129,25 +129,9 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
             }
 
             var newCount = count - 1;
-            if (newCount <= 0)
-            {
-                CompleteStreamInternal(topicId);
-                return true;
-            }
-
             _pendingPromptCounts[topicId] = newCount;
-            return false;
+            return newCount <= 0;
         }
-    }
-
-    private void CompleteStreamInternal(string topicId)
-    {
-        if (_responseChannels.TryRemove(topicId, out var channel))
-        {
-            channel.Complete();
-        }
-
-        CleanupStreamState(topicId);
     }
 
     public StreamState? GetStreamState(string topicId)

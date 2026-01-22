@@ -141,29 +141,30 @@ public sealed class WebChatStreamManagerTests : IDisposable
     }
 
     [Fact]
-    public void DecrementPendingAndCompleteIfZero_WhenCountReachesZero_CompletesStream()
+    public void DecrementPendingAndCheckIfShouldComplete_WhenCountReachesZero_ReturnsTrueButKeepsStreamOpen()
     {
         const string topicId = "test-topic";
         _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
         _manager.TryIncrementPending(topicId);
 
-        var completed = _manager.DecrementPendingAndCompleteIfZero(topicId);
+        var shouldComplete = _manager.DecrementPendingAndCheckIfShouldComplete(topicId);
 
-        completed.ShouldBeTrue();
-        _manager.IsStreaming(topicId).ShouldBeFalse();
+        shouldComplete.ShouldBeTrue();
+        // Stream is still open - caller is responsible for completing after writing final message
+        _manager.IsStreaming(topicId).ShouldBeTrue();
     }
 
     [Fact]
-    public void DecrementPendingAndCompleteIfZero_WhenCountAboveZero_KeepsStreamOpen()
+    public void DecrementPendingAndCheckIfShouldComplete_WhenCountAboveZero_ReturnsFalse()
     {
         const string topicId = "test-topic";
         _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
         _manager.TryIncrementPending(topicId);
         _manager.TryIncrementPending(topicId); // count = 2
 
-        var completed = _manager.DecrementPendingAndCompleteIfZero(topicId);
+        var shouldComplete = _manager.DecrementPendingAndCheckIfShouldComplete(topicId);
 
-        completed.ShouldBeFalse();
+        shouldComplete.ShouldBeFalse();
         _manager.IsStreaming(topicId).ShouldBeTrue();
     }
 
