@@ -32,4 +32,11 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
     {
         await sender.SendAsync("OnToolCalls", notification, cancellationToken);
     }
+
+    public async Task NotifyUserMessageAsync(
+        UserMessageNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        await sender.SendAsync("OnUserMessage", notification, cancellationToken);
+    }
 }

@@ -14,4 +14,7 @@ public interface INotifier
 
     Task NotifyToolCallsAsync(ToolCallsNotification notification,
         CancellationToken cancellationToken = default);
+
+    Task NotifyUserMessageAsync(UserMessageNotification notification,
+        CancellationToken cancellationToken = default);
 }

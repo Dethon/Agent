@@ -31,3 +31,8 @@ public record ApprovalResolvedNotification(
 public record ToolCallsNotification(
     string TopicId,
     string ToolCalls);
+
+public record UserMessageNotification(
+    string TopicId,
+    string Content,
+    string? SenderId);
