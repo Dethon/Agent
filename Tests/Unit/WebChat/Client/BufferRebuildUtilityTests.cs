@@ -144,6 +144,64 @@ public sealed class BufferRebuildUtilityTests
         streamingMessage.Content.ShouldBe("Second turn");
     }
 
+    [Fact]
+    public void RebuildFromBuffer_WithUserMessage_IncludesInCompletedTurns()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello from user", UserMessage = new UserMessageInfo("alice") },
+            new() { Content = "Hi there!", MessageId = "msg-1" }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns.Count.ShouldBe(1);
+        completedTurns[0].Role.ShouldBe("user");
+        completedTurns[0].Content.ShouldBe("Hello from user");
+        completedTurns[0].SenderId.ShouldBe("alice");
+        streamingMessage.Content.ShouldBe("Hi there!");
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_WithMixedMessages_PreservesChronologicalOrder()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "User msg 1", UserMessage = new UserMessageInfo("alice"), SequenceNumber = 1 },
+            new() { Content = "Assistant response 1", MessageId = "msg-1", SequenceNumber = 2 },
+            new() { IsComplete = true, MessageId = "msg-1", SequenceNumber = 3 },
+            new() { Content = "User msg 2", UserMessage = new UserMessageInfo("bob"), SequenceNumber = 4 },
+            new() { Content = "Assistant response 2", MessageId = "msg-2", SequenceNumber = 5 }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns.Count.ShouldBe(3);
+        completedTurns[0].Role.ShouldBe("user");
+        completedTurns[0].Content.ShouldBe("User msg 1");
+        completedTurns[1].Role.ShouldBe("assistant");
+        completedTurns[1].Content.ShouldBe("Assistant response 1");
+        completedTurns[2].Role.ShouldBe("user");
+        completedTurns[2].Content.ShouldBe("User msg 2");
+        streamingMessage.Content.ShouldBe("Assistant response 2");
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_UserMessageNotStripped_EvenIfInHistory()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice") }
+        };
+        var historyContent = new HashSet<string> { "Hello" };
+
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
+
+        // User messages should NOT be stripped based on assistant history
+        completedTurns.Count.ShouldBe(1);
+        completedTurns[0].Content.ShouldBe("Hello");
+    }
+
     #endregion
 
     #region StripKnownContent Tests

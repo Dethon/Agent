@@ -7,6 +7,7 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.State;
 
@@ -16,6 +17,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     private readonly Dispatcher _realDispatcher;
     private readonly TopicsStore _topicsStore;
     private readonly StreamingStore _streamingStore;
+    private readonly UserIdentityStore _userIdentityStore;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly HubEventDispatcher _sut;
 
@@ -25,11 +27,13 @@ public sealed class HubEventDispatcherTests : IDisposable
         _realDispatcher = new Dispatcher();
         _topicsStore = new TopicsStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
+        _userIdentityStore = new UserIdentityStore(_realDispatcher);
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _streamingStore,
+            _userIdentityStore,
             _mockStreamResumeService.Object);
     }
 
@@ -37,6 +41,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     {
         _topicsStore.Dispose();
         _streamingStore.Dispose();
+        _userIdentityStore.Dispose();
     }
 
     private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
