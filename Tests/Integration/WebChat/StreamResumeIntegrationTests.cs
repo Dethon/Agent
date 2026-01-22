@@ -108,39 +108,4 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
         // Assert
         resumedMessages.ShouldBeEmpty();
     }
-
-    [Fact]
-    public async Task StreamState_ContainsSequenceNumbers()
-    {
-        // Arrange
-        var topicId = Guid.NewGuid().ToString();
-        var chatId = Random.Shared.NextInt64(10000, 99999);
-        var threadId = Random.Shared.NextInt64(20000, 29999);
-
-        for (var i = 0; i < 5; i++)
-        {
-            fixture.FakeAgentFactory.EnqueueResponses($"Message {i}. ");
-        }
-
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
-
-        var messages = new List<ChatStreamMessage>();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // Act
-        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate messages", cts.Token))
-        {
-            messages.Add(msg);
-            if (msg.IsComplete || msg.Error is not null)
-            {
-                break;
-            }
-        }
-
-        // Assert
-        var sequenceNumbers = messages.Select(m => m.SequenceNumber).ToList();
-        sequenceNumbers.ShouldBeInOrder(); // Verify sequence numbers are in order
-        sequenceNumbers.ShouldAllBe(n => n > 0); // All should be positive
-    }
 }

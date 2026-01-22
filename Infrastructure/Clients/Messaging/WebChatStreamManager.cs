@@ -9,7 +9,6 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
     private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
-    private readonly ConcurrentDictionary<string, long> _sequenceCounters = new();
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
@@ -26,7 +25,6 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         _responseChannels[topicId] = broadcastChannel;
 
         _streamBuffers.TryRemove(topicId, out _);
-        _sequenceCounters.TryRemove(topicId, out _);
 
         _currentPrompts[topicId] = currentPrompt;
         if (currentSenderId is not null)
@@ -60,12 +58,9 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
             return;
         }
 
-        var sequenceNumber = _sequenceCounters.AddOrUpdate(topicId, 1, (_, seq) => seq + 1);
-        var messageWithSequence = message with { SequenceNumber = sequenceNumber };
-
         var buffer = _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer());
-        buffer.Add(messageWithSequence);
-        await channel.WriteAsync(messageWithSequence, cancellationToken);
+        buffer.Add(message);
+        await channel.WriteAsync(message, cancellationToken);
     }
 
     public void CompleteStream(string topicId)
@@ -154,7 +149,6 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private void CleanupStreamState(string topicId)
     {
         _streamBuffers.TryRemove(topicId, out _);
-        _sequenceCounters.TryRemove(topicId, out _);
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
