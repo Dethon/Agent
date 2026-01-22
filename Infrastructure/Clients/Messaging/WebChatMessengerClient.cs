@@ -57,10 +57,13 @@ public sealed class WebChatMessengerClient(
                             topicId,
                             new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
                             cancellationToken);
-                        streamManager.CompleteStream(topicId);
-                        await hubNotifier.NotifyStreamChangedAsync(
-                                new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
-                            .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+
+                        if (streamManager.DecrementPendingAndCompleteIfZero(topicId))
+                        {
+                            await hubNotifier.NotifyStreamChangedAsync(
+                                    new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
+                                .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+                        }
                         continue;
                     }
 
@@ -87,7 +90,13 @@ public sealed class WebChatMessengerClient(
                     topicId,
                     new ChatStreamMessage { IsComplete = true, Error = ex.Message, MessageId = update.MessageId },
                     CancellationToken.None);
-                streamManager.CompleteStream(topicId);
+
+                if (streamManager.DecrementPendingAndCompleteIfZero(topicId))
+                {
+                    await hubNotifier.NotifyStreamChangedAsync(
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId), CancellationToken.None)
+                        .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+                }
             }
         }
     }
@@ -140,6 +149,7 @@ public sealed class WebChatMessengerClient(
         }
 
         var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, sender, cancellationToken);
+        streamManager.TryIncrementPending(topicId);
 
         await hubNotifier.NotifyStreamChangedAsync(
                 new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
