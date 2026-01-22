@@ -13,7 +13,7 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
-    private readonly object _streamLock = new();
+    private readonly Lock _streamLock = new();
     private bool _disposed;
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) CreateStream(
@@ -70,12 +70,15 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
 
     public void CompleteStream(string topicId)
     {
-        if (_responseChannels.TryRemove(topicId, out var channel))
+        lock (_streamLock)
         {
-            channel.Complete();
-        }
+            if (_responseChannels.TryRemove(topicId, out var channel))
+            {
+                channel.Complete();
+            }
 
-        CleanupStreamState(topicId);
+            CleanupStreamState(topicId);
+        }
     }
 
     public void CancelStream(string topicId)
