@@ -58,16 +58,17 @@ public sealed class WebChatMessengerClient(
                         {
                             var message = new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId };
                             var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId);
-                            
+
                             await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
                             streamManager.CompleteStream(topicId);
                             await hubNotifier
                                 .NotifyStreamChangedAsync(notification, cancellationToken)
                                 .SafeAwaitAsync(
-                                    logger, 
-                                    "Failed to notify stream completed for topic {TopicId}", 
+                                    logger,
+                                    "Failed to notify stream completed for topic {TopicId}",
                                     topicId);
                         }
+
                         continue;
                     }
 
@@ -146,6 +147,7 @@ public sealed class WebChatMessengerClient(
         string topicId,
         string message,
         string sender,
+        string? correlationId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
@@ -167,7 +169,7 @@ public sealed class WebChatMessengerClient(
 
         // Notify other browsers about the user message
         await hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender), cancellationToken)
+                new UserMessageNotification(topicId, message, sender, correlationId), cancellationToken)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         await hubNotifier.NotifyStreamChangedAsync(
@@ -194,7 +196,7 @@ public sealed class WebChatMessengerClient(
         }
     }
 
-    public bool EnqueuePrompt(string topicId, string message, string sender)
+    public bool EnqueuePrompt(string topicId, string message, string sender, string? correlationId)
     {
         if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
         {
@@ -218,7 +220,7 @@ public sealed class WebChatMessengerClient(
 
         // Notify other browsers about the user message
         _ = hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender), CancellationToken.None)
+                new UserMessageNotification(topicId, message, sender, correlationId), CancellationToken.None)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);

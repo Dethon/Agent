@@ -35,4 +35,5 @@ public record ToolCallsNotification(
 public record UserMessageNotification(
     string TopicId,
     string Content,
-    string? SenderId);
+    string? SenderId,
+    string? CorrelationId = null);

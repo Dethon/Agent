@@ -133,6 +133,7 @@ public sealed class ChatHub(
     public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
+        string? correlationId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!IsRegistered)
@@ -156,7 +157,8 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
-        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, userId, cancellationToken);
+        var responses =
+            messengerClient.EnqueuePromptAndGetResponses(topicId, message, userId, correlationId, cancellationToken);
 
         await foreach (var msg in responses.IgnoreCancellation(ct: cancellationToken))
         {
@@ -168,7 +170,7 @@ public sealed class ChatHub(
         }
     }
 
-    public bool EnqueueMessage(string topicId, string message)
+    public bool EnqueueMessage(string topicId, string message, string? correlationId)
     {
         if (!IsRegistered)
         {
@@ -181,7 +183,7 @@ public sealed class ChatHub(
         }
 
         var userId = GetRegisteredUserId() ?? "Anonymous";
-        return messengerClient.EnqueuePrompt(topicId, message, userId);
+        return messengerClient.EnqueuePrompt(topicId, message, userId, correlationId);
     }
 
     public async Task CancelTopic(string topicId)

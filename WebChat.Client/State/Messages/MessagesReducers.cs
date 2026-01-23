@@ -25,6 +25,19 @@ public static class MessagesReducers
             }
         },
 
+        AddPendingMessage a => state with
+        {
+            PendingMessagesByTopic =
+            new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.PendingMessagesByTopic)
+            {
+                [a.TopicId] = state.PendingMessagesByTopic.GetValueOrDefault(a.TopicId, [])
+                    .Append(a.Message)
+                    .ToList()
+            }
+        },
+
+        FlushPendingMessages a => FlushPending(state, a.TopicId),
+
         UpdateMessage a => state with
         {
             MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
@@ -47,11 +60,41 @@ public static class MessagesReducers
             {
                 [a.TopicId] = []
             },
+            PendingMessagesByTopic =
+            new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.PendingMessagesByTopic)
+            {
+                [a.TopicId] = []
+            },
             LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId))
         },
 
         _ => state
     };
+
+    private static MessagesState FlushPending(MessagesState state, string topicId)
+    {
+        var pending = state.PendingMessagesByTopic.GetValueOrDefault(topicId, []);
+        if (pending.Count == 0)
+        {
+            return state;
+        }
+
+        var current = state.MessagesByTopic.GetValueOrDefault(topicId, []);
+        var combined = current.Concat(pending).ToList();
+
+        return state with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
+            {
+                [topicId] = combined
+            },
+            PendingMessagesByTopic =
+            new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.PendingMessagesByTopic)
+            {
+                [topicId] = []
+            }
+        };
+    }
 
     // ReSharper disable UnusedParameter.Local
     private static IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> UpdateMessageInTopic(

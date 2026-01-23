@@ -134,7 +134,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         using var cts1 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId1, "Message to topic 1", cts1.Token))
+                           "SendMessage", topicId1, "Message to topic 1", null, cts1.Token))
         {
             messages1.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -154,7 +154,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId2, "Message to topic 2", cts2.Token))
+                           "SendMessage", topicId2, "Message to topic 2", null, cts2.Token))
         {
             messages2.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -256,7 +256,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         {
             var messages = new List<ChatStreamMessage>();
             await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                               "SendMessage", session.TopicId, $"Message to {session.TopicId}", cts.Token))
+                               "SendMessage", session.TopicId, $"Message to {session.TopicId}", null, cts.Token))
             {
                 messages.Add(msg);
                 if (msg.IsComplete || msg.Error is not null)
@@ -307,7 +307,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Message to deleted topic", cts.Token))
+                           "SendMessage", topicId, "Message to deleted topic", null, cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)

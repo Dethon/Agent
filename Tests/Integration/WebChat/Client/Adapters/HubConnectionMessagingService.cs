@@ -6,9 +6,11 @@ namespace Tests.Integration.WebChat.Client.Adapters;
 
 public sealed class HubConnectionMessagingService(HubConnection connection) : IChatMessagingService
 {
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
+        string? correlationId = null)
     {
-        await foreach (var msg in connection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message))
+        await foreach (var msg in connection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message,
+                           correlationId))
         {
             yield return msg;
         }
@@ -32,8 +34,8 @@ public sealed class HubConnectionMessagingService(HubConnection connection) : IC
         await connection.InvokeAsync("CancelTopic", topicId);
     }
 
-    public async Task<bool> EnqueueMessageAsync(string topicId, string message)
+    public async Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
     {
-        return await connection.InvokeAsync<bool>("EnqueueMessage", topicId, message);
+        return await connection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId);
     }
 }

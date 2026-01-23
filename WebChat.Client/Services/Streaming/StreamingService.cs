@@ -18,24 +18,24 @@ public sealed class StreamingService(
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
 
-    public async Task SendMessageAsync(StoredTopic topic, string message)
+    public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
     {
         await _streamLock.WaitAsync();
         try
         {
             var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
-                || task.IsCompleted;
+                              || task.IsCompleted;
 
             if (isNewStream)
             {
-                StartNewStream(topic, message);
+                StartNewStream(topic, message, correlationId);
             }
             else
             {
-                var success = await messagingService.EnqueueMessageAsync(topic.TopicId, message);
+                var success = await messagingService.EnqueueMessageAsync(topic.TopicId, message, correlationId);
                 if (!success)
                 {
-                    StartNewStream(topic, message);
+                    StartNewStream(topic, message, correlationId);
                 }
             }
         }
@@ -45,15 +45,15 @@ public sealed class StreamingService(
         }
     }
 
-    private void StartNewStream(StoredTopic topic, string message)
+    private void StartNewStream(StoredTopic topic, string message, string? correlationId)
     {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-        var streamTask = StreamResponseAsync(topic, message);
+        var streamTask = StreamResponseAsync(topic, message, correlationId);
         _activeStreams[topic.TopicId] = streamTask;
         _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out Task? _));
     }
 
-    public async Task StreamResponseAsync(StoredTopic topic, string message)
+    public async Task StreamResponseAsync(StoredTopic topic, string message, string? correlationId = null)
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
         string? currentMessageId = null;
@@ -61,7 +61,7 @@ public sealed class StreamingService(
 
         try
         {
-            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message))
+            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message, correlationId))
             {
                 if (chunk.ApprovalRequest is not null)
                 {

@@ -58,7 +58,8 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
+        string? correlationId = null)
     {
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
@@ -96,7 +97,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         return Task.CompletedTask;
     }
 
-    public Task<bool> EnqueueMessageAsync(string topicId, string message)
+    public Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
     {
         return Task.FromResult(_enqueueResult);
     }

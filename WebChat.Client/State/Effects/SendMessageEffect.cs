@@ -1,5 +1,6 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services;
 using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -17,6 +18,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IChatMessagingService _messagingService;
     private readonly UserIdentityStore _userIdentityStore;
+    private readonly SentMessageTracker _sentMessageTracker;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -25,7 +27,8 @@ public sealed class SendMessageEffect : IDisposable
         IStreamingService streamingService,
         ITopicService topicService,
         IChatMessagingService messagingService,
-        UserIdentityStore userIdentityStore)
+        UserIdentityStore userIdentityStore,
+        SentMessageTracker sentMessageTracker)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -34,6 +37,7 @@ public sealed class SendMessageEffect : IDisposable
         _topicService = topicService;
         _messagingService = messagingService;
         _userIdentityStore = userIdentityStore;
+        _sentMessageTracker = sentMessageTracker;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
@@ -95,7 +99,10 @@ public sealed class SendMessageEffect : IDisposable
             }
         }
 
-        // Add user message
+        // Generate correlation ID to track this message (for duplicate detection)
+        var correlationId = _sentMessageTracker.TrackNewMessage();
+
+        // Add user message immediately for instant feedback
         var identityState = _userIdentityStore.State;
         var currentUser = identityState.AvailableUsers
             .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
@@ -108,7 +115,7 @@ public sealed class SendMessageEffect : IDisposable
         }));
 
         // Delegate to streaming service (handles stream reuse internally)
-        _ = _streamingService.SendMessageAsync(topic, action.Message);
+        _ = _streamingService.SendMessageAsync(topic, action.Message, correlationId);
     }
 
     public void Dispose()

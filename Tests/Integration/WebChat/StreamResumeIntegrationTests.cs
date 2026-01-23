@@ -50,7 +50,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         // Consume the stream
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate messages", cts.Token))
+                           "SendMessage", topicId, "Generate messages", null, cts.Token))
         {
             if (msg.IsComplete || msg.Error is not null)
             {
@@ -85,7 +85,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         // Complete the stream
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate response", cts.Token))
+                           "SendMessage", topicId, "Generate response", null, cts.Token))
         {
             if (msg.IsComplete || msg.Error is not null)
             {
