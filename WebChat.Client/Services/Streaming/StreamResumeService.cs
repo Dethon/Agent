@@ -95,7 +95,9 @@ public sealed class StreamResumeService(
             var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(
                 state.BufferedMessages, historyContent);
 
-            foreach (var turn in completedTurns.Where(t => t.HasContent))
+            // Skip user messages that match CurrentPrompt - already added above
+            foreach (var turn in completedTurns.Where(t =>
+                         t.HasContent && !(t.Role == "user" && t.Content == state.CurrentPrompt)))
             {
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
             }

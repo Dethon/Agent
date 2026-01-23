@@ -111,14 +111,16 @@ window.chatScroll = {
     scrollToBottom: function (element, smooth) {
         if (!element) return;
         this._stickyState = true;  // Reset sticky state when forcing scroll
-        if (smooth) {
-            element.scrollTo({
-                top: element.scrollHeight,
-                behavior: 'smooth'
-            });
-        } else {
-            element.scrollTop = element.scrollHeight;
-        }
+        requestAnimationFrame(() => {
+            if (smooth) {
+                element.scrollTo({
+                    top: element.scrollHeight,
+                    behavior: 'smooth'
+                });
+            } else {
+                element.scrollTop = element.scrollHeight;
+            }
+        });
     },
 
     // Initialize scroll tracking for an element
@@ -134,8 +136,9 @@ window.chatScroll = {
         this._stickyState = true;
 
         // Track scroll position to detect user scrolling away
+        const self = this;
         this._scrollHandler = () => {
-            this._stickyState = this.isAtBottom(element);
+            self._stickyState = self.isAtBottom(element);
         };
 
         element.addEventListener('scroll', this._scrollHandler, {passive: true});
@@ -145,7 +148,9 @@ window.chatScroll = {
     scrollToBottomIfSticky: function (element) {
         if (!element) return;
         if (this._stickyState) {
-            element.scrollTop = element.scrollHeight;
+            requestAnimationFrame(() => {
+                element.scrollTop = element.scrollHeight;
+            });
         }
     },
 

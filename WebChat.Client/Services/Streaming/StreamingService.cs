@@ -224,7 +224,6 @@ public sealed class StreamingService(
         var processedContentLength = streamingMessage.Content.Length;
         var processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
         var processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
-        dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
 
         try
         {

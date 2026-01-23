@@ -502,5 +502,62 @@ public sealed class StreamingServiceTests : IDisposable
         await streamTask;
     }
 
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithFinalizationRequest_ResetsAccumulator()
+    {
+        // Scenario: User sends a message during resume, triggering finalization
+        // The finalization request is set by SendMessageEffect, not by ResumeStreamResponseAsync
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
+
+        // Simulate: SendMessageEffect finalized content and set RequestContentFinalization
+        // Then a user message arrives in the stream, followed by new assistant content
+        _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage
+                { UserMessage = new UserMessageInfo("Alice"), Content = "user msg", MessageId = "msg-1" },
+            new ChatStreamMessage { Content = "New response", MessageId = "msg-2" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
+        );
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-0");
+
+        // Verify: The existing content was NOT added (finalization cleared it)
+        // but the new response after the user message WAS added
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.Content == "Existing");
+        messages.ShouldContain(m => m.Content == "New response");
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithoutFinalizationRequest_PreservesContent()
+    {
+        // Scenario: Normal resume without user sending a message
+        // No finalization request should be set, content should be preserved
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
+
+        // NO RequestContentFinalization dispatch - normal resume
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = " more content", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
+        );
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        // Verify: Content was accumulated and preserved
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldContain("Existing");
+        messages[0].Content.ShouldContain("more content");
+    }
+
     #endregion
 }

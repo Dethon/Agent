@@ -224,6 +224,40 @@ public sealed class StreamResumeServiceTests : IDisposable
         promptCount.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task TryResumeStreamAsync_DoesNotDuplicatePromptFromBufferAndCurrentPrompt()
+    {
+        // This tests the specific case where the user message appears in BOTH:
+        // 1. CurrentPrompt (the prompt being processed)
+        // 2. BufferedMessages as a UserMessage (e.g., from another browser's session)
+        var topic = CreateTopic(topicId: "topic-1");
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true,
+            [
+                // User message in buffer (from server-side buffering)
+                new ChatStreamMessage
+                {
+                    Content = "User's question",
+                    UserMessage = new UserMessageInfo("Bob")
+                },
+                // Assistant response in progress
+                new ChatStreamMessage { Content = "I'm thinking...", MessageId = "msg-1" }
+            ],
+            "msg-1",
+            "User's question", // Same prompt also in CurrentPrompt
+            "Bob"));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
+        var promptCount = messages.Count(m => m is { Role: "user", Content: "User's question" });
+        promptCount.ShouldBe(1);
+    }
+
     #endregion
 
     #region Approval Handling Tests
