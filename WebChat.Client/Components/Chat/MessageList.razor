@@ -1,5 +1,4 @@
 @using WebChat.Client.State.UserIdentity
-
 @inherits StoreSubscriberComponent
 
 @inject MessagesStore MessagesStore
@@ -8,6 +7,7 @@
 @inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
+@inject RenderCoordinator RenderCoordinator
 
 @code {
     private IReadOnlyList<ChatMessageModel> _messages = [];
@@ -17,6 +17,7 @@
     private ElementReference _messagesArea;
     private bool _shouldAutoScroll = true;
     private string? _currentUserId;
+    private IDisposable? _streamingContentSubscription;
 
     protected override void OnInitialized()
     {
@@ -28,6 +29,7 @@
                 _topicId = id;
                 UpdateMessages();
                 UpdateStreamingStatus();
+                UpdateStreamingContentSubscription();
             });
 
         // Subscribe to selected agent
@@ -40,10 +42,14 @@
             state => state,
             _ => UpdateMessages());
 
-        // Subscribe to streaming status
+        // Subscribe to streaming status and content for auto-scroll
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
-            _ => UpdateStreamingStatus());
+            _ =>
+            {
+                UpdateStreamingStatus();
+                UpdateStreamingContentSubscription();
+            });
 
         // Subscribe to user identity
         Subscribe(UserIdentityStore.StateObservable,
@@ -61,6 +67,27 @@
     private void UpdateStreamingStatus()
     {
         _isStreaming = _topicId != null && StreamingStore.State.StreamingTopics.Contains(_topicId);
+    }
+
+    private void UpdateStreamingContentSubscription()
+    {
+        // Dispose existing subscription
+        _streamingContentSubscription?.Dispose();
+        _streamingContentSubscription = null;
+
+        // Subscribe to streaming content if topic is streaming (triggers re-render for auto-scroll)
+        if (_isStreaming && !string.IsNullOrEmpty(_topicId))
+        {
+            _streamingContentSubscription = RenderCoordinator
+                .CreateStreamingObservable(_topicId)
+                .Subscribe(_ => InvokeAsync(StateHasChanged));
+        }
+    }
+
+    public override void Dispose()
+    {
+        _streamingContentSubscription?.Dispose();
+        base.Dispose();
     }
 
     private void HandleSuggestionClicked(string suggestion)
