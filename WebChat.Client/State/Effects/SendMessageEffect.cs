@@ -110,7 +110,7 @@ public sealed class SendMessageEffect : IDisposable
         if (streamingState.StreamingTopics.Contains(topic.TopicId))
         {
             var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(topic.TopicId);
-            if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
+            if (currentContent?.HasContent == true)
             {
                 // Finalize current streaming content as a completed message
                 // Include the stream message ID to prevent duplicate adds from race conditions

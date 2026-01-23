@@ -87,12 +87,17 @@ public sealed class StreamingService(
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
-                // SendMessageEffect or HandleUserMessage may have already finalized,
-                // but message ID deduplication prevents duplicate adds
+                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
                 if (chunk.UserMessage is not null)
                 {
-                    if (streamingMessage.HasContent)
+                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
                     {
+                        // SendMessageEffect already added the message, just clear the flag
+                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+                    }
+                    else if (streamingMessage.HasContent)
+                    {
+                        // No finalization request - we need to add the message here
                         dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                         dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                     }
@@ -180,6 +185,7 @@ public sealed class StreamingService(
         var processedContentLength = streamingMessage.Content.Length;
         var processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
         var processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
+        dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
 
         try
         {
@@ -208,13 +214,17 @@ public sealed class StreamingService(
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
-                // but do NOT add the user message here - HandleUserMessage is responsible for that
-                // because it has the correlationId to check if this client sent the message
+                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
                 if (chunk.UserMessage is not null)
                 {
-                    // Finalize current assistant content before the user message
-                    if (streamingMessage.HasContent)
+                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
                     {
+                        // SendMessageEffect already added the message, just clear the flag
+                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+                    }
+                    else if (streamingMessage.HasContent)
+                    {
+                        // No finalization request - we need to add the message here
                         dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                         dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                     }
@@ -259,16 +269,20 @@ public sealed class StreamingService(
                 streamingMessage =
                     BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
 
+                var newContent = streamingMessage.Content;
+                var newReasoning = streamingMessage.Reasoning;
+                var newToolCalls = streamingMessage.ToolCalls;
+
                 // Check if we have new content beyond what was in the buffer
-                var hasNewContent = streamingMessage.Content.Length > processedContentLength;
-                var hasNewReasoning = (streamingMessage.Reasoning?.Length ?? 0) > processedReasoningLength;
-                var hasNewToolCalls = (streamingMessage.ToolCalls?.Length ?? 0) > processedToolCallsLength;
-                var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls;
+                var hasNewContent = newContent.Length > processedContentLength;
+                var hasNewReasoning = (newReasoning?.Length ?? 0) > processedReasoningLength;
+                var hasNewToolCalls = (newToolCalls?.Length ?? 0) > processedToolCallsLength;
+                var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls || chunk.MessageId != currentMessageId;
 
                 // Update processed lengths
-                processedContentLength = streamingMessage.Content.Length;
-                processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
-                processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
+                processedContentLength = newContent.Length;
+                processedReasoningLength = newReasoning?.Length ?? 0;
+                processedToolCallsLength = newToolCalls?.Length ?? 0;
 
                 if (!isNew)
                 {
@@ -281,7 +295,7 @@ public sealed class StreamingService(
                     streamingMessage.Content,
                     streamingMessage.Reasoning,
                     streamingMessage.ToolCalls,
-                    currentMessageId));
+                    currentMessageId ?? chunk.MessageId));
             }
 
             // Check finalization one more time before adding final message

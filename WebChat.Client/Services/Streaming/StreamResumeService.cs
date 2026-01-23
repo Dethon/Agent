@@ -101,7 +101,7 @@ public sealed class StreamResumeService(
                 streamingMessage.Content,
                 streamingMessage.Reasoning,
                 streamingMessage.ToolCalls,
-                null));
+                string.IsNullOrEmpty(state.CurrentMessageId) ? null : state.CurrentMessageId));
 
             await streamingService.ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
         }

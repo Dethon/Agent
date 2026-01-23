@@ -9,6 +9,11 @@ public sealed record StreamingContent
     public string? ToolCalls { get; init; }
     public string? CurrentMessageId { get; init; }
     public bool IsError { get; init; }
+
+    public bool HasContent =>
+        !string.IsNullOrEmpty(Content) ||
+        !string.IsNullOrEmpty(ToolCalls) ||
+        !string.IsNullOrEmpty(Reasoning);
 }
 
 public sealed record StreamingState

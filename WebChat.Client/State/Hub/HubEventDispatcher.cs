@@ -119,7 +119,7 @@ public sealed class HubEventDispatcher(
         if (streamingState.StreamingTopics.Contains(notification.TopicId))
         {
             var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
-            if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
+            if (currentContent?.HasContent == true)
             {
                 // Finalize current streaming content as a completed message
                 dispatcher.Dispatch(new AddMessage(
@@ -135,6 +135,7 @@ public sealed class HubEventDispatcher(
 
                 // Reset streaming content for new assistant response
                 dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
+                dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
             }
         }
 
