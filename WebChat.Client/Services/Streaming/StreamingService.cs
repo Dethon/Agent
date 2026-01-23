@@ -86,20 +86,21 @@ public sealed class StreamingService(
                     break;
                 }
 
-                // Skip user messages - they're handled separately via UserMessageNotification
+                // When a user message arrives in the stream, finalize current assistant content
+                // SendMessageEffect or HandleUserMessage may have already finalized,
+                // but message ID deduplication prevents duplicate adds
                 if (chunk.UserMessage is not null)
                 {
-                    continue;
-                }
+                    if (streamingMessage.HasContent)
+                    {
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+                    }
 
-                // Check if accumulator reset was requested (user sent a message mid-stream)
-                // The message was already finalized by SendMessageEffect/HubEventDispatcher,
-                // we just need to reset our internal accumulator to avoid duplication
-                if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-                {
+                    // Reset accumulator for the new response (user message added by HandleUserMessage)
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
                     needsReasoningSeparator = false;
+                    continue;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
@@ -110,7 +111,7 @@ public sealed class StreamingService(
                     !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
-                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
@@ -132,9 +133,18 @@ public sealed class StreamingService(
                     currentMessageId));
             }
 
+            // Check finalization one more time before adding final message
+            // This handles the case where the stream ends right after a user message
+            // (no content chunks arrive after the finalization request was dispatched)
+            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+            {
+                streamingMessage = new ChatMessageModel { Role = "assistant" };
+                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+            }
+
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }, currentMessageId));
             }
 
             // Fetch current topic from store to get latest LastReadMessageCount
@@ -197,25 +207,26 @@ public sealed class StreamingService(
                     break;
                 }
 
-                // Skip user messages - they're handled separately via buffer rebuild
+                // When a user message arrives in the stream, finalize current assistant content
+                // but do NOT add the user message here - HandleUserMessage is responsible for that
+                // because it has the correlationId to check if this client sent the message
                 if (chunk.UserMessage is not null)
                 {
-                    continue;
-                }
+                    // Finalize current assistant content before the user message
+                    if (streamingMessage.HasContent)
+                    {
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+                    }
 
-                // Check if accumulator reset was requested (user sent a message mid-stream)
-                // The message was already finalized by SendMessageEffect/HubEventDispatcher,
-                // we just need to reset our internal accumulator to avoid duplication
-                if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-                {
+                    // Reset accumulator for the new response (user message added by HandleUserMessage)
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
                     needsReasoningSeparator = false;
-
-                    // Reset processed lengths after finalization
                     processedContentLength = 0;
                     processedReasoningLength = 0;
                     processedToolCallsLength = 0;
+
+                    continue;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
@@ -226,7 +237,7 @@ public sealed class StreamingService(
                     !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
-                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
@@ -273,9 +284,18 @@ public sealed class StreamingService(
                     currentMessageId));
             }
 
+            // Check finalization one more time before adding final message
+            // This handles the case where the stream ends right after a user message
+            // (no content chunks arrive after the finalization request was dispatched)
+            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+            {
+                streamingMessage = new ChatMessageModel { Role = "assistant" };
+                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+            }
+
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }, currentMessageId));
             }
 
             if (receivedNewContent)

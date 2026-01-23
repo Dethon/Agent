@@ -111,7 +111,10 @@ public sealed class HubEventDispatcher(
             return;
         }
 
-        // If streaming is active, finalize current content for correct message ordering
+        // If streaming is active, finalize current assistant content before adding user message
+        // This is the authoritative place to add OTHER users' messages because:
+        // 1. We have correlationId to check if this client sent it (stream chunks don't have this)
+        // 2. We can finalize streaming content with proper message ID for deduplication
         var streamingState = streamingStore.State;
         if (streamingState.StreamingTopics.Contains(notification.TopicId))
         {
@@ -119,22 +122,23 @@ public sealed class HubEventDispatcher(
             if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
             {
                 // Finalize current streaming content as a completed message
-                dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
-                {
-                    Role = "assistant",
-                    Content = currentContent.Content,
-                    Reasoning = currentContent.Reasoning,
-                    ToolCalls = currentContent.ToolCalls
-                }));
+                dispatcher.Dispatch(new AddMessage(
+                    notification.TopicId,
+                    new ChatMessageModel
+                    {
+                        Role = "assistant",
+                        Content = currentContent.Content,
+                        Reasoning = currentContent.Reasoning,
+                        ToolCalls = currentContent.ToolCalls
+                    },
+                    currentContent.CurrentMessageId));
 
-                // Reset streaming content for a fresh bubble
+                // Reset streaming content for new assistant response
                 dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
-
-                // Signal StreamingService to reset its internal accumulator
-                dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
             }
         }
 
+        // Add the user message
         dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
         {
             Role = "user",

@@ -113,13 +113,17 @@ public sealed class SendMessageEffect : IDisposable
             if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
             {
                 // Finalize current streaming content as a completed message
-                _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
-                {
-                    Role = "assistant",
-                    Content = currentContent.Content,
-                    Reasoning = currentContent.Reasoning,
-                    ToolCalls = currentContent.ToolCalls
-                }));
+                // Include the stream message ID to prevent duplicate adds from race conditions
+                _dispatcher.Dispatch(new AddMessage(
+                    topic.TopicId,
+                    new ChatMessageModel
+                    {
+                        Role = "assistant",
+                        Content = currentContent.Content,
+                        Reasoning = currentContent.Reasoning,
+                        ToolCalls = currentContent.ToolCalls
+                    },
+                    currentContent.CurrentMessageId));
 
                 // Reset streaming content for a fresh bubble
                 _dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));

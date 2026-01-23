@@ -4,7 +4,7 @@ namespace WebChat.Client.State.Messages;
 
 public record MessagesLoaded(string TopicId, IReadOnlyList<ChatMessageModel> Messages) : IAction;
 
-public record AddMessage(string TopicId, ChatMessageModel Message) : IAction;
+public record AddMessage(string TopicId, ChatMessageModel Message, string? StreamMessageId = null) : IAction;
 
 public record AddPendingMessage(string TopicId, ChatMessageModel Message) : IAction;
 

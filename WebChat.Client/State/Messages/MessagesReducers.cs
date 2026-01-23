@@ -15,15 +15,7 @@ public static class MessagesReducers
             LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId }
         },
 
-        AddMessage a => state with
-        {
-            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-            {
-                [a.TopicId] = state.MessagesByTopic.GetValueOrDefault(a.TopicId, [])
-                    .Append(a.Message)
-                    .ToList()
-            }
-        },
+        AddMessage a => AddMessageWithDedup(state, a.TopicId, a.Message, a.StreamMessageId),
 
         AddPendingMessage a => state with
         {
@@ -117,4 +109,42 @@ public static class MessagesReducers
         };
     }
     // ReSharper restore UnusedParameter.Local
+
+    private static MessagesState AddMessageWithDedup(
+        MessagesState state,
+        string topicId,
+        ChatMessageModel message,
+        string? streamMessageId)
+    {
+        var existingMessages = state.MessagesByTopic.GetValueOrDefault(topicId, []);
+        var finalizedIds = state.FinalizedMessageIdsByTopic.GetValueOrDefault(topicId)
+                           ?? new HashSet<string>();
+
+        // If a stream message ID is provided, check if it's already been finalized
+        // This prevents duplicates from race conditions between HandleUserMessage
+        // and StreamingService both trying to add the same assistant message
+        if (!string.IsNullOrEmpty(streamMessageId) && finalizedIds.Contains(streamMessageId))
+        {
+            return state;
+        }
+
+        // Update finalized IDs if we have a stream message ID
+        var newFinalizedIds = finalizedIds;
+        if (!string.IsNullOrEmpty(streamMessageId))
+        {
+            newFinalizedIds = new HashSet<string>(finalizedIds) { streamMessageId };
+        }
+
+        return state with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
+            {
+                [topicId] = existingMessages.Append(message).ToList()
+            },
+            FinalizedMessageIdsByTopic = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic)
+            {
+                [topicId] = newFinalizedIds
+            }
+        };
+    }
 }

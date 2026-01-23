@@ -13,6 +13,13 @@ public sealed record MessagesState
     public IReadOnlySet<string> LoadedTopics { get; init; }
         = new HashSet<string>();
 
+    /// <summary>
+    ///     Tracks message IDs that have been finalized (added from streaming).
+    ///     Used to prevent duplicate messages when both HandleUserMessage and
+    ///     StreamingService try to add the same message due to race conditions.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlySet<string>> FinalizedMessageIdsByTopic { get; init; }
+        = new Dictionary<string, IReadOnlySet<string>>();
 
     public static MessagesState Initial => new();
 }
