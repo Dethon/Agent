@@ -111,6 +111,30 @@ public sealed class HubEventDispatcher(
             return;
         }
 
+        // If streaming is active, finalize the current bubble before adding user message
+        var streamingState = streamingStore.State;
+        if (streamingState.StreamingTopics.Contains(notification.TopicId))
+        {
+            var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
+            if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
+            {
+                // Finalize current streaming content as a completed message
+                dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
+                {
+                    Role = "assistant",
+                    Content = currentContent.Content,
+                    Reasoning = currentContent.Reasoning,
+                    ToolCalls = currentContent.ToolCalls
+                }));
+
+                // Reset streaming content for a fresh bubble
+                dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
+            }
+
+            // Signal StreamingService to reset its internal accumulator
+            dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
+        }
+
         dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
         {
             Role = "user",

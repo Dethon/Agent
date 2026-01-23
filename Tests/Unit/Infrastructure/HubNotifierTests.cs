@@ -2,7 +2,6 @@ using Domain.Contracts;
 using Domain.DTOs.WebChat;
 using Infrastructure.Clients.Messaging;
 using Moq;
-using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 

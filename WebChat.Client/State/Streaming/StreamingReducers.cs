@@ -21,6 +21,21 @@ public static class StreamingReducers
 
         StreamCancelled a => RemoveStreaming(state, a.TopicId),
 
+        ResetStreamingContent a => state with
+        {
+            StreamingByTopic = state.StreamingByTopic.SetItem(a.TopicId, new StreamingContent())
+        },
+
+        RequestContentFinalization a => state with
+        {
+            FinalizationRequests = state.FinalizationRequests.Add(a.TopicId)
+        },
+
+        ClearFinalizationRequest a => state with
+        {
+            FinalizationRequests = state.FinalizationRequests.Remove(a.TopicId)
+        },
+
         StreamError a => state with
         {
             StreamingByTopic = SetError(state.StreamingByTopic, a.TopicId)

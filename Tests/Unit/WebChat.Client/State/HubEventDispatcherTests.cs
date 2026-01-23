@@ -17,7 +17,6 @@ public sealed class HubEventDispatcherTests : IDisposable
     private readonly Dispatcher _realDispatcher;
     private readonly TopicsStore _topicsStore;
     private readonly StreamingStore _streamingStore;
-    private readonly SentMessageTracker _sentMessageTracker;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly HubEventDispatcher _sut;
 
@@ -27,13 +26,13 @@ public sealed class HubEventDispatcherTests : IDisposable
         _realDispatcher = new Dispatcher();
         _topicsStore = new TopicsStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
-        _sentMessageTracker = new SentMessageTracker();
+        var sentMessageTracker = new SentMessageTracker();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _streamingStore,
-            _sentMessageTracker,
+            sentMessageTracker,
             _mockStreamResumeService.Object);
     }
 

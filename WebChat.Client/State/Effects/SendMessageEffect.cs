@@ -13,6 +13,7 @@ public sealed class SendMessageEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
+    private readonly StreamingStore _streamingStore;
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
@@ -23,6 +24,7 @@ public sealed class SendMessageEffect : IDisposable
     public SendMessageEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
+        StreamingStore streamingStore,
         IChatSessionService sessionService,
         IStreamingService streamingService,
         ITopicService topicService,
@@ -32,6 +34,7 @@ public sealed class SendMessageEffect : IDisposable
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
+        _streamingStore = streamingStore;
         _sessionService = sessionService;
         _streamingService = streamingService;
         _topicService = topicService;
@@ -102,7 +105,31 @@ public sealed class SendMessageEffect : IDisposable
         // Generate correlation ID to track this message (for duplicate detection)
         var correlationId = _sentMessageTracker.TrackNewMessage();
 
-        // Add user message immediately for instant feedback
+        // If streaming is active, finalize the current bubble before adding user message
+        var streamingState = _streamingStore.State;
+        if (streamingState.StreamingTopics.Contains(topic.TopicId))
+        {
+            var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(topic.TopicId);
+            if (currentContent is not null && !string.IsNullOrEmpty(currentContent.Content))
+            {
+                // Finalize current streaming content as a completed message
+                _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
+                {
+                    Role = "assistant",
+                    Content = currentContent.Content,
+                    Reasoning = currentContent.Reasoning,
+                    ToolCalls = currentContent.ToolCalls
+                }));
+
+                // Reset streaming content for a fresh bubble
+                _dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+            }
+
+            // Signal StreamingService to reset its internal accumulator
+            _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
+        }
+
+        // Add user message
         var identityState = _userIdentityStore.State;
         var currentUser = identityState.AvailableUsers
             .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
