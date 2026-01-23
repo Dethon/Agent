@@ -46,6 +46,45 @@ public sealed class StreamingService(
         }
     }
 
+    public async Task<bool> TryStartResumeStreamAsync(
+        StoredTopic topic,
+        ChatMessageModel streamingMessage,
+        string startMessageId)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var hasActiveStream = _activeStreams.TryGetValue(topic.TopicId, out var task) && !task.IsCompleted;
+            if (hasActiveStream)
+            {
+                return false;
+            }
+
+            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+            var streamTask = ResumeStreamResponseAsync(topic, streamingMessage, startMessageId);
+            _activeStreams[topic.TopicId] = streamTask;
+            _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+            return true;
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    public async Task<bool> IsStreamActiveAsync(string topicId)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            return _activeStreams.TryGetValue(topicId, out var task) && !task.IsCompleted;
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
     private void StartNewStream(StoredTopic topic, string message, string? correlationId)
     {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));

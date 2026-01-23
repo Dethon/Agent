@@ -431,4 +431,76 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     #endregion
+
+    #region TryStartResumeStreamAsync Tests
+
+    [Fact]
+    public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant" };
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "Resumed", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
+        );
+
+        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
+
+        result.ShouldBeTrue();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse(); // Completed
+    }
+
+    [Fact]
+    public async Task TryStartResumeStreamAsync_WithActiveStream_ReturnsFalse()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // Start a stream that won't complete immediately
+        _messagingService.SetBlockUntilComplete(true);
+        _messagingService.EnqueueContent("First response");
+        var firstTask = _service.SendMessageAsync(topic, "first");
+
+        // Try to resume while first stream is active
+        var existingMessage = new ChatMessageModel { Role = "assistant" };
+        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
+
+        result.ShouldBeFalse();
+
+        // Complete the first stream
+        _messagingService.UnblockCompletion();
+        await firstTask;
+    }
+
+    [Fact]
+    public async Task IsStreamActiveAsync_WithNoActiveStream_ReturnsFalse()
+    {
+        var topic = CreateTopic();
+
+        var result = await _service.IsStreamActiveAsync(topic.TopicId);
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task IsStreamActiveAsync_WithActiveStream_ReturnsTrue()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        _messagingService.SetBlockUntilComplete(true);
+        _messagingService.EnqueueContent("Response");
+        var streamTask = _service.SendMessageAsync(topic, "test");
+
+        var result = await _service.IsStreamActiveAsync(topic.TopicId);
+
+        result.ShouldBeTrue();
+
+        _messagingService.UnblockCompletion();
+        await streamTask;
+    }
+
+    #endregion
 }

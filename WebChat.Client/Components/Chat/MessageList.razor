@@ -15,9 +15,9 @@
     private bool _isStreaming;
     private AgentInfo? _selectedAgent;
     private ElementReference _messagesArea;
-    private bool _shouldAutoScroll = true;
     private string? _currentUserId;
     private IDisposable? _streamingContentSubscription;
+    private bool _forceScrollToBottom;
 
     protected override void OnInitialized()
     {
@@ -27,6 +27,7 @@
             id =>
             {
                 _topicId = id;
+                _forceScrollToBottom = true; // Scroll to bottom when switching topics
                 UpdateMessages();
                 UpdateStreamingStatus();
                 UpdateStreamingContentSubscription();
@@ -80,13 +81,26 @@
         {
             _streamingContentSubscription = RenderCoordinator
                 .CreateStreamingObservable(_topicId)
-                .Subscribe(_ => InvokeAsync(StateHasChanged));
+                .Subscribe(OnStreamingContentChanged);
         }
+    }
+
+    private void OnStreamingContentChanged(StreamingContent? _)
+    {
+        InvokeAsync(StateHasChanged);
     }
 
     public override void Dispose()
     {
         _streamingContentSubscription?.Dispose();
+        try
+        {
+            ((IJSInProcessRuntime)Js).InvokeVoid("chatScroll.dispose");
+        }
+        catch
+        {
+            // JS runtime may not be available during dispose
+        }
         base.Dispose();
     }
 
@@ -116,9 +130,20 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_shouldAutoScroll)
+        if (firstRender)
         {
-            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, true);
+            await Js.InvokeVoidAsync("chatScroll.initStickyScroll", _messagesArea);
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, false);
+        }
+        else if (_forceScrollToBottom)
+        {
+            _forceScrollToBottom = false;
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, false);
+        }
+        else
+        {
+            // Sticky scroll: only scroll if user hasn't scrolled away
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottomIfSticky", _messagesArea);
         }
     }
 }

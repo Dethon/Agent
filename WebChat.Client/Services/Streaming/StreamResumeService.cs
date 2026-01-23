@@ -28,8 +28,14 @@ public sealed class StreamResumeService(
 
         try
         {
-            // Check if topic is already streaming via store
+            // Check if topic is already streaming via store (quick check before server call)
             if (streamingStore.State.StreamingTopics.Contains(topic.TopicId))
+            {
+                return;
+            }
+
+            // Check if streaming service has an active stream (atomic check with lock)
+            if (await streamingService.IsStreamActiveAsync(topic.TopicId))
             {
                 return;
             }
@@ -52,7 +58,6 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
 
-            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
             var existingMessages = messagesStore.State.MessagesByTopic
                 .GetValueOrDefault(topic.TopicId) ?? [];
 
@@ -103,7 +108,9 @@ public sealed class StreamResumeService(
                 streamingMessage.ToolCalls,
                 string.IsNullOrEmpty(state.CurrentMessageId) ? null : state.CurrentMessageId));
 
-            await streamingService.ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
+            // Use TryStartResumeStreamAsync to atomically check and start the stream
+            // This prevents race conditions with SendMessageAsync
+            await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {

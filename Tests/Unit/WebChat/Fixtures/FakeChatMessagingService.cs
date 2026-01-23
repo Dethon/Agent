@@ -9,7 +9,20 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private readonly Dictionary<string, StreamState> _streamStates = new();
     private readonly HashSet<string> _cancelledTopics = new();
     private bool _enqueueResult = true;
+    private bool _blockUntilComplete;
+    private readonly TaskCompletionSource _completionSource = new();
+
     public void SetEnqueueResult(bool result) => _enqueueResult = result;
+
+    public void SetBlockUntilComplete(bool block)
+    {
+        _blockUntilComplete = block;
+    }
+
+    public void UnblockCompletion()
+    {
+        _completionSource.TrySetResult();
+    }
 
     public int StreamDelayMs { get; set; } = 0;
 
@@ -61,6 +74,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
         string? correlationId = null)
     {
+        if (_blockUntilComplete)
+        {
+            await _completionSource.Task;
+        }
+
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
             if (StreamDelayMs > 0)
