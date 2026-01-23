@@ -25,3 +25,7 @@ public record StopResuming(string TopicId) : IAction;
 public record SendMessage(string? TopicId, string Message) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
+
+public record RequestContentFinalization(string TopicId) : IAction;
+
+public record ClearFinalizationRequest(string TopicId) : IAction;

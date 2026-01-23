@@ -123,6 +123,9 @@ public sealed class SendMessageEffect : IDisposable
 
                 // Reset streaming content for a fresh bubble
                 _dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+
+                // Signal StreamingService to reset its internal accumulator
+                _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
             }
         }
 

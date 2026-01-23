@@ -129,6 +129,9 @@ public sealed class HubEventDispatcher(
 
                 // Reset streaming content for a fresh bubble
                 dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
+
+                // Signal StreamingService to reset its internal accumulator
+                dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
             }
         }
 

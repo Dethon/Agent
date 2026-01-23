@@ -41,6 +41,16 @@ public static class StreamingReducers
             ResumingTopics = state.ResumingTopics.Remove(a.TopicId)
         },
 
+        RequestContentFinalization a => state with
+        {
+            FinalizationRequests = state.FinalizationRequests.Add(a.TopicId)
+        },
+
+        ClearFinalizationRequest a => state with
+        {
+            FinalizationRequests = state.FinalizationRequests.Remove(a.TopicId)
+        },
+
         _ => state
     };
 

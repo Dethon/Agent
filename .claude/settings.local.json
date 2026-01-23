@@ -32,7 +32,8 @@
       "Skill(superpowers:subagent-driven-development)",
       "Bash(git show:*)",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Skill(superpowers:systematic-debugging)"
     ]
   }
 }

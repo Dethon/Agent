@@ -40,7 +40,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
     }
 
     public async Task DisposeAsync()

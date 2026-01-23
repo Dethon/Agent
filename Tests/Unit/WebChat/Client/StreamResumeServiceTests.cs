@@ -30,7 +30,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         _streamingStore = new StreamingStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         var streamingService =
-            new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+            new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,

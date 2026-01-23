@@ -24,6 +24,10 @@ public sealed class StreamingStore : IDisposable
             _store.Dispatch(action, StreamingReducers.Reduce));
         dispatcher.RegisterHandler<StopResuming>(action =>
             _store.Dispatch(action, StreamingReducers.Reduce));
+        dispatcher.RegisterHandler<RequestContentFinalization>(action =>
+            _store.Dispatch(action, StreamingReducers.Reduce));
+        dispatcher.RegisterHandler<ClearFinalizationRequest>(action =>
+            _store.Dispatch(action, StreamingReducers.Reduce));
     }
 
     public StreamingState State => _store.State;
