@@ -92,28 +92,29 @@ public sealed class FakeAgentFactory : IAgentFactory
             return ValueTask.CompletedTask;
         }
 
-        public override AgentThread GetNewThread()
+        public override ValueTask<AgentThread> GetNewThreadAsync(CancellationToken cancellationToken = default)
         {
-            return new FakeAgentThread();
+            return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
         }
 
-        public override AgentThread DeserializeThread(
+        public override ValueTask<AgentThread> DeserializeThreadAsync(
             JsonElement serializedThread,
-            JsonSerializerOptions? jsonSerializerOptions = null)
+            JsonSerializerOptions? jsonSerializerOptions = null,
+            CancellationToken cancellationToken = default)
         {
-            return new FakeAgentThread();
+            return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
         }
 
-        protected override Task<AgentRunResponse> RunCoreAsync(
+        protected override Task<AgentResponse> RunCoreAsync(
             IEnumerable<ChatMessage> messages,
             AgentThread? thread = null,
             AgentRunOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(new AgentRunResponse());
+            return Task.FromResult(new AgentResponse());
         }
 
-        protected override async IAsyncEnumerable<AgentRunResponseUpdate> RunCoreStreamingAsync(
+        protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
             IEnumerable<ChatMessage> messages,
             AgentThread? thread = null,
             AgentRunOptions? options = null,
@@ -134,7 +135,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
                 if (response.Content is not null)
                 {
-                    yield return new AgentRunResponseUpdate
+                    yield return new AgentResponseUpdate
                     {
                         MessageId = messageId,
                         Contents = [new TextContent(response.Content)]
@@ -143,7 +144,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
                 if (response.Reasoning is not null)
                 {
-                    yield return new AgentRunResponseUpdate
+                    yield return new AgentResponseUpdate
                     {
                         MessageId = messageId,
                         Contents = [new TextReasoningContent(response.Reasoning)]
@@ -152,7 +153,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
                 if (response.ToolCall is not null)
                 {
-                    yield return new AgentRunResponseUpdate
+                    yield return new AgentResponseUpdate
                     {
                         MessageId = messageId,
                         Contents =
@@ -167,7 +168,7 @@ public sealed class FakeAgentFactory : IAgentFactory
             }
 
             // Final update with usage info to signal completion
-            yield return new AgentRunResponseUpdate
+            yield return new AgentResponseUpdate
             {
                 MessageId = messageId,
                 Contents = [new UsageContent(new UsageDetails { InputTokenCount = 10, OutputTokenCount = 20 })]

@@ -7,7 +7,7 @@ namespace Infrastructure.Agents.Mappers;
 
 public static class ChatResponseUpdateExtensions
 {
-    public static CreateMessageResult ToCreateMessageResult(this IEnumerable<AgentRunResponseUpdate> updates)
+    public static CreateMessageResult ToCreateMessageResult(this IEnumerable<AgentResponseUpdate> updates)
     {
         var enumerated = updates.ToArray();
         var response = enumerated.ToAiResponse();

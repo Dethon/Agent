@@ -7,7 +7,7 @@ namespace Domain.Extensions;
 
 public static class AgentRunResponseExtensions
 {
-    public static AiResponse ToAiResponse(this IEnumerable<AgentRunResponseUpdate> updates)
+    public static AiResponse ToAiResponse(this IEnumerable<AgentResponseUpdate> updates)
     {
         var contents = updates.SelectMany(x => x.Contents).ToArray();
         var text = string.Join("", contents.OfType<TextContent>().Select(x => x.Text));
@@ -23,10 +23,10 @@ public static class AgentRunResponseExtensions
         };
     }
 
-    public static async IAsyncEnumerable<(AgentRunResponseUpdate, AiResponse?)> ToUpdateAiResponsePairs(
-        this IAsyncEnumerable<AgentRunResponseUpdate> updates)
+    public static async IAsyncEnumerable<(AgentResponseUpdate, AiResponse?)> ToUpdateAiResponsePairs(
+        this IAsyncEnumerable<AgentResponseUpdate> updates)
     {
-        Dictionary<string, List<AgentRunResponseUpdate>> updatesByMessage = [];
+        Dictionary<string, List<AgentResponseUpdate>> updatesByMessage = [];
         await foreach (var update in updates)
         {
             if (update.MessageId is not { } messageId)
@@ -54,7 +54,7 @@ public static class AgentRunResponseExtensions
         }
     }
 
-    private static bool HasUsageOrToolCall(this AgentRunResponseUpdate update)
+    private static bool HasUsageOrToolCall(this AgentResponseUpdate update)
     {
         return update.Contents.Any(c => c is UsageContent or FunctionCallContent);
     }

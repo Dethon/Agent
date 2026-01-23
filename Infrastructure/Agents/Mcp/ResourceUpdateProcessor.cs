@@ -21,7 +21,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private int _isDisposed;
 
-    public Channel<AgentRunResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
+    public Channel<AgentResponseUpdate> SubscriptionChannel { get; private set; } = CreateChannel();
 
     public ResourceUpdateProcessor(ResourceProcessorConfig config)
     {
@@ -103,9 +103,9 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         }, ct);
     }
 
-    private static Channel<AgentRunResponseUpdate> CreateChannel()
+    private static Channel<AgentResponseUpdate> CreateChannel()
     {
-        return Channel.CreateBounded<AgentRunResponseUpdate>(new BoundedChannelOptions(1000)
+        return Channel.CreateBounded<AgentResponseUpdate>(new BoundedChannelOptions(1000)
         {
             FullMode = BoundedChannelFullMode.DropOldest
         });

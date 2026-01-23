@@ -26,7 +26,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
@@ -48,7 +48,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
@@ -63,7 +63,7 @@ public class RedisChatMessageStoreTests
     }
 
     [Fact]
-    public void Serialize_ReturnsKeyAsJsonElement()
+    public async Task Serialize_ReturnsKeyAsJsonElement()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
@@ -77,7 +77,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         var serialized = store.Serialize();

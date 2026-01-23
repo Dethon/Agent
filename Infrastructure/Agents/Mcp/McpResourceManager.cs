@@ -18,7 +18,7 @@ internal sealed class McpResourceManager : IAsyncDisposable
         _subscriptionManager = new McpSubscriptionManager(_updateProcessor);
     }
 
-    public Channel<AgentRunResponseUpdate> SubscriptionChannel => _updateProcessor.SubscriptionChannel;
+    public Channel<AgentResponseUpdate> SubscriptionChannel => _updateProcessor.SubscriptionChannel;
 
     public async ValueTask DisposeAsync()
     {

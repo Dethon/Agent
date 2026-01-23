@@ -40,7 +40,7 @@ public class ChatMonitor(
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> ProcessChatThread(
+    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> ProcessChatThread(
         AgentKey agentKey,
         IAsyncGrouping<AgentKey, ChatPrompt> group,
         [EnumeratorCancellation] CancellationToken ct)
@@ -48,7 +48,7 @@ public class ChatMonitor(
         var firstPrompt = await group.FirstAsync(ct);
         await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.BotTokenHash);
         var context = threadResolver.Resolve(agentKey);
-        var thread = GetOrRestoreThread(agent, agentKey);
+        var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
         context.RegisterCompletionCallback(group.Complete);
 
@@ -64,10 +64,10 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
                         userMessage.SetSenderId(x.Sender);
@@ -76,7 +76,7 @@ public class ChatMonitor(
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((
-                                new AgentRunResponseUpdate { Contents = [new StreamCompleteContent()] },
+                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] },
                                 null));
                 }
             })
@@ -88,9 +88,10 @@ public class ChatMonitor(
         }
     }
 
-    private static AgentThread GetOrRestoreThread(DisposableAgent agent, AgentKey agentKey)
+    private static ValueTask<AgentThread> GetOrRestoreThread(
+        DisposableAgent agent, AgentKey agentKey, CancellationToken ct)
     {
-        return agent.DeserializeThread(JsonSerializer.SerializeToElement(agentKey.ToString()));
+        return agent.DeserializeThreadAsync(JsonSerializer.SerializeToElement(agentKey.ToString()), null, ct);
     }
 
     private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)

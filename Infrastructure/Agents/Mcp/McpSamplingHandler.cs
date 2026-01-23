@@ -27,19 +27,18 @@ internal sealed class McpSamplingHandler
         IProgress<ProgressNotificationValue> progress,
         CancellationToken ct)
     {
-        var thread = GetOrCreateThread(parameters);
+        var thread = await GetOrCreateThread(parameters, ct);
         var messages = MapMessages(parameters);
         var options = CreateOptions(parameters);
 
         return await ExecuteAndReport(messages, thread, options, progress, ct);
     }
 
-    private AgentThread GetOrCreateThread(CreateMessageRequestParams? parameters)
+    private async ValueTask<AgentThread> GetOrCreateThread(CreateMessageRequestParams? parameters, CancellationToken ct)
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
-        return tracker is null
-            ? _agent.GetNewThread()
-            : _trackedConversations.GetOrAdd(tracker, static (_, a) => a.GetNewThread(), _agent);
+        var thread = await _agent.GetNewThreadAsync(ct);
+        return tracker is null ? thread : _trackedConversations.GetOrAdd(tracker, thread);
     }
 
     private static ChatMessage[] MapMessages(CreateMessageRequestParams? parameters)
@@ -73,7 +72,7 @@ internal sealed class McpSamplingHandler
         IProgress<ProgressNotificationValue> progress,
         CancellationToken ct)
     {
-        List<AgentRunResponseUpdate> updates = [];
+        List<AgentResponseUpdate> updates = [];
         await foreach (var update in _agent.RunStreamingAsync(messages, thread, options, ct))
         {
             updates.Add(update);

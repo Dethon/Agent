@@ -206,40 +206,40 @@ public class OneShotChatMessengerClientTests
         exists.ShouldBeTrue();
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
         string content)
     {
         var key = new AgentKey(1, 1);
         await Task.CompletedTask;
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
         }, new AiResponse { Content = content });
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning)
     {
         var key = new AgentKey(1, 1);
         await Task.CompletedTask;
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]

@@ -277,64 +277,64 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
             client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
         string content, long chatId, long? threadId, string? botTokenHash)
     {
         var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
         await Task.CompletedTask;
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
         }, new AiResponse { Content = content });
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning, long chatId, long? threadId, string? botTokenHash)
     {
         var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
         await Task.CompletedTask;
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
         }, new AiResponse { Content = content, Reasoning = reasoning });
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
         CreateUpdatesWithContentAndToolCall(
             string content, string toolName, object args, long chatId, long? threadId, string? botTokenHash)
     {
         var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
         var toolCalls = $"{toolName}({JsonSerializer.Serialize(args)})";
         await Task.CompletedTask;
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
         }, null);
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new FunctionCallContent("call-1", toolName, args as IDictionary<string, object?>)]
         }, new AiResponse { Content = content, ToolCalls = toolCalls });
-        yield return (key, new AgentRunResponseUpdate
+        yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]

@@ -41,7 +41,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
         string? currentMessageId = null;

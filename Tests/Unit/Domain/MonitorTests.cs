@@ -15,27 +15,29 @@ namespace Tests.Unit.Domain;
 
 internal sealed class FakeAiAgent : DisposableAgent
 {
-    public override AgentThread GetNewThread()
+    public override ValueTask<AgentThread> GetNewThreadAsync(CancellationToken cancellationToken = default)
     {
-        return new FakeAgentThread();
+        return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
     }
 
-    public override AgentThread
-        DeserializeThread(JsonElement serializedThread, JsonSerializerOptions? options = null)
+    public override ValueTask<AgentThread> DeserializeThreadAsync(
+        JsonElement serializedThread,
+        JsonSerializerOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        return new FakeAgentThread();
+        return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
     }
 
-    protected override Task<AgentRunResponse> RunCoreAsync(
+    protected override Task<AgentResponse> RunCoreAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(new AgentRunResponse());
+        return Task.FromResult(new AgentResponse());
     }
 
-    protected override async IAsyncEnumerable<AgentRunResponseUpdate> RunCoreStreamingAsync(
+    protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages,
         AgentThread? thread = null,
         AgentRunOptions? options = null,
@@ -97,10 +99,10 @@ internal static class MonitorTestMocks
 
         mock.Setup(c =>
                 c.ProcessResponseStreamAsync(
-                    It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
+                    It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>>(),
                     It.IsAny<CancellationToken>()
                 ))
-            .Returns(async (IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+            .Returns(async (IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
                 CancellationToken ct) =>
             {
                 // Must consume the enumerable to drive the lazy streaming pipeline
@@ -147,7 +149,7 @@ public class ChatMonitorTests
         // Assert - ProcessResponseStreamAsync should be called
         chatMessengerClient.Verify(c =>
             c.ProcessResponseStreamAsync(
-                It.IsAny<IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)>>(),
+                It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>>(),
                 It.IsAny<CancellationToken>()), Times.Once);
     }
 
