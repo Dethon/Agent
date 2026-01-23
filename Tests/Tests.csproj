@@ -47,4 +47,8 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.2"/>
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
+
 </Project>

@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
@@ -14,6 +16,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
+    private readonly UserIdentityStore _userIdentityStore;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -22,7 +25,8 @@ public sealed class InitializationEffect : IDisposable
         ITopicService topicService,
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
-        IStreamResumeService streamResumeService)
+        IStreamResumeService streamResumeService,
+        UserIdentityStore userIdentityStore)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
@@ -31,8 +35,15 @@ public sealed class InitializationEffect : IDisposable
         _localStorage = localStorage;
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
+        _userIdentityStore = userIdentityStore;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
+        dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
+    }
+
+    private void HandleSelectUser(SelectUser action)
+    {
+        _ = RegisterUserAsync(action.UserId);
     }
 
     private void HandleInitialize(Initialize action)
@@ -45,6 +56,12 @@ public sealed class InitializationEffect : IDisposable
         // Connect to SignalR
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
+
+        // Register user after initial connection
+        await RegisterUserAsync();
+
+        // Re-register user on reconnection
+        _connectionService.OnReconnected += async () => await RegisterUserAsync();
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
@@ -75,13 +92,23 @@ public sealed class InitializationEffect : IDisposable
         }
     }
 
+    private async Task RegisterUserAsync(string? userId = null)
+    {
+        userId ??= _userIdentityStore.State.SelectedUserId;
+        if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
+        {
+            await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
+        }
+    }
+
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
         var messages = history.Select(h => new ChatMessageModel
         {
             Role = h.Role,
-            Content = h.Content
+            Content = h.Content,
+            SenderId = h.SenderId
         }).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
 

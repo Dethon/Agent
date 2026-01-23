@@ -19,13 +19,6 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         await sender.SendAsync("OnStreamChanged", notification, cancellationToken);
     }
 
-    public async Task NotifyNewMessageAsync(
-        NewMessageNotification notification,
-        CancellationToken cancellationToken = default)
-    {
-        await sender.SendAsync("OnNewMessage", notification, cancellationToken);
-    }
-
     public async Task NotifyApprovalResolvedAsync(
         ApprovalResolvedNotification notification,
         CancellationToken cancellationToken = default)
@@ -38,5 +31,12 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         CancellationToken cancellationToken = default)
     {
         await sender.SendAsync("OnToolCalls", notification, cancellationToken);
+    }
+
+    public async Task NotifyUserMessageAsync(
+        UserMessageNotification notification,
+        CancellationToken cancellationToken = default)
+    {
+        await sender.SendAsync("OnUserMessage", notification, cancellationToken);
     }
 }

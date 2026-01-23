@@ -832,6 +832,83 @@ html, body {
    Chat Messages
    =================================== */
 
+/* ===================================
+   Message Attribution Layout
+   =================================== */
+
+.message-wrapper {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.message-wrapper.agent {
+    display: block; /* Agent messages don't need flex layout */
+}
+
+.message-wrapper.user {
+    flex-direction: row-reverse; /* Avatar on right for user messages */
+}
+
+.message-avatar-column {
+    flex-shrink: 0;
+    width: 28px;
+    padding-top: 0.25rem; /* Align avatar with message bubble top */
+}
+
+.avatar-placeholder-space {
+    width: 28px;
+    height: 28px;
+}
+
+/* Avatar image component styles */
+.avatar-image-container {
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.avatar-image-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.avatar-fallback {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 0.75rem;
+    user-select: none;
+}
+
+/* Own message styling - different background color */
+.chat-message.user.own {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+[data-theme="dark"] .chat-message.user.own {
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+}
+
+/* Adjust message width within wrapper */
+.message-wrapper .chat-message {
+    flex: 1;
+    max-width: 75%;
+}
+
+.message-wrapper.user .chat-message {
+    flex: 0 1 auto; /* Don't grow, shrink if needed, natural width */
+}
+
+.message-wrapper.agent .chat-message {
+    max-width: 75%; /* Keep same max-width for agent messages */
+}
+
 .chat-message {
     max-width: 75%;
     padding: 1rem 1.25rem;
@@ -1998,4 +2075,92 @@ select:focus:not(:focus-visible) {
     .approval-actions .btn {
         width: 100%;
     }
+}
+
+/* ===================================
+   User Identity Picker
+   =================================== */
+
+.user-identity-picker {
+    position: relative;
+}
+
+.avatar-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid var(--border-color);
+    background: var(--bg-tertiary);
+    cursor: pointer;
+    padding: 0;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-button:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+.avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-tertiary);
+    color: var(--text-muted);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.user-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 180px;
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    overflow: hidden;
+    animation: dropdownSlide 0.15s ease-out;
+}
+
+.user-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.user-dropdown-item:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.user-dropdown-item.selected {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+}
+
+.user-avatar-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    object-fit: cover;
 }

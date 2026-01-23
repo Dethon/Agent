@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -6,14 +5,14 @@ using WebChat.Client.State.Hub;
 namespace WebChat.Client.Services;
 
 public sealed class ChatConnectionService(
-    HttpClient httpClient,
+    ConfigService configService,
     ConnectionEventDispatcher connectionEventDispatcher) : IChatConnectionService
 {
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
     public bool IsReconnecting => HubConnection?.State == HubConnectionState.Reconnecting;
 
-    internal HubConnection? HubConnection { get; private set; }
+    public HubConnection? HubConnection { get; private set; }
 
     public event Action? OnStateChanged;
     public event Func<Task>? OnReconnected;
@@ -26,8 +25,8 @@ public sealed class ChatConnectionService(
             return;
         }
 
-        var config = await httpClient.GetFromJsonAsync<AppConfig>("/api/config");
-        var agentUrl = config?.AgentUrl ?? "http://localhost:5000";
+        var config = await configService.GetConfigAsync();
+        var agentUrl = config.AgentUrl ?? "http://localhost:5000";
         var hubUrl = $"{agentUrl.TrimEnd('/')}/hubs/chat";
 
         HubConnection = new HubConnectionBuilder()
@@ -77,8 +76,6 @@ public sealed class ChatConnectionService(
         }
     }
 }
-
-internal record AppConfig(string? AgentUrl);
 
 internal sealed class AggressiveRetryPolicy : IRetryPolicy
 {

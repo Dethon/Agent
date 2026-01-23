@@ -1,6 +1,7 @@
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -12,6 +13,7 @@ public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
     StreamingStore streamingStore,
+    SentMessageTracker sentMessageTracker,
     IStreamResumeService streamResumeService) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
@@ -68,11 +70,6 @@ public sealed class HubEventDispatcher(
         }
     }
 
-    public void HandleNewMessage(NewMessageNotification notification)
-    {
-        dispatcher.Dispatch(new LoadMessages(notification.TopicId));
-    }
-
     public void HandleApprovalResolved(ApprovalResolvedNotification notification)
     {
         dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId, notification.ToolCalls));
@@ -96,5 +93,58 @@ public sealed class HubEventDispatcher(
             Reasoning: null,
             ToolCalls: notification.ToolCalls,
             MessageId: null));
+    }
+
+    public void HandleUserMessage(UserMessageNotification notification)
+    {
+        // Only add if we're watching this topic
+        var currentTopic = topicsStore.State.SelectedTopicId;
+        if (currentTopic != notification.TopicId)
+        {
+            return;
+        }
+
+        // Skip if this message was sent by this browser instance
+        // (we already added it locally in SendMessageEffect)
+        if (sentMessageTracker.WasSentByThisClient(notification.CorrelationId))
+        {
+            return;
+        }
+
+        // If streaming is active, finalize current assistant content before adding user message
+        // This is the authoritative place to add OTHER users' messages because:
+        // 1. We have correlationId to check if this client sent it (stream chunks don't have this)
+        // 2. We can finalize streaming content with proper message ID for deduplication
+        var streamingState = streamingStore.State;
+        if (streamingState.StreamingTopics.Contains(notification.TopicId))
+        {
+            var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
+            if (currentContent?.HasContent == true)
+            {
+                // Finalize current streaming content as a completed message
+                dispatcher.Dispatch(new AddMessage(
+                    notification.TopicId,
+                    new ChatMessageModel
+                    {
+                        Role = "assistant",
+                        Content = currentContent.Content,
+                        Reasoning = currentContent.Reasoning,
+                        ToolCalls = currentContent.ToolCalls
+                    },
+                    currentContent.CurrentMessageId));
+
+                // Reset streaming content for new assistant response
+                dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
+                dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
+            }
+        }
+
+        // Add the user message
+        dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel
+        {
+            Role = "user",
+            Content = notification.Content,
+            SenderId = notification.SenderId
+        }));
     }
 }

@@ -16,7 +16,6 @@ public sealed class StreamResumeService(
     MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
-
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
         // Check if already resuming via store state
@@ -29,8 +28,14 @@ public sealed class StreamResumeService(
 
         try
         {
-            // Check if topic is already streaming via store
+            // Check if topic is already streaming via store (quick check before server call)
             if (streamingStore.State.StreamingTopics.Contains(topic.TopicId))
+            {
+                return;
+            }
+
+            // Check if streaming service has an active stream (atomic check with lock)
+            if (await streamingService.IsStreamActiveAsync(topic.TopicId))
             {
                 return;
             }
@@ -47,12 +52,12 @@ public sealed class StreamResumeService(
                 var messages = history.Select(h => new ChatMessageModel
                 {
                     Role = h.Role,
-                    Content = h.Content
+                    Content = h.Content,
+                    SenderId = h.SenderId
                 }).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
 
-            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
             var existingMessages = messagesStore.State.MessagesByTopic
                 .GetValueOrDefault(topic.TopicId) ?? [];
 
@@ -66,7 +71,8 @@ public sealed class StreamResumeService(
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
                     {
                         Role = "user",
-                        Content = state.CurrentPrompt
+                        Content = state.CurrentPrompt,
+                        SenderId = state.CurrentSenderId
                     }));
                 }
             }
@@ -89,7 +95,9 @@ public sealed class StreamResumeService(
             var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(
                 state.BufferedMessages, historyContent);
 
-            foreach (var turn in completedTurns.Where(t => t.HasContent))
+            // Skip user messages that match CurrentPrompt - already added above
+            foreach (var turn in completedTurns.Where(t =>
+                         t.HasContent && !(t.Role == "user" && t.Content == state.CurrentPrompt)))
             {
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
             }
@@ -100,9 +108,11 @@ public sealed class StreamResumeService(
                 streamingMessage.Content,
                 streamingMessage.Reasoning,
                 streamingMessage.ToolCalls,
-                null));
+                string.IsNullOrEmpty(state.CurrentMessageId) ? null : state.CurrentMessageId));
 
-            await streamingService.ResumeStreamResponseAsync(topic, streamingMessage, state.CurrentMessageId);
+            // Use TryStartResumeStreamAsync to atomically check and start the stream
+            // This prevents race conditions with SendMessageAsync
+            await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {

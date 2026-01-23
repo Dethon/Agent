@@ -2,10 +2,10 @@ using Domain.DTOs.WebChat;
 using Moq;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
-using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -26,11 +26,13 @@ public sealed class HubEventDispatcherTests : IDisposable
         _realDispatcher = new Dispatcher();
         _topicsStore = new TopicsStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
+        var sentMessageTracker = new SentMessageTracker();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _streamingStore,
+            sentMessageTracker,
             _mockStreamResumeService.Object);
     }
 
@@ -142,18 +144,6 @@ public sealed class HubEventDispatcherTests : IDisposable
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<StreamCancelled>(a => a.TopicId == "topic-1")),
-            Times.Once);
-    }
-
-    [Fact]
-    public void HandleNewMessage_DispatchesLoadMessages()
-    {
-        var notification = new NewMessageNotification("topic-1");
-
-        _sut.HandleNewMessage(notification);
-
-        _mockDispatcher.Verify(
-            d => d.Dispatch(It.Is<LoadMessages>(a => a.TopicId == "topic-1")),
             Times.Once);
     }
 

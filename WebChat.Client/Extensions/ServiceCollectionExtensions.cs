@@ -1,11 +1,13 @@
+using WebChat.Client.Services;
 using WebChat.Client.State;
-using WebChat.Client.State.Topics;
-using WebChat.Client.State.Messages;
-using WebChat.Client.State.Streaming;
-using WebChat.Client.State.Connection;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.Extensions;
 
@@ -25,9 +27,13 @@ public static class ServiceCollectionExtensions
             services.AddScoped<StreamingStore>();
             services.AddScoped<ConnectionStore>();
             services.AddScoped<ApprovalStore>();
+            services.AddScoped<UserIdentityStore>();
 
             // State coordination
             services.AddScoped<RenderCoordinator>();
+
+            // Services
+            services.AddScoped<ConfigService>();
 
             return services;
         }
@@ -40,6 +46,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicDeleteEffect>();
             services.AddScoped<InitializationEffect>();
             services.AddScoped<AgentSelectionEffect>();
+            services.AddScoped<UserIdentityEffect>();
 
             return services;
         }

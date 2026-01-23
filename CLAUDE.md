@@ -70,6 +70,7 @@ Quick reference for finding code files:
 | WebChat pages            | `WebChat.Client/Pages/*.razor`            |
 | WebChat components       | `WebChat.Client/Components/**/*.razor`    |
 | WebChat contracts        | `WebChat.Client/Contracts/*.cs`           |
+| WebChat helpers          | `WebChat.Client/Helpers/*.cs`             |
 | WebChat services         | `WebChat.Client/Services/**/*.cs`         |
 | WebChat state stores     | `WebChat.Client/State/*/*.cs`             |
 | WebChat effects          | `WebChat.Client/State/Effects/*.cs`       |
@@ -138,11 +139,31 @@ Features:
 - Topic-based conversations with server-side persistence
 - Stream resumption after disconnection (buffered messages + sequence tracking)
 - Multi-agent selection
+- User identity selection with avatar support
 
 Client-side state management uses a Redux-like pattern (`WebChat.Client/State/`):
-- **Stores**: ApprovalStore, ConnectionStore, MessagesStore, StreamingStore, TopicsStore
-- **Effects**: Side effect handlers for async operations (agent selection, topic selection, message sending)
+- **Stores**: ApprovalStore, ConnectionStore, MessagesStore, StreamingStore, TopicsStore, UserIdentityStore
+- **Effects**: Side effect handlers for async operations (agent selection, topic selection, message sending, user identity)
 - **HubEventDispatcher**: Routes SignalR events to appropriate state actions
+
+### User Identity System
+
+WebChat supports multiple user identities with avatars, configured via environment variables:
+
+- **ConfigService** (`WebChat.Client/Services/ConfigService.cs`) - Fetches and caches app config including users
+- **UserIdentityStore** (`WebChat.Client/State/UserIdentity/`) - Client-side state for user selection
+- **UserIdentityEffect** (`WebChat.Client/State/Effects/UserIdentityEffect.cs`) - Loads users from config and persists selection to local storage
+- **UserIdentityPicker** (`WebChat.Client/Components/UserIdentityPicker.razor`) - Dropdown for identity selection
+- **AvatarImage** (`WebChat.Client/Components/AvatarImage.razor`) - Avatar display with fallback to initials
+
+Configuration via `WebChat/appsettings.json` or environment variables:
+```json
+{
+  "Users": [{ "Id": "Alice", "AvatarUrl": "avatars/alice.png" }]
+}
+```
+
+Environment override: `USERS__0__ID=Alice`, `USERS__0__AVATARURL=avatars/alice.png`
 
 ### Message Streaming Pipeline
 

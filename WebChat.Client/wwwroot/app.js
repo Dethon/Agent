@@ -96,6 +96,10 @@ document.addEventListener('input', function (e) {
 // ===================================
 
 window.chatScroll = {
+    _stickyState: true,  // Track if we should stick to bottom
+    _element: null,
+    _scrollHandler: null,
+
     // Check if user is scrolled to near the bottom (within threshold)
     isAtBottom: function (element) {
         if (!element) return true;
@@ -106,14 +110,58 @@ window.chatScroll = {
     // Scroll element to the bottom with smooth animation
     scrollToBottom: function (element, smooth) {
         if (!element) return;
-        if (smooth) {
-            element.scrollTo({
-                top: element.scrollHeight,
-                behavior: 'smooth'
-            });
-        } else {
-            element.scrollTop = element.scrollHeight;
+        this._stickyState = true;  // Reset sticky state when forcing scroll
+        requestAnimationFrame(() => {
+            if (smooth) {
+                element.scrollTo({
+                    top: element.scrollHeight,
+                    behavior: 'smooth'
+                });
+            } else {
+                element.scrollTop = element.scrollHeight;
+            }
+        });
+    },
+
+    // Initialize scroll tracking for an element
+    initStickyScroll: function (element) {
+        if (!element) return;
+
+        // Clean up previous handler if exists
+        if (this._element && this._scrollHandler) {
+            this._element.removeEventListener('scroll', this._scrollHandler);
         }
+
+        this._element = element;
+        this._stickyState = true;
+
+        // Track scroll position to detect user scrolling away
+        const self = this;
+        this._scrollHandler = () => {
+            self._stickyState = self.isAtBottom(element);
+        };
+
+        element.addEventListener('scroll', this._scrollHandler, {passive: true});
+    },
+
+    // Scroll to bottom only if sticky state is true
+    scrollToBottomIfSticky: function (element) {
+        if (!element) return;
+        if (this._stickyState) {
+            requestAnimationFrame(() => {
+                element.scrollTop = element.scrollHeight;
+            });
+        }
+    },
+
+    // Dispose scroll tracking
+    dispose: function () {
+        if (this._element && this._scrollHandler) {
+            this._element.removeEventListener('scroll', this._scrollHandler);
+        }
+        this._element = null;
+        this._scrollHandler = null;
+        this._stickyState = true;
     }
 };
 

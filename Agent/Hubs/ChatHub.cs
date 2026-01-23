@@ -19,6 +19,26 @@ public sealed class ChatHub(
     WebChatMessengerClient messengerClient,
     INotifier hubNotifier) : Hub
 {
+    private bool IsRegistered => Context.Items.ContainsKey("UserId");
+
+    private string? GetRegisteredUserId()
+    {
+        return Context.Items.TryGetValue("UserId", out var userId)
+            ? userId as string
+            : null;
+    }
+
+    public Task RegisterUser(string userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            throw new HubException("User ID cannot be empty");
+        }
+
+        Context.Items["UserId"] = userId;
+        return Task.CompletedTask;
+    }
+
     public IReadOnlyList<AgentInfo> GetAgents()
     {
         return agentFactory.GetAvailableAgents();
@@ -49,7 +69,8 @@ public sealed class ChatHub(
             .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
             .Select(m => new ChatHistoryMessage(
                 m.Role.Value,
-                string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text))))
+                string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
+                m.GetSenderId()))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }
@@ -112,8 +133,19 @@ public sealed class ChatHub(
     public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
+        string? correlationId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!IsRegistered)
+        {
+            yield return new ChatStreamMessage
+            {
+                Error = "User not registered. Please call RegisterUser first.",
+                IsComplete = true
+            };
+            yield break;
+        }
+
         if (!messengerClient.TryGetSession(topicId, out _))
         {
             yield return new ChatStreamMessage
@@ -124,7 +156,9 @@ public sealed class ChatHub(
             yield break;
         }
 
-        var responses = messengerClient.EnqueuePromptAndGetResponses(topicId, message, "web-user", cancellationToken);
+        var userId = GetRegisteredUserId() ?? "Anonymous";
+        var responses =
+            messengerClient.EnqueuePromptAndGetResponses(topicId, message, userId, correlationId, cancellationToken);
 
         await foreach (var msg in responses.IgnoreCancellation(ct: cancellationToken))
         {
@@ -134,6 +168,22 @@ public sealed class ChatHub(
                 break;
             }
         }
+    }
+
+    public bool EnqueueMessage(string topicId, string message, string? correlationId)
+    {
+        if (!IsRegistered)
+        {
+            return false;
+        }
+
+        if (!messengerClient.TryGetSession(topicId, out _))
+        {
+            return false;
+        }
+
+        var userId = GetRegisteredUserId() ?? "Anonymous";
+        return messengerClient.EnqueuePrompt(topicId, message, userId, correlationId);
     }
 
     public async Task CancelTopic(string topicId)

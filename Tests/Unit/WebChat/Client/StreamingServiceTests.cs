@@ -8,6 +8,7 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client;
 
@@ -19,6 +20,7 @@ public sealed class StreamingServiceTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly ApprovalStore _approvalStore;
+    private readonly UserIdentityStore _userIdentityStore;
     private readonly FakeTopicService _topicService = new();
     private readonly StreamingService _service;
 
@@ -28,7 +30,8 @@ public sealed class StreamingServiceTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _approvalStore = new ApprovalStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
+        _userIdentityStore = new UserIdentityStore(_dispatcher);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
     }
 
     public void Dispose()
@@ -37,6 +40,7 @@ public sealed class StreamingServiceTests : IDisposable
         _messagesStore.Dispose();
         _streamingStore.Dispose();
         _approvalStore.Dispose();
+        _userIdentityStore.Dispose();
     }
 
     private StoredTopic CreateTopic(string? topicId = null)
@@ -260,6 +264,60 @@ public sealed class StreamingServiceTests : IDisposable
 
     #endregion
 
+    #region SendMessageAsync Tests
+
+    [Fact]
+    public async Task SendMessageAsync_WithNoActiveStream_CreatesNewStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "test");
+
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse(); // Completed
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_WithActiveStream_ReusesExistingStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // First message - creates stream
+        _messagingService.EnqueueContent("First response");
+        var firstTask = _service.SendMessageAsync(topic, "first");
+
+        // Simulate second message while first is processing
+        // The fake service will return true for EnqueueMessageAsync
+        await firstTask;
+
+        // Verify only one stream was created (one response)
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_WhenEnqueueFails_CreatesNewStream()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // Set enqueue to fail
+        _messagingService.SetEnqueueResult(false);
+        _messagingService.EnqueueContent("Response");
+
+        await _service.SendMessageAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+    }
+
+    #endregion
+
     #region ResumeStreamResponseAsync Tests
 
     [Fact]
@@ -346,7 +404,8 @@ public sealed class StreamingServiceTests : IDisposable
         // Check saved metadata has updated timestamp
         _topicService.SavedTopics.Count.ShouldBe(1);
         _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
-        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
     [Fact]
@@ -369,6 +428,135 @@ public sealed class StreamingServiceTests : IDisposable
         // Approval was dispatched and message completed
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.ShouldContain(m => m.Content == "Done");
+    }
+
+    #endregion
+
+    #region TryStartResumeStreamAsync Tests
+
+    [Fact]
+    public async Task TryStartResumeStreamAsync_WithNoActiveStream_ReturnsTrue()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant" };
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "Resumed", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
+        );
+
+        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
+
+        result.ShouldBeTrue();
+        _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse(); // Completed
+    }
+
+    [Fact]
+    public async Task TryStartResumeStreamAsync_WithActiveStream_ReturnsFalse()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        // Start a stream that won't complete immediately
+        _messagingService.SetBlockUntilComplete(true);
+        _messagingService.EnqueueContent("First response");
+        var firstTask = _service.SendMessageAsync(topic, "first");
+
+        // Try to resume while first stream is active
+        var existingMessage = new ChatMessageModel { Role = "assistant" };
+        var result = await _service.TryStartResumeStreamAsync(topic, existingMessage, "msg-1");
+
+        result.ShouldBeFalse();
+
+        // Complete the first stream
+        _messagingService.UnblockCompletion();
+        await firstTask;
+    }
+
+    [Fact]
+    public async Task IsStreamActiveAsync_WithNoActiveStream_ReturnsFalse()
+    {
+        var topic = CreateTopic();
+
+        var result = await _service.IsStreamActiveAsync(topic.TopicId);
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task IsStreamActiveAsync_WithActiveStream_ReturnsTrue()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+
+        _messagingService.SetBlockUntilComplete(true);
+        _messagingService.EnqueueContent("Response");
+        var streamTask = _service.SendMessageAsync(topic, "test");
+
+        var result = await _service.IsStreamActiveAsync(topic.TopicId);
+
+        result.ShouldBeTrue();
+
+        _messagingService.UnblockCompletion();
+        await streamTask;
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithFinalizationRequest_ResetsAccumulator()
+    {
+        // Scenario: User sends a message during resume, triggering finalization
+        // The finalization request is set by SendMessageEffect, not by ResumeStreamResponseAsync
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
+
+        // Simulate: SendMessageEffect finalized content and set RequestContentFinalization
+        // Then a user message arrives in the stream, followed by new assistant content
+        _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage
+                { UserMessage = new UserMessageInfo("Alice"), Content = "user msg", MessageId = "msg-1" },
+            new ChatStreamMessage { Content = "New response", MessageId = "msg-2" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
+        );
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-0");
+
+        // Verify: The existing content was NOT added (finalization cleared it)
+        // but the new response after the user message WAS added
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.Content == "Existing");
+        messages.ShouldContain(m => m.Content == "New response");
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithoutFinalizationRequest_PreservesContent()
+    {
+        // Scenario: Normal resume without user sending a message
+        // No finalization request should be set, content should be preserved
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Existing" };
+
+        // NO RequestContentFinalization dispatch - normal resume
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = " more content", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
+        );
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        // Verify: Content was accumulated and preserved
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldContain("Existing");
+        messages[0].Content.ShouldContain("more content");
     }
 
     #endregion

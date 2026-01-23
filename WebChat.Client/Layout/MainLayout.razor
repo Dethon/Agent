@@ -14,6 +14,7 @@
                 <span class="status-dot @(ConnectionService.IsConnected ? "connected" : "")"></span>
                 @(ConnectionService.IsConnected ? "Connected" : "Disconnected")
             </div>
+            <UserIdentityPicker />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
                 @if (_isDarkTheme)
                 {

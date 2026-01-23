@@ -6,7 +6,8 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatMessagingService(ChatConnectionService connectionService) : IChatMessagingService
 {
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
+        string? correlationId = null)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -14,7 +15,7 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
             yield break;
         }
 
-        var stream = hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message);
+        var stream = hubConnection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, message, correlationId);
 
         await foreach (var item in stream)
         {
@@ -58,5 +59,16 @@ public sealed class ChatMessagingService(ChatConnectionService connectionService
         }
 
         await hubConnection.InvokeAsync("CancelTopic", topicId);
+    }
+
+    public async Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
+    {
+        var hubConnection = connectionService.HubConnection;
+        if (hubConnection is null)
+        {
+            return false;
+        }
+
+        return await hubConnection.InvokeAsync<bool>("EnqueueMessage", topicId, message, correlationId);
     }
 }

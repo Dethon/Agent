@@ -9,63 +9,83 @@ public static class BufferRebuildUtility
         IReadOnlyList<ChatStreamMessage> bufferedMessages,
         HashSet<string> historyContent)
     {
-        var currentMessage = new ChatMessageModel { Role = "assistant" };
         var completedTurns = new List<ChatMessageModel>();
+        var currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
 
         if (bufferedMessages.Count == 0)
         {
-            return (completedTurns, currentMessage);
+            return (completedTurns, currentAssistantMessage);
         }
 
-        var turnGroups = bufferedMessages
-            .GroupBy(m => m.MessageId)
-            .OrderBy(g => g.Key)
+        // Process messages in sequence order
+        var orderedMessages = bufferedMessages
+            .OrderBy(m => m.SequenceNumber)
             .ToList();
 
-        var isFirstGroup = true;
         var needsReasoningSeparator = false;
+        string? currentMessageId = null;
 
-        foreach (var turnGroup in turnGroups)
+        foreach (var msg in orderedMessages)
         {
-            var chunks = turnGroup.ToList();
-            var isComplete = chunks.Any(m => m.IsComplete);
-
-            if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Content))
+            // Handle user messages - they're always complete, add directly
+            if (msg.UserMessage is not null)
             {
-                var strippedMessage = StripKnownContent(currentMessage, historyContent);
+                // If we have pending assistant content, save it first
+                if (currentAssistantMessage.HasContent)
+                {
+                    var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
+                    if (strippedMessage.HasContent)
+                    {
+                        completedTurns.Add(strippedMessage);
+                    }
+                    currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
+                    needsReasoningSeparator = false;
+                }
+
+                completedTurns.Add(new ChatMessageModel
+                {
+                    Role = "user",
+                    Content = msg.Content ?? "",
+                    SenderId = msg.UserMessage.SenderId
+                });
+                continue;
+            }
+
+            // Handle assistant messages
+            // If message ID changed and we have content, save the previous turn
+            if (currentMessageId is not null && msg.MessageId != currentMessageId && currentAssistantMessage.HasContent)
+            {
+                var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                 if (strippedMessage.HasContent)
                 {
                     completedTurns.Add(strippedMessage);
                 }
-
-                currentMessage = new ChatMessageModel { Role = "assistant" };
+                currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                 needsReasoningSeparator = false;
             }
-            else if (!isFirstGroup && !string.IsNullOrEmpty(currentMessage.Reasoning))
-            {
-                needsReasoningSeparator = true;
-            }
 
-            isFirstGroup = false;
+            currentMessageId = msg.MessageId;
 
-            foreach (var chunk in chunks.Where(m => m is { IsComplete: false, Error: null }))
+            // Skip complete markers and errors for accumulation
+            if (msg.IsComplete || msg.Error is not null)
             {
-                currentMessage = AccumulateChunk(currentMessage, chunk, ref needsReasoningSeparator);
-            }
-
-            if (isComplete)
-            {
-                var strippedMessage = StripKnownContent(currentMessage, historyContent);
-                if (strippedMessage.HasContent)
+                if (msg.IsComplete && currentAssistantMessage.HasContent)
                 {
-                    completedTurns.Add(strippedMessage);
+                    var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
+                    if (strippedMessage.HasContent)
+                    {
+                        completedTurns.Add(strippedMessage);
+                    }
+                    currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
+                    needsReasoningSeparator = false;
                 }
-
-                currentMessage = new ChatMessageModel { Role = "assistant" };
+                continue;
             }
+
+            currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
         }
 
-        var streamingMessage = StripKnownContent(currentMessage, historyContent);
+        var streamingMessage = StripKnownContent(currentAssistantMessage, historyContent);
         return (completedTurns, streamingMessage);
     }
 

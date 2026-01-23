@@ -40,6 +40,7 @@ builder.Services.AddWebChatEffects();
 builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
+builder.Services.AddSingleton<SentMessageTracker>();
 
 // Notification handling
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
@@ -53,5 +54,6 @@ _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
+_ = app.Services.GetRequiredService<UserIdentityEffect>();
 
 await app.RunAsync();

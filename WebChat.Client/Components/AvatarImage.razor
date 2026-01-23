@@ -1,0 +1,46 @@
+@using WebChat.Client.Helpers
+
+<div class="avatar-image-container" style="width: @(Size)px; height: @(Size)px;">
+    @if (!string.IsNullOrEmpty(AvatarUrl) && !_imageLoadFailed)
+    {
+        <img src="@AvatarUrl"
+             alt="@UserId"
+             class="avatar-image"
+             style="width: @(Size)px; height: @(Size)px; border-radius: 50%;"
+             @onerror="HandleImageError" />
+    }
+    else
+    {
+        <div class="avatar-fallback"
+             style="width: @(Size)px; height: @(Size)px; background-color: @_backgroundColor; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; font-size: @(Size / 2)px;">
+            @_initials
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string? UserId { get; set; }
+
+    [Parameter]
+    public string? AvatarUrl { get; set; }
+
+    [Parameter]
+    public int Size { get; set; } = 32;
+
+    private bool _imageLoadFailed;
+    private string _backgroundColor = "#FF6B6B";
+    private string _initials = "?";
+
+    protected override void OnParametersSet()
+    {
+        _backgroundColor = AvatarHelper.GetColorForUser(UserId);
+        _initials = AvatarHelper.GetInitials(UserId);
+    }
+
+    private void HandleImageError()
+    {
+        _imageLoadFailed = true;
+        StateHasChanged();
+    }
+}

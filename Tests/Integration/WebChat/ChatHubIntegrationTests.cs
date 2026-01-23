@@ -14,6 +14,9 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     {
         _connection = fixture.CreateHubConnection();
         await _connection.StartAsync();
+
+        // Register user (required by ChatHub before sending messages)
+        await _connection.InvokeAsync("RegisterUser", "test-user");
     }
 
     public async Task DisposeAsync()
@@ -90,8 +93,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         var messages = new List<ChatStreamMessage>();
 
         // Act
-        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Hello"))
+        await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>("SendMessage", topicId, "Hello", null))
         {
             messages.Add(msg);
         }
@@ -121,7 +123,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         // Act
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Say hello", cts.Token))
+                           "SendMessage", topicId, "Say hello", null, cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -157,7 +159,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         // Act
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Search for something", cts.Token))
+                           "SendMessage", topicId, "Search for something", null, cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -191,7 +193,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         // Act
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "What is the answer?", cts.Token))
+                           "SendMessage", topicId, "What is the answer?", null, cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -232,7 +234,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         {
             await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
                                // ReSharper disable once AccessToDisposedClosure
-                               "SendMessage", topicId, "Generate long response", cts.Token))
+                               "SendMessage", topicId, "Generate long response", null, cts.Token))
             {
                 messages.Add(msg);
                 if (messages.Count == 1)
@@ -275,7 +277,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         // Consume the stream to completion
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Generate response", cts.Token))
+                           "SendMessage", topicId, "Generate response", null, cts.Token))
         {
             if (msg.IsComplete || msg.Error is not null)
             {
@@ -320,7 +322,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "Hello", cts.Token))
+                           "SendMessage", topicId, "Hello", null, cts.Token))
         {
             messages.Add(msg);
             if (msg.IsComplete || msg.Error is not null)
@@ -355,7 +357,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         try
         {
             await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                               "SendMessage", topicId, "Trigger error", cts.Token))
+                               "SendMessage", topicId, "Trigger error", null, cts.Token))
             {
                 messages.Add(msg);
                 if (msg.IsComplete || msg.Error is not null)
@@ -411,7 +413,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             {
                 // ReSharper disable once AccessToDisposedClosure
                 await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                                   "SendMessage", topicId, "Hello from multi-connection test", cts.Token))
+                                   "SendMessage", topicId, "Hello from multi-connection test", null, cts.Token))
                 {
                     messages1.Add(msg);
                     if (msg.IsComplete || msg.Error is not null)
@@ -479,7 +481,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         // Act - Start streaming and capture buffer state after reasoning is received
         await foreach (var msg in _connection.StreamAsync<ChatStreamMessage>(
-                           "SendMessage", topicId, "What is the answer?", cts.Token))
+                           "SendMessage", topicId, "What is the answer?", null, cts.Token))
         {
             receivedMessages.Add(msg);
 

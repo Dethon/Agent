@@ -13,6 +13,8 @@ public record StreamCompleted(string TopicId) : IAction;
 
 public record StreamCancelled(string TopicId) : IAction;
 
+public record ResetStreamingContent(string TopicId) : IAction;
+
 public record StreamError(string TopicId, string Error) : IAction;
 
 public record StartResuming(string TopicId) : IAction;
@@ -23,3 +25,7 @@ public record StopResuming(string TopicId) : IAction;
 public record SendMessage(string? TopicId, string Message) : IAction;
 
 public record CancelStreaming(string TopicId) : IAction;
+
+public record RequestContentFinalization(string TopicId) : IAction;
+
+public record ClearFinalizationRequest(string TopicId) : IAction;

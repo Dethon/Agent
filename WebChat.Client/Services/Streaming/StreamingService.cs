@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -12,9 +13,87 @@ public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,
     ITopicService topicService,
-    TopicsStore topicsStore) : IStreamingService
+    TopicsStore topicsStore,
+    StreamingStore streamingStore) : IStreamingService
 {
-    public async Task StreamResponseAsync(StoredTopic topic, string message)
+    private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
+    private readonly SemaphoreSlim _streamLock = new(1, 1);
+
+    public async Task SendMessageAsync(StoredTopic topic, string message, string? correlationId = null)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var isNewStream = !_activeStreams.TryGetValue(topic.TopicId, out var task)
+                              || task.IsCompleted;
+
+            if (isNewStream)
+            {
+                StartNewStream(topic, message, correlationId);
+            }
+            else
+            {
+                var success = await messagingService.EnqueueMessageAsync(topic.TopicId, message, correlationId);
+                if (!success)
+                {
+                    StartNewStream(topic, message, correlationId);
+                }
+            }
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    public async Task<bool> TryStartResumeStreamAsync(
+        StoredTopic topic,
+        ChatMessageModel streamingMessage,
+        string startMessageId)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var hasActiveStream = _activeStreams.TryGetValue(topic.TopicId, out var task) && !task.IsCompleted;
+            if (hasActiveStream)
+            {
+                return false;
+            }
+
+            dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+            var streamTask = ResumeStreamResponseAsync(topic, streamingMessage, startMessageId);
+            _activeStreams[topic.TopicId] = streamTask;
+            _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
+            return true;
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    public async Task<bool> IsStreamActiveAsync(string topicId)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            return _activeStreams.TryGetValue(topicId, out var task) && !task.IsCompleted;
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    private void StartNewStream(StoredTopic topic, string message, string? correlationId)
+    {
+        dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+        var streamTask = StreamResponseAsync(topic, message, correlationId);
+        _activeStreams[topic.TopicId] = streamTask;
+        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out Task? _));
+    }
+
+    public async Task StreamResponseAsync(StoredTopic topic, string message, string? correlationId = null)
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
         string? currentMessageId = null;
@@ -22,7 +101,7 @@ public sealed class StreamingService(
 
         try
         {
-            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message))
+            await foreach (var chunk in messagingService.SendMessageAsync(topic.TopicId, message, correlationId))
             {
                 if (chunk.ApprovalRequest is not null)
                 {
@@ -46,6 +125,28 @@ public sealed class StreamingService(
                     break;
                 }
 
+                // When a user message arrives in the stream, finalize current assistant content
+                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
+                if (chunk.UserMessage is not null)
+                {
+                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+                    {
+                        // SendMessageEffect already added the message, just clear the flag
+                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+                    }
+                    else if (streamingMessage.HasContent)
+                    {
+                        // No finalization request - we need to add the message here
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+                    }
+
+                    // Reset accumulator for the new response (user message added by HandleUserMessage)
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    needsReasoningSeparator = false;
+                    continue;
+                }
+
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
                 // Only finalize current message if new chunk starts actual message content
@@ -54,7 +155,7 @@ public sealed class StreamingService(
                     !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
-                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
@@ -76,9 +177,18 @@ public sealed class StreamingService(
                     currentMessageId));
             }
 
+            // Check finalization one more time before adding final message
+            // This handles the case where the stream ends right after a user message
+            // (no content chunks arrive after the finalization request was dispatched)
+            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+            {
+                streamingMessage = new ChatMessageModel { Role = "assistant" };
+                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+            }
+
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }, currentMessageId));
             }
 
             // Fetch current topic from store to get latest LastReadMessageCount
@@ -141,6 +251,32 @@ public sealed class StreamingService(
                     break;
                 }
 
+                // When a user message arrives in the stream, finalize current assistant content
+                // UNLESS SendMessageEffect already finalized (check FinalizationRequests flag)
+                if (chunk.UserMessage is not null)
+                {
+                    if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+                    {
+                        // SendMessageEffect already added the message, just clear the flag
+                        dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
+                    }
+                    else if (streamingMessage.HasContent)
+                    {
+                        // No finalization request - we need to add the message here
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                        dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
+                    }
+
+                    // Reset accumulator for the new response (user message added by HandleUserMessage)
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
+                    needsReasoningSeparator = false;
+                    processedContentLength = 0;
+                    processedReasoningLength = 0;
+                    processedToolCallsLength = 0;
+
+                    continue;
+                }
+
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
                 // Only finalize current message if new chunk starts actual message content
@@ -149,7 +285,7 @@ public sealed class StreamingService(
                     !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
                 if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
                 {
-                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage));
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                     needsReasoningSeparator = false;
@@ -171,32 +307,47 @@ public sealed class StreamingService(
                 streamingMessage =
                     BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
 
+                var newContent = streamingMessage.Content;
+                var newReasoning = streamingMessage.Reasoning;
+                var newToolCalls = streamingMessage.ToolCalls;
+
                 // Check if we have new content beyond what was in the buffer
-                var hasNewContent = streamingMessage.Content.Length > processedContentLength;
-                var hasNewReasoning = (streamingMessage.Reasoning?.Length ?? 0) > processedReasoningLength;
-                var hasNewToolCalls = (streamingMessage.ToolCalls?.Length ?? 0) > processedToolCallsLength;
-                var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls;
+                var hasNewContent = newContent.Length > processedContentLength;
+                var hasNewReasoning = (newReasoning?.Length ?? 0) > processedReasoningLength;
+                var hasNewToolCalls = (newToolCalls?.Length ?? 0) > processedToolCallsLength;
+                var isNew = hasNewContent || hasNewReasoning || hasNewToolCalls || chunk.MessageId != currentMessageId;
 
                 // Update processed lengths
-                processedContentLength = streamingMessage.Content.Length;
-                processedReasoningLength = streamingMessage.Reasoning?.Length ?? 0;
-                processedToolCallsLength = streamingMessage.ToolCalls?.Length ?? 0;
+                processedContentLength = newContent.Length;
+                processedReasoningLength = newReasoning?.Length ?? 0;
+                processedToolCallsLength = newToolCalls?.Length ?? 0;
 
-                if (isNew)
+                if (!isNew)
                 {
-                    receivedNewContent = true;
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
+                    continue;
                 }
+
+                receivedNewContent = true;
+                dispatcher.Dispatch(new StreamChunk(
+                    topic.TopicId,
+                    streamingMessage.Content,
+                    streamingMessage.Reasoning,
+                    streamingMessage.ToolCalls,
+                    currentMessageId ?? chunk.MessageId));
+            }
+
+            // Check finalization one more time before adding final message
+            // This handles the case where the stream ends right after a user message
+            // (no content chunks arrive after the finalization request was dispatched)
+            if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
+            {
+                streamingMessage = new ChatMessageModel { Role = "assistant" };
+                dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
             }
 
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage with { }, currentMessageId));
             }
 
             if (receivedNewContent)

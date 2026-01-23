@@ -109,8 +109,9 @@ internal sealed class McpClientManager : IAsyncDisposable
         IEnumerable<McpClient> clients, string userId, CancellationToken ct)
     {
         var userContextPrompt = $"## User Context\n" +
-                                $"Current user ID: `{userId}`\n" +
-                                $"Use this userId for all user-scoped operations.";
+                                $"Conversation created by user: '{userId}'\n" +
+                                $"Use this userId/username for all user-scoped operations. unless you get more " +
+                                $"updated information in the user's message";
         return await clients
             .Where(c => c.ServerCapabilities.Prompts is not null)
             .ToAsyncEnumerable()

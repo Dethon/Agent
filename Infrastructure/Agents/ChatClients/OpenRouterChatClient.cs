@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
@@ -40,6 +41,20 @@ public sealed class OpenRouterChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        messages = messages.Select(x =>
+        {
+            var newMessage = x.Clone();
+            var sender = newMessage.GetSenderId();
+            if (sender is not null && newMessage.Role == ChatRole.User)
+            {
+                newMessage.Contents = newMessage.Contents
+                    .Prepend(new TextContent($"Message from {sender}:\n"))
+                    .ToList();
+            }
+
+            return newMessage;
+        });
+
         await foreach (var update in _client.GetStreamingResponseAsync(messages, options, ct))
         {
             AppendReasoningContent(update);

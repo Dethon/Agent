@@ -8,6 +8,21 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private readonly Queue<ChatStreamMessage> _enqueuedMessages = new();
     private readonly Dictionary<string, StreamState> _streamStates = new();
     private readonly HashSet<string> _cancelledTopics = new();
+    private bool _enqueueResult = true;
+    private bool _blockUntilComplete;
+    private readonly TaskCompletionSource _completionSource = new();
+
+    public void SetEnqueueResult(bool result) => _enqueueResult = result;
+
+    public void SetBlockUntilComplete(bool block)
+    {
+        _blockUntilComplete = block;
+    }
+
+    public void UnblockCompletion()
+    {
+        _completionSource.TrySetResult();
+    }
 
     public int StreamDelayMs { get; set; } = 0;
 
@@ -56,8 +71,14 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public IReadOnlySet<string> CancelledTopics => _cancelledTopics;
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message)
+    public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
+        string? correlationId = null)
     {
+        if (_blockUntilComplete)
+        {
+            await _completionSource.Task;
+        }
+
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
             if (StreamDelayMs > 0)
@@ -92,5 +113,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     {
         _cancelledTopics.Add(topicId);
         return Task.CompletedTask;
+    }
+
+    public Task<bool> EnqueueMessageAsync(string topicId, string message, string? correlationId = null)
+    {
+        return Task.FromResult(_enqueueResult);
     }
 }

@@ -23,9 +23,6 @@ public record StreamChangedNotification(
     StreamChangeType ChangeType,
     string TopicId);
 
-public record NewMessageNotification(
-    string TopicId);
-
 public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,
@@ -34,3 +31,9 @@ public record ApprovalResolvedNotification(
 public record ToolCallsNotification(
     string TopicId,
     string ToolCalls);
+
+public record UserMessageNotification(
+    string TopicId,
+    string Content,
+    string? SenderId,
+    string? CorrelationId = null);

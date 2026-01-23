@@ -50,20 +50,25 @@ public sealed class WebChatMessengerClient(
             {
                 foreach (var content in update.Contents)
                 {
-                    // StreamCompleteContent signals that this topic's agent turn is done
+                    // StreamCompleteContent signals that one prompt's agent turn is done
+                    // Only send IsComplete when ALL pending prompts are processed
                     if (content is StreamCompleteContent)
                     {
-                        await streamManager.WriteMessageAsync(
-                            topicId,
-                            new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
-                            cancellationToken);
-                        streamManager.CompleteStream(topicId);
-                        await hubNotifier.NotifyStreamChangedAsync(
-                                new StreamChangedNotification(StreamChangeType.Completed, topicId), cancellationToken)
-                            .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
-                        await hubNotifier.NotifyNewMessageAsync(
-                                new NewMessageNotification(topicId), cancellationToken)
-                            .SafeAwaitAsync(logger, "Failed to notify new message for topic {TopicId}", topicId);
+                        if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
+                        {
+                            var message = new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId };
+                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId);
+
+                            await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
+                            streamManager.CompleteStream(topicId);
+                            await hubNotifier
+                                .NotifyStreamChangedAsync(notification, cancellationToken)
+                                .SafeAwaitAsync(
+                                    logger,
+                                    "Failed to notify stream completed for topic {TopicId}",
+                                    topicId);
+                        }
+
                         continue;
                     }
 
@@ -83,16 +88,6 @@ public sealed class WebChatMessengerClient(
                         await streamManager.WriteMessageAsync(topicId, msg, cancellationToken);
                     }
                 }
-
-                // When aiResponse is present, the individual message is complete
-                // Note: Do NOT complete the stream here - multiple messages may follow (e.g., tool calls then response)
-                // if (aiResponse is not null)
-                // {
-                //     await streamManager.WriteMessageAsync(
-                //         topicId,
-                //         new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId },
-                //         cancellationToken);
-                // }
             }
             catch (Exception ex)
             {
@@ -100,7 +95,15 @@ public sealed class WebChatMessengerClient(
                     topicId,
                     new ChatStreamMessage { IsComplete = true, Error = ex.Message, MessageId = update.MessageId },
                     CancellationToken.None);
-                streamManager.CompleteStream(topicId);
+
+                if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
+                {
+                    streamManager.CompleteStream(topicId);
+
+                    await hubNotifier.NotifyStreamChangedAsync(
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId), CancellationToken.None)
+                        .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+                }
             }
         }
     }
@@ -144,6 +147,7 @@ public sealed class WebChatMessengerClient(
         string topicId,
         string message,
         string sender,
+        string? correlationId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
@@ -152,11 +156,33 @@ public sealed class WebChatMessengerClient(
             yield break;
         }
 
-        var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, cancellationToken);
+        // GetOrCreateStream returns existing channel if one exists, allowing multiple browsers
+        // to share the same stream. IsNew indicates whether we created a new stream.
+        var (broadcastChannel, linkedToken, isNewStream) =
+            streamManager.GetOrCreateStream(topicId, message, sender, cancellationToken);
+        streamManager.TryIncrementPending(topicId);
 
-        await hubNotifier.NotifyStreamChangedAsync(
-                new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
-            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        // Write user message to buffer for other browsers to see on refresh
+        var userMessage = new ChatStreamMessage
+        {
+            Content = message,
+            UserMessage = new UserMessageInfo(sender)
+        };
+        await streamManager.WriteMessageAsync(topicId, userMessage, cancellationToken);
+
+        // Notify other browsers about the user message
+        await hubNotifier.NotifyUserMessageAsync(
+                new UserMessageNotification(topicId, message, sender, correlationId), cancellationToken)
+            .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
+
+        // Only notify StreamChanged.Started for new streams
+        // (don't send duplicate Started notifications when joining existing stream)
+        if (isNewStream)
+        {
+            await hubNotifier.NotifyStreamChangedAsync(
+                    new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
+                .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        }
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);
 
@@ -176,6 +202,49 @@ public sealed class WebChatMessengerClient(
         {
             yield return msg;
         }
+    }
+
+    public bool EnqueuePrompt(string topicId, string message, string sender, string? correlationId)
+    {
+        if (!sessionManager.TryGetSession(topicId, out var session) || session is null)
+        {
+            return false;
+        }
+
+        if (!streamManager.TryIncrementPending(topicId))
+        {
+            return false;
+        }
+
+        // Write user message to buffer for other browsers to see on refresh
+        var userMessage = new ChatStreamMessage
+        {
+            Content = message,
+            UserMessage = new UserMessageInfo(sender)
+        };
+        // Fire and forget - don't block the enqueue
+        _ = streamManager.WriteMessageAsync(topicId, userMessage, CancellationToken.None)
+            .SafeAwaitAsync(logger, "Failed to buffer user message for topic {TopicId}", topicId);
+
+        // Notify other browsers about the user message
+        _ = hubNotifier.NotifyUserMessageAsync(
+                new UserMessageNotification(topicId, message, sender, correlationId), CancellationToken.None)
+            .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
+
+        var messageId = Interlocked.Increment(ref _messageIdCounter);
+
+        var prompt = new ChatPrompt
+        {
+            Prompt = message,
+            ChatId = session.ChatId,
+            ThreadId = (int)session.ThreadId,
+            MessageId = messageId,
+            Sender = sender,
+            BotTokenHash = session.AgentId
+        };
+
+        _promptChannel.Writer.TryWrite(prompt);
+        return true;
     }
 
     public bool IsProcessing(string topicId)

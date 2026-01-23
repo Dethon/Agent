@@ -8,6 +8,8 @@ public record ChatMessageModel
     public string? ToolCalls { get; init; }
     public bool IsError { get; init; }
 
+    public string? SenderId { get; init; }
+
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
         !string.IsNullOrEmpty(ToolCalls) ||

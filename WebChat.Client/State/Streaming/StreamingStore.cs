@@ -16,11 +16,17 @@ public sealed class StreamingStore : IDisposable
             _store.Dispatch(action, StreamingReducers.Reduce));
         dispatcher.RegisterHandler<StreamCancelled>(action =>
             _store.Dispatch(action, StreamingReducers.Reduce));
+        dispatcher.RegisterHandler<ResetStreamingContent>(action =>
+            _store.Dispatch(action, StreamingReducers.Reduce));
         dispatcher.RegisterHandler<StreamError>(action =>
             _store.Dispatch(action, StreamingReducers.Reduce));
         dispatcher.RegisterHandler<StartResuming>(action =>
             _store.Dispatch(action, StreamingReducers.Reduce));
         dispatcher.RegisterHandler<StopResuming>(action =>
+            _store.Dispatch(action, StreamingReducers.Reduce));
+        dispatcher.RegisterHandler<RequestContentFinalization>(action =>
+            _store.Dispatch(action, StreamingReducers.Reduce));
+        dispatcher.RegisterHandler<ClearFinalizationRequest>(action =>
             _store.Dispatch(action, StreamingReducers.Reduce));
     }
 

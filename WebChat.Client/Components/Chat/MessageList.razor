@@ -1,10 +1,13 @@
+@using WebChat.Client.State.UserIdentity
 @inherits StoreSubscriberComponent
 
 @inject MessagesStore MessagesStore
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
+@inject RenderCoordinator RenderCoordinator
 
 @code {
     private IReadOnlyList<ChatMessageModel> _messages = [];
@@ -12,7 +15,9 @@
     private bool _isStreaming;
     private AgentInfo? _selectedAgent;
     private ElementReference _messagesArea;
-    private bool _shouldAutoScroll = true;
+    private string? _currentUserId;
+    private IDisposable? _streamingContentSubscription;
+    private bool _forceScrollToBottom;
 
     protected override void OnInitialized()
     {
@@ -22,8 +27,10 @@
             id =>
             {
                 _topicId = id;
+                _forceScrollToBottom = true; // Scroll to bottom when switching topics
                 UpdateMessages();
                 UpdateStreamingStatus();
+                UpdateStreamingContentSubscription();
             });
 
         // Subscribe to selected agent
@@ -36,10 +43,19 @@
             state => state,
             _ => UpdateMessages());
 
-        // Subscribe to streaming status
+        // Subscribe to streaming status and content for auto-scroll
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
-            _ => UpdateStreamingStatus());
+            _ =>
+            {
+                UpdateStreamingStatus();
+                UpdateStreamingContentSubscription();
+            });
+
+        // Subscribe to user identity
+        Subscribe(UserIdentityStore.StateObservable,
+            state => state.SelectedUserId,
+            userId => _currentUserId = userId);
     }
 
     private void UpdateMessages()
@@ -54,16 +70,80 @@
         _isStreaming = _topicId != null && StreamingStore.State.StreamingTopics.Contains(_topicId);
     }
 
+    private void UpdateStreamingContentSubscription()
+    {
+        // Dispose existing subscription
+        _streamingContentSubscription?.Dispose();
+        _streamingContentSubscription = null;
+
+        // Subscribe to streaming content if topic is streaming (triggers re-render for auto-scroll)
+        if (_isStreaming && !string.IsNullOrEmpty(_topicId))
+        {
+            _streamingContentSubscription = RenderCoordinator
+                .CreateStreamingObservable(_topicId)
+                .Subscribe(OnStreamingContentChanged);
+        }
+    }
+
+    private void OnStreamingContentChanged(StreamingContent? _)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public override void Dispose()
+    {
+        _streamingContentSubscription?.Dispose();
+        try
+        {
+            ((IJSInProcessRuntime)Js).InvokeVoid("chatScroll.dispose");
+        }
+        catch
+        {
+            // JS runtime may not be available during dispose
+        }
+        base.Dispose();
+    }
+
     private void HandleSuggestionClicked(string suggestion)
     {
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
+    private bool ShouldShowAvatar(int index)
+    {
+        if (index == 0) return true;
+
+        var current = _messages[index];
+        var previous = _messages[index - 1];
+
+        // Show avatar if sender OR role changed
+        return current.SenderId != previous.SenderId
+            || current.Role != previous.Role;
+    }
+
+    private bool IsOwnMessage(ChatMessageModel message)
+    {
+        return message.Role == "user"
+            && !string.IsNullOrEmpty(message.SenderId)
+            && message.SenderId == _currentUserId;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_shouldAutoScroll)
+        if (firstRender)
         {
-            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, true);
+            await Js.InvokeVoidAsync("chatScroll.initStickyScroll", _messagesArea);
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, false);
+        }
+        else if (_forceScrollToBottom)
+        {
+            _forceScrollToBottom = false;
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottom", _messagesArea, false);
+        }
+        else
+        {
+            // Sticky scroll: only scroll if user hasn't scrolled away
+            await Js.InvokeVoidAsync("chatScroll.scrollToBottomIfSticky", _messagesArea);
         }
     }
 }
@@ -75,9 +155,11 @@
     }
     else
     {
-        @foreach (var message in _messages)
+        @foreach (var (message, index) in _messages.Select((m, i) => (m, i)))
         {
-            <ChatMessage Message="@message"/>
+            <ChatMessage Message="@message"
+                         ShowAvatar="@ShouldShowAvatar(index)"
+                         IsOwnMessage="@IsOwnMessage(message)" />
         }
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))

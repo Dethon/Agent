@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -68,8 +69,10 @@ public class ChatMonitor(
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
                     default:
+                        var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
+                        userMessage.SetSenderId(x.Sender);
                         return agent
-                            .RunStreamingAsync(x.Prompt, thread, cancellationToken: linkedCt)
+                            .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((
