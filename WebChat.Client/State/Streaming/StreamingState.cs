@@ -18,7 +18,6 @@ public sealed record StreamingState
 
     public ImmutableHashSet<string> StreamingTopics { get; init; } = [];
     public ImmutableHashSet<string> ResumingTopics { get; init; } = [];
-    public ImmutableHashSet<string> FinalizationRequests { get; init; } = [];
 
     public static StreamingState Initial => new();
 }

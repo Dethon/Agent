@@ -15,12 +15,36 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
     private readonly Lock _streamLock = new();
     private bool _disposed;
 
-    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) CreateStream(
+    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool IsNew) GetOrCreateStream(
         string topicId,
         string currentPrompt,
         string? currentSenderId,
         CancellationToken parentToken)
     {
+        // If a stream already exists, return it (don't overwrite!)
+        // This allows multiple browsers to share the same stream
+        if (_responseChannels.TryGetValue(topicId, out var existingChannel))
+        {
+            // Update prompt info for the new message
+            _currentPrompts[topicId] = currentPrompt;
+            if (currentSenderId is not null)
+            {
+                _currentSenderIds[topicId] = currentSenderId;
+            }
+
+            // Get existing cancellation token
+            if (_cancellationTokens.TryGetValue(topicId, out var existingCts))
+            {
+                return (existingChannel, existingCts.Token, IsNew: false);
+            }
+
+            // Fallback: create new linked token if somehow missing
+            var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+            _cancellationTokens[topicId] = linkedCts;
+            return (existingChannel, linkedCts.Token, IsNew: false);
+        }
+
+        // No existing stream - create new one
         var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
         _responseChannels[topicId] = broadcastChannel;
 
@@ -35,7 +59,7 @@ public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) :
         var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
         _cancellationTokens[topicId] = cts;
 
-        return (broadcastChannel, cts.Token);
+        return (broadcastChannel, cts.Token, IsNew: true);
     }
 
     public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(

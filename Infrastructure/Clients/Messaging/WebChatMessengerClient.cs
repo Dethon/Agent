@@ -156,7 +156,10 @@ public sealed class WebChatMessengerClient(
             yield break;
         }
 
-        var (broadcastChannel, linkedToken) = streamManager.CreateStream(topicId, message, sender, cancellationToken);
+        // GetOrCreateStream returns existing channel if one exists, allowing multiple browsers
+        // to share the same stream. IsNew indicates whether we created a new stream.
+        var (broadcastChannel, linkedToken, isNewStream) =
+            streamManager.GetOrCreateStream(topicId, message, sender, cancellationToken);
         streamManager.TryIncrementPending(topicId);
 
         // Write user message to buffer for other browsers to see on refresh
@@ -172,9 +175,14 @@ public sealed class WebChatMessengerClient(
                 new UserMessageNotification(topicId, message, sender, correlationId), cancellationToken)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
-        await hubNotifier.NotifyStreamChangedAsync(
-                new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
-            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        // Only notify StreamChanged.Started for new streams
+        // (don't send duplicate Started notifications when joining existing stream)
+        if (isNewStream)
+        {
+            await hubNotifier.NotifyStreamChangedAsync(
+                    new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
+                .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        }
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);
 

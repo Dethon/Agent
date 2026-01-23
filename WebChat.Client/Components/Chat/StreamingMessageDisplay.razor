@@ -28,9 +28,20 @@
     }
 }
 
-@if (_streamingContent is not null)
+@if (_streamingContent is not null && HasDisplayableContent())
 {
     <ChatMessage Message="@CreateMessageModel()" IsStreaming="true"/>
+}
+
+@code {
+
+    private bool HasDisplayableContent()
+    {
+        return !string.IsNullOrEmpty(_streamingContent?.Content) ||
+               !string.IsNullOrEmpty(_streamingContent?.Reasoning) ||
+               !string.IsNullOrEmpty(_streamingContent?.ToolCalls);
+    }
+
 }
 
 @code {

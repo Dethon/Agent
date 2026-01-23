@@ -19,7 +19,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var messageWithReasoning = new ChatStreamMessage
         {
@@ -42,7 +42,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var reasoningMessage = new ChatStreamMessage
         {
@@ -77,7 +77,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var message = new ChatStreamMessage
         {
@@ -100,7 +100,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     {
         // Arrange
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var reasoningMsg = new ChatStreamMessage { Reasoning = "Thinking...", MessageId = "1" };
         var contentMsg = new ChatStreamMessage { Content = "Answer", MessageId = "2" };
@@ -123,7 +123,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     public void TryIncrementPending_WithActiveStream_ReturnsTrue()
     {
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var result = _manager.TryIncrementPending(topicId);
 
@@ -144,7 +144,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     public void DecrementPendingAndCheckIfShouldComplete_WhenCountReachesZero_ReturnsTrueButKeepsStreamOpen()
     {
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
         _manager.TryIncrementPending(topicId);
 
         var shouldComplete = _manager.DecrementPendingAndCheckIfShouldComplete(topicId);
@@ -158,7 +158,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     public void DecrementPendingAndCheckIfShouldComplete_WhenCountAboveZero_ReturnsFalse()
     {
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
         _manager.TryIncrementPending(topicId);
         _manager.TryIncrementPending(topicId); // count = 2
 
@@ -172,7 +172,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     public void CancelStream_ResetsPendingCount()
     {
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
         _manager.TryIncrementPending(topicId);
         _manager.TryIncrementPending(topicId);
 
@@ -186,7 +186,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
     public async Task WriteMessageAsync_WithUserMessage_BuffersUserMessage()
     {
         const string topicId = "test-topic";
-        _manager.CreateStream(topicId, "test prompt", null, CancellationToken.None);
+        _manager.GetOrCreateStream(topicId, "test prompt", null, CancellationToken.None);
 
         var userMessage = new ChatStreamMessage
         {
@@ -202,5 +202,37 @@ public sealed class WebChatStreamManagerTests : IDisposable
         state.BufferedMessages[0].Content.ShouldBe("Hello from user");
         state.BufferedMessages[0].UserMessage.ShouldNotBeNull();
         state.BufferedMessages[0].UserMessage!.SenderId.ShouldBe("alice");
+    }
+
+    [Fact]
+    public void GetOrCreateStream_WhenStreamExists_ReturnsSameChannelAndIsNewFalse()
+    {
+        const string topicId = "test-topic";
+
+        // First call creates new stream
+        var (channel1, _, isNew1) = _manager.GetOrCreateStream(topicId, "prompt 1", "sender1", CancellationToken.None);
+
+        // Second call should return same channel with IsNew = false
+        var (channel2, _, isNew2) = _manager.GetOrCreateStream(topicId, "prompt 2", "sender2", CancellationToken.None);
+
+        isNew1.ShouldBeTrue("First call should indicate new stream");
+        isNew2.ShouldBeFalse("Second call should indicate existing stream");
+        channel2.ShouldBeSameAs(channel1, "Should return the same channel instance");
+    }
+
+    [Fact]
+    public void GetOrCreateStream_AfterComplete_CreatesNewStream()
+    {
+        const string topicId = "test-topic";
+
+        // Create and complete a stream
+        var (channel1, _, _) = _manager.GetOrCreateStream(topicId, "prompt 1", null, CancellationToken.None);
+        _manager.CompleteStream(topicId);
+
+        // After completion, should create a new stream
+        var (channel2, _, isNew) = _manager.GetOrCreateStream(topicId, "prompt 2", null, CancellationToken.None);
+
+        isNew.ShouldBeTrue("Should create new stream after previous was completed");
+        channel2.ShouldNotBeSameAs(channel1, "Should create a new channel instance");
     }
 }

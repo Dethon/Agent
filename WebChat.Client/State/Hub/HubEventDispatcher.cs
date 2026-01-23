@@ -111,7 +111,7 @@ public sealed class HubEventDispatcher(
             return;
         }
 
-        // If streaming is active, finalize the current bubble before adding user message
+        // If streaming is active, finalize current content for correct message ordering
         var streamingState = streamingStore.State;
         if (streamingState.StreamingTopics.Contains(notification.TopicId))
         {
@@ -130,9 +130,6 @@ public sealed class HubEventDispatcher(
                 // Reset streaming content for a fresh bubble
                 dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
             }
-
-            // Signal StreamingService to reset its internal accumulator
-            dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
         }
 
         dispatcher.Dispatch(new AddMessage(notification.TopicId, new ChatMessageModel

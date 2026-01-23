@@ -25,7 +25,7 @@ public sealed class ConcurrentStreamingTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore);
     }
 
     public void Dispose()

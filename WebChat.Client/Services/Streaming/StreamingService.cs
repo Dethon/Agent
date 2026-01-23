@@ -13,8 +13,7 @@ public sealed class StreamingService(
     IChatMessagingService messagingService,
     IDispatcher dispatcher,
     ITopicService topicService,
-    TopicsStore topicsStore,
-    StreamingStore streamingStore) : IStreamingService
+    TopicsStore topicsStore) : IStreamingService
 {
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
@@ -90,16 +89,6 @@ public sealed class StreamingService(
                 if (chunk.UserMessage is not null)
                 {
                     continue;
-                }
-
-                // Check if accumulator reset was requested (user sent a message mid-stream)
-                // The message was already finalized by SendMessageEffect/HubEventDispatcher,
-                // we just need to reset our internal accumulator to avoid duplication
-                if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-                {
-                    streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
-                    needsReasoningSeparator = false;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
@@ -201,21 +190,6 @@ public sealed class StreamingService(
                 if (chunk.UserMessage is not null)
                 {
                     continue;
-                }
-
-                // Check if accumulator reset was requested (user sent a message mid-stream)
-                // The message was already finalized by SendMessageEffect/HubEventDispatcher,
-                // we just need to reset our internal accumulator to avoid duplication
-                if (streamingStore.State.FinalizationRequests.Contains(topic.TopicId))
-                {
-                    streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new ClearFinalizationRequest(topic.TopicId));
-                    needsReasoningSeparator = false;
-
-                    // Reset processed lengths after finalization
-                    processedContentLength = 0;
-                    processedReasoningLength = 0;
-                    processedToolCallsLength = 0;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
