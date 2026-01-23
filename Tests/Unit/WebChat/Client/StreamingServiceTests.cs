@@ -404,8 +404,8 @@ public sealed class StreamingServiceTests : IDisposable
         // Check saved metadata has updated timestamp
         _topicService.SavedTopics.Count.ShouldBe(1);
         _topicService.SavedTopics[0].LastMessageAt.ShouldNotBeNull();
-        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(new DateTimeOffset(2024, 1, 1, 0, 0, 0,
-            TimeSpan.Zero));
+        _topicService.SavedTopics[0].LastMessageAt!.Value.ShouldBeGreaterThan(
+            new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 
     [Fact]
