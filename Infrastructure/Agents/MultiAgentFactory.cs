@@ -13,7 +13,7 @@ namespace Infrastructure.Agents;
 public sealed class MultiAgentFactory(
     IServiceProvider serviceProvider,
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
-    OpenRouterConfig openRouterConfig) : IAgentFactory
+    OpenRouterConfig openRouterConfig) : IAgentFactory, IScheduleAgentFactory
 {
     public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
     {
