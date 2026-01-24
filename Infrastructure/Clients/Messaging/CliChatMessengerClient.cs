@@ -98,6 +98,16 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         return Task.FromResult(true);
     }
 
+    public Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? userId,
+        string? botTokenHash,
+        CancellationToken ct = default)
+    {
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, botTokenHash));
+    }
+
     public void Dispose()
     {
         _router.Dispose();
