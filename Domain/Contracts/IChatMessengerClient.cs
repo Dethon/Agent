@@ -13,4 +13,11 @@ public interface IChatMessengerClient
 
     Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken);
     Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash, CancellationToken cancellationToken);
+
+    Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? userId,
+        string? botTokenHash,
+        CancellationToken ct = default);
 }
