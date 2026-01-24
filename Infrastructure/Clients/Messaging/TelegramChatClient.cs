@@ -133,6 +133,31 @@ public class TelegramChatClient(
         }
     }
 
+    public async Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? userId,
+        string? botTokenHash,
+        CancellationToken ct = default)
+    {
+        if (!chatId.HasValue)
+        {
+            throw new ArgumentException("chatId is required for Telegram", nameof(chatId));
+        }
+
+        if (threadId.HasValue)
+        {
+            var exists = await DoesThreadExist(chatId.Value, threadId.Value, botTokenHash, ct);
+            if (exists)
+            {
+                return new AgentKey(chatId.Value, threadId.Value, botTokenHash);
+            }
+        }
+
+        var newThreadId = await CreateThread(chatId.Value, "Scheduled task", botTokenHash, ct);
+        return new AgentKey(chatId.Value, newThreadId, botTokenHash);
+    }
+
     private ITelegramBotClient GetClientByHash(string? botTokenHash)
     {
         ArgumentNullException.ThrowIfNull(botTokenHash);
