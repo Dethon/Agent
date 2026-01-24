@@ -65,6 +65,11 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         await _db.KeyDeleteAsync(TopicKey(topicId));
     }
 
+    public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
+    {
+        return await _db.KeyExistsAsync(key);
+    }
+
     private static string TopicKey(string topicId)
     {
         return $"topic:{topicId}";
