@@ -9,7 +9,7 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 {
     private const string ScheduleSetKey = "schedules";
     private const string DueSetKey = "schedules:due";
-    private static readonly TimeSpan OneShotBuffer = TimeSpan.FromHours(1);
+    private static readonly TimeSpan _oneShotBuffer = TimeSpan.FromHours(1);
 
     private readonly IDatabase _db = redis.GetDatabase();
 
@@ -30,7 +30,7 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 
         if (schedule.CronExpression is null && schedule.RunAt.HasValue)
         {
-            _ = transaction.KeyExpireAsync(key, schedule.RunAt.Value.Add(OneShotBuffer) - DateTime.UtcNow);
+            _ = transaction.KeyExpireAsync(key, schedule.RunAt.Value.Add(_oneShotBuffer) - DateTime.UtcNow);
         }
 
         await transaction.ExecuteAsync();
@@ -93,7 +93,8 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
         return schedules;
     }
 
-    public async Task UpdateLastRunAsync(string id, DateTime lastRunAt, DateTime? nextRunAt, CancellationToken ct = default)
+    public async Task UpdateLastRunAsync(string id, DateTime lastRunAt, DateTime? nextRunAt,
+        CancellationToken ct = default)
     {
         var schedule = await GetAsync(id, ct);
         if (schedule is null)

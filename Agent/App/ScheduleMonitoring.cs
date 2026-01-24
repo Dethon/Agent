@@ -9,7 +9,7 @@ public class ScheduleMonitoring(
     ScheduleExecutor executor,
     Channel<Schedule> scheduleChannel) : BackgroundService
 {
-    private static readonly TimeSpan DispatchInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _dispatchInterval = TimeSpan.FromSeconds(30);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -26,7 +26,7 @@ public class ScheduleMonitoring(
             while (!ct.IsCancellationRequested)
             {
                 await dispatcher.DispatchDueSchedulesAsync(ct);
-                await Task.Delay(DispatchInterval, ct);
+                await Task.Delay(_dispatchInterval, ct);
             }
         }
         catch (OperationCanceledException)
