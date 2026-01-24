@@ -122,7 +122,7 @@ public class DependencyInjectionTests
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Length.ShouldBe(2);
+        hostedServices.Length.ShouldBe(3);
     }
 
     [Fact]
