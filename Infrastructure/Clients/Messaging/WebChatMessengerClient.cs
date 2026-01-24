@@ -119,6 +119,34 @@ public sealed class WebChatMessengerClient(
         return Task.FromResult(true);
     }
 
+    public async Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? userId,
+        string? botTokenHash,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            throw new ArgumentException("userId is required for WebChat", nameof(userId));
+        }
+
+        if (threadId.HasValue && chatId.HasValue)
+        {
+            var exists = await DoesThreadExist(chatId.Value, threadId.Value, botTokenHash, ct);
+            if (exists)
+            {
+                return new AgentKey(chatId.Value, threadId.Value, botTokenHash);
+            }
+        }
+
+        var newChatId = chatId ?? GenerateChatId();
+        var newThreadId = await CreateThread(newChatId, "Scheduled task", botTokenHash, ct);
+        return new AgentKey(newChatId, newThreadId, botTokenHash);
+    }
+
+    private static long GenerateChatId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     public bool StartSession(string topicId, string agentId, long chatId, long threadId)
     {
         return sessionManager.StartSession(topicId, agentId, chatId, threadId);
