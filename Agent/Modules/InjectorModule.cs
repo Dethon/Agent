@@ -37,7 +37,9 @@ public static class InjectorModule
                     new MultiAgentFactory(
                         sp,
                         sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
-                        llmConfig));
+                        llmConfig))
+                .AddSingleton<IScheduleAgentFactory>(sp =>
+                    (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
