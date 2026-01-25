@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -9,9 +10,9 @@ public class ScheduleCreateTool(
     ICronValidator cronValidator,
     IAgentDefinitionProvider agentProvider)
 {
-    protected const string Name = "schedule_create";
+    public const string Name = "schedule_create";
 
-    protected const string Description = """
+    public const string Description = """
                                          Creates a scheduled agent task. The specified agent will run with the given prompt
                                          at the scheduled time(s).
 
@@ -25,16 +26,17 @@ public class ScheduleCreateTool(
                                          The channel specifies where responses will be delivered (telegram or webchat).
                                          """;
 
-    protected async Task<JsonNode> Run(
-        string agentId,
-        string prompt,
-        string? cronExpression,
-        DateTime? runAt,
-        string channel,
-        long? chatId,
-        long? threadId,
-        string? userId,
-        string? targetAgentId,
+    [Description(Description)]
+    public async Task<JsonNode> RunAsync(
+        [Description("Agent ID to execute the task")] string agentId,
+        [Description("The prompt/task to execute")] string prompt,
+        [Description("Cron expression for recurring schedules (5-field format)")] string? cronExpression,
+        [Description("ISO 8601 datetime for one-time execution (UTC)")] DateTime? runAt,
+        [Description("Channel to send results: 'telegram' or 'webchat'")] string channel,
+        [Description("Chat ID for the target conversation")] long? chatId,
+        [Description("Thread ID within the chat")] long? threadId,
+        [Description("User ID for WebChat channel")] string? userId,
+        [Description("Target agent ID for WebChat routing")] string? targetAgentId,
         CancellationToken ct = default)
     {
         var validationError = Validate(agentId, cronExpression, runAt, channel);
