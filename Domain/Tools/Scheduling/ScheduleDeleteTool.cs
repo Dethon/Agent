@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 
@@ -5,13 +6,17 @@ namespace Domain.Tools.Scheduling;
 
 public class ScheduleDeleteTool(IScheduleStore store)
 {
-    protected const string Name = "schedule_delete";
+    public const string Name = "schedule_delete";
 
-    protected const string Description = """
+    public const string Description = """
         Deletes a scheduled agent task by ID. Use schedule_list to find schedule IDs.
         """;
 
-    protected async Task<JsonNode> Run(string scheduleId, CancellationToken ct = default)
+    [Description(Description)]
+    public async Task<JsonNode> RunAsync(
+        [Description("The schedule ID to delete (from schedule_list)")]
+        string scheduleId,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(scheduleId))
         {
