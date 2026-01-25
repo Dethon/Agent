@@ -49,11 +49,14 @@ public class ScheduleExecutor(
             yield break;
         }
 
-        logger.LogInformation(
-            "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
-            schedule.Id,
-            schedule.Agent.Name,
-            agentKey.ThreadId);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
+                schedule.Id,
+                schedule.Agent.Name,
+                agentKey.ThreadId);
+        }
 
         await foreach (var item in ExecuteScheduleCore(schedule, agentKey, ct))
         {
