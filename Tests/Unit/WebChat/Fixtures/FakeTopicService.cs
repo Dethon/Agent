@@ -40,7 +40,7 @@ public sealed class FakeTopicService : ITopicService
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)
+    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
         return Task.FromResult<IReadOnlyList<ChatHistoryMessage>>(
             _history.TryGetValue((chatId, threadId), out var h) ? h : []);

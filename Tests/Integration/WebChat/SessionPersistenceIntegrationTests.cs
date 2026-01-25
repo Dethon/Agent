@@ -90,7 +90,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         var history = await _connection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>(
-            "GetHistory", chatId, threadId);
+            "GetHistory", "test-agent", chatId, threadId);
 
         // Assert - history endpoint works and returns an empty or populated list
         history.ShouldNotBeNull();
@@ -227,7 +227,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         var history = await _connection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>(
-            "GetHistory", nonExistentChatId, nonExistentThreadId);
+            "GetHistory", "test-agent", nonExistentChatId, nonExistentThreadId);
 
         // Assert
         history.ShouldNotBeNull();

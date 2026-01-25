@@ -55,7 +55,7 @@ public sealed class TopicSelectionEffect : IDisposable
         if (!hasMessages)
         {
             await _sessionService.StartSessionAsync(topic);
-            var history = await _topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+            var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
 
             // Re-check after async work - SendMessageEffect might have added messages
             var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);

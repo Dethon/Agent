@@ -55,9 +55,9 @@ public sealed class ChatHub(
         return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId);
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(long chatId, long threadId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
-        var agentKey = new AgentKey(chatId, threadId);
+        var agentKey = new AgentKey(chatId, threadId, agentId);
         var messages = await threadStateStore.GetMessagesAsync(agentKey.ToString());
 
         if (messages is null)
@@ -197,7 +197,7 @@ public sealed class ChatHub(
     {
         messengerClient.EndSession(topicId);
 
-        var agentKey = new AgentKey(chatId, threadId);
+        var agentKey = new AgentKey(chatId, threadId, agentId);
         await threadStateStore.DeleteAsync(agentKey);
         await threadStateStore.DeleteTopicAsync(agentId, chatId, topicId);
 

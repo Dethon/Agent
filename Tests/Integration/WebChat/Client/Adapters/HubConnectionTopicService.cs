@@ -21,9 +21,9 @@ public sealed class HubConnectionTopicService(HubConnection connection) : ITopic
         await connection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
-        return await connection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId, threadId);
+        return await connection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId, threadId);
     }
 
     public async Task<bool> StartSessionAsync(string agentId, string topicId, long chatId, long threadId)

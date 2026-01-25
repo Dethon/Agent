@@ -39,7 +39,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
         await hubConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -47,6 +47,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             return [];
         }
 
-        return await hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", chatId, threadId);
+        return await hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId,
+            threadId);
     }
 }

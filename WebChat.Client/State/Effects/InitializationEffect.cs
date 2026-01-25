@@ -105,7 +105,7 @@ public sealed class InitializationEffect : IDisposable
 
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
-        var history = await _topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+        var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
         var messages = history.Select(h => new ChatMessageModel
         {
             Role = h.Role,
