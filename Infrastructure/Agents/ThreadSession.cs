@@ -70,7 +70,7 @@ internal sealed class ThreadSessionBuilder(
         var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, ct);
 
         // Step 3: Combine MCP tools with domain tools
-        _tools = clientManager.Tools.Concat(domainTools.Cast<AITool>()).ToList();
+        _tools = clientManager.Tools.Concat(domainTools).ToList();
 
         // Step 4: Setup resource management with user context prepended
         var resourceManager = await CreateResourceManagerAsync(clientManager, ct);
