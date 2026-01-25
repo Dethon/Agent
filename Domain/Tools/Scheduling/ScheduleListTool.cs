@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -6,14 +7,15 @@ namespace Domain.Tools.Scheduling;
 
 public class ScheduleListTool(IScheduleStore store)
 {
-    protected const string Name = "schedule_list";
+    public const string Name = "schedule_list";
 
-    protected const string Description = """
+    public const string Description = """
         Lists all scheduled agent tasks. Shows schedule ID, agent name, prompt preview,
         schedule timing (cron or one-shot), next run time, and target channel.
         """;
 
-    protected async Task<JsonNode> Run(CancellationToken ct = default)
+    [Description(Description)]
+    public async Task<JsonNode> RunAsync(CancellationToken ct = default)
     {
         var schedules = await store.ListAsync(ct);
 
