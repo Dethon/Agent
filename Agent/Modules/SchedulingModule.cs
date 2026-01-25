@@ -27,6 +27,8 @@ public static class SchedulingModule
             services.AddTransient<ScheduleListTool>();
             services.AddTransient<ScheduleDeleteTool>();
 
+            services.AddTransient<IDomainToolFeature, SchedulingToolFeature>();
+
             services.AddSingleton<ScheduleDispatcher>();
             services.AddSingleton<ScheduleExecutor>();
 

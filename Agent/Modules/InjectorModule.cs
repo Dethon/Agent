@@ -34,11 +34,13 @@ public static class InjectorModule
             return services
                 .AddRedis(settings.Redis)
                 .AddSingleton<ChatThreadResolver>()
+                .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
                         sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
-                        llmConfig))
+                        llmConfig,
+                        sp.GetRequiredService<IDomainToolRegistry>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }
