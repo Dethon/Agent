@@ -12,6 +12,7 @@ using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using Telegram.Bot;
 using HubNotifier = Infrastructure.Clients.Messaging.HubNotifier;
 
 namespace Agent.Modules;
@@ -116,14 +117,13 @@ public static class InjectorModule
                 throw new InvalidOperationException("No Telegram bot tokens configured in agents.");
             }
 
-            // TelegramToolApprovalHandlerFactory still uses hash-based lookup for callback routing
-            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(
-                agentBots.Select(ab => ab.Item2));
+            var botClientsByAgentId = agentBots.ToDictionary(
+                ab => ab.Id, ITelegramBotClient (ab) => TelegramBotHelper.CreateBotClient(ab.Item2));
 
             return services
                 .AddHostedService<CleanupMonitoring>()
                 .AddSingleton<AgentCleanupMonitor>()
-                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
+                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByAgentId))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
                     agentBots,
                     settings.Telegram.AllowedUserNames,
