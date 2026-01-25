@@ -39,8 +39,8 @@ public class ScheduleExecutor(
             agentKey = await messengerClient.CreateTopicIfNeededAsync(
                 schedule.Target.ChatId,
                 schedule.Target.ThreadId,
-                schedule.Target.UserId,
                 schedule.Target.AgentId,
+                "Scheduled task",
                 ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

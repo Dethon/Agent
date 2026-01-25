@@ -137,8 +137,8 @@ public class TelegramChatClient(
     public async Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
-        string? userId,
         string? agentId,
+        string? topicName,
         CancellationToken ct = default)
     {
         if (!chatId.HasValue)
@@ -155,7 +155,7 @@ public class TelegramChatClient(
             }
         }
 
-        var newThreadId = await CreateThread(chatId.Value, "Scheduled task", agentId, ct);
+        var newThreadId = await CreateThread(chatId.Value, topicName ?? "Scheduled task", agentId, ct);
         return new AgentKey(chatId.Value, newThreadId, agentId);
     }
 

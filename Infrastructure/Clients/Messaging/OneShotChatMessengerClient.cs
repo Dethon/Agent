@@ -90,8 +90,8 @@ public sealed class OneShotChatMessengerClient(
     public Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
-        string? userId,
         string? agentId,
+        string? topicName,
         CancellationToken ct = default)
     {
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));

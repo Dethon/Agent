@@ -21,7 +21,10 @@ public class ChatMonitor(
         try
         {
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
-                .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), cancellationToken)
+                .GroupByStreaming(
+                    async (x, ct) => await chatMessengerClient.CreateTopicIfNeededAsync(
+                        x.ChatId, x.ThreadId, x.AgentId, x.Prompt, ct),
+                    cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
@@ -92,18 +95,5 @@ public class ChatMonitor(
         DisposableAgent agent, AgentKey agentKey, CancellationToken ct)
     {
         return agent.DeserializeThreadAsync(JsonSerializer.SerializeToElement(agentKey.ToString()), null, ct);
-    }
-
-    private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
-    {
-        if (prompt.ThreadId is not null)
-        {
-            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value, prompt.AgentId);
-        }
-
-        var threadId = await chatMessengerClient.CreateThread(
-            prompt.ChatId, prompt.Prompt, prompt.AgentId, cancellationToken);
-
-        return new AgentKey(prompt.ChatId, threadId, prompt.AgentId);
     }
 }

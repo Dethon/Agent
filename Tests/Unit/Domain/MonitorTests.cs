@@ -136,6 +136,10 @@ public class ChatMonitorTests
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt() };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        chatMessengerClient.Setup(c =>
+                c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentKey(1, 1));
 
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -154,16 +158,16 @@ public class ChatMonitorTests
     }
 
     [Fact]
-    public async Task Monitor_WithNullThreadId_CallsCreateThread()
+    public async Task Monitor_WithNullThreadId_CallsCreateTopicIfNeededAsync()
     {
         // Arrange
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
         var prompts = new[] { MonitorTestMocks.CreatePrompt(threadId: null) };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
-                c.CreateThread(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
-                    It.IsAny<CancellationToken>()))
-            .ReturnsAsync(100);
+                c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentKey(1, 100));
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
@@ -173,8 +177,9 @@ public class ChatMonitorTests
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - CreateThread is called during Monitor, not during task processing
-        chatMessengerClient.Verify(c => c.CreateThread(1, "Hello", It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+        // Assert - CreateTopicIfNeededAsync is called with prompt parameters
+        chatMessengerClient.Verify(
+            c => c.CreateTopicIfNeededAsync(1, null, null, "Hello", It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -186,12 +191,16 @@ public class ChatMonitorTests
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        var agentKey = new AgentKey(1, 1);
+        chatMessengerClient.Setup(c =>
+                c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentKey);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
         // First resolve a context for the agent key so we can verify it gets canceled but not cleaned
-        var agentKey = new AgentKey(1, 1);
         var context = threadResolver.Resolve(agentKey);
 
         var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
@@ -213,12 +222,16 @@ public class ChatMonitorTests
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/clear") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
+        var agentKey = new AgentKey(1, 1);
+        chatMessengerClient.Setup(c =>
+                c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(agentKey);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
         // First resolve a context for the agent key so we can verify it gets cleaned
-        var agentKey = new AgentKey(1, 1);
         var context = threadResolver.Resolve(agentKey);
 
         var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);

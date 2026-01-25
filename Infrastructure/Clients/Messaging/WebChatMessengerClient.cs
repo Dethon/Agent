@@ -150,15 +150,10 @@ public sealed class WebChatMessengerClient(
     public async Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
-        string? userId,
         string? agentId,
+        string? topicName,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(userId))
-        {
-            throw new ArgumentException("userId is required for WebChat", nameof(userId));
-        }
-
         if (string.IsNullOrEmpty(agentId))
         {
             throw new ArgumentException("agentId is required for WebChat", nameof(agentId));
@@ -178,7 +173,7 @@ public sealed class WebChatMessengerClient(
         }
 
         var actualChatId = chatId ?? GenerateChatId();
-        var actualThreadId = await CreateThread(actualChatId, "Scheduled task", agentId, ct);
+        var actualThreadId = await CreateThread(actualChatId, topicName ?? "Scheduled task", agentId, ct);
 
         return new AgentKey(actualChatId, actualThreadId, agentId);
     }

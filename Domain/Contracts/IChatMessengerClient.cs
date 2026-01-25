@@ -17,7 +17,7 @@ public interface IChatMessengerClient
     Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
-        string? userId,
         string? agentId,
+        string? topicName,
         CancellationToken ct = default);
 }
