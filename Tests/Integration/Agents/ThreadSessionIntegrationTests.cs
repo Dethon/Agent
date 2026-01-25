@@ -41,6 +41,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Test Description",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -71,6 +72,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Tool Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -97,6 +99,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Prompt Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -128,6 +131,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Subscription Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert - The session should have synced resources
@@ -156,6 +160,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Notification Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Subscribe to resources
@@ -190,6 +195,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Dispose Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         var clientCount = session.ClientManager.Clients.Count;
@@ -217,6 +223,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Retry Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -242,6 +249,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Multi Endpoint Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert

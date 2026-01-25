@@ -44,6 +44,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "Sync Resources Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Act - Sync should have happened during creation
@@ -76,6 +77,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "Unsubscribe Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Act - Remove the download and sync
@@ -105,6 +107,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "No Resources Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Act - Sync with no resources
@@ -136,6 +139,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "Reactivate Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Sync with no resources to complete channel
@@ -172,6 +176,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "Dispose Unsub Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Act & Assert - Should not throw
@@ -199,6 +204,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             "Multi Client Sync Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Act

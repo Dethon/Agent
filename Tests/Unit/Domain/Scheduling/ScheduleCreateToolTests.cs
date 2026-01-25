@@ -151,7 +151,7 @@ public class ScheduleCreateToolTests
             string? userId,
             string? targetAgentId)
         {
-            return Run(agentId, prompt, cronExpression, runAt, channel, chatId, threadId, userId, targetAgentId);
+            return RunAsync(agentId, prompt, cronExpression, runAt, channel, chatId, threadId, userId, targetAgentId);
         }
     }
 }
