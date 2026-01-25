@@ -14,4 +14,5 @@ public interface IThreadStateStore
     Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync();
     Task SaveTopicAsync(TopicMetadata topic);
     Task DeleteTopicAsync(string topicId);
+    Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(long chatId, long threadId, CancellationToken ct = default);
 }

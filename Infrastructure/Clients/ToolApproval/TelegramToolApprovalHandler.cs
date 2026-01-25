@@ -296,7 +296,7 @@ public sealed class TelegramToolApprovalHandlerFactory(
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
-        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.BotTokenHash);
+        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.AgentId);
         return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
     }
 }

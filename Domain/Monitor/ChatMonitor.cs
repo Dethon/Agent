@@ -46,7 +46,7 @@ public class ChatMonitor(
         [EnumeratorCancellation] CancellationToken ct)
     {
         var firstPrompt = await group.FirstAsync(ct);
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.BotTokenHash);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId);
         var context = threadResolver.Resolve(agentKey);
         var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
@@ -98,12 +98,12 @@ public class ChatMonitor(
     {
         if (prompt.ThreadId is not null)
         {
-            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value, prompt.BotTokenHash);
+            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value, prompt.AgentId);
         }
 
         var threadId = await chatMessengerClient.CreateThread(
-            prompt.ChatId, prompt.Prompt, prompt.BotTokenHash, cancellationToken);
+            prompt.ChatId, prompt.Prompt, prompt.AgentId, cancellationToken);
 
-        return new AgentKey(prompt.ChatId, threadId, prompt.BotTokenHash);
+        return new AgentKey(prompt.ChatId, threadId, prompt.AgentId);
     }
 }

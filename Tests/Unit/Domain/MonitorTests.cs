@@ -62,7 +62,7 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
     {
         return agent;
     }

@@ -23,7 +23,7 @@ public record ScheduleTarget
     public long? ChatId { get; init; }
     public long? ThreadId { get; init; }
     public string? UserId { get; init; }
-    public string? BotTokenHash { get; init; }
+    public string? AgentId { get; init; }
 }
 
 [PublicAPI]

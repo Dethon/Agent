@@ -76,12 +76,12 @@ public sealed class OneShotChatMessengerClient(
         CompleteResponse();
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
+    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
         return Task.FromResult(1);
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
@@ -91,10 +91,10 @@ public sealed class OneShotChatMessengerClient(
         long? chatId,
         long? threadId,
         string? userId,
-        string? botTokenHash,
+        string? agentId,
         CancellationToken ct = default)
     {
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, botTokenHash));
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
     private void FlushOutput()

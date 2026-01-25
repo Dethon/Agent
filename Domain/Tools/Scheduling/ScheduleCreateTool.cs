@@ -12,18 +12,18 @@ public class ScheduleCreateTool(
     protected const string Name = "schedule_create";
 
     protected const string Description = """
-        Creates a scheduled agent task. The specified agent will run with the given prompt
-        at the scheduled time(s).
+                                         Creates a scheduled agent task. The specified agent will run with the given prompt
+                                         at the scheduled time(s).
 
-        For recurring schedules, use cronExpression (standard 5-field cron format):
-        - "0 9 * * *" = every day at 9:00 AM
-        - "0 */2 * * *" = every 2 hours
-        - "30 14 * * 1-5" = weekdays at 2:30 PM
+                                         For recurring schedules, use cronExpression (standard 5-field cron format):
+                                         - "0 9 * * *" = every day at 9:00 AM
+                                         - "0 */2 * * *" = every 2 hours
+                                         - "30 14 * * 1-5" = weekdays at 2:30 PM
 
-        For one-time schedules, use runAt with a UTC datetime.
+                                         For one-time schedules, use runAt with a UTC datetime.
 
-        The target specifies where responses will be delivered (telegram or webchat).
-        """;
+                                         The channel specifies where responses will be delivered (telegram or webchat).
+                                         """;
 
     protected async Task<JsonNode> Run(
         string agentId,
@@ -34,7 +34,7 @@ public class ScheduleCreateTool(
         long? chatId,
         long? threadId,
         string? userId,
-        string? botTokenHash,
+        string? targetAgentId,
         CancellationToken ct = default)
     {
         var validationError = Validate(agentId, cronExpression, runAt, channel);
@@ -64,7 +64,7 @@ public class ScheduleCreateTool(
                 ChatId = chatId,
                 ThreadId = threadId,
                 UserId = userId,
-                BotTokenHash = botTokenHash
+                AgentId = targetAgentId
             },
             CreatedAt = DateTime.UtcNow,
             NextRunAt = nextRunAt

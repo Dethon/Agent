@@ -40,7 +40,7 @@ public class ScheduleExecutor(
                 schedule.Target.ChatId,
                 schedule.Target.ThreadId,
                 schedule.Target.UserId,
-                schedule.Target.BotTokenHash,
+                schedule.Target.AgentId,
                 ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -79,9 +79,10 @@ public class ScheduleExecutor(
         var userMessage = new ChatMessage(ChatRole.User, schedule.Prompt);
 
         await foreach (var (update, aiResponse) in agent
-            .RunStreamingAsync([userMessage], thread, cancellationToken: ct)
-            .WithErrorHandling(ct)
-            .ToUpdateAiResponsePairs())
+                           .RunStreamingAsync([userMessage], thread, cancellationToken: ct)
+                           .WithErrorHandling(ct)
+                           .ToUpdateAiResponsePairs()
+                           .WithCancellation(ct))
         {
             yield return (agentKey, update, aiResponse);
         }
@@ -91,7 +92,6 @@ public class ScheduleExecutor(
         if (schedule.CronExpression is null)
         {
             await store.DeleteAsync(schedule.Id, ct);
-            logger.LogInformation("Deleted one-shot schedule {ScheduleId}", schedule.Id);
         }
     }
 }

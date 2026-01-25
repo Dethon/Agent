@@ -38,7 +38,8 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_BothCronAndRunAt_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), "telegram", 123,
+            null, null, null);
 
         result["error"]?.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
     }
@@ -56,7 +57,8 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_RunAtInPast_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), "telegram", 123, null,
+            null, null);
 
         result["error"]?.GetValue<string>().ShouldBe("runAt must be in the future");
     }
@@ -64,7 +66,8 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_InvalidChannel_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddDays(1), "invalid", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddDays(1), "invalid", 123, null, null,
+            null);
 
         result["error"]?.GetValue<string>().ShouldBe("channel must be 'telegram' or 'webchat'");
     }
@@ -74,7 +77,8 @@ public class ScheduleCreateToolTests
     {
         _agentProvider.Setup(p => p.GetById("unknown")).Returns((AgentDefinition?)null);
 
-        var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), "telegram", 123, null,
+            null, null);
 
         result["error"]?.GetValue<string>().ShouldBe("Agent 'unknown' not found");
     }
@@ -121,7 +125,8 @@ public class ScheduleCreateToolTests
         _store.Setup(s => s.CreateAsync(It.IsAny<Schedule>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Schedule s, CancellationToken _) => s);
 
-        var result = await _tool.TestRun("jack", "test prompt", "0 9 * * *", null, "webchat", null, null, "user1", null);
+        var result =
+            await _tool.TestRun("jack", "test prompt", "0 9 * * *", null, "webchat", null, null, "user1", null);
 
         result["status"]?.GetValue<string>().ShouldBe("created");
         _store.Verify(s => s.CreateAsync(It.Is<Schedule>(sch =>
@@ -144,9 +149,9 @@ public class ScheduleCreateToolTests
             long? chatId,
             long? threadId,
             string? userId,
-            string? botTokenHash)
+            string? targetAgentId)
         {
-            return Run(agentId, prompt, cronExpression, runAt, channel, chatId, threadId, userId, botTokenHash);
+            return Run(agentId, prompt, cronExpression, runAt, channel, chatId, threadId, userId, targetAgentId);
         }
     }
 }

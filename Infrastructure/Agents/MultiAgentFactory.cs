@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -15,7 +13,7 @@ public sealed class MultiAgentFactory(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     OpenRouterConfig openRouterConfig) : IAgentFactory, IScheduleAgentFactory
 {
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
     {
         var agents = registryOptions.CurrentValue.Agents;
         if (agents.Length == 0)
@@ -23,21 +21,12 @@ public sealed class MultiAgentFactory(
             throw new InvalidOperationException("No agents configured.");
         }
 
-        AgentDefinition? agent;
-        if (string.IsNullOrEmpty(botTokenHash))
-        {
-            agent = agents[0]; // CLI mode - use first agent
-        }
-        else
-        {
-            // Try matching by Telegram bot token hash first, then by agent ID (for web chat)
-            agent = agents.FirstOrDefault(a =>
-                a.TelegramBotToken is not null &&
-                ComputeHash(a.TelegramBotToken) == botTokenHash);
-            agent ??= agents.FirstOrDefault(a => a.Id == botTokenHash);
-        }
+        var agent = string.IsNullOrEmpty(agentId)
+            ? agents[0]
+            : // CLI mode - use first agent
+            agents.FirstOrDefault(a => a.Id == agentId);
 
-        _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{botTokenHash}'.");
+        _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{agentId}'.");
 
         return CreateFromDefinition(agentKey, userId, agent);
     }
@@ -67,12 +56,6 @@ public sealed class MultiAgentFactory(
             stateStore,
             userId,
             definition.CustomInstructions);
-    }
-
-    private static string ComputeHash(string token)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        return Convert.ToHexStringLower(bytes);
     }
 
     private OpenRouterChatClient CreateChatClient(string model)

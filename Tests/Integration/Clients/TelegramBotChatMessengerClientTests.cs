@@ -140,7 +140,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContent("Test response", chatId, null, fixture.BotTokenHash);
+        var updates = CreateUpdatesWithContent("Test response", chatId, null, fixture.AgentId);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
@@ -158,7 +158,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupSendMessage(chatId);
 
         var updates = CreateUpdatesWithContentAndToolCall("Response", "test_tool", new { param = "value" }, chatId,
-            null, fixture.BotTokenHash);
+            null, fixture.AgentId);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
@@ -176,7 +176,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         fixture.SetupSendMessage(chatId);
 
-        var updates = CreateUpdatesWithContent("Thread response", chatId, threadId, fixture.BotTokenHash);
+        var updates = CreateUpdatesWithContent("Thread response", chatId, threadId, fixture.AgentId);
 
         // Act & Assert - Should not throw
         await Should.NotThrowAsync(() =>
@@ -197,7 +197,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupSendMessage(chatId);
 
         // Act
-        var threadId = await client.CreateThread(chatId, "Test Topic", fixture.BotTokenHash, CancellationToken.None);
+        var threadId = await client.CreateThread(chatId, "Test Topic", fixture.AgentId, CancellationToken.None);
 
         // Assert
         threadId.ShouldBe(expectedThreadId);
@@ -216,7 +216,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupEditForumTopic(true);
 
         // Act
-        var exists = await client.DoesThreadExist(chatId, threadId, fixture.BotTokenHash, CancellationToken.None);
+        var exists = await client.DoesThreadExist(chatId, threadId, fixture.AgentId, CancellationToken.None);
 
         // Assert
         exists.ShouldBeTrue();
@@ -235,7 +235,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupEditForumTopic(false);
 
         // Act
-        var exists = await client.DoesThreadExist(chatId, threadId, fixture.BotTokenHash, CancellationToken.None);
+        var exists = await client.DoesThreadExist(chatId, threadId, fixture.AgentId, CancellationToken.None);
 
         // Assert
         exists.ShouldBeFalse();
@@ -252,7 +252,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupSendMessage(chatId);
 
         var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...", chatId, null,
-            fixture.BotTokenHash);
+            fixture.AgentId);
 
         // Act & Assert - Should not throw (reasoning message + content message)
         await Should.NotThrowAsync(() =>
@@ -270,7 +270,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupSendMessage(chatId);
 
         var updates = CreateUpdatesWithContentAndReasoning("Result", "Thinking about the problem...", chatId, null,
-            fixture.BotTokenHash);
+            fixture.AgentId);
 
         // Act & Assert - Should not throw (only content message)
         await Should.NotThrowAsync(() =>
@@ -278,9 +278,9 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
     }
 
     private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
-        string content, long chatId, long? threadId, string? botTokenHash)
+        string content, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
+        var key = new AgentKey(chatId, threadId ?? 0, agentId);
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {
@@ -296,9 +296,9 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
     private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
         CreateUpdatesWithContentAndReasoning(
-            string content, string reasoning, long chatId, long? threadId, string? botTokenHash)
+            string content, string reasoning, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
+        var key = new AgentKey(chatId, threadId ?? 0, agentId);
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {
@@ -319,9 +319,9 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
     private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
         CreateUpdatesWithContentAndToolCall(
-            string content, string toolName, object args, long chatId, long? threadId, string? botTokenHash)
+            string content, string toolName, object args, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, botTokenHash);
+        var key = new AgentKey(chatId, threadId ?? 0, agentId);
         var toolCalls = $"{toolName}({JsonSerializer.Serialize(args)})";
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate

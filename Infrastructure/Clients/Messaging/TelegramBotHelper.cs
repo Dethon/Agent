@@ -22,12 +22,12 @@ public static class TelegramBotHelper
 
     public static ITelegramBotClient GetClientByHash(
         IReadOnlyDictionary<string, ITelegramBotClient> botsByHash,
-        string? botTokenHash)
+        string? agentId)
     {
-        ArgumentNullException.ThrowIfNull(botTokenHash);
-        return botsByHash.TryGetValue(botTokenHash, out var client)
+        ArgumentNullException.ThrowIfNull(agentId);
+        return botsByHash.TryGetValue(agentId, out var client)
             ? client
-            : throw new ArgumentException("Invalid bot token hash", nameof(botTokenHash));
+            : throw new ArgumentException("Invalid agent ID / token hash", nameof(agentId));
     }
 
     private static TelegramBotClient CreateBotClient(string token, string? baseUrl)

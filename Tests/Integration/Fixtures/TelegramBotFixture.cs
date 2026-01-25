@@ -15,7 +15,7 @@ public class TelegramBotFixture : IAsyncLifetime
     private string BaseUrl { get; set; } = null!;
     private static string BotToken => TestBotToken;
     public string[] AllowedUserNames { get; } = ["testuser", "alloweduser"];
-    public string BotTokenHash { get; } = TelegramBotHelper.ComputeTokenHash(TestBotToken);
+    public string AgentId { get; } = TelegramBotHelper.ComputeTokenHash(TestBotToken);
 
     public Task InitializeAsync()
     {

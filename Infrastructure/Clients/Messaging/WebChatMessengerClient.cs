@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
+using Infrastructure.Utils;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -16,6 +17,7 @@ public sealed class WebChatMessengerClient(
     WebChatStreamManager streamManager,
     WebChatApprovalManager approvalManager,
     ChatThreadResolver threadResolver,
+    IThreadStateStore threadStateStore,
     INotifier hubNotifier,
     ILogger<WebChatMessengerClient> logger) : IChatMessengerClient, IDisposable
 {
@@ -108,22 +110,42 @@ public sealed class WebChatMessengerClient(
         }
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
+    public async Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
-        return Task.FromResult(0);
+        var topicId = TopicIdHasher.GenerateTopicId();
+        var threadId = TopicIdHasher.GetThreadIdForTopic(topicId);
+
+        var topic = new TopicMetadata(
+            TopicId: topicId,
+            ChatId: chatId,
+            ThreadId: threadId,
+            AgentId: agentId ?? "unknown",
+            Name: name,
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+
+        await threadStateStore.SaveTopicAsync(topic);
+
+        await hubNotifier.NotifyTopicChangedAsync(
+            new TopicChangedNotification(TopicChangeType.Created, topicId, topic), cancellationToken);
+
+        sessionManager.StartSession(topicId, agentId ?? "unknown", chatId, threadId);
+
+        return (int)threadId;
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public async Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(true);
+        var topic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(chatId, threadId, cancellationToken);
+        return topic is not null;
     }
 
     public async Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
         string? userId,
-        string? botTokenHash,
+        string? agentId,
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(userId))
@@ -131,18 +153,28 @@ public sealed class WebChatMessengerClient(
             throw new ArgumentException("userId is required for WebChat", nameof(userId));
         }
 
+        if (string.IsNullOrEmpty(agentId))
+        {
+            throw new ArgumentException("agentId is required for WebChat", nameof(agentId));
+        }
+
         if (threadId.HasValue && chatId.HasValue)
         {
-            var exists = await DoesThreadExist(chatId.Value, threadId.Value, botTokenHash, ct);
-            if (exists)
+            var existingTopic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
+                chatId.Value, threadId.Value, ct);
+
+            if (existingTopic is not null)
             {
-                return new AgentKey(chatId.Value, threadId.Value, botTokenHash);
+                sessionManager.StartSession(existingTopic.TopicId, existingTopic.AgentId,
+                    existingTopic.ChatId, existingTopic.ThreadId);
+                return new AgentKey(existingTopic.ChatId, existingTopic.ThreadId, existingTopic.AgentId);
             }
         }
 
-        var newChatId = chatId ?? GenerateChatId();
-        var newThreadId = await CreateThread(newChatId, "Scheduled task", botTokenHash, ct);
-        return new AgentKey(newChatId, newThreadId, botTokenHash);
+        var actualChatId = chatId ?? GenerateChatId();
+        var actualThreadId = await CreateThread(actualChatId, "Scheduled task", agentId, ct);
+
+        return new AgentKey(actualChatId, actualThreadId, agentId);
     }
 
     private static long GenerateChatId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -221,7 +253,7 @@ public sealed class WebChatMessengerClient(
             ThreadId = (int)session.ThreadId,
             MessageId = messageId,
             Sender = sender,
-            BotTokenHash = session.AgentId
+            AgentId = session.AgentId
         };
 
         _promptChannel.Writer.TryWrite(prompt);
@@ -268,7 +300,7 @@ public sealed class WebChatMessengerClient(
             ThreadId = (int)session.ThreadId,
             MessageId = messageId,
             Sender = sender,
-            BotTokenHash = session.AgentId
+            AgentId = session.AgentId
         };
 
         _promptChannel.Writer.TryWrite(prompt);

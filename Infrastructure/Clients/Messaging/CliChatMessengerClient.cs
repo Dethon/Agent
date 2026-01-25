@@ -86,13 +86,13 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _router.SendResponse(new ChatResponseMessage { IsComplete = true, MessageIndex = messageIndex });
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
+    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
         _router.CreateThread(name);
         return Task.FromResult(_router.ThreadId);
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
@@ -102,10 +102,10 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         long? chatId,
         long? threadId,
         string? userId,
-        string? botTokenHash,
+        string? agentId,
         CancellationToken ct = default)
     {
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, botTokenHash));
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
     public void Dispose()
