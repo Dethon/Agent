@@ -16,6 +16,7 @@ public sealed class McpAgent : DisposableAgent
 {
     private readonly string? _customInstructions;
     private readonly string _description;
+    private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly string[] _endpoints;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
@@ -35,13 +36,15 @@ public sealed class McpAgent : DisposableAgent
         string description,
         IThreadStateStore stateStore,
         string userId,
-        string? customInstructions = null)
+        string? customInstructions = null,
+        IReadOnlyList<AIFunction>? domainTools = null)
     {
         _endpoints = endpoints;
         _name = name;
         _description = description;
         _userId = userId;
         _customInstructions = customInstructions;
+        _domainTools = domainTools ?? [];
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -202,7 +205,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent, thread, ct);
+                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent, thread, _domainTools, ct);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);
