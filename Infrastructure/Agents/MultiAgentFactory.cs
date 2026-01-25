@@ -11,7 +11,8 @@ namespace Infrastructure.Agents;
 public sealed class MultiAgentFactory(
     IServiceProvider serviceProvider,
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
-    OpenRouterConfig openRouterConfig) : IAgentFactory, IScheduleAgentFactory
+    OpenRouterConfig openRouterConfig,
+    IDomainToolRegistry domainToolRegistry) : IAgentFactory, IScheduleAgentFactory
 {
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
     {
@@ -48,6 +49,10 @@ public sealed class MultiAgentFactory(
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, definition.WhitelistPatterns);
 
+        var domainTools = domainToolRegistry
+            .GetToolsForFeatures(definition.EnabledFeatures)
+            .ToList();
+
         return new McpAgent(
             definition.McpServerEndpoints,
             effectiveClient,
@@ -55,7 +60,8 @@ public sealed class MultiAgentFactory(
             definition.Description ?? "",
             stateStore,
             userId,
-            definition.CustomInstructions);
+            definition.CustomInstructions,
+            domainTools);
     }
 
     private OpenRouterChatClient CreateChatClient(string model)
