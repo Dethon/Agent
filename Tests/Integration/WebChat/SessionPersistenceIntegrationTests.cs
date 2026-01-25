@@ -33,6 +33,20 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         await _connection.DisposeAsync();
     }
 
+    private async Task StartSessionWithTopic(string agentId, string topicId, long chatId, long threadId)
+    {
+        var topic = new TopicMetadata(
+            TopicId: topicId,
+            ChatId: chatId,
+            ThreadId: threadId,
+            AgentId: agentId,
+            Name: "Test Topic",
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+        await _connection.InvokeAsync<bool>("StartSession", agentId, topicId, chatId, threadId);
+    }
+
     [Fact]
     public async Task SaveTopic_ThenGetAllTopics_ReturnsSavedTopic()
     {
@@ -128,7 +142,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         fixture.FakeAgentFactory.EnqueueResponses("Response for topic 1");
 
         // Start and send to first topic
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId1, chatId1, threadId1);
+        await StartSessionWithTopic("test-agent", topicId1, chatId1, threadId1);
 
         var messages1 = new List<ChatStreamMessage>();
         using var cts1 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -147,8 +161,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         fixture.FakeAgentFactory.EnqueueResponses("Response for topic 2");
 
         // Start and send to second topic
-        await _connection.InvokeAsync<bool>(
-            "StartSession", "test-agent", topicId2, chatId2, threadId2, CancellationToken.None);
+        await StartSessionWithTopic("test-agent", topicId2, chatId2, threadId2);
 
         var messages2 = new List<ChatStreamMessage>();
         using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -241,12 +254,10 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
             fixture.FakeAgentFactory.EnqueueResponses($"Response for {session.TopicId[..8]}");
         }
 
-        // Start all sessions
+        // Start all sessions (save topic to Redis first)
         foreach (var session in sessions)
         {
-            var result = await _connection.InvokeAsync<bool>(
-                "StartSession", "test-agent", session.TopicId, session.ChatId, session.ThreadId);
-            result.ShouldBeTrue();
+            await StartSessionWithTopic("test-agent", session.TopicId, session.ChatId, session.ThreadId);
         }
 
         // Send messages concurrently

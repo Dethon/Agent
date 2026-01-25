@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -74,7 +75,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         await _connection.DisposeAsync();
     }
 
-    private StoredTopic CreateAndRegisterTopic(string? topicId = null)
+    private async Task<StoredTopic> CreateAndRegisterTopicAsync(string? topicId = null)
     {
         var id = topicId ?? Guid.NewGuid().ToString();
         var topic = new StoredTopic
@@ -87,6 +88,18 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             CreatedAt = DateTime.UtcNow
         };
         _dispatcher.Dispatch(new AddTopic(topic));
+
+        // Save topic to Redis (required by ChatMonitor to create topic)
+        var metadata = new TopicMetadata(
+            TopicId: topic.TopicId,
+            ChatId: topic.ChatId,
+            ThreadId: topic.ThreadId,
+            AgentId: topic.AgentId,
+            Name: topic.Name,
+            CreatedAt: topic.CreatedAt,
+            LastMessageAt: null);
+        await _topicService.SaveTopicAsync(metadata, true);
+
         return topic;
     }
 
@@ -104,7 +117,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     public async Task TryResumeStreamAsync_WhenNoActiveStream_DoesNothing()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         // Act
@@ -119,7 +132,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     public async Task TryResumeStreamAsync_AfterStreamComplete_DoesNothing()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         // Complete a stream first
@@ -143,7 +156,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     public async Task TryResumeStreamAsync_WhenAlreadyResuming_DoesNotDuplicate()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         _dispatcher.Dispatch(new StartResuming(topic.TopicId));
@@ -159,7 +172,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     public async Task TryResumeStreamAsync_AfterClearingMessages_DoesNotThrow()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         // Complete a stream to establish some state
@@ -209,7 +222,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
                 streamingStore2);
 
             // Create topics for each client
-            var topic1 = CreateAndRegisterTopic();
+            var topic1 = await CreateAndRegisterTopicAsync();
             var topic2Id = Guid.NewGuid().ToString();
             var topic2 = new StoredTopic
             {
@@ -221,6 +234,17 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
                 CreatedAt = DateTime.UtcNow
             };
             dispatcher2.Dispatch(new AddTopic(topic2));
+
+            // Save topic2 to Redis (required by ChatMonitor)
+            var topic2Metadata = new TopicMetadata(
+                TopicId: topic2.TopicId,
+                ChatId: topic2.ChatId,
+                ThreadId: topic2.ThreadId,
+                AgentId: topic2.AgentId,
+                Name: topic2.Name,
+                CreatedAt: topic2.CreatedAt,
+                LastMessageAt: null);
+            await topicService2.SaveTopicAsync(topic2Metadata, true);
 
             // Start sessions
             await _topicService.StartSessionAsync("test-agent", topic1.TopicId, topic1.ChatId, topic1.ThreadId);

@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -62,7 +63,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         await _connection.DisposeAsync();
     }
 
-    private StoredTopic CreateAndRegisterTopic(string? topicId = null)
+    private async Task<StoredTopic> CreateAndRegisterTopicAsync(string? topicId = null)
     {
         var id = topicId ?? Guid.NewGuid().ToString();
         var topic = new StoredTopic
@@ -75,6 +76,18 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
             CreatedAt = DateTime.UtcNow
         };
         _dispatcher.Dispatch(new AddTopic(topic));
+
+        // Save topic to Redis (required by ChatMonitor to create topic)
+        var metadata = new TopicMetadata(
+            TopicId: topic.TopicId,
+            ChatId: topic.ChatId,
+            ThreadId: topic.ThreadId,
+            AgentId: topic.AgentId,
+            Name: topic.Name,
+            CreatedAt: topic.CreatedAt,
+            LastMessageAt: null);
+        await _topicService.SaveTopicAsync(metadata, true);
+
         return topic;
     }
 
@@ -92,7 +105,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_WithRealServer_ProcessesMessages()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         fixture.FakeAgentFactory.EnqueueResponses("Hello", " from", " the", " server!");
@@ -116,7 +129,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_WithReasoning_CapturesReasoning()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         fixture.FakeAgentFactory.EnqueueReasoning("Let me think about this...");
@@ -138,7 +151,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_SetsAndClearsStreamingState()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         fixture.FakeAgentFactory.EnqueueResponses("Quick response");
@@ -161,7 +174,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_OnError_StopsCleanly()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         fixture.FakeAgentFactory.EnqueueError("Simulated error");
@@ -182,7 +195,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_MultipleMessages_AccumulatesCorrectly()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         fixture.FakeAgentFactory.EnqueueResponses("First response.");
@@ -217,7 +230,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task StreamResponseAsync_AfterClearingMessages_StartsClean()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         // First message to establish some history
@@ -250,7 +263,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     public async Task CancelTopicAsync_DuringStream_StopsProcessing()
     {
         // Arrange
-        var topic = CreateAndRegisterTopic();
+        var topic = await CreateAndRegisterTopicAsync();
         await _topicService.StartSessionAsync("test-agent", topic.TopicId, topic.ChatId, topic.ThreadId);
 
         // Queue many responses to keep stream alive
