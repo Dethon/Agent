@@ -91,12 +91,12 @@ public class RedisChatMessageStoreTests
     public void AgentKey_ToString_ReturnsCorrectFormat()
     {
         // Arrange
-        var agentKey = new AgentKey(999, 888);
+        var agentKey = new AgentKey(999, 888, "test-agent");
 
         // Act
         var key = agentKey.ToString();
 
         // Assert
-        key.ShouldBe("agent-key:999:888");
+        key.ShouldBe("agent-key:test-agent:999:888");
     }
 }

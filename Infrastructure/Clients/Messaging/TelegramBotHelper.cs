@@ -30,7 +30,7 @@ public static class TelegramBotHelper
             : throw new ArgumentException("Invalid agent ID / token hash", nameof(agentId));
     }
 
-    private static TelegramBotClient CreateBotClient(string token, string? baseUrl)
+    public static TelegramBotClient CreateBotClient(string token, string? baseUrl = null)
     {
         if (baseUrl is null)
         {

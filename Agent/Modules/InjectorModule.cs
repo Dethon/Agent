@@ -106,25 +106,26 @@ public static class InjectorModule
 
         private IServiceCollection AddTelegramClient(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var botTokens = settings.Agents
-                .Select(a => a.TelegramBotToken)
-                .Where(t => t is not null)
-                .Cast<string>()
+            var agentBots = settings.Agents
+                .Where(a => a.TelegramBotToken is not null)
+                .Select(a => (a.Id, a.TelegramBotToken!))
                 .ToArray();
 
-            if (botTokens.Length == 0)
+            if (agentBots.Length == 0)
             {
                 throw new InvalidOperationException("No Telegram bot tokens configured in agents.");
             }
 
-            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
+            // TelegramToolApprovalHandlerFactory still uses hash-based lookup for callback routing
+            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(
+                agentBots.Select(ab => ab.Item2));
 
             return services
                 .AddHostedService<CleanupMonitoring>()
                 .AddSingleton<AgentCleanupMonitor>()
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
-                    botTokens,
+                    agentBots,
                     settings.Telegram.AllowedUserNames,
                     cmdParams.ShowReasoning,
                     sp.GetRequiredService<ILogger<TelegramChatClient>>()));
