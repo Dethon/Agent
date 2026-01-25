@@ -7,13 +7,15 @@ namespace Infrastructure.Agents;
 
 internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
-    McpResourceManager ResourceManager);
+    McpResourceManager ResourceManager,
+    IReadOnlyList<AITool> Tools);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
     private readonly ThreadSessionData _data;
     private int _isDisposed;
 
+    public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
     public McpResourceManager ResourceManager => _data.ResourceManager;
 
@@ -75,7 +77,7 @@ internal sealed class ThreadSessionBuilder(
         // Step 4: Setup resource management with user context prepended
         var resourceManager = await CreateResourceManagerAsync(clientManager, ct);
 
-        return new ThreadSessionData(clientManager, resourceManager);
+        return new ThreadSessionData(clientManager, resourceManager, _tools);
     }
 
     private async Task<McpResourceManager> CreateResourceManagerAsync(

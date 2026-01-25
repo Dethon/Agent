@@ -8,7 +8,7 @@ public class SchedulingToolFeature(
     ScheduleListTool listTool,
     ScheduleDeleteTool deleteTool) : IDomainToolFeature
 {
-    public const string Feature = "scheduling";
+    private const string Feature = "scheduling";
 
     public string FeatureName => Feature;
 

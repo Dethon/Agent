@@ -190,7 +190,7 @@ public sealed class McpAgent : DisposableAgent
 
         return new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = [.. session.ClientManager.Tools],
+            Tools = [.. session.Tools],
             Instructions = string.Join("\n\n", prompts)
         });
     }
