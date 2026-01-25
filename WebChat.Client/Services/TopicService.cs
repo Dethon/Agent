@@ -6,7 +6,7 @@ namespace WebChat.Client.Services;
 
 public sealed class TopicService(ChatConnectionService connectionService) : ITopicService
 {
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -14,7 +14,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             return [];
         }
 
-        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
+        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId);
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
@@ -28,7 +28,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
         await hubConnection.InvokeAsync("SaveTopic", topic, isNew);
     }
 
-    public async Task DeleteTopicAsync(string topicId, long chatId, long threadId)
+    public async Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -36,7 +36,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             return;
         }
 
-        await hubConnection.InvokeAsync("DeleteTopic", topicId, chatId, threadId);
+        await hubConnection.InvokeAsync("DeleteTopic", agentId, topicId, chatId, threadId);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)

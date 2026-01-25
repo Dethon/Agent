@@ -53,7 +53,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         await _connection.InvokeAsync("SaveTopic", topic, true);
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
 
         // Assert
         allTopics.ShouldNotBeNull();
@@ -104,10 +104,10 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
 
         // Act
-        await _connection.InvokeAsync("DeleteTopic", topicId, chatId, threadId);
+        await _connection.InvokeAsync("DeleteTopic", "test-agent", topicId, chatId, threadId);
 
         // Get all topics
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
 
         // Assert
         allTopics.ShouldNotContain(t => t.TopicId == topicId);
@@ -195,7 +195,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         await _connection.InvokeAsync("SaveTopic", topic, true);
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
 
         // Assert
         var savedTopic = allTopics.FirstOrDefault(t => t.TopicId == topicId);
@@ -300,7 +300,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
 
         // Delete the topic (which ends the session)
-        await _connection.InvokeAsync("DeleteTopic", topicId, chatId, threadId);
+        await _connection.InvokeAsync("DeleteTopic", "test-agent", topicId, chatId, threadId);
 
         // Act - Try to send message to deleted topic
         var messages = new List<ChatStreamMessage>();

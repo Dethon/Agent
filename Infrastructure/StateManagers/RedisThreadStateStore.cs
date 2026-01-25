@@ -32,11 +32,11 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         await _db.StringSetAsync(key, json, expiration);
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
     {
         var topics = new List<TopicMetadata>();
 
-        await foreach (var key in _server.KeysAsync(pattern: "topic:*"))
+        await foreach (var key in _server.KeysAsync(pattern: $"topic:{agentId}:*"))
         {
             var json = await _db.StringGetAsync(key);
             if (json.IsNullOrEmpty)
@@ -57,12 +57,12 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     public async Task SaveTopicAsync(TopicMetadata topic)
     {
         var json = JsonSerializer.Serialize(topic);
-        await _db.StringSetAsync(TopicKey(topic.TopicId), json, expiration);
+        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, expiration);
     }
 
-    public async Task DeleteTopicAsync(string topicId)
+    public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)
     {
-        await _db.KeyDeleteAsync(TopicKey(topicId));
+        await _db.KeyDeleteAsync(TopicKey(agentId, chatId, topicId));
     }
 
     public async Task<bool> ExistsAsync(string key, CancellationToken ct = default)
@@ -70,9 +70,16 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         return await _db.KeyExistsAsync(key);
     }
 
-    private static string TopicKey(string topicId)
+    public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
+        string agentId, long chatId, long threadId, CancellationToken ct = default)
     {
-        return $"topic:{topicId}";
+        var topics = await GetAllTopicsAsync(agentId);
+        return topics.FirstOrDefault(t => t.ChatId == chatId && t.ThreadId == threadId);
+    }
+
+    private static string TopicKey(string agentId, long chatId, string topicId)
+    {
+        return $"topic:{agentId}:{chatId}:{topicId}";
     }
 
     private sealed class StoreState

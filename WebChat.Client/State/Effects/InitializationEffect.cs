@@ -67,21 +67,23 @@ public sealed class InitializationEffect : IDisposable
         var agents = await _agentService.GetAgentsAsync();
         _dispatcher.Dispatch(new SetAgents(agents));
 
-        if (agents.Count > 0)
+        if (agents.Count == 0)
         {
-            var savedAgentId = await _localStorage.GetAsync("selectedAgentId");
-            var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
-            var agentToSelect = savedAgent ?? agents[0];
-            _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id));
-
-            if (savedAgent is null)
-            {
-                await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
-            }
+            return;
         }
 
-        // Load topics
-        var serverTopics = await _topicService.GetAllTopicsAsync();
+        var savedAgentId = await _localStorage.GetAsync("selectedAgentId");
+        var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
+        var agentToSelect = savedAgent ?? agents[0];
+        _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id));
+
+        if (savedAgent is null)
+        {
+            await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
+        }
+
+        // Load topics for selected agent
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id);
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 

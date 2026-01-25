@@ -31,7 +31,7 @@ public static class ConfigModule
         {
             Description = "Chat interface to interact with the agent",
             Required = false,
-            DefaultValueFactory = _ => ChatInterface.Web
+            DefaultValueFactory = _ => ChatInterface.Telegram
         };
         var promptOption = new Option<string?>("--prompt", "-p")
         {

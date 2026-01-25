@@ -137,7 +137,13 @@ public sealed class WebChatMessengerClient(
     public async Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
-        var topic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(chatId, threadId, cancellationToken);
+        if (string.IsNullOrEmpty(agentId))
+        {
+            return false;
+        }
+
+        var topic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId,
+            cancellationToken);
         return topic is not null;
     }
 
@@ -161,7 +167,7 @@ public sealed class WebChatMessengerClient(
         if (threadId.HasValue && chatId.HasValue)
         {
             var existingTopic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
-                chatId.Value, threadId.Value, ct);
+                agentId, chatId.Value, threadId.Value, ct);
 
             if (existingTopic is not null)
             {

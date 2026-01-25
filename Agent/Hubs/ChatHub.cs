@@ -75,9 +75,9 @@ public sealed class ChatHub(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics()
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId)
     {
-        return await threadStateStore.GetAllTopicsAsync();
+        return await threadStateStore.GetAllTopicsAsync(agentId);
     }
 
     public bool IsProcessing(string topicId)
@@ -193,13 +193,13 @@ public sealed class ChatHub(
             new StreamChangedNotification(StreamChangeType.Cancelled, topicId));
     }
 
-    public async Task DeleteTopic(string topicId, long chatId, long threadId)
+    public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
         messengerClient.EndSession(topicId);
 
         var agentKey = new AgentKey(chatId, threadId);
         await threadStateStore.DeleteAsync(agentKey);
-        await threadStateStore.DeleteTopicAsync(topicId);
+        await threadStateStore.DeleteTopicAsync(agentId, chatId, topicId);
 
         await hubNotifier.NotifyTopicChangedAsync(
             new TopicChangedNotification(TopicChangeType.Deleted, topicId));
