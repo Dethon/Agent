@@ -78,6 +78,32 @@
         return Message.Role == "user" ? Message.SenderId : null;
     }
 
+    private string? GetFormattedTimestamp()
+    {
+        if (Message.Timestamp is null)
+        {
+            return null;
+        }
+
+        var local = Message.Timestamp.Value.ToLocalTime();
+        var now = DateTimeOffset.Now;
+
+        // If today, show only time
+        if (local.Date == now.Date)
+        {
+            return local.ToString("HH:mm");
+        }
+
+        // If this year, show day/month and time
+        if (local.Year == now.Year)
+        {
+            return local.ToString("d MMM, HH:mm");
+        }
+
+        // Otherwise show full date with time
+        return local.ToString("d MMM yyyy, HH:mm");
+    }
+
 }
 
 <div class="@GetMessageWrapperClass()">
@@ -134,6 +160,14 @@
         <div class="message-content">
             @((MarkupString)RenderMarkdown(Message.Content))
         </div>
+
+        @{
+            var timestamp = GetFormattedTimestamp();
+        }
+        @if (!string.IsNullOrEmpty(timestamp))
+        {
+            <div class="message-timestamp">@timestamp</div>
+        }
 
         @if (IsStreaming && string.IsNullOrEmpty(Message.Content))
         {
