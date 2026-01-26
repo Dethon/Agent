@@ -519,7 +519,7 @@ public sealed class StreamingServiceTests : IDisposable
 
         _messagingService.EnqueueMessages(
             new ChatStreamMessage
-                { UserMessage = new UserMessageInfo("Alice"), Content = "user msg", MessageId = "msg-1" },
+                { UserMessage = new UserMessageInfo("Alice", null), Content = "user msg", MessageId = "msg-1" },
             new ChatStreamMessage { Content = "New response", MessageId = "msg-2" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
         );

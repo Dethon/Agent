@@ -4,8 +4,8 @@ namespace WebChat.Client.Contracts;
 
 public interface ITopicService
 {
-    Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync();
+    Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId);
     Task SaveTopicAsync(TopicMetadata topic, bool isNew = false);
-    Task DeleteTopicAsync(string topicId, long chatId, long threadId);
-    Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId);
+    Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId);
+    Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId);
 }

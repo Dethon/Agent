@@ -191,7 +191,7 @@ public sealed class WebChatStreamManagerTests : IDisposable
         var userMessage = new ChatStreamMessage
         {
             Content = "Hello from user",
-            UserMessage = new UserMessageInfo("alice")
+            UserMessage = new UserMessageInfo("alice", null)
         };
 
         await _manager.WriteMessageAsync(topicId, userMessage, CancellationToken.None);

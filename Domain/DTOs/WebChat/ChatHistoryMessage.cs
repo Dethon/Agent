@@ -3,4 +3,5 @@ namespace Domain.DTOs.WebChat;
 public record ChatHistoryMessage(
     string Role,
     string Content,
-    string? SenderId);
+    string? SenderId,
+    DateTimeOffset? Timestamp);

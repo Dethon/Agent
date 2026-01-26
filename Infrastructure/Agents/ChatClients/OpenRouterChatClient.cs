@@ -45,10 +45,18 @@ public sealed class OpenRouterChatClient : IChatClient
         {
             var newMessage = x.Clone();
             var sender = newMessage.GetSenderId();
-            if (sender is not null && newMessage.Role == ChatRole.User)
+            var timestamp = newMessage.GetTimestamp();
+            if (newMessage.Role == ChatRole.User && (sender is not null || timestamp is not null))
             {
+                var prefix = (sender, timestamp) switch
+                {
+                    (not null, not null) => $"[{timestamp:yyyy-MM-dd HH:mm:ss zzz}] Message from {sender}:\n",
+                    (not null, null) => $"Message from {sender}:\n",
+                    (null, not null) => $"[{timestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
+                    _ => ""
+                };
                 newMessage.Contents = newMessage.Contents
-                    .Prepend(new TextContent($"Message from {sender}:\n"))
+                    .Prepend(new TextContent(prefix))
                     .ToList();
             }
 

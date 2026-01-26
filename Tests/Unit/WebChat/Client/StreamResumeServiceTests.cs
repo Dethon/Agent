@@ -129,8 +129,8 @@ public sealed class StreamResumeServiceTests : IDisposable
     {
         var topic = CreateTopic(topicId: "topic-1");
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("user", "Hello", null),
-            new ChatHistoryMessage("assistant", "Hi", null));
+            new ChatHistoryMessage("user", "Hello", null, null),
+            new ChatHistoryMessage("assistant", "Hi", null, null));
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
             [
@@ -155,7 +155,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             new ChatMessageModel { Role = "user", Content = "Existing" }
         ]));
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("user", "Different content", null));
+            new ChatHistoryMessage("user", "Different content", null, null));
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
             [
@@ -239,7 +239,7 @@ public sealed class StreamResumeServiceTests : IDisposable
                 new ChatStreamMessage
                 {
                     Content = "User's question",
-                    UserMessage = new UserMessageInfo("Bob")
+                    UserMessage = new UserMessageInfo("Bob", null)
                 },
                 // Assistant response in progress
                 new ChatStreamMessage { Content = "I'm thinking...", MessageId = "msg-1" }

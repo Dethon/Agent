@@ -43,11 +43,12 @@ public sealed class TopicDeleteEffect : IDisposable
             _dispatcher.Dispatch(new StreamCancelled(action.TopicId));
         }
 
-        // Delete from server only if ChatId/ThreadId provided (client-initiated delete)
+        // Delete from server only if AgentId/ChatId/ThreadId provided (client-initiated delete)
         // When server sends delete notification, these are null (already deleted server-side)
-        if (action.ChatId.HasValue && action.ThreadId.HasValue)
+        if (action.AgentId is not null && action.ChatId.HasValue && action.ThreadId.HasValue)
         {
-            await _topicService.DeleteTopicAsync(action.TopicId, action.ChatId.Value, action.ThreadId.Value);
+            await _topicService.DeleteTopicAsync(action.AgentId, action.TopicId, action.ChatId.Value,
+                action.ThreadId.Value);
         }
 
         // Clear approval if this was the selected topic

@@ -19,6 +19,8 @@ public sealed class OneShotChatMessengerClient(
     private readonly StringBuilder _reasoningBuilder = new();
     private readonly Lock _lock = new();
 
+    public bool SupportsScheduledNotifications => false;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -40,7 +42,7 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
         var responses = updates
@@ -76,15 +78,30 @@ public sealed class OneShotChatMessengerClient(
         CompleteResponse();
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
+    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
         return Task.FromResult(1);
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
+    }
+
+    public Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? agentId,
+        string? topicName,
+        CancellationToken ct = default)
+    {
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
+    }
+
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
     }
 
     private void FlushOutput()

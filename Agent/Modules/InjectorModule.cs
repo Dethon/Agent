@@ -12,6 +12,7 @@ using Infrastructure.CliGui.Ui;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using Telegram.Bot;
 using HubNotifier = Infrastructure.Clients.Messaging.HubNotifier;
 
 namespace Agent.Modules;
@@ -33,11 +34,15 @@ public static class InjectorModule
             return services
                 .AddRedis(settings.Redis)
                 .AddSingleton<ChatThreadResolver>()
+                .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
                         sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
-                        llmConfig));
+                        llmConfig,
+                        sp.GetRequiredService<IDomainToolRegistry>()))
+                .AddSingleton<IScheduleAgentFactory>(sp =>
+                    (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
@@ -104,25 +109,25 @@ public static class InjectorModule
 
         private IServiceCollection AddTelegramClient(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var botTokens = settings.Agents
-                .Select(a => a.TelegramBotToken)
-                .Where(t => t is not null)
-                .Cast<string>()
+            var agentBots = settings.Agents
+                .Where(a => a.TelegramBotToken is not null)
+                .Select(a => (a.Id, a.TelegramBotToken!))
                 .ToArray();
 
-            if (botTokens.Length == 0)
+            if (agentBots.Length == 0)
             {
                 throw new InvalidOperationException("No Telegram bot tokens configured in agents.");
             }
 
-            var botClientsByHash = TelegramBotHelper.CreateBotClientsByHash(botTokens);
+            var botClientsByAgentId = agentBots.ToDictionary(
+                ab => ab.Id, ITelegramBotClient (ab) => TelegramBotHelper.CreateBotClient(ab.Item2));
 
             return services
                 .AddHostedService<CleanupMonitoring>()
                 .AddSingleton<AgentCleanupMonitor>()
-                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByHash))
+                .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByAgentId))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
-                    botTokens,
+                    agentBots,
                     settings.Telegram.AllowedUserNames,
                     cmdParams.ShowReasoning,
                     sp.GetRequiredService<ILogger<TelegramChatClient>>()));

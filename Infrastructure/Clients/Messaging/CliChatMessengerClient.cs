@@ -15,6 +15,8 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private readonly IThreadStateStore? _threadStateStore;
     private bool _historyRestored;
 
+    public bool SupportsScheduledNotifications => false;
+
     public CliChatMessengerClient(
         ICliChatMessageRouter router,
         Action? onShutdownRequested = null,
@@ -41,7 +43,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
         string? currentMessageId = null;
@@ -86,16 +88,31 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _router.SendResponse(new ChatResponseMessage { IsComplete = true, MessageIndex = messageIndex });
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? botTokenHash, CancellationToken cancellationToken)
+    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
         _router.CreateThread(name);
         return Task.FromResult(_router.ThreadId);
     }
 
-    public Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
         return Task.FromResult(true);
+    }
+
+    public Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? agentId,
+        string? topicName,
+        CancellationToken ct = default)
+    {
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
+    }
+
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
     }
 
     public void Dispose()

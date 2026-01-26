@@ -55,9 +55,9 @@ public sealed class ChatHub(
         return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId);
     }
 
-    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(long chatId, long threadId)
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
-        var agentKey = new AgentKey(chatId, threadId);
+        var agentKey = new AgentKey(chatId, threadId, agentId);
         var messages = await threadStateStore.GetMessagesAsync(agentKey.ToString());
 
         if (messages is null)
@@ -70,14 +70,15 @@ public sealed class ChatHub(
             .Select(m => new ChatHistoryMessage(
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
-                m.GetSenderId()))
+                m.GetSenderId(),
+                m.GetTimestamp()))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics()
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId)
     {
-        return await threadStateStore.GetAllTopicsAsync();
+        return await threadStateStore.GetAllTopicsAsync(agentId);
     }
 
     public bool IsProcessing(string topicId)
@@ -193,13 +194,13 @@ public sealed class ChatHub(
             new StreamChangedNotification(StreamChangeType.Cancelled, topicId));
     }
 
-    public async Task DeleteTopic(string topicId, long chatId, long threadId)
+    public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
         messengerClient.EndSession(topicId);
 
-        var agentKey = new AgentKey(chatId, threadId);
+        var agentKey = new AgentKey(chatId, threadId, agentId);
         await threadStateStore.DeleteAsync(agentKey);
-        await threadStateStore.DeleteTopicAsync(topicId);
+        await threadStateStore.DeleteTopicAsync(agentId, chatId, topicId);
 
         await hubNotifier.NotifyTopicChangedAsync(
             new TopicChangedNotification(TopicChangeType.Deleted, topicId));

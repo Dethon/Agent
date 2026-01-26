@@ -1,229 +1,54 @@
-# Agent - AI Media Library Agent
+# Agent
 
-## Overview
-
-This repository contains **Agent**, an AI-powered agent that manages a personal media library through Telegram chat, web interface, or CLI terminal,
-using OpenRouter LLMs and the Model Context Protocol (MCP).
-
-## Technology Stack
-
-- **.NET 10** - Target framework
-- **Model Context Protocol (MCP)** - Tool integration architecture
-- **OpenRouter LLMs** - AI model provider (Gemini, GPT-4, etc.)
-- **Microsoft.Extensions.AI** - LLM abstraction layer
-- **Microsoft.Agents.AI** - Agent framework
-- **Redis** - Conversation state persistence
-- **Docker Compose** - Deployment stack
-
-## Project Structure
-
-| Project                  | Layer          | Purpose                                                     |
-|--------------------------|----------------|-------------------------------------------------------------|
-| `Agent`                  | Application    | Composition root, Telegram bot, DI configuration            |
-| `Domain`                 | Domain         | Pure business logic, contracts, DTOs, exceptions            |
-| `Infrastructure`         | Infrastructure | External service clients, agent implementations             |
-| `McpServerLibrary`       | Module         | MCP server for torrent search, downloads, file organization |
-| `McpServerText`          | Module         | MCP server for text/markdown file inspection and editing    |
-| `McpServerWebSearch`     | Module         | MCP server for web search and content fetching              |
-| `McpServerMemory`        | Module         | MCP server for vector-based memory storage and recall       |
-| `McpServerIdealista`     | Module         | MCP server for Idealista real estate property search        |
-| `McpServerCommandRunner` | Module         | MCP server for CLI command execution                        |
-| `WebChat`                | Application    | Blazor WebAssembly host server                              |
-| `WebChat.Client`         | Application    | Blazor WebAssembly client for web-based chat                |
-| `Tests`                  | Testing        | Unit and integration tests                                  |
-| `DockerCompose`          | Deployment     | Docker Compose configuration                                |
-
-## File Patterns
-
-Quick reference for finding code files:
-
-| What                     | Where                                     |
-|--------------------------|-------------------------------------------|
-| Contracts/Interfaces     | `Domain/Contracts/*.cs`                   |
-| DTOs                     | `Domain/DTOs/*.cs`                        |
-| Domain tools             | `Domain/Tools/**/*.cs`                    |
-| Domain agents            | `Domain/Agents/*.cs`                      |
-| Domain prompts           | `Domain/Prompts/*.cs`                     |
-| Domain monitors          | `Domain/Monitor/*.cs`                     |
-| Agent implementations    | `Infrastructure/Agents/*.cs`              |
-| MCP integration          | `Infrastructure/Agents/Mcp/*.cs`          |
-| Chat clients             | `Infrastructure/Agents/ChatClients/*.cs`  |
-| External service clients | `Infrastructure/Clients/**/*.cs`          |
-| Tool approval handlers   | `Infrastructure/Clients/ToolApproval/*.cs`|
-| Messaging clients        | `Infrastructure/Clients/Messaging/*.cs`   |
-| Torrent clients          | `Infrastructure/Clients/Torrent/*.cs`     |
-| Browser clients          | `Infrastructure/Clients/Browser/*.cs`     |
-| HTML processing          | `Infrastructure/HtmlProcessing/*.cs`      |
-| CLI UI components        | `Infrastructure/CliGui/**/*.cs`           |
-| CLI abstractions         | `Infrastructure/CliGui/Abstractions/*.cs` |
-| CLI routing              | `Infrastructure/CliGui/Routing/*.cs`      |
-| CLI rendering            | `Infrastructure/CliGui/Rendering/*.cs`    |
-| Command runners          | `Infrastructure/CommandRunners/*.cs`      |
-| Memory services          | `Infrastructure/Memory/*.cs`              |
-| State persistence        | `Infrastructure/StateManagers/*.cs`       |
-| MCP server tools         | `McpServer*/McpTools/*.cs`                |
-| MCP server prompts       | `McpServer*/McpPrompts/*.cs`              |
-| App bootstrapping        | `Agent/App/*.cs`                          |
-| App DI modules           | `Agent/Modules/*.cs`                      |
-| App settings             | `Agent/Settings/*.cs`                     |
-| WebChat hub              | `Agent/Hubs/*.cs`                         |
-| WebChat pages            | `WebChat.Client/Pages/*.razor`            |
-| WebChat components       | `WebChat.Client/Components/**/*.razor`    |
-| WebChat contracts        | `WebChat.Client/Contracts/*.cs`           |
-| WebChat helpers          | `WebChat.Client/Helpers/*.cs`             |
-| WebChat services         | `WebChat.Client/Services/**/*.cs`         |
-| WebChat state stores     | `WebChat.Client/State/*/*.cs`             |
-| WebChat effects          | `WebChat.Client/State/Effects/*.cs`       |
-| WebChat hub dispatchers  | `WebChat.Client/State/Hub/*.cs`           |
-| WebChat models           | `WebChat.Client/Models/*.cs`              |
-| Unit tests               | `Tests/Unit/**/*Tests.cs`                 |
-| Integration tests        | `Tests/Integration/**/*Tests.cs`          |
-| Test fixtures            | `Tests/Integration/Fixtures/*.cs`         |
+AI media library agent via Telegram/WebChat/CLI using .NET 10, MCP, and OpenRouter LLMs.
 
 ## Architecture
 
-Dependencies flow inward: `Agent` → `Infrastructure` → `Domain`
+**Layers** (dependencies flow inward): `Agent` → `Infrastructure` → `Domain`
 
-- **Domain**: Interfaces, DTOs, domain services, pure business logic (no external dependencies)
+- **Domain**: Contracts, DTOs, pure business logic (no external deps)
 - **Infrastructure**: Implementations, external clients, state management
-- **Agent**: Bootstrapping, DI, configuration, application entry point
+- **Agent**: DI, config, entry point
 
-**Interface policy**: Services with a single expected implementation do not require an interface unless the Domain layer needs to consume them. The Agent layer may directly depend on Infrastructure concrete types when no abstraction is needed.
+**Interface policy**: Only create interfaces when Domain needs to consume them.
 
-See `.claude/rules/` for layer-specific coding rules that apply automatically based on file paths.
+See `.claude/rules/` for layer-specific coding rules.
 
-## Key Components
+## Projects
 
-### Multi-Agent Architecture
+| Project | Purpose |
+|---------|---------|
+| `Agent` | Composition root, Telegram bot, DI |
+| `Domain` | Contracts, DTOs, business logic |
+| `Infrastructure` | External clients, agent implementations |
+| `McpServer*` | MCP servers (Library, Text, WebSearch, Memory, Idealista, CommandRunner) |
+| `WebChat`/`.Client` | Blazor WebAssembly chat interface |
+| `Tests` | Unit and integration tests |
 
-Agents are defined as configuration data, allowing a single container to run multiple agents:
+## Key File Locations
 
-- **AgentDefinition** (`Domain/DTOs/AgentDefinition.cs`) - Defines an agent with name, model, MCP endpoints, whitelist patterns, and custom instructions
-- **MultiAgentFactory** (`Infrastructure/Agents/MultiAgentFactory.cs`) - Creates agents based on definitions, resolves agent from bot token hash
-- **TelegramChatClient** (`Infrastructure/Clients/Messaging/TelegramChatClient.cs`) - Polls multiple Telegram bots, routes messages by bot token hash
+| What | Where |
+|------|-------|
+| Contracts | `Domain/Contracts/*.cs` |
+| DTOs | `Domain/DTOs/*.cs` |
+| Agent implementations | `Infrastructure/Agents/*.cs` |
+| External clients | `Infrastructure/Clients/**/*.cs` |
+| MCP tools | `McpServer*/McpTools/*.cs` |
+| WebChat state | `WebChat.Client/State/**/*.cs` |
+| Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
-Agent routing:
-- **Telegram**: Each bot token maps to one agent via SHA256 hash matching
-- **CLI**: Uses the first configured agent
-- **WebChat**: User selects agent from available list
+## Key Types
 
-Configuration in `appsettings.json`:
-```json
-{
-  "agents": [
-    {
-      "id": "jack",
-      "name": "Jack",
-      "model": "google/gemini-2.0-flash-001",
-      "mcpServerEndpoints": ["http://mcp-library:8080/sse"],
-      "whitelistPatterns": ["mcp:mcp-library:*"],
-      "customInstructions": "You are Jack...",
-      "telegramBotToken": "123456:ABC..."
-    }
-  ]
-}
-```
+- **AgentDefinition** - Agent config (model, MCP endpoints, instructions)
+- **MultiAgentFactory** - Creates/routes agents by config
+- **ChatMonitor** - Streaming message pipeline
+- **IToolApprovalHandler** - User approval for tool execution
+- **IMemoryStore** - Vector memory (Redis-backed)
 
-### WebChat
+## Multi-Agent Config
 
-Browser-based chat interface using Blazor WebAssembly and SignalR:
+Agents configured in `appsettings.json` under `"agents"` array. Each has id, name, model, MCP endpoints, whitelist patterns, custom instructions, and optional telegram token.
 
-- **WebChat** - Static file host for the Blazor WebAssembly client
-- **WebChat.Client** - Blazor WebAssembly application with chat UI
-- **ChatHub** (`Agent/Hubs/ChatHub.cs`) - SignalR hub for real-time communication
-- **WebChatMessengerClient** (`Infrastructure/Clients/Messaging/WebChatMessengerClient.cs`) - Server-side message routing
-- **ChatConnectionService** (`WebChat.Client/Services/ChatConnectionService.cs`) - Client-side SignalR connection management
+## WebChat State
 
-Features:
-- Real-time message streaming with reconnection support
-- Topic-based conversations with server-side persistence
-- Stream resumption after disconnection (buffered messages + sequence tracking)
-- Multi-agent selection
-- User identity selection with avatar support
-
-Client-side state management uses a Redux-like pattern (`WebChat.Client/State/`):
-- **Stores**: ApprovalStore, ConnectionStore, MessagesStore, StreamingStore, TopicsStore, UserIdentityStore
-- **Effects**: Side effect handlers for async operations (agent selection, topic selection, message sending, user identity)
-- **HubEventDispatcher**: Routes SignalR events to appropriate state actions
-
-### User Identity System
-
-WebChat supports multiple user identities with avatars, configured via environment variables:
-
-- **ConfigService** (`WebChat.Client/Services/ConfigService.cs`) - Fetches and caches app config including users
-- **UserIdentityStore** (`WebChat.Client/State/UserIdentity/`) - Client-side state for user selection
-- **UserIdentityEffect** (`WebChat.Client/State/Effects/UserIdentityEffect.cs`) - Loads users from config and persists selection to local storage
-- **UserIdentityPicker** (`WebChat.Client/Components/UserIdentityPicker.razor`) - Dropdown for identity selection
-- **AvatarImage** (`WebChat.Client/Components/AvatarImage.razor`) - Avatar display with fallback to initials
-
-Configuration via `WebChat/appsettings.json` or environment variables:
-```json
-{
-  "Users": [{ "Id": "Alice", "AvatarUrl": "avatars/alice.png" }]
-}
-```
-
-Environment override: `USERS__0__ID=Alice`, `USERS__0__AVATARURL=avatars/alice.png`
-
-### Message Streaming Pipeline
-
-The `ChatMonitor` uses a streaming pipeline to handle concurrent conversations:
-
-```
-Prompts → GroupByStreaming(AgentKey) → ProcessChatThread → Merge → SendResponse
-```
-
-### MCP Resource Subscriptions
-
-Real-time resource updates from MCP servers:
-
-- **SubscriptionTracker** (McpServerLibrary) - Server-side subscription tracking
-- **McpSubscriptionManager** (Infrastructure) - Client-side subscription lifecycle
-- Flow: MCP Server → `notifications/resources/updated` → Client → Agent
-
-### Conversation Persistence
-
-Redis-backed chat history with key format: `agent-key:{chatId}:{threadId}` (30-day expiry)
-
-### Chat Commands
-
-| Command   | Action                                          |
-|-----------|-------------------------------------------------|
-| `/cancel` | Cancels current operation, keeps history        |
-| `/clear`  | Clears conversation and deletes persisted state |
-
-### Tool Approval System
-
-Tool execution requires user approval via `IToolApprovalHandler`:
-
-- `TelegramToolApprovalHandler` - Inline keyboard in Telegram
-- `CliToolApprovalHandler` - Modal dialog in CLI
-- `WebToolApprovalHandler` - SignalR-based approval for WebChat
-
-Results: `Approved`, `ApprovedAndRemember`, `Rejected`, `AutoApproved`
-
-### Memory System
-
-Vector-based storage via `IMemoryStore` → `RedisStackMemoryStore` with `IEmbeddingService` →
-`OpenRouterEmbeddingService`
-
-Tools: `MemoryStoreTool`, `MemoryRecallTool`, `MemoryForgetTool`, `MemoryListTool`, `MemoryReflectTool`
-
-### Web Search
-
-`IWebSearchClient` → `BraveSearchClient` for web search queries
-
-### Web Browsing
-
-`IWebBrowser` → `PlaywrightWebBrowser` for persistent browser sessions
-
-WebBrowse supports CSS selectors for targeting content, markdown/html output formats, link extraction,
-automatic modal dismissal (cookie consent, age gates), lazy-load scrolling, and DOM stability waiting.
-
-### Real Estate Search
-
-`IIdealistaClient` → `IdealistaClient` for property search in Spain, Italy, and Portugal via Idealista API
-
-### Command Runners
-
-Platform-specific via `ICommandRunner`: `BashRunner`, `CmdRunner`, `PowerShellRunner`, `ShRunner`
+Redux-like pattern in `WebChat.Client/State/`: Stores + Effects + HubEventDispatcher

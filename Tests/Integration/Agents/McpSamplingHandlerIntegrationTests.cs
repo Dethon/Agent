@@ -38,7 +38,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "SamplingTestAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "SamplingTestAgent" });
         var tools = Array.Empty<AITool>();
         var samplingHandler = new McpSamplingHandler(agent, () => tools);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -66,7 +66,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TrackedConversationAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TrackedConversationAgent" });
         var tools = Array.Empty<AITool>();
         var samplingHandler = new McpSamplingHandler(agent, () => tools);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
@@ -111,7 +111,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "SystemPromptAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "SystemPromptAgent" });
         var tools = Array.Empty<AITool>();
         var samplingHandler = new McpSamplingHandler(agent, () => tools);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -139,7 +139,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "ToolsAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "ToolsAgent" });
 
         // Create a simple test tool
         var testTool = AIFunctionFactory.Create(() => "test result", "TestTool", "A test tool");
@@ -171,7 +171,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "ProgressAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "ProgressAgent" });
         var tools = Array.Empty<AITool>();
         var samplingHandler = new McpSamplingHandler(agent, () => tools);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -200,7 +200,7 @@ public class McpSamplingHandlerIntegrationTests
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "NewThreadAgent" });
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "NewThreadAgent" });
         var tools = Array.Empty<AITool>();
         var samplingHandler = new McpSamplingHandler(agent, () => tools);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));

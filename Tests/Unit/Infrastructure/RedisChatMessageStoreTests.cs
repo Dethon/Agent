@@ -26,7 +26,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
@@ -48,7 +48,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
@@ -63,7 +63,7 @@ public class RedisChatMessageStoreTests
     }
 
     [Fact]
-    public void Serialize_ReturnsKeyAsJsonElement()
+    public async Task Serialize_ReturnsKeyAsJsonElement()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
@@ -77,7 +77,7 @@ public class RedisChatMessageStoreTests
             JsonSerializerOptions = new JsonSerializerOptions()
         };
 
-        var store = RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
         var serialized = store.Serialize();
@@ -91,12 +91,12 @@ public class RedisChatMessageStoreTests
     public void AgentKey_ToString_ReturnsCorrectFormat()
     {
         // Arrange
-        var agentKey = new AgentKey(999, 888);
+        var agentKey = new AgentKey(999, 888, "test-agent");
 
         // Act
         var key = agentKey.ToString();
 
         // Assert
-        key.ShouldBe("agent-key:999:888");
+        key.ShouldBe("agent-key:test-agent:999:888");
     }
 }

@@ -12,7 +12,7 @@ public class AgentCleanupMonitor(
         foreach (var agentKey in threadResolver.AgentKeys)
         {
             if (!await chatMessengerClient.DoesThreadExist(
-                    agentKey.ChatId, agentKey.ThreadId, agentKey.BotTokenHash, ct))
+                    agentKey.ChatId, agentKey.ThreadId, agentKey.AgentId, ct))
             {
                 await threadResolver.ClearAsync(agentKey);
             }

@@ -144,7 +144,8 @@ public sealed class HubEventDispatcher(
         {
             Role = "user",
             Content = notification.Content,
-            SenderId = notification.SenderId
+            SenderId = notification.SenderId,
+            Timestamp = notification.Timestamp
         }));
     }
 }

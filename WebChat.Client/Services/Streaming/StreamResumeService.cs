@@ -48,12 +48,13 @@ public sealed class StreamResumeService(
 
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
-                var history = await topicService.GetHistoryAsync(topic.ChatId, topic.ThreadId);
+                var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
                 var messages = history.Select(h => new ChatMessageModel
                 {
                     Role = h.Role,
                     Content = h.Content,
-                    SenderId = h.SenderId
+                    SenderId = h.SenderId,
+                    Timestamp = h.Timestamp
                 }).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }

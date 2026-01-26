@@ -22,9 +22,10 @@ public sealed class FakeTopicService : ITopicService
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
 
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync()
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
     {
-        return Task.FromResult<IReadOnlyList<TopicMetadata>>(_savedTopics);
+        return Task.FromResult<IReadOnlyList<TopicMetadata>>(
+            _savedTopics.Where(t => t.AgentId == agentId).ToList());
     }
 
     public Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
@@ -33,13 +34,13 @@ public sealed class FakeTopicService : ITopicService
         return Task.CompletedTask;
     }
 
-    public Task DeleteTopicAsync(string topicId, long chatId, long threadId)
+    public Task DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
         _deletedTopicIds.Add(topicId);
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(long chatId, long threadId)
+    public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
         return Task.FromResult<IReadOnlyList<ChatHistoryMessage>>(
             _history.TryGetValue((chatId, threadId), out var h) ? h : []);

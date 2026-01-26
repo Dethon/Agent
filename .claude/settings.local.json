@@ -33,7 +33,9 @@
       "Bash(git show:*)",
       "Bash(timeout:*)",
       "Bash(ping:*)",
-      "Skill(superpowers:systematic-debugging)"
+      "Skill(superpowers:systematic-debugging)",
+      "Bash(dotnet list:*)",
+      "Bash(dotnet add:*)"
     ]
   }
 }

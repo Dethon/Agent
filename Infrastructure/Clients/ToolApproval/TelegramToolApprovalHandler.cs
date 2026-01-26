@@ -4,7 +4,6 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -292,11 +291,13 @@ public sealed class TelegramToolApprovalHandler(
 }
 
 public sealed class TelegramToolApprovalHandlerFactory(
-    IReadOnlyDictionary<string, ITelegramBotClient> botsByTokenHash) : IToolApprovalHandlerFactory
+    IReadOnlyDictionary<string, ITelegramBotClient> botsByAgentId) : IToolApprovalHandlerFactory
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
-        var client = TelegramBotHelper.GetClientByHash(botsByTokenHash, agentKey.BotTokenHash);
-        return new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
+        ArgumentNullException.ThrowIfNull(agentKey.AgentId);
+        return !botsByAgentId.TryGetValue(agentKey.AgentId, out var client)
+            ? throw new ArgumentException("Invalid agent ID", nameof(agentKey))
+            : new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
     }
 }

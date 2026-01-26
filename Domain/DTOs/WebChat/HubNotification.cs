@@ -36,4 +36,5 @@ public record UserMessageNotification(
     string TopicId,
     string Content,
     string? SenderId,
+    DateTimeOffset? Timestamp,
     string? CorrelationId = null);

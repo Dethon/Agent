@@ -195,7 +195,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act - First interaction to create a thread with state
-        var thread = agent.GetNewThread();
+        var thread = await agent.GetNewThreadAsync(cts.Token);
         var responses1 = await agent.RunStreamingAsync(
                 "Remember: my favorite color is blue.",
                 thread,
@@ -210,7 +210,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         var serializedJson = serialized.GetRawText();
 
         // Deserialize into a new thread
-        var deserializedThread = agent.DeserializeThread(serialized);
+        var deserializedThread = await agent.DeserializeThreadAsync(serialized, cancellationToken: cts.Token);
 
         // Continue conversation with deserialized thread
         var responses2 = await agent.RunStreamingAsync(
@@ -242,7 +242,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
 
         // Act - Create thread from AgentKey (simulating how ChatMonitor works)
         var agentKeyJson = JsonSerializer.SerializeToElement(agentKey);
-        var thread = agent.DeserializeThread(agentKeyJson);
+        var thread = await agent.DeserializeThreadAsync(agentKeyJson, cancellationToken: cts.Token);
 
         // First interaction
         var responses1 = await agent.RunStreamingAsync(
@@ -259,7 +259,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         var agent2 = CreateAgent(llmClient);
 
         // Restore thread from same AgentKey
-        var thread2 = agent2.DeserializeThread(agentKeyJson);
+        var thread2 = await agent2.DeserializeThreadAsync(agentKeyJson, cancellationToken: cts.Token);
 
         // Continue conversation
         var responses2 = await agent2.RunStreamingAsync(

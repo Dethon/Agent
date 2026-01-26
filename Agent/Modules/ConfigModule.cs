@@ -21,6 +21,7 @@ public static class ConfigModule
     {
         return services
             .AddAgent(settings)
+            .AddScheduling()
             .AddChatMonitoring(settings, cmdParams);
     }
 

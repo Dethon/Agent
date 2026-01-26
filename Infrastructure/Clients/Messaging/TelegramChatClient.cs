@@ -14,17 +14,20 @@ using Message = Telegram.Bot.Types.Message;
 namespace Infrastructure.Clients.Messaging;
 
 public class TelegramChatClient(
-    IEnumerable<string> botTokens,
+    IEnumerable<(string AgentId, string BotToken)> agentBots,
     string[] allowedUserNames,
     bool showReasoning,
     ILogger<TelegramChatClient> logger,
     string? baseUrl = null) : IChatMessengerClient
 {
-    private readonly Dictionary<string, BotContext> _bots = TelegramBotHelper
-        .CreateBotClientsByHash(botTokens, baseUrl)
-        .ToDictionary(kvp => kvp.Key, kvp => new BotContext(kvp.Key, kvp.Value));
+    private readonly Dictionary<string, BotContext> _bots = agentBots
+        .ToDictionary(
+            ab => ab.AgentId,
+            ab => new BotContext(ab.AgentId, TelegramBotHelper.CreateBotClient(ab.BotToken, baseUrl)));
 
     private string? _topicIconId;
+
+    public bool SupportsScheduledNotifications => false;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -41,7 +44,7 @@ public class TelegramChatClient(
                 pendingTasks.Remove(completedTask);
 
                 var messages = await completedTask;
-                foreach (var (prompt, client, tokenHash) in messages)
+                foreach (var (prompt, client, agentId) in messages)
                 {
                     if (!IsAuthorized(prompt))
                     {
@@ -53,14 +56,14 @@ public class TelegramChatClient(
                         continue;
                     }
 
-                    yield return prompt with { BotTokenHash = tokenHash };
+                    yield return prompt with { AgentId = agentId };
                 }
             }
         }
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
         var responses = updates
@@ -74,7 +77,7 @@ public class TelegramChatClient(
                 continue;
             }
 
-            var client = GetClientByHash(key.BotTokenHash);
+            var client = GetClient(key.AgentId);
             await SendResponseWithClient(client, key.ChatId,
                 new ChatResponseMessage
                 {
@@ -86,10 +89,10 @@ public class TelegramChatClient(
         }
     }
 
-    public async Task<int> CreateThread(long chatId, string name, string? botTokenHash,
+    public async Task<int> CreateThread(long chatId, string name, string? agentId,
         CancellationToken cancellationToken)
     {
-        var client = GetClientByHash(botTokenHash);
+        var client = GetClient(agentId);
         var icon = await GetIcon(client, cancellationToken);
         var thread = await client.CreateForumTopic(
             chatId,
@@ -109,10 +112,10 @@ public class TelegramChatClient(
         return thread.MessageThreadId;
     }
 
-    public async Task<bool> DoesThreadExist(long chatId, long threadId, string? botTokenHash,
+    public async Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
-        var client = GetClientByHash(botTokenHash);
+        var client = GetClient(agentId);
         var icon = await GetIcon(client, cancellationToken);
         try
         {
@@ -133,15 +136,45 @@ public class TelegramChatClient(
         }
     }
 
-    private ITelegramBotClient GetClientByHash(string? botTokenHash)
+    public async Task<AgentKey> CreateTopicIfNeededAsync(
+        long? chatId,
+        long? threadId,
+        string? agentId,
+        string? topicName,
+        CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(botTokenHash);
-        return _bots.TryGetValue(botTokenHash, out var bot)
-            ? bot.Client
-            : throw new ArgumentException("Invalid bot token hash", nameof(botTokenHash));
+        if (!chatId.HasValue)
+        {
+            throw new ArgumentException("chatId is required for Telegram", nameof(chatId));
+        }
+
+        if (threadId.HasValue)
+        {
+            var exists = await DoesThreadExist(chatId.Value, threadId.Value, agentId, ct);
+            if (exists)
+            {
+                return new AgentKey(chatId.Value, threadId.Value, agentId);
+            }
+        }
+
+        var newThreadId = await CreateThread(chatId.Value, topicName ?? "Scheduled task", agentId, ct);
+        return new AgentKey(chatId.Value, newThreadId, agentId);
     }
 
-    private async Task<List<(ChatPrompt Prompt, ITelegramBotClient Client, string TokenHash)>> PollBotAsync(
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
+    private ITelegramBotClient GetClient(string? agentId)
+    {
+        ArgumentNullException.ThrowIfNull(agentId);
+        return _bots.TryGetValue(agentId, out var bot)
+            ? bot.Client
+            : throw new ArgumentException("Invalid agent ID", nameof(agentId));
+    }
+
+    private async Task<List<(ChatPrompt Prompt, ITelegramBotClient Client, string AgentId)>> PollBotAsync(
         BotContext bot, int timeout, CancellationToken cancellationToken)
     {
         var results = new List<(ChatPrompt, ITelegramBotClient, string)>();
@@ -173,14 +206,14 @@ public class TelegramChatClient(
             results
                 .AddRange(messageUpdates
                     .Select(GetPromptFromUpdate)
-                    .Select(prompt => (prompt, bot.Client, bot.TokenHash)));
+                    .Select(prompt => (prompt, bot.Client, bot.AgentId)));
         }
         catch (Exception ex)
         {
             if (logger.IsEnabled(LogLevel.Error))
             {
-                logger.LogError(ex, "Telegram read messages exception for bot {TokenHash}: {ExceptionMessage}",
-                    bot.TokenHash[..8], ex.Message);
+                logger.LogError(ex, "Telegram read messages exception for bot {AgentId}: {ExceptionMessage}",
+                    bot.AgentId, ex.Message);
             }
         }
 
@@ -280,10 +313,10 @@ public class TelegramChatClient(
         };
     }
 
-    private sealed class BotContext(string tokenHash, ITelegramBotClient client)
+    private sealed class BotContext(string agentId, ITelegramBotClient client)
     {
         public ITelegramBotClient Client { get; } = client;
-        public string TokenHash { get; } = tokenHash;
+        public string AgentId { get; } = agentId;
         public int? Offset { get; set; }
     }
 }

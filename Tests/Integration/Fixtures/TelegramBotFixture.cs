@@ -11,11 +11,12 @@ public class TelegramBotFixture : IAsyncLifetime
 {
     private WireMockServer _server = null!;
     private const string TestBotToken = "123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11";
+    private const string TestAgentId = "test-agent";
 
     private string BaseUrl { get; set; } = null!;
     private static string BotToken => TestBotToken;
     public string[] AllowedUserNames { get; } = ["testuser", "alloweduser"];
-    public string BotTokenHash { get; } = TelegramBotHelper.ComputeTokenHash(TestBotToken);
+    public string AgentId { get; } = TestAgentId;
 
     public Task InitializeAsync()
     {
@@ -31,7 +32,7 @@ public class TelegramBotFixture : IAsyncLifetime
     public TelegramChatClient CreateClient(bool showReasoning = false)
     {
         var logger = NullLogger<TelegramChatClient>.Instance;
-        return new TelegramChatClient([BotToken], AllowedUserNames, showReasoning, logger, BaseUrl);
+        return new TelegramChatClient([(TestAgentId, BotToken)], AllowedUserNames, showReasoning, logger, BaseUrl);
     }
 
     private void SetupGetMe()

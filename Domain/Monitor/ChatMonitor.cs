@@ -21,7 +21,10 @@ public class ChatMonitor(
         try
         {
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
-                .GroupByStreaming(async (x, ct) => await CreateTopicIfNeeded(x, ct), cancellationToken)
+                .GroupByStreaming(
+                    async (x, ct) => await chatMessengerClient.CreateTopicIfNeededAsync(
+                        x.ChatId, x.ThreadId, x.AgentId, x.Prompt, ct),
+                    cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
@@ -40,15 +43,15 @@ public class ChatMonitor(
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentRunResponseUpdate, AiResponse?)> ProcessChatThread(
+    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> ProcessChatThread(
         AgentKey agentKey,
         IAsyncGrouping<AgentKey, ChatPrompt> group,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var firstPrompt = await group.FirstAsync(ct);
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.BotTokenHash);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId);
         var context = threadResolver.Resolve(agentKey);
-        var thread = GetOrRestoreThread(agent, agentKey);
+        var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
         context.RegisterCompletionCallback(group.Complete);
 
@@ -64,19 +67,20 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(AgentRunResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
                         userMessage.SetSenderId(x.Sender);
+                        userMessage.SetTimestamp(DateTimeOffset.UtcNow);
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((
-                                new AgentRunResponseUpdate { Contents = [new StreamCompleteContent()] },
+                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] },
                                 null));
                 }
             })
@@ -88,21 +92,9 @@ public class ChatMonitor(
         }
     }
 
-    private static AgentThread GetOrRestoreThread(DisposableAgent agent, AgentKey agentKey)
+    private static ValueTask<AgentThread> GetOrRestoreThread(
+        DisposableAgent agent, AgentKey agentKey, CancellationToken ct)
     {
-        return agent.DeserializeThread(JsonSerializer.SerializeToElement(agentKey.ToString()));
-    }
-
-    private async Task<AgentKey> CreateTopicIfNeeded(ChatPrompt prompt, CancellationToken cancellationToken)
-    {
-        if (prompt.ThreadId is not null)
-        {
-            return new AgentKey(prompt.ChatId, prompt.ThreadId.Value, prompt.BotTokenHash);
-        }
-
-        var threadId = await chatMessengerClient.CreateThread(
-            prompt.ChatId, prompt.Prompt, prompt.BotTokenHash, cancellationToken);
-
-        return new AgentKey(prompt.ChatId, threadId, prompt.BotTokenHash);
+        return agent.DeserializeThreadAsync(JsonSerializer.SerializeToElement(agentKey.ToString()), null, ct);
     }
 }

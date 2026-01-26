@@ -38,6 +38,7 @@ public static class BufferRebuildUtility
                     {
                         completedTurns.Add(strippedMessage);
                     }
+
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                     needsReasoningSeparator = false;
                 }
@@ -46,7 +47,8 @@ public static class BufferRebuildUtility
                 {
                     Role = "user",
                     Content = msg.Content ?? "",
-                    SenderId = msg.UserMessage.SenderId
+                    SenderId = msg.UserMessage.SenderId,
+                    Timestamp = msg.UserMessage.Timestamp
                 });
                 continue;
             }
@@ -60,6 +62,7 @@ public static class BufferRebuildUtility
                 {
                     completedTurns.Add(strippedMessage);
                 }
+
                 currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                 needsReasoningSeparator = false;
             }
@@ -76,9 +79,11 @@ public static class BufferRebuildUtility
                     {
                         completedTurns.Add(strippedMessage);
                     }
+
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                     needsReasoningSeparator = false;
                 }
+
                 continue;
             }
 

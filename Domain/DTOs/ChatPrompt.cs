@@ -10,5 +10,5 @@ public record ChatPrompt
     public required int? ThreadId { get; init; }
     public required int MessageId { get; init; }
     public required string Sender { get; init; }
-    public string? BotTokenHash { get; init; }
+    public string? AgentId { get; init; }
 }

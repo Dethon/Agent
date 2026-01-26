@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
 using Infrastructure.Clients.ToolApproval;
 using Shouldly;
 using Telegram.Bot;
@@ -104,10 +103,10 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
     public void Factory_CreatesHandlerWithCorrectContext()
     {
         // Arrange
-        var tokenHash = TelegramBotHelper.ComputeTokenHash(TestBotToken);
-        var botsByHash = new Dictionary<string, ITelegramBotClient> { [tokenHash] = _botClient };
-        var factory = new TelegramToolApprovalHandlerFactory(botsByHash);
-        var agentKey = new AgentKey(TestChatId, TestThreadId, tokenHash);
+        const string agentId = "test-agent";
+        var botsByAgentId = new Dictionary<string, ITelegramBotClient> { [agentId] = _botClient };
+        var factory = new TelegramToolApprovalHandlerFactory(botsByAgentId);
+        var agentKey = new AgentKey(TestChatId, TestThreadId, agentId);
 
         // Act
         var handler = factory.Create(agentKey);

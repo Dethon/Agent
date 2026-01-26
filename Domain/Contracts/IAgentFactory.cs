@@ -5,6 +5,6 @@ namespace Domain.Contracts;
 
 public interface IAgentFactory
 {
-    DisposableAgent Create(AgentKey agentKey, string userId, string? botTokenHash);
+    DisposableAgent Create(AgentKey agentKey, string userId, string? agentId);
     IReadOnlyList<AgentInfo> GetAvailableAgents();
 }

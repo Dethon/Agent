@@ -33,6 +33,20 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
         await _connection.DisposeAsync();
     }
 
+    private async Task StartSessionWithTopic(string agentId, string topicId, long chatId, long threadId)
+    {
+        var topic = new TopicMetadata(
+            TopicId: topicId,
+            ChatId: chatId,
+            ThreadId: threadId,
+            AgentId: agentId,
+            Name: "Test Topic",
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+        await _connection.InvokeAsync<bool>("StartSession", agentId, topicId, chatId, threadId);
+    }
+
     [Fact]
     public async Task GetStreamState_EndpointWorks()
     {
@@ -44,7 +58,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         fixture.FakeAgentFactory.EnqueueResponses("Message.");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
@@ -79,7 +93,7 @@ public sealed class StreamResumeIntegrationTests(WebChatServerFixture fixture)
 
         fixture.FakeAgentFactory.EnqueueResponses("Message.");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 

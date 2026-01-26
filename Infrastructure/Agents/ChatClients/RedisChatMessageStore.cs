@@ -9,12 +9,14 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    public static RedisChatMessageStore Create(
-        IThreadStateStore store, ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
+    public static ValueTask<ChatMessageStore> Create(
+        IThreadStateStore store,
+        ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx,
+        CancellationToken ct = default)
     {
         var redisKey = ResolveRedisKey(ctx);
         var chatStore = new RedisChatMessageStore(store, redisKey);
-        return chatStore;
+        return ValueTask.FromResult<ChatMessageStore>(chatStore);
     }
 
     private static string ResolveRedisKey(ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)

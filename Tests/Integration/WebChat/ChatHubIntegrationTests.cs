@@ -24,6 +24,20 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         await _connection.DisposeAsync();
     }
 
+    private async Task StartSessionWithTopic(string agentId, string topicId, long chatId, long threadId)
+    {
+        var topic = new TopicMetadata(
+            TopicId: topicId,
+            ChatId: chatId,
+            ThreadId: threadId,
+            AgentId: agentId,
+            Name: "Test Topic",
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+        await _connection.InvokeAsync<bool>("StartSession", agentId, topicId, chatId, threadId);
+    }
+
     [Fact]
     public async Task GetAgents_ReturnsConfiguredAgents()
     {
@@ -116,7 +130,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         fixture.FakeAgentFactory.EnqueueResponses("Hello", " world", "!");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         var messages = new List<ChatStreamMessage>();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -152,7 +166,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         fixture.FakeAgentFactory.EnqueueResponses("Let me search for that.");
         fixture.FakeAgentFactory.EnqueueResponses("Here are the results.");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         var messages = new List<ChatStreamMessage>();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -186,7 +200,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         fixture.FakeAgentFactory.EnqueueReasoning("Let me think about this...");
         fixture.FakeAgentFactory.EnqueueResponses("The answer is 42.");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         var messages = new List<ChatStreamMessage>();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -223,7 +237,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             fixture.FakeAgentFactory.EnqueueResponses($"Response {i}. ");
         }
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         var messages = new List<ChatStreamMessage>();
         var streamStarted = new TaskCompletionSource();
@@ -272,7 +286,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         fixture.FakeAgentFactory.EnqueueResponses("Response.");
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         // Consume the stream to completion
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -300,16 +314,25 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     {
         // Arrange
         var topicId = Guid.NewGuid().ToString();
-        var chatId1 = Random.Shared.NextInt64(10000, 99999);
-        var threadId1 = Random.Shared.NextInt64(20000, 29999);
-        var chatId2 = Random.Shared.NextInt64(30000, 39999);
-        var threadId2 = Random.Shared.NextInt64(40000, 49999);
+        var chatId = Random.Shared.NextInt64(10000, 99999);
+        var threadId = Random.Shared.NextInt64(20000, 29999);
 
-        // Act - Start session twice with same topicId
+        // Save topic to Redis first (required by ChatMonitor)
+        var topic = new TopicMetadata(
+            TopicId: topicId,
+            ChatId: chatId,
+            ThreadId: threadId,
+            AgentId: "test-agent",
+            Name: "Test Topic",
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+
+        // Act - Start session twice with same topicId (simulates reconnection)
         var result1 = await _connection.InvokeAsync<bool>(
-            "StartSession", "test-agent", topicId, chatId1, threadId1);
+            "StartSession", "test-agent", topicId, chatId, threadId);
         var result2 = await _connection.InvokeAsync<bool>(
-            "StartSession", "test-agent", topicId, chatId2, threadId2);
+            "StartSession", "test-agent", topicId, chatId, threadId);
 
         // Assert - Both should succeed (second overwrites first)
         result1.ShouldBeTrue();
@@ -345,7 +368,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
 
         // Start session first, then enqueue error right before sending
         // This minimizes window for other tests to interfere with the queue
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         // Enqueue error right before sending to minimize race conditions
         fixture.FakeAgentFactory.EnqueueError("Simulated agent failure");
@@ -403,7 +426,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
                 fixture.FakeAgentFactory.EnqueueResponses($"Message {i}. ");
             }
 
-            await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+            await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
             var messages1 = new List<ChatStreamMessage>();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -473,7 +496,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             fixture.FakeAgentFactory.EnqueueResponses($"Content chunk {i}. ");
         }
 
-        await _connection.InvokeAsync<bool>("StartSession", "test-agent", topicId, chatId, threadId);
+        await StartSessionWithTopic("test-agent", topicId, chatId, threadId);
 
         var receivedMessages = new List<ChatStreamMessage>();
         StreamState? capturedStreamState = null;

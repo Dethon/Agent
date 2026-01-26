@@ -14,4 +14,5 @@ public record AgentDefinition
     public string? CustomInstructions { get; init; }
     public LlmConfiguration? LlmOverrides { get; init; }
     public string? TelegramBotToken { get; init; }
+    public string[] EnabledFeatures { get; init; } = [];
 }

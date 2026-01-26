@@ -82,4 +82,83 @@ public class ChatMessageSerializationTests
         // Assert
         msg.AdditionalProperties.ShouldBeNull();
     }
+
+    [Fact]
+    public void SetTimestamp_StoresValueInAdditionalProperties()
+    {
+        // Arrange
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        var timestamp = new DateTimeOffset(2024, 1, 15, 10, 30, 0, TimeSpan.FromHours(2));
+
+        // Act
+        msg.SetTimestamp(timestamp);
+
+        // Assert
+        msg.AdditionalProperties.ShouldNotBeNull();
+        msg.AdditionalProperties["Timestamp"].ShouldBe(timestamp);
+    }
+
+    [Fact]
+    public void GetTimestamp_ReturnsDateTimeOffsetValue()
+    {
+        // Arrange
+        var timestamp = new DateTimeOffset(2024, 1, 15, 10, 30, 0, TimeSpan.FromHours(2));
+        var msg = new ChatMessage(ChatRole.User, "Hello")
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                ["Timestamp"] = timestamp
+            }
+        };
+
+        // Act
+        var result = msg.GetTimestamp();
+
+        // Assert
+        result.ShouldBe(timestamp);
+    }
+
+    [Fact]
+    public void GetTimestamp_ReturnsValueAfterJsonRoundtrip()
+    {
+        // Arrange - simulate what happens when ChatMessage is stored in Redis
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        var timestamp = new DateTimeOffset(2024, 1, 15, 10, 30, 0, TimeSpan.FromHours(2));
+        msg.SetTimestamp(timestamp);
+
+        // Act - serialize and deserialize (simulates Redis storage)
+        var json = JsonSerializer.Serialize(msg);
+        var deserialized = JsonSerializer.Deserialize<ChatMessage>(json);
+
+        // Assert - GetTimestamp should handle JsonElement correctly
+        deserialized.ShouldNotBeNull();
+        var result = deserialized.GetTimestamp();
+        result.ShouldBe(timestamp);
+    }
+
+    [Fact]
+    public void GetTimestamp_ReturnsNullWhenNotSet()
+    {
+        // Arrange
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        // Act
+        var result = msg.GetTimestamp();
+
+        // Assert
+        result.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetTimestamp_DoesNothingWhenNull()
+    {
+        // Arrange
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        // Act
+        msg.SetTimestamp(null);
+
+        // Assert
+        msg.AdditionalProperties.ShouldBeNull();
+    }
 }

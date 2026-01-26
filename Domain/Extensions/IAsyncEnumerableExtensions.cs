@@ -187,12 +187,12 @@ public static class IAsyncEnumerableExtensions
         }
     }
 
-    public static async IAsyncEnumerable<AgentRunResponseUpdate> WithErrorHandling(
-        this IAsyncEnumerable<AgentRunResponseUpdate> source,
+    public static async IAsyncEnumerable<AgentResponseUpdate> WithErrorHandling(
+        this IAsyncEnumerable<AgentResponseUpdate> source,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var enumerator = source.GetAsyncEnumerator(ct);
-        AgentRunResponseUpdate? errorResponse = null;
+        AgentResponseUpdate? errorResponse = null;
         try
         {
             while (true)
@@ -208,7 +208,7 @@ public static class IAsyncEnumerableExtensions
                 }
                 catch (Exception ex)
                 {
-                    errorResponse = new AgentRunResponseUpdate
+                    errorResponse = new AgentResponseUpdate
                     {
                         Contents = [new ErrorContent($"An error occurred: {ex.Message}")]
                     };

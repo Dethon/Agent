@@ -29,8 +29,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -41,6 +41,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Test Description",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -59,8 +60,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -71,6 +72,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Tool Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -85,8 +87,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -97,6 +99,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Prompt Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -116,8 +119,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         fixture.DownloadClient.SetDownload(101, DownloadState.InProgress, 0.5);
 
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -128,6 +131,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Subscription Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert - The session should have synced resources
@@ -145,8 +149,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         fixture.DownloadClient.SetDownload(201, DownloadState.InProgress, 0.1);
 
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var session = await ThreadSession.CreateAsync(
@@ -156,6 +160,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Notification Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Subscribe to resources
@@ -179,8 +184,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -190,6 +195,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Dispose Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         var clientCount = session.ClientManager.Clients.Count;
@@ -205,8 +211,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // This test verifies the retry logic exists - actual retry behavior
         // is difficult to test without network manipulation
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act - Connect to valid endpoint should succeed
@@ -217,6 +223,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Retry Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
@@ -230,8 +237,8 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     {
         // Arrange - Use the same endpoint twice to verify multiple connections
         using var chatClient = CreateChatClient();
-        var agent = chatClient.CreateAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = agent.GetNewThread();
+        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
+        var thread = await agent.GetNewThreadAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -242,6 +249,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             "Multi Endpoint Test",
             agent,
             thread,
+            [],
             cts.Token);
 
         // Assert
