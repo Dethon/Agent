@@ -11,7 +11,7 @@ public class ScheduleListTool(IScheduleStore store)
 
     public const string Description = """
         Lists all scheduled agent tasks. Shows schedule ID, agent name, prompt preview,
-        schedule timing (cron or one-shot), next run time, and target channel.
+        schedule timing (cron or one-shot), next run time, and optional user context.
         """;
 
     [Description(Description)]
@@ -27,7 +27,7 @@ public class ScheduleListTool(IScheduleStore store)
                 s.CronExpression,
                 s.RunAt,
                 s.NextRunAt,
-                s.Target.Channel))
+                s.UserId))
             .ToList();
 
         return new JsonObject
@@ -49,8 +49,7 @@ public class ScheduleListTool(IScheduleStore store)
         {
             ["id"] = summary.Id,
             ["agentName"] = summary.AgentName,
-            ["prompt"] = summary.Prompt,
-            ["channel"] = summary.Channel
+            ["prompt"] = summary.Prompt
         };
 
         if (summary.CronExpression is not null)
@@ -66,6 +65,11 @@ public class ScheduleListTool(IScheduleStore store)
         if (summary.NextRunAt.HasValue)
         {
             node["nextRunAt"] = summary.NextRunAt.Value.ToString("O");
+        }
+
+        if (summary.UserId is not null)
+        {
+            node["userId"] = summary.UserId;
         }
 
         return node;
