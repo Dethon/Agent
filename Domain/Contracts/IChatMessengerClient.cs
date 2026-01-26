@@ -6,6 +6,8 @@ namespace Domain.Contracts;
 
 public interface IChatMessengerClient
 {
+    bool SupportsScheduledNotifications { get; }
+
     IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken);
 
     Task ProcessResponseStreamAsync(

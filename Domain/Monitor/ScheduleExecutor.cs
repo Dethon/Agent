@@ -20,58 +20,78 @@ public class ScheduleExecutor(
 {
     public async Task ProcessSchedulesAsync(CancellationToken ct)
     {
-        var responses = scheduleChannel.Reader
-            .ReadAllAsync(ct)
-            .Select(schedule => ProcessScheduleAsync(schedule, ct))
-            .Merge(ct);
-
-        await messengerClient.ProcessResponseStreamAsync(responses, ct);
+        await foreach (var schedule in scheduleChannel.Reader.ReadAllAsync(ct))
+        {
+            await ProcessScheduleAsync(schedule, ct);
+        }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> ProcessScheduleAsync(
-        Schedule schedule,
-        [EnumeratorCancellation] CancellationToken ct)
+    private async Task ProcessScheduleAsync(Schedule schedule, CancellationToken ct)
     {
         AgentKey agentKey;
 
-        try
+        if (messengerClient.SupportsScheduledNotifications)
         {
-            agentKey = await messengerClient.CreateTopicIfNeededAsync(
-                schedule.Target.ChatId,
-                schedule.Target.ThreadId,
-                schedule.Target.AgentId,
-                "Scheduled task",
-                ct);
+            try
+            {
+                agentKey = await messengerClient.CreateTopicIfNeededAsync(
+                    chatId: null,
+                    threadId: null,
+                    agentId: schedule.Agent.Id,
+                    topicName: "Scheduled task",
+                    ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Error creating topic for schedule {ScheduleId}", schedule.Id);
+                return;
+            }
+
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
+                    schedule.Id,
+                    schedule.Agent.Name,
+                    agentKey.ThreadId);
+            }
+
+            var responses = ExecuteScheduleCore(schedule, agentKey, ct);
+            await messengerClient.ProcessResponseStreamAsync(
+                responses.Select(r => (agentKey, r.Update, r.AiResponse)), ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        else
         {
-            logger.LogError(ex, "Error creating topic for schedule {ScheduleId}", schedule.Id);
-            yield break;
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "Executing schedule {ScheduleId} for agent {AgentName} silently (no notification support)",
+                    schedule.Id,
+                    schedule.Agent.Name);
+            }
+
+            agentKey = new AgentKey(0, 0, schedule.Agent.Id);
+
+            await foreach (var _ in ExecuteScheduleCore(schedule, agentKey, ct))
+            {
+                // Consume the stream silently
+            }
         }
 
-        if (logger.IsEnabled(LogLevel.Information))
+        if (schedule.CronExpression is null)
         {
-            logger.LogInformation(
-                "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
-                schedule.Id,
-                schedule.Agent.Name,
-                agentKey.ThreadId);
-        }
-
-        await foreach (var item in ExecuteScheduleCore(schedule, agentKey, ct))
-        {
-            yield return item;
+            await store.DeleteAsync(schedule.Id, ct);
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> ExecuteScheduleCore(
+    private async IAsyncEnumerable<(AgentResponseUpdate Update, AiResponse? AiResponse)> ExecuteScheduleCore(
         Schedule schedule,
         AgentKey agentKey,
         [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.CreateFromDefinition(
             agentKey,
-            schedule.Target.UserId ?? "scheduler",
+            schedule.UserId ?? "scheduler",
             schedule.Agent);
 
         var thread = await agent.DeserializeThreadAsync(
@@ -87,14 +107,9 @@ public class ScheduleExecutor(
                            .ToUpdateAiResponsePairs()
                            .WithCancellation(ct))
         {
-            yield return (agentKey, update, aiResponse);
+            yield return (update, aiResponse);
         }
 
-        yield return (agentKey, new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null);
-
-        if (schedule.CronExpression is null)
-        {
-            await store.DeleteAsync(schedule.Id, ct);
-        }
+        yield return (new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null);
     }
 }

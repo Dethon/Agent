@@ -15,6 +15,8 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private readonly IThreadStateStore? _threadStateStore;
     private bool _historyRestored;
 
+    public bool SupportsScheduledNotifications => false;
+
     public CliChatMessengerClient(
         ICliChatMessageRouter router,
         Action? onShutdownRequested = null,

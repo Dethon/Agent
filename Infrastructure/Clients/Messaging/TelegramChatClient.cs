@@ -27,6 +27,8 @@ public class TelegramChatClient(
 
     private string? _topicIconId;
 
+    public bool SupportsScheduledNotifications => false;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {

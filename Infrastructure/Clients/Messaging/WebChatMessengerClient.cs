@@ -25,6 +25,8 @@ public sealed class WebChatMessengerClient(
     private int _messageIdCounter;
     private bool _disposed;
 
+    public bool SupportsScheduledNotifications => true;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout,
         [EnumeratorCancellation] CancellationToken cancellationToken)

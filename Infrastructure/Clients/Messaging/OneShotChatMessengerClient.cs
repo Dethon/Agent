@@ -19,6 +19,8 @@ public sealed class OneShotChatMessengerClient(
     private readonly StringBuilder _reasoningBuilder = new();
     private readonly Lock _lock = new();
 
+    public bool SupportsScheduledNotifications => false;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
