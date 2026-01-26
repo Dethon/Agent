@@ -99,6 +99,11 @@ public sealed class OneShotChatMessengerClient(
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
     private void FlushOutput()
     {
         if (_reasoningBuilder.Length > 0)

@@ -110,6 +110,11 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
     public void Dispose()
     {
         _router.Dispose();

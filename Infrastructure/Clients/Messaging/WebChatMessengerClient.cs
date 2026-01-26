@@ -182,6 +182,23 @@ public sealed class WebChatMessengerClient(
 
     private static long GenerateChatId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+    public async Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        var topicId = sessionManager.GetTopicIdByChatId(agentKey.ChatId);
+        if (topicId is null)
+        {
+            logger.LogWarning("StartScheduledStreamAsync: topicId not found for chatId={ChatId}", agentKey.ChatId);
+            return;
+        }
+
+        streamManager.GetOrCreateStream(topicId, "Scheduled task", null, ct);
+        streamManager.TryIncrementPending(topicId);
+
+        await hubNotifier.NotifyStreamChangedAsync(
+                new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+    }
+
     public bool StartSession(string topicId, string agentId, long chatId, long threadId)
     {
         return sessionManager.StartSession(topicId, agentId, chatId, threadId);

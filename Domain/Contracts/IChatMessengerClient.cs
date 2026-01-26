@@ -22,4 +22,6 @@ public interface IChatMessengerClient
         string? agentId,
         string? topicName,
         CancellationToken ct = default);
+
+    Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default);
 }

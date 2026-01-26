@@ -161,6 +161,11 @@ public class TelegramChatClient(
         return new AgentKey(chatId.Value, newThreadId, agentId);
     }
 
+    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    {
+        return Task.CompletedTask;
+    }
+
     private ITelegramBotClient GetClient(string? agentId)
     {
         ArgumentNullException.ThrowIfNull(agentId);

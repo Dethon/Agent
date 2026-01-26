@@ -1,5 +1,4 @@
 using Domain.DTOs.WebChat;
-using WebChat.Client.Services.Utilities;
 
 namespace WebChat.Client.Models;
 
@@ -19,8 +18,8 @@ public class StoredTopic
         return new StoredTopic
         {
             TopicId = metadata.TopicId,
-            ChatId = TopicIdGenerator.GetChatIdForTopic(metadata.TopicId),
-            ThreadId = TopicIdGenerator.GetThreadIdForTopic(metadata.TopicId),
+            ChatId = metadata.ChatId,
+            ThreadId = metadata.ThreadId,
             AgentId = metadata.AgentId,
             Name = metadata.Name,
             CreatedAt = metadata.CreatedAt.UtcDateTime,
