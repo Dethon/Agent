@@ -114,14 +114,9 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 
         _ = transaction.StringSetAsync(ScheduleKey(id), json);
 
-        if (nextRunAt.HasValue)
-        {
-            _ = transaction.SortedSetAddAsync(DueSetKey, id, nextRunAt.Value.Ticks);
-        }
-        else
-        {
-            _ = transaction.SortedSetRemoveAsync(DueSetKey, id);
-        }
+        _ = nextRunAt.HasValue
+            ? transaction.SortedSetAddAsync(DueSetKey, id, nextRunAt.Value.Ticks)
+            : transaction.SortedSetRemoveAsync(DueSetKey, id);
 
         await transaction.ExecuteAsync();
     }
