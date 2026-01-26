@@ -22,7 +22,7 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_MissingAgentId_ReturnsError()
     {
-        var result = await _tool.TestRun("", "prompt", "0 9 * * *", null, "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("", "prompt", "0 9 * * *", null, null);
 
         result["error"]?.GetValue<string>().ShouldBe("agentId is required");
     }
@@ -30,7 +30,7 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_NeitherCronNorRunAt_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", null, null, "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", null, null, null);
 
         result["error"]?.GetValue<string>().ShouldBe("Either cronExpression or runAt must be provided");
     }
@@ -38,8 +38,7 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_BothCronAndRunAt_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), "telegram", 123,
-            null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), null);
 
         result["error"]?.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
     }
@@ -49,7 +48,7 @@ public class ScheduleCreateToolTests
     {
         _cronValidator.Setup(v => v.IsValid("invalid")).Returns(false);
 
-        var result = await _tool.TestRun("jack", "prompt", "invalid", null, "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "prompt", "invalid", null, null);
 
         result["error"]?.GetValue<string>().ShouldContain("Invalid cron expression");
     }
@@ -57,19 +56,9 @@ public class ScheduleCreateToolTests
     [Fact]
     public async Task Run_RunAtInPast_ReturnsError()
     {
-        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), "telegram", 123, null,
-            null, null);
+        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), null);
 
         result["error"]?.GetValue<string>().ShouldBe("runAt must be in the future");
-    }
-
-    [Fact]
-    public async Task Run_InvalidChannel_ReturnsError()
-    {
-        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddDays(1), "invalid", 123, null, null,
-            null);
-
-        result["error"]?.GetValue<string>().ShouldBe("channel must be 'telegram' or 'webchat'");
     }
 
     [Fact]
@@ -77,8 +66,7 @@ public class ScheduleCreateToolTests
     {
         _agentProvider.Setup(p => p.GetById("unknown")).Returns((AgentDefinition?)null);
 
-        var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), "telegram", 123, null,
-            null, null);
+        var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), null);
 
         result["error"]?.GetValue<string>().ShouldBe("Agent 'unknown' not found");
     }
@@ -98,14 +86,15 @@ public class ScheduleCreateToolTests
             .ReturnsAsync((Schedule s, CancellationToken _) => s);
 
         var runAt = DateTime.UtcNow.AddDays(1);
-        var result = await _tool.TestRun("jack", "test prompt", null, runAt, "telegram", 123, null, null, null);
+        var result = await _tool.TestRun("jack", "test prompt", null, runAt, null);
 
         result["status"]?.GetValue<string>().ShouldBe("created");
         result["agentName"]?.GetValue<string>().ShouldBe("Jack");
         _store.Verify(s => s.CreateAsync(It.Is<Schedule>(sch =>
             sch.Agent.Id == "jack" &&
             sch.Prompt == "test prompt" &&
-            sch.RunAt == runAt), It.IsAny<CancellationToken>()), Times.Once);
+            sch.RunAt == runAt &&
+            sch.UserId == null), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -125,13 +114,13 @@ public class ScheduleCreateToolTests
         _store.Setup(s => s.CreateAsync(It.IsAny<Schedule>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((Schedule s, CancellationToken _) => s);
 
-        var result =
-            await _tool.TestRun("jack", "test prompt", "0 9 * * *", null, "webchat", null, null, "user1", null);
+        var result = await _tool.TestRun("jack", "test prompt", "0 9 * * *", null, "user1");
 
         result["status"]?.GetValue<string>().ShouldBe("created");
         _store.Verify(s => s.CreateAsync(It.Is<Schedule>(sch =>
             sch.CronExpression == "0 9 * * *" &&
-            sch.NextRunAt == nextRun), It.IsAny<CancellationToken>()), Times.Once);
+            sch.NextRunAt == nextRun &&
+            sch.UserId == "user1"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private class TestableScheduleCreateTool(
@@ -145,13 +134,9 @@ public class ScheduleCreateToolTests
             string prompt,
             string? cronExpression,
             DateTime? runAt,
-            string channel,
-            long? chatId,
-            long? threadId,
-            string? userId,
-            string? targetAgentId)
+            string? userId)
         {
-            return RunAsync(agentId, prompt, cronExpression, runAt, channel, chatId, threadId, userId, targetAgentId);
+            return RunAsync(agentId, prompt, cronExpression, runAt, userId);
         }
     }
 }

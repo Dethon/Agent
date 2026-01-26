@@ -13,18 +13,18 @@ public class ScheduleCreateTool(
     public const string Name = "schedule_create";
 
     public const string Description = """
-                                         Creates a scheduled agent task. The specified agent will run with the given prompt
-                                         at the scheduled time(s).
+                                      Creates a scheduled agent task. The specified agent will run with the given prompt
+                                      at the scheduled time(s).
 
-                                         For recurring schedules, use cronExpression (standard 5-field cron format):
-                                         - "0 9 * * *" = every day at 9:00 AM
-                                         - "0 */2 * * *" = every 2 hours
-                                         - "30 14 * * 1-5" = weekdays at 2:30 PM
+                                      For recurring schedules, use cronExpression (standard 5-field cron format):
+                                      - "0 9 * * *" = every day at 9:00 AM
+                                      - "0 */2 * * *" = every 2 hours
+                                      - "30 14 * * 1-5" = weekdays at 2:30 PM
 
-                                         For one-time schedules, use runAt with a UTC datetime.
+                                      For one-time schedules, use runAt with a UTC datetime.
 
-                                         The channel specifies where responses will be delivered (telegram or webchat).
-                                         """;
+                                      Results are delivered to WebChat when available.
+                                      """;
 
     [Description(Description)]
     public async Task<JsonNode> RunAsync(
@@ -32,14 +32,10 @@ public class ScheduleCreateTool(
         [Description("The prompt/task to execute")] string prompt,
         [Description("Cron expression for recurring schedules (5-field format)")] string? cronExpression,
         [Description("ISO 8601 datetime for one-time execution (UTC)")] DateTime? runAt,
-        [Description("Channel to send results: 'telegram' or 'webchat'")] string channel,
-        [Description("Chat ID for the target conversation")] long? chatId,
-        [Description("Thread ID within the chat")] long? threadId,
-        [Description("User ID for WebChat channel")] string? userId,
-        [Description("Target agent ID for WebChat routing")] string? targetAgentId,
+        [Description("Optional user context for the prompt")] string? userId,
         CancellationToken ct = default)
     {
-        var validationError = Validate(agentId, cronExpression, runAt, channel);
+        var validationError = Validate(agentId, cronExpression, runAt);
         if (validationError is not null)
         {
             return validationError;
@@ -60,14 +56,7 @@ public class ScheduleCreateTool(
             Prompt = prompt,
             CronExpression = cronExpression,
             RunAt = runAt,
-            Target = new ScheduleTarget
-            {
-                Channel = channel,
-                ChatId = chatId,
-                ThreadId = threadId,
-                UserId = userId,
-                AgentId = targetAgentId
-            },
+            UserId = userId,
             CreatedAt = DateTime.UtcNow,
             NextRunAt = nextRunAt
         };
@@ -83,7 +72,7 @@ public class ScheduleCreateTool(
         };
     }
 
-    private JsonObject? Validate(string agentId, string? cronExpression, DateTime? runAt, string channel)
+    private JsonObject? Validate(string agentId, string? cronExpression, DateTime? runAt)
     {
         if (string.IsNullOrWhiteSpace(agentId))
         {
@@ -108,11 +97,6 @@ public class ScheduleCreateTool(
         if (runAt is not null && runAt <= DateTime.UtcNow)
         {
             return new JsonObject { ["error"] = "runAt must be in the future" };
-        }
-
-        if (channel is not "telegram" and not "webchat")
-        {
-            return new JsonObject { ["error"] = "channel must be 'telegram' or 'webchat'" };
         }
 
         return null;
