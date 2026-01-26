@@ -56,7 +56,7 @@ public class ScheduleExecutor(
                     agentKey.ThreadId);
             }
 
-            var responses = ExecuteScheduleCore(schedule, agentKey, ct);
+            var responses = ExecuteScheduleCore(schedule, agentKey, schedule.UserId, ct);
             await messengerClient.ProcessResponseStreamAsync(
                 responses.Select(r => (agentKey, r.Update, r.AiResponse)), ct);
         }
@@ -72,7 +72,7 @@ public class ScheduleExecutor(
 
             agentKey = new AgentKey(0, 0, schedule.Agent.Id);
 
-            await foreach (var _ in ExecuteScheduleCore(schedule, agentKey, ct))
+            await foreach (var _ in ExecuteScheduleCore(schedule, agentKey, schedule.UserId, ct))
             {
                 // Consume the stream silently
             }
@@ -87,6 +87,7 @@ public class ScheduleExecutor(
     private async IAsyncEnumerable<(AgentResponseUpdate Update, AiResponse? AiResponse)> ExecuteScheduleCore(
         Schedule schedule,
         AgentKey agentKey,
+        string? userId,
         [EnumeratorCancellation] CancellationToken ct)
     {
         await using var agent = agentFactory.CreateFromDefinition(
@@ -100,6 +101,7 @@ public class ScheduleExecutor(
             ct);
 
         var userMessage = new ChatMessage(ChatRole.User, schedule.Prompt);
+        userMessage.SetSenderId(userId);
 
         await foreach (var (update, aiResponse) in agent
                            .RunStreamingAsync([userMessage], thread, cancellationToken: ct)
