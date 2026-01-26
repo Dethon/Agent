@@ -9,6 +9,7 @@ public record ChatMessageModel
     public bool IsError { get; init; }
 
     public string? SenderId { get; init; }
+    public DateTimeOffset? Timestamp { get; init; }
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||

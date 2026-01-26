@@ -11,7 +11,7 @@ public sealed class ChatStreamMessageTests
         var message = new ChatStreamMessage
         {
             Content = "Hello",
-            UserMessage = new UserMessageInfo("alice")
+            UserMessage = new UserMessageInfo("alice", null)
         };
 
         message.UserMessage.ShouldNotBeNull();

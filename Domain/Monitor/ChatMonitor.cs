@@ -74,6 +74,7 @@ public class ChatMonitor(
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
                         userMessage.SetSenderId(x.Sender);
+                        userMessage.SetTimestamp(DateTimeOffset.UtcNow);
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)

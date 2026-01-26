@@ -65,7 +65,8 @@ public sealed class TopicSelectionEffect : IDisposable
                 {
                     Role = h.Role,
                     Content = h.Content,
-                    SenderId = h.SenderId
+                    SenderId = h.SenderId,
+                    Timestamp = h.Timestamp
                 }).ToList();
                 _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
             }

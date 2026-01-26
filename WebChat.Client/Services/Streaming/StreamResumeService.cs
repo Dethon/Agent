@@ -53,7 +53,8 @@ public sealed class StreamResumeService(
                 {
                     Role = h.Role,
                     Content = h.Content,
-                    SenderId = h.SenderId
+                    SenderId = h.SenderId,
+                    Timestamp = h.Timestamp
                 }).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }

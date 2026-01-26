@@ -70,7 +70,8 @@ public sealed class ChatHub(
             .Select(m => new ChatHistoryMessage(
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
-                m.GetSenderId()))
+                m.GetSenderId(),
+                m.GetTimestamp()))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }

@@ -149,7 +149,7 @@ public sealed class BufferRebuildUtilityTests
     {
         var buffer = new List<ChatStreamMessage>
         {
-            new() { Content = "Hello from user", UserMessage = new UserMessageInfo("alice") },
+            new() { Content = "Hello from user", UserMessage = new UserMessageInfo("alice", null) },
             new() { Content = "Hi there!", MessageId = "msg-1" }
         };
 
@@ -167,10 +167,10 @@ public sealed class BufferRebuildUtilityTests
     {
         var buffer = new List<ChatStreamMessage>
         {
-            new() { Content = "User msg 1", UserMessage = new UserMessageInfo("alice"), SequenceNumber = 1 },
+            new() { Content = "User msg 1", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
             new() { Content = "Assistant response 1", MessageId = "msg-1", SequenceNumber = 2 },
             new() { IsComplete = true, MessageId = "msg-1", SequenceNumber = 3 },
-            new() { Content = "User msg 2", UserMessage = new UserMessageInfo("bob"), SequenceNumber = 4 },
+            new() { Content = "User msg 2", UserMessage = new UserMessageInfo("bob", null), SequenceNumber = 4 },
             new() { Content = "Assistant response 2", MessageId = "msg-2", SequenceNumber = 5 }
         };
 
@@ -191,7 +191,7 @@ public sealed class BufferRebuildUtilityTests
     {
         var buffer = new List<ChatStreamMessage>
         {
-            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice") }
+            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
         };
         var historyContent = new HashSet<string> { "Hello" };
 

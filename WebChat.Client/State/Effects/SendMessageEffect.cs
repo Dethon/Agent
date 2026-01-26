@@ -142,7 +142,8 @@ public sealed class SendMessageEffect : IDisposable
         {
             Role = "user",
             Content = action.Message,
-            SenderId = currentUser?.Id
+            SenderId = currentUser?.Id,
+            Timestamp = DateTimeOffset.UtcNow
         }));
 
         // Delegate to streaming service (handles stream reuse internally)

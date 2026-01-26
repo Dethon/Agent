@@ -243,16 +243,17 @@ public sealed class WebChatMessengerClient(
         streamManager.TryIncrementPending(topicId);
 
         // Write user message to buffer for other browsers to see on refresh
+        var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(sender)
+            UserMessage = new UserMessageInfo(sender, timestamp)
         };
         await streamManager.WriteMessageAsync(topicId, userMessage, cancellationToken);
 
         // Notify other browsers about the user message
         await hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender, correlationId), cancellationToken)
+                new UserMessageNotification(topicId, message, sender, timestamp, correlationId), cancellationToken)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         // Only notify StreamChanged.Started for new streams
@@ -297,10 +298,11 @@ public sealed class WebChatMessengerClient(
         }
 
         // Write user message to buffer for other browsers to see on refresh
+        var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(sender)
+            UserMessage = new UserMessageInfo(sender, timestamp)
         };
         // Fire and forget - don't block the enqueue
         _ = streamManager.WriteMessageAsync(topicId, userMessage, CancellationToken.None)
@@ -308,7 +310,7 @@ public sealed class WebChatMessengerClient(
 
         // Notify other browsers about the user message
         _ = hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender, correlationId), CancellationToken.None)
+                new UserMessageNotification(topicId, message, sender, timestamp, correlationId), CancellationToken.None)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);

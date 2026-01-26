@@ -13,7 +13,7 @@ public sealed class HubNotifierTests
         // Arrange
         var mockSender = new Mock<IHubNotificationSender>();
         var notifier = new HubNotifier(mockSender.Object);
-        var notification = new UserMessageNotification("topic-1", "Hello", "alice");
+        var notification = new UserMessageNotification("topic-1", "Hello", "alice", DateTimeOffset.UtcNow);
 
         // Act
         await notifier.NotifyUserMessageAsync(notification);

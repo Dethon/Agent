@@ -6,6 +6,7 @@ namespace Domain.Extensions;
 public static class ChatMessageExtensions
 {
     private const string SenderIdKey = "SenderId";
+    private const string TimestampKey = "Timestamp";
 
     extension(ChatMessage message)
     {
@@ -29,6 +30,30 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SenderIdKey] = senderId;
+        }
+
+        public DateTimeOffset? GetTimestamp()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(TimestampKey);
+            return value switch
+            {
+                DateTimeOffset dto => dto,
+                string s when DateTimeOffset.TryParse(s, out var parsed) => parsed,
+                JsonElement { ValueKind: JsonValueKind.String } je
+                    when DateTimeOffset.TryParse(je.GetString(), out var parsed) => parsed,
+                _ => null
+            };
+        }
+
+        public void SetTimestamp(DateTimeOffset? timestamp)
+        {
+            if (timestamp is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[TimestampKey] = timestamp.Value;
         }
     }
 }

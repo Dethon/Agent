@@ -104,6 +104,7 @@ public class ScheduleExecutor(
 
         var userMessage = new ChatMessage(ChatRole.User, schedule.Prompt);
         userMessage.SetSenderId(userId);
+        userMessage.SetTimestamp(DateTimeOffset.UtcNow);
 
         await foreach (var (update, aiResponse) in agent
                            .RunStreamingAsync([userMessage], thread, cancellationToken: ct)
