@@ -212,11 +212,7 @@ public class RedisScheduleStoreTests(RedisFixture fixture) : IClassFixture<Redis
             },
             Prompt = "Test prompt",
             CronExpression = "0 9 * * *",
-            Target = new ScheduleTarget
-            {
-                Channel = "telegram",
-                ChatId = 12345
-            },
+            UserId = "testuser",
             CreatedAt = DateTime.UtcNow,
             NextRunAt = DateTime.UtcNow.AddHours(1)
         };
