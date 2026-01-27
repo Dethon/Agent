@@ -1,4 +1,5 @@
-using WebChat.Extensions;
+using Infrastructure.Extensions;
+using JetBrains.Annotations;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +21,8 @@ app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
 
+[UsedImplicitly]
 record UserConfig(string Id, string AvatarUrl);
 
+[UsedImplicitly]
 record AppConfig(string AgentUrl, UserConfig[] Users);

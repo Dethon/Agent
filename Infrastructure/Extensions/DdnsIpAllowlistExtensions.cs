@@ -1,6 +1,8 @@
-using WebChat.Middleware;
+using Infrastructure.Middleware;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 
-namespace WebChat.Extensions;
+namespace Infrastructure.Extensions;
 
 public static class DdnsIpAllowlistExtensions
 {

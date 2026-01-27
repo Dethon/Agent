@@ -259,6 +259,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
     networks:
       - jackbot
     depends_on:

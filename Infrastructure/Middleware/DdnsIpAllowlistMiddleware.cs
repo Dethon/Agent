@@ -1,6 +1,7 @@
 using System.Net;
+using Microsoft.AspNetCore.Http;
 
-namespace WebChat.Middleware;
+namespace Infrastructure.Middleware;
 
 public sealed class DdnsIpAllowlistMiddleware(RequestDelegate next, string ddnsHostname)
 {
