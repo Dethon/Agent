@@ -135,7 +135,8 @@ public sealed class ReconnectionEffectTests : IDisposable
         // Connection drops completely (goes to Disconnected, not Reconnecting)
         _dispatcher.Dispatch(new ConnectionClosed(null));
 
-        // Reconnects
+        // Reconnects (goes through Connecting state first)
+        _dispatcher.Dispatch(new ConnectionConnecting());
         _dispatcher.Dispatch(new ConnectionConnected());
 
         await Task.Delay(50);
