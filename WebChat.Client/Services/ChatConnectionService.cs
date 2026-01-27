@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -6,7 +7,8 @@ namespace WebChat.Client.Services;
 
 public sealed class ChatConnectionService(
     ConfigService configService,
-    ConnectionEventDispatcher connectionEventDispatcher) : IChatConnectionService
+    ConnectionEventDispatcher connectionEventDispatcher,
+    NavigationManager navigationManager) : IChatConnectionService
 {
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
@@ -26,8 +28,13 @@ public sealed class ChatConnectionService(
         }
 
         var config = await configService.GetConfigAsync();
-        var agentUrl = config.AgentUrl ?? "http://localhost:5000";
-        var hubUrl = $"{agentUrl.TrimEnd('/')}/hubs/chat";
+        var isHttps = navigationManager.BaseUri.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        // When on HTTPS (through reverse proxy), use same origin to go through the proxy
+        // This avoids mixed content issues and allows the proxy to route SignalR properly
+        var hubUrl = string.IsNullOrEmpty(config.AgentUrl) || isHttps
+            ? navigationManager.ToAbsoluteUri("/hubs/chat").ToString()
+            : $"{config.AgentUrl.TrimEnd('/')}/hubs/chat";
 
         HubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl)

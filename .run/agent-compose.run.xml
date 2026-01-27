@@ -15,6 +15,7 @@
             <option value="qbittorrent" />
             <option value="jackett" />
             <option value="redis" />
+              <option value="caddy"/>
           </list>
         </option>
         <option name="sourceFilePath" value="DockerCompose/docker-compose.yml" />

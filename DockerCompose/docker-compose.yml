@@ -315,6 +315,7 @@ services:
       - jackbot
     depends_on:
       - webui
+      - agent
 
 networks:
   jackbot:

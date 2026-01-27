@@ -1,4 +1,15 @@
 :443 {
-    tls internal
-    reverse_proxy webui:8080
+    tls internal {
+        on_demand
+    }
+
+    # SignalR hub - proxy to agent
+    handle /hubs/* {
+        reverse_proxy agent:8080
+    }
+
+    # Everything else - proxy to webui
+    handle {
+        reverse_proxy webui:8080
+    }
 }
