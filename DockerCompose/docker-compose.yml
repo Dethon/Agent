@@ -272,6 +272,7 @@ services:
     env_file:
       - .env
     environment:
+      - AGENTURL=${AGENTURL:-http://agent:8080}
       - USERS__0__ID=${USERS__0__ID:-Alice}
       - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
       - USERS__1__ID=${USERS__1__ID:-Bob}
