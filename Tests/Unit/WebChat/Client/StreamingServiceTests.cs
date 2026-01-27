@@ -262,6 +262,66 @@ public sealed class StreamingServiceTests : IDisposable
         messages[0].Reasoning!.ShouldContain("-----");
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_WithOperationCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new OperationCanceledException());
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithTaskCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new TaskCanceledException());
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new Exception(""));
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithRealException_AddsErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("Something went wrong"));
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldContain(m => m.IsError && m.Content.Contains("Something went wrong"));
+    }
+
     #endregion
 
     #region SendMessageAsync Tests
@@ -428,6 +488,70 @@ public sealed class StreamingServiceTests : IDisposable
         // Approval was dispatched and message completed
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.ShouldContain(m => m.Content == "Done");
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithOperationCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new OperationCanceledException());
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithTaskCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new TaskCanceledException());
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new Exception(""));
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithRealException_AddsErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("Something went wrong"));
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldContain(m => m.IsError && m.Content.Contains("Something went wrong"));
     }
 
     #endregion
