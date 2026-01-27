@@ -109,20 +109,10 @@ public sealed class StreamingService(
                     continue;
                 }
 
+                // Skip errors - reconnection flow handles recovery
                 if (chunk.Error is not null)
                 {
-                    streamingMessage = streamingMessage with
-                    {
-                        Content = chunk.Error,
-                        IsError = true
-                    };
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
-                    break;
+                    continue;
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
@@ -200,9 +190,9 @@ public sealed class StreamingService(
                 await topicService.SaveTopicAsync(metadata);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error: {ex.Message}")));
+            // Errors are silently ignored - reconnection flow handles recovery
         }
         finally
         {
@@ -235,20 +225,10 @@ public sealed class StreamingService(
                     continue;
                 }
 
+                // Skip errors - reconnection flow handles recovery
                 if (chunk.Error is not null)
                 {
-                    streamingMessage = streamingMessage with
-                    {
-                        Content = chunk.Error,
-                        IsError = true
-                    };
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
-                    break;
+                    continue;
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
@@ -362,24 +342,13 @@ public sealed class StreamingService(
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            dispatcher.Dispatch(new AddMessage(topic.TopicId,
-                CreateErrorMessage($"Error resuming stream: {ex.Message}")));
+            // Errors are silently ignored - reconnection flow handles recovery
         }
         finally
         {
             dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
         }
-    }
-
-    private static ChatMessageModel CreateErrorMessage(string errorMessage)
-    {
-        return new ChatMessageModel
-        {
-            Role = "assistant",
-            Content = errorMessage,
-            IsError = true
-        };
     }
 }

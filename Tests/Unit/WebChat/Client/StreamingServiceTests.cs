@@ -262,6 +262,144 @@ public sealed class StreamingServiceTests : IDisposable
         messages[0].Reasoning!.ShouldContain("-----");
     }
 
+    [Fact]
+    public async Task StreamResponseAsync_WithOperationCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new OperationCanceledException());
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithTaskCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new TaskCanceledException());
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new Exception(""));
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithAnyException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("Something went wrong"));
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        // All errors are silently ignored - reconnection flow handles recovery
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithOperationCanceledMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        // Exception type is NOT OperationCanceledException, but message contains "OperationCanceled"
+        _messagingService.SetExceptionToThrow(new Exception("OperationCanceled"));
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithOperationCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueError("OperationCanceled");
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithTaskCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueError("TaskCanceled");
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithOperationWasCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueError("The operation was canceled.");
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_WithAnyErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueError("Connection reset by peer");
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        // All errors are silently ignored - reconnection flow handles recovery
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
     #endregion
 
     #region SendMessageAsync Tests
@@ -428,6 +566,153 @@ public sealed class StreamingServiceTests : IDisposable
         // Approval was dispatched and message completed
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages.ShouldContain(m => m.Content == "Done");
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithOperationCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new OperationCanceledException());
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithTaskCanceledException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new TaskCanceledException());
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new Exception(""));
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithAnyException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.SetExceptionToThrow(new InvalidOperationException("Something went wrong"));
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        // All errors are silently ignored - reconnection flow handles recovery
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithOperationCanceledMessageException_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        // Exception type is NOT OperationCanceledException, but message contains "OperationCanceled"
+        _messagingService.SetExceptionToThrow(new Exception("OperationCanceled"));
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithOperationCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.EnqueueError("OperationCanceled");
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithTaskCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.EnqueueError("TaskCanceled");
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithOperationWasCanceledErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.EnqueueError("The operation was canceled.");
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
+    }
+
+    [Fact]
+    public async Task ResumeStreamResponseAsync_WithAnyErrorChunk_DoesNotAddErrorMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        var existingMessage = new ChatMessageModel { Role = "assistant", Content = "Partial" };
+        _messagingService.EnqueueError("Connection reset by peer");
+
+        await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
+
+        // All errors are silently ignored - reconnection flow handles recovery
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.ShouldNotContain(m => m.IsError);
     }
 
     #endregion
