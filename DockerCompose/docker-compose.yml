@@ -139,6 +139,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerLibrary/Dockerfile
+      cache_from:
+        - mcp-library:latest
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
@@ -164,6 +166,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerText/Dockerfile
+      cache_from:
+        - mcp-text:latest
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${VAULT_PATH:-./volumes/vault}:/vault
@@ -185,6 +189,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerWebSearch/Dockerfile
+      cache_from:
+        - mcp-websearch:latest
     restart: unless-stopped
     env_file:
       - .env
@@ -203,6 +209,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerMemory/Dockerfile
+      cache_from:
+        - mcp-memory:latest
     restart: unless-stopped
     env_file:
       - .env
@@ -225,6 +233,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerIdealista/Dockerfile
+      cache_from:
+        - mcp-idealista:latest
     restart: unless-stopped
     env_file:
       - .env
@@ -243,6 +253,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
+      cache_from:
+        - agent:latest
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
     env_file:
@@ -269,6 +281,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: WebChat/Dockerfile
+      cache_from:
+        - webui:latest
     env_file:
       - .env
     environment:
@@ -282,6 +296,25 @@ services:
       - jackbot
     depends_on:
       - agent
+
+  caddy:
+    image: caddy:2
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: caddy
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./volumes/caddy_data:/data
+      - ./volumes/caddy_config:/config
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - webui
 
 networks:
   jackbot:

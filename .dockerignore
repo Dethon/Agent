@@ -1,4 +1,5 @@
-﻿**/.dockerignore
+﻿# IDE and tooling
+**/.dockerignore
 **/.env
 **/.git
 **/.gitignore
@@ -11,6 +12,8 @@
 **/*.*proj.user
 **/*.dbmdl
 **/*.jfm
+
+# Build artifacts
 **/azds.yaml
 **/bin
 **/charts
@@ -21,5 +24,29 @@
 **/obj
 **/secrets.dev.yaml
 **/values.dev.yaml
+
+# Documentation
 LICENSE
 README.md
+CLAUDE.md
+**/*.md
+
+# Test and config
+**/Tests
+.claude
+DockerCompose
+**/TestResults
+**/*.log
+
+# Dev settings (not needed in container builds)
+**/Properties/launchSettings.json
+**/*.Development.json
+**/appsettings.Development.json
+*.sln
+.editorconfig
+global.json
+nuget.config
+
+# Unused projects (not in docker-compose)
+BlazorUI
+McpServerCommandRunner
