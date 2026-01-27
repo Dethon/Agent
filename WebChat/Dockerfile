@@ -7,11 +7,13 @@ WORKDIR /src
 COPY ["WebChat/WebChat.csproj", "WebChat/"]
 COPY ["WebChat.Client/WebChat.Client.csproj", "WebChat.Client/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
+COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 RUN dotnet restore "WebChat/WebChat.csproj"
 
 FROM dependencies AS build
 ARG BUILD_CONFIGURATION=Release
 COPY ["Domain/", "Domain/"]
+COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["WebChat/", "WebChat/"]
 COPY ["WebChat.Client/", "WebChat.Client/"]
 WORKDIR "/src/WebChat"
