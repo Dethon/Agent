@@ -11,6 +11,9 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private bool _enqueueResult = true;
     private bool _blockUntilComplete;
     private readonly TaskCompletionSource _completionSource = new();
+    private Exception? _exceptionToThrow;
+
+    public void SetExceptionToThrow(Exception? exception) => _exceptionToThrow = exception;
 
     public void SetEnqueueResult(bool result) => _enqueueResult = result;
 
@@ -74,6 +77,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     public async IAsyncEnumerable<ChatStreamMessage> SendMessageAsync(string topicId, string message,
         string? correlationId = null)
     {
+        if (_exceptionToThrow is not null)
+        {
+            throw _exceptionToThrow;
+        }
+
         if (_blockUntilComplete)
         {
             await _completionSource.Task;
@@ -92,6 +100,11 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamAsync(string topicId)
     {
+        if (_exceptionToThrow is not null)
+        {
+            throw _exceptionToThrow;
+        }
+
         while (_enqueuedMessages.TryDequeue(out var msg))
         {
             if (StreamDelayMs > 0)
