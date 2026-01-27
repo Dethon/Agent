@@ -200,9 +200,13 @@ public sealed class StreamingService(
                 await topicService.SaveTopicAsync(metadata);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!IsTransientError(ex))
         {
             dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error: {ex.Message}")));
+        }
+        catch
+        {
+            // Transient error (connection lost, operation cancelled) - reconnection flow handles recovery
         }
         finally
         {
@@ -362,16 +366,24 @@ public sealed class StreamingService(
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!IsTransientError(ex))
         {
             dispatcher.Dispatch(new AddMessage(topic.TopicId,
                 CreateErrorMessage($"Error resuming stream: {ex.Message}")));
+        }
+        catch
+        {
+            // Transient error (connection lost, operation cancelled) - reconnection flow handles recovery
         }
         finally
         {
             dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
         }
     }
+
+    private static bool IsTransientError(Exception ex) =>
+        ex is OperationCanceledException or TaskCanceledException ||
+        string.IsNullOrWhiteSpace(ex.Message);
 
     private static ChatMessageModel CreateErrorMessage(string errorMessage)
     {
