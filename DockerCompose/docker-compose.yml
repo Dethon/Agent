@@ -317,5 +317,19 @@ services:
       - webui
       - agent
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - caddy
+
 networks:
   jackbot:
