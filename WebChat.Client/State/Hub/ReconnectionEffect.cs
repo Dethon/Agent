@@ -12,6 +12,7 @@ public sealed class ReconnectionEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
     private ConnectionStatus _previousStatus = ConnectionStatus.Disconnected;
+    private bool _wasEverConnected;
 
     public ReconnectionEffect(
         ConnectionStore connectionStore,
@@ -27,11 +28,21 @@ public sealed class ReconnectionEffect : IDisposable
         _subscription = connectionStore.StateObservable
             .Subscribe(state =>
             {
-                var wasReconnecting = _previousStatus == ConnectionStatus.Reconnecting;
+                var wasDisconnected = _previousStatus is ConnectionStatus.Reconnecting or ConnectionStatus.Disconnected;
                 var isNowConnected = state.Status == ConnectionStatus.Connected;
+
+                // Track first connection to avoid reload on initial page load
+                if (isNowConnected && !_wasEverConnected)
+                {
+                    _wasEverConnected = true;
+                    _previousStatus = state.Status;
+                    return;
+                }
+
                 _previousStatus = state.Status;
 
-                if (wasReconnecting && isNowConnected)
+                // Reload history when reconnecting from any disconnected state
+                if (_wasEverConnected && wasDisconnected && isNowConnected)
                 {
                     _ = HandleReconnectedAsync(topicsStore, sessionService, streamResumeService);
                 }

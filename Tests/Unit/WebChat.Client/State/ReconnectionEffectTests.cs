@@ -104,7 +104,8 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         CreateEffect();
 
-        // Simulate reconnection
+        // Simulate initial connection then reconnection
+        _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
@@ -115,6 +116,32 @@ public sealed class ReconnectionEffectTests : IDisposable
             Times.Once);
         _mockStreamResumeService.Verify(
             s => s.TryResumeStreamAsync(It.Is<StoredTopic>(t => t.TopicId == "topic-2")),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task WhenConnectionDroppedAndReconnected_ReloadsHistory()
+    {
+        var topic = new StoredTopic
+            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+
+        CreateEffect();
+
+        // Initial connection
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        // Connection drops completely (goes to Disconnected, not Reconnecting)
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+
+        // Reconnects
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await Task.Delay(50);
+
+        _mockTopicService.Verify(
+            s => s.GetHistoryAsync("agent-1", 123, 456),
             Times.Once);
     }
 
