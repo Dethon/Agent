@@ -212,7 +212,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Second", MessageId = "msg-2" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
 
         completedTurns[0].MessageId.ShouldBe("msg-1");
     }

@@ -66,7 +66,6 @@ public static class BufferRebuildUtility
 
                 currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                 needsReasoningSeparator = false;
-                currentMessageId = null;
             }
 
             currentMessageId = msg.MessageId;
