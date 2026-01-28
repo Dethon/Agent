@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Runtime base with Playwright browsers
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS playwright-base
 
@@ -21,20 +23,22 @@ WORKDIR /src
 COPY ["McpServerWebSearch/McpServerWebSearch.csproj", "McpServerWebSearch/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
 
-# Stage 3: Build and publish
-FROM dependencies AS build
+# Stage 3: Publish
+FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["McpServerWebSearch/", "McpServerWebSearch/"]
 WORKDIR "/src/McpServerWebSearch"
-RUN dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages \
+    dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 # Stage 4: Final runtime image (inherits Playwright + deps from playwright-base)
 FROM playwright-base AS final
 WORKDIR /app
-COPY --from=build /app/publish .
+COPY --from=publish /app/publish .
 USER $APP_UID
 ENTRYPOINT ["dotnet", "McpServerWebSearch.dll"]

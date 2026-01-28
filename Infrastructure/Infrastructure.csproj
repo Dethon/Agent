@@ -13,6 +13,8 @@
 
   <PropertyGroup>
     <PlaywrightPlatform>all</PlaywrightPlatform>
+    <!-- Skip browser download during build - browsers are installed in Docker runtime image -->
+    <PlaywrightSkipBrowserDownload>true</PlaywrightSkipBrowserDownload>
   </PropertyGroup>
 
   <ItemGroup>
