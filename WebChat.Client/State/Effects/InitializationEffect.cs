@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
-using WebChat.Client.Extensions;
 using WebChat.Client.Models;
-using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -18,6 +17,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
     private readonly UserIdentityStore _userIdentityStore;
+    private readonly IMessagePipeline _pipeline;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -27,7 +27,8 @@ public sealed class InitializationEffect : IDisposable
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
-        UserIdentityStore userIdentityStore)
+        UserIdentityStore userIdentityStore,
+        IMessagePipeline pipeline)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
@@ -37,6 +38,7 @@ public sealed class InitializationEffect : IDisposable
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
         _userIdentityStore = userIdentityStore;
+        _pipeline = pipeline;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
         dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
@@ -107,8 +109,7 @@ public sealed class InitializationEffect : IDisposable
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        var messages = history.Select(h => h.ToChatMessageModel()).ToList();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
+        _pipeline.LoadHistory(topic.TopicId, history);
 
         _ = _streamResumeService.TryResumeStreamAsync(topic);
     }

@@ -1,9 +1,9 @@
 using WebChat.Client.Contracts;
-using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.Services.Streaming;
@@ -14,6 +14,7 @@ public sealed class StreamResumeService(
     IApprovalService approvalService,
     IStreamingService streamingService,
     IDispatcher dispatcher,
+    IMessagePipeline pipeline,
     MessagesStore messagesStore,
     StreamingStore streamingStore) : IStreamResumeService
 {
@@ -47,30 +48,11 @@ public sealed class StreamResumeService(
                 return;
             }
 
+            // Load history if not already in store
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                var messages = history.Select(h => h.ToChatMessageModel()).ToList();
-                dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
-            }
-
-            var existingMessages = messagesStore.State.MessagesByTopic
-                .GetValueOrDefault(topic.TopicId) ?? [];
-
-            if (!string.IsNullOrEmpty(state.CurrentPrompt))
-            {
-                var promptExists = existingMessages.Any(m =>
-                    m.Role == "user" && m.Content == state.CurrentPrompt);
-
-                if (!promptExists)
-                {
-                    dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
-                    {
-                        Role = "user",
-                        Content = state.CurrentPrompt,
-                        SenderId = state.CurrentSenderId
-                    }));
-                }
+                pipeline.LoadHistory(topic.TopicId, history);
             }
 
             var pendingApproval = await approvalService.GetPendingApprovalForTopicAsync(topic.TopicId);
@@ -79,43 +61,16 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
 
-            // Re-read after potential AddMessage dispatch
-            existingMessages = messagesStore.State.MessagesByTopic
-                .GetValueOrDefault(topic.TopicId) ?? [];
-
-            // Build ID-based lookup for precise content matching (only messages with IDs)
-            var historyContentById = existingMessages
-                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content) && !string.IsNullOrEmpty(m.MessageId))
-                .ToDictionary(m => m.MessageId!, m => m.Content);
-
-            // Build HashSet from ALL assistant content for backward compatibility with RebuildFromBuffer
-            // This includes messages without MessageIds (legacy data)
-            var historyContent = existingMessages
-                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
-                .Select(m => m.Content)
-                .ToHashSet();
-
-            var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(
-                state.BufferedMessages, historyContent);
-
-            // Skip user messages that match CurrentPrompt - already added above
-            foreach (var turn in completedTurns.Where(t =>
-                         t.HasContent && !(t.Role == "user" && t.Content == state.CurrentPrompt)))
-            {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
-            }
-
-            streamingMessage = BufferRebuildUtility.StripKnownContentById(
-                streamingMessage, state.CurrentMessageId, historyContentById);
-            dispatcher.Dispatch(new StreamChunk(
+            pipeline.ResumeFromBuffer(
                 topic.TopicId,
-                streamingMessage.Content,
-                streamingMessage.Reasoning,
-                streamingMessage.ToolCalls,
-                string.IsNullOrEmpty(state.CurrentMessageId) ? null : state.CurrentMessageId));
+                state.BufferedMessages,
+                state.CurrentMessageId,
+                state.CurrentPrompt,
+                state.CurrentSenderId);
 
             // Use TryStartResumeStreamAsync to atomically check and start the stream
             // This prevents race conditions with SendMessageAsync
+            var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(state.BufferedMessages, []);
             await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
