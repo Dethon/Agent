@@ -11,7 +11,7 @@ namespace Infrastructure.Agents.Mcp;
 
 internal sealed record ResourceProcessorConfig(
     AIAgent Agent,
-    AgentThread Thread,
+    AgentSession Thread,
     string? Instructions,
     IReadOnlyList<AITool> Tools);
 

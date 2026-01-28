@@ -30,7 +30,7 @@ internal sealed class ThreadSession : IAsyncDisposable
         string userId,
         string description,
         ChatClientAgent agent,
-        AgentThread thread,
+        AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
         CancellationToken ct)
     {
@@ -56,7 +56,7 @@ internal sealed class ThreadSessionBuilder(
     string name,
     string description,
     ChatClientAgent agent,
-    AgentThread thread,
+    AgentSession thread,
     string userId,
     IReadOnlyList<AIFunction> domainTools)
 {

@@ -11,7 +11,7 @@ internal sealed class McpSamplingHandler
 {
     private readonly ChatClientAgent _agent;
     private readonly Func<IReadOnlyList<AITool>> _toolsProvider;
-    private readonly ConcurrentDictionary<string, AgentThread> _trackedConversations = [];
+    private readonly ConcurrentDictionary<string, AgentSession> _trackedConversations = [];
 
     public McpSamplingHandler(ChatClientAgent agent, Func<IReadOnlyList<AITool>> toolsProvider)
     {
@@ -34,10 +34,11 @@ internal sealed class McpSamplingHandler
         return await ExecuteAndReport(messages, thread, options, progress, ct);
     }
 
-    private async ValueTask<AgentThread> GetOrCreateThread(CreateMessageRequestParams? parameters, CancellationToken ct)
+    private async ValueTask<AgentSession> GetOrCreateThread(CreateMessageRequestParams? parameters,
+        CancellationToken ct)
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
-        var thread = await _agent.GetNewThreadAsync(ct);
+        var thread = await _agent.GetNewSessionAsync(ct);
         return tracker is null ? thread : _trackedConversations.GetOrAdd(tracker, thread);
     }
 
@@ -67,7 +68,7 @@ internal sealed class McpSamplingHandler
 
     private async Task<CreateMessageResult> ExecuteAndReport(
         ChatMessage[] messages,
-        AgentThread thread,
+        AgentSession thread,
         ChatClientAgentRunOptions options,
         IProgress<ProgressNotificationValue> progress,
         CancellationToken ct)

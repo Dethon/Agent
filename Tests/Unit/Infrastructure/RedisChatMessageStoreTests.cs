@@ -20,7 +20,7 @@ public class RedisChatMessageStoreTests
 
         var agentKey = new AgentKey(123, 456);
         var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
+        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
         {
             SerializedState = serializedState,
             JsonSerializerOptions = new JsonSerializerOptions()
@@ -29,7 +29,7 @@ public class RedisChatMessageStoreTests
         var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
-        await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
+        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext([]), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
@@ -42,7 +42,7 @@ public class RedisChatMessageStoreTests
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
-        var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
+        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
         {
             SerializedState = default, // JsonValueKind.Undefined
             JsonSerializerOptions = new JsonSerializerOptions()
@@ -51,7 +51,7 @@ public class RedisChatMessageStoreTests
         var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
-        await store.InvokingAsync(new ChatMessageStore.InvokingContext([]), CancellationToken.None);
+        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext([]), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(It.Is<string>(k => IsGuid(k))), Times.Once);
@@ -71,7 +71,7 @@ public class RedisChatMessageStoreTests
 
         var agentKey = new AgentKey(123, 456);
         var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatMessageStoreFactoryContext
+        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
         {
             SerializedState = serializedState,
             JsonSerializerOptions = new JsonSerializerOptions()
