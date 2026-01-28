@@ -41,7 +41,7 @@ builder.Services.AddWebChatEffects();
 builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
-builder.Services.AddSingleton<IMessagePipeline, MessagePipeline>();
+builder.Services.AddScoped<IMessagePipeline, MessagePipeline>();
 
 // Notification handling
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
