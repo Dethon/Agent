@@ -83,6 +83,13 @@ public sealed class StreamResumeService(
             existingMessages = messagesStore.State.MessagesByTopic
                 .GetValueOrDefault(topic.TopicId) ?? [];
 
+            // Build ID-based lookup for precise content matching (only messages with IDs)
+            var historyContentById = existingMessages
+                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content) && !string.IsNullOrEmpty(m.MessageId))
+                .ToDictionary(m => m.MessageId!, m => m.Content);
+
+            // Build HashSet from ALL assistant content for backward compatibility with RebuildFromBuffer
+            // This includes messages without MessageIds (legacy data)
             var historyContent = existingMessages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
                 .Select(m => m.Content)
@@ -98,7 +105,8 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
             }
 
-            streamingMessage = BufferRebuildUtility.StripKnownContent(streamingMessage, historyContent);
+            streamingMessage = BufferRebuildUtility.StripKnownContentById(
+                streamingMessage, state.CurrentMessageId, historyContentById);
             dispatcher.Dispatch(new StreamChunk(
                 topic.TopicId,
                 streamingMessage.Content,
