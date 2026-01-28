@@ -12,18 +12,17 @@ public sealed class MessagePipelineTests
 {
     private readonly Dispatcher _dispatcher;
     private readonly MessagesStore _messagesStore;
-    private readonly StreamingStore _streamingStore;
     private readonly MessagePipeline _pipeline;
 
     public MessagePipelineTests()
     {
         _dispatcher = new Dispatcher();
         _messagesStore = new MessagesStore(_dispatcher);
-        _streamingStore = new StreamingStore(_dispatcher);
+        var streamingStore = new StreamingStore(_dispatcher);
         _pipeline = new MessagePipeline(
             _dispatcher,
             _messagesStore,
-            _streamingStore,
+            streamingStore,
             NullLogger<MessagePipeline>.Instance);
     }
 
@@ -51,7 +50,7 @@ public sealed class MessagePipelineTests
     [Fact]
     public void SubmitUserMessage_TracksAsPending()
     {
-        var id = _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
+        _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
 
         var snapshot = _pipeline.GetSnapshot("topic-1");
         snapshot.PendingUserMessages.ShouldBe(1);

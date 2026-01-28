@@ -1,5 +1,4 @@
 using WebChat.Client.Contracts;
-using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;

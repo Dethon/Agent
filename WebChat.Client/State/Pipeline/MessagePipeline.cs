@@ -1,19 +1,19 @@
 using System.Reactive.Subjects;
 using Domain.DTOs.WebChat;
-using Microsoft.Extensions.Logging;
 using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 
 namespace WebChat.Client.State.Pipeline;
 
-public sealed class MessagePipeline : IMessagePipeline, IDisposable
+public sealed class MessagePipeline(
+    IDispatcher dispatcher,
+    MessagesStore messagesStore,
+    StreamingStore streamingStore,
+    ILogger<MessagePipeline> logger)
+    : IMessagePipeline, IDisposable
 {
-    private readonly IDispatcher _dispatcher;
-    private readonly MessagesStore _messagesStore;
-    private readonly StreamingStore _streamingStore;
-    private readonly ILogger<MessagePipeline> _logger;
-
     private readonly Dictionary<string, ManagedMessage> _messagesById = new();
     private readonly Dictionary<string, HashSet<string>> _finalizedByTopic = new();
     private readonly Dictionary<string, string> _pendingUserMessages = new();
@@ -23,18 +23,6 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
 
     public IObservable<MessageLifecycleEvent> LifecycleEvents => _lifecycleEvents;
 
-    public MessagePipeline(
-        IDispatcher dispatcher,
-        MessagesStore messagesStore,
-        StreamingStore streamingStore,
-        ILogger<MessagePipeline> logger)
-    {
-        _dispatcher = dispatcher;
-        _messagesStore = messagesStore;
-        _streamingStore = streamingStore;
-        _logger = logger;
-    }
-
     public string SubmitUserMessage(string topicId, string content, string? senderId)
     {
         var correlationId = Guid.NewGuid().ToString("N");
@@ -43,15 +31,15 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
         {
             _pendingUserMessages[correlationId] = topicId;
 
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Pipeline.SubmitUserMessage: topic={TopicId}, correlationId={CorrelationId}, senderId={SenderId}",
                     topicId, correlationId, senderId);
             }
         }
 
-        _dispatcher.Dispatch(new AddMessage(topicId, new ChatMessageModel
+        dispatcher.Dispatch(new AddMessage(topicId, new ChatMessageModel
         {
             Role = "user",
             Content = content,
@@ -69,18 +57,19 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
         {
             if (!ShouldProcess(topicId, messageId))
             {
-                if (_logger.IsEnabled(LogLevel.Debug))
+                if (logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.LogDebug(
+                    logger.LogDebug(
                         "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
                         topicId, messageId);
                 }
+
                 return;
             }
 
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Pipeline.AccumulateChunk: topic={TopicId}, messageId={MessageId}, contentLen={ContentLen}",
                     topicId, messageId, content?.Length ?? 0);
             }
@@ -88,7 +77,7 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
 
         // Dispatch StreamChunk - this still uses the existing reducer for now
         // Phase 3 will simplify this
-        _dispatcher.Dispatch(new StreamChunk(topicId, content, reasoning, toolCalls, messageId));
+        dispatcher.Dispatch(new StreamChunk(topicId, content, reasoning, toolCalls, messageId));
     }
 
     public void FinalizeMessage(string topicId, string? messageId)
@@ -103,33 +92,32 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
                     _finalizedByTopic[topicId] = finalized;
                 }
 
-                if (finalized.Contains(messageId))
+                if (!finalized.Add(messageId))
                 {
-                    if (_logger.IsEnabled(LogLevel.Debug))
+                    if (logger.IsEnabled(LogLevel.Debug))
                     {
-                        _logger.LogDebug(
+                        logger.LogDebug(
                             "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
                             topicId, messageId);
                     }
+
                     return;
                 }
-
-                finalized.Add(messageId);
             }
 
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Pipeline.FinalizeMessage: topic={TopicId}, messageId={MessageId}",
                     topicId, messageId);
             }
         }
 
         // Get current streaming content and add as message
-        var streamingContent = _streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+        var streamingContent = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
         if (streamingContent?.HasContent == true)
         {
-            _dispatcher.Dispatch(new AddMessage(
+            dispatcher.Dispatch(new AddMessage(
                 topicId,
                 new ChatMessageModel
                 {
@@ -141,7 +129,7 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
                 },
                 messageId));
 
-            _dispatcher.Dispatch(new ResetStreamingContent(topicId));
+            dispatcher.Dispatch(new ResetStreamingContent(topicId));
         }
     }
 
@@ -170,15 +158,15 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
                 finalized.Add(msg.MessageId!);
             }
 
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Pipeline.LoadHistory: topic={TopicId}, count={Count}, finalizedIds={FinalizedCount}",
                     topicId, chatMessages.Count, finalized.Count);
             }
         }
 
-        _dispatcher.Dispatch(new MessagesLoaded(topicId, chatMessages));
+        dispatcher.Dispatch(new MessagesLoaded(topicId, chatMessages));
     }
 
     public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> buffer,
@@ -186,7 +174,7 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
     {
         // Delegate to existing BufferRebuildUtility for now
         // This maintains compatibility while migrating
-        var existingMessages = _messagesStore.State.MessagesByTopic
+        var existingMessages = messagesStore.State.MessagesByTopic
             .GetValueOrDefault(topicId) ?? [];
 
         var historyContent = existingMessages
@@ -195,13 +183,13 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
             .ToHashSet();
 
         var (completedTurns, streamingMessage) =
-            Services.Streaming.BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
+            BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
 
         lock (_lock)
         {
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug(
+                logger.LogDebug(
                     "Pipeline.ResumeFromBuffer: topic={TopicId}, bufferCount={BufferCount}, " +
                     "completedTurns={CompletedTurns}, hasStreamingContent={HasStreaming}",
                     topicId, buffer.Count, completedTurns.Count, streamingMessage.HasContent);
@@ -216,7 +204,7 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
 
             if (!promptExists)
             {
-                _dispatcher.Dispatch(new AddMessage(topicId, new ChatMessageModel
+                dispatcher.Dispatch(new AddMessage(topicId, new ChatMessageModel
                 {
                     Role = "user",
                     Content = currentPrompt,
@@ -227,15 +215,15 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
 
         // Add completed turns (skip user messages matching currentPrompt)
         foreach (var turn in completedTurns.Where(t =>
-            t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
+                     t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
         {
-            _dispatcher.Dispatch(new AddMessage(topicId, turn));
+            dispatcher.Dispatch(new AddMessage(topicId, turn));
         }
 
         // Dispatch streaming content
         if (streamingMessage.HasContent)
         {
-            _dispatcher.Dispatch(new StreamChunk(
+            dispatcher.Dispatch(new StreamChunk(
                 topicId,
                 streamingMessage.Content,
                 streamingMessage.Reasoning,
@@ -250,19 +238,21 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
         {
             _streamingByTopic.Remove(topicId);
 
-            if (_logger.IsEnabled(LogLevel.Debug))
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                _logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
+                logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
             }
         }
 
-        _dispatcher.Dispatch(new ResetStreamingContent(topicId));
+        dispatcher.Dispatch(new ResetStreamingContent(topicId));
     }
 
     public bool WasSentByThisClient(string? correlationId)
     {
         if (string.IsNullOrEmpty(correlationId))
+        {
             return false;
+        }
 
         lock (_lock)
         {
@@ -288,11 +278,15 @@ public sealed class MessagePipeline : IMessagePipeline, IDisposable
     private bool ShouldProcess(string topicId, string? messageId)
     {
         if (string.IsNullOrEmpty(messageId))
+        {
             return true;
+        }
 
         if (_finalizedByTopic.TryGetValue(topicId, out var finalized) &&
             finalized.Contains(messageId))
+        {
             return false;
+        }
 
         return true;
     }

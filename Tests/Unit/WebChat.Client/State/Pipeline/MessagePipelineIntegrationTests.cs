@@ -12,18 +12,17 @@ public sealed class MessagePipelineIntegrationTests
 {
     private readonly Dispatcher _dispatcher;
     private readonly MessagesStore _messagesStore;
-    private readonly StreamingStore _streamingStore;
     private readonly MessagePipeline _pipeline;
 
     public MessagePipelineIntegrationTests()
     {
         _dispatcher = new Dispatcher();
         _messagesStore = new MessagesStore(_dispatcher);
-        _streamingStore = new StreamingStore(_dispatcher);
+        var streamingStore = new StreamingStore(_dispatcher);
         _pipeline = new MessagePipeline(
             _dispatcher,
             _messagesStore,
-            _streamingStore,
+            streamingStore,
             NullLogger<MessagePipeline>.Instance);
     }
 
@@ -31,7 +30,7 @@ public sealed class MessagePipelineIntegrationTests
     public void FullConversationFlow_UserSendsMessage_AssistantResponds()
     {
         // User sends message
-        var correlationId = _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
+        _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
 
         // Streaming starts
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
