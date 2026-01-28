@@ -1,0 +1,56 @@
+@using WebChat.Client.State
+@using WebChat.Client.State.Toast
+@using ToastItemRecord = WebChat.Client.State.Toast.ToastItem
+@implements IDisposable
+@inject IDispatcher Dispatcher
+
+<div class="toast-item @(_isExiting ? "exiting" : "")">
+    <span class="toast-message">@Toast.Message</span>
+    <button class="toast-dismiss" @onclick="Dismiss" aria-label="Dismiss">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    </button>
+</div>
+
+@code {
+    private const int AutoDismissMs = 8000;
+    private const int ExitAnimationMs = 200;
+
+    private Timer? _timer;
+    private bool _isExiting;
+
+    [Parameter, EditorRequired]
+    public ToastItemRecord Toast { get; set; } = null!;
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(_ => _ = StartDismissAsync(), null, AutoDismissMs, Timeout.Infinite);
+    }
+
+    private async Task StartDismissAsync()
+    {
+        await InvokeAsync(() =>
+        {
+            _isExiting = true;
+            StateHasChanged();
+        });
+
+        await Task.Delay(ExitAnimationMs);
+        Dispatcher.Dispatch(new DismissToast(Toast.Id));
+    }
+
+    private async Task Dismiss()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        await StartDismissAsync();
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}
