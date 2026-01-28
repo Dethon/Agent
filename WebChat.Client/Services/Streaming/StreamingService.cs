@@ -5,6 +5,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
@@ -14,7 +15,8 @@ public sealed class StreamingService(
     IDispatcher dispatcher,
     ITopicService topicService,
     TopicsStore topicsStore,
-    StreamingStore streamingStore) : IStreamingService
+    StreamingStore streamingStore,
+    ToastStore toastStore) : IStreamingService
 {
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
@@ -109,9 +111,10 @@ public sealed class StreamingService(
                     continue;
                 }
 
-                // Skip errors - reconnection flow handles recovery
                 if (chunk.Error is not null)
                 {
+                    if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
+                        dispatcher.Dispatch(new ShowError(chunk.Error));
                     continue;
                 }
 
@@ -190,9 +193,13 @@ public sealed class StreamingService(
                 await topicService.SaveTopicAsync(metadata);
             }
         }
+        catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
+        {
+            dispatcher.Dispatch(new ShowError(ex.Message));
+        }
         catch
         {
-            // Errors are silently ignored - reconnection flow handles recovery
+            // Transient errors silently ignored - reconnection handles recovery
         }
         finally
         {
@@ -225,9 +232,10 @@ public sealed class StreamingService(
                     continue;
                 }
 
-                // Skip errors - reconnection flow handles recovery
                 if (chunk.Error is not null)
                 {
+                    if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
+                        dispatcher.Dispatch(new ShowError(chunk.Error));
                     continue;
                 }
 
@@ -342,9 +350,13 @@ public sealed class StreamingService(
                 }
             }
         }
+        catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
+        {
+            dispatcher.Dispatch(new ShowError(ex.Message));
+        }
         catch
         {
-            // Errors are silently ignored - reconnection flow handles recovery
+            // Transient errors silently ignored - reconnection handles recovery
         }
         finally
         {
