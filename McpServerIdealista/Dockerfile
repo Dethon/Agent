@@ -8,7 +8,7 @@ WORKDIR /src
 COPY ["McpServerIdealista/McpServerIdealista.csproj", "McpServerIdealista/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "McpServerIdealista/McpServerIdealista.csproj"
 
 FROM dependencies AS publish
@@ -17,7 +17,7 @@ COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["McpServerIdealista/", "McpServerIdealista/"]
 WORKDIR "/src/McpServerIdealista"
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final

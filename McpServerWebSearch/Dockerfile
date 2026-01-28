@@ -23,7 +23,7 @@ WORKDIR /src
 COPY ["McpServerWebSearch/McpServerWebSearch.csproj", "McpServerWebSearch/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
 
 # Stage 3: Publish
@@ -33,7 +33,7 @@ COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["McpServerWebSearch/", "McpServerWebSearch/"]
 WORKDIR "/src/McpServerWebSearch"
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 # Stage 4: Final runtime image (inherits Playwright + deps from playwright-base)

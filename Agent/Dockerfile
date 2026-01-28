@@ -8,7 +8,7 @@ WORKDIR /src
 COPY ["Agent/Agent.csproj", "Agent/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "Agent/Agent.csproj"
 
 FROM dependencies AS publish
@@ -17,7 +17,7 @@ COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["Agent/", "Agent/"]
 WORKDIR "/src/Agent"
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "./Agent.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final

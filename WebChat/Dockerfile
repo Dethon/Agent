@@ -9,7 +9,7 @@ COPY ["WebChat/WebChat.csproj", "WebChat/"]
 COPY ["WebChat.Client/WebChat.Client.csproj", "WebChat.Client/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "WebChat/WebChat.csproj"
 
 FROM dependencies AS publish
@@ -19,7 +19,7 @@ COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["WebChat/", "WebChat/"]
 COPY ["WebChat.Client/", "WebChat.Client/"]
 WORKDIR "/src/WebChat"
-RUN --mount=type=cache,target=/root/.nuget/packages \
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet publish "./WebChat.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
