@@ -7,6 +7,7 @@ using WebChat.Client.Services;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Pipeline;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
@@ -41,6 +42,7 @@ builder.Services.AddScoped<IStreamingService, StreamingService>();
 builder.Services.AddScoped<StreamResumeService>();
 builder.Services.AddScoped<IStreamResumeService>(sp => sp.GetRequiredService<StreamResumeService>());
 builder.Services.AddSingleton<SentMessageTracker>();
+builder.Services.AddSingleton<IMessagePipeline, MessagePipeline>();
 
 // Notification handling
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();

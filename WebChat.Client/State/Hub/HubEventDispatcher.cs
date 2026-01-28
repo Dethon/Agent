@@ -4,6 +4,7 @@ using WebChat.Client.Models;
 using WebChat.Client.Services;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -13,7 +14,7 @@ public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
     StreamingStore streamingStore,
-    SentMessageTracker sentMessageTracker,
+    IMessagePipeline pipeline,
     IStreamResumeService streamResumeService) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
@@ -106,7 +107,7 @@ public sealed class HubEventDispatcher(
 
         // Skip if this message was sent by this browser instance
         // (we already added it locally in SendMessageEffect)
-        if (sentMessageTracker.WasSentByThisClient(notification.CorrelationId))
+        if (pipeline.WasSentByThisClient(notification.CorrelationId))
         {
             return;
         }
@@ -121,21 +122,8 @@ public sealed class HubEventDispatcher(
             var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(notification.TopicId);
             if (currentContent?.HasContent == true)
             {
-                // Finalize current streaming content as a completed message
-                dispatcher.Dispatch(new AddMessage(
-                    notification.TopicId,
-                    new ChatMessageModel
-                    {
-                        Role = "assistant",
-                        Content = currentContent.Content,
-                        Reasoning = currentContent.Reasoning,
-                        ToolCalls = currentContent.ToolCalls
-                    },
-                    currentContent.CurrentMessageId));
-
-                // Reset streaming content for new assistant response
-                dispatcher.Dispatch(new ResetStreamingContent(notification.TopicId));
-                dispatcher.Dispatch(new RequestContentFinalization(notification.TopicId));
+                // Finalize current streaming content via pipeline
+                pipeline.FinalizeMessage(notification.TopicId, currentContent.CurrentMessageId);
             }
         }
 

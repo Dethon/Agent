@@ -3,6 +3,7 @@ using WebChat.Client.Models;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -19,7 +20,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IChatMessagingService _messagingService;
     private readonly UserIdentityStore _userIdentityStore;
-    private readonly SentMessageTracker _sentMessageTracker;
+    private readonly IMessagePipeline _pipeline;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -30,7 +31,7 @@ public sealed class SendMessageEffect : IDisposable
         ITopicService topicService,
         IChatMessagingService messagingService,
         UserIdentityStore userIdentityStore,
-        SentMessageTracker sentMessageTracker)
+        IMessagePipeline pipeline)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -40,7 +41,7 @@ public sealed class SendMessageEffect : IDisposable
         _topicService = topicService;
         _messagingService = messagingService;
         _userIdentityStore = userIdentityStore;
-        _sentMessageTracker = sentMessageTracker;
+        _pipeline = pipeline;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
@@ -102,9 +103,6 @@ public sealed class SendMessageEffect : IDisposable
             }
         }
 
-        // Generate correlation ID to track this message (for duplicate detection)
-        var correlationId = _sentMessageTracker.TrackNewMessage();
-
         // If streaming is active, finalize the current bubble before adding user message
         var streamingState = _streamingStore.State;
         if (streamingState.StreamingTopics.Contains(topic.TopicId))
@@ -112,39 +110,16 @@ public sealed class SendMessageEffect : IDisposable
             var currentContent = streamingState.StreamingByTopic.GetValueOrDefault(topic.TopicId);
             if (currentContent?.HasContent == true)
             {
-                // Finalize current streaming content as a completed message
-                // Include the stream message ID to prevent duplicate adds from race conditions
-                _dispatcher.Dispatch(new AddMessage(
-                    topic.TopicId,
-                    new ChatMessageModel
-                    {
-                        Role = "assistant",
-                        Content = currentContent.Content,
-                        Reasoning = currentContent.Reasoning,
-                        ToolCalls = currentContent.ToolCalls
-                    },
-                    currentContent.CurrentMessageId));
-
-                // Reset streaming content for a fresh bubble
-                _dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
-
-                // Signal StreamingService to reset its internal accumulator
-                _dispatcher.Dispatch(new RequestContentFinalization(topic.TopicId));
+                _pipeline.FinalizeMessage(topic.TopicId, currentContent.CurrentMessageId);
             }
         }
 
-        // Add user message
+        // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
         var identityState = _userIdentityStore.State;
         var currentUser = identityState.AvailableUsers
             .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
 
-        _dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
-        {
-            Role = "user",
-            Content = action.Message,
-            SenderId = currentUser?.Id,
-            Timestamp = DateTimeOffset.UtcNow
-        }));
+        var correlationId = _pipeline.SubmitUserMessage(topic.TopicId, action.Message, currentUser?.Id);
 
         // Delegate to streaming service (handles stream reuse internally)
         _ = _streamingService.SendMessageAsync(topic, action.Message, correlationId);
