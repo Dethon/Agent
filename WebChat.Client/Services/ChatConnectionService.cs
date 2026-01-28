@@ -86,19 +86,8 @@ public sealed class ChatConnectionService(
 
 internal sealed class AggressiveRetryPolicy : IRetryPolicy
 {
-    private static readonly TimeSpan[] _retryDelays =
-    [
-        TimeSpan.Zero,
-        TimeSpan.FromSeconds(1),
-        TimeSpan.FromSeconds(2),
-        TimeSpan.FromSeconds(5)
-    ];
-
-    private static readonly TimeSpan _maxDelay = TimeSpan.FromSeconds(10);
-
     public TimeSpan? NextRetryDelay(RetryContext retryContext)
     {
-        var attempt = retryContext.PreviousRetryCount;
-        return attempt < _retryDelays.Length ? _retryDelays[attempt] : _maxDelay;
+        return TimeSpan.FromSeconds(1);
     }
 }

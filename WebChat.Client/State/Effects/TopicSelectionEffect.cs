@@ -1,7 +1,7 @@
 using WebChat.Client.Contracts;
-using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -14,6 +14,7 @@ public sealed class TopicSelectionEffect : IDisposable
     private readonly IChatSessionService _sessionService;
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
+    private readonly IMessagePipeline _pipeline;
 
     public TopicSelectionEffect(
         Dispatcher dispatcher,
@@ -21,7 +22,8 @@ public sealed class TopicSelectionEffect : IDisposable
         MessagesStore messagesStore,
         IChatSessionService sessionService,
         ITopicService topicService,
-        IStreamResumeService streamResumeService)
+        IStreamResumeService streamResumeService,
+        IMessagePipeline pipeline)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -29,6 +31,7 @@ public sealed class TopicSelectionEffect : IDisposable
         _sessionService = sessionService;
         _topicService = topicService;
         _streamResumeService = streamResumeService;
+        _pipeline = pipeline;
 
         dispatcher.RegisterHandler<SelectTopic>(HandleSelectTopic);
     }
@@ -62,8 +65,7 @@ public sealed class TopicSelectionEffect : IDisposable
             var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
             if (currentMessages.Count == 0)
             {
-                var messages = history.Select(h => h.ToChatMessageModel()).ToList();
-                _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
+                _pipeline.LoadHistory(topicId, history);
             }
         }
 

@@ -2,10 +2,10 @@ using Domain.DTOs.WebChat;
 using Moq;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
-using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -26,13 +26,13 @@ public sealed class HubEventDispatcherTests : IDisposable
         _realDispatcher = new Dispatcher();
         _topicsStore = new TopicsStore(_realDispatcher);
         _streamingStore = new StreamingStore(_realDispatcher);
-        var sentMessageTracker = new SentMessageTracker();
+        var mockPipeline = new Mock<IMessagePipeline>();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _streamingStore,
-            sentMessageTracker,
+            mockPipeline.Object,
             _mockStreamResumeService.Object);
     }
 
@@ -162,14 +162,15 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleApprovalResolved_WithToolCalls_DispatchesStreamChunk()
     {
-        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output");
+        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1");
 
         _sut.HandleApprovalResolved(notification);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<StreamChunk>(a =>
                 a.TopicId == "topic-1" &&
-                a.ToolCalls == "tool output")),
+                a.ToolCalls == "tool output" &&
+                a.MessageId == "msg-1")),
             Times.Once);
     }
 
@@ -188,7 +189,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     [Fact]
     public void HandleToolCalls_DispatchesStreamChunk()
     {
-        var notification = new ToolCallsNotification("topic-1", "tool output");
+        var notification = new ToolCallsNotification("topic-1", "tool output", "msg-1");
 
         _sut.HandleToolCalls(notification);
 
@@ -198,7 +199,7 @@ public sealed class HubEventDispatcherTests : IDisposable
                 a.ToolCalls == "tool output" &&
                 a.Content == null &&
                 a.Reasoning == null &&
-                a.MessageId == null)),
+                a.MessageId == "msg-1")),
             Times.Once);
     }
 }

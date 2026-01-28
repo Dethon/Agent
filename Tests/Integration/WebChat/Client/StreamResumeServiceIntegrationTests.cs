@@ -1,5 +1,6 @@
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Integration.WebChat.Client.Adapters;
@@ -7,6 +8,7 @@ using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -49,12 +51,15 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _streamingService =
             new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+        var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _streamingStore,
+            NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _approvalService,
             _streamingService,
             _dispatcher,
+            pipeline,
             _messagesStore,
             _streamingStore);
     }
@@ -216,12 +221,15 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var userIdentityStore2 = new UserIdentityStore(dispatcher2);
             var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2,
                 streamingStore2);
+            var pipeline2 = new MessagePipeline(dispatcher2, messagesStore2, streamingStore2,
+                NullLogger<MessagePipeline>.Instance);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
                 approvalService2,
                 streamingService2,
                 dispatcher2,
+                pipeline2,
                 messagesStore2,
                 streamingStore2);
 

@@ -20,7 +20,8 @@ public class ApprovalStoreTests : IDisposable
     public void Dispose() => _store.Dispose();
 
     private static ToolApprovalRequestMessage CreateRequest(string approvalId = "approval-1") =>
-        new(approvalId, [new ToolApprovalRequest("Search", new Dictionary<string, object?> { ["query"] = "test" })]);
+        new(approvalId,
+            [new ToolApprovalRequest(null, "Search", new Dictionary<string, object?> { ["query"] = "test" })]);
 
     [Fact]
     public void Initial_StateHasNoRequest()

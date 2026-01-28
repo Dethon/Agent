@@ -105,7 +105,8 @@ public sealed class WebChatMessengerClient(
                     streamManager.CompleteStream(topicId);
 
                     await hubNotifier.NotifyStreamChangedAsync(
-                            new StreamChangedNotification(StreamChangeType.Completed, topicId), CancellationToken.None)
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId),
+                            CancellationToken.None)
                         .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
                 }
             }

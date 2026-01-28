@@ -34,6 +34,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     {
         var toolName = context.Function.Name;
         var request = new ToolApprovalRequest(
+            context.Messages.LastOrDefault()?.MessageId,
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 

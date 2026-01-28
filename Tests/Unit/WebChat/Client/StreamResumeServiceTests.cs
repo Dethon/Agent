@@ -1,10 +1,12 @@
 using Domain.DTOs.WebChat;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -34,12 +36,15 @@ public sealed class StreamResumeServiceTests : IDisposable
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         var streamingService =
             new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+        var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _streamingStore,
+            NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
             _approvalService,
             streamingService,
             _dispatcher,
+            pipeline,
             _messagesStore,
             _streamingStore);
     }
@@ -321,8 +326,9 @@ public sealed class StreamResumeServiceTests : IDisposable
     public async Task TryResumeStreamAsync_StripsKnownContent()
     {
         var topic = CreateTopic(topicId: "topic-1");
+        // Preload message with same MessageId as buffer - simulates real server history
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", [
-            new ChatMessageModel { Role = "assistant", Content = "Already known content" }
+            new ChatMessageModel { Role = "assistant", Content = "Already known content", MessageId = "msg-1" }
         ]));
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
@@ -336,7 +342,7 @@ public sealed class StreamResumeServiceTests : IDisposable
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        // The duplicate content should be stripped
+        // The duplicate content should be stripped (MessageId-based deduplication)
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
         var contentCount = messages.Count(m => m.Content == "Already known content");
         contentCount.ShouldBe(1);

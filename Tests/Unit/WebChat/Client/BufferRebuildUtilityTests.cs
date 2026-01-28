@@ -297,7 +297,7 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void StripKnownContent_WhenContentIsDuplicate_StripsReasoning()
+    public void StripKnownContent_WhenContentIsDuplicate_KeepsReasoningAndToolCalls()
     {
         var message = new ChatMessageModel
         {
@@ -311,8 +311,8 @@ public sealed class BufferRebuildUtilityTests
         var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
 
         result.Content.ShouldBeEmpty();
-        result.Reasoning.ShouldBeNull();
-        result.ToolCalls.ShouldBe("tool_1"); // ToolCalls preserved (might be for different turn)
+        result.Reasoning.ShouldBe("orphaned reasoning"); // Kept for merging into history
+        result.ToolCalls.ShouldBe("tool_1"); // Kept for merging into history
     }
 
     #endregion
@@ -331,7 +331,7 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void StripKnownContentById_WhenBufferIsSubset_ReturnsEmpty()
+    public void StripKnownContentById_WhenBufferIsSubset_KeepsReasoning()
     {
         var message = new ChatMessageModel { Role = "assistant", Content = "partial", Reasoning = "thinking" };
         var historyById = new Dictionary<string, string> { ["msg-1"] = "partial content complete" };
@@ -339,7 +339,7 @@ public sealed class BufferRebuildUtilityTests
         var result = BufferRebuildUtility.StripKnownContentById(message, "msg-1", historyById);
 
         result.Content.ShouldBeEmpty();
-        result.Reasoning.ShouldBeNull();
+        result.Reasoning.ShouldBe("thinking"); // Kept for merging into history
     }
 
     [Fact]

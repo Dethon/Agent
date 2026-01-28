@@ -68,20 +68,23 @@ public sealed class WebChatApprovalManager(
         IReadOnlyList<ToolApprovalRequest> requests,
         CancellationToken cancellationToken)
     {
-        var formattedToolCalls = FormatToolCalls(requests);
+        var messages = requests
+            .GroupBy(x => x.MessageId)
+            .Select(g => new ChatStreamMessage
+            {
+                MessageId = g.Key,
+                ToolCalls = FormatToolCalls(g.ToArray())
+            });
 
-        var message = new ChatStreamMessage
+        foreach (var message in messages)
         {
-            ToolCalls = formattedToolCalls
-        };
-
-        await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
-
-        // Also broadcast as notification to ensure all browsers receive it
-        // (handles race condition where browser subscribes after this message is sent)
-        await notifier.NotifyToolCallsAsync(
-                new ToolCallsNotification(topicId, formattedToolCalls), cancellationToken)
-            .SafeAwaitAsync(logger, "Failed to notify tool calls for topic {TopicId}", topicId);
+            await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
+            // Also broadcast as notification to ensure all browsers receive it
+            // (handles race condition where browser subscribes after this message is sent)
+            await notifier.NotifyToolCallsAsync(
+                    new ToolCallsNotification(topicId, message.ToolCalls!, message.MessageId), cancellationToken)
+                .SafeAwaitAsync(logger, "Failed to notify tool calls for topic {TopicId}", topicId);
+        }
     }
 
     public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
@@ -97,9 +100,12 @@ public sealed class WebChatApprovalManager(
             ? FormatToolCalls(context.Requests)
             : null;
 
+        // Use the first request's MessageId for correlation (requests in a batch typically share the same MessageId)
+        var messageId = context.Requests.FirstOrDefault()?.MessageId;
+
         // Broadcast to all clients so other browsers can dismiss their approval modals and show tool calls
         await notifier.NotifyApprovalResolvedAsync(
-                new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls))
+                new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls, messageId))
             .SafeAwaitAsync(logger, "Failed to notify approval resolved for topic {TopicId}", context.TopicId);
 
         var success = context.TrySetResult(result);
