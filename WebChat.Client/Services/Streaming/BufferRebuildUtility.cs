@@ -36,11 +36,12 @@ public static class BufferRebuildUtility
                     var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                     if (strippedMessage.HasContent)
                     {
-                        completedTurns.Add(strippedMessage);
+                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                     }
 
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                     needsReasoningSeparator = false;
+                    currentMessageId = null;
                 }
 
                 completedTurns.Add(new ChatMessageModel
@@ -60,11 +61,12 @@ public static class BufferRebuildUtility
                 var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                 if (strippedMessage.HasContent)
                 {
-                    completedTurns.Add(strippedMessage);
+                    completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                 }
 
                 currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                 needsReasoningSeparator = false;
+                currentMessageId = null;
             }
 
             currentMessageId = msg.MessageId;
@@ -77,7 +79,7 @@ public static class BufferRebuildUtility
                     var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                     if (strippedMessage.HasContent)
                     {
-                        completedTurns.Add(strippedMessage);
+                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                     }
 
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };

@@ -202,6 +202,34 @@ public sealed class BufferRebuildUtilityTests
         completedTurns[0].Content.ShouldBe("Hello");
     }
 
+    [Fact]
+    public void RebuildFromBuffer_PropagatesMessageIdToCompletedTurns()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "First", MessageId = "msg-1" },
+            new() { IsComplete = true, MessageId = "msg-1" },
+            new() { Content = "Second", MessageId = "msg-2" }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns[0].MessageId.ShouldBe("msg-1");
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_UserMessages_HaveNoMessageId()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
+        };
+
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns[0].MessageId.ShouldBeNull();
+    }
+
     #endregion
 
     #region StripKnownContent Tests
