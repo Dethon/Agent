@@ -12,7 +12,14 @@ public static class MessagesReducers
             {
                 [a.TopicId] = a.Messages
             },
-            LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId }
+            LoadedTopics = new HashSet<string>(state.LoadedTopics) { a.TopicId },
+            FinalizedMessageIdsByTopic = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic)
+            {
+                [a.TopicId] = a.Messages
+                    .Select(m => m.MessageId)
+                    .Where(id => id is not null)
+                    .ToHashSet()!
+            }
         },
 
         AddMessage a => AddMessageWithDedup(state, a.TopicId, a.Message, a.StreamMessageId),
