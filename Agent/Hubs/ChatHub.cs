@@ -68,6 +68,7 @@ public sealed class ChatHub(
         return messages
             .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
             .Select(m => new ChatHistoryMessage(
+                m.MessageId,
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
                 m.GetSenderId(),
