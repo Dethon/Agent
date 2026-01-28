@@ -61,17 +61,18 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
 
+            // Start streaming FIRST (dispatches StreamStarted which creates empty StreamingContent)
+            // Then ResumeFromBuffer fills it with content via StreamChunk
+            // Order matters: StreamStarted resets content, so it must come before StreamChunk
+            var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(state.BufferedMessages, []);
+            await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
+
             pipeline.ResumeFromBuffer(
                 topic.TopicId,
                 state.BufferedMessages,
                 state.CurrentMessageId,
                 state.CurrentPrompt,
                 state.CurrentSenderId);
-
-            // Use TryStartResumeStreamAsync to atomically check and start the stream
-            // This prevents race conditions with SendMessageAsync
-            var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(state.BufferedMessages, []);
-            await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
         }
         finally
         {
