@@ -251,7 +251,7 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void StripKnownContent_PreservesOtherFields()
+    public void StripKnownContent_WhenPrefixStripped_PreservesReasoning()
     {
         var message = new ChatMessageModel
         {
@@ -266,6 +266,25 @@ public sealed class BufferRebuildUtilityTests
 
         result.Reasoning.ShouldBe("thinking");
         result.ToolCalls.ShouldBe("tool_1");
+    }
+
+    [Fact]
+    public void StripKnownContent_WhenContentIsDuplicate_StripsReasoning()
+    {
+        var message = new ChatMessageModel
+        {
+            Role = "assistant",
+            Content = "partial",
+            Reasoning = "orphaned reasoning",
+            ToolCalls = "tool_1"
+        };
+        var historyContent = new HashSet<string> { "partial content is longer" };
+
+        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
+
+        result.Content.ShouldBeEmpty();
+        result.Reasoning.ShouldBeNull();
+        result.ToolCalls.ShouldBe("tool_1"); // ToolCalls preserved (might be for different turn)
     }
 
     #endregion

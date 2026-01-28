@@ -104,9 +104,10 @@ public static class BufferRebuildUtility
 
         // If the buffer content is a subset of any history content, it's a duplicate
         // (user disconnected mid-stream and buffer has incomplete content while history has complete)
+        // Clear both content and reasoning since this entire message is already in history
         if (historyContent.Any(known => known.Contains(message.Content)))
         {
-            return message with { Content = "" };
+            return message with { Content = "", Reasoning = null };
         }
 
         // Remove any history content that appears as a prefix in this message
