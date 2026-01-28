@@ -43,7 +43,11 @@
 
     private async Task Dismiss()
     {
-        _timer?.Dispose();
+        if (_timer is not null)
+        {
+            await _timer.DisposeAsync();
+        }
+
         _timer = null;
         await StartDismissAsync();
     }
