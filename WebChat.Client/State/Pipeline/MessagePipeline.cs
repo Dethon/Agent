@@ -14,12 +14,10 @@ public sealed class MessagePipeline(
     ILogger<MessagePipeline> logger)
     : IMessagePipeline, IDisposable
 {
-    private readonly Dictionary<string, ManagedMessage> _messagesById = new();
     private readonly Dictionary<string, HashSet<string>> _finalizedByTopic = new();
     private readonly Dictionary<string, string> _pendingUserMessages = new();
-    private readonly Dictionary<string, string> _streamingByTopic = new();
     private readonly Subject<MessageLifecycleEvent> _lifecycleEvents = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
 
     public IObservable<MessageLifecycleEvent> LifecycleEvents => _lifecycleEvents;
 
@@ -236,8 +234,6 @@ public sealed class MessagePipeline(
     {
         lock (_lock)
         {
-            _streamingByTopic.Remove(topicId);
-
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
@@ -264,14 +260,12 @@ public sealed class MessagePipeline(
     {
         lock (_lock)
         {
-            var streamingId = _streamingByTopic.GetValueOrDefault(topicId);
+            var streamingContent = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
+            var streamingId = streamingContent?.CurrentMessageId;
             var finalizedCount = _finalizedByTopic.GetValueOrDefault(topicId)?.Count ?? 0;
             var pendingCount = _pendingUserMessages.Count;
-            var activeMessages = _messagesById.Values
-                .Where(m => m.TopicId == topicId)
-                .ToList();
 
-            return new PipelineSnapshot(streamingId, finalizedCount, pendingCount, activeMessages);
+            return new PipelineSnapshot(streamingId, finalizedCount, pendingCount, []);
         }
     }
 
