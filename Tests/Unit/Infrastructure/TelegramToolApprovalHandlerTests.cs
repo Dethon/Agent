@@ -44,7 +44,7 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
             new TelegramToolApprovalHandler(_botClient, TestChatId, TestThreadId, TimeSpan.FromMilliseconds(100));
         var requests = new List<ToolApprovalRequest>
         {
-            new("TestTool", new Dictionary<string, object?> { ["param"] = "value" })
+            new(null, "TestTool", new Dictionary<string, object?> { ["param"] = "value" })
         };
 
         SetupSendMessage(TestChatId);
