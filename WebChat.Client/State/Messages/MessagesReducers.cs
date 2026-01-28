@@ -95,7 +95,6 @@ public static class MessagesReducers
         };
     }
 
-    // ReSharper disable UnusedParameter.Local
     private static IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> UpdateMessageInTopic(
         IReadOnlyDictionary<string, IReadOnlyList<ChatMessageModel>> messagesByTopic,
         string topicId,
@@ -107,15 +106,21 @@ public static class MessagesReducers
             return messagesByTopic;
         }
 
-        // Note: ChatMessageModel doesn't have a MessageId field currently
-        // This action is designed for future use when message identity is needed
-        // For now, it updates all messages (placeholder implementation)
+        var updated = messages
+            .Select(m => m.MessageId == messageId ? updatedMessage : m)
+            .ToList();
+
+        // If no message was updated, return unchanged
+        if (updated.SequenceEqual(messages))
+        {
+            return messagesByTopic;
+        }
+
         return new Dictionary<string, IReadOnlyList<ChatMessageModel>>(messagesByTopic)
         {
-            [topicId] = messages.ToList() // No-op until MessageId is available
+            [topicId] = updated
         };
     }
-    // ReSharper restore UnusedParameter.Local
 
     private static MessagesState AddMessageWithDedup(
         MessagesState state,

@@ -64,4 +64,47 @@ public sealed class MessagesReducersTests
 
         newState.MessagesByTopic["topic-1"].Count.ShouldBe(1);
     }
+
+    [Fact]
+    public void UpdateMessage_FindsAndUpdatesMessageById()
+    {
+        var state = MessagesState.Initial with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>
+            {
+                ["topic-1"] = new List<ChatMessageModel>
+                {
+                    new() { MessageId = "msg-1", Role = "assistant", Content = "Original" },
+                    new() { MessageId = "msg-2", Role = "assistant", Content = "Other" }
+                }
+            }
+        };
+
+        var updated = new ChatMessageModel { MessageId = "msg-1", Role = "assistant", Content = "Updated" };
+        var newState = MessagesReducers.Reduce(state, new UpdateMessage("topic-1", "msg-1", updated));
+
+        var messages = newState.MessagesByTopic["topic-1"];
+        messages[0].Content.ShouldBe("Updated");
+        messages[1].Content.ShouldBe("Other");
+    }
+
+    [Fact]
+    public void UpdateMessage_WhenMessageIdNotFound_NoChange()
+    {
+        var state = MessagesState.Initial with
+        {
+            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>
+            {
+                ["topic-1"] = new List<ChatMessageModel>
+                {
+                    new() { MessageId = "msg-1", Role = "assistant", Content = "Original" }
+                }
+            }
+        };
+
+        var updated = new ChatMessageModel { MessageId = "msg-99", Role = "assistant", Content = "Updated" };
+        var newState = MessagesReducers.Reduce(state, new UpdateMessage("topic-1", "msg-99", updated));
+
+        newState.MessagesByTopic["topic-1"][0].Content.ShouldBe("Original");
+    }
 }
