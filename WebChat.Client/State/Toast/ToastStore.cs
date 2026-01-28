@@ -27,28 +27,34 @@ public sealed class ToastStore : IDisposable
 
         // Deduplicate: don't add if same message already visible
         if (state.Toasts.Any(t => t.Message == message))
+        {
             return state;
+        }
 
         var toast = new ToastItem(Guid.NewGuid(), message, DateTime.UtcNow);
         var toasts = state.Toasts.Add(toast);
 
         // Enforce max limit by removing oldest
         if (toasts.Count > MaxToasts)
+        {
             toasts = toasts.RemoveAt(0);
+        }
 
-        return state with { Toasts = toasts };
+        return new ToastState(Toasts: toasts);
     }
 
     private static ToastState Reduce(ToastState state, DismissToast action)
     {
         var toasts = state.Toasts.RemoveAll(t => t.Id == action.Id);
-        return state with { Toasts = toasts };
+        return new ToastState(Toasts: toasts);
     }
 
     private static string TruncateMessage(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
+        {
             return "Something went wrong. Please try again.";
+        }
 
         return message.Length <= MaxMessageLength
             ? message

@@ -15,8 +15,7 @@ public sealed class StreamingService(
     IDispatcher dispatcher,
     ITopicService topicService,
     TopicsStore topicsStore,
-    StreamingStore streamingStore,
-    ToastStore toastStore) : IStreamingService
+    StreamingStore streamingStore) : IStreamingService
 {
     private readonly ConcurrentDictionary<string, Task> _activeStreams = new();
     private readonly SemaphoreSlim _streamLock = new(1, 1);
@@ -114,7 +113,10 @@ public sealed class StreamingService(
                 if (chunk.Error is not null)
                 {
                     if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
+                    {
                         dispatcher.Dispatch(new ShowError(chunk.Error));
+                    }
+
                     continue;
                 }
 
@@ -235,7 +237,10 @@ public sealed class StreamingService(
                 if (chunk.Error is not null)
                 {
                     if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
+                    {
                         dispatcher.Dispatch(new ShowError(chunk.Error));
+                    }
+
                     continue;
                 }
 

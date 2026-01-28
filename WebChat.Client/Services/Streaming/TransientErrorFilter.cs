@@ -2,7 +2,7 @@ namespace WebChat.Client.Services.Streaming;
 
 public static class TransientErrorFilter
 {
-    private static readonly string[] TransientPatterns =
+    private static readonly string[] _transientPatterns =
     [
         "OperationCanceled",
         "TaskCanceled",
@@ -17,9 +17,11 @@ public static class TransientErrorFilter
     public static bool IsTransientErrorMessage(string? message)
     {
         if (string.IsNullOrWhiteSpace(message))
+        {
             return true;
+        }
 
-        return TransientPatterns.Any(pattern =>
+        return _transientPatterns.Any(pattern =>
             message.Contains(pattern, StringComparison.OrdinalIgnoreCase));
     }
 }
