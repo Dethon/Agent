@@ -6,6 +6,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Integration.WebChat.Client;
@@ -17,6 +18,7 @@ public sealed class ConcurrentStreamingTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly ToastStore _toastStore;
     private readonly FakeTopicService _topicService = new();
     private readonly StreamingService _service;
 
@@ -25,7 +27,8 @@ public sealed class ConcurrentStreamingTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
-        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+        _toastStore = new ToastStore(_dispatcher);
+        _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _toastStore);
     }
 
     public void Dispose()
@@ -33,6 +36,7 @@ public sealed class ConcurrentStreamingTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _toastStore.Dispose();
     }
 
     private StoredTopic CreateTopic()

@@ -8,6 +8,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -24,6 +25,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
     private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
+    private ToastStore _toastStore = null!;
     private UserIdentityStore _userIdentityStore = null!;
     private StreamingService _streamingService = null!;
     private StreamResumeService _resumeService = null!;
@@ -43,9 +45,10 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _streamingService =
-            new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
+            new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore, _toastStore);
         _resumeService = new StreamResumeService(
             _messagingService,
             _topicService,
@@ -61,6 +64,7 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _toastStore.Dispose();
         _userIdentityStore.Dispose();
 
         try
@@ -209,9 +213,10 @@ public sealed class StreamResumeServiceIntegrationTests(WebChatServerFixture fix
             var topicsStore2 = new TopicsStore(dispatcher2);
             var messagesStore2 = new MessagesStore(dispatcher2);
             var streamingStore2 = new StreamingStore(dispatcher2);
+            var toastStore2 = new ToastStore(dispatcher2);
             var userIdentityStore2 = new UserIdentityStore(dispatcher2);
             var streamingService2 = new StreamingService(messagingService2, dispatcher2, topicService2, topicsStore2,
-                streamingStore2);
+                streamingStore2, toastStore2);
             var resumeService2 = new StreamResumeService(
                 messagingService2,
                 topicService2,
