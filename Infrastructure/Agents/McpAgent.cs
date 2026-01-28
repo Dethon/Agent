@@ -106,14 +106,17 @@ public sealed class McpAgent : DisposableAgent
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        if (serializedThread.TryGetProperty("StoreState", StringComparison.InvariantCultureIgnoreCase, out _))
+        if (serializedThread.TryGetProperty(
+                "ChatHistoryProviderState",
+                StringComparison.InvariantCultureIgnoreCase,
+                out _))
         {
             return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);
         }
 
         var json = new JsonObject
         {
-            ["StoreState"] = serializedThread.ToJsonNode()
+            ["ChatHistoryProviderState"] = serializedThread.ToJsonNode()
         };
         serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
         return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);
