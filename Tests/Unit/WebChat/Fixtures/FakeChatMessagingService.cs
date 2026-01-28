@@ -13,7 +13,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     private readonly TaskCompletionSource _completionSource = new();
     private Exception? _exceptionToThrow;
 
-    public void SetExceptionToThrow(Exception? exception) => _exceptionToThrow = exception;
+    public void SetExceptionToThrow(Exception? exception)
+    {
+        _exceptionToThrow = exception;
+    }
 
     public void SetEnqueueResult(bool result) => _enqueueResult = result;
 

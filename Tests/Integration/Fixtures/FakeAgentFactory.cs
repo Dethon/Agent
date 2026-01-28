@@ -74,7 +74,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
     private record ToolCallInfo(string Name, Dictionary<string, object?> Arguments);
 
-    private sealed class FakeAgentThread : AgentThread;
+    private sealed class FakeAgentThread : AgentSession;
 
     private sealed class FakeDisposableAgent(IReadOnlyList<QueuedResponse> responses, int responseDelayMs)
         : DisposableAgent
@@ -87,27 +87,27 @@ public sealed class FakeAgentFactory : IAgentFactory
             return ValueTask.CompletedTask;
         }
 
-        public override ValueTask DisposeThreadSessionAsync(AgentThread thread)
+        public override ValueTask DisposeThreadSessionAsync(AgentSession thread)
         {
             return ValueTask.CompletedTask;
         }
 
-        public override ValueTask<AgentThread> GetNewThreadAsync(CancellationToken cancellationToken = default)
+        public override ValueTask<AgentSession> GetNewSessionAsync(CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
+            return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
         }
 
-        public override ValueTask<AgentThread> DeserializeThreadAsync(
+        public override ValueTask<AgentSession> DeserializeSessionAsync(
             JsonElement serializedThread,
             JsonSerializerOptions? jsonSerializerOptions = null,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult<AgentThread>(new FakeAgentThread());
+            return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
         }
 
         protected override Task<AgentResponse> RunCoreAsync(
             IEnumerable<ChatMessage> messages,
-            AgentThread? thread = null,
+            AgentSession? thread = null,
             AgentRunOptions? options = null,
             CancellationToken cancellationToken = default)
         {
@@ -116,7 +116,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
         protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
             IEnumerable<ChatMessage> messages,
-            AgentThread? thread = null,
+            AgentSession? thread = null,
             AgentRunOptions? options = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {

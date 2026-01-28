@@ -202,6 +202,34 @@ public sealed class BufferRebuildUtilityTests
         completedTurns[0].Content.ShouldBe("Hello");
     }
 
+    [Fact]
+    public void RebuildFromBuffer_PropagatesMessageIdToCompletedTurns()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "First", MessageId = "msg-1" },
+            new() { IsComplete = true, MessageId = "msg-1" },
+            new() { Content = "Second", MessageId = "msg-2" }
+        };
+
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns[0].MessageId.ShouldBe("msg-1");
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_UserMessages_HaveNoMessageId()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
+        };
+
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+        completedTurns[0].MessageId.ShouldBeNull();
+    }
+
     #endregion
 
     #region StripKnownContent Tests
@@ -251,7 +279,7 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void StripKnownContent_PreservesOtherFields()
+    public void StripKnownContent_WhenPrefixStripped_PreservesReasoning()
     {
         var message = new ChatMessageModel
         {
@@ -266,6 +294,74 @@ public sealed class BufferRebuildUtilityTests
 
         result.Reasoning.ShouldBe("thinking");
         result.ToolCalls.ShouldBe("tool_1");
+    }
+
+    [Fact]
+    public void StripKnownContent_WhenContentIsDuplicate_StripsReasoning()
+    {
+        var message = new ChatMessageModel
+        {
+            Role = "assistant",
+            Content = "partial",
+            Reasoning = "orphaned reasoning",
+            ToolCalls = "tool_1"
+        };
+        var historyContent = new HashSet<string> { "partial content is longer" };
+
+        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
+
+        result.Content.ShouldBeEmpty();
+        result.Reasoning.ShouldBeNull();
+        result.ToolCalls.ShouldBe("tool_1"); // ToolCalls preserved (might be for different turn)
+    }
+
+    #endregion
+
+    #region StripKnownContentById Tests
+
+    [Fact]
+    public void StripKnownContentById_WhenIdNotInHistory_ReturnsUnchanged()
+    {
+        var message = new ChatMessageModel { Role = "assistant", Content = "New content" };
+        var historyById = new Dictionary<string, string> { ["msg-1"] = "Old content" };
+
+        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-2", historyById);
+
+        result.Content.ShouldBe("New content");
+    }
+
+    [Fact]
+    public void StripKnownContentById_WhenBufferIsSubset_ReturnsEmpty()
+    {
+        var message = new ChatMessageModel { Role = "assistant", Content = "partial", Reasoning = "thinking" };
+        var historyById = new Dictionary<string, string> { ["msg-1"] = "partial content complete" };
+
+        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-1", historyById);
+
+        result.Content.ShouldBeEmpty();
+        result.Reasoning.ShouldBeNull();
+    }
+
+    [Fact]
+    public void StripKnownContentById_WhenBufferHasMore_StripsPrefix()
+    {
+        var message = new ChatMessageModel { Role = "assistant", Content = "Known new stuff" };
+        var historyById = new Dictionary<string, string> { ["msg-1"] = "Known" };
+
+        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-1", historyById);
+
+        result.Content.ShouldBe("new stuff");
+    }
+
+    [Fact]
+    public void StripKnownContentById_WithNullMessageId_ReturnsUnchanged()
+    {
+        var message = new ChatMessageModel { Role = "assistant", Content = "Content" };
+        var historyById = new Dictionary<string, string> { ["msg-1"] = "Content" };
+
+        var result = BufferRebuildUtility.StripKnownContentById(message, null, historyById);
+
+        result.Content.ShouldBe("Content");
     }
 
     #endregion

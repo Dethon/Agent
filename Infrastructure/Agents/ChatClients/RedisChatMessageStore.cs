@@ -5,21 +5,21 @@ using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatMessageStore
+public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatHistoryProvider
 {
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    public static ValueTask<ChatMessageStore> Create(
+    public static ValueTask<ChatHistoryProvider> Create(
         IThreadStateStore store,
-        ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx,
+        ChatClientAgentOptions.ChatHistoryProviderFactoryContext ctx,
         CancellationToken ct = default)
     {
         var redisKey = ResolveRedisKey(ctx);
         var chatStore = new RedisChatMessageStore(store, redisKey);
-        return ValueTask.FromResult<ChatMessageStore>(chatStore);
+        return ValueTask.FromResult<ChatHistoryProvider>(chatStore);
     }
 
-    private static string ResolveRedisKey(ChatClientAgentOptions.ChatMessageStoreFactoryContext ctx)
+    private static string ResolveRedisKey(ChatClientAgentOptions.ChatHistoryProviderFactoryContext ctx)
     {
         if (ctx.SerializedState.ValueKind == JsonValueKind.String)
         {

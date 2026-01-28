@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER $APP_UID
 WORKDIR /app
@@ -7,18 +8,17 @@ WORKDIR /src
 COPY ["McpServerIdealista/McpServerIdealista.csproj", "McpServerIdealista/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerIdealista/McpServerIdealista.csproj"
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
+    dotnet restore "McpServerIdealista/McpServerIdealista.csproj"
 
-FROM dependencies AS build
+FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["McpServerIdealista/", "McpServerIdealista/"]
 WORKDIR "/src/McpServerIdealista"
-RUN dotnet build "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
-FROM build AS publish
-RUN dotnet publish "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
+    dotnet publish "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

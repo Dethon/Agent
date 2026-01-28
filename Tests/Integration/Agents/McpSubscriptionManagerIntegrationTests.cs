@@ -34,7 +34,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -67,7 +67,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -97,7 +97,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -129,7 +129,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -166,7 +166,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -193,7 +193,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewThreadAsync();
+        var thread = await agent.GetNewSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Use two endpoints

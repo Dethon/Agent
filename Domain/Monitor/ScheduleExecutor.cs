@@ -97,7 +97,7 @@ public class ScheduleExecutor(
             schedule.UserId ?? "scheduler",
             schedule.Agent);
 
-        var thread = await agent.DeserializeThreadAsync(
+        var thread = await agent.DeserializeSessionAsync(
             JsonSerializer.SerializeToElement(agentKey.ToString()),
             null,
             ct);

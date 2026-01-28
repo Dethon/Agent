@@ -5,5 +5,5 @@ namespace Domain.Agents;
 public abstract class DisposableAgent : AIAgent, IAsyncDisposable
 {
     public abstract ValueTask DisposeAsync();
-    public abstract ValueTask DisposeThreadSessionAsync(AgentThread thread);
+    public abstract ValueTask DisposeThreadSessionAsync(AgentSession thread);
 }

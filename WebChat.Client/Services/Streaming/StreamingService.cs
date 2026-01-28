@@ -5,6 +5,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
@@ -111,18 +112,12 @@ public sealed class StreamingService(
 
                 if (chunk.Error is not null)
                 {
-                    streamingMessage = streamingMessage with
+                    if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
                     {
-                        Content = chunk.Error,
-                        IsError = true
-                    };
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
-                    break;
+                        dispatcher.Dispatch(new ShowError(chunk.Error));
+                    }
+
+                    continue;
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
@@ -200,13 +195,13 @@ public sealed class StreamingService(
                 await topicService.SaveTopicAsync(metadata);
             }
         }
-        catch (Exception ex) when (!IsTransientError(ex))
+        catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
         {
-            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage($"Error: {ex.Message}")));
+            dispatcher.Dispatch(new ShowError(ex.Message));
         }
         catch
         {
-            // Transient error (connection lost, operation cancelled) - reconnection flow handles recovery
+            // Transient errors silently ignored - reconnection handles recovery
         }
         finally
         {
@@ -241,18 +236,12 @@ public sealed class StreamingService(
 
                 if (chunk.Error is not null)
                 {
-                    streamingMessage = streamingMessage with
+                    if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
                     {
-                        Content = chunk.Error,
-                        IsError = true
-                    };
-                    dispatcher.Dispatch(new StreamChunk(
-                        topic.TopicId,
-                        streamingMessage.Content,
-                        streamingMessage.Reasoning,
-                        streamingMessage.ToolCalls,
-                        currentMessageId));
-                    break;
+                        dispatcher.Dispatch(new ShowError(chunk.Error));
+                    }
+
+                    continue;
                 }
 
                 // When a user message arrives in the stream, finalize current assistant content
@@ -366,32 +355,17 @@ public sealed class StreamingService(
                 }
             }
         }
-        catch (Exception ex) when (!IsTransientError(ex))
+        catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
         {
-            dispatcher.Dispatch(new AddMessage(topic.TopicId,
-                CreateErrorMessage($"Error resuming stream: {ex.Message}")));
+            dispatcher.Dispatch(new ShowError(ex.Message));
         }
         catch
         {
-            // Transient error (connection lost, operation cancelled) - reconnection flow handles recovery
+            // Transient errors silently ignored - reconnection handles recovery
         }
         finally
         {
             dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
         }
-    }
-
-    private static bool IsTransientError(Exception ex) =>
-        ex is OperationCanceledException or TaskCanceledException ||
-        string.IsNullOrWhiteSpace(ex.Message);
-
-    private static ChatMessageModel CreateErrorMessage(string errorMessage)
-    {
-        return new ChatMessageModel
-        {
-            Role = "assistant",
-            Content = errorMessage,
-            IsError = true
-        };
     }
 }

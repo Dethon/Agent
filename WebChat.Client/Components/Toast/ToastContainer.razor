@@ -1,0 +1,23 @@
+@using WebChat.Client.State.Toast
+@using ToastItemRecord = WebChat.Client.State.Toast.ToastItem
+@inherits StoreSubscriberComponent
+@inject ToastStore ToastStore
+
+<div class="toast-container">
+    @foreach (var toast in _toasts)
+    {
+        <ToastItem Toast="toast" @key="toast.Id" />
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ToastItemRecord> _toasts = [];
+
+    protected override void OnInitialized()
+    {
+        Subscribe(ToastStore.StateObservable, state => state.Toasts, toasts =>
+        {
+            _toasts = toasts;
+        });
+    }
+}

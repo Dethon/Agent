@@ -36,11 +36,12 @@ public static class BufferRebuildUtility
                     var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                     if (strippedMessage.HasContent)
                     {
-                        completedTurns.Add(strippedMessage);
+                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                     }
 
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
                     needsReasoningSeparator = false;
+                    currentMessageId = null;
                 }
 
                 completedTurns.Add(new ChatMessageModel
@@ -60,7 +61,7 @@ public static class BufferRebuildUtility
                 var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                 if (strippedMessage.HasContent)
                 {
-                    completedTurns.Add(strippedMessage);
+                    completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                 }
 
                 currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
@@ -77,7 +78,7 @@ public static class BufferRebuildUtility
                     var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
                     if (strippedMessage.HasContent)
                     {
-                        completedTurns.Add(strippedMessage);
+                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
                     }
 
                     currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
@@ -104,9 +105,10 @@ public static class BufferRebuildUtility
 
         // If the buffer content is a subset of any history content, it's a duplicate
         // (user disconnected mid-stream and buffer has incomplete content while history has complete)
+        // Clear both content and reasoning since this entire message is already in history
         if (historyContent.Any(known => known.Contains(message.Content)))
         {
-            return message with { Content = "" };
+            return message with { Content = "", Reasoning = null };
         }
 
         // Remove any history content that appears as a prefix in this message
@@ -118,6 +120,33 @@ public static class BufferRebuildUtility
         }
 
         return content != message.Content ? message with { Content = content } : message;
+    }
+
+    public static ChatMessageModel StripKnownContentById(
+        ChatMessageModel message,
+        string? messageId,
+        IReadOnlyDictionary<string, string> historyContentById)
+    {
+        if (string.IsNullOrEmpty(message.Content) ||
+            string.IsNullOrEmpty(messageId) ||
+            !historyContentById.TryGetValue(messageId, out var knownContent))
+        {
+            return message;
+        }
+
+        // Buffer content is subset of history - entire message already saved
+        if (knownContent.Contains(message.Content))
+        {
+            return message with { Content = "", Reasoning = null };
+        }
+
+        // Buffer has more than history - strip the known prefix
+        if (message.Content.StartsWith(knownContent))
+        {
+            return message with { Content = message.Content[knownContent.Length..].TrimStart() };
+        }
+
+        return message;
     }
 
     internal static ChatMessageModel AccumulateChunk(

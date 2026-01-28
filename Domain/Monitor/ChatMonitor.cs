@@ -92,9 +92,9 @@ public class ChatMonitor(
         }
     }
 
-    private static ValueTask<AgentThread> GetOrRestoreThread(
+    private static ValueTask<AgentSession> GetOrRestoreThread(
         DisposableAgent agent, AgentKey agentKey, CancellationToken ct)
     {
-        return agent.DeserializeThreadAsync(JsonSerializer.SerializeToElement(agentKey.ToString()), null, ct);
+        return agent.DeserializeSessionAsync(JsonSerializer.SerializeToElement(agentKey.ToString()), null, ct);
     }
 }

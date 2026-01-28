@@ -10,7 +10,7 @@
     <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />
       <PackageReference Include="JetBrains.Annotations" Version="2025.2.4" />
-      <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.0.0-preview.260121.1" />
+      <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.0.0-preview.260127.1"/>
       <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.2.0" />
       <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.2" />
       <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />

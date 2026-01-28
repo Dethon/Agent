@@ -11,7 +11,7 @@ internal sealed class McpResourceManager : IAsyncDisposable
     private readonly ResourceUpdateProcessor _updateProcessor;
     private bool _isDisposed;
 
-    public McpResourceManager(AIAgent agent, AgentThread thread, string? instructions, IReadOnlyList<AITool> tools)
+    public McpResourceManager(AIAgent agent, AgentSession thread, string? instructions, IReadOnlyList<AITool> tools)
     {
         var config = new ResourceProcessorConfig(agent, thread, instructions, tools);
         _updateProcessor = new ResourceUpdateProcessor(config);

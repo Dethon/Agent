@@ -23,7 +23,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _userId;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
-    private readonly ConcurrentDictionary<AgentThread, ThreadSession> _threadSessions = [];
+    private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
 
     public override string? Name => _innerAgent.Name;
@@ -59,7 +59,7 @@ public sealed class McpAgent : DisposableAgent
                 }
             },
             Description = description,
-            ChatMessageStoreFactory = (ctx, ct) => RedisChatMessageStore.Create(stateStore, ctx, ct)
+            ChatHistoryProviderFactory = (ctx, ct) => RedisChatMessageStore.Create(stateStore, ctx, ct)
         });
     }
 
@@ -82,13 +82,13 @@ public sealed class McpAgent : DisposableAgent
         _syncLock.Dispose();
     }
 
-    public override ValueTask<AgentThread> GetNewThreadAsync(CancellationToken cancellationToken = default)
+    public override ValueTask<AgentSession> GetNewSessionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        return _innerAgent.GetNewThreadAsync(cancellationToken);
+        return _innerAgent.GetNewSessionAsync(cancellationToken);
     }
 
-    public override async ValueTask DisposeThreadSessionAsync(AgentThread thread)
+    public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         await _syncLock.WithLockAsync(async () =>
@@ -100,28 +100,31 @@ public sealed class McpAgent : DisposableAgent
         });
     }
 
-    public override ValueTask<AgentThread> DeserializeThreadAsync(
+    public override ValueTask<AgentSession> DeserializeSessionAsync(
         JsonElement serializedThread,
         JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        if (serializedThread.TryGetProperty("StoreState", StringComparison.InvariantCultureIgnoreCase, out _))
+        if (serializedThread.TryGetProperty(
+                "ChatHistoryProviderState",
+                StringComparison.InvariantCultureIgnoreCase,
+                out _))
         {
-            return _innerAgent.DeserializeThreadAsync(serializedThread, jsonSerializerOptions, cancellationToken);
+            return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);
         }
 
         var json = new JsonObject
         {
-            ["StoreState"] = serializedThread.ToJsonNode()
+            ["ChatHistoryProviderState"] = serializedThread.ToJsonNode()
         };
         serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
-        return _innerAgent.DeserializeThreadAsync(serializedThread, jsonSerializerOptions, cancellationToken);
+        return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);
     }
 
     protected override async Task<AgentResponse> RunCoreAsync(
         IEnumerable<ChatMessage> messages,
-        AgentThread? thread = null,
+        AgentSession? thread = null,
         AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
@@ -132,12 +135,12 @@ public sealed class McpAgent : DisposableAgent
 
     protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages,
-        AgentThread? thread = null,
+        AgentSession? thread = null,
         AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        thread ??= await GetNewThreadAsync(cancellationToken);
+        thread ??= await GetNewSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
         await session.ResourceManager.EnsureChannelActive(cancellationToken);
         options ??= CreateRunOptions(session);
@@ -160,7 +163,7 @@ public sealed class McpAgent : DisposableAgent
 
     private async IAsyncEnumerable<AgentResponseUpdate> RunStreamingCoreAsync(
         IEnumerable<ChatMessage> messages,
-        AgentThread thread,
+        AgentSession thread,
         ThreadSession session,
         AgentRunOptions options,
         [EnumeratorCancellation] CancellationToken ct = default)
@@ -195,7 +198,7 @@ public sealed class McpAgent : DisposableAgent
         });
     }
 
-    private async Task<ThreadSession> GetOrCreateSessionAsync(AgentThread thread, CancellationToken ct)
+    private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
     {
         return await _syncLock.WithLockAsync(async () =>
         {

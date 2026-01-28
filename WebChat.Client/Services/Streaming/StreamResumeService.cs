@@ -1,4 +1,5 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
@@ -49,13 +50,7 @@ public sealed class StreamResumeService(
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                var messages = history.Select(h => new ChatMessageModel
-                {
-                    Role = h.Role,
-                    Content = h.Content,
-                    SenderId = h.SenderId,
-                    Timestamp = h.Timestamp
-                }).ToList();
+                var messages = history.Select(h => h.ToChatMessageModel()).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
 
@@ -88,6 +83,13 @@ public sealed class StreamResumeService(
             existingMessages = messagesStore.State.MessagesByTopic
                 .GetValueOrDefault(topic.TopicId) ?? [];
 
+            // Build ID-based lookup for precise content matching (only messages with IDs)
+            var historyContentById = existingMessages
+                .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content) && !string.IsNullOrEmpty(m.MessageId))
+                .ToDictionary(m => m.MessageId!, m => m.Content);
+
+            // Build HashSet from ALL assistant content for backward compatibility with RebuildFromBuffer
+            // This includes messages without MessageIds (legacy data)
             var historyContent = existingMessages
                 .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
                 .Select(m => m.Content)
@@ -103,7 +105,8 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, turn));
             }
 
-            streamingMessage = BufferRebuildUtility.StripKnownContent(streamingMessage, historyContent);
+            streamingMessage = BufferRebuildUtility.StripKnownContentById(
+                streamingMessage, state.CurrentMessageId, historyContentById);
             dispatcher.Dispatch(new StreamChunk(
                 topic.TopicId,
                 streamingMessage.Content,

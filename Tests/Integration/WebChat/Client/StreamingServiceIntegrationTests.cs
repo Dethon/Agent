@@ -8,6 +8,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -23,6 +24,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     private TopicsStore _topicsStore = null!;
     private MessagesStore _messagesStore = null!;
     private StreamingStore _streamingStore = null!;
+    private ToastStore _toastStore = null!;
     private UserIdentityStore _userIdentityStore = null!;
     private StreamingService _service = null!;
 
@@ -40,6 +42,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
     }
@@ -49,6 +52,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _toastStore.Dispose();
         _userIdentityStore.Dispose();
 
         try
@@ -171,7 +175,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     }
 
     [Fact]
-    public async Task StreamResponseAsync_OnError_StopsCleanly()
+    public async Task StreamResponseAsync_OnError_StopsCleanlyWithoutErrorMessage()
     {
         // Arrange
         var topic = await CreateAndRegisterTopicAsync();
@@ -183,12 +187,11 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         AddUserMessageAndStartStreaming(topic, "Trigger error");
         await _service.StreamResponseAsync(topic, "Trigger error");
 
-        // Assert
+        // Assert - streaming should stop but no error message should be shown
+        // (reconnection flow handles recovery seamlessly)
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        var lastMessage = messages.LastOrDefault(m => m.Role == "assistant");
-        lastMessage.ShouldNotBeNull();
-        lastMessage.Content.ShouldContain("error");
+        messages.ShouldNotContain(m => m.IsError);
     }
 
     [Fact]

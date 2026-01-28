@@ -6,6 +6,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -28,6 +29,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<ConnectionStore>();
             services.AddScoped<ApprovalStore>();
             services.AddScoped<UserIdentityStore>();
+            services.AddScoped<ToastStore>();
 
             // State coordination
             services.AddScoped<RenderCoordinator>();

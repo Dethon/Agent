@@ -6,6 +6,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -20,6 +21,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
+    private readonly ToastStore _toastStore;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly StreamResumeService _resumeService;
 
@@ -28,6 +30,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         _topicsStore = new TopicsStore(_dispatcher);
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
+        _toastStore = new ToastStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         var streamingService =
             new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _streamingStore);
@@ -46,6 +49,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _toastStore.Dispose();
         _userIdentityStore.Dispose();
     }
 
@@ -129,8 +133,8 @@ public sealed class StreamResumeServiceTests : IDisposable
     {
         var topic = CreateTopic(topicId: "topic-1");
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("user", "Hello", null, null),
-            new ChatHistoryMessage("assistant", "Hi", null, null));
+            new ChatHistoryMessage("1", "user", "Hello", null, null),
+            new ChatHistoryMessage("2", "assistant", "Hi", null, null));
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
             [
@@ -155,7 +159,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             new ChatMessageModel { Role = "user", Content = "Existing" }
         ]));
         _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("user", "Different content", null, null));
+            new ChatHistoryMessage("1", "user", "Different content", null, null));
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
             [
