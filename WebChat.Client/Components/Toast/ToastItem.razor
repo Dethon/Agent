@@ -26,7 +26,7 @@
 
     protected override void OnInitialized()
     {
-        _timer = new Timer(_ => _ = StartDismissAsync(), null, AutoDismissMs, Timeout.Infinite);
+        _timer = new Timer(_ => StartDismissAsync().ContinueWith(_ => { }), null, AutoDismissMs, Timeout.Infinite);
     }
 
     private async Task StartDismissAsync()
