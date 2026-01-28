@@ -103,12 +103,12 @@ public static class BufferRebuildUtility
             return message;
         }
 
-        // If the buffer content is a subset of any history content, it's a duplicate
+        // If the buffer content is a subset of any history content, the content is duplicate
         // (user disconnected mid-stream and buffer has incomplete content while history has complete)
-        // Clear both content and reasoning since this entire message is already in history
+        // Only clear content - keep Reasoning/ToolCalls so they can be merged into history
         if (historyContent.Any(known => known.Contains(message.Content)))
         {
-            return message with { Content = "", Reasoning = null };
+            return message with { Content = "" };
         }
 
         // Remove any history content that appears as a prefix in this message
@@ -134,10 +134,11 @@ public static class BufferRebuildUtility
             return message;
         }
 
-        // Buffer content is subset of history - entire message already saved
+        // Buffer content is subset of history - content is duplicate
+        // Only clear content - keep Reasoning/ToolCalls so they can be merged into history
         if (knownContent.Contains(message.Content))
         {
-            return message with { Content = "", Reasoning = null };
+            return message with { Content = "" };
         }
 
         // Buffer has more than history - strip the known prefix

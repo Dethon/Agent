@@ -26,11 +26,13 @@ public record StreamChangedNotification(
 public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,
-    string? ToolCalls = null);
+    string? ToolCalls = null,
+    string? MessageId = null);
 
 public record ToolCallsNotification(
     string TopicId,
-    string ToolCalls);
+    string ToolCalls,
+    string? MessageId = null);
 
 public record UserMessageNotification(
     string TopicId,

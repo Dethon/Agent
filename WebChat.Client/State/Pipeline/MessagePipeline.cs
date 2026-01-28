@@ -170,15 +170,18 @@ public sealed class MessagePipeline(
     public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> buffer,
         string? currentMessageId, string? currentPrompt, string? currentSenderId)
     {
-        // Delegate to existing BufferRebuildUtility for now
-        // This maintains compatibility while migrating
         var existingMessages = messagesStore.State.MessagesByTopic
             .GetValueOrDefault(topicId) ?? [];
 
+        // Build maps for merging: history content for dedup, and history messages by ID for merging
         var historyContent = existingMessages
             .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
             .Select(m => m.Content)
             .ToHashSet();
+
+        var historyById = existingMessages
+            .Where(m => !string.IsNullOrEmpty(m.MessageId))
+            .ToDictionary(m => m.MessageId!, m => m);
 
         var (completedTurns, streamingMessage) =
             BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
@@ -211,16 +214,31 @@ public sealed class MessagePipeline(
             }
         }
 
-        // Add completed turns (skip user messages matching currentPrompt)
+        // Process completed turns - merge with history or add new
         foreach (var turn in completedTurns.Where(t =>
                      t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
         {
-            dispatcher.Dispatch(new AddMessage(topicId, turn));
+            // Try to merge reasoning/toolcalls into existing history message
+            if (!string.IsNullOrEmpty(turn.MessageId) &&
+                historyById.TryGetValue(turn.MessageId, out var historyMsg) &&
+                TryMergeIntoHistory(topicId, historyMsg, turn))
+            {
+                continue;
+            }
+
+            dispatcher.Dispatch(new AddMessage(topicId, turn, turn.MessageId));
         }
 
-        // Dispatch streaming content
+        // For streaming content, also try to merge into history first
         if (streamingMessage.HasContent)
         {
+            if (!string.IsNullOrEmpty(currentMessageId) &&
+                historyById.TryGetValue(currentMessageId, out var historyMsg) &&
+                TryMergeIntoHistory(topicId, historyMsg, streamingMessage))
+            {
+                return;
+            }
+
             dispatcher.Dispatch(new StreamChunk(
                 topicId,
                 streamingMessage.Content,
@@ -228,6 +246,27 @@ public sealed class MessagePipeline(
                 streamingMessage.ToolCalls,
                 currentMessageId));
         }
+    }
+
+    private bool TryMergeIntoHistory(string topicId, ChatMessageModel historyMsg, ChatMessageModel bufferMsg)
+    {
+        // Check if history is missing reasoning or toolcalls that buffer has
+        var needsReasoning = string.IsNullOrEmpty(historyMsg.Reasoning) && !string.IsNullOrEmpty(bufferMsg.Reasoning);
+        var needsToolCalls = string.IsNullOrEmpty(historyMsg.ToolCalls) && !string.IsNullOrEmpty(bufferMsg.ToolCalls);
+
+        if (!needsReasoning && !needsToolCalls)
+        {
+            return false;
+        }
+
+        var merged = historyMsg with
+        {
+            Reasoning = needsReasoning ? bufferMsg.Reasoning : historyMsg.Reasoning,
+            ToolCalls = needsToolCalls ? bufferMsg.ToolCalls : historyMsg.ToolCalls
+        };
+
+        dispatcher.Dispatch(new UpdateMessage(topicId, historyMsg.MessageId!, merged));
+        return true;
     }
 
     public void Reset(string topicId)

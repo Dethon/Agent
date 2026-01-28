@@ -81,7 +81,7 @@ public sealed class HubEventDispatcher(
                 Content: null,
                 Reasoning: null,
                 ToolCalls: notification.ToolCalls,
-                MessageId: null));
+                MessageId: notification.MessageId));
         }
     }
 
@@ -92,7 +92,7 @@ public sealed class HubEventDispatcher(
             Content: null,
             Reasoning: null,
             ToolCalls: notification.ToolCalls,
-            MessageId: null));
+            MessageId: notification.MessageId));
     }
 
     public void HandleUserMessage(UserMessageNotification notification)
