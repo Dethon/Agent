@@ -1,4 +1,5 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
@@ -68,13 +69,7 @@ public sealed class AgentSelectionEffect : IDisposable
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-        var messages = history.Select(h => new ChatMessageModel
-        {
-            Role = h.Role,
-            Content = h.Content,
-            SenderId = h.SenderId,
-            Timestamp = h.Timestamp
-        }).ToList();
+        var messages = history.Select(h => h.ToChatMessageModel()).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
 
         _ = _streamResumeService.TryResumeStreamAsync(topic);

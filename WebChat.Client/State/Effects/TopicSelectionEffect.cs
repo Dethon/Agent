@@ -1,4 +1,5 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
@@ -61,13 +62,7 @@ public sealed class TopicSelectionEffect : IDisposable
             var currentMessages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []);
             if (currentMessages.Count == 0)
             {
-                var messages = history.Select(h => new ChatMessageModel
-                {
-                    Role = h.Role,
-                    Content = h.Content,
-                    SenderId = h.SenderId,
-                    Timestamp = h.Timestamp
-                }).ToList();
+                var messages = history.Select(h => h.ToChatMessageModel()).ToList();
                 _dispatcher.Dispatch(new MessagesLoaded(topicId, messages));
             }
         }

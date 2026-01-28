@@ -1,4 +1,5 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
@@ -49,13 +50,7 @@ public sealed class StreamResumeService(
             if (!messagesStore.State.MessagesByTopic.ContainsKey(topic.TopicId))
             {
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-                var messages = history.Select(h => new ChatMessageModel
-                {
-                    Role = h.Role,
-                    Content = h.Content,
-                    SenderId = h.SenderId,
-                    Timestamp = h.Timestamp
-                }).ToList();
+                var messages = history.Select(h => h.ToChatMessageModel()).ToList();
                 dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));
             }
 
