@@ -121,6 +121,33 @@ public static class BufferRebuildUtility
         return content != message.Content ? message with { Content = content } : message;
     }
 
+    public static ChatMessageModel StripKnownContentById(
+        ChatMessageModel message,
+        string? messageId,
+        IReadOnlyDictionary<string, string> historyContentById)
+    {
+        if (string.IsNullOrEmpty(message.Content) ||
+            string.IsNullOrEmpty(messageId) ||
+            !historyContentById.TryGetValue(messageId, out var knownContent))
+        {
+            return message;
+        }
+
+        // Buffer content is subset of history - entire message already saved
+        if (knownContent.Contains(message.Content))
+        {
+            return message with { Content = "", Reasoning = null };
+        }
+
+        // Buffer has more than history - strip the known prefix
+        if (message.Content.StartsWith(knownContent))
+        {
+            return message with { Content = message.Content[knownContent.Length..].TrimStart() };
+        }
+
+        return message;
+    }
+
     internal static ChatMessageModel AccumulateChunk(
         ChatMessageModel streamingMessage,
         ChatStreamMessage chunk,
