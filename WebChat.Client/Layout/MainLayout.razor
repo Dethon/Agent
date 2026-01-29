@@ -52,6 +52,7 @@
 
 @code {
     private bool _isDarkTheme;
+    private DotNetObjectReference<MainLayout>? _selfRef;
 
     protected override Task OnInitializedAsync()
     {
@@ -65,8 +66,18 @@
         {
             var theme = await Js.InvokeAsync<string>("themeManager.getTheme");
             _isDarkTheme = theme == "dark";
+
+            _selfRef = DotNetObjectReference.Create(this);
+            await Js.InvokeVoidAsync("visibilityHelper.register", _selfRef);
+
             StateHasChanged();
         }
+    }
+
+    [JSInvokable]
+    public async Task OnPageVisible()
+    {
+        await ConnectionService.ReconnectIfNeededAsync();
     }
 
     private async Task ToggleTheme()
@@ -78,5 +89,6 @@
     public void Dispose()
     {
         ConnectionService.OnStateChanged -= StateHasChanged;
+        _selfRef?.Dispose();
     }
 }

@@ -12,4 +12,5 @@ public interface IChatConnectionService : IAsyncDisposable
     event Action? OnReconnecting;
 
     Task ConnectAsync();
+    Task ReconnectIfNeededAsync();
 }

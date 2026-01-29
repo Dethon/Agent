@@ -54,6 +54,31 @@ if (window.matchMedia) {
 }
 
 // ===================================
+// Page Visibility (for mobile background/foreground)
+// ===================================
+
+window.visibilityHelper = {
+    _dotnetRef: null,
+
+    register: function (dotnetRef) {
+        this._dotnetRef = dotnetRef;
+        document.addEventListener('visibilitychange', this._handler);
+    },
+
+    _handler: function () {
+        const ref = window.visibilityHelper._dotnetRef;
+        if (ref && document.visibilityState === 'visible') {
+            ref.invokeMethodAsync('OnPageVisible');
+        }
+    },
+
+    dispose: function () {
+        document.removeEventListener('visibilitychange', this._handler);
+        this._dotnetRef = null;
+    }
+};
+
+// ===================================
 // Chat Input Handling
 // ===================================
 

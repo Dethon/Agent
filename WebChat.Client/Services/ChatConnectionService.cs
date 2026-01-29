@@ -75,6 +75,29 @@ public sealed class ChatConnectionService(
         OnStateChanged?.Invoke();
     }
 
+    public async Task ReconnectIfNeededAsync()
+    {
+        if (HubConnection is null)
+        {
+            return;
+        }
+
+        if (HubConnection.State is HubConnectionState.Connected)
+        {
+            return;
+        }
+
+        if (HubConnection.State is HubConnectionState.Reconnecting or HubConnectionState.Connecting)
+        {
+            return;
+        }
+
+        // Connection is disconnected — dispose and rebuild
+        await HubConnection.DisposeAsync();
+        HubConnection = null;
+        await ConnectAsync();
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (HubConnection is not null)
