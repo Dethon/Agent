@@ -227,6 +227,9 @@ public sealed class MessagePipeline(
         // Build merged list: walk history, enrich anchors, insert new messages at anchor positions
         var merged = new List<ChatMessageModel>(existingMessages.Count + completedTurns.Count);
         var leadingInserted = false;
+        var completedById = completedTurns
+            .Where(t => !string.IsNullOrEmpty(t.MessageId))
+            .ToDictionary(t => t.MessageId!, t => t);
 
         foreach (var msg in existingMessages)
         {
@@ -239,18 +242,18 @@ public sealed class MessagePipeline(
 
             // Enrich anchor with buffer reasoning/toolcalls, or pass through unchanged
             var anchorTurn = (msg.MessageId is not null &&
-                completedTurns.FirstOrDefault(t => t.MessageId == msg.MessageId) is { } match)
+                completedById.TryGetValue(msg.MessageId, out var match))
                 ? match : null;
 
             if (anchorTurn is not null)
             {
-                var nr = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
-                var nt = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
-                merged.Add((nr || nt)
+                var needsReasoning = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
+                var needsToolCalls = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
+                merged.Add((needsReasoning || needsToolCalls)
                     ? msg with
                     {
-                        Reasoning = nr ? anchorTurn.Reasoning : msg.Reasoning,
-                        ToolCalls = nt ? anchorTurn.ToolCalls : msg.ToolCalls
+                        Reasoning = needsReasoning ? anchorTurn.Reasoning : msg.Reasoning,
+                        ToolCalls = needsToolCalls ? anchorTurn.ToolCalls : msg.ToolCalls
                     }
                     : msg);
             }
