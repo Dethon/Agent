@@ -3,6 +3,8 @@
 
 @code {
     [Parameter, EditorRequired] public string TopicId { get; set; } = "";
+    [Parameter] public string? CarriedReasoning { get; set; }
+    [Parameter] public string? CarriedToolCalls { get; set; }
 
     private StreamingContent? _streamingContent;
     private string _previousTopicId = "";
@@ -39,7 +41,9 @@
     {
         return !string.IsNullOrEmpty(_streamingContent?.Content) ||
                !string.IsNullOrEmpty(_streamingContent?.Reasoning) ||
-               !string.IsNullOrEmpty(_streamingContent?.ToolCalls);
+               !string.IsNullOrEmpty(_streamingContent?.ToolCalls) ||
+               !string.IsNullOrEmpty(CarriedReasoning) ||
+               !string.IsNullOrEmpty(CarriedToolCalls);
     }
 
 }
@@ -49,8 +53,17 @@
     {
         Role = "assistant",
         Content = _streamingContent?.Content ?? "",
-        Reasoning = _streamingContent?.Reasoning,
-        ToolCalls = _streamingContent?.ToolCalls,
+        Reasoning = MergeField(CarriedReasoning, _streamingContent?.Reasoning, "\n-----\n"),
+        ToolCalls = MergeField(CarriedToolCalls, _streamingContent?.ToolCalls, "\n"),
         IsError = _streamingContent?.IsError ?? false
     };
+
+    private static string? MergeField(string? carried, string? live, string separator) =>
+        (carried, live) switch
+        {
+            (null or "", null or "") => null,
+            (null or "", _) => live,
+            (_, null or "") => carried,
+            _ => carried + separator + live
+        };
 }
