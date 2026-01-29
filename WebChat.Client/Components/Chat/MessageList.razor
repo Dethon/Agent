@@ -112,7 +112,13 @@
 
             if (!string.IsNullOrEmpty(message.Content))
             {
-                accContent ??= message.Content;
+                if (accContent is not null)
+                {
+                    // Previous message(s) already had content — flush them as a separate bubble
+                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                }
+
+                accContent = message.Content;
             }
 
             accReasoning = (accReasoning, message.Reasoning) switch

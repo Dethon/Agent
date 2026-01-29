@@ -83,4 +83,40 @@ public sealed class MessageMergeTests
 
         result.Count.ShouldBe(3);
     }
+
+    [Fact]
+    public void MultipleConsecutiveWithContent_NotMerged()
+    {
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", MessageId = "gen-1", Content = "First response" },
+            new() { Role = "assistant", MessageId = "gen-2", Content = "Second response" },
+            new() { Role = "assistant", MessageId = "gen-3", Content = "Third response" }
+        };
+
+        var result = MessageList.MergeConsecutiveAssistantMessages(messages);
+
+        result.Count.ShouldBe(3);
+        result[0].Content.ShouldBe("First response");
+        result[1].Content.ShouldBe("Second response");
+        result[2].Content.ShouldBe("Third response");
+    }
+
+    [Fact]
+    public void ReasoningFragment_ThenMultipleWithContent_MergesOnlyFragment()
+    {
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "", Reasoning = "Thinking" },
+            new() { Role = "assistant", MessageId = "gen-1", Content = "First answer" },
+            new() { Role = "assistant", MessageId = "gen-2", Content = "Second answer" }
+        };
+
+        var result = MessageList.MergeConsecutiveAssistantMessages(messages);
+
+        result.Count.ShouldBe(2);
+        result[0].Reasoning.ShouldBe("Thinking");
+        result[0].Content.ShouldBe("First answer");
+        result[1].Content.ShouldBe("Second answer");
+    }
 }
