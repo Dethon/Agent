@@ -318,8 +318,11 @@ public sealed class StreamResumeServiceTests : IDisposable
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
-        messages.ShouldContain(m => m.Content.Contains("buffered content"));
+        // Buffered content is dispatched as a StreamChunk (streaming store),
+        // not finalized into messages store — the live stream does that asynchronously.
+        var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
+        streaming.ShouldNotBeNull();
+        streaming!.Content.ShouldContain("buffered content");
     }
 
     [Fact]
