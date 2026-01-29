@@ -91,7 +91,7 @@ public sealed class StreamingService(
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
         var streamTask = StreamResponseAsync(topic, message, correlationId);
         _activeStreams[topic.TopicId] = streamTask;
-        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out Task? _));
+        _ = streamTask.ContinueWith(_ => _activeStreams.TryRemove(topic.TopicId, out var _));
     }
 
     public async Task StreamResponseAsync(StoredTopic topic, string message, string? correlationId = null)
@@ -146,7 +146,7 @@ public sealed class StreamingService(
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
+                    dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                 }
 
                 currentMessageId = chunk.MessageId;
@@ -262,7 +262,7 @@ public sealed class StreamingService(
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
+                    dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
 
                     processedContentLength = 0;
                     processedReasoningLength = 0;
