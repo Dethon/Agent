@@ -19,9 +19,7 @@ public static class BufferRebuildUtility
             .Where(m => !string.IsNullOrEmpty(m.MessageId))
             .ToDictionary(m => m.MessageId!, m => m);
 
-        // Rebuild buffer into completed turns + raw streaming message.
-        // Pass empty historyContent — we need anchor MessageIds for positioning, not content stripping.
-        var (completedTurns, rawStreamingMessage) = RebuildFromBuffer(buffer, []);
+        var (completedTurns, rawStreamingMessage) = RebuildFromBuffer(buffer);
 
         // Strip streaming message against history content
         var historyContent = existingHistory
@@ -117,8 +115,7 @@ public static class BufferRebuildUtility
     }
 
     internal static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
-        IReadOnlyList<ChatStreamMessage> bufferedMessages,
-        HashSet<string> historyContent)
+        IReadOnlyList<ChatStreamMessage> bufferedMessages)
     {
         var completedTurns = new List<ChatMessageModel>();
         var currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
@@ -128,29 +125,12 @@ public static class BufferRebuildUtility
             return (completedTurns, currentAssistantMessage);
         }
 
-        var orderedMessages = bufferedMessages
-            .OrderBy(m => m.SequenceNumber)
-            .ToList();
-
-        var needsReasoningSeparator = false;
         string? currentMessageId = null;
-
-        foreach (var msg in orderedMessages)
+        foreach (var msg in bufferedMessages.OrderBy(m => m.SequenceNumber))
         {
             if (msg.UserMessage is not null)
             {
-                if (currentAssistantMessage.HasContent)
-                {
-                    var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
-                    if (strippedMessage.HasContent)
-                    {
-                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
-                    }
-
-                    currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
-                    needsReasoningSeparator = false;
-                    currentMessageId = null;
-                }
+                currentAssistantMessage = FinalizeAssistantTurn(completedTurns, currentAssistantMessage);
 
                 completedTurns.Add(new ChatMessageModel
                 {
@@ -162,45 +142,44 @@ public static class BufferRebuildUtility
                 continue;
             }
 
-            if (currentMessageId is not null && msg.MessageId != currentMessageId && currentAssistantMessage.HasContent)
+            if (currentMessageId is not null && msg.MessageId != currentMessageId)
             {
-                var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
-                if (strippedMessage.HasContent)
-                {
-                    completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
-                }
-
-                currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
-                needsReasoningSeparator = false;
+                currentAssistantMessage = FinalizeAssistantTurn(completedTurns, currentAssistantMessage);
             }
 
             currentMessageId = msg.MessageId;
 
-            if (!string.IsNullOrEmpty(msg.Content) || !string.IsNullOrEmpty(msg.Reasoning) || !string.IsNullOrEmpty(msg.ToolCalls))
+            if (!string.IsNullOrEmpty(msg.Content) ||
+                !string.IsNullOrEmpty(msg.Reasoning) ||
+                !string.IsNullOrEmpty(msg.ToolCalls))
             {
-                currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
+                currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg);
             }
 
-            if (msg.IsComplete || msg.Error is not null)
+            if (msg is { IsComplete: false, Error: null })
             {
-                if (msg.IsComplete && currentAssistantMessage.HasContent)
-                {
-                    var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
-                    if (strippedMessage.HasContent)
-                    {
-                        completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
-                    }
-
-                    currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
-                    needsReasoningSeparator = false;
-                }
-
                 continue;
+            }
+
+            if (msg.IsComplete)
+            {
+                currentAssistantMessage = FinalizeAssistantTurn(completedTurns, currentAssistantMessage);
             }
         }
 
-        var streamingMessage = StripKnownContent(currentAssistantMessage, historyContent);
-        return (completedTurns, streamingMessage);
+        return (completedTurns, currentAssistantMessage);
+    }
+
+    private static ChatMessageModel FinalizeAssistantTurn(
+        List<ChatMessageModel> completedTurns,
+        ChatMessageModel currentMessage)
+    {
+        if (currentMessage.HasContent)
+        {
+            completedTurns.Add(currentMessage);
+        }
+
+        return new ChatMessageModel { Role = "assistant" };
     }
 
     private static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
@@ -226,8 +205,7 @@ public static class BufferRebuildUtility
 
     internal static ChatMessageModel AccumulateChunk(
         ChatMessageModel streamingMessage,
-        ChatStreamMessage chunk,
-        ref bool needsReasoningSeparator)
+        ChatStreamMessage chunk)
     {
         if (!string.IsNullOrEmpty(chunk.Content))
         {
@@ -241,13 +219,11 @@ public static class BufferRebuildUtility
 
         if (!string.IsNullOrEmpty(chunk.Reasoning))
         {
-            var separator = needsReasoningSeparator ? "\n-----\n" : "";
-            needsReasoningSeparator = false;
             streamingMessage = streamingMessage with
             {
                 Reasoning = string.IsNullOrEmpty(streamingMessage.Reasoning)
                     ? chunk.Reasoning
-                    : streamingMessage.Reasoning + separator + chunk.Reasoning
+                    : streamingMessage.Reasoning + chunk.Reasoning
             };
         }
 

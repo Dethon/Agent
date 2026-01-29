@@ -1,4 +1,3 @@
-using System.Reactive.Subjects;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
@@ -12,14 +11,11 @@ public sealed class MessagePipeline(
     MessagesStore messagesStore,
     StreamingStore streamingStore,
     ILogger<MessagePipeline> logger)
-    : IMessagePipeline, IDisposable
+    : IMessagePipeline
 {
     private readonly Dictionary<string, HashSet<string>> _finalizedByTopic = new();
     private readonly Dictionary<string, string> _pendingUserMessages = new();
-    private readonly Subject<MessageLifecycleEvent> _lifecycleEvents = new();
     private readonly Lock _lock = new();
-
-    public IObservable<MessageLifecycleEvent> LifecycleEvents => _lifecycleEvents;
 
     public string SubmitUserMessage(string topicId, string content, string? senderId)
     {
@@ -28,14 +24,11 @@ public sealed class MessagePipeline(
         lock (_lock)
         {
             _pendingUserMessages[correlationId] = topicId;
-
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug(
-                    "Pipeline.SubmitUserMessage: topic={TopicId}, correlationId={CorrelationId}, senderId={SenderId}",
-                    topicId, correlationId, senderId);
-            }
         }
+
+        logger.LogDebug(
+            "Pipeline.SubmitUserMessage: topic={TopicId}, correlationId={CorrelationId}, senderId={SenderId}",
+            topicId, correlationId, senderId);
 
         dispatcher.Dispatch(new AddMessage(topicId, new ChatMessageModel
         {
@@ -55,26 +48,17 @@ public sealed class MessagePipeline(
         {
             if (!ShouldProcess(topicId, messageId))
             {
-                if (logger.IsEnabled(LogLevel.Debug))
-                {
-                    logger.LogDebug(
-                        "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                        topicId, messageId);
-                }
-
-                return;
-            }
-
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
                 logger.LogDebug(
-                    "Pipeline.AccumulateChunk: topic={TopicId}, messageId={MessageId}, contentLen={ContentLen}",
-                    topicId, messageId, content?.Length ?? 0);
+                    "Pipeline.AccumulateChunk: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
+                    topicId, messageId);
+                return;
             }
         }
 
-        // Dispatch StreamChunk - this still uses the existing reducer for now
-        // Phase 3 will simplify this
+        logger.LogDebug(
+            "Pipeline.AccumulateChunk: topic={TopicId}, messageId={MessageId}, contentLen={ContentLen}",
+            topicId, messageId, content?.Length ?? 0);
+
         dispatcher.Dispatch(new StreamChunk(topicId, content, reasoning, toolCalls, messageId));
     }
 
@@ -92,26 +76,18 @@ public sealed class MessagePipeline(
 
                 if (!finalized.Add(messageId))
                 {
-                    if (logger.IsEnabled(LogLevel.Debug))
-                    {
-                        logger.LogDebug(
-                            "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
-                            topicId, messageId);
-                    }
-
+                    logger.LogDebug(
+                        "Pipeline.FinalizeMessage: SKIPPED (already finalized) topic={TopicId}, messageId={MessageId}",
+                        topicId, messageId);
                     return;
                 }
             }
-
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug(
-                    "Pipeline.FinalizeMessage: topic={TopicId}, messageId={MessageId}",
-                    topicId, messageId);
-            }
         }
 
-        // Get current streaming content and add as message
+        logger.LogDebug(
+            "Pipeline.FinalizeMessage: topic={TopicId}, messageId={MessageId}",
+            topicId, messageId);
+
         var streamingContent = streamingStore.State.StreamingByTopic.GetValueOrDefault(topicId);
         if (streamingContent?.HasContent == true)
         {
@@ -144,7 +120,6 @@ public sealed class MessagePipeline(
 
         lock (_lock)
         {
-            // Track all message IDs as finalized
             if (!_finalizedByTopic.TryGetValue(topicId, out var finalized))
             {
                 finalized = new HashSet<string>();
@@ -155,29 +130,20 @@ public sealed class MessagePipeline(
             {
                 finalized.Add(msg.MessageId!);
             }
-
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug(
-                    "Pipeline.LoadHistory: topic={TopicId}, count={Count}, finalizedIds={FinalizedCount}",
-                    topicId, chatMessages.Count, finalized.Count);
-            }
         }
+
+        logger.LogDebug(
+            "Pipeline.LoadHistory: topic={TopicId}, count={Count}",
+            topicId, chatMessages.Count);
 
         dispatcher.Dispatch(new MessagesLoaded(topicId, chatMessages));
     }
 
     public void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId)
     {
-        lock (_lock)
-        {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug(
-                    "Pipeline.ResumeFromBuffer: topic={TopicId}, mergedCount={MergedCount}, hasStreaming={HasStreaming}",
-                    topicId, result.MergedMessages.Count, result.StreamingMessage.HasContent);
-            }
-        }
+        logger.LogDebug(
+            "Pipeline.ResumeFromBuffer: topic={TopicId}, mergedCount={MergedCount}, hasStreaming={HasStreaming}",
+            topicId, result.MergedMessages.Count, result.StreamingMessage.HasContent);
 
         dispatcher.Dispatch(new MessagesLoaded(topicId, result.MergedMessages));
 
@@ -222,14 +188,7 @@ public sealed class MessagePipeline(
 
     public void Reset(string topicId)
     {
-        lock (_lock)
-        {
-            if (logger.IsEnabled(LogLevel.Debug))
-            {
-                logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
-            }
-        }
-
+        logger.LogDebug("Pipeline.Reset: topic={TopicId}", topicId);
         dispatcher.Dispatch(new ResetStreamingContent(topicId));
     }
 
@@ -255,7 +214,7 @@ public sealed class MessagePipeline(
             var finalizedCount = _finalizedByTopic.GetValueOrDefault(topicId)?.Count ?? 0;
             var pendingCount = _pendingUserMessages.Count;
 
-            return new PipelineSnapshot(streamingId, finalizedCount, pendingCount, []);
+            return new PipelineSnapshot(streamingId, finalizedCount, pendingCount);
         }
     }
 
@@ -266,17 +225,7 @@ public sealed class MessagePipeline(
             return true;
         }
 
-        if (_finalizedByTopic.TryGetValue(topicId, out var finalized) &&
-            finalized.Contains(messageId))
-        {
-            return false;
-        }
-
-        return true;
-    }
-
-    public void Dispose()
-    {
-        _lifecycleEvents.Dispose();
+        return !_finalizedByTopic.TryGetValue(topicId, out var finalized) ||
+               !finalized.Contains(messageId);
     }
 }

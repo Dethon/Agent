@@ -322,7 +322,7 @@ public sealed class StreamResumeServiceTests : IDisposable
         // not finalized into messages store — the live stream does that asynchronously.
         var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
         streaming.ShouldNotBeNull();
-        streaming!.Content.ShouldContain("buffered content");
+        streaming.Content.ShouldContain("buffered content");
     }
 
     [Fact]

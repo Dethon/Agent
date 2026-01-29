@@ -12,7 +12,7 @@ public sealed class BufferRebuildUtilityTests
     [Fact]
     public void RebuildFromBuffer_WithEmptyBuffer_ReturnsEmptyMessage()
     {
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer([], []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer([]);
 
         completedTurns.ShouldBeEmpty();
         streamingMessage.Role.ShouldBe("assistant");
@@ -28,7 +28,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = " world", MessageId = "msg-1" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.ShouldBeEmpty();
         streamingMessage.Content.ShouldBe("Hello world");
@@ -43,7 +43,7 @@ public sealed class BufferRebuildUtilityTests
             new() { IsComplete = true, MessageId = "msg-1" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.Count.ShouldBe(1);
         completedTurns[0].Content.ShouldBe("First turn");
@@ -60,7 +60,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Second", MessageId = "msg-2" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.Count.ShouldBe(1);
         completedTurns[0].Content.ShouldBe("First");
@@ -79,7 +79,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "B2", MessageId = "msg-b" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.Count.ShouldBe(1);
         completedTurns[0].Content.ShouldBe("A1A2");
@@ -95,7 +95,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Answer", MessageId = "msg-1" }
         };
 
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         streamingMessage.Reasoning.ShouldBe("Thinking...");
         streamingMessage.Content.ShouldBe("Answer");
@@ -110,23 +110,9 @@ public sealed class BufferRebuildUtilityTests
             new() { ToolCalls = "tool_2", MessageId = "msg-1" }
         };
 
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         streamingMessage.ToolCalls.ShouldBe("tool_1\ntool_2");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_StripsKnownContent_FromAllTurns()
-    {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Known content here", MessageId = "msg-1" }
-        };
-        var historyContent = new HashSet<string> { "Known content here" };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
-
-        streamingMessage.Content.ShouldBeEmpty();
     }
 
     [Fact]
@@ -138,7 +124,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Second turn", MessageId = "msg-2" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.ShouldBeEmpty();
         streamingMessage.Content.ShouldBe("Second turn");
@@ -153,7 +139,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Hi there!", MessageId = "msg-1" }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.Count.ShouldBe(1);
         completedTurns[0].Role.ShouldBe("user");
@@ -174,7 +160,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Assistant response 2", MessageId = "msg-2", SequenceNumber = 5 }
         };
 
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns.Count.ShouldBe(3);
         completedTurns[0].Role.ShouldBe("user");
@@ -187,22 +173,6 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void RebuildFromBuffer_UserMessageNotStripped_EvenIfInHistory()
-    {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
-        };
-        var historyContent = new HashSet<string> { "Hello" };
-
-        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
-
-        // User messages should NOT be stripped based on assistant history
-        completedTurns.Count.ShouldBe(1);
-        completedTurns[0].Content.ShouldBe("Hello");
-    }
-
-    [Fact]
     public void RebuildFromBuffer_PropagatesMessageIdToCompletedTurns()
     {
         var buffer = new List<ChatStreamMessage>
@@ -212,7 +182,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Second", MessageId = "msg-2" }
         };
 
-        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns[0].MessageId.ShouldBe("msg-1");
     }
@@ -225,7 +195,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
         };
 
-        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
         completedTurns[0].MessageId.ShouldBeNull();
     }
@@ -357,7 +327,11 @@ public sealed class BufferRebuildUtilityTests
 
         var buffer = new List<ChatStreamMessage>
         {
-            new() { MessageId = "msg-1", Content = "A1", Reasoning = "Thought process", IsComplete = true, SequenceNumber = 1 }
+            new()
+            {
+                MessageId = "msg-1", Content = "A1", Reasoning = "Thought process", IsComplete = true,
+                SequenceNumber = 1
+            }
         };
 
         var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
@@ -396,9 +370,7 @@ public sealed class BufferRebuildUtilityTests
             new() { Role = "user", Content = "Same prompt" }
         };
 
-        var buffer = new List<ChatStreamMessage>();
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "Same prompt", null);
+        var result = BufferRebuildUtility.ResumeFromBuffer([], history, "Same prompt", null);
 
         var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "Same prompt" });
         promptCount.ShouldBe(1);
@@ -407,15 +379,13 @@ public sealed class BufferRebuildUtilityTests
     [Fact]
     public void ResumeFromBuffer_ExcludesCurrentPromptFromBufferTurns()
     {
-        var history = new List<ChatMessageModel>();
-
         var buffer = new List<ChatStreamMessage>
         {
             new() { Content = "User's question", UserMessage = new UserMessageInfo("Bob", null), SequenceNumber = 1 },
             new() { Content = "Response", MessageId = "msg-1", SequenceNumber = 2 }
         };
 
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "User's question", "Bob");
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], "User's question", "Bob");
 
         var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "User's question" });
         promptCount.ShouldBe(1);

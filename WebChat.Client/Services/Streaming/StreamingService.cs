@@ -98,7 +98,6 @@ public sealed class StreamingService(
     {
         var streamingMessage = new ChatMessageModel { Role = "assistant" };
         string? currentMessageId = null;
-        var needsReasoningSeparator = false;
 
         try
         {
@@ -138,32 +137,21 @@ public sealed class StreamingService(
 
                     // Reset accumulator for the new response (user message added by HandleUserMessage)
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    needsReasoningSeparator = false;
                     continue;
                 }
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
-                // Only finalize current message if new chunk starts actual message content
-                // Tool calls (no content/reasoning) shouldn't split the message
-                var chunkStartsNewMessage =
-                    !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
-                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
+                if (isNewMessageTurn && streamingMessage.HasContent)
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
-                    needsReasoningSeparator = false;
-                }
-                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning) && chunkStartsNewMessage)
-                {
-                    needsReasoningSeparator = true;
                 }
 
                 currentMessageId = chunk.MessageId;
 
-                streamingMessage =
-                    BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
+                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk);
                 dispatcher.Dispatch(new StreamChunk(
                     topic.TopicId,
                     streamingMessage.Content,
@@ -215,7 +203,6 @@ public sealed class StreamingService(
         string startMessageId)
     {
         var currentMessageId = startMessageId;
-        var needsReasoningSeparator = false;
         var receivedNewContent = false;
 
         // Track the exact length of content we've already processed from the buffer
@@ -262,7 +249,6 @@ public sealed class StreamingService(
 
                     // Reset accumulator for the new response (user message added by HandleUserMessage)
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    needsReasoningSeparator = false;
                     processedContentLength = 0;
                     processedReasoningLength = 0;
                     processedToolCallsLength = 0;
@@ -272,33 +258,21 @@ public sealed class StreamingService(
 
                 var isNewMessageTurn = chunk.MessageId != currentMessageId && currentMessageId is not null;
 
-                // Only finalize current message if new chunk starts actual message content
-                // Tool calls (no content/reasoning) shouldn't split the message
-                var chunkStartsNewMessage =
-                    !string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning);
-                if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Content) && chunkStartsNewMessage)
+                if (isNewMessageTurn && streamingMessage.HasContent)
                 {
                     dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
                     streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
-                    needsReasoningSeparator = false;
 
                     // Reset processed lengths for new message turn
                     processedContentLength = 0;
                     processedReasoningLength = 0;
                     processedToolCallsLength = 0;
                 }
-                else if (isNewMessageTurn && !string.IsNullOrEmpty(streamingMessage.Reasoning) && chunkStartsNewMessage)
-                {
-                    needsReasoningSeparator = true;
-                }
 
                 currentMessageId = chunk.MessageId;
 
-                // Accumulate new chunks from the live stream
-                // Use simple accumulation - live stream chunks are new content
-                streamingMessage =
-                    BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk, ref needsReasoningSeparator);
+                streamingMessage = BufferRebuildUtility.AccumulateChunk(streamingMessage, chunk);
 
                 var newContent = streamingMessage.Content;
                 var newReasoning = streamingMessage.Reasoning;
