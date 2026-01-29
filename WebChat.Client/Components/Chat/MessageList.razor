@@ -86,7 +86,7 @@
     // Merges consecutive assistant messages into a single bubble.
     // Reasoning concatenated with "\n-----\n", tool calls with "\n".
     // Content taken from whichever message has it. Empty trailing bubble kept (expecting more data).
-    private static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(IReadOnlyList<ChatMessageModel> messages)
+    internal static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(IReadOnlyList<ChatMessageModel> messages)
     {
         if (messages.Count <= 1)
         {
