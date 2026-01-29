@@ -70,7 +70,13 @@ public static class BufferRebuildUtility
 
             currentMessageId = msg.MessageId;
 
-            // Skip complete markers and errors for accumulation
+            // Accumulate content before checking completion (a single chunk can carry both content and IsComplete)
+            if (!string.IsNullOrEmpty(msg.Content) || !string.IsNullOrEmpty(msg.Reasoning) || !string.IsNullOrEmpty(msg.ToolCalls))
+            {
+                currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
+            }
+
+            // Handle complete markers and errors
             if (msg.IsComplete || msg.Error is not null)
             {
                 if (msg.IsComplete && currentAssistantMessage.HasContent)
@@ -87,8 +93,6 @@ public static class BufferRebuildUtility
 
                 continue;
             }
-
-            currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
         }
 
         var streamingMessage = StripKnownContent(currentAssistantMessage, historyContent);
