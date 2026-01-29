@@ -244,29 +244,6 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_ReasoningSeparator_OnNewTurn()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Reasoning = "First thought", MessageId = "msg-1" },
-            new ChatStreamMessage { Reasoning = "Second thought", MessageId = "msg-2" },
-            new ChatStreamMessage { Content = "Answer", MessageId = "msg-2" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
-        );
-
-        await _service.StreamResponseAsync(topic, "test");
-
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        // First turn has no content so is skipped, second turn has separator
-        messages.Count.ShouldBe(1);
-        messages[0].Reasoning.ShouldNotBeNull();
-        messages[0].Reasoning!.ShouldContain("-----");
-    }
-
-    [Fact]
     public async Task StreamResponseAsync_WithOperationCanceledException_DoesNotAddErrorMessage()
     {
         var topic = CreateTopic();

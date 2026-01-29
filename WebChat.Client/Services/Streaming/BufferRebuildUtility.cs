@@ -207,6 +207,11 @@ public static class BufferRebuildUtility
         ChatMessageModel streamingMessage,
         ChatStreamMessage chunk)
     {
+        if (!string.IsNullOrEmpty(chunk.MessageId) && streamingMessage.MessageId != chunk.MessageId)
+        {
+            streamingMessage = streamingMessage with { MessageId = chunk.MessageId };
+        }
+
         if (!string.IsNullOrEmpty(chunk.Content))
         {
             streamingMessage = streamingMessage with
