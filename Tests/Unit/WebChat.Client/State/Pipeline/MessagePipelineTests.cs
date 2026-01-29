@@ -140,4 +140,141 @@ public sealed class MessagePipelineTests
         messages.ShouldNotBeNull();
         messages.Count.ShouldBe(2);
     }
+
+    [Fact]
+    public void ResumeFromBuffer_InterleavesByAnchorPosition()
+    {
+        // History: [H1(msg-1, user), H2(msg-2, assistant), H3(msg-3, user), H4(msg-4, assistant)]
+        var history = new List<ChatHistoryMessage>
+        {
+            new("msg-1", "user", "Q1", null, null),
+            new("msg-2", "assistant", "A1", null, null),
+            new("msg-3", "user", "Q2", null, null),
+            new("msg-4", "assistant", "A2", null, null)
+        };
+        _pipeline.LoadHistory("topic-1", history);
+
+        // Buffer: [B1(=msg-2 anchor), B2(new, no ID), B3(=msg-4 anchor)]
+        // B2 should appear between msg-2 and msg-3 in final list
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "New message", IsComplete = true, SequenceNumber = 2 },
+            new() { MessageId = "msg-4", Content = "A2", IsComplete = true, SequenceNumber = 3 }
+        };
+
+        _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(5);
+        messages[0].Content.ShouldBe("Q1");
+        messages[1].Content.ShouldBe("A1");
+        messages[2].Content.ShouldBe("New message");  // Interleaved after anchor msg-2
+        messages[3].Content.ShouldBe("Q2");
+        messages[4].Content.ShouldBe("A2");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor()
+    {
+        // History: [H1(msg-1, user), H2(msg-2, assistant)]
+        var history = new List<ChatHistoryMessage>
+        {
+            new("msg-1", "user", "Q1", null, null),
+            new("msg-2", "assistant", "A1", null, null)
+        };
+        _pipeline.LoadHistory("topic-1", history);
+
+        // Buffer: [B0(new), B1(=msg-2 anchor)]
+        // B0 should appear before msg-2 (right before the first anchor)
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Leading new", IsComplete = true, SequenceNumber = 1 },
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 2 }
+        };
+
+        _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(3);
+        messages[0].Content.ShouldBe("Q1");
+        messages[1].Content.ShouldBe("Leading new");  // Before anchor msg-2
+        messages[2].Content.ShouldBe("A1");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor()
+    {
+        // History: [H1(msg-1, user), H2(msg-2, assistant)]
+        var history = new List<ChatHistoryMessage>
+        {
+            new("msg-1", "user", "Q1", null, null),
+            new("msg-2", "assistant", "A1", null, null)
+        };
+        _pipeline.LoadHistory("topic-1", history);
+
+        // Buffer: [B1(=msg-2 anchor), B2(new trailing)]
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "Trailing new", IsComplete = true, SequenceNumber = 2 }
+        };
+
+        _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(3);
+        messages[0].Content.ShouldBe("Q1");
+        messages[1].Content.ShouldBe("A1");
+        messages[2].Content.ShouldBe("Trailing new");  // After last anchor
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_NoAnchors_AppendsAllAtEnd()
+    {
+        // History: [H1(msg-1, user), H2(msg-2, assistant)]
+        var history = new List<ChatHistoryMessage>
+        {
+            new("msg-1", "user", "Q1", null, null),
+            new("msg-2", "assistant", "A1", null, null)
+        };
+        _pipeline.LoadHistory("topic-1", history);
+
+        // Buffer: all new messages, no anchors
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "New1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "New2", IsComplete = true, SequenceNumber = 2 }
+        };
+
+        _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(4);
+        messages[2].Content.ShouldBe("New1");
+        messages[3].Content.ShouldBe("New2");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_MergesReasoningIntoAnchor()
+    {
+        var history = new List<ChatHistoryMessage>
+        {
+            new("msg-1", "assistant", "A1", null, null)
+        };
+        _pipeline.LoadHistory("topic-1", history);
+
+        // Buffer has same content but adds reasoning
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Content = "A1", Reasoning = "Thought process", IsComplete = true, SequenceNumber = 1 }
+        };
+
+        _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(1);
+        messages[0].Content.ShouldBe("A1");
+        messages[0].Reasoning.ShouldBe("Thought process");
+    }
 }
