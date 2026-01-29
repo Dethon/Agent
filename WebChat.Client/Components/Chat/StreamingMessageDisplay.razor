@@ -1,3 +1,4 @@
+@using WebChat.Client.Helpers
 @inherits StoreSubscriberComponent
 @inject RenderCoordinator RenderCoordinator
 
@@ -53,17 +54,11 @@
     {
         Role = "assistant",
         Content = _streamingContent?.Content ?? "",
-        Reasoning = MergeField(CarriedReasoning, _streamingContent?.Reasoning, "\n-----\n"),
-        ToolCalls = MergeField(CarriedToolCalls, _streamingContent?.ToolCalls, "\n"),
+        Reasoning = MessageFieldMerger.Merge(
+            CarriedReasoning, _streamingContent?.Reasoning, MessageFieldMerger.ReasoningSeparator),
+        ToolCalls = MessageFieldMerger.Merge(
+            CarriedToolCalls, _streamingContent?.ToolCalls, MessageFieldMerger.ToolCallsSeparator),
         IsError = _streamingContent?.IsError ?? false
     };
 
-    private static string? MergeField(string? carried, string? live, string separator) =>
-        (carried, live) switch
-        {
-            (null or "", null or "") => null,
-            (null or "", _) => live,
-            (_, null or "") => carried,
-            _ => carried + separator + live
-        };
 }

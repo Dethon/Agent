@@ -1,3 +1,4 @@
+@using WebChat.Client.Helpers
 @using WebChat.Client.State.UserIdentity
 @inherits StoreSubscriberComponent
 
@@ -86,7 +87,8 @@
     // Merges consecutive assistant messages into a single bubble.
     // Reasoning concatenated with "\n-----\n", tool calls with "\n".
     // Content taken from whichever message has it. Empty trailing bubble kept (expecting more data).
-    internal static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(IReadOnlyList<ChatMessageModel> messages)
+    internal static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(
+        IReadOnlyList<ChatMessageModel> messages)
     {
         if (messages.Count <= 1)
         {
@@ -121,19 +123,10 @@
                 accContent = message.Content;
             }
 
-            accReasoning = (accReasoning, message.Reasoning) switch
-            {
-                (null, _) => message.Reasoning,
-                (_, null or "") => accReasoning,
-                _ => accReasoning + "\n-----\n" + message.Reasoning
-            };
-
-            accToolCalls = (accToolCalls, message.ToolCalls) switch
-            {
-                (null, _) => message.ToolCalls,
-                (_, null or "") => accToolCalls,
-                _ => accToolCalls + "\n" + message.ToolCalls
-            };
+            accReasoning = MessageFieldMerger.Merge(
+                accReasoning, message.Reasoning, MessageFieldMerger.ReasoningSeparator);
+            accToolCalls = MessageFieldMerger.Merge(
+                accToolCalls, message.ToolCalls, MessageFieldMerger.ToolCallsSeparator);
 
             // Prefer the message that carries content as anchor for MessageId/Timestamp
             anchor = anchor is null || !string.IsNullOrEmpty(message.Content) ? message : anchor;
