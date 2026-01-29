@@ -14,6 +14,8 @@
     private string? _topicId;
     private bool _isStreaming;
     private AgentInfo? _selectedAgent;
+    private string? _carriedReasoning;
+    private string? _carriedToolCalls;
     private ElementReference _messagesArea;
     private string? _currentUserId;
     private IDisposable? _streamingContentSubscription;
@@ -63,7 +65,22 @@
         var raw = _topicId != null
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
-        _messages = MergeConsecutiveAssistantMessages(raw);
+        var merged = MergeConsecutiveAssistantMessages(raw);
+
+        if (_isStreaming && merged.Count > 0
+            && merged[^1] is { Role: "assistant", Content: "" or null } last
+            && (last.Reasoning is not null || last.ToolCalls is not null))
+        {
+            _carriedReasoning = last.Reasoning;
+            _carriedToolCalls = last.ToolCalls;
+            _messages = merged.Take(merged.Count - 1).ToList();
+        }
+        else
+        {
+            _carriedReasoning = null;
+            _carriedToolCalls = null;
+            _messages = merged;
+        }
     }
 
     // Merges consecutive assistant messages into a single bubble.
@@ -153,7 +170,13 @@
 
     private void UpdateStreamingStatus()
     {
+        var wasStreaming = _isStreaming;
         _isStreaming = _topicId != null && StreamingStore.State.StreamingTopics.Contains(_topicId);
+
+        if (wasStreaming && !_isStreaming)
+        {
+            UpdateMessages();
+        }
     }
 
     private void UpdateStreamingContentSubscription()
@@ -253,7 +276,9 @@
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))
         {
-            <StreamingMessageDisplay TopicId="@_topicId"/>
+            <StreamingMessageDisplay TopicId="@_topicId"
+                                     CarriedReasoning="@_carriedReasoning"
+                                     CarriedToolCalls="@_carriedToolCalls"/>
         }
     }
 </div>
