@@ -39,7 +39,7 @@ public sealed class ChatConnectionService(
         HubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
             .WithAutomaticReconnect(new AggressiveRetryPolicy())
-            .WithServerTimeout(TimeSpan.FromMinutes(3))
+            .WithServerTimeout(TimeSpan.FromMinutes(6))
             .WithKeepAliveInterval(TimeSpan.FromSeconds(10))
             .Build();
 
