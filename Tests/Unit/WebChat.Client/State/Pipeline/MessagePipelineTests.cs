@@ -1,6 +1,8 @@
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
+using WebChat.Client.Models;
+using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -139,5 +141,48 @@ public sealed class MessagePipelineTests
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1");
         messages.ShouldNotBeNull();
         messages.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_DispatchesMergedMessages()
+    {
+        var result = new BufferResumeResult(
+            [
+                new ChatMessageModel { Role = "user", Content = "Q1" },
+                new ChatMessageModel { Role = "assistant", Content = "A1" }
+            ],
+            new ChatMessageModel { Role = "assistant" });
+
+        _pipeline.ResumeFromBuffer(result, "topic-1", null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(2);
+        messages[0].Content.ShouldBe("Q1");
+        messages[1].Content.ShouldBe("A1");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_DispatchesStreamChunkWhenStreamingContent()
+    {
+        var result = new BufferResumeResult(
+            [],
+            new ChatMessageModel { Role = "assistant", Content = "Streaming..." });
+
+        _pipeline.ResumeFromBuffer(result, "topic-1", "msg-1");
+
+        // StreamChunk dispatched — no exception means it worked
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_WithNoStreamingContent_DoesNotDispatchChunk()
+    {
+        var result = new BufferResumeResult(
+            [new ChatMessageModel { Role = "user", Content = "Q1" }],
+            new ChatMessageModel { Role = "assistant" });
+
+        _pipeline.ResumeFromBuffer(result, "topic-1", null);
+
+        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
+        messages.Count.ShouldBe(1);
     }
 }

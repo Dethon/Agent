@@ -1,8 +1,11 @@
+@using WebChat.Client.Helpers
 @inherits StoreSubscriberComponent
 @inject RenderCoordinator RenderCoordinator
 
 @code {
     [Parameter, EditorRequired] public string TopicId { get; set; } = "";
+    [Parameter] public string? CarriedReasoning { get; set; }
+    [Parameter] public string? CarriedToolCalls { get; set; }
 
     private StreamingContent? _streamingContent;
     private string _previousTopicId = "";
@@ -39,7 +42,9 @@
     {
         return !string.IsNullOrEmpty(_streamingContent?.Content) ||
                !string.IsNullOrEmpty(_streamingContent?.Reasoning) ||
-               !string.IsNullOrEmpty(_streamingContent?.ToolCalls);
+               !string.IsNullOrEmpty(_streamingContent?.ToolCalls) ||
+               !string.IsNullOrEmpty(CarriedReasoning) ||
+               !string.IsNullOrEmpty(CarriedToolCalls);
     }
 
 }
@@ -49,8 +54,11 @@
     {
         Role = "assistant",
         Content = _streamingContent?.Content ?? "",
-        Reasoning = _streamingContent?.Reasoning,
-        ToolCalls = _streamingContent?.ToolCalls,
+        Reasoning = MessageFieldMerger.Merge(
+            CarriedReasoning, _streamingContent?.Reasoning, MessageFieldMerger.ReasoningSeparator),
+        ToolCalls = MessageFieldMerger.Merge(
+            CarriedToolCalls, _streamingContent?.ToolCalls, MessageFieldMerger.ToolCallsSeparator),
         IsError = _streamingContent?.IsError ?? false
     };
+
 }

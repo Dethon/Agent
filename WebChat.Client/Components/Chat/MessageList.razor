@@ -1,3 +1,4 @@
+@using WebChat.Client.Helpers
 @using WebChat.Client.State.UserIdentity
 @inherits StoreSubscriberComponent
 
@@ -14,6 +15,8 @@
     private string? _topicId;
     private bool _isStreaming;
     private AgentInfo? _selectedAgent;
+    private string? _carriedReasoning;
+    private string? _carriedToolCalls;
     private ElementReference _messagesArea;
     private string? _currentUserId;
     private IDisposable? _streamingContentSubscription;
@@ -60,14 +63,119 @@
 
     private void UpdateMessages()
     {
-        _messages = _topicId != null
+        var raw = _topicId != null
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
+        var merged = MergeConsecutiveAssistantMessages(raw);
+
+        if (_isStreaming && merged.Count > 0
+            && merged[^1] is { Role: "assistant", Content: "" or null } last
+            && (last.Reasoning is not null || last.ToolCalls is not null))
+        {
+            _carriedReasoning = last.Reasoning;
+            _carriedToolCalls = last.ToolCalls;
+            _messages = merged.Take(merged.Count - 1).ToList();
+        }
+        else
+        {
+            _carriedReasoning = null;
+            _carriedToolCalls = null;
+            _messages = merged;
+        }
+    }
+
+    // Merges consecutive assistant messages into a single bubble.
+    // Reasoning concatenated with "\n-----\n", tool calls with "\n".
+    // Content taken from whichever message has it. Empty trailing bubble kept (expecting more data).
+    internal static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(
+        IReadOnlyList<ChatMessageModel> messages)
+    {
+        if (messages.Count <= 1)
+        {
+            return messages;
+        }
+
+        var result = new List<ChatMessageModel>(messages.Count);
+        string? accReasoning = null;
+        string? accToolCalls = null;
+        string? accContent = null;
+        ChatMessageModel? anchor = null;
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var message = messages[i];
+
+            if (message.Role != "assistant")
+            {
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                result.Add(message);
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(message.Content))
+            {
+                if (accContent is not null)
+                {
+                    // Previous message(s) already had content — flush them as a separate bubble
+                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                }
+
+                accContent = message.Content;
+            }
+
+            accReasoning = MessageFieldMerger.Merge(
+                accReasoning, message.Reasoning, MessageFieldMerger.ReasoningSeparator);
+            accToolCalls = MessageFieldMerger.Merge(
+                accToolCalls, message.ToolCalls, MessageFieldMerger.ToolCallsSeparator);
+
+            // Prefer the message that carries content as anchor for MessageId/Timestamp
+            anchor = anchor is null || !string.IsNullOrEmpty(message.Content) ? message : anchor;
+
+            var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
+            if (!nextIsAssistant)
+            {
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+            }
+        }
+
+        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+        return result;
+
+        static void Flush(
+            List<ChatMessageModel> result,
+            ref ChatMessageModel? anchor,
+            ref string? content,
+            ref string? reasoning,
+            ref string? toolCalls)
+        {
+            if (anchor is null)
+            {
+                return;
+            }
+
+            result.Add(anchor with
+            {
+                Content = content ?? "",
+                Reasoning = reasoning,
+                ToolCalls = toolCalls
+            });
+
+            anchor = null;
+            content = null;
+            reasoning = null;
+            toolCalls = null;
+        }
     }
 
     private void UpdateStreamingStatus()
     {
+        var wasStreaming = _isStreaming;
         _isStreaming = _topicId != null && StreamingStore.State.StreamingTopics.Contains(_topicId);
+
+        if (wasStreaming && !_isStreaming)
+        {
+            UpdateMessages();
+        }
     }
 
     private void UpdateStreamingContentSubscription()
@@ -111,7 +219,10 @@
 
     private bool ShouldShowAvatar(int index)
     {
-        if (index == 0) return true;
+        if (index == 0)
+        {
+            return true;
+        }
 
         var current = _messages[index];
         var previous = _messages[index - 1];
@@ -164,7 +275,9 @@
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))
         {
-            <StreamingMessageDisplay TopicId="@_topicId"/>
+            <StreamingMessageDisplay TopicId="@_topicId"
+                                     CarriedReasoning="@_carriedReasoning"
+                                     CarriedToolCalls="@_carriedToolCalls"/>
         }
     }
 </div>

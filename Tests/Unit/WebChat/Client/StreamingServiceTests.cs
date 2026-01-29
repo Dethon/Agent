@@ -206,6 +206,48 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StreamResponseAsync_ReasoningOnlyTurn_FinalizesToStore()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Reasoning = "Thinking step", MessageId = "msg-1" },
+            new ChatStreamMessage { Content = "Final answer", MessageId = "msg-2" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(2);
+        messages[0].Reasoning.ShouldBe("Thinking step");
+        messages[0].Content.ShouldBeEmpty();
+        messages[1].Content.ShouldBe("Final answer");
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_ToolCallsOnlyTurn_FinalizesToStore()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { ToolCalls = "search(\"query\")", MessageId = "msg-1" },
+            new ChatStreamMessage { Content = "Found results", MessageId = "msg-2" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        messages.Count.ShouldBe(2);
+        messages[0].ToolCalls.ShouldBe("search(\"query\")");
+        messages[0].Content.ShouldBeEmpty();
+        messages[1].Content.ShouldBe("Found results");
+    }
+
+    [Fact]
     public async Task StreamResponseAsync_WithEmptyMessage_DoesNotAddToHistory()
     {
         var topic = CreateTopic();
@@ -241,29 +283,6 @@ public sealed class StreamingServiceTests : IDisposable
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
         messages[0].ToolCalls.ShouldBe("tool_1\ntool_2");
-    }
-
-    [Fact]
-    public async Task StreamResponseAsync_ReasoningSeparator_OnNewTurn()
-    {
-        var topic = CreateTopic();
-        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
-        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { Reasoning = "First thought", MessageId = "msg-1" },
-            new ChatStreamMessage { Reasoning = "Second thought", MessageId = "msg-2" },
-            new ChatStreamMessage { Content = "Answer", MessageId = "msg-2" },
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" }
-        );
-
-        await _service.StreamResponseAsync(topic, "test");
-
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        // First turn has no content so is skipped, second turn has separator
-        messages.Count.ShouldBe(1);
-        messages[0].Reasoning.ShouldNotBeNull();
-        messages[0].Reasoning!.ShouldContain("-----");
     }
 
     [Fact]

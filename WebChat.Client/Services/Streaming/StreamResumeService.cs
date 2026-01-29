@@ -61,18 +61,18 @@ public sealed class StreamResumeService(
                 dispatcher.Dispatch(new ShowApproval(topic.TopicId, pendingApproval));
             }
 
+            // Single rebuild: buffer + history → merged result
+            var existingHistory = messagesStore.State.MessagesByTopic
+                .GetValueOrDefault(topic.TopicId) ?? [];
+            var result = BufferRebuildUtility.ResumeFromBuffer(
+                state.BufferedMessages, existingHistory, state.CurrentPrompt, state.CurrentSenderId);
+
             // Start streaming FIRST (dispatches StreamStarted which creates empty StreamingContent)
             // Then ResumeFromBuffer fills it with content via StreamChunk
             // Order matters: StreamStarted resets content, so it must come before StreamChunk
-            var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(state.BufferedMessages, []);
-            await streamingService.TryStartResumeStreamAsync(topic, streamingMessage, state.CurrentMessageId);
+            await streamingService.TryStartResumeStreamAsync(topic, result.StreamingMessage, state.CurrentMessageId);
 
-            pipeline.ResumeFromBuffer(
-                topic.TopicId,
-                state.BufferedMessages,
-                state.CurrentMessageId,
-                state.CurrentPrompt,
-                state.CurrentSenderId);
+            pipeline.ResumeFromBuffer(result, topic.TopicId, state.CurrentMessageId);
         }
         finally
         {
