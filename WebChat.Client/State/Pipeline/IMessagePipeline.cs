@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using WebChat.Client.Services.Streaming;
 
 namespace WebChat.Client.State.Pipeline;
 
@@ -18,8 +19,7 @@ public interface IMessagePipeline
     void LoadHistory(string topicId, IEnumerable<ChatHistoryMessage> messages);
 
     /// <summary>Resume from buffered messages after reconnection.</summary>
-    void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> buffer,
-        string? currentMessageId, string? currentPrompt, string? currentSenderId);
+    void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId);
 
     /// <summary>Reset pipeline state for topic (error or cancel).</summary>
     void Reset(string topicId);

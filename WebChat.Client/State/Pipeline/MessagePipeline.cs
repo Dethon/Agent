@@ -167,156 +167,57 @@ public sealed class MessagePipeline(
         dispatcher.Dispatch(new MessagesLoaded(topicId, chatMessages));
     }
 
-    public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> buffer,
-        string? currentMessageId, string? currentPrompt, string? currentSenderId)
+    public void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId)
     {
-        var existingMessages = messagesStore.State.MessagesByTopic
-            .GetValueOrDefault(topicId) ?? [];
-
-        var historyById = existingMessages
-            .Where(m => !string.IsNullOrEmpty(m.MessageId))
-            .ToDictionary(m => m.MessageId!, m => m);
-
-        // Don't strip completed turn content — we need anchor MessageIds for positioning.
-        // Only strip the streaming message (below).
-        var (completedTurns, rawStreamingMessage) =
-            BufferRebuildUtility.RebuildFromBuffer(buffer, []);
-
-        // Strip streaming message against history content
-        var historyContent = existingMessages
-            .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
-            .Select(m => m.Content)
-            .ToHashSet();
-        var streamingMessage = BufferRebuildUtility.StripKnownContent(rawStreamingMessage, historyContent);
-
         lock (_lock)
         {
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug(
-                    "Pipeline.ResumeFromBuffer: topic={TopicId}, bufferCount={BufferCount}, " +
-                    "completedTurns={CompletedTurns}, hasStreamingContent={HasStreaming}",
-                    topicId, buffer.Count, completedTurns.Count, streamingMessage.HasContent);
+                    "Pipeline.ResumeFromBuffer: topic={TopicId}, mergedCount={MergedCount}, hasStreaming={HasStreaming}",
+                    topicId, result.MergedMessages.Count, result.StreamingMessage.HasContent);
             }
         }
 
-        // Classify completed turns: anchors (MessageId in history) track position,
-        // new messages are grouped by which anchor they follow
-        string? lastAnchorId = null;
-        var followingNew = new Dictionary<string, List<ChatMessageModel>>();
-        var leadingNew = new List<ChatMessageModel>();
+        dispatcher.Dispatch(new MessagesLoaded(topicId, result.MergedMessages));
 
-        foreach (var turn in completedTurns.Where(t =>
-                     t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
+        if (!result.StreamingMessage.HasContent)
         {
-            if (!string.IsNullOrEmpty(turn.MessageId) && historyById.ContainsKey(turn.MessageId))
-            {
-                followingNew[turn.MessageId] = [];
-                lastAnchorId = turn.MessageId;
-            }
-            else if (lastAnchorId is not null)
-            {
-                followingNew[lastAnchorId].Add(turn);
-            }
-            else
-            {
-                leadingNew.Add(turn);
-            }
+            return;
         }
 
-        // Build merged list: walk history, enrich anchors, insert new messages at anchor positions
-        var merged = new List<ChatMessageModel>(existingMessages.Count + completedTurns.Count);
-        var leadingInserted = false;
-        var completedById = completedTurns
-            .Where(t => !string.IsNullOrEmpty(t.MessageId))
-            .ToDictionary(t => t.MessageId!, t => t);
+        // Enrich existing history message or dispatch as streaming chunk
+        var existingMessages = messagesStore.State.MessagesByTopic
+            .GetValueOrDefault(topicId) ?? [];
+        var historyMsg = !string.IsNullOrEmpty(currentMessageId)
+            ? existingMessages.FirstOrDefault(m => m.MessageId == currentMessageId)
+            : null;
 
-        foreach (var msg in existingMessages)
+        if (historyMsg is not null)
         {
-            // Insert leading new messages before the first anchor
-            if (!leadingInserted && msg.MessageId is not null && followingNew.ContainsKey(msg.MessageId))
+            var needsReasoning = string.IsNullOrEmpty(historyMsg.Reasoning) &&
+                                 !string.IsNullOrEmpty(result.StreamingMessage.Reasoning);
+            var needsToolCalls = string.IsNullOrEmpty(historyMsg.ToolCalls) &&
+                                 !string.IsNullOrEmpty(result.StreamingMessage.ToolCalls);
+
+            if (needsReasoning || needsToolCalls)
             {
-                merged.AddRange(leadingNew);
-                leadingInserted = true;
-            }
-
-            // Enrich anchor with buffer reasoning/toolcalls, or pass through unchanged
-            var anchorTurn = (msg.MessageId is not null &&
-                completedById.TryGetValue(msg.MessageId, out var match))
-                ? match : null;
-
-            if (anchorTurn is not null)
-            {
-                var needsReasoning = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
-                var needsToolCalls = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
-                merged.Add((needsReasoning || needsToolCalls)
-                    ? msg with
-                    {
-                        Reasoning = needsReasoning ? anchorTurn.Reasoning : msg.Reasoning,
-                        ToolCalls = needsToolCalls ? anchorTurn.ToolCalls : msg.ToolCalls
-                    }
-                    : msg);
-            }
-            else
-            {
-                merged.Add(msg);
-            }
-
-            // Insert new messages that follow this anchor
-            if (msg.MessageId is not null && followingNew.TryGetValue(msg.MessageId, out var following))
-            {
-                merged.AddRange(following);
-            }
-        }
-
-        // Append leading new if no anchors were found
-        if (!leadingInserted)
-        {
-            merged.AddRange(leadingNew);
-        }
-
-        // Add current prompt if not already present
-        if (!string.IsNullOrEmpty(currentPrompt) &&
-            !existingMessages.Any(m => m.Role == "user" && m.Content == currentPrompt))
-        {
-            merged.Add(new ChatMessageModel
-            {
-                Role = "user",
-                Content = currentPrompt,
-                SenderId = currentSenderId
-            });
-        }
-
-        dispatcher.Dispatch(new MessagesLoaded(topicId, merged));
-
-        // Streaming content — enrich history or dispatch chunk
-        if (streamingMessage.HasContent)
-        {
-            if (!string.IsNullOrEmpty(currentMessageId) &&
-                historyById.TryGetValue(currentMessageId, out var historyMsg))
-            {
-                var needsReasoning = string.IsNullOrEmpty(historyMsg.Reasoning) && !string.IsNullOrEmpty(streamingMessage.Reasoning);
-                var needsToolCalls = string.IsNullOrEmpty(historyMsg.ToolCalls) && !string.IsNullOrEmpty(streamingMessage.ToolCalls);
-
-                if (needsReasoning || needsToolCalls)
+                var enriched = historyMsg with
                 {
-                    var enriched = historyMsg with
-                    {
-                        Reasoning = needsReasoning ? streamingMessage.Reasoning : historyMsg.Reasoning,
-                        ToolCalls = needsToolCalls ? streamingMessage.ToolCalls : historyMsg.ToolCalls
-                    };
-                    dispatcher.Dispatch(new UpdateMessage(topicId, historyMsg.MessageId!, enriched));
-                    return;
-                }
+                    Reasoning = needsReasoning ? result.StreamingMessage.Reasoning : historyMsg.Reasoning,
+                    ToolCalls = needsToolCalls ? result.StreamingMessage.ToolCalls : historyMsg.ToolCalls
+                };
+                dispatcher.Dispatch(new UpdateMessage(topicId, currentMessageId!, enriched));
+                return;
             }
-
-            dispatcher.Dispatch(new StreamChunk(
-                topicId,
-                streamingMessage.Content,
-                streamingMessage.Reasoning,
-                streamingMessage.ToolCalls,
-                currentMessageId));
         }
+
+        dispatcher.Dispatch(new StreamChunk(
+            topicId,
+            result.StreamingMessage.Content,
+            result.StreamingMessage.Reasoning,
+            result.StreamingMessage.ToolCalls,
+            currentMessageId));
     }
 
     public void Reset(string topicId)

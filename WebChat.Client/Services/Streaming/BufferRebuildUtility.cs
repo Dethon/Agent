@@ -203,7 +203,7 @@ public static class BufferRebuildUtility
         return (completedTurns, streamingMessage);
     }
 
-    internal static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
+    private static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
     {
         if (string.IsNullOrEmpty(message.Content))
         {
