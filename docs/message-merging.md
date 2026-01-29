@@ -4,36 +4,25 @@
 
 During a single assistant response, the LLM backend may produce multiple distinct MessageIds. Earlier MessageIds often carry only reasoning or tool calls, while only the final MessageId carries the actual content. Without merging, each MessageId renders as a separate chat bubble — producing empty bubbles above the real response.
 
-## Design Rules
+## Architecture: Unified View-Layer Merge
 
-- **Forward accumulation only**: reasoning and tool calls from earlier messages merge into later ones, never backwards.
-- **Reasoning separator**: `"\n-----\n"` between blocks from different message turns.
-- **Tool calls separator**: `"\n"` between blocks from different message turns.
-- **Empty trailing bubble allowed**: the last bubble in the conversation may have no content (indicates more chunks/messages are expected).
+All message merging is handled in the view layer. StreamingService is a pure data pipeline — it finalizes every message turn to the store unconditionally, with no special-casing for content-less turns.
 
-## Two Code Paths, One View-Level Safety Net
+### StreamingService (data pipeline)
 
-The fix lives in two layers to cover all scenarios:
+`StreamingService.cs` finalizes every turn that has any content (reasoning, tool calls, or text) via `AddMessage`. No carry-forward, no separator trimming, no content-vs-no-content branching. Both `StreamResponseAsync` and `ResumeStreamResponseAsync` use the same simple pattern:
 
-### 1. Streaming path — `StreamingService.cs`
+```csharp
+if (isNewMessageTurn && streamingMessage.HasContent)
+{
+    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+    streamingMessage = new ChatMessageModel { Role = "assistant" };
+}
+```
 
-During live streaming, when a MessageId turn change occurs and the outgoing turn has **no Content** (only reasoning/toolcalls), the data is **carried forward** into the next streaming accumulator rather than finalized as a separate store entry.
+### MessageList.razor (finalized message merge)
 
-**Key methods:**
-
-- `CarryForward(message)` — resets the accumulator but preserves reasoning/toolcalls with trailing separators (`"\n-----\n"` / `"\n"`) so `AccumulateChunk` concatenates correctly across turn boundaries.
-- `TrimSeparators(message)` — strips any trailing separator that was added for carry-forward but had no subsequent content (called at stream end before final `AddMessage`).
-
-**Location**: `WebChat.Client/Services/Streaming/StreamingService.cs` — applied in both `StreamResponseAsync` and `ResumeStreamResponseAsync` at the `isNewMessageTurn` branch.
-
-**Why here**: during streaming, finalized messages go to `MessagesStore` while the current message lives in `StreamingStore`/`StreamingMessageDisplay`. These are separate rendering systems — the view-level merge cannot reach across them. Without this fix, a content-less finalized message would sit as a visible empty bubble above the active streaming bubble.
-
-### 2. View level — `MessageList.razor`
-
-`MergeConsecutiveAssistantMessages` runs on every render, collapsing any consecutive run of assistant messages into a single bubble. This handles:
-
-- **Buffer resume path**: `BufferRebuildUtility.ResumeFromBuffer` inserts "following new" messages after their history anchor, which can produce `[content, no-content]` order.
-- **Edge cases**: any scenario where separate assistant messages end up adjacent in the store (race conditions, reordering, etc).
+`MergeConsecutiveAssistantMessages` runs on every render, collapsing any consecutive run of assistant messages into a single bubble.
 
 **Algorithm**:
 1. Walk the message list forward.
@@ -43,14 +32,29 @@ During live streaming, when a MessageId turn change occurs and the outgoing turn
 5. Use the message with Content as the anchor (preserves its MessageId/Timestamp); fall back to the last message if none has Content.
 6. Emit one merged bubble at the end of each run.
 
-**Location**: `WebChat.Client/Components/Chat/MessageList.razor` — `MergeConsecutiveAssistantMessages` static method, called from `UpdateMessages`.
+**Trailing content-less absorption during streaming**: When streaming is active, if the last merged message is an assistant message with no content but with reasoning or tool calls, `UpdateMessages` absorbs it — removing it from the rendered list and passing its reasoning/toolcalls to `StreamingMessageDisplay` as carried context. When streaming stops, `UpdateStreamingStatus` re-runs `UpdateMessages` so the absorbed message reappears in the finalized list.
 
-## Why Both Layers
+### StreamingMessageDisplay.razor (streaming bubble merge)
 
-| Scenario | StreamingService fix | MessageList fix |
-|---|---|---|
-| Live streaming, turn change with no content | Needed (streaming vs finalized are separate render systems) | Cannot help |
-| Buffer resume, following-new messages after anchor | Not involved | Needed |
-| Post-stream finalized messages in store | Covered (carried forward, no empty entries created) | Safety net if any slip through |
+Accepts `CarriedReasoning` and `CarriedToolCalls` parameters from `MessageList`. Prepends carried context to live streaming content using `MergeField`:
 
-Removing either layer would leave one scenario unhandled. The view-level merge is a safety net that ensures no empty bubbles regardless of how messages arrive in the store.
+- Reasoning: carried + `"\n-----\n"` + live
+- Tool calls: carried + `"\n"` + live
+
+This ensures the streaming bubble shows the full reasoning/toolcalls chain without an empty finalized bubble above it.
+
+## Design Rules
+
+- **Forward accumulation only**: reasoning and tool calls from earlier messages merge into later ones, never backwards.
+- **Reasoning separator**: `"\n-----\n"` between blocks from different message turns.
+- **Tool calls separator**: `"\n"` between blocks from different message turns.
+- **Single merge point**: all merging lives in the view layer (MessageList + StreamingMessageDisplay). No duplication in the data pipeline.
+
+## Scenario Coverage
+
+| Scenario | How it's handled |
+|---|---|
+| Live streaming, turn change with reasoning-only | Finalized to store → absorbed by MessageList → carried to StreamingMessageDisplay |
+| Live streaming, turn change with tool-calls-only | Same as above |
+| Buffer resume, consecutive assistant messages | MergeConsecutiveAssistantMessages collapses them |
+| Post-stream finalized messages in store | MergeConsecutiveAssistantMessages collapses them |
