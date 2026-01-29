@@ -3,9 +3,120 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.Services.Streaming;
 
+public record BufferResumeResult(
+    List<ChatMessageModel> MergedMessages,
+    ChatMessageModel StreamingMessage);
+
 public static class BufferRebuildUtility
 {
-    public static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
+    public static BufferResumeResult ResumeFromBuffer(
+        IReadOnlyList<ChatStreamMessage> buffer,
+        IReadOnlyList<ChatMessageModel> existingHistory,
+        string? currentPrompt,
+        string? currentSenderId)
+    {
+        var historyById = existingHistory
+            .Where(m => !string.IsNullOrEmpty(m.MessageId))
+            .ToDictionary(m => m.MessageId!, m => m);
+
+        // Rebuild buffer into completed turns + raw streaming message.
+        // Pass empty historyContent — we need anchor MessageIds for positioning, not content stripping.
+        var (completedTurns, rawStreamingMessage) = RebuildFromBuffer(buffer, []);
+
+        // Strip streaming message against history content
+        var historyContent = existingHistory
+            .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
+            .Select(m => m.Content)
+            .ToHashSet();
+        var streamingMessage = StripKnownContent(rawStreamingMessage, historyContent);
+
+        // Classify completed turns: anchors (MessageId in history) track position,
+        // new messages are grouped by which anchor they follow
+        string? lastAnchorId = null;
+        var followingNew = new Dictionary<string, List<ChatMessageModel>>();
+        var leadingNew = new List<ChatMessageModel>();
+
+        foreach (var turn in completedTurns.Where(t =>
+                     t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
+        {
+            if (!string.IsNullOrEmpty(turn.MessageId) && historyById.ContainsKey(turn.MessageId))
+            {
+                followingNew[turn.MessageId] = [];
+                lastAnchorId = turn.MessageId;
+            }
+            else if (lastAnchorId is not null)
+            {
+                followingNew[lastAnchorId].Add(turn);
+            }
+            else
+            {
+                leadingNew.Add(turn);
+            }
+        }
+
+        // Build merged list: walk history, enrich anchors, insert new messages at anchor positions
+        var merged = new List<ChatMessageModel>(existingHistory.Count + completedTurns.Count);
+        var leadingInserted = false;
+        var completedById = completedTurns
+            .Where(t => !string.IsNullOrEmpty(t.MessageId))
+            .ToDictionary(t => t.MessageId!, t => t);
+
+        foreach (var msg in existingHistory)
+        {
+            // Insert leading new messages before the first anchor
+            if (!leadingInserted && msg.MessageId is not null && followingNew.ContainsKey(msg.MessageId))
+            {
+                merged.AddRange(leadingNew);
+                leadingInserted = true;
+            }
+
+            // Enrich anchor with buffer reasoning/toolcalls, or pass through unchanged
+            if (msg.MessageId is not null && completedById.TryGetValue(msg.MessageId, out var anchorTurn))
+            {
+                var needsReasoning = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
+                var needsToolCalls = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
+                merged.Add((needsReasoning || needsToolCalls)
+                    ? msg with
+                    {
+                        Reasoning = needsReasoning ? anchorTurn.Reasoning : msg.Reasoning,
+                        ToolCalls = needsToolCalls ? anchorTurn.ToolCalls : msg.ToolCalls
+                    }
+                    : msg);
+            }
+            else
+            {
+                merged.Add(msg);
+            }
+
+            // Insert new messages that follow this anchor
+            if (msg.MessageId is not null && followingNew.TryGetValue(msg.MessageId, out var following))
+            {
+                merged.AddRange(following);
+            }
+        }
+
+        // Append leading new if no anchors were found
+        if (!leadingInserted)
+        {
+            merged.AddRange(leadingNew);
+        }
+
+        // Add current prompt if not already present
+        if (!string.IsNullOrEmpty(currentPrompt) &&
+            !existingHistory.Any(m => m.Role == "user" && m.Content == currentPrompt))
+        {
+            merged.Add(new ChatMessageModel
+            {
+                Role = "user",
+                Content = currentPrompt,
+                SenderId = currentSenderId
+            });
+        }
+
+        return new BufferResumeResult(merged, streamingMessage);
+    }
+
+    internal static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
         IReadOnlyList<ChatStreamMessage> bufferedMessages,
         HashSet<string> historyContent)
     {
@@ -17,7 +128,6 @@ public static class BufferRebuildUtility
             return (completedTurns, currentAssistantMessage);
         }
 
-        // Process messages in sequence order
         var orderedMessages = bufferedMessages
             .OrderBy(m => m.SequenceNumber)
             .ToList();
@@ -27,10 +137,8 @@ public static class BufferRebuildUtility
 
         foreach (var msg in orderedMessages)
         {
-            // Handle user messages - they're always complete, add directly
             if (msg.UserMessage is not null)
             {
-                // If we have pending assistant content, save it first
                 if (currentAssistantMessage.HasContent)
                 {
                     var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
@@ -54,8 +162,6 @@ public static class BufferRebuildUtility
                 continue;
             }
 
-            // Handle assistant messages
-            // If message ID changed and we have content, save the previous turn
             if (currentMessageId is not null && msg.MessageId != currentMessageId && currentAssistantMessage.HasContent)
             {
                 var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
@@ -70,13 +176,11 @@ public static class BufferRebuildUtility
 
             currentMessageId = msg.MessageId;
 
-            // Accumulate content before checking completion (a single chunk can carry both content and IsComplete)
             if (!string.IsNullOrEmpty(msg.Content) || !string.IsNullOrEmpty(msg.Reasoning) || !string.IsNullOrEmpty(msg.ToolCalls))
             {
                 currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
             }
 
-            // Handle complete markers and errors
             if (msg.IsComplete || msg.Error is not null)
             {
                 if (msg.IsComplete && currentAssistantMessage.HasContent)
@@ -99,24 +203,18 @@ public static class BufferRebuildUtility
         return (completedTurns, streamingMessage);
     }
 
-
-    public static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
+    internal static ChatMessageModel StripKnownContent(ChatMessageModel message, HashSet<string> historyContent)
     {
         if (string.IsNullOrEmpty(message.Content))
         {
             return message;
         }
 
-        // If the buffer content is a subset of any history content, the content is duplicate
-        // (user disconnected mid-stream and buffer has incomplete content while history has complete)
-        // Only clear content - keep Reasoning/ToolCalls so they can be merged into history
         if (historyContent.Any(known => known.Contains(message.Content)))
         {
             return message with { Content = "" };
         }
 
-        // Remove any history content that appears as a prefix in this message
-        // (buffer has more content than was in history)
         var content = message.Content;
         foreach (var known in historyContent.Where(known => content.StartsWith(known)))
         {
@@ -124,34 +222,6 @@ public static class BufferRebuildUtility
         }
 
         return content != message.Content ? message with { Content = content } : message;
-    }
-
-    public static ChatMessageModel StripKnownContentById(
-        ChatMessageModel message,
-        string? messageId,
-        IReadOnlyDictionary<string, string> historyContentById)
-    {
-        if (string.IsNullOrEmpty(message.Content) ||
-            string.IsNullOrEmpty(messageId) ||
-            !historyContentById.TryGetValue(messageId, out var knownContent))
-        {
-            return message;
-        }
-
-        // Buffer content is subset of history - content is duplicate
-        // Only clear content - keep Reasoning/ToolCalls so they can be merged into history
-        if (knownContent.Contains(message.Content))
-        {
-            return message with { Content = "" };
-        }
-
-        // Buffer has more than history - strip the known prefix
-        if (message.Content.StartsWith(knownContent))
-        {
-            return message with { Content = message.Content[knownContent.Length..].TrimStart() };
-        }
-
-        return message;
     }
 
     internal static ChatMessageModel AccumulateChunk(

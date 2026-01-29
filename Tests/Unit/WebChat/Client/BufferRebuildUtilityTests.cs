@@ -232,136 +232,227 @@ public sealed class BufferRebuildUtilityTests
 
     #endregion
 
-    #region StripKnownContent Tests
+    #region ResumeFromBuffer Tests
 
     [Fact]
-    public void StripKnownContent_WhenBufferIsSubsetOfHistory_ReturnsEmpty()
+    public void ResumeFromBuffer_WithEmptyBuffer_ReturnsHistoryUnchanged()
     {
-        var message = new ChatMessageModel { Role = "assistant", Content = "partial" };
-        var historyContent = new HashSet<string> { "partial content is longer" };
-
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
-
-        result.Content.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void StripKnownContent_WhenBufferHasMoreThanHistory_StripsPrefix()
-    {
-        var message = new ChatMessageModel { Role = "assistant", Content = "Known new content" };
-        var historyContent = new HashSet<string> { "Known" };
-
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
-
-        result.Content.ShouldBe("new content");
-    }
-
-    [Fact]
-    public void StripKnownContent_WhenNoOverlap_ReturnsUnchanged()
-    {
-        var message = new ChatMessageModel { Role = "assistant", Content = "completely new" };
-        var historyContent = new HashSet<string> { "something else" };
-
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
-
-        result.Content.ShouldBe("completely new");
-    }
-
-    [Fact]
-    public void StripKnownContent_WithEmptyContent_ReturnsUnchanged()
-    {
-        var message = new ChatMessageModel { Role = "assistant", Content = "" };
-        var historyContent = new HashSet<string> { "something" };
-
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
-
-        result.Content.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void StripKnownContent_WhenPrefixStripped_PreservesReasoning()
-    {
-        var message = new ChatMessageModel
+        var history = new List<ChatMessageModel>
         {
-            Role = "assistant",
-            Content = "Known new",
-            Reasoning = "thinking",
-            ToolCalls = "tool_1"
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
         };
-        var historyContent = new HashSet<string> { "Known" };
 
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
+        var result = BufferRebuildUtility.ResumeFromBuffer([], history, null, null);
 
-        result.Reasoning.ShouldBe("thinking");
-        result.ToolCalls.ShouldBe("tool_1");
+        result.MergedMessages.Count.ShouldBe(2);
+        result.MergedMessages[0].Content.ShouldBe("Q1");
+        result.MergedMessages[1].Content.ShouldBe("A1");
+        result.StreamingMessage.HasContent.ShouldBeFalse();
     }
 
     [Fact]
-    public void StripKnownContent_WhenContentIsDuplicate_KeepsReasoningAndToolCalls()
+    public void ResumeFromBuffer_InterleavesByAnchorPosition()
     {
-        var message = new ChatMessageModel
+        var history = new List<ChatMessageModel>
         {
-            Role = "assistant",
-            Content = "partial",
-            Reasoning = "orphaned reasoning",
-            ToolCalls = "tool_1"
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" },
+            new() { Role = "user", Content = "Q2", MessageId = "msg-3" },
+            new() { Role = "assistant", Content = "A2", MessageId = "msg-4" }
         };
-        var historyContent = new HashSet<string> { "partial content is longer" };
 
-        var result = BufferRebuildUtility.StripKnownContent(message, historyContent);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "New message", IsComplete = true, SequenceNumber = 2 },
+            new() { MessageId = "msg-4", Content = "A2", IsComplete = true, SequenceNumber = 3 }
+        };
 
-        result.Content.ShouldBeEmpty();
-        result.Reasoning.ShouldBe("orphaned reasoning"); // Kept for merging into history
-        result.ToolCalls.ShouldBe("tool_1"); // Kept for merging into history
-    }
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
 
-    #endregion
-
-    #region StripKnownContentById Tests
-
-    [Fact]
-    public void StripKnownContentById_WhenIdNotInHistory_ReturnsUnchanged()
-    {
-        var message = new ChatMessageModel { Role = "assistant", Content = "New content" };
-        var historyById = new Dictionary<string, string> { ["msg-1"] = "Old content" };
-
-        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-2", historyById);
-
-        result.Content.ShouldBe("New content");
+        result.MergedMessages.Count.ShouldBe(5);
+        result.MergedMessages[0].Content.ShouldBe("Q1");
+        result.MergedMessages[1].Content.ShouldBe("A1");
+        result.MergedMessages[2].Content.ShouldBe("New message");
+        result.MergedMessages[3].Content.ShouldBe("Q2");
+        result.MergedMessages[4].Content.ShouldBe("A2");
     }
 
     [Fact]
-    public void StripKnownContentById_WhenBufferIsSubset_KeepsReasoning()
+    public void ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor()
     {
-        var message = new ChatMessageModel { Role = "assistant", Content = "partial", Reasoning = "thinking" };
-        var historyById = new Dictionary<string, string> { ["msg-1"] = "partial content complete" };
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+        };
 
-        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-1", historyById);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Leading new", IsComplete = true, SequenceNumber = 1 },
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 2 }
+        };
 
-        result.Content.ShouldBeEmpty();
-        result.Reasoning.ShouldBe("thinking"); // Kept for merging into history
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.MergedMessages.Count.ShouldBe(3);
+        result.MergedMessages[0].Content.ShouldBe("Q1");
+        result.MergedMessages[1].Content.ShouldBe("Leading new");
+        result.MergedMessages[2].Content.ShouldBe("A1");
     }
 
     [Fact]
-    public void StripKnownContentById_WhenBufferHasMore_StripsPrefix()
+    public void ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor()
     {
-        var message = new ChatMessageModel { Role = "assistant", Content = "Known new stuff" };
-        var historyById = new Dictionary<string, string> { ["msg-1"] = "Known" };
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+        };
 
-        var result = BufferRebuildUtility.StripKnownContentById(message, "msg-1", historyById);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "Trailing new", IsComplete = true, SequenceNumber = 2 }
+        };
 
-        result.Content.ShouldBe("new stuff");
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.MergedMessages.Count.ShouldBe(3);
+        result.MergedMessages[0].Content.ShouldBe("Q1");
+        result.MergedMessages[1].Content.ShouldBe("A1");
+        result.MergedMessages[2].Content.ShouldBe("Trailing new");
     }
 
     [Fact]
-    public void StripKnownContentById_WithNullMessageId_ReturnsUnchanged()
+    public void ResumeFromBuffer_NoAnchors_AppendsAllAtEnd()
     {
-        var message = new ChatMessageModel { Role = "assistant", Content = "Content" };
-        var historyById = new Dictionary<string, string> { ["msg-1"] = "Content" };
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+        };
 
-        var result = BufferRebuildUtility.StripKnownContentById(message, null, historyById);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "New1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "New2", IsComplete = true, SequenceNumber = 2 }
+        };
 
-        result.Content.ShouldBe("Content");
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.MergedMessages.Count.ShouldBe(4);
+        result.MergedMessages[2].Content.ShouldBe("New1");
+        result.MergedMessages[3].Content.ShouldBe("New2");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_MergesReasoningIntoAnchor()
+    {
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-1" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Content = "A1", Reasoning = "Thought process", IsComplete = true, SequenceNumber = 1 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.MergedMessages.Count.ShouldBe(1);
+        result.MergedMessages[0].Content.ShouldBe("A1");
+        result.MergedMessages[0].Reasoning.ShouldBe("Thought process");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_AddsPromptIfNotInHistory()
+    {
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "Previous", MessageId = "msg-1" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Content = "Previous", IsComplete = true, SequenceNumber = 1 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "New question", "alice");
+
+        result.MergedMessages.Count.ShouldBe(2);
+        result.MergedMessages[1].Role.ShouldBe("user");
+        result.MergedMessages[1].Content.ShouldBe("New question");
+        result.MergedMessages[1].SenderId.ShouldBe("alice");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_DoesNotDuplicatePrompt()
+    {
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Same prompt" }
+        };
+
+        var buffer = new List<ChatStreamMessage>();
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "Same prompt", null);
+
+        var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "Same prompt" });
+        promptCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_ExcludesCurrentPromptFromBufferTurns()
+    {
+        var history = new List<ChatMessageModel>();
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "User's question", UserMessage = new UserMessageInfo("Bob", null), SequenceNumber = 1 },
+            new() { Content = "Response", MessageId = "msg-1", SequenceNumber = 2 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "User's question", "Bob");
+
+        var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "User's question" });
+        promptCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_StripsStreamingMessageContentAgainstHistory()
+    {
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "Already known content", MessageId = "msg-1" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Already known content", MessageId = "msg-1", SequenceNumber = 1 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.StreamingMessage.Content.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_WithEmptyHistory_ReturnsBufferTurns()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "First", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "Second", MessageId = "msg-2", SequenceNumber = 2 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], null, null);
+
+        result.MergedMessages.Count.ShouldBe(1);
+        result.MergedMessages[0].Content.ShouldBe("First");
+        result.StreamingMessage.Content.ShouldBe("Second");
     }
 
     #endregion
