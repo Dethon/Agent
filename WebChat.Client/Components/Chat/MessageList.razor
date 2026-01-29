@@ -60,9 +60,95 @@
 
     private void UpdateMessages()
     {
-        _messages = _topicId != null
+        var raw = _topicId != null
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
+        _messages = MergeConsecutiveAssistantMessages(raw);
+    }
+
+    // Merges consecutive assistant messages into a single bubble.
+    // Reasoning concatenated with "\n-----\n", tool calls with "\n".
+    // Content taken from whichever message has it. Empty trailing bubble kept (expecting more data).
+    private static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(IReadOnlyList<ChatMessageModel> messages)
+    {
+        if (messages.Count <= 1)
+        {
+            return messages;
+        }
+
+        var result = new List<ChatMessageModel>(messages.Count);
+        string? accReasoning = null;
+        string? accToolCalls = null;
+        string? accContent = null;
+        ChatMessageModel? anchor = null;
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            var message = messages[i];
+
+            if (message.Role != "assistant")
+            {
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                result.Add(message);
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(message.Content))
+            {
+                accContent ??= message.Content;
+            }
+
+            accReasoning = (accReasoning, message.Reasoning) switch
+            {
+                (null, _) => message.Reasoning,
+                (_, null or "") => accReasoning,
+                _ => accReasoning + "\n-----\n" + message.Reasoning
+            };
+
+            accToolCalls = (accToolCalls, message.ToolCalls) switch
+            {
+                (null, _) => message.ToolCalls,
+                (_, null or "") => accToolCalls,
+                _ => accToolCalls + "\n" + message.ToolCalls
+            };
+
+            // Prefer the message that carries content as anchor for MessageId/Timestamp
+            anchor = anchor is null || !string.IsNullOrEmpty(message.Content) ? message : anchor;
+
+            var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
+            if (!nextIsAssistant)
+            {
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+            }
+        }
+
+        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+        return result;
+
+        static void Flush(
+            List<ChatMessageModel> result,
+            ref ChatMessageModel? anchor,
+            ref string? content,
+            ref string? reasoning,
+            ref string? toolCalls)
+        {
+            if (anchor is null)
+            {
+                return;
+            }
+
+            result.Add(anchor with
+            {
+                Content = content ?? "",
+                Reasoning = reasoning,
+                ToolCalls = toolCalls
+            });
+
+            anchor = null;
+            content = null;
+            reasoning = null;
+            toolCalls = null;
+        }
     }
 
     private void UpdateStreamingStatus()
@@ -111,7 +197,10 @@
 
     private bool ShouldShowAvatar(int index)
     {
-        if (index == 0) return true;
+        if (index == 0)
+        {
+            return true;
+        }
 
         var current = _messages[index];
         var previous = _messages[index - 1];
