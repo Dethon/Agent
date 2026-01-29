@@ -86,34 +86,6 @@ public sealed class StreamingService(
         }
     }
 
-    private const string ReasoningSeparator = "\n-----\n";
-
-    // Carry forward reasoning/toolcalls into the next turn with trailing separators
-    // so AccumulateChunk concatenates correctly across turn boundaries
-    private static ChatMessageModel CarryForward(ChatMessageModel message)
-    {
-        return new ChatMessageModel
-        {
-            Role = "assistant",
-            Reasoning = string.IsNullOrEmpty(message.Reasoning) ? null : message.Reasoning + ReasoningSeparator,
-            ToolCalls = string.IsNullOrEmpty(message.ToolCalls) ? null : message.ToolCalls + "\n"
-        };
-    }
-
-    // Strip trailing separator that was added for carry-forward but had no subsequent content
-    private static ChatMessageModel TrimSeparators(ChatMessageModel message)
-    {
-        return message with
-        {
-            Reasoning = message.Reasoning is not null && message.Reasoning.EndsWith(ReasoningSeparator)
-                ? message.Reasoning[..^ReasoningSeparator.Length]
-                : message.Reasoning,
-            ToolCalls = message.ToolCalls is not null && message.ToolCalls.EndsWith('\n')
-                ? message.ToolCalls[..^1]
-                : message.ToolCalls
-        };
-    }
-
     private void StartNewStream(StoredTopic topic, string message, string? correlationId)
     {
         dispatcher.Dispatch(new StreamStarted(topic.TopicId));
@@ -172,18 +144,8 @@ public sealed class StreamingService(
 
                 if (isNewMessageTurn && streamingMessage.HasContent)
                 {
-                    if (!string.IsNullOrEmpty(streamingMessage.Content))
-                    {
-                        // Has real content - finalize as separate message
-                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
-                        streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    }
-                    else
-                    {
-                        // Only reasoning/toolcalls - carry forward with separators for the next turn
-                        streamingMessage = CarryForward(streamingMessage);
-                    }
-
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
                 }
 
@@ -209,7 +171,7 @@ public sealed class StreamingService(
 
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, TrimSeparators(streamingMessage), currentMessageId));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
             }
 
             // Fetch current topic from store to get latest LastReadMessageCount
@@ -298,21 +260,10 @@ public sealed class StreamingService(
 
                 if (isNewMessageTurn && streamingMessage.HasContent)
                 {
-                    if (!string.IsNullOrEmpty(streamingMessage.Content))
-                    {
-                        // Has real content - finalize as separate message
-                        dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
-                        streamingMessage = new ChatMessageModel { Role = "assistant" };
-                    }
-                    else
-                    {
-                        // Only reasoning/toolcalls - carry forward with separators for the next turn
-                        streamingMessage = CarryForward(streamingMessage);
-                    }
-
+                    dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
+                    streamingMessage = new ChatMessageModel { Role = "assistant" };
                     dispatcher.Dispatch(new StreamChunk(topic.TopicId, null, null, null, chunk.MessageId));
 
-                    // Reset processed lengths for new message turn
                     processedContentLength = 0;
                     processedReasoningLength = 0;
                     processedToolCallsLength = 0;
@@ -362,7 +313,7 @@ public sealed class StreamingService(
 
             if (streamingMessage.HasContent)
             {
-                dispatcher.Dispatch(new AddMessage(topic.TopicId, TrimSeparators(streamingMessage), currentMessageId));
+                dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
             }
 
             if (receivedNewContent)
