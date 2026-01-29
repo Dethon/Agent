@@ -4,7 +4,7 @@
 
 **Goal:** Fix buffer-history merge ordering so buffer-only messages are interleaved at the correct position rather than appended at the end.
 
-**Architecture:** Replace the per-message dispatch loop in `ResumeFromBuffer` with a merge algorithm that builds the full interleaved list upfront, using matched message IDs as anchor points, then dispatches a single `MessagesLoaded` action.
+**Architecture:** Fix the accumulation bug in `RebuildFromBuffer`, then stop stripping completed turn content (pass empty `historyContent`). With anchors preserved in `completedTurns`, classification and merge happen inline in `ResumeFromBuffer` — no separate merge method needed.
 
 **Tech Stack:** C# / .NET 10 / Blazor WASM / Shouldly (tests)
 
@@ -12,176 +12,102 @@
 
 ### Task 1: Write failing tests for interleaved merge ordering
 
+Already committed at `55260ba`. Tests are in `Tests/Unit/WebChat.Client/State/Pipeline/MessagePipelineTests.cs`. All 5 tests fail as expected.
+
+---
+
+### Task 2: Fix BufferRebuildUtility accumulation order
+
 **Files:**
-- Modify: `Tests/Unit/WebChat.Client/State/Pipeline/MessagePipelineTests.cs`
+- Modify: `WebChat.Client/Services/Streaming/BufferRebuildUtility.cs`
 
-**Step 1: Write the failing tests**
+**Context:** There's a bug where single-chunk complete messages (Content + IsComplete in the same message) lose their content. The `continue` in the IsComplete check skips `AccumulateChunk`. This is independent of the merge ordering fix but required for the tests to work.
 
-Add these tests to the existing `MessagePipelineTests` class:
+**Step 1: Move AccumulateChunk before the IsComplete check**
+
+In `RebuildFromBuffer`, find this section (around line 70-96):
 
 ```csharp
-[Fact]
-public void ResumeFromBuffer_InterleavesByAnchorPosition()
+currentMessageId = msg.MessageId;
+
+// Skip complete markers and errors for accumulation
+if (msg.IsComplete || msg.Error is not null)
 {
-    // History: [H1(msg-1, user), H2(msg-2, assistant), H3(msg-3, user), H4(msg-4, assistant)]
-    var history = new List<ChatHistoryMessage>
+    if (msg.IsComplete && currentAssistantMessage.HasContent)
     {
-        new("msg-1", "user", "Q1", null, null),
-        new("msg-2", "assistant", "A1", null, null),
-        new("msg-3", "user", "Q2", null, null),
-        new("msg-4", "assistant", "A2", null, null)
-    };
-    _pipeline.LoadHistory("topic-1", history);
+        var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
+        if (strippedMessage.HasContent)
+        {
+            completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
+        }
 
-    // Buffer: [B1(=msg-2 anchor), B2(new, no ID), B3(=msg-4 anchor)]
-    // B2 should appear between msg-2 and msg-3 in final list
-    var buffer = new List<ChatStreamMessage>
-    {
-        new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
-        new() { Content = "New message", IsComplete = true, SequenceNumber = 2 },
-        new() { MessageId = "msg-4", Content = "A2", IsComplete = true, SequenceNumber = 3 }
-    };
+        currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
+        needsReasoningSeparator = false;
+    }
 
-    _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
-
-    var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-    messages.Count.ShouldBe(5);
-    messages[0].Content.ShouldBe("Q1");
-    messages[1].Content.ShouldBe("A1");
-    messages[2].Content.ShouldBe("New message");  // Interleaved after anchor msg-2
-    messages[3].Content.ShouldBe("Q2");
-    messages[4].Content.ShouldBe("A2");
+    continue;
 }
 
-[Fact]
-public void ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor()
+currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
+```
+
+Replace with:
+
+```csharp
+currentMessageId = msg.MessageId;
+
+// Accumulate content before checking completion (a single chunk can carry both content and IsComplete)
+if (!string.IsNullOrEmpty(msg.Content) || !string.IsNullOrEmpty(msg.Reasoning) || !string.IsNullOrEmpty(msg.ToolCalls))
 {
-    // History: [H1(msg-1, user), H2(msg-2, assistant)]
-    var history = new List<ChatHistoryMessage>
-    {
-        new("msg-1", "user", "Q1", null, null),
-        new("msg-2", "assistant", "A1", null, null)
-    };
-    _pipeline.LoadHistory("topic-1", history);
-
-    // Buffer: [B0(new), B1(=msg-2 anchor)]
-    // B0 should appear before msg-2 (right before the first anchor)
-    var buffer = new List<ChatStreamMessage>
-    {
-        new() { Content = "Leading new", IsComplete = true, SequenceNumber = 1 },
-        new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 2 }
-    };
-
-    _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
-
-    var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-    messages.Count.ShouldBe(3);
-    messages[0].Content.ShouldBe("Q1");
-    messages[1].Content.ShouldBe("Leading new");  // Before anchor msg-2
-    messages[2].Content.ShouldBe("A1");
+    currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg, ref needsReasoningSeparator);
 }
 
-[Fact]
-public void ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor()
+// Handle complete markers and errors
+if (msg.IsComplete || msg.Error is not null)
 {
-    // History: [H1(msg-1, user), H2(msg-2, assistant)]
-    var history = new List<ChatHistoryMessage>
+    if (msg.IsComplete && currentAssistantMessage.HasContent)
     {
-        new("msg-1", "user", "Q1", null, null),
-        new("msg-2", "assistant", "A1", null, null)
-    };
-    _pipeline.LoadHistory("topic-1", history);
+        var strippedMessage = StripKnownContent(currentAssistantMessage, historyContent);
+        if (strippedMessage.HasContent)
+        {
+            completedTurns.Add(strippedMessage with { MessageId = currentMessageId });
+        }
 
-    // Buffer: [B1(=msg-2 anchor), B2(new trailing)]
-    var buffer = new List<ChatStreamMessage>
-    {
-        new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
-        new() { Content = "Trailing new", IsComplete = true, SequenceNumber = 2 }
-    };
+        currentAssistantMessage = new ChatMessageModel { Role = "assistant" };
+        needsReasoningSeparator = false;
+    }
 
-    _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
-
-    var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-    messages.Count.ShouldBe(3);
-    messages[0].Content.ShouldBe("Q1");
-    messages[1].Content.ShouldBe("A1");
-    messages[2].Content.ShouldBe("Trailing new");  // After last anchor
-}
-
-[Fact]
-public void ResumeFromBuffer_NoAnchors_AppendsAllAtEnd()
-{
-    // History: [H1(msg-1, user), H2(msg-2, assistant)]
-    var history = new List<ChatHistoryMessage>
-    {
-        new("msg-1", "user", "Q1", null, null),
-        new("msg-2", "assistant", "A1", null, null)
-    };
-    _pipeline.LoadHistory("topic-1", history);
-
-    // Buffer: all new messages, no anchors
-    var buffer = new List<ChatStreamMessage>
-    {
-        new() { Content = "New1", IsComplete = true, SequenceNumber = 1 },
-        new() { Content = "New2", IsComplete = true, SequenceNumber = 2 }
-    };
-
-    _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
-
-    var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-    messages.Count.ShouldBe(4);
-    messages[2].Content.ShouldBe("New1");
-    messages[3].Content.ShouldBe("New2");
-}
-
-[Fact]
-public void ResumeFromBuffer_MergesReasoningIntoAnchor()
-{
-    var history = new List<ChatHistoryMessage>
-    {
-        new("msg-1", "assistant", "A1", null, null)
-    };
-    _pipeline.LoadHistory("topic-1", history);
-
-    // Buffer has same content but adds reasoning
-    var buffer = new List<ChatStreamMessage>
-    {
-        new() { MessageId = "msg-1", Content = "A1", Reasoning = "Thought process", IsComplete = true, SequenceNumber = 1 }
-    };
-
-    _pipeline.ResumeFromBuffer("topic-1", buffer, null, null, null);
-
-    var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-    messages.Count.ShouldBe(1);
-    messages[0].Content.ShouldBe("A1");
-    messages[0].Reasoning.ShouldBe("Thought process");
+    continue;
 }
 ```
 
-**Step 2: Run tests to verify they fail**
+**Step 2: Run existing BufferRebuildUtility tests**
 
-Run: `dotnet test Tests/ --filter "FullyQualifiedName~MessagePipelineTests.ResumeFromBuffer_" -v minimal`
-Expected: Tests fail (current implementation appends at end instead of interleaving)
+Run: `dotnet test Tests/ --filter "FullyQualifiedName~BufferRebuildUtilityTests" -v minimal`
+Expected: All existing tests still pass (no regressions).
 
-**Step 3: Commit failing tests**
+**Step 3: Commit**
 
 ```bash
-git add Tests/Unit/WebChat.Client/State/Pipeline/MessagePipelineTests.cs
-git commit -m "test: add failing tests for buffer-history merge ordering"
+git add WebChat.Client/Services/Streaming/BufferRebuildUtility.cs
+git commit -m "fix(webchat): accumulate content before checking IsComplete in buffer rebuild
+
+Single-chunk complete messages (Content + IsComplete in same message)
+previously lost their content because the continue skipped AccumulateChunk."
 ```
 
 ---
 
-### Task 2: Implement the interleaved merge in ResumeFromBuffer
+### Task 3: Simplify ResumeFromBuffer with inline merge
 
 **Files:**
-- Modify: `WebChat.Client/State/Pipeline/MessagePipeline.cs:170-270`
+- Modify: `WebChat.Client/State/Pipeline/MessagePipeline.cs`
 
-**Step 1: Replace the prompt + turns + TryMergeIntoHistory section**
+**Key insight:** Don't strip completed turn content — pass empty `historyContent` to `RebuildFromBuffer`. This preserves anchor MessageIds in `completedTurns`, so classification and merge happen in one place without a separate method.
 
-Replace lines 200-249 of `ResumeFromBuffer` (from the `// Add current prompt` comment through the streaming chunk dispatch) with the new merge algorithm. Keep the streaming chunk dispatch unchanged. Remove the `TryMergeIntoHistory` private method since it moves inline.
+**Step 1: Replace ResumeFromBuffer body**
 
-The new `ResumeFromBuffer` method body (lines 170-249):
+Replace the entire `ResumeFromBuffer` method (lines 170-253) with:
 
 ```csharp
 public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> buffer,
@@ -190,18 +116,21 @@ public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> bu
     var existingMessages = messagesStore.State.MessagesByTopic
         .GetValueOrDefault(topicId) ?? [];
 
-    // Build maps for merging: history content for dedup, and history messages by ID for merging
-    var historyContent = existingMessages
-        .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
-        .Select(m => m.Content)
-        .ToHashSet();
-
     var historyById = existingMessages
         .Where(m => !string.IsNullOrEmpty(m.MessageId))
         .ToDictionary(m => m.MessageId!, m => m);
 
-    var (completedTurns, streamingMessage) =
-        BufferRebuildUtility.RebuildFromBuffer(buffer, historyContent);
+    // Don't strip completed turn content — we need anchor MessageIds for positioning.
+    // Only strip the streaming message (below).
+    var (completedTurns, rawStreamingMessage) =
+        BufferRebuildUtility.RebuildFromBuffer(buffer, []);
+
+    // Strip streaming message against history content
+    var historyContent = existingMessages
+        .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
+        .Select(m => m.Content)
+        .ToHashSet();
+    var streamingMessage = BufferRebuildUtility.StripKnownContent(rawStreamingMessage, historyContent);
 
     lock (_lock)
     {
@@ -214,31 +143,93 @@ public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> bu
         }
     }
 
-    // Filter completed turns to those with content, excluding the current prompt
-    var turns = completedTurns
-        .Where(t => t.HasContent && !(t.Role == "user" && t.Content == currentPrompt))
-        .ToList();
+    // Classify completed turns: anchors (MessageId in history) track position,
+    // new messages are grouped by which anchor they follow
+    string? lastAnchorId = null;
+    var followingNew = new Dictionary<string, List<ChatMessageModel>>();
+    var leadingNew = new List<ChatMessageModel>();
 
-    // Build prompt message if not already in history
-    ChatMessageModel? promptMessage = null;
+    foreach (var turn in completedTurns.Where(t =>
+                 t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
+    {
+        if (!string.IsNullOrEmpty(turn.MessageId) && historyById.ContainsKey(turn.MessageId))
+        {
+            followingNew[turn.MessageId] = [];
+            lastAnchorId = turn.MessageId;
+        }
+        else if (lastAnchorId is not null)
+        {
+            followingNew[lastAnchorId].Add(turn);
+        }
+        else
+        {
+            leadingNew.Add(turn);
+        }
+    }
+
+    // Build merged list: walk history, enrich anchors, insert new messages at anchor positions
+    var merged = new List<ChatMessageModel>(existingMessages.Count + completedTurns.Count);
+    var leadingInserted = false;
+
+    foreach (var msg in existingMessages)
+    {
+        // Insert leading new messages before the first anchor
+        if (!leadingInserted && msg.MessageId is not null && followingNew.ContainsKey(msg.MessageId))
+        {
+            merged.AddRange(leadingNew);
+            leadingInserted = true;
+        }
+
+        // Enrich anchor with buffer reasoning/toolcalls, or pass through unchanged
+        var anchorTurn = (msg.MessageId is not null &&
+            completedTurns.FirstOrDefault(t => t.MessageId == msg.MessageId) is { } match)
+            ? match : null;
+
+        if (anchorTurn is not null)
+        {
+            var nr = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
+            var nt = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
+            merged.Add((nr || nt)
+                ? msg with
+                {
+                    Reasoning = nr ? anchorTurn.Reasoning : msg.Reasoning,
+                    ToolCalls = nt ? anchorTurn.ToolCalls : msg.ToolCalls
+                }
+                : msg);
+        }
+        else
+        {
+            merged.Add(msg);
+        }
+
+        // Insert new messages that follow this anchor
+        if (msg.MessageId is not null && followingNew.TryGetValue(msg.MessageId, out var following))
+        {
+            merged.AddRange(following);
+        }
+    }
+
+    // Append leading new if no anchors were found
+    if (!leadingInserted)
+    {
+        merged.AddRange(leadingNew);
+    }
+
+    // Add current prompt if not already present
     if (!string.IsNullOrEmpty(currentPrompt) &&
         !existingMessages.Any(m => m.Role == "user" && m.Content == currentPrompt))
     {
-        promptMessage = new ChatMessageModel
+        merged.Add(new ChatMessageModel
         {
             Role = "user",
             Content = currentPrompt,
             SenderId = currentSenderId
-        };
+        });
     }
 
-    // Build merged list
-    var merged = MergeBufferWithHistory(existingMessages, turns, historyById, promptMessage);
-
-    // Dispatch merged list as single replacement
     dispatcher.Dispatch(new MessagesLoaded(topicId, merged));
 
-    // Streaming content unchanged - always the latest in-progress content
+    // Streaming content — enrich history or dispatch chunk
     if (streamingMessage.HasContent)
     {
         if (!string.IsNullOrEmpty(currentMessageId) &&
@@ -269,121 +260,30 @@ public void ResumeFromBuffer(string topicId, IReadOnlyList<ChatStreamMessage> bu
 }
 ```
 
-**Step 2: Add the `MergeBufferWithHistory` private method**
+**Step 2: Remove `TryMergeIntoHistory`**
 
-Add this method after `ResumeFromBuffer`, replacing the old `TryMergeIntoHistory` method:
+Delete the `TryMergeIntoHistory` private method. Its enrichment logic is now inline in the merge loop.
 
-```csharp
-private static List<ChatMessageModel> MergeBufferWithHistory(
-    IReadOnlyList<ChatMessageModel> history,
-    List<ChatMessageModel> bufferTurns,
-    Dictionary<string, ChatMessageModel> historyById,
-    ChatMessageModel? promptMessage)
-{
-    // Classify buffer turns as anchors (matched by ID in history) or new
-    var anchorIds = new HashSet<string>();
-    var anchorTurns = new Dictionary<string, ChatMessageModel>();
-    var precedingNew = new Dictionary<string, List<ChatMessageModel>>();
-    var pendingNew = new List<ChatMessageModel>();
-    string? firstAnchorId = null;
-
-    foreach (var turn in bufferTurns)
-    {
-        if (!string.IsNullOrEmpty(turn.MessageId) && historyById.ContainsKey(turn.MessageId))
-        {
-            // Anchor: buffer turn matches a history message
-            anchorIds.Add(turn.MessageId);
-            anchorTurns[turn.MessageId] = turn;
-            precedingNew[turn.MessageId] = pendingNew;
-            pendingNew = [];
-            firstAnchorId ??= turn.MessageId;
-        }
-        else
-        {
-            // New: buffer turn not in history
-            pendingNew.Add(turn);
-        }
-    }
-
-    var trailingNew = pendingNew;
-
-    // Build merged list by walking history and inserting new messages at anchor positions
-    var merged = new List<ChatMessageModel>(history.Count + bufferTurns.Count);
-
-    foreach (var msg in history)
-    {
-        // Insert leading new messages (and prompt) before the first anchor
-        if (msg.MessageId == firstAnchorId && precedingNew.TryGetValue(firstAnchorId, out var leading) && leading.Count > 0)
-        {
-            if (promptMessage is not null)
-            {
-                merged.Add(promptMessage);
-                promptMessage = null;
-            }
-            merged.AddRange(leading);
-        }
-
-        // Emit history message, enriching anchors with buffer reasoning/toolcalls
-        if (msg.MessageId is not null && anchorTurns.TryGetValue(msg.MessageId, out var bufferTurn))
-        {
-            var needsReasoning = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(bufferTurn.Reasoning);
-            var needsToolCalls = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(bufferTurn.ToolCalls);
-
-            merged.Add((needsReasoning || needsToolCalls)
-                ? msg with
-                {
-                    Reasoning = needsReasoning ? bufferTurn.Reasoning : msg.Reasoning,
-                    ToolCalls = needsToolCalls ? bufferTurn.ToolCalls : msg.ToolCalls
-                }
-                : msg);
-        }
-        else
-        {
-            merged.Add(msg);
-        }
-
-        // Insert new messages that follow this anchor
-        if (msg.MessageId is not null && precedingNew.TryGetValue(msg.MessageId, out var following) && msg.MessageId != firstAnchorId)
-        {
-            merged.AddRange(following);
-        }
-    }
-
-    // Append prompt if it wasn't placed before an anchor
-    if (promptMessage is not null)
-    {
-        merged.Add(promptMessage);
-    }
-
-    // Append trailing new messages
-    merged.AddRange(trailingNew);
-
-    return merged;
-}
-```
-
-**Step 3: Remove the old `TryMergeIntoHistory` method**
-
-Delete lines 251-270 (the `TryMergeIntoHistory` private method). Its logic is now inline in `MergeBufferWithHistory`.
-
-**Step 4: Run tests to verify they pass**
+**Step 3: Run all MessagePipeline tests**
 
 Run: `dotnet test Tests/ --filter "FullyQualifiedName~MessagePipelineTests" -v minimal`
-Expected: All tests pass including both old and new tests.
+Expected: All tests pass (old and new).
 
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```bash
 git add WebChat.Client/State/Pipeline/MessagePipeline.cs
 git commit -m "fix(webchat): interleave buffer messages with history by anchor position
 
-Buffer-only messages now maintain their original order relative to
-anchor messages instead of being appended at the end."
+Stop stripping completed turn content so anchor MessageIds are preserved
+in completedTurns. Classification and merge happen inline — no separate
+merge method needed. Buffer-only messages now appear at the correct
+position relative to anchors instead of being appended at the end."
 ```
 
 ---
 
-### Task 3: Verify build and run full test suite
+### Task 4: Verify build and run full test suite
 
 **Step 1: Build the solution**
 
