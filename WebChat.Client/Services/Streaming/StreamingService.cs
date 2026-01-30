@@ -240,20 +240,18 @@ public sealed class StreamingService(
     private async Task UpdateLastReadMessage(StoredTopic topic, ChatStreamMessage chunk)
     {
         var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
-        var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
-        var lastMsgId = isActivelyViewed ? chunk.MessageId : currentTopic?.LastReadMessageId;
-        if (currentTopic is null ||
-            chunk.MessageId is null ||
-            lastMsgId is null ||
-            lastMsgId == currentTopic.LastReadMessageId)
+        if (currentTopic is null || chunk.MessageId is null)
         {
             return;
         }
 
+        var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
+        var lastReadMsgId = isActivelyViewed ? chunk.MessageId : currentTopic.LastReadMessageId;
+
         var metadata = currentTopic.ToMetadata() with
         {
             LastMessageAt = DateTimeOffset.UtcNow,
-            LastReadMessageId = lastMsgId
+            LastReadMessageId = lastReadMsgId
         };
 
         var updatedTopic = StoredTopic.FromMetadata(metadata);
