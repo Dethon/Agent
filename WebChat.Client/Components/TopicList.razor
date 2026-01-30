@@ -33,19 +33,23 @@
         Subscribe(StreamingStore.StateObservable,
             state => state.StreamingTopics,
             ids => _streamingTopics = ids);
-        // Unread counts depend on both MessagesStore and TopicsStore
-        // Subscribe to both to ensure recomputation when either changes
+        // Unread counts depend on MessagesStore, TopicsStore, and StreamingStore
+        // Subscribe to all three to ensure recomputation when any changes
         Subscribe(MessagesStore.StateObservable,
-            state => ComputeUnreadCounts(state, TopicsStore.State),
+            state => ComputeUnreadCounts(state, TopicsStore.State, StreamingStore.State),
             counts => _unreadCounts = counts);
         Subscribe(TopicsStore.StateObservable,
-            state => ComputeUnreadCounts(MessagesStore.State, state),
+            state => ComputeUnreadCounts(MessagesStore.State, state, StreamingStore.State),
+            counts => _unreadCounts = counts);
+        Subscribe(StreamingStore.StateObservable,
+            state => ComputeUnreadCounts(MessagesStore.State, TopicsStore.State, state),
             counts => _unreadCounts = counts);
     }
 
     private static IReadOnlyDictionary<string, int> ComputeUnreadCounts(
         MessagesState messagesState,
-        TopicsState topicsState)
+        TopicsState topicsState,
+        StreamingState streamingState)
     {
         var result = new Dictionary<string, int>();
         foreach (var topic in topicsState.Topics)
@@ -53,15 +57,39 @@
             if (topic.TopicId == topicsState.SelectedTopicId) continue;
 
             var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-            var assistantCount = messages.Count(m => m.Role != "user");
-            var lastRead = topic.LastReadMessageCount;
+            var hasStreamingContent = streamingState.StreamingByTopic.TryGetValue(topic.TopicId, out var streaming)
+                                      && streaming.HasContent;
 
-            if (assistantCount > lastRead)
+            if (messages.Count == 0 && !hasStreamingContent) continue;
+
+            var hasStreamingMessageId = hasStreamingContent && streaming?.CurrentMessageId is not null;
+            List<ChatMessageModel> allMessages = hasStreamingMessageId
+                ? [..messages, new ChatMessageModel { Role = "assistant", MessageId = streaming?.CurrentMessageId }]
+                : [..messages];
+
+            var unreadCount = GetUnreadCountSince(allMessages, topic.LastReadMessageId);
+            if (unreadCount > 0)
             {
-                result[topic.TopicId] = assistantCount - lastRead;
+                result[topic.TopicId] = unreadCount;
             }
         }
         return result;
+    }
+
+    private static int GetUnreadCountSince(IReadOnlyList<ChatMessageModel> messages, string? lastReadMessageId)
+    {
+        if (lastReadMessageId is null) return messages.Count;
+
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].MessageId == lastReadMessageId)
+            {
+                return messages.Count - 1 - i;
+            }
+        }
+
+        // ID not found — treat all as unread
+        return messages.Count;
     }
 
     private string SelectedAgentName => _agents.FirstOrDefault(a => a.Id == _selectedAgentId)?.Name ?? "Select Agent";

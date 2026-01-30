@@ -15,12 +15,6 @@ public sealed class MessagesStore : IDisposable
         dispatcher.RegisterHandler<AddMessage>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
 
-        dispatcher.RegisterHandler<AddPendingMessage>(action =>
-            _store.Dispatch(action, MessagesReducers.Reduce));
-
-        dispatcher.RegisterHandler<FlushPendingMessages>(action =>
-            _store.Dispatch(action, MessagesReducers.Reduce));
-
         dispatcher.RegisterHandler<UpdateMessage>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
 

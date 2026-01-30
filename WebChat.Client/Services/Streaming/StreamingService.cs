@@ -117,8 +117,6 @@ public sealed class StreamingService(
         ChatMessageModel streamingMessage,
         string? currentMessageId)
     {
-        var receivedNewContent = false;
-
         // Track processed lengths to avoid duplicate display when resuming from buffer.
         // For fresh streams these start at 0, so all content is considered new.
         var processedContentLength = streamingMessage.Content.Length;
@@ -201,13 +199,14 @@ public sealed class StreamingService(
                     continue;
                 }
 
-                receivedNewContent = true;
                 dispatcher.Dispatch(new StreamChunk(
                     topic.TopicId,
                     streamingMessage.Content,
                     streamingMessage.Reasoning,
                     streamingMessage.ToolCalls,
                     currentMessageId));
+
+                await UpdateLastReadMessage(topic, chunk);
             }
 
             // Check finalization one more time before adding final message
@@ -223,18 +222,6 @@ public sealed class StreamingService(
             {
                 dispatcher.Dispatch(new AddMessage(topic.TopicId, streamingMessage, currentMessageId));
             }
-
-            if (receivedNewContent)
-            {
-                // Fetch current topic from store to get latest LastReadMessageCount
-                // Don't mutate the store object - create metadata with updated LastMessageAt
-                var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
-                if (currentTopic is not null)
-                {
-                    var metadata = currentTopic.ToMetadata() with { LastMessageAt = DateTimeOffset.UtcNow };
-                    await topicService.SaveTopicAsync(metadata);
-                }
-            }
         }
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
         {
@@ -248,5 +235,32 @@ public sealed class StreamingService(
         {
             dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
         }
+    }
+
+    private async Task UpdateLastReadMessage(StoredTopic topic, ChatStreamMessage chunk)
+    {
+        var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
+        if (currentTopic is null || chunk.MessageId is null)
+        {
+            return;
+        }
+
+        var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
+        var lastReadMsgId = isActivelyViewed ? chunk.MessageId : currentTopic.LastReadMessageId;
+
+        if (lastReadMsgId is not null && lastReadMsgId == currentTopic.LastReadMessageId)
+        {
+            return;
+        }
+
+        var metadata = currentTopic.ToMetadata() with
+        {
+            LastMessageAt = DateTimeOffset.UtcNow,
+            LastReadMessageId = lastReadMsgId
+        };
+
+        var updatedTopic = StoredTopic.FromMetadata(metadata);
+        dispatcher.Dispatch(new UpdateTopic(updatedTopic));
+        await topicService.SaveTopicAsync(metadata);
     }
 }

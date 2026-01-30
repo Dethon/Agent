@@ -69,7 +69,7 @@ public sealed class TopicSelectionEffect : IDisposable
             }
         }
 
-        // Mark messages as read by updating LastReadMessageCount
+        // Mark messages as read by updating LastReadMessageId
         await MarkTopicAsReadAsync(topic);
 
         // Try to resume any active streaming
@@ -79,9 +79,9 @@ public sealed class TopicSelectionEffect : IDisposable
     private async Task MarkTopicAsReadAsync(StoredTopic topic)
     {
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-        var assistantCount = messages.Count(m => m.Role != "user");
+        var lastMessageId = messages.LastOrDefault(m => m.MessageId is not null)?.MessageId;
 
-        if (assistantCount > topic.LastReadMessageCount)
+        if (lastMessageId is not null && lastMessageId != topic.LastReadMessageId)
         {
             // Update local state
             var updatedTopic = new StoredTopic
@@ -93,7 +93,7 @@ public sealed class TopicSelectionEffect : IDisposable
                 Name = topic.Name,
                 CreatedAt = topic.CreatedAt,
                 LastMessageAt = topic.LastMessageAt,
-                LastReadMessageCount = assistantCount
+                LastReadMessageId = lastMessageId
             };
             _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
 

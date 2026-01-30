@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -17,6 +18,8 @@ public sealed class InitializationEffect : IDisposable
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
     private readonly UserIdentityStore _userIdentityStore;
+    private readonly TopicsStore _topicsStore;
+    private readonly MessagesStore _messagesStore;
     private readonly IMessagePipeline _pipeline;
 
     public InitializationEffect(
@@ -28,6 +31,8 @@ public sealed class InitializationEffect : IDisposable
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
         UserIdentityStore userIdentityStore,
+        TopicsStore topicsStore,
+        MessagesStore messagesStore,
         IMessagePipeline pipeline)
     {
         _dispatcher = dispatcher;
@@ -38,6 +43,8 @@ public sealed class InitializationEffect : IDisposable
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
         _userIdentityStore = userIdentityStore;
+        _topicsStore = topicsStore;
+        _messagesStore = messagesStore;
         _pipeline = pipeline;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
@@ -111,7 +118,36 @@ public sealed class InitializationEffect : IDisposable
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
         _pipeline.LoadHistory(topic.TopicId, history);
 
+        // If this topic is currently selected, mark it as read so no stale badges appear
+        if (_topicsStore.State.SelectedTopicId == topic.TopicId)
+        {
+            await MarkTopicAsReadAsync(topic);
+        }
+
         _ = _streamResumeService.TryResumeStreamAsync(topic);
+    }
+
+    private async Task MarkTopicAsReadAsync(StoredTopic topic)
+    {
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+        var lastMessageId = messages.LastOrDefault(m => m.MessageId is not null)?.MessageId;
+
+        if (lastMessageId is not null && lastMessageId != topic.LastReadMessageId)
+        {
+            var updatedTopic = new StoredTopic
+            {
+                TopicId = topic.TopicId,
+                ChatId = topic.ChatId,
+                ThreadId = topic.ThreadId,
+                AgentId = topic.AgentId,
+                Name = topic.Name,
+                CreatedAt = topic.CreatedAt,
+                LastMessageAt = topic.LastMessageAt,
+                LastReadMessageId = lastMessageId
+            };
+            _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
+            await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
+        }
     }
 
     public void Dispose()

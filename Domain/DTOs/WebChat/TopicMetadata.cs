@@ -8,4 +8,4 @@ public record TopicMetadata(
     string Name,
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastMessageAt,
-    int LastReadMessageCount = 0);
+    string? LastReadMessageId = null);
