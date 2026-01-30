@@ -53,9 +53,10 @@
             if (topic.TopicId == topicsState.SelectedTopicId) continue;
 
             var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-            if (messages.Count == 0) continue;
+            var pendingMessages = messagesState.PendingMessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+            if (messages.Count == 0 && pendingMessages.Count == 0) continue;
 
-            var unreadCount = GetUnreadCountSince(messages, topic.LastReadMessageId);
+            var unreadCount = GetUnreadCountSince([..messages, ..pendingMessages], topic.LastReadMessageId);
             if (unreadCount > 0)
             {
                 result[topic.TopicId] = unreadCount;
@@ -66,6 +67,9 @@
 
     private static int GetUnreadCountSince(IReadOnlyList<ChatMessageModel> messages, string? lastReadMessageId)
     {
+        Console.WriteLine($"lastReadMessageId {lastReadMessageId}");
+        Console.WriteLine($"messages.Count {messages.Count}");
+        Console.WriteLine($"messages {string.Join(',', messages.Select(m => m.MessageId))}");
         if (lastReadMessageId is null) return messages.Count;
 
         for (var i = messages.Count - 1; i >= 0; i--)
