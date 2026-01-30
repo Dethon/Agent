@@ -42,8 +42,5 @@
       <ProjectReference Include="..\Domain\Domain.csproj" />
     </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="Memory\NullEmbeddingService.cs"/>
-  </ItemGroup>
 
 </Project>
