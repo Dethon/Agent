@@ -248,6 +248,11 @@ public sealed class StreamingService(
         var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
         var lastReadMsgId = isActivelyViewed ? chunk.MessageId : currentTopic.LastReadMessageId;
 
+        if (lastReadMsgId is not null && lastReadMsgId == currentTopic.LastReadMessageId)
+        {
+            return;
+        }
+
         var metadata = currentTopic.ToMetadata() with
         {
             LastMessageAt = DateTimeOffset.UtcNow,
