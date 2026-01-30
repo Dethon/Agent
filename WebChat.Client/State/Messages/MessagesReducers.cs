@@ -153,6 +153,11 @@ public static class MessagesReducers
             {
                 [topicId] = existingMessages.Append(message).ToList()
             },
+            PendingMessagesByTopic =
+            new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.PendingMessagesByTopic)
+            {
+                [topicId] = []
+            },
             FinalizedMessageIdsByTopic = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic)
             {
                 [topicId] = newFinalizedIds
