@@ -1,5 +1,5 @@
 ﻿using Domain.Contracts;
-using McpServerLibrary.Extensions;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;

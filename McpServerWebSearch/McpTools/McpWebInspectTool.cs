@@ -2,7 +2,7 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
-using McpServerWebSearch.Extensions;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;

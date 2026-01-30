@@ -1,7 +1,7 @@
 ﻿using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.StateManagers;
-using McpServerLibrary.Extensions;
+using Infrastructure.Extensions;
 using McpServerLibrary.McpPrompts;
 using McpServerLibrary.McpResources;
 using McpServerLibrary.McpTools;

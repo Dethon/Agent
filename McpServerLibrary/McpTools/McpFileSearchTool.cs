@@ -2,7 +2,7 @@
 using Domain.Contracts;
 using Domain.Tools.Files;
 using Infrastructure.Utils;
-using McpServerLibrary.Extensions;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;

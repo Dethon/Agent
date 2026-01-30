@@ -1,6 +1,6 @@
 using ModelContextProtocol.Server;
 
-namespace McpServerWebSearch.Extensions;
+namespace Infrastructure.Extensions;
 
 public static class McpServerExtensions
 {

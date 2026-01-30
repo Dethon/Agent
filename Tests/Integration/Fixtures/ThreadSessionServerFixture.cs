@@ -6,7 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.Downloads;
 using Infrastructure.StateManagers;
-using McpServerLibrary.Extensions;
+using Infrastructure.Extensions;
 using McpServerLibrary.ResourceSubscriptions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
