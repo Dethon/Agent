@@ -57,15 +57,14 @@
             if (topic.TopicId == topicsState.SelectedTopicId) continue;
 
             var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-            var pendingMessages = messagesState.PendingMessagesByTopic.GetValueOrDefault(topic.TopicId, []);
             var hasStreamingContent = streamingState.StreamingByTopic.TryGetValue(topic.TopicId, out var streaming)
                                       && streaming.HasContent;
 
-            if (messages.Count == 0 && pendingMessages.Count == 0 && !hasStreamingContent) continue;
+            if (messages.Count == 0 && !hasStreamingContent) continue;
 
             List<ChatMessageModel> allMessages = hasStreamingContent
-                ? [..messages, ..pendingMessages, new ChatMessageModel { Role = "assistant", MessageId = streaming!.CurrentMessageId }]
-                : [..messages, ..pendingMessages];
+                ? [..messages, new ChatMessageModel { Role = "assistant", MessageId = streaming!.CurrentMessageId }]
+                : [..messages];
 
             var unreadCount = GetUnreadCountSince(allMessages, topic.LastReadMessageId);
             if (unreadCount > 0)

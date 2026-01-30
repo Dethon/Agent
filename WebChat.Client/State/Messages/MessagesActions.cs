@@ -6,10 +6,6 @@ public record MessagesLoaded(string TopicId, IReadOnlyList<ChatMessageModel> Mes
 
 public record AddMessage(string TopicId, ChatMessageModel Message, string? StreamMessageId = null) : IAction;
 
-public record AddPendingMessage(string TopicId, ChatMessageModel Message) : IAction;
-
-public record FlushPendingMessages(string TopicId) : IAction;
-
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
 public record RemoveLastMessage(string TopicId) : IAction;
