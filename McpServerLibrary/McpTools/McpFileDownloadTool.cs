@@ -4,7 +4,6 @@ using Domain.Tools.Config;
 using Domain.Tools.Downloads;
 using Infrastructure.Utils;
 using Infrastructure.Extensions;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -15,8 +14,7 @@ public class McpFileDownloadTool(
     IDownloadClient client,
     ISearchResultsManager searchResultsManager,
     ITrackedDownloadsManager trackedDownloadsManager,
-    DownloadPathConfig pathConfig,
-    ILogger<McpFileDownloadTool> logger)
+    DownloadPathConfig pathConfig)
     : FileDownloadTool(client, searchResultsManager, trackedDownloadsManager, pathConfig)
 {
     [McpServerTool(Name = Name)]
@@ -26,23 +24,11 @@ public class McpFileDownloadTool(
         int searchResultId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            var result = await Run(sessionId, searchResultId, cancellationToken);
-            await context.Server.SendNotificationAsync(
-                "notifications/resources/list_changed",
-                cancellationToken: cancellationToken);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        var result = await Run(sessionId, searchResultId, cancellationToken);
+        await context.Server.SendNotificationAsync(
+            "notifications/resources/list_changed",
+            cancellationToken: cancellationToken);
+        return ToolResponse.Create(result);
     }
 }

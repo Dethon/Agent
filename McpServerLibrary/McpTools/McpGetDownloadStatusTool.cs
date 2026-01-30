@@ -3,7 +3,6 @@ using Domain.Contracts;
 using Domain.Tools.Downloads;
 using Infrastructure.Utils;
 using Infrastructure.Extensions;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -12,8 +11,7 @@ namespace McpServerLibrary.McpTools;
 [McpServerToolType]
 public class McpGetDownloadStatusTool(
     IDownloadClient client,
-    ISearchResultsManager searchResultsManager,
-    ILogger<McpGetDownloadStatusTool> logger) : GetDownloadStatusTool(client, searchResultsManager)
+    ISearchResultsManager searchResultsManager) : GetDownloadStatusTool(client, searchResultsManager)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -22,19 +20,7 @@ public class McpGetDownloadStatusTool(
         int downloadId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            return ToolResponse.Create(await Run(sessionId, downloadId, cancellationToken));
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        return ToolResponse.Create(await Run(sessionId, downloadId, cancellationToken));
     }
 }
