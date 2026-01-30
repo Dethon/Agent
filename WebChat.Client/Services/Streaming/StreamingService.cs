@@ -226,12 +226,20 @@ public sealed class StreamingService(
 
             if (receivedNewContent)
             {
-                // Fetch current topic from store to get latest LastReadMessageCount
-                // Don't mutate the store object - create metadata with updated LastMessageAt
                 var currentTopic = topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId);
                 if (currentTopic is not null)
                 {
-                    var metadata = currentTopic.ToMetadata() with { LastMessageAt = DateTimeOffset.UtcNow };
+                    var isActivelyViewed = topicsStore.State.SelectedTopicId == topic.TopicId;
+                    var lastMsgId = isActivelyViewed ? currentMessageId : currentTopic.LastReadMessageId;
+
+                    var metadata = currentTopic.ToMetadata() with
+                    {
+                        LastMessageAt = DateTimeOffset.UtcNow,
+                        LastReadMessageId = lastMsgId
+                    };
+
+                    var updatedTopic = StoredTopic.FromMetadata(metadata);
+                    dispatcher.Dispatch(new UpdateTopic(updatedTopic));
                     await topicService.SaveTopicAsync(metadata);
                 }
             }

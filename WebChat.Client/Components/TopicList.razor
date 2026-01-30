@@ -53,15 +53,31 @@
             if (topic.TopicId == topicsState.SelectedTopicId) continue;
 
             var messages = messagesState.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
-            var assistantCount = messages.Count(m => m.Role != "user");
-            var lastRead = topic.LastReadMessageCount;
+            if (messages.Count == 0) continue;
 
-            if (assistantCount > lastRead)
+            var unreadCount = GetUnreadCountSince(messages, topic.LastReadMessageId);
+            if (unreadCount > 0)
             {
-                result[topic.TopicId] = assistantCount - lastRead;
+                result[topic.TopicId] = unreadCount;
             }
         }
         return result;
+    }
+
+    private static int GetUnreadCountSince(IReadOnlyList<ChatMessageModel> messages, string? lastReadMessageId)
+    {
+        if (lastReadMessageId is null) return messages.Count;
+
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].MessageId == lastReadMessageId)
+            {
+                return messages.Count - 1 - i;
+            }
+        }
+
+        // ID not found — treat all as unread
+        return messages.Count;
     }
 
     private string SelectedAgentName => _agents.FirstOrDefault(a => a.Id == _selectedAgentId)?.Name ?? "Select Agent";
