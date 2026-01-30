@@ -995,6 +995,48 @@ html, body {
     font-size: 0.875rem;
 }
 
+.message-content table {
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0;
+    font-size: 0.875rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+.message-content table::-webkit-scrollbar {
+    height: 6px;
+}
+
+.message-content table::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: 3px;
+}
+
+.message-content table::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.message-content table::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+}
+
+.message-content th,
+.message-content td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--code-border);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.message-content thead th {
+    background-color: var(--code-bg);
+    font-weight: 600;
+}
+
 .message-content ul, .message-content ol {
     margin: 0.5rem 0;
     padding-left: 1.5rem;
