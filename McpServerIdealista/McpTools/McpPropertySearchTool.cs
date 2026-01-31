@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.RealEstate;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerIdealista.McpTools;
 
 [McpServerToolType]
-public class McpPropertySearchTool(IIdealistaClient idealistaClient, ILogger<McpPropertySearchTool> logger)
+public class McpPropertySearchTool(IIdealistaClient idealistaClient)
     : PropertySearchTool(idealistaClient)
 {
     [McpServerTool(Name = Name)]
@@ -66,56 +65,44 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient, ILogger<Mcp
         string? preservation = null,
         CancellationToken ct = default)
     {
-        try
+        if (string.IsNullOrEmpty(locationId) && string.IsNullOrEmpty(center))
         {
-            if (string.IsNullOrEmpty(locationId) && string.IsNullOrEmpty(center))
-            {
-                return ToolResponse.Create(new InvalidOperationException(
-                    "Either 'locationId' or 'center' with 'distance' must be provided."));
-            }
-
-            if (!string.IsNullOrEmpty(center) && !distance.HasValue)
-            {
-                return ToolResponse.Create(new InvalidOperationException(
-                    "When using 'center', 'distance' parameter is required."));
-            }
-
-            var result = await RunAsync(
-                country,
-                operation,
-                propertyType,
-                locationId,
-                center,
-                distance,
-                maxItems,
-                numPage,
-                minPrice,
-                maxPrice,
-                minSize,
-                maxSize,
-                bedrooms,
-                bathrooms,
-                order,
-                sort,
-                elevator,
-                garage,
-                terrace,
-                swimmingPool,
-                airConditioning,
-                newDevelopment,
-                preservation,
-                ct);
-
-            return ToolResponse.Create(result);
+            return ToolResponse.Create(new InvalidOperationException(
+                "Either 'locationId' or 'center' with 'distance' must be provided."));
         }
-        catch (Exception ex)
+
+        if (!string.IsNullOrEmpty(center) && !distance.HasValue)
         {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
+            return ToolResponse.Create(new InvalidOperationException(
+                "When using 'center', 'distance' parameter is required."));
         }
+
+        var result = await RunAsync(
+            country,
+            operation,
+            propertyType,
+            locationId,
+            center,
+            distance,
+            maxItems,
+            numPage,
+            minPrice,
+            maxPrice,
+            minSize,
+            maxSize,
+            bedrooms,
+            bathrooms,
+            order,
+            sort,
+            elevator,
+            garage,
+            terrace,
+            swimmingPool,
+            airConditioning,
+            newDevelopment,
+            preservation,
+            ct);
+
+        return ToolResponse.Create(result);
     }
 }

@@ -3,14 +3,13 @@ using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
 using Infrastructure.Extensions;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> logger)
+public class McpWebBrowseTool(IWebBrowser browser)
     : WebBrowseTool(browser)
 {
     [McpServerTool(Name = Name)]
@@ -51,23 +50,11 @@ public class McpWebBrowseTool(IWebBrowser browser, ILogger<McpWebBrowseTool> log
         bool dismissModals = true,
         CancellationToken ct = default)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            var result = await RunAsync(sessionId, url, selector, format, maxLength, offset, includeLinks,
-                useReadability,
-                waitStrategy, waitSelector, waitTimeoutMs, extraDelayMs, scrollToLoad, scrollSteps,
-                waitForStability, dismissModals, ct);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        var result = await RunAsync(sessionId, url, selector, format, maxLength, offset, includeLinks,
+            useReadability,
+            waitStrategy, waitSelector, waitTimeoutMs, extraDelayMs, scrollToLoad, scrollSteps,
+            waitForStability, dismissModals, ct);
+        return ToolResponse.Create(result);
     }
 }

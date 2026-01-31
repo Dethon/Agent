@@ -2,7 +2,6 @@
 using Domain.Contracts;
 using Domain.Tools.Commands;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -10,25 +9,12 @@ namespace McpServerCommandRunner.McpTools;
 
 [McpServerToolType]
 public class McpRunCommandTool(
-    ICommandRunner commandRunner,
-    ILogger<McpRunCommandTool> logger) : RunCommandTool(commandRunner)
+    ICommandRunner commandRunner) : RunCommandTool(commandRunner)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(string command, CancellationToken cancellationToken)
     {
-        try
-        {
-            return ToolResponse.Create(await Run(command, cancellationToken));
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        return ToolResponse.Create(await Run(command, cancellationToken));
     }
 }

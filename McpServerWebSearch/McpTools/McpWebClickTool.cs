@@ -3,14 +3,13 @@ using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
 using Infrastructure.Extensions;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebClickTool(IWebBrowser browser, ILogger<McpWebClickTool> logger)
+public class McpWebClickTool(IWebBrowser browser)
     : WebClickTool(browser)
 {
     [McpServerTool(Name = Name)]
@@ -34,21 +33,9 @@ public class McpWebClickTool(IWebBrowser browser, ILogger<McpWebClickTool> logge
         int waitTimeoutMs = 30000,
         CancellationToken ct = default)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            var result = await RunAsync(sessionId, selector, text, action, inputValue, key, waitForNavigation,
-                waitTimeoutMs, ct);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        var result = await RunAsync(sessionId, selector, text, action, inputValue, key, waitForNavigation,
+            waitTimeoutMs, ct);
+        return ToolResponse.Create(result);
     }
 }

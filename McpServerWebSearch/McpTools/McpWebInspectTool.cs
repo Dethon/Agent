@@ -3,14 +3,13 @@ using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
 using Infrastructure.Extensions;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebInspectTool(IWebBrowser browser, ILogger<McpWebInspectTool> logger)
+public class McpWebInspectTool(IWebBrowser browser)
     : WebInspectTool(browser)
 {
     [McpServerTool(Name = Name)]
@@ -31,20 +30,8 @@ public class McpWebInspectTool(IWebBrowser browser, ILogger<McpWebInspectTool> l
         string? selector = null,
         CancellationToken ct = default)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            var result = await RunAsync(sessionId, mode, query, regex, maxResults, selector, ct);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        var result = await RunAsync(sessionId, mode, query, regex, maxResults, selector, ct);
+        return ToolResponse.Create(result);
     }
 }

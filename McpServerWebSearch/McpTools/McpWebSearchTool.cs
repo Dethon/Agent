@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebSearchTool(IWebSearchClient searchClient, ILogger<McpWebSearchTool> logger)
+public class McpWebSearchTool(IWebSearchClient searchClient)
     : WebSearchTool(searchClient)
 {
     [McpServerTool(Name = Name)]
@@ -25,19 +24,7 @@ public class McpWebSearchTool(IWebSearchClient searchClient, ILogger<McpWebSearc
         string? dateRange = null,
         CancellationToken ct = default)
     {
-        try
-        {
-            var result = await RunAsync(query, maxResults, site, dateRange, ct);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        var result = await RunAsync(query, maxResults, site, dateRange, ct);
+        return ToolResponse.Create(result);
     }
 }
