@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerText.Settings;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpTextCreateTool(McpSettings settings, ILogger<McpTextCreateTool> logger)
+public class McpTextCreateTool(McpSettings settings)
     : TextCreateTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = Name)]
@@ -22,14 +21,6 @@ public class McpTextCreateTool(McpSettings settings, ILogger<McpTextCreateTool> 
         [Description("Create parent directories if they don't exist")]
         bool createDirectories = true)
     {
-        try
-        {
-            return ToolResponse.Create(Run(filePath, content, createDirectories));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in {ToolName} tool", Name);
-            return ToolResponse.Create(ex);
-        }
+        return ToolResponse.Create(Run(filePath, content, createDirectories));
     }
 }

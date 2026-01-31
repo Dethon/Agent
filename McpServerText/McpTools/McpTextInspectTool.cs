@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerText.Settings;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpTextInspectTool(McpSettings settings, ILogger<McpTextInspectTool> logger)
+public class McpTextInspectTool(McpSettings settings)
     : TextInspectTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = Name)]
@@ -26,18 +25,6 @@ public class McpTextInspectTool(McpSettings settings, ILogger<McpTextInspectTool
         [Description("Lines of context around search matches (default: 0)")]
         int context = 0)
     {
-        try
-        {
-            return ToolResponse.Create(Run(filePath, mode, query, regex, context));
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        return ToolResponse.Create(Run(filePath, mode, query, regex, context));
     }
 }

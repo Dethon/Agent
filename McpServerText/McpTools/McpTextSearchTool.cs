@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerText.Settings;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpTextSearchTool(McpSettings settings, ILogger<McpTextSearchTool> logger)
+public class McpTextSearchTool(McpSettings settings)
     : TextSearchTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = Name)]
@@ -28,18 +27,6 @@ public class McpTextSearchTool(McpSettings settings, ILogger<McpTextSearchTool> 
         [Description("Lines of context around each match")]
         int contextLines = 1)
     {
-        try
-        {
-            return ToolResponse.Create(Run(query, regex, filePattern, path, maxResults, contextLines));
-        }
-        catch (Exception ex)
-        {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogError(ex, "Error in {ToolName} tool", Name);
-            }
-
-            return ToolResponse.Create(ex);
-        }
+        return ToolResponse.Create(Run(query, regex, filePattern, path, maxResults, contextLines));
     }
 }

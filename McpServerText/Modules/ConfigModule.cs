@@ -1,11 +1,13 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
+using Infrastructure.Utils;
 using McpServerText.McpPrompts;
 using McpServerText.McpTools;
 using McpServerText.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerText.Modules;
 
@@ -30,6 +32,19 @@ public static class ConfigModule
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
+            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            {
+                try
+                {
+                    return await next(context, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
+                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
+                    return ToolResponse.Create(ex);
+                }
+            })
             // Discovery tools
             .WithTools<McpTextListDirectoriesTool>()
             .WithTools<McpTextListFilesTool>()
