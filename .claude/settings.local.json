@@ -35,7 +35,8 @@
       "Bash(ping:*)",
       "Skill(superpowers:systematic-debugging)",
       "Bash(dotnet list:*)",
-      "Bash(dotnet add:*)"
+      "Bash(dotnet add:*)",
+      "WebFetch(domain:modelcontextprotocol.github.io)"
     ]
   }
 }
