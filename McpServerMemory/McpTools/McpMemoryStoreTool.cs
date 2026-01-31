@@ -2,7 +2,6 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Memory;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -11,8 +10,7 @@ namespace McpServerMemory.McpTools;
 [McpServerToolType]
 public class McpMemoryStoreTool(
     IMemoryStore store,
-    IEmbeddingService embeddingService,
-    ILogger<McpMemoryStoreTool> logger)
+    IEmbeddingService embeddingService)
     : MemoryStoreTool(store, embeddingService)
 {
     [McpServerTool(Name = Name)]
@@ -36,16 +34,8 @@ public class McpMemoryStoreTool(
         string? supersedes = null,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var result = await Run(userId, content, category, importance, confidence, tags, context, supersedes,
-                cancellationToken);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in {ToolName}", Name);
-            return ToolResponse.Create(ex);
-        }
+        var result = await Run(userId, content, category, importance, confidence, tags, context, supersedes,
+            cancellationToken);
+        return ToolResponse.Create(result);
     }
 }

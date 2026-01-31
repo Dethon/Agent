@@ -1,11 +1,13 @@
 using System.Net.Http.Headers;
 using Domain.Contracts;
 using Infrastructure.Memory;
+using Infrastructure.Utils;
 using McpServerMemory.McpPrompts;
 using McpServerMemory.McpTools;
 using McpServerMemory.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace McpServerMemory.Modules;
@@ -45,6 +47,19 @@ public static class ConfigModule
         services
             .AddMcpServer()
             .WithHttpTransport()
+            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            {
+                try
+                {
+                    return await next(context, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
+                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
+                    return ToolResponse.Create(ex);
+                }
+            })
             .WithTools<McpMemoryStoreTool>()
             .WithTools<McpMemoryRecallTool>()
             .WithTools<McpMemoryForgetTool>()

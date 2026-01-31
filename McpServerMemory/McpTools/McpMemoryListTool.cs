@@ -2,14 +2,13 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Memory;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerMemory.McpTools;
 
 [McpServerToolType]
-public class McpMemoryListTool(IMemoryStore store, ILogger<McpMemoryListTool> logger)
+public class McpMemoryListTool(IMemoryStore store)
     : MemoryListTool(store)
 {
     [McpServerTool(Name = Name)]
@@ -29,15 +28,7 @@ public class McpMemoryListTool(IMemoryStore store, ILogger<McpMemoryListTool> lo
         int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var result = await Run(userId, category, sortBy, order, page, pageSize, cancellationToken);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in {ToolName}", Name);
-            return ToolResponse.Create(ex);
-        }
+        var result = await Run(userId, category, sortBy, order, page, pageSize, cancellationToken);
+        return ToolResponse.Create(result);
     }
 }

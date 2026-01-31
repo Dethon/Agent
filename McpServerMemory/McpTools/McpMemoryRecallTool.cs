@@ -2,7 +2,6 @@ using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Memory;
 using Infrastructure.Utils;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -11,8 +10,7 @@ namespace McpServerMemory.McpTools;
 [McpServerToolType]
 public class McpMemoryRecallTool(
     IMemoryStore store,
-    IEmbeddingService embeddingService,
-    ILogger<McpMemoryRecallTool> logger)
+    IEmbeddingService embeddingService)
     : MemoryRecallTool(store, embeddingService)
 {
     [McpServerTool(Name = Name)]
@@ -35,16 +33,8 @@ public class McpMemoryRecallTool(
         bool includeContext = false,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var result = await Run(userId, query, categories, tags, minImportance, limit, includeContext,
-                cancellationToken);
-            return ToolResponse.Create(result);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in {ToolName}", Name);
-            return ToolResponse.Create(ex);
-        }
+        var result = await Run(userId, query, categories, tags, minImportance, limit, includeContext,
+            cancellationToken);
+        return ToolResponse.Create(result);
     }
 }
