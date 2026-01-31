@@ -18,8 +18,7 @@ Each MCP tool should:
 
 ```csharp
 [McpServerToolType]
-public class McpExampleTool(IDependency dep, ILogger<McpExampleTool> logger)
-    : ExampleTool(dep)
+public class McpExampleTool(IDependency dep) : ExampleTool(dep)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
@@ -28,23 +27,18 @@ public class McpExampleTool(IDependency dep, ILogger<McpExampleTool> logger)
         string parameter,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var sessionId = context.Server.StateKey;
-            return ToolResponse.Create(await Run(sessionId, parameter, cancellationToken));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error in {ToolName} tool", Name);
-            return ToolResponse.Create(ex);
-        }
+        var sessionId = context.Server.StateKey;
+        return ToolResponse.Create(await Run(sessionId, parameter, cancellationToken));
     }
 }
 ```
 
+## Error Handling
+
+Error handling is centralized via `AddCallToolFilter` in each server's `ConfigModule.cs`. Do NOT add try/catch blocks in individual tool methods — exceptions propagate to the global filter which logs and returns `ToolResponse.Create(ex)`.
+
 ## Key Points
 
 - Use `context.Server.StateKey` for session identification
-- Wrap all calls in try/catch returning `ToolResponse.Create(ex)` on failure
-- Log errors with tool name context
+- Do NOT add try/catch or `ILogger<T>` for error handling — the global filter handles this
 - `Name` and `Description` constants come from the base Domain tool
