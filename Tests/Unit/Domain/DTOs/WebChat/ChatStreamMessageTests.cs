@@ -28,4 +28,25 @@ public sealed class ChatStreamMessageTests
 
         message.UserMessage.ShouldBeNull();
     }
+
+    [Fact]
+    public void ChatStreamMessage_WithTimestamp_StoresValue()
+    {
+        var ts = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var message = new ChatStreamMessage
+        {
+            Content = "Hello",
+            Timestamp = ts
+        };
+
+        message.Timestamp.ShouldBe(ts);
+    }
+
+    [Fact]
+    public void ChatStreamMessage_WithoutTimestamp_DefaultsToNull()
+    {
+        var message = new ChatStreamMessage { Content = "Hello" };
+
+        message.Timestamp.ShouldBeNull();
+    }
 }

@@ -242,6 +242,11 @@ public static class BufferRebuildUtility
             };
         }
 
+        if (chunk.Timestamp is not null)
+        {
+            streamingMessage = streamingMessage with { Timestamp = chunk.Timestamp };
+        }
+
         return streamingMessage;
     }
 }

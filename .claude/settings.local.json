@@ -36,7 +36,14 @@
       "Skill(superpowers:systematic-debugging)",
       "Bash(dotnet list:*)",
       "Bash(dotnet add:*)",
-      "WebFetch(domain:modelcontextprotocol.github.io)"
+      "WebFetch(domain:modelcontextprotocol.github.io)",
+      "Skill(codemap-creator)",
+      "Bash(dotnet tool run ilspy:*)",
+      "Bash(xargs:*)",
+      "Bash(dotnet:*)",
+      "Bash(echo:*)",
+      "Bash(gh api:*)",
+      "Bash(gh search:*)"
     ]
   }
 }

@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.StateManagers;
+using Infrastructure.Utils;
 using McpServerLibrary.McpTools;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -56,6 +57,17 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
+            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            {
+                try
+                {
+                    return await next(context, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    return ToolResponse.Create(ex);
+                }
+            })
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpGetDownloadStatusTool>()

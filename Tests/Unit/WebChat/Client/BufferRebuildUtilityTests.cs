@@ -200,6 +200,50 @@ public sealed class BufferRebuildUtilityTests
         completedTurns[0].MessageId.ShouldBeNull();
     }
 
+    [Fact]
+    public void RebuildFromBuffer_WithTimestamp_CarriesTimestampForward()
+    {
+        var ts = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts },
+            new() { Content = " world", MessageId = "msg-1" }
+        };
+
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        streamingMessage.Timestamp.ShouldBe(ts);
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_WithMultipleTimestamps_LastWins()
+    {
+        var ts1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+        var ts2 = new DateTimeOffset(2025, 6, 15, 12, 0, 5, TimeSpan.Zero);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts1 },
+            new() { Content = " world", MessageId = "msg-1", Timestamp = ts2 }
+        };
+
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        streamingMessage.Timestamp.ShouldBe(ts2);
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_WithoutTimestamp_RemainsNull()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", MessageId = "msg-1" }
+        };
+
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        streamingMessage.Timestamp.ShouldBeNull();
+    }
+
     #endregion
 
     #region ResumeFromBuffer Tests

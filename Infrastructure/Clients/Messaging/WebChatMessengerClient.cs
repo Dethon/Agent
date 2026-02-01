@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Extensions;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
@@ -76,12 +77,13 @@ public sealed class WebChatMessengerClient(
                         continue;
                     }
 
+                    var timestamp = update.GetTimestamp();
                     var msg = content switch
                     {
                         TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
-                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId },
+                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId, Timestamp = timestamp },
                         TextReasoningContent rc when !string.IsNullOrEmpty(rc.Text) =>
-                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId },
+                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId, Timestamp = timestamp },
                         ErrorContent ec =>
                             new ChatStreamMessage { IsComplete = true, Error = ec.Message },
                         _ => null
