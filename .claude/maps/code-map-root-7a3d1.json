@@ -1,12 +1,12 @@
 {
   "root": "G:\\repos\\agent",
-  "generatedAt": "2026-01-31T00:00:00Z",
+  "generatedAt": "2026-02-01T00:00:00Z",
   "generator": "LSP documentSymbol",
   "totals": {
     "directories": 52,
-    "files": 156,
-    "symbols": 892,
-    "exported": 680
+    "files": 158,
+    "symbols": 969,
+    "exported": 738
   },
   "tree": {
     "Agent/": {
@@ -186,7 +186,7 @@
             "symbols": ["class AgentInfo"]
           },
           "ChatStreamMessage.cs": {
-            "symbols": ["class ChatStreamMessage", "prop Content", "prop Reasoning", "prop ToolCalls", "prop IsComplete", "prop Error", "prop MessageId", "prop ApprovalRequest", "prop SequenceNumber", "prop UserMessage"]
+            "symbols": ["class ChatStreamMessage", "prop Content", "prop Reasoning", "prop ToolCalls", "prop IsComplete", "prop Error", "prop MessageId", "prop ApprovalRequest", "prop SequenceNumber", "prop UserMessage", "prop Timestamp"]
           },
           "StreamState.cs": {
             "symbols": ["class StreamState"]
@@ -211,6 +211,9 @@
         },
         "StringExtensions.cs": {
           "symbols": ["class StringExtensions", "method Left", "method HtmlSanitize"]
+        },
+        "ChatMessageExtensions.cs": {
+          "symbols": ["class ChatMessageExtensions", "field SenderIdKey", "field TimestampKey", "method GetSenderId", "method SetSenderId", "method GetTimestamp", "method SetTimestamp", "method ParseTimestamp"]
         }
       },
       "Monitor/": {
@@ -394,13 +397,13 @@
         },
         "ChatClients/": {
           "OpenRouterChatClient.cs": {
-            "symbols": ["class OpenRouterChatClient : IChatClient", "method GetResponseAsync", "method GetStreamingResponseAsync", "method Dispose", "method AppendReasoningContent", "method DrainReasoningQueue", "class ReasoningHandler"]
+            "symbols": ["class OpenRouterChatClient : IChatClient", "method GetResponseAsync", "method GetStreamingResponseAsync", "method GetService", "method Dispose", "method AppendReasoningContent", "method DrainReasoningQueue", "method CreateClient", "method CreateHttpClient", "class ReasoningHandler", "method SendAsync"]
           },
           "OpenRouterHttpHelpers.cs": {
             "symbols": ["class OpenRouterHttpHelpers", "method FixEmptyAssistantContentWithToolCalls", "method WrapWithReasoningTee", "method ExtractReasoningFromSseData", "class TeeHttpContent", "class ReasoningTeeStream"]
           },
           "RedisChatMessageStore.cs": {
-            "symbols": ["class RedisChatMessageStore : ChatHistoryProvider", "method Create", "method InvokingAsync", "method InvokedAsync", "method Serialize"]
+            "symbols": ["class RedisChatMessageStore : ChatHistoryProvider", "method Create", "method ResolveRedisKey", "method InvokingAsync", "method InvokedAsync", "method Serialize"]
           },
           "ToolApprovalChatClient.cs": {
             "symbols": ["class ToolApprovalChatClient", "method InvokeFunctionAsync"]
@@ -546,7 +549,7 @@
             "symbols": ["class WebChatApprovalManager"]
           },
           "WebChatMessengerClient.cs": {
-            "symbols": ["class WebChatMessengerClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method StartSession", "method EnqueuePromptAndGetResponses", "method EnqueuePrompt", "method IsProcessing", "method GetStreamState", "method SubscribeToStream", "method CancelProcessing", "method RespondToApprovalAsync"]
+            "symbols": ["class WebChatMessengerClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method GenerateChatId", "method StartScheduledStreamAsync", "method StartSession", "method TryGetSession", "method EndSession", "method EnqueuePromptAndGetResponses", "method EnqueuePrompt", "method IsProcessing", "method GetStreamState", "method SubscribeToStream", "method CancelProcessing", "method IsApprovalPending", "method GetPendingApprovalForTopic", "method RespondToApprovalAsync", "method Dispose"]
           },
           "WebChatSession.cs": {
             "symbols": ["class WebChatSession"]
@@ -1007,7 +1010,7 @@
         },
         "Streaming/": {
           "BufferRebuildUtility.cs": {
-            "symbols": ["class BufferRebuildUtility"]
+            "symbols": ["class BufferResumeResult", "class BufferRebuildUtility", "method ResumeFromBuffer", "method RebuildFromBuffer", "method FinalizeAssistantTurn", "method StripKnownContent", "method AccumulateChunk"]
           },
           "StreamResumeService.cs": {
             "symbols": ["class StreamResumeService : IStreamResumeService"]
@@ -1222,7 +1225,7 @@
           "DTOs/": {
             "WebChat/": {
               "ChatStreamMessageTests.cs": {
-                "symbols": ["class ChatStreamMessageTests"]
+                "symbols": ["class ChatStreamMessageTests", "method ChatStreamMessage_WithUserMessage_IndicatesUserRole", "method ChatStreamMessage_WithoutUserMessage_IndicatesAssistantRole", "method ChatStreamMessage_WithTimestamp_StoresValue", "method ChatStreamMessage_WithoutTimestamp_DefaultsToNull"]
               }
             }
           },
@@ -1284,7 +1287,7 @@
             "symbols": ["class PlaywrightWebBrowserTests"]
           },
           "RedisChatMessageStoreTests.cs": {
-            "symbols": ["class RedisChatMessageStoreTests"]
+            "symbols": ["class RedisChatMessageStoreTests", "method InvokingAsync_WithStringKey_UsesKeyDirectly", "method InvokingAsync_WithUndefinedState_UsesGuidKey", "method Serialize_ReturnsKeyAsJsonElement", "method AgentKey_ToString_ReturnsCorrectFormat", "method ToChatResponse_DoesNotPreserveAdditionalPropertiesOnMessages", "method InvokedAsync_ResponseMessages_HaveTimestampAfterStorage", "method CreateStore"]
           },
           "TelegramToolApprovalHandlerTests.cs": {
             "symbols": ["class TelegramToolApprovalHandlerTests"]
@@ -1336,6 +1339,9 @@
             },
             "TransientErrorFilterTests.cs": {
               "symbols": ["class TransientErrorFilterTests"]
+            },
+            "BufferRebuildUtilityTests.cs": {
+              "symbols": ["class BufferRebuildUtilityTests", "method RebuildFromBuffer_WithEmptyBuffer_ReturnsEmptyMessage", "method RebuildFromBuffer_WithSingleTurn_ReturnsStreamingMessage", "method RebuildFromBuffer_WithCompleteFlag_MovesToCompletedTurns", "method RebuildFromBuffer_WithMultipleTurns_SeparatesCompleted", "method RebuildFromBuffer_GroupsByMessageId_PreservesOrder", "method RebuildFromBuffer_WithReasoning_AccumulatesCorrectly", "method RebuildFromBuffer_WithToolCalls_AccumulatesWithNewlines", "method RebuildFromBuffer_SkipsEmptyCompletedTurns", "method RebuildFromBuffer_WithUserMessage_IncludesInCompletedTurns", "method RebuildFromBuffer_WithMixedMessages_PreservesChronologicalOrder", "method RebuildFromBuffer_PropagatesMessageIdToCompletedTurns", "method RebuildFromBuffer_UserMessages_HaveNoMessageId", "method RebuildFromBuffer_WithTimestamp_CarriesTimestampForward", "method RebuildFromBuffer_WithMultipleTimestamps_LastWins", "method RebuildFromBuffer_WithoutTimestamp_RemainsNull", "method ResumeFromBuffer_WithEmptyBuffer_ReturnsHistoryUnchanged", "method ResumeFromBuffer_InterleavesByAnchorPosition", "method ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor", "method ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor", "method ResumeFromBuffer_NoAnchors_AppendsAllAtEnd", "method ResumeFromBuffer_MergesReasoningIntoAnchor", "method ResumeFromBuffer_AddsPromptIfNotInHistory", "method ResumeFromBuffer_DoesNotDuplicatePrompt", "method ResumeFromBuffer_ExcludesCurrentPromptFromBufferTurns", "method ResumeFromBuffer_StripsStreamingMessageContentAgainstHistory", "method ResumeFromBuffer_WithEmptyHistory_ReturnsBufferTurns"]
             }
           },
           "Fixtures/": {
@@ -1455,7 +1461,7 @@
             "symbols": ["class JackettFixture"]
           },
           "McpLibraryServerFixture.cs": {
-            "symbols": ["class McpLibraryServerFixture"]
+            "symbols": ["class McpLibraryServerFixture", "method InitializeAsync", "method GetAvailablePort", "method CreateLibraryStructure", "method CreateLibraryFile", "method CreateDownloadFile", "method FileExistsInLibrary", "method FileExistsInDownloads", "method DisposeAsync"]
           },
           "QBittorrentFixture.cs": {
             "symbols": ["class QBittorrentFixture"]
