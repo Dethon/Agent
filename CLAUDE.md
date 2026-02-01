@@ -52,3 +52,7 @@ Agents configured in `appsettings.json` under `"agents"` array. Each has id, nam
 ## WebChat State
 
 Redux-like pattern in `WebChat.Client/State/`: Stores + Effects + HubEventDispatcher
+
+## NuGet
+
+The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
