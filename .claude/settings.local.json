@@ -37,7 +37,11 @@
       "Bash(dotnet list:*)",
       "Bash(dotnet add:*)",
       "WebFetch(domain:modelcontextprotocol.github.io)",
-      "Skill(codemap-creator)"
+      "Skill(codemap-creator)",
+      "Bash(dotnet tool run ilspy:*)",
+      "Bash(xargs:*)",
+      "Bash(dotnet:*)",
+      "Bash(echo:*)"
     ]
   }
 }
