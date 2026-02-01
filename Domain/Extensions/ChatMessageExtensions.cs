@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Extensions;
@@ -34,15 +35,7 @@ public static class ChatMessageExtensions
 
         public DateTimeOffset? GetTimestamp()
         {
-            var value = message.AdditionalProperties?.GetValueOrDefault(TimestampKey);
-            return value switch
-            {
-                DateTimeOffset dto => dto,
-                string s when DateTimeOffset.TryParse(s, out var parsed) => parsed,
-                JsonElement { ValueKind: JsonValueKind.String } je
-                    when DateTimeOffset.TryParse(je.GetString(), out var parsed) => parsed,
-                _ => null
-            };
+            return ParseTimestamp(message.AdditionalProperties?.GetValueOrDefault(TimestampKey));
         }
 
         public void SetTimestamp(DateTimeOffset? timestamp)
@@ -55,5 +48,34 @@ public static class ChatMessageExtensions
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[TimestampKey] = timestamp.Value;
         }
+    }
+
+    extension(ChatResponseUpdate update)
+    {
+        public void SetTimestamp(DateTimeOffset timestamp)
+        {
+            update.AdditionalProperties ??= [];
+            update.AdditionalProperties[TimestampKey] = timestamp;
+        }
+    }
+
+    extension(AgentResponseUpdate update)
+    {
+        public DateTimeOffset? GetTimestamp()
+        {
+            return ParseTimestamp(update.AdditionalProperties?.GetValueOrDefault(TimestampKey));
+        }
+    }
+
+    private static DateTimeOffset? ParseTimestamp(object? value)
+    {
+        return value switch
+        {
+            DateTimeOffset dto => dto,
+            string s when DateTimeOffset.TryParse(s, out var parsed) => parsed,
+            JsonElement { ValueKind: JsonValueKind.String } je
+                when DateTimeOffset.TryParse(je.GetString(), out var parsed) => parsed,
+            _ => null
+        };
     }
 }

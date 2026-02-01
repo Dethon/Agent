@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Extensions;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
@@ -76,7 +77,7 @@ public sealed class WebChatMessengerClient(
                         continue;
                     }
 
-                    var timestamp = update.AdditionalProperties?.GetValueOrDefault("Timestamp") as DateTimeOffset?;
+                    var timestamp = update.GetTimestamp();
                     var msg = content switch
                     {
                         TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
