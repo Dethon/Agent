@@ -66,6 +66,8 @@ public sealed class OpenRouterChatClient : IChatClient
         await foreach (var update in _client.GetStreamingResponseAsync(messages, options, ct))
         {
             AppendReasoningContent(update);
+            update.AdditionalProperties ??= [];
+            update.AdditionalProperties["Timestamp"] = DateTimeOffset.UtcNow;
             yield return update;
         }
     }
