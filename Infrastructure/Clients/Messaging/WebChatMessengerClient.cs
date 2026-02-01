@@ -76,12 +76,13 @@ public sealed class WebChatMessengerClient(
                         continue;
                     }
 
+                    var now = DateTimeOffset.UtcNow;
                     var msg = content switch
                     {
                         TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
-                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId },
+                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId, Timestamp = now },
                         TextReasoningContent rc when !string.IsNullOrEmpty(rc.Text) =>
-                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId },
+                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId, Timestamp = now },
                         ErrorContent ec =>
                             new ChatStreamMessage { IsComplete = true, Error = ec.Message },
                         _ => null
