@@ -11,4 +11,5 @@ public record ChatStreamMessage
     public ToolApprovalRequestMessage? ApprovalRequest { get; init; }
     public long SequenceNumber { get; init; }
     public UserMessageInfo? UserMessage { get; init; }
+    public DateTimeOffset? Timestamp { get; init; }
 }
