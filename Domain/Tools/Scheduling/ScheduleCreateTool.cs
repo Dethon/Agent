@@ -28,11 +28,16 @@ public class ScheduleCreateTool(
 
     [Description(Description)]
     public async Task<JsonNode> RunAsync(
-        [Description("Agent ID to execute the task")] string agentId,
-        [Description("The prompt/task to execute")] string prompt,
-        [Description("Cron expression for recurring schedules (5-field format)")] string? cronExpression,
-        [Description("ISO 8601 datetime for one-time execution (UTC)")] DateTime? runAt,
-        [Description("Optional user context for the prompt")] string? userId,
+        [Description("Agent ID to execute the task")]
+        string agentId,
+        [Description("The prompt/task to execute")]
+        string prompt,
+        [Description("Cron expression for recurring schedules (5-field format)")]
+        string? cronExpression = null,
+        [Description("ISO 8601 datetime for one-time execution (UTC)")]
+        DateTime? runAt = null,
+        [Description("Optional user context for the prompt")]
+        string? userId = null,
         CancellationToken ct = default)
     {
         var validationError = Validate(agentId, cronExpression, runAt);
