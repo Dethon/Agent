@@ -41,7 +41,9 @@
       "Bash(dotnet tool run ilspy:*)",
       "Bash(xargs:*)",
       "Bash(dotnet:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(gh api:*)",
+      "Bash(gh search:*)"
     ]
   }
 }
