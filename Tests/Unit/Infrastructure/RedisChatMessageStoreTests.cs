@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Extensions;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -98,5 +99,75 @@ public class RedisChatMessageStoreTests
 
         // Assert
         key.ShouldBe("agent-key:test-agent:999:888");
+    }
+
+    [Fact]
+    public void ToChatResponse_DoesNotPreserveAdditionalPropertiesOnMessages()
+    {
+        // Documents framework behavior: ToChatResponse drops AdditionalProperties
+        // from streaming updates when building ChatMessage objects.
+        // This is why RedisChatMessageStore must stamp timestamps itself.
+        var updates = new List<ChatResponseUpdate>
+        {
+            new()
+            {
+                Role = ChatRole.Assistant,
+                Contents = [new TextContent("Hello")],
+                AdditionalProperties = new AdditionalPropertiesDictionary
+                {
+                    ["Timestamp"] = DateTimeOffset.UtcNow
+                }
+            }
+        };
+
+        var response = updates.ToChatResponse();
+
+        var message = response.Messages.ShouldHaveSingleItem();
+        message.GetTimestamp().ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task InvokedAsync_ResponseMessages_HaveTimestampAfterStorage()
+    {
+        // Arrange
+        var mockStore = new Mock<IThreadStateStore>();
+        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
+
+        ChatMessage[]? savedMessages = null;
+        mockStore.Setup(s => s.SetMessagesAsync(It.IsAny<string>(), It.IsAny<ChatMessage[]>()))
+            .Callback<string, ChatMessage[]>((_, msgs) => savedMessages = msgs)
+            .Returns(Task.CompletedTask);
+
+        var store = await CreateStore(mockStore.Object);
+
+        // Simulate what the framework produces: response messages without timestamps
+        // (ToChatResponse drops AdditionalProperties from streaming updates)
+        var responseMessage = new ChatMessage(ChatRole.Assistant, "Hello from agent");
+
+        var invokedContext = new ChatHistoryProvider.InvokedContext(
+            [new ChatMessage(ChatRole.User, "Hi")], [])
+        {
+            ResponseMessages = [responseMessage]
+        };
+
+        // Act
+        await store.InvokedAsync(invokedContext, CancellationToken.None);
+
+        // Assert
+        savedMessages.ShouldNotBeNull();
+        var assistantMsg = savedMessages.First(m => m.Role == ChatRole.Assistant);
+        assistantMsg.GetTimestamp().ShouldNotBeNull();
+    }
+
+    private static async Task<ChatHistoryProvider> CreateStore(IThreadStateStore threadStore)
+    {
+        var agentKey = new AgentKey(123, 456);
+        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
+        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
+        {
+            SerializedState = serializedState,
+            JsonSerializerOptions = new JsonSerializerOptions()
+        };
+        return await RedisChatMessageStore.Create(threadStore, ctx);
     }
 }

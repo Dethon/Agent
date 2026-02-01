@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -41,6 +42,14 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
+
+        // ToChatResponse does not preserve AdditionalProperties on ChatMessage objects,
+        // so response messages arrive without timestamps. Stamp them before persisting.
+        var now = DateTimeOffset.UtcNow;
+        foreach (var message in context.ResponseMessages?.Where(x => x.GetTimestamp() is null) ?? [])
+        {
+            message.SetTimestamp(now);
+        }
 
         var existingMessages = await store.GetMessagesAsync(key) ?? [];
         var allMessages = existingMessages
