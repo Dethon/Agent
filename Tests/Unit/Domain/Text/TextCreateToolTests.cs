@@ -60,7 +60,7 @@ public class TextCreateToolTests : IDisposable
         var ex = Should.Throw<InvalidOperationException>(() =>
             _tool.TestRun("existing.md", "New content"));
         ex.Message.ShouldContain("already exists");
-        ex.Message.ShouldContain("TextPatch");
+        ex.Message.ShouldContain("TextEdit");
     }
 
     [Fact]
