@@ -10,11 +10,8 @@ public class ListFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
     protected const string Name = "ListFiles";
 
     protected const string Description = """
-                                         Lists all files in the specified directory. It only returns files, not 
-                                         directories.
+                                         Lists all files in the specified directory. Returns only files, not directories.
                                          The path must be absolute and derived from the ListDirectories tool.
-                                         Must be used to explore the relevant directories within the library and find 
-                                         the correct place and name for the downloaded files.
                                          """;
 
     protected async Task<JsonNode> Run(string path, CancellationToken cancellationToken)
