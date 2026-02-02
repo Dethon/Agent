@@ -52,10 +52,7 @@ public class TextReadToolTests : IDisposable
                       """;
         var filePath = CreateTestFile("doc.md", content);
 
-        var target = new JsonObject
-        {
-            ["heading"] = new JsonObject { ["text"] = "Setup", ["includeChildren"] = false }
-        };
+        var target = new JsonObject { ["heading"] = "## Setup" };
         var result = _tool.TestRun(filePath, target);
 
         result["content"]!.ToString().ShouldContain("Setup content");
@@ -106,7 +103,7 @@ public class TextReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_SearchTarget_ReturnsContextAroundMatch()
+    public void Run_SearchTarget_ThrowsArgumentException()
     {
         var content = """
                       Line 1
@@ -121,11 +118,9 @@ public class TextReadToolTests : IDisposable
         {
             ["search"] = new JsonObject { ["query"] = "Target", ["contextLines"] = 2 }
         };
-        var result = _tool.TestRun(filePath, target);
 
-        result["content"]!.ToString().ShouldContain("Line 1");
-        result["content"]!.ToString().ShouldContain("Target text");
-        result["content"]!.ToString().ShouldContain("Line 5");
+        var ex = Should.Throw<ArgumentException>(() => _tool.TestRun(filePath, target));
+        ex.Message.ShouldContain("Invalid target");
     }
 
     [Fact]
@@ -151,13 +146,28 @@ public class TextReadToolTests : IDisposable
                       """;
         var filePath = CreateTestFile("doc.md", content);
 
-        var target = new JsonObject
-        {
-            ["heading"] = new JsonObject { ["text"] = "Instalation" } // Typo
-        };
+        var target = new JsonObject { ["heading"] = "## Instalation" }; // Typo
 
         var ex = Should.Throw<InvalidOperationException>(() => _tool.TestRun(filePath, target));
         ex.Message.ShouldContain("not found");
+    }
+
+    [Fact]
+    public void Run_UnknownTarget_ThrowsWithValidTargetList()
+    {
+        var content = "Some content";
+        var filePath = CreateTestFile("test.md", content);
+
+        var target = new JsonObject { ["unknown"] = "value" };
+
+        var ex = Should.Throw<ArgumentException>(() => _tool.TestRun(filePath, target));
+        ex.Message.ShouldContain("Invalid target");
+        ex.Message.ShouldContain("lines");
+        ex.Message.ShouldContain("heading");
+        ex.Message.ShouldContain("codeBlock");
+        ex.Message.ShouldContain("anchor");
+        ex.Message.ShouldContain("section");
+        ex.Message.ShouldNotContain("search");
     }
 
     private string CreateTestFile(string name, string content)

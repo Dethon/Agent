@@ -25,7 +25,7 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
                                          1. Always use TextInspect first to find exact line numbers
                                          2. Prefer heading targeting for markdown—survives other edits
                                          3. Line numbers shift after insert/delete—re-inspect if making multiple edits
-                                         4. For text find-and-replace, use TextReplace instead
+                                         4. For text find-and-replace by content match, use TextReplace instead
 
                                          Examples:
                                          - Replace heading: operation="replace", target={ "heading": "## Old" }, content="## New"

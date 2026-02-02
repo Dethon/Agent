@@ -36,6 +36,8 @@ public class TextReplaceTool(string vaultPath, string[] allowedExtensions) : Tex
                                          - Replace last: oldText="TODO", newText="DONE", occurrence="last"
                                          - Replace all: oldText="old", newText="new", occurrence="all"
                                          - Replace 3rd: oldText="item", newText="ITEM", occurrence="3"
+
+                                         For structural edits by heading, line range, or code block position, use TextPatch instead.
                                          """;
 
     protected JsonNode Run(string filePath, string oldText, string newText, string occurrence = "first",
