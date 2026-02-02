@@ -55,7 +55,8 @@ public static class KnowledgeBasePrompt
         **Document Tools:**
         - `TextInspect` - Understand document structure (headings, code blocks, sections)
         - `TextRead` - Read specific sections by heading, line range, or search
-        - `TextPatch` - Modify documents with surgical precision
+        - `TextReplace` - Replace exact text in a file (preferred for inline edits)
+        - `TextPatch` - Modify documents with surgical precision (for structural changes)
         - `TextCreate` - Create a new text/markdown file
 
         **File Tools:**
@@ -78,8 +79,8 @@ public static class KnowledgeBasePrompt
         **Editing Documents:**
         1. Use TextInspect with mode="structure" to understand the document
         2. Use TextRead to see the current content of the target section
-        3. Use TextPatch with appropriate targeting to make changes
-        4. If making multiple edits, prefer heading-based targeting (stable) over line numbers (shift after edits)
+        3. Use TextReplace for inline changes (preferred), or TextPatch for structural modifications
+        4. If making multiple edits, pass expectedHash from each response to the next edit to detect conflicts
 
         **Creating Content:**
         1. If adding to existing file: inspect structure, find appropriate location, use insert
@@ -91,20 +92,27 @@ public static class KnowledgeBasePrompt
         2. Propose reorganization plans before executing
         3. Make changes incrementally, verifying each step
 
-        ### Targeting Best Practices
+        ### Editing Best Practices
 
-        **Prefer semantic targets (stable across edits):**
-        - `heading: "## Installation"` - targets by heading text
-        - `text: "specific phrase"` - targets by content
-        - `section: "[database]"` - targets by section marker
+        **For inline text changes (fix typos, update values, rewrite sentences):**
+        → Use TextReplace. It finds exact text and replaces it. No line numbers needed.
 
-        **Use line numbers only when necessary:**
-        - After insertions/deletions, line numbers shift
-        - If you must use lines, re-inspect after each edit
+        **For structural changes (add new sections, delete blocks, insert under headings):**
+        → Use TextPatch with heading-based targeting.
 
-        **For insertions:**
-        - `afterHeading: "## Setup"` - insert content after a heading
-        - `beforeHeading: "## Conclusion"` - insert content before a heading
+        **For appending content to an existing section:**
+        → Use TextPatch with appendToSection target (inserts at end of section).
+
+        **For multi-edit workflows:**
+        → Pass expectedHash from each response to the next edit to detect conflicts.
+        → After edits, use the context lines in the response to orient yourself.
+        → Do NOT reuse line numbers from a previous TextInspect after making edits.
+
+        **Tool priority for edits:**
+        1. TextReplace — default choice for most edits
+        2. TextPatch with appendToSection/beforeHeading — for inserting new content
+        3. TextPatch with heading/codeBlock — for replacing entire sections
+        4. TextPatch with lines — last resort, line numbers are fragile
 
         ### Response Style
 
