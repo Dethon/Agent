@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json.Nodes;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerText.Settings;
@@ -17,13 +16,11 @@ public class McpTextReadTool(McpSettings settings)
     public CallToolResult McpRun(
         [Description("Path to the text file (absolute or relative to vault)")]
         string filePath,
-        [Description(
-            "Target specification as JSON. Use ONE of: lines {start,end}, heading, codeBlock {index}, anchor, section")]
-        string target)
+        [Description("Start from this line number (1-based)")]
+        int? offset = null,
+        [Description("Max lines to return")]
+        int? limit = null)
     {
-        var targetObj = JsonNode.Parse(target)?.AsObject()
-                        ?? throw new ArgumentException("Target must be a valid JSON object");
-
-        return ToolResponse.Create(Run(filePath, targetObj));
+        return ToolResponse.Create(Run(filePath, offset, limit));
     }
 }
