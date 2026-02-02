@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Domain.Tools.Text;
 
-public class TextPatchTool(string vaultPath, string[] allowedExtensions)
+public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextToolBase(vaultPath, allowedExtensions)
 {
     protected const string Name = "TextPatch";
 
@@ -435,29 +435,4 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions)
         return line[..indent];
     }
 
-    private string ValidateAndResolvePath(string filePath)
-    {
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, filePath));
-
-        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException($"File not found: {filePath}");
-        }
-
-        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-        if (!allowedExtensions.Contains(ext))
-        {
-            throw new InvalidOperationException(
-                $"File type '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
-        }
-
-        return fullPath;
-    }
 }
