@@ -22,11 +22,14 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
                                          - Create config: filePath="config/settings.json", content="{\"key\": \"value\"}"
                                          """;
 
-    protected JsonNode Run(string filePath, string content, bool createDirectories = true)
+    protected JsonNode Run(string filePath, string content, bool overwrite = false, bool createDirectories = true)
     {
         var fullPath = ResolvePath(filePath);
         ValidateExtension(fullPath);
-        ValidateNotExists(fullPath, filePath);
+        if (!overwrite)
+        {
+            ValidateNotExists(fullPath, filePath);
+        }
 
         if (createDirectories)
         {
