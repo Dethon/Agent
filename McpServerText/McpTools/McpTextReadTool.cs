@@ -18,7 +18,7 @@ public class McpTextReadTool(McpSettings settings)
         [Description("Path to the text file (absolute or relative to vault)")]
         string filePath,
         [Description(
-            "Target specification as JSON. Use ONE of: lines {start,end}, heading {text,includeChildren}, codeBlock {index}, anchor, section, search {query,contextLines}")]
+            "Target specification as JSON. Use ONE of: lines {start,end}, heading, codeBlock {index}, anchor, section")]
         string target)
     {
         var targetObj = JsonNode.Parse(target)?.AsObject()

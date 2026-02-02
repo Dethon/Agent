@@ -17,10 +17,10 @@ public class McpTextPatchTool(McpSettings settings)
     public CallToolResult McpRun(
         [Description("Path to the text file (absolute or relative to vault)")]
         string filePath,
-        [Description("Operation: 'replace', 'insert', 'delete', or 'replaceLines'")]
+        [Description("Operation: 'replace', 'insert', or 'delete'")]
         string operation,
         [Description(
-            "Target specification as JSON. Use ONE of: lines {start,end}, text, pattern, heading, afterHeading, beforeHeading, codeBlock {index}, section")]
+            "Target specification as JSON. Use ONE of: lines {start,end}, heading, beforeHeading, appendToSection, codeBlock {index}")]
         string target,
         [Description("New content for replace/insert operations")]
         string? content = null,
