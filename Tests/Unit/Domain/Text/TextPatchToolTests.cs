@@ -25,57 +25,6 @@ public class TextPatchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_ReplaceText_ReplacesFirstOccurrence()
-    {
-        var filePath = CreateTestFile("test.md", "Version: v1.0.0\nOther: v1.0.0");
-
-        var target = new JsonObject { ["text"] = "v1.0.0" };
-        var result = _tool.TestRun(filePath, "replace", target, "v2.0.0");
-
-        result["status"]!.ToString().ShouldBe("success");
-        var content = File.ReadAllText(filePath);
-        content.ShouldContain("Version: v2.0.0");
-        content.ShouldContain("Other: v1.0.0"); // Second occurrence unchanged
-    }
-
-    [Fact]
-    public void Run_ReplaceLines_ReplacesLineRange()
-    {
-        var content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
-        var filePath = CreateTestFile("test.md", content);
-
-        var target = new JsonObject { ["lines"] = new JsonObject { ["start"] = 2, ["end"] = 3 } };
-        var result = _tool.TestRun(filePath, "replaceLines", target, "New Line A\nNew Line B");
-
-        result["status"]!.ToString().ShouldBe("success");
-        var newContent = File.ReadAllText(filePath);
-        newContent.ShouldContain("Line 1");
-        newContent.ShouldContain("New Line A");
-        newContent.ShouldContain("New Line B");
-        newContent.ShouldContain("Line 4");
-        newContent.ShouldContain("Line 5");
-        newContent.ShouldNotContain("Line 2");
-        newContent.ShouldNotContain("Line 3");
-    }
-
-    [Fact]
-    public void Run_InsertAfterHeading_InsertsContent()
-    {
-        var content = "# Introduction\nIntro text\n## Setup\nSetup text";
-        var filePath = CreateTestFile("doc.md", content);
-
-        var target = new JsonObject { ["afterHeading"] = "# Introduction" };
-        var result = _tool.TestRun(filePath, "insert", target, "\nNew paragraph here");
-
-        result["status"]!.ToString().ShouldBe("success");
-        var newContent = File.ReadAllText(filePath);
-        newContent.ShouldContain("New paragraph");
-        newContent
-            .IndexOf("Introduction", StringComparison.Ordinal)
-            .ShouldBeLessThan(newContent.IndexOf("New paragraph", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public void Run_InsertBeforeHeading_InsertsContent()
     {
         var content = "# Introduction\nIntro text\n## Setup\nSetup text";
@@ -126,33 +75,6 @@ public class TextPatchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_ReplaceWithPattern_MatchesRegex()
-    {
-        var content = "Date: 2024-01-15\nUpdated: 2024-02-20";
-        var filePath = CreateTestFile("test.md", content);
-
-        var target = new JsonObject { ["pattern"] = @"\d{4}-\d{2}-\d{2}" };
-        var result = _tool.TestRun(filePath, "replace", target, "2025-01-01");
-
-        result["status"]!.ToString().ShouldBe("success");
-        var newContent = File.ReadAllText(filePath);
-        newContent.ShouldContain("Date: 2025-01-01");
-        newContent.ShouldContain("Updated: 2024-02-20"); // Only first match replaced
-    }
-
-    [Fact]
-    public void Run_TextNotFound_ThrowsWithSuggestion()
-    {
-        var filePath = CreateTestFile("test.md", "Hello World");
-
-        var target = new JsonObject { ["text"] = "hello world" }; // Case mismatch
-
-        var ex = Should.Throw<InvalidOperationException>(() =>
-            _tool.TestRun(filePath, "replace", target, "Hi"));
-        ex.Message.ShouldContain("Hello World"); // Case-insensitive suggestion
-    }
-
-    [Fact]
     public void Run_HeadingNotFound_ThrowsWithSimilar()
     {
         var content = "# Introduction\n## Installation\n## Configuration";
@@ -182,6 +104,54 @@ public class TextPatchToolTests : IDisposable
 
         Should.Throw<UnauthorizedAccessException>(() =>
             _tool.TestRun("/etc/passwd", "replace", target, "new"));
+    }
+
+    [Fact]
+    public void Run_TextTarget_ThrowsArgumentException()
+    {
+        var filePath = CreateTestFile("test.md", "Some content here");
+
+        var target = new JsonObject { ["text"] = "content" };
+
+        var ex = Should.Throw<ArgumentException>(() =>
+            _tool.TestRun(filePath, "replace", target, "new content"));
+        ex.Message.ShouldContain("text");
+    }
+
+    [Fact]
+    public void Run_PatternTarget_ThrowsArgumentException()
+    {
+        var filePath = CreateTestFile("test.md", "Date: 2024-01-15");
+
+        var target = new JsonObject { ["pattern"] = @"\d{4}-\d{2}-\d{2}" };
+
+        var ex = Should.Throw<ArgumentException>(() =>
+            _tool.TestRun(filePath, "replace", target, "2025-01-01"));
+        ex.Message.ShouldContain("pattern");
+    }
+
+    [Fact]
+    public void Run_SectionTarget_ThrowsArgumentException()
+    {
+        var filePath = CreateTestFile("test.txt", "[Section1]\nkey=value");
+
+        var target = new JsonObject { ["section"] = "[Section1]" };
+
+        var ex = Should.Throw<ArgumentException>(() =>
+            _tool.TestRun(filePath, "replace", target, "new content"));
+        ex.Message.ShouldContain("section");
+    }
+
+    [Fact]
+    public void Run_ReplaceLinesOperation_ThrowsArgumentException()
+    {
+        var filePath = CreateTestFile("test.md", "Line 1\nLine 2\nLine 3");
+
+        var target = new JsonObject { ["lines"] = new JsonObject { ["start"] = 1, ["end"] = 2 } };
+
+        var ex = Should.Throw<ArgumentException>(() =>
+            _tool.TestRun(filePath, "replaceLines", target, "New content"));
+        ex.Message.ShouldContain("replaceLines");
     }
 
     private string CreateTestFile(string name, string content)

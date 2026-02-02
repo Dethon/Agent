@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace Domain.Tools.Text;
 
@@ -11,33 +10,27 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
                                          Modifies a text or markdown file with precise targeting.
 
                                          Operations:
-                                         - 'replace': Replace targeted text/lines with new content
+                                         - 'replace': Replace targeted lines with new content
                                          - 'insert': Insert new content at target location
                                          - 'delete': Remove targeted content
-                                         - 'replaceLines': Replace a range of lines (handles line count changes)
 
                                          Targeting (use ONE):
                                          - lines: { "start": N, "end": M } - Target specific line range
-                                         - text: "exact text" - Find and target literal text (first occurrence)
-                                         - pattern: "regex" - Find and target regex match (first occurrence)
                                          - heading: "## Title" - Target a markdown heading line
-                                         - afterHeading: "## Title" - Position after a heading (for insert)
                                          - beforeHeading: "## Title" - Position before a heading (for insert)
                                          - codeBlock: { "index": N } - Target Nth code block content
-                                         - section: "[name]" - Target INI section
 
                                          IMPORTANT:
-                                         1. Always use TextInspect first to find exact line numbers and text
-                                         2. Prefer heading/section targeting for markdown—survives other edits
-                                         3. Use text/pattern targeting for inline changes
-                                         4. Line numbers shift after insert/delete—re-inspect if making multiple edits
+                                         1. Always use TextInspect first to find exact line numbers
+                                         2. Prefer heading targeting for markdown—survives other edits
+                                         3. Line numbers shift after insert/delete—re-inspect if making multiple edits
+                                         4. For text find-and-replace, use TextReplace instead
 
                                          Examples:
                                          - Replace heading: operation="replace", target={ "heading": "## Old" }, content="## New"
-                                         - Insert after heading: operation="insert", target={ "afterHeading": "## Intro" }, content="\nNew paragraph..."
+                                         - Insert before heading: operation="insert", target={ "beforeHeading": "## Setup" }, content="## New Section\n"
                                          - Delete lines 50-55: operation="delete", target={ "lines": { "start": 50, "end": 55 } }
                                          - Replace code block: operation="replace", target={ "codeBlock": { "index": 0 } }, content="new code..."
-                                         - Find and replace: operation="replace", target={ "text": "v1.0.0" }, content="v2.0.0"
                                          """;
 
     protected JsonNode Run(string filePath, string operation, JsonObject target, string? content = null,
@@ -63,9 +56,8 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             "replace" => ApplyReplace(lines, startLine, endLine, matchedText, content!, preserveIndent),
             "insert" => ApplyInsert(lines, target, startLine, content!, preserveIndent),
             "delete" => ApplyDelete(lines, startLine, endLine),
-            "replacelines" => ApplyReplaceLines(lines, startLine, endLine, content!),
             _ => throw new ArgumentException(
-                $"Invalid operation '{operation}'. Must be 'replace', 'insert', 'delete', or 'replaceLines'.")
+                $"Invalid operation '{operation}'. Must be 'replace', 'insert', or 'delete'.")
         };
 
         // Write atomically
@@ -103,7 +95,12 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
     private static void ValidateOperation(string operation, string? content)
     {
         var op = operation.ToLowerInvariant();
-        if (op is "replace" or "insert" or "replacelines" && string.IsNullOrEmpty(content))
+        if (op is not ("replace" or "insert" or "delete"))
+        {
+            throw new ArgumentException($"Invalid operation '{operation}'. Must be 'replace', 'insert', or 'delete'.");
+        }
+
+        if (op is "replace" or "insert" && string.IsNullOrEmpty(content))
         {
             throw new ArgumentException($"Content required for '{operation}' operation");
         }
@@ -120,19 +117,6 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             return (start, end, null);
         }
 
-        if (target.TryGetPropertyValue("text", out var textNode))
-        {
-            var searchText = textNode?.GetValue<string>() ?? throw new ArgumentException("text value required");
-            return FindTextTarget(lines, searchText);
-        }
-
-        if (target.TryGetPropertyValue("pattern", out var patternNode))
-        {
-            var pattern = patternNode?.GetValue<string>() ?? throw new ArgumentException("pattern value required");
-            var flags = target["flags"]?.GetValue<string>();
-            return FindPatternTarget(lines, pattern, flags);
-        }
-
         if (target.TryGetPropertyValue("heading", out var headingNode))
         {
             if (!isMarkdown)
@@ -142,18 +126,6 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
 
             var heading = headingNode?.GetValue<string>() ?? throw new ArgumentException("heading value required");
             return FindHeadingTarget(lines, heading);
-        }
-
-        if (target.TryGetPropertyValue("afterHeading", out var afterNode))
-        {
-            if (!isMarkdown)
-            {
-                throw new InvalidOperationException("Heading targeting only works with markdown files");
-            }
-
-            var heading = afterNode?.GetValue<string>() ?? throw new ArgumentException("afterHeading value required");
-            var (line, _, _) = FindHeadingTarget(lines, heading);
-            return (line, line, null); // Insert point is after this line
         }
 
         if (target.TryGetPropertyValue("beforeHeading", out var beforeNode))
@@ -180,14 +152,29 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             return FindCodeBlockTarget(lines, index);
         }
 
-        if (target.TryGetPropertyValue("section", out var sectionNode))
+        // Throw for deprecated targets
+        if (target.ContainsKey("text"))
         {
-            var marker = sectionNode?.GetValue<string>() ?? throw new ArgumentException("section value required");
-            return FindSectionTarget(lines, marker);
+            throw new ArgumentException("The 'text' target is deprecated. Use TextReplace tool for find-and-replace operations.");
+        }
+
+        if (target.ContainsKey("pattern"))
+        {
+            throw new ArgumentException("The 'pattern' target is deprecated. Use TextReplace tool for pattern-based replacements.");
+        }
+
+        if (target.ContainsKey("section"))
+        {
+            throw new ArgumentException("The 'section' target is deprecated and no longer supported.");
+        }
+
+        if (target.ContainsKey("afterHeading"))
+        {
+            throw new ArgumentException("The 'afterHeading' target is deprecated. Use 'beforeHeading' to position before the next heading instead.");
         }
 
         throw new ArgumentException(
-            "Invalid target. Use one of: lines, text, pattern, heading, afterHeading, beforeHeading, codeBlock, section");
+            "Invalid target. Use one of: lines, heading, beforeHeading, codeBlock");
     }
 
     private static void ValidateLineRange(int start, int end, int totalLines)
@@ -201,61 +188,6 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
         {
             throw new ArgumentException($"End line {end} out of range. Must be >= {start} and <= {totalLines}.");
         }
-    }
-
-    private static (int, int, string?) FindTextTarget(List<string> lines, string searchText)
-    {
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var col = lines[i].IndexOf(searchText, StringComparison.Ordinal);
-            if (col >= 0)
-            {
-                return (i + 1, i + 1, searchText);
-            }
-        }
-
-        // Try case-insensitive as fallback and suggest
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var col = lines[i].IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
-            if (col >= 0)
-            {
-                var actual = lines[i].Substring(col, searchText.Length);
-                throw new InvalidOperationException(
-                    $"Exact text '{searchText}' not found. Did you mean '{actual}' (case-insensitive match at line {i + 1})?");
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Text '{searchText}' not found in file. Use TextInspect with search mode to locate text.");
-    }
-
-    private static (int, int, string?) FindPatternTarget(List<string> lines, string pattern, string? flags)
-    {
-        var options = RegexOptions.None;
-        if (flags?.Contains('i') == true)
-        {
-            options |= RegexOptions.IgnoreCase;
-        }
-
-        if (flags?.Contains('m') == true)
-        {
-            options |= RegexOptions.Multiline;
-        }
-
-        var regex = new Regex(pattern, options);
-
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var match = regex.Match(lines[i]);
-            if (match.Success)
-            {
-                return (i + 1, i + 1, match.Value);
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Pattern '{pattern}' not found in file. Use TextInspect with search mode to test patterns.");
     }
 
     private static (int, int, string?) FindHeadingTarget(List<string> lines, string heading)
@@ -308,27 +240,6 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
         var block = structure.CodeBlocks[index];
         // Return the content lines (excluding the ``` markers)
         return (block.StartLine + 1, block.EndLine - 1, null);
-    }
-
-    private static (int, int, string?) FindSectionTarget(List<string> lines, string marker)
-    {
-        var structure = MarkdownParser.ParsePlainText(lines.ToArray());
-
-        var sectionIndex = structure.Sections
-            .Select((s, i) => (s, i))
-            .FirstOrDefault(x => x.s.Marker.Equals(marker, StringComparison.OrdinalIgnoreCase));
-
-        if (sectionIndex.s is null)
-        {
-            var available = structure.Sections.Select(s => s.Marker).Take(10);
-            throw new InvalidOperationException(
-                $"Section '{marker}' not found. Available: {string.Join(", ", available)}");
-        }
-
-        var startLine = sectionIndex.s.Line;
-        var endLine = MarkdownParser.FindSectionEnd(structure.Sections, sectionIndex.i, lines.Count);
-
-        return (startLine, endLine, null);
     }
 
     private static JsonObject ApplyReplace(List<string> lines, int startLine, int endLine, string? matchedText,
@@ -401,19 +312,6 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
         {
             ["linesDeleted"] = endLine - startLine + 1,
             ["deletedContent"] = deletedContent.Length > 200 ? deletedContent[..200] + "..." : deletedContent
-        };
-    }
-
-    private static JsonObject ApplyReplaceLines(List<string> lines, int startLine, int endLine, string content)
-    {
-        var newLines = content.Split('\n').ToList();
-        lines.RemoveRange(startLine - 1, endLine - startLine + 1);
-        lines.InsertRange(startLine - 1, newLines);
-
-        return new JsonObject
-        {
-            ["linesChanged"] = endLine - startLine + 1,
-            ["newContent"] = content.Length > 200 ? content[..200] + "..." : content
         };
     }
 
