@@ -60,7 +60,7 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
         if (File.Exists(fullPath))
         {
             throw new InvalidOperationException(
-                $"File already exists: {originalPath}. Use TextPatch to modify existing files.");
+                $"File already exists: {originalPath}. Use TextEdit to modify existing files.");
         }
     }
 
