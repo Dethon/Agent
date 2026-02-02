@@ -148,6 +148,8 @@ public class TextInspectTool(string vaultPath, string[] allowedExtensions) : Tex
             result["structure"] = structureNode;
         }
 
+        result["fileHash"] = ComputeFileHash(lines);
+
         return result;
     }
 

@@ -152,6 +152,41 @@ public class TextInspectToolTests : IDisposable
         Should.Throw<UnauthorizedAccessException>(() => _tool.TestRun("/etc/passwd"));
     }
 
+    [Fact]
+    public void Run_StructureMode_ReturnsFileHash()
+    {
+        var content = """
+                      # Test Document
+                      Some content here.
+                      """;
+        var filePath = CreateTestFile("test.md", content);
+
+        var result = _tool.TestRun(filePath);
+
+        result["fileHash"].ShouldNotBeNull();
+        var hash = result["fileHash"]!.ToString();
+        hash.Length.ShouldBe(16);
+        hash.ShouldMatch("^[a-f0-9]{16}$");
+    }
+
+    [Fact]
+    public void Run_StructureMode_FileHash_ChangesWhenContentChanges()
+    {
+        var content1 = "# Original Content";
+        var filePath = CreateTestFile("mutable.md", content1);
+
+        var result1 = _tool.TestRun(filePath);
+        var hash1 = result1["fileHash"]!.ToString();
+
+        var content2 = "# Modified Content";
+        File.WriteAllText(filePath, content2);
+
+        var result2 = _tool.TestRun(filePath);
+        var hash2 = result2["fileHash"]!.ToString();
+
+        hash1.ShouldNotBe(hash2);
+    }
+
     private string CreateTestFile(string name, string content)
     {
         var path = Path.Combine(_testDir, name);
