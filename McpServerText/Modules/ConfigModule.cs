@@ -55,7 +55,7 @@ public static class ConfigModule
             .WithTools<McpTextSearchTool>()
             .WithTools<McpTextInspectTool>()
             .WithTools<McpTextReadTool>()
-            .WithTools<McpTextPatchTool>()
+            .WithTools<McpTextEditTool>()
             .WithTools<McpTextCreateTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>();
