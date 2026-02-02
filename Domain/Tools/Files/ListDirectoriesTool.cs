@@ -10,13 +10,8 @@ public class ListDirectoriesTool(IFileSystemClient client, LibraryPathConfig lib
     protected const string Name = "ListDirectories";
 
     protected const string Description = """
-                                         Lists all directories in the library. It only returns directories, not files.
-                                         Must be used to explore the library and find the place in which downloaded
-                                         files are currently located and where they should be stored.
-                                         This tool returns a list of absolute directories and subdirectories in the 
-                                         library.
-                                         IMPORTANT: The directory structure rarely changes. Call this tool only once 
-                                         per conversation and reuse the result for subsequent operations.
+                                         Lists all directories as a tree of absolute paths. Returns only directories, not files.
+                                         Call once per conversation and reuse the result—directory structure rarely changes.
                                          """;
 
     protected async Task<JsonNode> Run(CancellationToken cancellationToken)
