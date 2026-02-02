@@ -34,36 +34,66 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
                                          """;
 
     protected JsonNode Run(string filePath, string operation, JsonObject target, string? content = null,
-        bool preserveIndent = true)
+        bool preserveIndent = true, string? expectedHash = null)
     {
         var fullPath = ValidateAndResolvePath(filePath);
-        var lines = File.ReadAllLines(fullPath).ToList();
+        var lines = File.ReadAllLines(fullPath);
+        ValidateExpectedHash(lines, expectedHash);
+        var linesList = lines.ToList();
         var isMarkdown = Path.GetExtension(fullPath).ToLowerInvariant() is ".md" or ".markdown";
 
         ValidateOperation(operation, content);
 
-        var (startLine, endLine, matchedText) = ResolveTarget(target, lines, isMarkdown);
-        var originalLineCount = lines.Count;
+        var (startLine, endLine, matchedText) = ResolveTarget(target, linesList, isMarkdown);
+        var originalTotalLines = lines.Length;
+        var originalLineCount = linesList.Count;
 
         string? previousContent = null;
         if (startLine > 0 && endLine > 0)
         {
-            previousContent = string.Join("\n", lines.Skip(startLine - 1).Take(endLine - startLine + 1));
+            previousContent = string.Join("\n", linesList.Skip(startLine - 1).Take(endLine - startLine + 1));
         }
 
         var result = operation.ToLowerInvariant() switch
         {
-            "replace" => ApplyReplace(lines, startLine, endLine, matchedText, content!, preserveIndent),
-            "insert" => ApplyInsert(lines, target, startLine, content!, preserveIndent),
-            "delete" => ApplyDelete(lines, startLine, endLine),
+            "replace" => ApplyReplace(linesList, startLine, endLine, matchedText, content!, preserveIndent),
+            "insert" => ApplyInsert(linesList, target, startLine, content!, preserveIndent),
+            "delete" => ApplyDelete(linesList, startLine, endLine),
             _ => throw new ArgumentException(
                 $"Invalid operation '{operation}'. Must be 'replace', 'insert', or 'delete'.")
         };
 
         // Write atomically
         var tempPath = fullPath + ".tmp";
-        File.WriteAllLines(tempPath, lines);
+        File.WriteAllLines(tempPath, linesList);
         File.Move(tempPath, fullPath, overwrite: true);
+
+        // Re-read updated file for context window and hash
+        var updatedLines = File.ReadAllLines(fullPath);
+        var newEndLine = startLine + (updatedLines.Length - originalTotalLines) + (endLine - startLine);
+
+        // Build context window (3 lines before and after)
+        var contextBefore = new JsonArray();
+        var beforeStart = Math.Max(0, startLine - 3 - 1); // -1 for 0-indexed
+        var beforeEnd = startLine - 1;
+        for (var i = beforeStart; i < beforeEnd; i++)
+        {
+            if (i >= 0 && i < updatedLines.Length)
+            {
+                contextBefore.Add(updatedLines[i]);
+            }
+        }
+
+        var contextAfter = new JsonArray();
+        var afterStart = newEndLine; // Already 1-indexed, so this is the line after
+        var afterEnd = Math.Min(updatedLines.Length, afterStart + 3);
+        for (var i = afterStart; i < afterEnd; i++)
+        {
+            if (i >= 0 && i < updatedLines.Length)
+            {
+                contextAfter.Add(updatedLines[i]);
+            }
+        }
 
         result["status"] = "success";
         result["filePath"] = fullPath;
@@ -73,7 +103,13 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             ["start"] = startLine,
             ["end"] = endLine
         };
-        result["linesDelta"] = lines.Count - originalLineCount;
+        result["linesDelta"] = linesList.Count - originalLineCount;
+        result["context"] = new JsonObject
+        {
+            ["beforeLines"] = contextBefore,
+            ["afterLines"] = contextAfter
+        };
+        result["fileHash"] = ComputeFileHash(updatedLines);
 
         if (previousContent is not null && previousContent.Length < 500)
         {
@@ -84,9 +120,9 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             };
         }
 
-        if (lines.Count != originalLineCount)
+        if (linesList.Count != originalLineCount)
         {
-            result["note"] = $"File now has {lines.Count} lines (was {originalLineCount})";
+            result["note"] = $"File now has {linesList.Count} lines (was {originalLineCount})";
         }
 
         return result;

@@ -25,11 +25,13 @@ public class McpTextPatchTool(McpSettings settings)
         [Description("New content for replace/insert operations")]
         string? content = null,
         [Description("Match indentation of target line (default: true)")]
-        bool preserveIndent = true)
+        bool preserveIndent = true,
+        [Description("Expected file hash for staleness detection. Get from TextInspect structure mode.")]
+        string? expectedHash = null)
     {
         var targetObj = JsonNode.Parse(target)?.AsObject() ??
                         throw new ArgumentException("Target must be a valid JSON object");
 
-        return ToolResponse.Create(Run(filePath, operation, targetObj, content, preserveIndent));
+        return ToolResponse.Create(Run(filePath, operation, targetObj, content, preserveIndent, expectedHash));
     }
 }
