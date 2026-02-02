@@ -67,7 +67,8 @@ public class TextReplaceTool(string vaultPath, string[] allowedExtensions) : Tex
         }
 
         // Determine which occurrence(s) to replace
-        var (replacedContent, replacedCount, replacementPosition) = ApplyReplacement(content, oldText, newText, occurrence, positions);
+        var (replacedContent, replacedCount, replacementPosition) =
+            ApplyReplacement(content, oldText, newText, occurrence, positions);
 
         // Write atomically
         var tempPath = fullPath + ".tmp";
@@ -75,7 +76,7 @@ public class TextReplaceTool(string vaultPath, string[] allowedExtensions) : Tex
         File.Move(tempPath, fullPath, overwrite: true);
 
         // Compute affected line range
-        var (startLine, endLine) = ComputeAffectedLines(content, replacementPosition, oldText.Length, newText.Length);
+        var (startLine, endLine) = ComputeAffectedLines(content, replacementPosition, oldText.Length);
 
         // Read updated lines for hash
         var updatedLines = File.ReadAllLines(fullPath);
@@ -184,8 +185,7 @@ public class TextReplaceTool(string vaultPath, string[] allowedExtensions) : Tex
         return (replacedFirst, 1, firstPosition);
     }
 
-    private static (int StartLine, int EndLine) ComputeAffectedLines(string content, int position, int oldLength,
-        int newLength)
+    private static (int StartLine, int EndLine) ComputeAffectedLines(string content, int position, int oldLength)
     {
         // Count lines up to the replacement position
         var startLine = content[..position].Count(c => c == '\n') + 1;

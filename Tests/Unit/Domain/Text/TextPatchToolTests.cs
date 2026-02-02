@@ -172,9 +172,9 @@ public class TextPatchToolTests : IDisposable
         newContent.ShouldContain("## Config");
 
         // Verify order: Setup text should come before New content, which should come before Config
-        var setupTextIndex = newContent.IndexOf("Setup text");
-        var newContentIndex = newContent.IndexOf("New content");
-        var configIndex = newContent.IndexOf("## Config");
+        var setupTextIndex = newContent.IndexOf("Setup text", StringComparison.Ordinal);
+        var newContentIndex = newContent.IndexOf("New content", StringComparison.Ordinal);
+        var configIndex = newContent.IndexOf("## Config", StringComparison.Ordinal);
 
         newContentIndex.ShouldBeGreaterThan(setupTextIndex);
         configIndex.ShouldBeGreaterThan(newContentIndex);
@@ -194,8 +194,8 @@ public class TextPatchToolTests : IDisposable
 
         // Verify new content appears at the end after Setup text
         newContent.ShouldContain("New content at end");
-        var setupTextIndex = newContent.IndexOf("Setup text");
-        var newContentIndex = newContent.IndexOf("New content at end");
+        var setupTextIndex = newContent.IndexOf("Setup text", StringComparison.Ordinal);
+        var newContentIndex = newContent.IndexOf("New content at end", StringComparison.Ordinal);
         newContentIndex.ShouldBeGreaterThan(setupTextIndex);
     }
 

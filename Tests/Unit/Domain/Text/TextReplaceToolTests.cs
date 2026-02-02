@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Tools.Text;
 using Shouldly;
@@ -189,7 +191,7 @@ public class TextReplaceToolTests : IDisposable
     {
         var filePath = CreateTestFile("test.txt", "foo\nbar\nfoo\nbaz\nfoo");
 
-        var result = _tool.TestRun(filePath, "foo", "FOO", "first");
+        var result = _tool.TestRun(filePath, "foo", "FOO");
 
         result["note"]!.ToString().ShouldContain("other occurrence(s) remain");
     }
@@ -220,8 +222,8 @@ public class TextReplaceToolTests : IDisposable
     private static string ComputeTestHash(string[] lines)
     {
         var content = string.Join("\n", lines);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
 
