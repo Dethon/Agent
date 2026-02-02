@@ -71,73 +71,6 @@ public class TextInspectToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_SearchMode_FindsMatches()
-    {
-        var content = """
-                      # Introduction
-                      This is about kubernetes.
-                      ## Setup
-                      Configure kubernetes cluster.
-                      """;
-        var filePath = CreateTestFile("doc.md", content);
-
-        var result = _tool.TestRun(filePath, "search", "kubernetes");
-
-        result["totalMatches"]!.GetValue<int>().ShouldBe(2);
-        var matches = result["matches"]!.AsArray();
-        matches[0]!["line"]!.GetValue<int>().ShouldBe(2);
-        matches[1]!["line"]!.GetValue<int>().ShouldBe(4);
-    }
-
-    [Fact]
-    public void Run_SearchMode_WithContext_IncludesContextLines()
-    {
-        var content = """
-                      Line 1
-                      Line 2
-                      Target line
-                      Line 4
-                      Line 5
-                      """;
-        var filePath = CreateTestFile("test.md", content);
-
-        var result = _tool.TestRun(filePath, "search", "Target", context: 1);
-
-        var match = result["matches"]!.AsArray()[0]!;
-        match["context"]!["before"]!.AsArray().Count.ShouldBe(1);
-        match["context"]!["after"]!.AsArray().Count.ShouldBe(1);
-    }
-
-    [Fact]
-    public void Run_SearchMode_WithRegex_MatchesPattern()
-    {
-        var content = """
-                      TODO: Fix this
-                      FIXME: And this
-                      TODO: Another one
-                      """;
-        var filePath = CreateTestFile("notes.md", content);
-
-        var result = _tool.TestRun(filePath, "search", "TODO:.*", regex: true);
-
-        result["totalMatches"]!.GetValue<int>().ShouldBe(2);
-    }
-
-    [Fact]
-    public void Run_LinesMode_ReturnsSpecificLines()
-    {
-        var content = string.Join("\n", Enumerable.Range(1, 100).Select(i => $"Line {i}"));
-        var filePath = CreateTestFile("large.md", content);
-
-        var result = _tool.TestRun(filePath, "lines", "50-55");
-
-        var lines = result["lines"]!.AsArray();
-        lines.Count.ShouldBe(6);
-        lines[0]!["number"]!.GetValue<int>().ShouldBe(50);
-        lines[5]!["number"]!.GetValue<int>().ShouldBe(55);
-    }
-
-    [Fact]
     public void Run_DisallowedExtension_ThrowsException()
     {
         var filePath = CreateTestFile("script.ps1", "Get-Process");
@@ -197,14 +130,9 @@ public class TextInspectToolTests : IDisposable
     private class TestableTextInspectTool(string vaultPath, string[] allowedExtensions)
         : TextInspectTool(vaultPath, allowedExtensions)
     {
-        public JsonNode TestRun(
-            string filePath,
-            string mode = "structure",
-            string? query = null,
-            bool regex = false,
-            int context = 0)
+        public JsonNode TestRun(string filePath)
         {
-            return Run(filePath, mode, query, regex, context);
+            return Run(filePath);
         }
     }
 }
