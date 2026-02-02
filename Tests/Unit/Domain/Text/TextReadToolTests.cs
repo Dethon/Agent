@@ -25,149 +25,112 @@ public class TextReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_LinesTarget_ReturnsSpecifiedLines()
+    public void Run_ReturnsWholeFileWithLineNumbers()
     {
-        var content = string.Join("\n", Enumerable.Range(1, 10).Select(i => $"Line {i}"));
-        var filePath = CreateTestFile("test.md", content);
+        var filePath = CreateTestFile("test.txt", "Line A\nLine B\nLine C");
 
-        var target = new JsonObject { ["lines"] = new JsonObject { ["start"] = 3, ["end"] = 5 } };
-        var result = _tool.TestRun(filePath, target);
+        var result = _tool.TestRun(filePath);
 
-        result["content"]!.ToString().ShouldBe("Line 3\nLine 4\nLine 5");
-        result["range"]!["startLine"]!.GetValue<int>().ShouldBe(3);
-        result["range"]!["endLine"]!.GetValue<int>().ShouldBe(5);
+        result["content"]!.ToString().ShouldBe("1: Line A\n2: Line B\n3: Line C");
     }
 
     [Fact]
-    public void Run_HeadingTarget_ReturnsHeadingSection()
+    public void Run_ReturnsFileHash()
     {
-        var content = """
-                      # Introduction
-                      Intro content
-                      ## Setup
-                      Setup content line 1
-                      Setup content line 2
-                      ## Configuration
-                      Config content
-                      """;
-        var filePath = CreateTestFile("doc.md", content);
+        var filePath = CreateTestFile("test.txt", "Hello World");
 
-        var target = new JsonObject { ["heading"] = "## Setup" };
-        var result = _tool.TestRun(filePath, target);
+        var result = _tool.TestRun(filePath);
 
-        result["content"]!.ToString().ShouldContain("Setup content");
-        result["content"]!.ToString().ShouldNotContain("Config content");
+        result["fileHash"]!.ToString().ShouldNotBeNullOrEmpty();
+        result["fileHash"]!.ToString().Length.ShouldBe(16);
     }
 
     [Fact]
-    public void Run_CodeBlockTarget_ReturnsCodeBlock()
+    public void Run_ReturnsTotalLines()
     {
-        var content = """
-                      # Examples
-                      ```csharp
-                      var x = 1;
-                      var y = 2;
-                      ```
-                      Some text
-                      ```python
-                      print("hello")
-                      ```
-                      """;
-        var filePath = CreateTestFile("code.md", content);
+        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-        var target = new JsonObject { ["codeBlock"] = new JsonObject { ["index"] = 1 } };
-        var result = _tool.TestRun(filePath, target);
+        var result = _tool.TestRun(filePath);
 
-        result["content"]!.ToString().ShouldContain("python");
-        result["content"]!.ToString().ShouldContain("print");
+        result["totalLines"]!.GetValue<int>().ShouldBe(5);
     }
 
     [Fact]
-    public void Run_SectionTarget_ReturnsIniSection()
+    public void Run_WithOffset_StartsFromSpecifiedLine()
     {
-        var content = """
-                      [database]
-                      host=localhost
-                      port=5432
+        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-                      [cache]
-                      enabled=true
-                      """;
-        var filePath = CreateTestFile("config.txt", content);
+        var result = _tool.TestRun(filePath, offset: 3);
 
-        var target = new JsonObject { ["section"] = "[database]" };
-        var result = _tool.TestRun(filePath, target);
-
-        result["content"]!.ToString().ShouldContain("host=localhost");
-        result["content"]!.ToString().ShouldNotContain("enabled=true");
+        result["content"]!.ToString().ShouldBe("3: Line 3\n4: Line 4\n5: Line 5");
     }
 
     [Fact]
-    public void Run_SearchTarget_ThrowsArgumentException()
+    public void Run_WithLimit_ReturnsLimitedLines()
     {
-        var content = """
-                      Line 1
-                      Line 2
-                      Target text here
-                      Line 4
-                      Line 5
-                      """;
-        var filePath = CreateTestFile("search.md", content);
+        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-        var target = new JsonObject
-        {
-            ["search"] = new JsonObject { ["query"] = "Target", ["contextLines"] = 2 }
-        };
+        var result = _tool.TestRun(filePath, limit: 2);
 
-        var ex = Should.Throw<ArgumentException>(() => _tool.TestRun(filePath, target));
-        ex.Message.ShouldContain("Invalid target");
+        result["content"]!.ToString().ShouldBe("1: Line 1\n2: Line 2");
     }
 
     [Fact]
-    public void Run_LargeSection_IsTruncated()
+    public void Run_WithOffsetAndLimit_ReturnsPaginatedContent()
     {
-        var content = string.Join("\n", Enumerable.Range(1, 500).Select(i => $"Line {i}"));
-        var filePath = CreateTestFile("large.md", content);
+        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-        var target = new JsonObject { ["lines"] = new JsonObject { ["start"] = 1, ["end"] = 500 } };
-        var result = _tool.TestRun(filePath, target);
+        var result = _tool.TestRun(filePath, offset: 2, limit: 3);
+
+        result["content"]!.ToString().ShouldBe("2: Line 2\n3: Line 3\n4: Line 4");
+    }
+
+    [Fact]
+    public void Run_LargeFile_TruncatesAt500Lines()
+    {
+        var content = string.Join("\n", Enumerable.Range(1, 600).Select(i => $"Line {i}"));
+        var filePath = CreateTestFile("large.txt", content);
+
+        var result = _tool.TestRun(filePath);
 
         result["truncated"]!.GetValue<bool>().ShouldBeTrue();
-        result["suggestion"]!.ToString().ShouldNotBeEmpty();
+        result["suggestion"]!.ToString().ShouldContain("offset=501");
+        result["totalLines"]!.GetValue<int>().ShouldBe(600);
+        result["content"]!.ToString().Split('\n').Length.ShouldBe(500);
     }
 
     [Fact]
-    public void Run_HeadingNotFound_ThrowsWithSuggestions()
+    public void Run_SmallFile_NotTruncated()
     {
-        var content = """
-                      # Introduction
-                      ## Installation
-                      ## Configuration
-                      """;
-        var filePath = CreateTestFile("doc.md", content);
+        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2");
 
-        var target = new JsonObject { ["heading"] = "## Instalation" }; // Typo
+        var result = _tool.TestRun(filePath);
 
-        var ex = Should.Throw<InvalidOperationException>(() => _tool.TestRun(filePath, target));
-        ex.Message.ShouldContain("not found");
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
+        result.AsObject().ContainsKey("suggestion").ShouldBeFalse();
     }
 
     [Fact]
-    public void Run_UnknownTarget_ThrowsWithValidTargetList()
+    public void Run_FileNotFound_Throws()
     {
-        var content = "Some content";
-        var filePath = CreateTestFile("test.md", content);
+        Should.Throw<FileNotFoundException>(() =>
+            _tool.TestRun(Path.Combine(_testDir, "nonexistent.txt")));
+    }
 
-        var target = new JsonObject { ["unknown"] = "value" };
+    [Fact]
+    public void Run_PathOutsideVault_Throws()
+    {
+        Should.Throw<UnauthorizedAccessException>(() =>
+            _tool.TestRun("/etc/passwd"));
+    }
 
-        var ex = Should.Throw<ArgumentException>(() => _tool.TestRun(filePath, target));
-        ex.Message.ShouldContain("Invalid target");
-        ex.Message.ShouldContain("lines");
-        ex.Message.ShouldContain("heading");
-        ex.Message.ShouldContain("codeBlock");
-        ex.Message.ShouldContain("anchor");
-        ex.Message.ShouldContain("section");
-        ex.Message.ShouldNotContain("search");
+    [Fact]
+    public void Run_DisallowedExtension_Throws()
+    {
+        var filePath = CreateTestFile("test.exe", "content");
+
+        Should.Throw<InvalidOperationException>(() =>
+            _tool.TestRun(filePath));
     }
 
     private string CreateTestFile(string name, string content)
@@ -180,9 +143,9 @@ public class TextReadToolTests : IDisposable
     private class TestableTextReadTool(string vaultPath, string[] allowedExtensions)
         : TextReadTool(vaultPath, allowedExtensions)
     {
-        public JsonNode TestRun(string filePath, JsonObject target)
+        public JsonNode TestRun(string filePath, int? offset = null, int? limit = null)
         {
-            return Run(filePath, target);
+            return Run(filePath, offset, limit);
         }
     }
 }
