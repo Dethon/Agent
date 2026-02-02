@@ -13,30 +13,30 @@ public class RemoveFileTool(IFileSystemClient client, LibraryPathConfig libraryP
                                          The path must be absolute and derived from the ListFiles tool response.
                                          """;
 
-    protected async Task<JsonNode> Run(string path, CancellationToken cancellationToken)
+    protected async Task<JsonNode> Run(string filePath, CancellationToken cancellationToken)
     {
-        ValidatePathWithinLibrary(path);
+        ValidatePathWithinLibrary(filePath);
 
-        var trashPath = await client.MoveToTrash(path, cancellationToken);
+        var trashPath = await client.MoveToTrash(filePath, cancellationToken);
         return new JsonObject
         {
             ["status"] = "success",
             ["message"] = "File moved to trash",
-            ["originalPath"] = path,
+            ["originalPath"] = filePath,
             ["trashPath"] = trashPath
         };
     }
 
-    private void ValidatePathWithinLibrary(string path)
+    private void ValidatePathWithinLibrary(string filePath)
     {
-        if (path.Contains("..", StringComparison.Ordinal))
+        if (filePath.Contains("..", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"{nameof(RemoveFileTool)} path must not contain '..' segments.");
         }
 
         var canonicalLibraryPath = Path.GetFullPath(libraryPath.BaseLibraryPath);
-        var canonicalFilePath = Path.GetFullPath(path);
+        var canonicalFilePath = Path.GetFullPath(filePath);
 
         if (!canonicalFilePath.StartsWith(canonicalLibraryPath, StringComparison.OrdinalIgnoreCase))
         {
