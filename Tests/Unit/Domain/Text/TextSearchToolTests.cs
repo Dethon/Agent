@@ -233,6 +233,41 @@ public class TextSearchToolTests : IDisposable
         result["totalMatches"]!.GetValue<int>().ShouldBe(2);
     }
 
+
+    [Fact]
+    public void Run_WithOutputModeFilesOnly_ReturnsFilePathsAndCounts()
+    {
+        CreateTestFile("doc1.md", "Hello World\nHello again");
+        CreateTestFile("doc2.md", "Hello there");
+
+        var result = _tool.TestRun("Hello", outputMode: "files_only");
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(2);
+        var firstResult = result["results"]!.AsArray()[0]!;
+        firstResult["matchCount"]!.GetValue<int>().ShouldBeGreaterThan(0);
+        firstResult.AsObject().ContainsKey("matches").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Run_WithOutputModeContent_ReturnsFullMatches()
+    {
+        CreateTestFile("doc.md", "Hello World");
+
+        var result = _tool.TestRun("Hello", outputMode: "content");
+
+        var firstResult = result["results"]!.AsArray()[0]!;
+        firstResult["matches"]!.AsArray().Count.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Run_WithInvalidOutputMode_Throws()
+    {
+        CreateTestFile("doc.md", "Hello World");
+
+        Should.Throw<ArgumentException>(() =>
+            _tool.TestRun("Hello", outputMode: "invalid"));
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);
@@ -255,9 +290,10 @@ public class TextSearchToolTests : IDisposable
             string? filePattern = null,
             string directoryPath = "/",
             int maxResults = 50,
-            int contextLines = 1)
+            int contextLines = 1,
+            string outputMode = "content")
         {
-            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines);
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode);
         }
     }
 }
