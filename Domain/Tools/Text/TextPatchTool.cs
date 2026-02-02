@@ -18,6 +18,7 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
                                          - lines: { "start": N, "end": M } - Target specific line range
                                          - heading: "## Title" - Target a markdown heading line
                                          - beforeHeading: "## Title" - Position before a heading (for insert)
+                                         - appendToSection: "## Title" - Append to end of a markdown section (for insert)
                                          - codeBlock: { "index": N } - Target Nth code block content
 
                                          IMPORTANT:
@@ -29,6 +30,7 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
                                          Examples:
                                          - Replace heading: operation="replace", target={ "heading": "## Old" }, content="## New"
                                          - Insert before heading: operation="insert", target={ "beforeHeading": "## Setup" }, content="## New Section\n"
+                                         - Append to section: operation="insert", target={ "appendToSection": "## Setup" }, content="New content\n"
                                          - Delete lines 50-55: operation="delete", target={ "lines": { "start": 50, "end": 55 } }
                                          - Replace code block: operation="replace", target={ "codeBlock": { "index": 0 } }, content="new code..."
                                          """;
@@ -164,6 +166,20 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
             return FindHeadingTarget(lines, heading);
         }
 
+        if (target.TryGetPropertyValue("appendToSection", out var appendNode))
+        {
+            if (!isMarkdown)
+            {
+                throw new InvalidOperationException("appendToSection targeting only works with markdown files");
+            }
+
+            var heading = appendNode?.GetValue<string>() ?? throw new ArgumentException("appendToSection value required");
+            var structure = MarkdownParser.Parse(lines.ToArray());
+            var headingIndex = FindHeadingIndex(structure, heading);
+            var endLine = MarkdownParser.FindHeadingEnd(structure.Headings, headingIndex, lines.Count);
+            return (endLine, endLine, null); // Insert at end of section
+        }
+
         if (target.TryGetPropertyValue("beforeHeading", out var beforeNode))
         {
             if (!isMarkdown)
@@ -210,7 +226,7 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
         }
 
         throw new ArgumentException(
-            "Invalid target. Use one of: lines, heading, beforeHeading, codeBlock");
+            "Invalid target. Use one of: lines, heading, beforeHeading, appendToSection, codeBlock");
     }
 
     private static void ValidateLineRange(int start, int end, int totalLines)
@@ -254,6 +270,38 @@ public class TextPatchTool(string vaultPath, string[] allowedExtensions) : TextT
 
         // Find similar headings
         var structure = MarkdownParser.Parse(lines.ToArray());
+        var similar = structure.Headings
+            .Where(h => h.Text.Contains(normalized.Split(' ')[0], StringComparison.OrdinalIgnoreCase))
+            .Take(3)
+            .Select(h => $"'{new string('#', h.Level)} {h.Text}' (line {h.Line})");
+
+        throw new InvalidOperationException(
+            $"Heading '{heading}' not found. Similar: {string.Join(", ", similar)}. Use TextInspect to list all headings.");
+    }
+
+    private static int FindHeadingIndex(MarkdownStructure structure, string heading)
+    {
+        var normalized = heading.TrimStart('#').Trim();
+
+        for (var i = 0; i < structure.Headings.Count; i++)
+        {
+            var h = structure.Headings[i];
+
+            // Check exact match first
+            var fullHeading = $"{new string('#', h.Level)} {h.Text}";
+            if (fullHeading.Equals(heading, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+
+            // Check normalized match
+            if (h.Text.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        // Find similar headings for error message
         var similar = structure.Headings
             .Where(h => h.Text.Contains(normalized.Split(' ')[0], StringComparison.OrdinalIgnoreCase))
             .Take(3)

@@ -154,6 +154,76 @@ public class TextPatchToolTests : IDisposable
         ex.Message.ShouldContain("replaceLines");
     }
 
+    [Fact]
+    public void Run_AppendToSection_InsertsAtEndOfSection()
+    {
+        var content = "# Intro\nIntro text\n## Setup\nSetup text\n## Config\nConfig text";
+        var filePath = CreateTestFile("doc.md", content);
+
+        var target = new JsonObject { ["appendToSection"] = "## Setup" };
+        var result = _tool.TestRun(filePath, "insert", target, "New content");
+
+        result["status"]!.ToString().ShouldBe("success");
+        var newContent = File.ReadAllText(filePath);
+
+        // Verify new content appears between Setup text and Config heading
+        newContent.ShouldContain("Setup text");
+        newContent.ShouldContain("New content");
+        newContent.ShouldContain("## Config");
+
+        // Verify order: Setup text should come before New content, which should come before Config
+        var setupTextIndex = newContent.IndexOf("Setup text");
+        var newContentIndex = newContent.IndexOf("New content");
+        var configIndex = newContent.IndexOf("## Config");
+
+        newContentIndex.ShouldBeGreaterThan(setupTextIndex);
+        configIndex.ShouldBeGreaterThan(newContentIndex);
+    }
+
+    [Fact]
+    public void Run_AppendToSection_LastSection_InsertsAtEndOfFile()
+    {
+        var content = "# Intro\nIntro text\n## Setup\nSetup text";
+        var filePath = CreateTestFile("doc.md", content);
+
+        var target = new JsonObject { ["appendToSection"] = "## Setup" };
+        var result = _tool.TestRun(filePath, "insert", target, "New content at end");
+
+        result["status"]!.ToString().ShouldBe("success");
+        var newContent = File.ReadAllText(filePath);
+
+        // Verify new content appears at the end after Setup text
+        newContent.ShouldContain("New content at end");
+        var setupTextIndex = newContent.IndexOf("Setup text");
+        var newContentIndex = newContent.IndexOf("New content at end");
+        newContentIndex.ShouldBeGreaterThan(setupTextIndex);
+    }
+
+    [Fact]
+    public void Run_AppendToSection_NonMarkdown_Throws()
+    {
+        var content = "Some text\nMore text";
+        var filePath = CreateTestFile("test.txt", content);
+
+        var target = new JsonObject { ["appendToSection"] = "Section" };
+
+        var ex = Should.Throw<InvalidOperationException>(() =>
+            _tool.TestRun(filePath, "insert", target, "New content"));
+        ex.Message.ShouldContain("markdown");
+    }
+
+    [Fact]
+    public void Run_AppendToSection_HeadingNotFound_Throws()
+    {
+        var content = "# Intro\nIntro text\n## Setup\nSetup text";
+        var filePath = CreateTestFile("doc.md", content);
+
+        var target = new JsonObject { ["appendToSection"] = "## Config" };
+
+        Should.Throw<InvalidOperationException>(() =>
+            _tool.TestRun(filePath, "insert", target, "New content"));
+    }
+
     private string CreateTestFile(string name, string content)
     {
         var path = Path.Combine(_testDir, name);
