@@ -17,9 +17,9 @@ public class McpTextListFilesTool(
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
         [Description("Absolute path to the directory")]
-        string path,
+        string directoryPath,
         CancellationToken cancellationToken)
     {
-        return ToolResponse.Create(await Run(path, cancellationToken));
+        return ToolResponse.Create(await Run(directoryPath, cancellationToken));
     }
 }
