@@ -21,7 +21,7 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
                                          2. Prefer heading/section targeting for markdown—more stable than line numbers
                                          3. Use line targeting when you need exact control
                                          4. Large sections may be truncated—use narrower targets
-                                         5. To search within a file, use TextInspect with search mode
+                                         5. To search within a file, use TextSearch with filePath parameter
 
                                          Examples:
                                          - Read lines 50-75: target={ "lines": { "start": 50, "end": 75 } }
