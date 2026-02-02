@@ -29,8 +29,15 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
         var totalLines = allLines.Length;
 
         var startIndex = (offset ?? 1) - 1;
-        if (startIndex < 0) startIndex = 0;
-        if (startIndex > allLines.Length) startIndex = allLines.Length;
+        if (startIndex < 0)
+        {
+            startIndex = 0;
+        }
+
+        if (startIndex > allLines.Length)
+        {
+            startIndex = allLines.Length;
+        }
 
         var remainingLines = allLines.Skip(startIndex).ToArray();
         var requestedLimit = limit ?? remainingLines.Length;
