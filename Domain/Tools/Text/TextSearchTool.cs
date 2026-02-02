@@ -48,7 +48,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         string? filePattern = null,
         string directoryPath = "/",
         int maxResults = 50,
-        int contextLines = 1)
+        int contextLines = 1,
+        string outputMode = "content")
     {
         var searchParams = new SearchParams(
             query,
@@ -58,7 +59,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
         if (filePath is not null)
         {
-            return RunSingleFileSearch(filePath, query, regex, searchParams);
+            return RunSingleFileSearch(filePath, query, regex, searchParams, outputMode);
         }
 
         var fullPath = ResolvePath(directoryPath);
@@ -72,10 +73,10 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         var (results, filesSearched) = SearchFiles(files, searchParams);
         var totalMatches = results.Sum(r => r.Matches.Count);
 
-        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults);
+        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults, outputMode);
     }
 
-    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams)
+    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams, string outputMode)
     {
         var fullPath = ValidateAndResolveSingleFilePath(filePath);
 
@@ -84,7 +85,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ? [new FileMatch(ToRelativePath(fullPath), matches)]
             : new List<FileMatch>();
 
-        return BuildResultJson(query, regex, filePath, 1, results, matches.Count, searchParams.MaxResults);
+        return BuildResultJson(query, regex, filePath, 1, results, matches.Count, searchParams.MaxResults, outputMode);
     }
 
     private string ValidateAndResolveSingleFilePath(string filePath)
@@ -250,8 +251,18 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         int filesSearched,
         List<FileMatch> results,
         int totalMatches,
-        int maxResults)
+        int maxResults,
+        string outputMode)
     {
+        if (outputMode is not "content" and not "files_only")
+        {
+            throw new ArgumentException($"Invalid outputMode '{outputMode}'. Must be 'content' or 'files_only'.");
+        }
+
+        var resultMapper = outputMode == "files_only"
+            ? (Func<FileMatch, JsonNode>)ToFileMatchSummaryJson
+            : ToFileMatchJson;
+
         return new JsonObject
         {
             ["query"] = query,
@@ -261,7 +272,16 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             ["filesWithMatches"] = results.Count,
             ["totalMatches"] = totalMatches,
             ["truncated"] = totalMatches >= maxResults,
-            ["results"] = new JsonArray(results.Select(ToFileMatchJson).ToArray())
+            ["results"] = new JsonArray(results.Select(resultMapper).ToArray())
+        };
+    }
+
+    private static JsonNode ToFileMatchSummaryJson(FileMatch fileMatch)
+    {
+        return new JsonObject
+        {
+            ["file"] = fileMatch.File,
+            ["matchCount"] = fileMatch.Matches.Count
         };
     }
 
