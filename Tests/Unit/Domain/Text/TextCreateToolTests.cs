@@ -106,15 +106,37 @@ public class TextCreateToolTests : IDisposable
         File.Exists(Path.Combine(_testDir, "docs", "readme.md")).ShouldBeTrue();
     }
 
+    [Fact]
+    public void Run_WithOverwriteTrue_OverwritesExistingFile()
+    {
+        File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
+
+        var result = _tool.TestRun("existing.md", "New content", overwrite: true);
+
+        result["status"]!.ToString().ShouldBe("created");
+        File.ReadAllText(Path.Combine(_testDir, "existing.md")).ShouldBe("New content");
+    }
+
+    [Fact]
+    public void Run_WithOverwriteFalse_FileExists_ThrowsException()
+    {
+        File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
+
+        var ex = Should.Throw<InvalidOperationException>(() =>
+            _tool.TestRun("existing.md", "New content", overwrite: false));
+        ex.Message.ShouldContain("already exists");
+    }
+
     private class TestableTextCreateTool(string vaultPath, string[] allowedExtensions)
         : TextCreateTool(vaultPath, allowedExtensions)
     {
         public JsonNode TestRun(
             string filePath,
             string content,
+            bool overwrite = false,
             bool createDirectories = true)
         {
-            return Run(filePath, content, createDirectories);
+            return Run(filePath, content, overwrite, createDirectories);
         }
     }
 }
