@@ -8,23 +8,25 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     protected const string Name = "TextSearch";
 
     protected const string Description = """
-                                         Searches for text across all files in the vault.
+                                         Searches for text across files in the vault, or within a single file.
 
-                                         Returns matching files with line numbers and context. Use this to find 
-                                         content when you don't know which file contains it.
+                                         Returns matching files with line numbers and context.
+                                         To modify matching content, use TextEdit with a text target.
 
                                          Parameters:
                                          - query: Text or regex pattern to search for
                                          - regex: Treat query as regex pattern (default: false)
+                                         - filePath: Optional. Search within this single file only (ignores directoryPath and filePattern)
                                          - filePattern: Glob pattern to filter files (e.g., "*.md")
-                                         - path: Directory to search in (default: "/" for entire vault)
+                                         - directoryPath: Directory to search in (default: "/" for entire vault)
                                          - maxResults: Maximum number of matches to return (default: 50)
                                          - contextLines: Lines of context around each match (default: 1)
 
                                          Examples:
                                          - Find all mentions of "kubernetes": query="kubernetes"
+                                         - Find in single file: query="config", filePath="docs/setup.md"
                                          - Find TODOs: query="TODO:.*", regex=true
-                                         - Search only in docs: query="api", path="/docs"
+                                         - Search only in docs: query="api", directoryPath="/docs"
                                          - Search markdown files: query="config", filePattern="*.md"
                                          """;
 
@@ -42,29 +44,73 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     protected JsonNode Run(
         string query,
         bool regex = false,
+        string? filePath = null,
         string? filePattern = null,
-        string path = "/",
+        string directoryPath = "/",
         int maxResults = 50,
         int contextLines = 1)
     {
-        var fullPath = ResolvePath(path);
-
-        if (!Directory.Exists(fullPath))
-        {
-            throw new DirectoryNotFoundException($"Directory not found: {path}");
-        }
-
         var searchParams = new SearchParams(
             query,
             regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
             contextLines,
             maxResults);
 
+        if (filePath is not null)
+        {
+            return RunSingleFileSearch(filePath, query, regex, searchParams);
+        }
+
+        var fullPath = ResolvePath(directoryPath);
+
+        if (!Directory.Exists(fullPath))
+        {
+            throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+        }
+
         var files = EnumerateAllowedFiles(fullPath, filePattern);
         var (results, filesSearched) = SearchFiles(files, searchParams);
         var totalMatches = results.Sum(r => r.Matches.Count);
 
-        return BuildResultJson(query, regex, path, filesSearched, results, totalMatches, maxResults);
+        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults);
+    }
+
+    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams)
+    {
+        var fullPath = ValidateAndResolveSingleFilePath(filePath);
+
+        var matches = SearchSingleFile(fullPath, searchParams, searchParams.MaxResults);
+        var results = matches.Count > 0
+            ? [new FileMatch(ToRelativePath(fullPath), matches)]
+            : new List<FileMatch>();
+
+        return BuildResultJson(query, regex, filePath, 1, results, matches.Count, searchParams.MaxResults);
+    }
+
+    private string ValidateAndResolveSingleFilePath(string filePath)
+    {
+        var fullPath = Path.IsPathRooted(filePath)
+            ? Path.GetFullPath(filePath)
+            : Path.GetFullPath(Path.Combine(vaultPath, filePath));
+
+        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            throw new FileNotFoundException($"File not found: {filePath}");
+        }
+
+        if (!IsAllowedExtension(fullPath))
+        {
+            var ext = Path.GetExtension(fullPath).ToLowerInvariant();
+            throw new InvalidOperationException(
+                $"File type '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
+        }
+
+        return fullPath;
     }
 
     private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern)
