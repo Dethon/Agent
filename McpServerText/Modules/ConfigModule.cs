@@ -53,7 +53,6 @@ public static class ConfigModule
             .WithTools<McpRemoveFileTool>()
             // Text tools
             .WithTools<McpTextSearchTool>()
-            .WithTools<McpTextInspectTool>()
             .WithTools<McpTextReadTool>()
             .WithTools<McpTextEditTool>()
             .WithTools<McpTextCreateTool>()
