@@ -44,7 +44,8 @@
       "Bash(echo:*)",
       "Bash(gh api:*)",
       "Bash(gh search:*)",
-      "Skill(plan-creator)"
+      "Skill(plan-creator)",
+      "Bash(git rm:*)"
     ]
   }
 }
