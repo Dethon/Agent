@@ -27,8 +27,10 @@ public class McpTextSearchTool(McpSettings settings)
         [Description("Maximum number of matches to return")]
         int maxResults = 50,
         [Description("Lines of context around each match")]
-        int contextLines = 1)
+        int contextLines = 1,
+        [Description("Output mode: 'content' for matching lines with context, 'files_only' for file paths with match counts")]
+        string outputMode = "content")
     {
-        return ToolResponse.Create(Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines));
+        return ToolResponse.Create(Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode));
     }
 }
