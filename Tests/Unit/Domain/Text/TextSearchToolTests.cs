@@ -153,6 +153,86 @@ public class TextSearchToolTests : IDisposable
         file.ShouldNotContain("\\");
     }
 
+    // --- Single-file search tests ---
+
+    [Fact]
+    public void Run_WithFilePath_SearchesSingleFile()
+    {
+        CreateTestFile("target.md", "Find this line\nAnd this one too");
+        CreateTestFile("other.md", "Find this also");
+
+        var filePath = Path.Combine(_testDir, "target.md");
+        var result = _tool.TestRun("Find", filePath: filePath);
+
+        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(1);
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public void Run_WithFilePath_IgnoresDirectoryPathAndFilePattern()
+    {
+        Directory.CreateDirectory(Path.Combine(_testDir, "subdir"));
+        CreateTestFile("subdir/target.md", "Find this line");
+        CreateTestFile("other.md", "Find this also");
+
+        var filePath = Path.Combine(_testDir, "subdir", "target.md");
+        var result = _tool.TestRun("Find", filePath: filePath, filePattern: "*.txt", directoryPath: "/nonexistent");
+
+        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public void Run_WithFilePath_FileNotFound_Throws()
+    {
+        var filePath = Path.Combine(_testDir, "nonexistent.md");
+
+        Should.Throw<FileNotFoundException>(() =>
+            _tool.TestRun("query", filePath: filePath));
+    }
+
+    [Fact]
+    public void Run_WithFilePath_OutsideVault_Throws()
+    {
+        Should.Throw<UnauthorizedAccessException>(() =>
+            _tool.TestRun("query", filePath: "/etc/passwd"));
+    }
+
+    [Fact]
+    public void Run_WithFilePath_DisallowedExtension_Throws()
+    {
+        CreateTestFile("script.ps1", "Find this");
+
+        var filePath = Path.Combine(_testDir, "script.ps1");
+
+        Should.Throw<InvalidOperationException>(() =>
+            _tool.TestRun("Find", filePath: filePath));
+    }
+
+    [Fact]
+    public void Run_WithFilePath_NoMatches_ReturnsEmpty()
+    {
+        CreateTestFile("target.md", "No matching content here");
+
+        var filePath = Path.Combine(_testDir, "target.md");
+        var result = _tool.TestRun("nonexistent", filePath: filePath);
+
+        result["filesWithMatches"]!.GetValue<int>().ShouldBe(0);
+        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_WithFilePath_WithRegex_MatchesPattern()
+    {
+        CreateTestFile("target.md", "TODO: Fix bug\nFIXME: Later\nTODO: Add test");
+
+        var filePath = Path.Combine(_testDir, "target.md");
+        var result = _tool.TestRun("TODO:.*", regex: true, filePath: filePath);
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(2);
+    }
+
     private void CreateTestFile(string relativePath, string content)
     {
         var fullPath = Path.Combine(_testDir, relativePath);
@@ -171,12 +251,13 @@ public class TextSearchToolTests : IDisposable
         public JsonNode TestRun(
             string query,
             bool regex = false,
+            string? filePath = null,
             string? filePattern = null,
-            string path = "/",
+            string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1)
         {
-            return Run(query, regex, filePattern, path, maxResults, contextLines);
+            return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines);
         }
     }
 }
