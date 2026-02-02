@@ -18,9 +18,11 @@ public class McpTextCreateTool(McpSettings settings)
         string filePath,
         [Description("Initial content for the file")]
         string content,
+        [Description("Overwrite existing file (default: false)")]
+        bool overwrite = false,
         [Description("Create parent directories if they don't exist")]
         bool createDirectories = true)
     {
-        return ToolResponse.Create(Run(filePath, content, createDirectories));
+        return ToolResponse.Create(Run(filePath, content, overwrite, createDirectories));
     }
 }
