@@ -83,7 +83,10 @@ public class CompositeChatMessengerClientTests
             await foreach (var prompt in composite.ReadPrompts(100, cts.Token))
             {
                 prompts.Add(prompt);
-                if (prompts.Count >= 2) break;
+                if (prompts.Count >= 2)
+                {
+                    break;
+                }
             }
         }
         catch (OperationCanceledException) { }

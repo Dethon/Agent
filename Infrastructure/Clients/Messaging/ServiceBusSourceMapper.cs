@@ -52,7 +52,7 @@ public sealed class ServiceBusSourceMapper(
 
         var mapping = new SourceMapping(chatId, threadId, topicId);
         var mappingJson = JsonSerializer.Serialize(mapping);
-        await _db.StringSetAsync(redisKey, mappingJson, TimeSpan.FromDays(30), false, When.Always, CommandFlags.None);
+        await _db.StringSetAsync(redisKey, mappingJson, TimeSpan.FromDays(30), false);
 
         logger.LogInformation(
             "Created new mapping for sourceId={SourceId}: chatId={ChatId}, threadId={ThreadId}, topicId={TopicId}",

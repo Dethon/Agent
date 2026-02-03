@@ -38,7 +38,7 @@ public sealed class ServiceBusChatMessengerClient(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, aiResponse) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
         {
             if (!_chatIdToSourceId.TryGetValue(key.ChatId, out var sourceId))
             {
@@ -66,6 +66,7 @@ public sealed class ServiceBusChatMessengerClient(
 
                             accumulator.Clear();
                         }
+
                         _responseAccumulators.TryRemove(key.ChatId, out _);
                         break;
                 }

@@ -10,40 +10,33 @@ namespace Tests.Unit.Infrastructure.Messaging;
 
 public class ServiceBusChatMessengerClientTests
 {
-    private readonly Mock<IConnectionMultiplexer> _redisMock;
-    private readonly Mock<IDatabase> _dbMock;
-    private readonly Mock<IThreadStateStore> _threadStateStoreMock;
-    private readonly Mock<ILogger<ServiceBusSourceMapper>> _mapperLoggerMock;
-    private readonly Mock<ILogger<ServiceBusResponseWriter>> _writerLoggerMock;
-    private readonly Mock<ILogger<ServiceBusChatMessengerClient>> _clientLoggerMock;
-    private readonly ServiceBusSourceMapper _mapper;
     private readonly ServiceBusChatMessengerClient _client;
 
     public ServiceBusChatMessengerClientTests()
     {
-        _redisMock = new Mock<IConnectionMultiplexer>();
-        _dbMock = new Mock<IDatabase>();
-        _threadStateStoreMock = new Mock<IThreadStateStore>();
-        _mapperLoggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
-        _writerLoggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
-        _clientLoggerMock = new Mock<ILogger<ServiceBusChatMessengerClient>>();
+        var redisMock = new Mock<IConnectionMultiplexer>();
+        var dbMock = new Mock<IDatabase>();
+        var threadStateStoreMock = new Mock<IThreadStateStore>();
+        var mapperLoggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
+        var writerLoggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
+        var clientLoggerMock = new Mock<ILogger<ServiceBusChatMessengerClient>>();
 
-        _redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
-            .Returns(_dbMock.Object);
+        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(dbMock.Object);
 
-        _mapper = new ServiceBusSourceMapper(
-            _redisMock.Object,
-            _threadStateStoreMock.Object,
-            _mapperLoggerMock.Object);
+        var mapper = new ServiceBusSourceMapper(
+            redisMock.Object,
+            threadStateStoreMock.Object,
+            mapperLoggerMock.Object);
 
         // Note: ServiceBusResponseWriter requires a real ServiceBusSender which we can't easily mock
         // For these tests, we'll create the client with a null writer (tests don't exercise response writing)
-        var writerMock = new Mock<ServiceBusResponseWriter>(null!, _writerLoggerMock.Object);
+        var writerMock = new Mock<ServiceBusResponseWriter>(null!, writerLoggerMock.Object);
 
         _client = new ServiceBusChatMessengerClient(
-            _mapper,
+            mapper,
             writerMock.Object,
-            _clientLoggerMock.Object,
+            clientLoggerMock.Object,
             "default");
     }
 

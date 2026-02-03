@@ -1,6 +1,6 @@
 using System.Text.Json;
-using global::Domain.Agents;
-using global::Domain.DTOs;
+using Domain.Agents;
+using Domain.DTOs;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -174,7 +174,10 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
             await foreach (var p in _messengerClient.ReadPrompts(0, _cts.Token))
             {
                 prompts.Add(p);
-                if (prompts.Count >= 2) break;
+                if (prompts.Count >= 2)
+                {
+                    break;
+                }
             }
         });
 
@@ -206,7 +209,10 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
             await foreach (var p in _messengerClient.ReadPrompts(0, _cts.Token))
             {
                 prompts.Add(p);
-                if (prompts.Count >= 2) break;
+                if (prompts.Count >= 2)
+                {
+                    break;
+                }
             }
         });
 

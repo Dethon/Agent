@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
@@ -24,7 +23,8 @@ public sealed class CompositeChatMessengerClient(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        var channels = clients.Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?)>()).ToArray();
+        var channels = clients.Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?)>())
+            .ToArray();
 
         var broadcastTask = BroadcastUpdatesAsync(updates, channels, cancellationToken);
 
@@ -53,6 +53,7 @@ public sealed class CompositeChatMessengerClient(
                 return true;
             }
         }
+
         return false;
     }
 

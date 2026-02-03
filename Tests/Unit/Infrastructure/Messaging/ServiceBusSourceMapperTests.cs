@@ -10,26 +10,24 @@ namespace Tests.Unit.Infrastructure.Messaging;
 
 public class ServiceBusSourceMapperTests
 {
-    private readonly Mock<IConnectionMultiplexer> _redisMock;
     private readonly Mock<IDatabase> _dbMock;
     private readonly Mock<IThreadStateStore> _threadStateStoreMock;
-    private readonly Mock<ILogger<ServiceBusSourceMapper>> _loggerMock;
     private readonly ServiceBusSourceMapper _mapper;
 
     public ServiceBusSourceMapperTests()
     {
-        _redisMock = new Mock<IConnectionMultiplexer>();
+        var redisMock = new Mock<IConnectionMultiplexer>();
         _dbMock = new Mock<IDatabase>();
         _threadStateStoreMock = new Mock<IThreadStateStore>();
-        _loggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
+        var loggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
 
-        _redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(_dbMock.Object);
 
         _mapper = new ServiceBusSourceMapper(
-            _redisMock.Object,
+            redisMock.Object,
             _threadStateStoreMock.Object,
-            _loggerMock.Object);
+            loggerMock.Object);
     }
 
     [Fact]
@@ -90,7 +88,8 @@ public class ServiceBusSourceMapperTests
         const long expectedThreadId = 67890;
         const string expectedTopicId = "abc123";
         var redisKey = $"sb-source:{agentId}:{sourceId}";
-        var cachedJson = $"{{\"ChatId\":{expectedChatId},\"ThreadId\":{expectedThreadId},\"TopicId\":\"{expectedTopicId}\"}}";
+        var cachedJson =
+            $"{{\"ChatId\":{expectedChatId},\"ThreadId\":{expectedThreadId},\"TopicId\":\"{expectedTopicId}\"}}";
 
         _dbMock.Setup(db => db.StringGetAsync(redisKey, It.IsAny<CommandFlags>()))
             .ReturnsAsync(cachedJson);
@@ -131,8 +130,8 @@ public class ServiceBusSourceMapperTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var (chatId1, threadId1, _, isNew1) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId1);
-        var (chatId2, threadId2, _, isNew2) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId2);
+        var (chatId1, _, _, isNew1) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId1);
+        var (chatId2, _, _, isNew2) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId2);
 
         // Assert
         isNew1.ShouldBeTrue();
