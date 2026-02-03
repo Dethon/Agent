@@ -1,6 +1,7 @@
 using Agent.App;
 using Agent.Hubs;
 using Agent.Settings;
+using Azure.Messaging.ServiceBus;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
@@ -65,7 +66,7 @@ public static class InjectorModule
                 ChatInterface.Cli => services.AddCliClient(settings, cmdParams),
                 ChatInterface.Telegram => services.AddTelegramClient(settings, cmdParams),
                 ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
-                ChatInterface.Web => services.AddWebClient(),
+                ChatInterface.Web => services.AddWebClient(settings),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
@@ -147,20 +148,61 @@ public static class InjectorModule
                 });
         }
 
-        private IServiceCollection AddWebClient()
+        private IServiceCollection AddWebClient(AgentSettings settings)
         {
-            return services
+            services = services
                 .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
                 .AddSingleton<INotifier, HubNotifier>()
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()
                 .AddSingleton<WebChatMessengerClient>()
-                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>())
                 .AddSingleton<IToolApprovalHandlerFactory>(sp =>
                     new WebToolApprovalHandlerFactory(
                         sp.GetRequiredService<WebChatApprovalManager>(),
                         sp.GetRequiredService<WebChatSessionManager>()));
+
+            if (settings.ServiceBus is not null)
+            {
+                return services.AddServiceBusClient(settings.ServiceBus, settings.Agents[0].Id);
+            }
+
+            return services
+                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>());
+        }
+
+        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings, string defaultAgentId)
+        {
+            return services
+                .AddSingleton(_ => new ServiceBusClient(sbSettings.ConnectionString))
+                .AddSingleton(sp =>
+                {
+                    var client = sp.GetRequiredService<ServiceBusClient>();
+                    return client.CreateProcessor(sbSettings.PromptQueueName, new ServiceBusProcessorOptions
+                    {
+                        AutoCompleteMessages = false,
+                        MaxConcurrentCalls = sbSettings.MaxConcurrentCalls
+                    });
+                })
+                .AddSingleton(sp =>
+                {
+                    var client = sp.GetRequiredService<ServiceBusClient>();
+                    return client.CreateSender(sbSettings.ResponseQueueName);
+                })
+                .AddSingleton<ServiceBusSourceMapper>()
+                .AddSingleton(sp => new ServiceBusResponseWriter(
+                    sp.GetRequiredService<ServiceBusSender>(),
+                    sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
+                .AddSingleton(sp => new ServiceBusChatMessengerClient(
+                    sp.GetRequiredService<ServiceBusSourceMapper>(),
+                    sp.GetRequiredService<ServiceBusResponseWriter>(),
+                    sp.GetRequiredService<ILogger<ServiceBusChatMessengerClient>>(),
+                    defaultAgentId))
+                .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient([
+                    sp.GetRequiredService<WebChatMessengerClient>(),
+                    sp.GetRequiredService<ServiceBusChatMessengerClient>()
+                ]))
+                .AddHostedService<ServiceBusProcessorHost>();
         }
     }
 }
