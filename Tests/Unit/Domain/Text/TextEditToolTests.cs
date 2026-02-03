@@ -92,17 +92,6 @@ public class TextEditToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_ReturnsFileHash()
-    {
-        var filePath = CreateTestFile("test.txt", "Hello World");
-
-        var result = _tool.TestRun(filePath, "World", "Universe");
-
-        result["fileHash"]!.ToString().ShouldNotBeNullOrEmpty();
-        result["fileHash"]!.ToString().Length.ShouldBe(16);
-    }
-
-    [Fact]
     public void Run_ReturnsAffectedLines()
     {
         var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nTarget\nLine 4");

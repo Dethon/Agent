@@ -24,52 +24,6 @@ public class TextToolBaseTests : IDisposable
     }
 
     [Fact]
-    public void ComputeFileHash_SameContent_ReturnsSameHash()
-    {
-        var lines1 = new[] { "Line 1", "Line 2", "Line 3" };
-        var lines2 = new[] { "Line 1", "Line 2", "Line 3" };
-
-        var hash1 = TestableTextTool.TestComputeFileHash(lines1);
-        var hash2 = TestableTextTool.TestComputeFileHash(lines2);
-
-        hash1.ShouldBe(hash2);
-    }
-
-    [Fact]
-    public void ComputeFileHash_DifferentContent_ReturnsDifferentHash()
-    {
-        var lines1 = new[] { "Line 1", "Line 2", "Line 3" };
-        var lines2 = new[] { "Line 1", "Line 2", "Line 4" };
-
-        var hash1 = TestableTextTool.TestComputeFileHash(lines1);
-        var hash2 = TestableTextTool.TestComputeFileHash(lines2);
-
-        hash1.ShouldNotBe(hash2);
-    }
-
-    [Fact]
-    public void ValidateExpectedHash_Matching_DoesNotThrow()
-    {
-        var lines = new[] { "Line 1", "Line 2", "Line 3" };
-        var hash = TestableTextTool.TestComputeFileHash(lines);
-
-        Should.NotThrow(() => TestableTextTool.TestValidateExpectedHash(lines, hash));
-    }
-
-    [Fact]
-    public void ValidateExpectedHash_Mismatching_ThrowsWithCurrentHash()
-    {
-        var lines = new[] { "Line 1", "Line 2", "Line 3" };
-        var wrongHash = "0000000000000000";
-
-        var ex = Should.Throw<InvalidOperationException>(() =>
-            TestableTextTool.TestValidateExpectedHash(lines, wrongHash));
-
-        ex.Message.ShouldContain("File hash mismatch");
-        ex.Message.ShouldContain(TestableTextTool.TestComputeFileHash(lines));
-    }
-
-    [Fact]
     public void ValidateAndResolvePath_ValidFile_ReturnsFullPath()
     {
         var filePath = CreateTestFile("test.md", "content");
@@ -118,16 +72,6 @@ public class TextToolBaseTests : IDisposable
         public string TestValidateAndResolvePath(string filePath)
         {
             return ValidateAndResolvePath(filePath);
-        }
-
-        public static string TestComputeFileHash(string[] lines)
-        {
-            return ComputeFileHash(lines);
-        }
-
-        public static void TestValidateExpectedHash(string[] lines, string? expectedHash)
-        {
-            ValidateExpectedHash(lines, expectedHash);
         }
     }
 }

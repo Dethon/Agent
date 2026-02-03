@@ -1,10 +1,9 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json.Nodes;
 
 namespace Domain.Tools.Text;
 
 public class TextReadTool(string vaultPath, string[] allowedExtensions)
+    : TextToolBase(vaultPath, allowedExtensions)
 {
     protected const string Name = "TextRead";
 
@@ -49,14 +48,11 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
             .Select((line, i) => $"{startIndex + i + 1}: {line}");
         var content = string.Join("\n", numberedLines);
 
-        var fileHash = ComputeFileHash(allLines);
-
         var result = new JsonObject
         {
             ["filePath"] = fullPath,
             ["content"] = content,
             ["totalLines"] = totalLines,
-            ["fileHash"] = fileHash,
             ["truncated"] = truncated
         };
 
@@ -67,39 +63,5 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
         }
 
         return result;
-    }
-
-    private string ValidateAndResolvePath(string filePath)
-    {
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, filePath));
-
-        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException($"File not found: {filePath}");
-        }
-
-        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-        if (!allowedExtensions.Contains(ext))
-        {
-            throw new InvalidOperationException(
-                $"File type '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
-        }
-
-        return fullPath;
-    }
-
-    private static string ComputeFileHash(string[] lines)
-    {
-        var content = string.Join("\n", lines);
-        var bytes = Encoding.UTF8.GetBytes(content);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
 }

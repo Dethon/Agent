@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 namespace Domain.Tools.Text;
 
 public class TextSearchTool(string vaultPath, string[] allowedExtensions)
+    : TextToolBase(vaultPath, allowedExtensions)
 {
     protected const string Name = "TextSearch";
 
@@ -51,6 +52,11 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         int contextLines = 1,
         string outputMode = "content")
     {
+        if (outputMode is not "content" and not "files_only")
+        {
+            throw new ArgumentException($"Invalid outputMode '{outputMode}'. Must be 'content' or 'files_only'.");
+        }
+
         var searchParams = new SearchParams(
             query,
             regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
@@ -73,12 +79,14 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         var (results, filesSearched) = SearchFiles(files, searchParams);
         var totalMatches = results.Sum(r => r.Matches.Count);
 
-        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults, outputMode);
+        return BuildResultJson(query, regex, directoryPath, filesSearched, results, totalMatches, maxResults,
+            outputMode);
     }
 
-    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams, string outputMode)
+    private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams,
+        string outputMode)
     {
-        var fullPath = ValidateAndResolveSingleFilePath(filePath);
+        var fullPath = ValidateAndResolvePath(filePath);
 
         var matches = SearchSingleFile(fullPath, searchParams, searchParams.MaxResults);
         var results = matches.Count > 0
@@ -86,32 +94,6 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
             : new List<FileMatch>();
 
         return BuildResultJson(query, regex, filePath, 1, results, matches.Count, searchParams.MaxResults, outputMode);
-    }
-
-    private string ValidateAndResolveSingleFilePath(string filePath)
-    {
-        var fullPath = Path.IsPathRooted(filePath)
-            ? Path.GetFullPath(filePath)
-            : Path.GetFullPath(Path.Combine(vaultPath, filePath));
-
-        if (!fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
-        }
-
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException($"File not found: {filePath}");
-        }
-
-        if (!IsAllowedExtension(fullPath))
-        {
-            var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-            throw new InvalidOperationException(
-                $"File type '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
-        }
-
-        return fullPath;
     }
 
     private IEnumerable<string> EnumerateAllowedFiles(string fullPath, string? filePattern)
@@ -123,7 +105,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
     private bool IsAllowedExtension(string filePath)
     {
-        return allowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
+        return AllowedExtensions.Contains(Path.GetExtension(filePath).ToLowerInvariant());
     }
 
     private (List<FileMatch> Results, int FilesSearched) SearchFiles(
@@ -155,7 +137,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         return (results, filesSearched);
     }
 
-    private IReadOnlyList<MatchResult> SearchSingleFile(string filePath, SearchParams searchParams, int maxMatches)
+    private static IReadOnlyList<MatchResult> SearchSingleFile(string filePath, SearchParams searchParams,
+        int maxMatches)
     {
         try
         {
@@ -229,22 +212,22 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
 
     private string ToRelativePath(string fullPath)
     {
-        return Path.GetRelativePath(vaultPath, fullPath).Replace('\\', '/');
+        return Path.GetRelativePath(VaultPath, fullPath).Replace('\\', '/');
     }
 
     private string ResolvePath(string path)
     {
         var normalized = path.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
         var fullPath = string.IsNullOrEmpty(normalized)
-            ? vaultPath
-            : Path.GetFullPath(Path.Combine(vaultPath, normalized));
+            ? VaultPath
+            : Path.GetFullPath(Path.Combine(VaultPath, normalized));
 
-        return fullPath.StartsWith(vaultPath, StringComparison.OrdinalIgnoreCase)
+        return fullPath.StartsWith(VaultPath, StringComparison.OrdinalIgnoreCase)
             ? fullPath
             : throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
     }
 
-    private JsonNode BuildResultJson(
+    private static JsonNode BuildResultJson(
         string query,
         bool regex,
         string path,
@@ -254,11 +237,6 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         int maxResults,
         string outputMode)
     {
-        if (outputMode is not "content" and not "files_only")
-        {
-            throw new ArgumentException($"Invalid outputMode '{outputMode}'. Must be 'content' or 'files_only'.");
-        }
-
         var resultMapper = outputMode == "files_only"
             ? (Func<FileMatch, JsonNode>)ToFileMatchSummaryJson
             : ToFileMatchJson;

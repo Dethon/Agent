@@ -42,8 +42,8 @@ public static class KnowledgeBasePrompt
            targeting (headings, text matches) rather than line numbers when possible—they're more 
            stable across edits.
 
-        4. **Verify Before Acting**: Always inspect a file's structure before attempting edits. 
-           Use TextInspect first, then TextRead if you need to see content, then TextPatch to modify.
+        4. **Verify Before Acting**: Always read a file before attempting edits.
+           Use TextRead to see content, then TextEdit to modify.
 
         ### Available Tools
 
@@ -53,11 +53,10 @@ public static class KnowledgeBasePrompt
         - `TextSearch` - Search for text/patterns across all vault files
 
         **Document Tools:**
-        - `TextInspect` - Understand document structure (headings, code blocks, sections)
-        - `TextRead` - Read specific sections by heading, line range, or search
-        - `TextReplace` - Replace exact text in a file (preferred for inline edits)
-        - `TextPatch` - Modify documents with surgical precision (for structural changes)
-        - `TextCreate` - Create a new text/markdown file
+        - `TextRead` - Read file content with line numbers, supports pagination (offset/limit)
+        - `TextSearch` - Search for text/patterns across vault or within a single file
+        - `TextEdit` - Edit files by replacing exact string matches (oldString → newString)
+        - `TextCreate` - Create a new text/markdown file (supports overwrite)
 
         **File Tools:**
         - `Move` - Move/rename files or directories (absolute paths from ListDirectories/ListFiles)
@@ -67,9 +66,8 @@ public static class KnowledgeBasePrompt
 
         **Finding Information:**
         1. Use TextSearch to locate content across the vault
-        2. Use TextInspect to understand the file structure
-        3. Use TextRead to retrieve the relevant section
-        4. Summarize or present the information to the user
+        2. Use TextRead to retrieve the relevant file or section
+        3. Summarize or present the information to the user
 
         **Exploring the Vault:**
         1. Use ListDirectories to see the folder structure
@@ -77,10 +75,8 @@ public static class KnowledgeBasePrompt
         3. Present an overview to help the user navigate
 
         **Editing Documents:**
-        1. Use TextInspect with mode="structure" to understand the document
-        2. Use TextRead to see the current content of the target section
-        3. Use TextReplace for inline changes (preferred), or TextPatch for structural modifications
-        4. If making multiple edits, pass expectedHash from each response to the next edit to detect conflicts
+        1. Use TextRead to see the current content of the file
+        2. Use TextEdit to replace specific text (oldString → newString)
 
         **Creating Content:**
         1. If adding to existing file: inspect structure, find appropriate location, use insert
@@ -94,25 +90,20 @@ public static class KnowledgeBasePrompt
 
         ### Editing Best Practices
 
-        **For inline text changes (fix typos, update values, rewrite sentences):**
-        → Use TextReplace. It finds exact text and replaces it. No line numbers needed.
+        **For text changes (fix typos, update values, rewrite sentences):**
+        → Use TextEdit with oldString/newString. It finds exact text and replaces it.
 
-        **For structural changes (add new sections, delete blocks, insert under headings):**
-        → Use TextPatch with heading-based targeting.
+        **For inserting content:**
+        → Use TextEdit — include surrounding context in oldString, add new lines in newString.
 
-        **For appending content to an existing section:**
-        → Use TextPatch with appendToSection target (inserts at end of section).
+        **For deleting content:**
+        → Use TextEdit — include content in oldString, omit it from newString.
 
         **For multi-edit workflows:**
-        → Pass expectedHash from each response to the next edit to detect conflicts.
-        → After edits, use the context lines in the response to orient yourself.
-        → Do NOT reuse line numbers from a previous TextInspect after making edits.
+        → After edits, use the affected lines in the response to orient yourself.
 
-        **Tool priority for edits:**
-        1. TextReplace — default choice for most edits
-        2. TextPatch with appendToSection/beforeHeading — for inserting new content
-        3. TextPatch with heading/codeBlock — for replacing entire sections
-        4. TextPatch with lines — last resort, line numbers are fragile
+        **For bulk replacements:**
+        → Use TextEdit with replaceAll=true to replace all occurrences at once.
 
         ### Response Style
 

@@ -59,8 +59,6 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         File.Move(tempPath, fullPath, overwrite: true);
 
         var (startLine, endLine) = ComputeAffectedLines(content, positions[0], oldString.Length);
-        var updatedLines = File.ReadAllLines(fullPath);
-        var fileHash = ComputeFileHash(updatedLines);
 
         return new JsonObject
         {
@@ -71,8 +69,7 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             {
                 ["start"] = startLine,
                 ["end"] = endLine
-            },
-            ["fileHash"] = fileHash
+            }
         };
     }
 
