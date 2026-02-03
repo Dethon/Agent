@@ -1,12 +1,12 @@
 {
   "root": "G:\\repos\\agent",
-  "generatedAt": "2026-02-01T00:00:00Z",
+  "generatedAt": "2026-02-03T00:00:00Z",
   "generator": "LSP documentSymbol",
   "totals": {
     "directories": 52,
-    "files": 158,
-    "symbols": 969,
-    "exported": 738
+    "files": 152,
+    "symbols": 1041,
+    "exported": 790
   },
   "tree": {
     "Agent/": {
@@ -291,16 +291,16 @@
             "symbols": ["class FileSearchTool", "method Run"]
           },
           "ListDirectoriesTool.cs": {
-            "symbols": ["class ListDirectoriesTool", "method Run"]
+            "symbols": ["class ListDirectoriesTool", "field Name", "field Description", "method Run"]
           },
           "ListFilesTool.cs": {
-            "symbols": ["class ListFilesTool", "method Run"]
+            "symbols": ["class ListFilesTool", "field Name", "field Description", "method Run"]
           },
           "MoveTool.cs": {
-            "symbols": ["class MoveTool", "method Run"]
+            "symbols": ["class MoveTool", "field Name", "field Description", "method Run"]
           },
           "RemoveFileTool.cs": {
-            "symbols": ["class RemoveFileTool", "method Run", "method ValidatePathWithinLibrary"]
+            "symbols": ["class RemoveFileTool", "field Name", "field Description", "method Run", "method ValidatePathWithinLibrary"]
           }
         },
         "Memory/": {
@@ -340,26 +340,20 @@
           }
         },
         "Text/": {
-          "MarkdownParser.cs": {
-            "symbols": ["class MarkdownParser", "method Parse", "method ParsePlainText", "method ParseFrontMatter", "method ParseCodeBlocks", "method ParseHeadings", "method ParseAnchors", "method ParseSections"]
-          },
-          "MarkdownStructure.cs": {
-            "symbols": ["class MarkdownHeading", "class MarkdownCodeBlock", "class MarkdownFrontmatter", "class MarkdownAnchor", "class TextSection", "class MarkdownStructure", "class TextStructure"]
+          "TextToolBase.cs": {
+            "symbols": ["class TextToolBase", "method ValidateAndResolvePath", "method ComputeFileHash", "method ValidateExpectedHash"]
           },
           "TextCreateTool.cs": {
-            "symbols": ["class TextCreateTool", "method Run", "method ValidateExtension", "method ValidateNotExists", "method ResolvePath"]
+            "symbols": ["class TextCreateTool", "field Name", "field Description", "method Run", "method ValidateExtension", "method ValidateNotExists", "method EnsureDirectoryExists", "method ToRelativePath", "method ResolvePath", "method FormatFileSize"]
           },
-          "TextInspectTool.cs": {
-            "symbols": ["class TextInspectTool", "method Run", "method InspectStructure", "method InspectSearch", "method InspectLines"]
-          },
-          "TextPatchTool.cs": {
-            "symbols": ["class TextPatchTool", "method Run", "method ResolveTarget", "method ApplyReplace", "method ApplyInsert", "method ApplyDelete", "method ApplyReplaceLines"]
+          "TextEditTool.cs": {
+            "symbols": ["class TextEditTool", "field Name", "field Description", "method Run", "method ReplaceFirst", "method FindAllOccurrences", "method FindCaseInsensitiveSuggestion", "method ComputeAffectedLines", "method Truncate"]
           },
           "TextReadTool.cs": {
-            "symbols": ["class TextReadTool", "method Run", "method ResolveTarget", "method ResolveHeadingTarget", "method ResolveCodeBlockTarget", "method ResolveAnchorTarget", "method ResolveSectionTarget", "method ResolveSearchTarget"]
+            "symbols": ["class TextReadTool", "field Name", "field Description", "field MaxReturnLines", "method Run", "method ValidateAndResolvePath", "method ComputeFileHash"]
           },
           "TextSearchTool.cs": {
-            "symbols": ["class TextSearchTool", "method Run", "method EnumerateAllowedFiles", "method SearchFiles", "method SearchSingleFile", "method FindMatchesInLines"]
+            "symbols": ["class TextSearchTool", "field Name", "field Description", "class SearchParams", "class FileMatch", "class MatchResult", "method Run", "method RunSingleFileSearch", "method ValidateAndResolveSingleFilePath", "method EnumerateAllowedFiles", "method IsAllowedExtension", "method SearchFiles", "method SearchSingleFile", "method FindMatchesInLines", "method IsMatchingLine", "method CreateMatchResult", "method GetContextBefore", "method GetContextAfter", "method FindNearestHeading", "method Truncate", "method ToRelativePath", "method ResolvePath", "method BuildResultJson", "method ToFileMatchSummaryJson", "method ToFileMatchJson", "method ToMatchResultJson", "method ToJsonArray"]
           }
         },
         "Web/": {
@@ -758,33 +752,30 @@
           "symbols": ["class McpMoveTool"]
         },
         "McpRemoveFileTool.cs": {
-          "symbols": ["class McpRemoveFileTool"]
+          "symbols": ["class McpRemoveFileTool", "method McpRun"]
         },
         "McpTextCreateTool.cs": {
-          "symbols": ["class McpTextCreateTool"]
+          "symbols": ["class McpTextCreateTool", "method McpRun"]
         },
-        "McpTextInspectTool.cs": {
-          "symbols": ["class McpTextInspectTool"]
+        "McpTextEditTool.cs": {
+          "symbols": ["class McpTextEditTool", "method McpRun"]
         },
         "McpTextListDirectoriesTool.cs": {
           "symbols": ["class McpTextListDirectoriesTool"]
         },
         "McpTextListFilesTool.cs": {
-          "symbols": ["class McpTextListFilesTool"]
-        },
-        "McpTextPatchTool.cs": {
-          "symbols": ["class McpTextPatchTool"]
+          "symbols": ["class McpTextListFilesTool", "method McpRun"]
         },
         "McpTextReadTool.cs": {
-          "symbols": ["class McpTextReadTool"]
+          "symbols": ["class McpTextReadTool", "method McpRun"]
         },
         "McpTextSearchTool.cs": {
-          "symbols": ["class McpTextSearchTool"]
+          "symbols": ["class McpTextSearchTool", "method McpRun"]
         }
       },
       "Modules/": {
         "ConfigModule.cs": {
-          "symbols": ["class ConfigModule"]
+          "symbols": ["class ConfigModule", "method GetSettings", "method ConfigureMcp"]
         }
       },
       "Settings/": {
@@ -1244,23 +1235,20 @@
             }
           },
           "Text/": {
-            "MarkdownParserTests.cs": {
-              "symbols": ["class MarkdownParserTests"]
+            "TextToolBaseTests.cs": {
+              "symbols": ["class TextToolBaseTests", "method ComputeFileHash_SameContent_ReturnsSameHash", "method ComputeFileHash_DifferentContent_ReturnsDifferentHash", "method ValidateExpectedHash_Matching_DoesNotThrow", "method ValidateExpectedHash_Mismatching_ThrowsWithCurrentHash", "method ValidateAndResolvePath_ValidFile_ReturnsFullPath", "method ValidateAndResolvePath_PathOutsideVault_ThrowsException", "method ValidateAndResolvePath_FileNotFound_ThrowsException", "method ValidateAndResolvePath_DisallowedExtension_ThrowsException", "class TestableTextTool"]
             },
             "TextCreateToolTests.cs": {
-              "symbols": ["class TextCreateToolTests"]
+              "symbols": ["class TextCreateToolTests", "method Run_CreatesNewFile", "method Run_CreatesParentDirectories", "method Run_WithCreateDirectoriesFalse_FailsIfParentMissing", "method Run_FileAlreadyExists_ThrowsException", "method Run_DisallowedExtension_ThrowsException", "method Run_PathOutsideVault_ThrowsException", "method Run_ReturnsFileMetadata", "method Run_RelativePath_ResolvesCorrectly", "method Run_LeadingSlash_ResolvesCorrectly", "method Run_WithOverwriteTrue_OverwritesExistingFile", "method Run_WithOverwriteFalse_FileExists_ThrowsException", "class TestableTextCreateTool"]
             },
-            "TextInspectToolTests.cs": {
-              "symbols": ["class TextInspectToolTests"]
-            },
-            "TextPatchToolTests.cs": {
-              "symbols": ["class TextPatchToolTests"]
+            "TextEditToolTests.cs": {
+              "symbols": ["class TextEditToolTests", "method Run_SingleOccurrence_ReplacesText", "method Run_MultipleOccurrences_ReplaceAllFalse_Throws", "method Run_MultipleOccurrences_ReplaceAllTrue_ReplacesAll", "method Run_NotFound_Throws", "method Run_CaseInsensitiveMatch_ThrowsWithSuggestion", "method Run_MultilineOldString_ReplacesAcrossLines", "method Run_ReturnsFileHash", "method Run_ReturnsAffectedLines", "method Run_AtomicWrite_NoTmpFileRemains", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "method Run_FileNotFound_Throws", "class TestableTextEditTool"]
             },
             "TextReadToolTests.cs": {
-              "symbols": ["class TextReadToolTests"]
+              "symbols": ["class TextReadToolTests", "method Run_ReturnsWholeFileWithLineNumbers", "method Run_ReturnsFileHash", "method Run_ReturnsTotalLines", "method Run_WithOffset_StartsFromSpecifiedLine", "method Run_WithLimit_ReturnsLimitedLines", "method Run_WithOffsetAndLimit_ReturnsPaginatedContent", "method Run_LargeFile_TruncatesAt500Lines", "method Run_SmallFile_NotTruncated", "method Run_FileNotFound_Throws", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "class TestableTextReadTool"]
             },
             "TextSearchToolTests.cs": {
-              "symbols": ["class TextSearchToolTests"]
+              "symbols": ["class TextSearchToolTests", "method Run_FindsMatchesAcrossMultipleFiles", "method Run_WithFilePattern_FiltersFiles", "method Run_WithSubdirectory_SearchesRecursively", "method Run_WithRegex_MatchesPattern", "method Run_IncludesNearestHeading", "method Run_WithContextLines_IncludesContext", "method Run_RespectsMaxResults", "method Run_CaseInsensitiveByDefault", "method Run_NoMatches_ReturnsEmptyResults", "method Run_SkipsDisallowedExtensions", "method Run_RelativePathsInResults", "method Run_WithFilePath_SearchesSingleFile", "method Run_WithFilePath_IgnoresDirectoryPathAndFilePattern", "method Run_WithFilePath_FileNotFound_Throws", "method Run_WithFilePath_OutsideVault_Throws", "method Run_WithFilePath_DisallowedExtension_Throws", "method Run_WithFilePath_NoMatches_ReturnsEmpty", "method Run_WithFilePath_WithRegex_MatchesPattern", "method Run_WithOutputModeFilesOnly_ReturnsFilePathsAndCounts", "method Run_WithOutputModeContent_ReturnsFullMatches", "method Run_WithInvalidOutputMode_Throws", "class TestableTextSearchTool"]
             }
           }
         },
