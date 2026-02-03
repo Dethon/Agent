@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Shouldly;
+using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
 
 namespace Tests.Integration.Clients;

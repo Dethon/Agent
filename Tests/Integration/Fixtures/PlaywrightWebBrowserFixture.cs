@@ -4,7 +4,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Infrastructure.Clients.Browser;
 
-namespace Tests.Integration.Clients;
+namespace Tests.Integration.Fixtures;
 
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {

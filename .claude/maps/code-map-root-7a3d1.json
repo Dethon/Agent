@@ -1,11 +1,11 @@
 {
   "root": "G:\\repos\\agent",
-  "generatedAt": "2026-02-03T12:00:00Z",
+  "generatedAt": "2026-02-03T18:00:00Z",
   "generator": "LSP documentSymbol",
   "totals": {
     "directories": 52,
     "files": 152,
-    "symbols": 1043,
+    "symbols": 1086,
     "exported": 790
   },
   "tree": {
@@ -511,7 +511,7 @@
             "symbols": ["class ModalDismisser"]
           },
           "PlaywrightWebBrowser.cs": {
-            "symbols": ["class PlaywrightWebBrowser : IWebBrowser", "method NavigateAsync", "method ClickAsync", "method GetCurrentPageAsync", "method InspectAsync", "method CloseSessionAsync", "method EnsureInitializedAsync", "method ScrollToLoadAsync", "method WaitForDomStabilityAsync", "method ContainsCaptcha", "method TrySolveCaptchaAsync", "method DisposeAsync"]
+            "symbols": ["class PlaywrightWebBrowser : IWebBrowser", "field ChromeMajorVersion", "field UserAgent", "field StealthScript", "field MaxCaptchaRetries", "method NavigateAsync", "method ClickAsync", "method GetCurrentPageAsync", "method InspectAsync", "method CloseSessionAsync", "method ClearCookiesAsync", "method EnsureInitializedAsync", "method PerformClickAsync", "method MapWaitStrategy", "method WaitForSelectorAsync", "method ScrollToLoadAsync", "method WaitForDomStabilityAsync", "method ValidateUrl", "method CreateErrorResult", "method ContainsCaptcha", "method TrySolveCaptchaAsync", "method ExtractCaptchaUrl", "method SetDataDomeCookieAsync", "method DisposeAsync"]
           }
         },
         "Messaging/": {
@@ -1424,10 +1424,10 @@
             "symbols": ["class OneShotChatMessengerClientTests"]
           },
           "PlaywrightWebBrowserFixture.cs": {
-            "symbols": ["class PlaywrightWebBrowserFixture"]
+            "symbols": ["class PlaywrightWebBrowserFixture", "prop Browser", "prop IsAvailable", "prop InitializationError", "method InitializeAsync", "method TryInitializeLocalAsync", "method TryInitializeContainerAsync", "method GetWebSocketDebuggerUrlAsync", "method ClearContextStateAsync", "method DisposeAsync", "class PlaywrightWebBrowserIntegrationCollection"]
           },
           "PlaywrightWebBrowserIntegrationTests.cs": {
-            "symbols": ["class PlaywrightWebBrowserIntegrationTests"]
+            "symbols": ["class PlaywrightWebBrowserIntegrationTests", "method InitializeAsync", "method DisposeAsync", "method GetUniqueSessionId", "method NavigateAsync_WithSimplePage_ReturnsContent", "method NavigateAsync_WithWikipedia_ReturnsContentWithLinks", "method NavigateAsync_WithCssSelector_ExtractsSpecificContent", "method NavigateAsync_SessionPersistsAcrossCalls", "method ClickAsync_WithValidSelector_ClicksElement", "method ClickAsync_WithTextFilter_ClicksMatchingElement", "method ClickAsync_WithNonexistentSelector_ReturnsElementNotFound", "method ClickAsync_WithNoSession_ReturnsSessionNotFound", "method GetCurrentPageAsync_WithValidSession_ReturnsContent", "method GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound", "method CloseSessionAsync_ClosesSession", "method NavigateAsync_WithInvalidUrl_ReturnsError", "method NavigateAsync_WithNonexistentDomain_ReturnsError", "method NavigateAsync_MultipleSessions_AreIndependent", "method ClickAsync_HoverAction_HoversElement", "method ClickAsync_FillAndPressEnter_SubmitsForm", "method ClickAsync_ClearAction_ClearsInputField", "method NavigateAsync_WithWikipediaUrls_ChecksForRedirect"]
           },
           "QBittorrentDownloadClientTests.cs": {
             "symbols": ["class QBittorrentDownloadClientTests"]
