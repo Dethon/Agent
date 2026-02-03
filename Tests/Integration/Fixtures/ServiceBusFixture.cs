@@ -32,7 +32,7 @@ public class ServiceBusFixture : IAsyncLifetime
 
         var configPath = Path.Combine(AppContext.BaseDirectory, "Integration", "Fixtures", "ServiceBusConfig.json");
 
-        _serviceBusContainer = new ServiceBusBuilder()
+        _serviceBusContainer = new ServiceBusBuilder("mcr.microsoft.com/azure-messaging/servicebus-emulator:latest")
             .WithAcceptLicenseAgreement(true)
             .WithConfig(configPath)
             .Build();
@@ -116,7 +116,7 @@ public class ServiceBusFixture : IAsyncLifetime
     {
         var threadStateStoreMock = new Mock<IThreadStateStore>();
         threadStateStoreMock
-            .Setup(s => s.SaveTopicAsync(It.IsAny<Domain.DTOs.WebChat.TopicMetadata>()))
+            .Setup(s => s.SaveTopicAsync(It.IsAny<global::Domain.DTOs.WebChat.TopicMetadata>()))
             .Returns(Task.CompletedTask);
 
         var sourceMapper = new ServiceBusSourceMapper(
