@@ -50,7 +50,7 @@ public static class KnowledgeBasePrompt
         **Discovery Tools (use these first):**
         - `ListDirectories` - Browse vault folder structure
         - `ListFiles` - List files in a directory
-        - `TextSearch` - Search for text/patterns across all vault files
+        - `TextSearch` - Search for text/patterns across vault or within a single file
 
         **Document Tools:**
         - `TextRead` - Read file content with line numbers, supports pagination (offset/limit)
