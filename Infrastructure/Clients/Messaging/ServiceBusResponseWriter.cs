@@ -4,11 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
 
-public sealed class ServiceBusResponseWriter(
+public class ServiceBusResponseWriter(
     ServiceBusSender sender,
     ILogger<ServiceBusResponseWriter> logger)
 {
-    public async Task WriteResponseAsync(
+    public virtual async Task WriteResponseAsync(
         string sourceId,
         string agentId,
         string response,
