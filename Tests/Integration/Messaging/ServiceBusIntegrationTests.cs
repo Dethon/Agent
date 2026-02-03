@@ -1,7 +1,6 @@
 using System.Text.Json;
-using Azure.Messaging.ServiceBus;
-using Domain.Agents;
-using Domain.DTOs;
+using global::Domain.Agents;
+using global::Domain.DTOs;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
