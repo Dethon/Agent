@@ -141,8 +141,8 @@ public class CompositeChatMessengerClientTests
         // Assert
         receivedUpdates1.Count.ShouldBe(1);
         receivedUpdates2.Count.ShouldBe(1);
-        receivedUpdates1[0].Item2.Contents.ShouldContain(c => c is TextContent tc && tc.Text == "Hello");
-        receivedUpdates2[0].Item2.Contents.ShouldContain(c => c is TextContent tc && tc.Text == "Hello");
+        receivedUpdates1[0].Item2.Contents.OfType<TextContent>().ShouldContain(tc => tc.Text == "Hello");
+        receivedUpdates2[0].Item2.Contents.OfType<TextContent>().ShouldContain(tc => tc.Text == "Hello");
     }
 
     [Fact]
