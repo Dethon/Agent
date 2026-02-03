@@ -1,11 +1,11 @@
 {
   "root": "G:\\repos\\agent",
-  "generatedAt": "2026-02-03T00:00:00Z",
+  "generatedAt": "2026-02-03T12:00:00Z",
   "generator": "LSP documentSymbol",
   "totals": {
     "directories": 52,
     "files": 152,
-    "symbols": 1041,
+    "symbols": 1043,
     "exported": 790
   },
   "tree": {
@@ -341,7 +341,7 @@
         },
         "Text/": {
           "TextToolBase.cs": {
-            "symbols": ["class TextToolBase", "method ValidateAndResolvePath", "method ComputeFileHash", "method ValidateExpectedHash"]
+            "symbols": ["class TextToolBase", "prop VaultPath", "prop AllowedExtensions", "method ValidateAndResolvePath", "method ComputeFileHash", "method ValidateExpectedHash"]
           },
           "TextCreateTool.cs": {
             "symbols": ["class TextCreateTool", "field Name", "field Description", "method Run", "method ValidateExtension", "method ValidateNotExists", "method EnsureDirectoryExists", "method ToRelativePath", "method ResolvePath", "method FormatFileSize"]
@@ -350,10 +350,10 @@
             "symbols": ["class TextEditTool", "field Name", "field Description", "method Run", "method ReplaceFirst", "method FindAllOccurrences", "method FindCaseInsensitiveSuggestion", "method ComputeAffectedLines", "method Truncate"]
           },
           "TextReadTool.cs": {
-            "symbols": ["class TextReadTool", "field Name", "field Description", "field MaxReturnLines", "method Run", "method ValidateAndResolvePath", "method ComputeFileHash"]
+            "symbols": ["class TextReadTool", "field Name", "field Description", "field MaxReturnLines", "method Run"]
           },
           "TextSearchTool.cs": {
-            "symbols": ["class TextSearchTool", "field Name", "field Description", "class SearchParams", "class FileMatch", "class MatchResult", "method Run", "method RunSingleFileSearch", "method ValidateAndResolveSingleFilePath", "method EnumerateAllowedFiles", "method IsAllowedExtension", "method SearchFiles", "method SearchSingleFile", "method FindMatchesInLines", "method IsMatchingLine", "method CreateMatchResult", "method GetContextBefore", "method GetContextAfter", "method FindNearestHeading", "method Truncate", "method ToRelativePath", "method ResolvePath", "method BuildResultJson", "method ToFileMatchSummaryJson", "method ToFileMatchJson", "method ToMatchResultJson", "method ToJsonArray"]
+            "symbols": ["class TextSearchTool", "field Name", "field Description", "class SearchParams", "class FileMatch", "class MatchResult", "method Run", "method RunSingleFileSearch", "method EnumerateAllowedFiles", "method IsAllowedExtension", "method SearchFiles", "method SearchSingleFile", "method FindMatchesInLines", "method IsMatchingLine", "method CreateMatchResult", "method GetContextBefore", "method GetContextAfter", "method FindNearestHeading", "method Truncate", "method ToRelativePath", "method ResolvePath", "method BuildResultJson", "method ToFileMatchSummaryJson", "method ToFileMatchJson", "method ToMatchResultJson", "method ToJsonArray"]
           }
         },
         "Web/": {
@@ -1236,13 +1236,13 @@
           },
           "Text/": {
             "TextToolBaseTests.cs": {
-              "symbols": ["class TextToolBaseTests", "method ComputeFileHash_SameContent_ReturnsSameHash", "method ComputeFileHash_DifferentContent_ReturnsDifferentHash", "method ValidateExpectedHash_Matching_DoesNotThrow", "method ValidateExpectedHash_Mismatching_ThrowsWithCurrentHash", "method ValidateAndResolvePath_ValidFile_ReturnsFullPath", "method ValidateAndResolvePath_PathOutsideVault_ThrowsException", "method ValidateAndResolvePath_FileNotFound_ThrowsException", "method ValidateAndResolvePath_DisallowedExtension_ThrowsException", "class TestableTextTool"]
+              "symbols": ["class TextToolBaseTests", "method ComputeFileHash_SameContent_ReturnsSameHash", "method ComputeFileHash_DifferentContent_ReturnsDifferentHash", "method ValidateExpectedHash_Matching_DoesNotThrow", "method ValidateExpectedHash_Mismatching_ThrowsWithCurrentHash", "method ValidateAndResolvePath_ValidFile_ReturnsFullPath", "method ValidateAndResolvePath_PathOutsideVault_ThrowsException", "method ValidateAndResolvePath_FileNotFound_ThrowsException", "method ValidateAndResolvePath_DisallowedExtension_ThrowsException", "method CreateTestFile", "class TestableTextTool"]
             },
             "TextCreateToolTests.cs": {
               "symbols": ["class TextCreateToolTests", "method Run_CreatesNewFile", "method Run_CreatesParentDirectories", "method Run_WithCreateDirectoriesFalse_FailsIfParentMissing", "method Run_FileAlreadyExists_ThrowsException", "method Run_DisallowedExtension_ThrowsException", "method Run_PathOutsideVault_ThrowsException", "method Run_ReturnsFileMetadata", "method Run_RelativePath_ResolvesCorrectly", "method Run_LeadingSlash_ResolvesCorrectly", "method Run_WithOverwriteTrue_OverwritesExistingFile", "method Run_WithOverwriteFalse_FileExists_ThrowsException", "class TestableTextCreateTool"]
             },
             "TextEditToolTests.cs": {
-              "symbols": ["class TextEditToolTests", "method Run_SingleOccurrence_ReplacesText", "method Run_MultipleOccurrences_ReplaceAllFalse_Throws", "method Run_MultipleOccurrences_ReplaceAllTrue_ReplacesAll", "method Run_NotFound_Throws", "method Run_CaseInsensitiveMatch_ThrowsWithSuggestion", "method Run_MultilineOldString_ReplacesAcrossLines", "method Run_ReturnsFileHash", "method Run_ReturnsAffectedLines", "method Run_AtomicWrite_NoTmpFileRemains", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "method Run_FileNotFound_Throws", "class TestableTextEditTool"]
+              "symbols": ["class TextEditToolTests", "method Run_SingleOccurrence_ReplacesText", "method Run_MultipleOccurrences_ReplaceAllFalse_Throws", "method Run_MultipleOccurrences_ReplaceAllTrue_ReplacesAll", "method Run_NotFound_Throws", "method Run_CaseInsensitiveMatch_ThrowsWithSuggestion", "method Run_MultilineOldString_ReplacesAcrossLines", "method Run_ReturnsFileHash", "method Run_ReturnsAffectedLines", "method Run_AtomicWrite_NoTmpFileRemains", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "method Run_FileNotFound_Throws", "method Run_WithMatchingExpectedHash_Succeeds", "method Run_WithMismatchingExpectedHash_Throws", "class TestableTextEditTool"]
             },
             "TextReadToolTests.cs": {
               "symbols": ["class TextReadToolTests", "method Run_ReturnsWholeFileWithLineNumbers", "method Run_ReturnsFileHash", "method Run_ReturnsTotalLines", "method Run_WithOffset_StartsFromSpecifiedLine", "method Run_WithLimit_ReturnsLimitedLines", "method Run_WithOffsetAndLimit_ReturnsPaginatedContent", "method Run_LargeFile_TruncatesAt500Lines", "method Run_SmallFile_NotTruncated", "method Run_FileNotFound_Throws", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "class TestableTextReadTool"]
