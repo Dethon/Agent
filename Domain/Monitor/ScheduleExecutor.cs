@@ -47,14 +47,12 @@ public class ScheduleExecutor(
                 return;
             }
 
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation(
-                    "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
-                    schedule.Id,
-                    schedule.Agent.Name,
-                    agentKey.ThreadId);
-            }
+            logger.LogInformation(
+                "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
+                schedule.Id,
+                schedule.Agent.Name,
+                agentKey.ThreadId);
+
 
             await messengerClient.StartScheduledStreamAsync(agentKey, ct);
 
@@ -64,13 +62,10 @@ public class ScheduleExecutor(
         }
         else
         {
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation(
-                    "Executing schedule {ScheduleId} for agent {AgentName} silently (no notification support)",
-                    schedule.Id,
-                    schedule.Agent.Name);
-            }
+            logger.LogInformation(
+                "Executing schedule {ScheduleId} for agent {AgentName} silently (no notification support)",
+                schedule.Id,
+                schedule.Agent.Name);
 
             agentKey = new AgentKey(0, 0, schedule.Agent.Id);
 

@@ -14,10 +14,7 @@ public static class TaskExtensions
             }
             catch (OperationCanceledException ex)
             {
-                if (logger.IsEnabled(LogLevel.Information))
-                {
-                    logger.LogInformation(ex, message, arg);
-                }
+                logger.LogInformation(ex, message, arg);
             }
             catch (Exception ex)
             {

@@ -23,13 +23,10 @@ public class ScheduleDispatcher(
                 await store.UpdateLastRunAsync(schedule.Id, DateTime.UtcNow, nextRun, ct);
 
                 await scheduleChannel.Writer.WriteAsync(schedule, ct);
-                if (logger.IsEnabled(LogLevel.Information))
-                {
-                    logger.LogInformation(
-                        "Dispatched schedule {ScheduleId} for agent {AgentName}",
-                        schedule.Id,
-                        schedule.Agent.Name);
-                }
+                logger.LogInformation(
+                    "Dispatched schedule {ScheduleId} for agent {AgentName}",
+                    schedule.Id,
+                    schedule.Agent.Name);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

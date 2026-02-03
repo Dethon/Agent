@@ -8,7 +8,7 @@ public class ServiceBusResponseWriter(
     ServiceBusSender sender,
     ILogger<ServiceBusResponseWriter> logger)
 {
-    public virtual async Task WriteResponseAsync(
+    public async Task WriteResponseAsync(
         string sourceId,
         string agentId,
         string response,
