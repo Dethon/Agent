@@ -30,7 +30,7 @@
     <PackageReference Include="NRedisStack" Version="1.2.0"/>
     <PackageReference Include="Polly" Version="8.6.5"/>
     <PackageReference Include="Polly.Extensions.Http" Version="3.0.0"/>
-    <PackageReference Include="Microsoft.Playwright" Version="1.57.0"/>
+    <PackageReference Include="Microsoft.Playwright" Version="1.58.0"/>
     <PackageReference Include="SmartReader" Version="0.11.0"/>
     <PackageReference Include="Spectre.Console" Version="0.54.0"/>
     <PackageReference Include="StackExchange.Redis" Version="2.10.1"/>
