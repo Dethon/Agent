@@ -42,21 +42,21 @@ public static class KnowledgeBasePrompt
            targeting (headings, text matches) rather than line numbers when possible—they're more 
            stable across edits.
 
-        4. **Verify Before Acting**: Always inspect a file's structure before attempting edits. 
-           Use TextInspect first, then TextRead if you need to see content, then TextPatch to modify.
+        4. **Verify Before Acting**: Always read a file before attempting edits.
+           Use TextRead to see content, then TextEdit to modify.
 
         ### Available Tools
 
         **Discovery Tools (use these first):**
         - `ListDirectories` - Browse vault folder structure
         - `ListFiles` - List files in a directory
-        - `TextSearch` - Search for text/patterns across all vault files
+        - `TextSearch` - Search for text/patterns across vault or within a single file
 
         **Document Tools:**
-        - `TextInspect` - Understand document structure (headings, code blocks, sections)
-        - `TextRead` - Read specific sections by heading, line range, or search
-        - `TextPatch` - Modify documents with surgical precision
-        - `TextCreate` - Create a new text/markdown file
+        - `TextRead` - Read file content with line numbers, supports pagination (offset/limit)
+        - `TextSearch` - Search for text/patterns across vault or within a single file
+        - `TextEdit` - Edit files by replacing exact string matches (oldString → newString)
+        - `TextCreate` - Create a new text/markdown file (supports overwrite)
 
         **File Tools:**
         - `Move` - Move/rename files or directories (absolute paths from ListDirectories/ListFiles)
@@ -66,9 +66,8 @@ public static class KnowledgeBasePrompt
 
         **Finding Information:**
         1. Use TextSearch to locate content across the vault
-        2. Use TextInspect to understand the file structure
-        3. Use TextRead to retrieve the relevant section
-        4. Summarize or present the information to the user
+        2. Use TextRead to retrieve the relevant file or section
+        3. Summarize or present the information to the user
 
         **Exploring the Vault:**
         1. Use ListDirectories to see the folder structure
@@ -76,10 +75,8 @@ public static class KnowledgeBasePrompt
         3. Present an overview to help the user navigate
 
         **Editing Documents:**
-        1. Use TextInspect with mode="structure" to understand the document
-        2. Use TextRead to see the current content of the target section
-        3. Use TextPatch with appropriate targeting to make changes
-        4. If making multiple edits, prefer heading-based targeting (stable) over line numbers (shift after edits)
+        1. Use TextRead to see the current content of the file
+        2. Use TextEdit to replace specific text (oldString → newString)
 
         **Creating Content:**
         1. If adding to existing file: inspect structure, find appropriate location, use insert
@@ -91,20 +88,22 @@ public static class KnowledgeBasePrompt
         2. Propose reorganization plans before executing
         3. Make changes incrementally, verifying each step
 
-        ### Targeting Best Practices
+        ### Editing Best Practices
 
-        **Prefer semantic targets (stable across edits):**
-        - `heading: "## Installation"` - targets by heading text
-        - `text: "specific phrase"` - targets by content
-        - `section: "[database]"` - targets by section marker
+        **For text changes (fix typos, update values, rewrite sentences):**
+        → Use TextEdit with oldString/newString. It finds exact text and replaces it.
 
-        **Use line numbers only when necessary:**
-        - After insertions/deletions, line numbers shift
-        - If you must use lines, re-inspect after each edit
+        **For inserting content:**
+        → Use TextEdit — include surrounding context in oldString, add new lines in newString.
 
-        **For insertions:**
-        - `afterHeading: "## Setup"` - insert content after a heading
-        - `beforeHeading: "## Conclusion"` - insert content before a heading
+        **For deleting content:**
+        → Use TextEdit — include content in oldString, omit it from newString.
+
+        **For multi-edit workflows:**
+        → After edits, use the affected lines in the response to orient yourself.
+
+        **For bulk replacements:**
+        → Use TextEdit with replaceAll=true to replace all occurrences at once.
 
         ### Response Style
 

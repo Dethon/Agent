@@ -43,7 +43,9 @@
       "Bash(dotnet:*)",
       "Bash(echo:*)",
       "Bash(gh api:*)",
-      "Bash(gh search:*)"
+      "Bash(gh search:*)",
+      "Skill(plan-creator)",
+      "Bash(git rm:*)"
     ]
   }
 }

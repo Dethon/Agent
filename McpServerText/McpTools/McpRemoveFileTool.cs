@@ -17,9 +17,9 @@ public class McpRemoveFileTool(
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
         [Description("Absolute path to the file (from ListFiles)")]
-        string path,
+        string filePath,
         CancellationToken cancellationToken)
     {
-        return ToolResponse.Create(await Run(path, cancellationToken));
+        return ToolResponse.Create(await Run(filePath, cancellationToken));
     }
 }
