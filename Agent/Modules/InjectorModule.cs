@@ -188,22 +188,35 @@ public static class InjectorModule
                     return client.CreateSender(sbSettings.ResponseQueueName);
                 })
                 .AddSingleton<ServiceBusConversationMapper>()
+                .AddSingleton(sp => new ServiceBusMessageParser(defaultAgentId))
+                .AddSingleton(sp => new ServiceBusPromptReceiver(
+                    sp.GetRequiredService<ServiceBusConversationMapper>(),
+                    sp.GetRequiredService<ILogger<ServiceBusPromptReceiver>>()))
                 .AddSingleton(sp => new ServiceBusResponseWriter(
                     sp.GetRequiredService<ServiceBusSender>(),
                     sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
-                .AddSingleton<ServiceBusPromptReceiver>()
-                .AddSingleton<ServiceBusResponseHandler>()
+                .AddSingleton(sp => new ServiceBusResponseHandler(
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ServiceBusResponseWriter>(),
+                    defaultAgentId,
+                    sp.GetRequiredService<ILogger<ServiceBusResponseHandler>>()))
                 .AddSingleton(sp => new ServiceBusChatMessengerClient(
                     sp.GetRequiredService<ServiceBusPromptReceiver>(),
                     sp.GetRequiredService<ServiceBusResponseHandler>(),
                     defaultAgentId))
                 .AddSingleton<IMessageSourceRouter, MessageSourceRouter>()
-                .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient([
-                    sp.GetRequiredService<WebChatMessengerClient>(),
-                    sp.GetRequiredService<ServiceBusChatMessengerClient>()
-                ],
-                sp.GetRequiredService<IMessageSourceRouter>()))
-                .AddHostedService<ServiceBusProcessorHost>();
+                .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient(
+                    [
+                        sp.GetRequiredService<WebChatMessengerClient>(),
+                        sp.GetRequiredService<ServiceBusChatMessengerClient>()
+                    ],
+                    sp.GetRequiredService<IMessageSourceRouter>()))
+                .AddSingleton(sp => new ServiceBusProcessorHost(
+                    sp.GetRequiredService<ServiceBusProcessor>(),
+                    sp.GetRequiredService<ServiceBusMessageParser>(),
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ILogger<ServiceBusProcessorHost>>()))
+                .AddHostedService(sp => sp.GetRequiredService<ServiceBusProcessorHost>());
         }
     }
 }
