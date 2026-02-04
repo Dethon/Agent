@@ -1,6 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Domain.Routers;
 using Moq;
 using Shouldly;
 

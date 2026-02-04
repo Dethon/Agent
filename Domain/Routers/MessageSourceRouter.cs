@@ -1,7 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Domain.Routers;
 
 public sealed class MessageSourceRouter : IMessageSourceRouter
 {

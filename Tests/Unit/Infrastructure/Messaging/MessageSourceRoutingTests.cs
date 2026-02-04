@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Routers;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;

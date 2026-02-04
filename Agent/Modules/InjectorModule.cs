@@ -5,6 +5,7 @@ using Azure.Messaging.ServiceBus;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
+using Domain.Routers;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging;
 using Infrastructure.Clients.ToolApproval;
