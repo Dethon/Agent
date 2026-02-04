@@ -277,8 +277,9 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
             client.ProcessResponseStreamAsync(updates, CancellationToken.None));
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
-        string content, long chatId, long? threadId, string? agentId)
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
+        CreateUpdatesWithContent(
+            string content, long chatId, long? threadId, string? agentId)
     {
         var key = new AgentKey(chatId, threadId ?? 0, agentId);
         await Task.CompletedTask;
@@ -286,15 +287,15 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Telegram);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content });
+        }, new AiResponse { Content = content }, MessageSource.Telegram);
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning, long chatId, long? threadId, string? agentId)
     {
@@ -304,20 +305,20 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
-        }, null);
+        }, null, MessageSource.Telegram);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Telegram);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content, Reasoning = reasoning });
+        }, new AiResponse { Content = content, Reasoning = reasoning }, MessageSource.Telegram);
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
         CreateUpdatesWithContentAndToolCall(
             string content, string toolName, object args, long chatId, long? threadId, string? agentId)
     {
@@ -328,16 +329,16 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Telegram);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new FunctionCallContent("call-1", toolName, args as IDictionary<string, object?>)]
-        }, new AiResponse { Content = content, ToolCalls = toolCalls });
+        }, new AiResponse { Content = content, ToolCalls = toolCalls }, MessageSource.Telegram);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, null);
+        }, null, MessageSource.Telegram);
     }
 }

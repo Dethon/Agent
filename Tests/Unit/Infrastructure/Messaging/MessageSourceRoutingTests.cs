@@ -72,7 +72,7 @@ public class MessageSourceRoutingTests
     }
 
     [Fact]
-    public async Task ProcessResponseStreamAsync_UnknownChatIdBroadcastsToAll()
+    public async Task ProcessResponseStreamAsync_CliSourceBroadcastsToWebUiOnly()
     {
         // Arrange
         var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
@@ -83,21 +83,21 @@ public class MessageSourceRoutingTests
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // Create response with Unknown source (no source tracking needed)
+        // Create response with Cli source (only WebUI should receive it as universal viewer)
         var response = (
             new AgentKey(789, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
             (AiResponse?)null,
-            MessageSource.Unknown);
+            MessageSource.Cli);
 
         // Act
         await composite.ProcessResponseStreamAsync(
             new[] { response }.ToAsyncEnumerable(),
             CancellationToken.None);
 
-        // Assert - Both should receive it as fail-safe (unknown source defaults to broadcast)
+        // Assert - Only WebUI receives it (universal viewer), ServiceBus doesn't match source
         webUiUpdates.Count.ShouldBe(1);
-        serviceBusUpdates.Count.ShouldBe(1);
+        serviceBusUpdates.Count.ShouldBe(0);
     }
 
     [Fact]
@@ -125,8 +125,8 @@ public class MessageSourceRoutingTests
             CancellationToken.None);
 
         // Assert
-        webUiUpdates.Count.ShouldBe(1);  // WebUI receives all
-        telegramUpdates.Count.ShouldBe(1);  // Telegram receives its own
+        webUiUpdates.Count.ShouldBe(1); // WebUI receives all
+        telegramUpdates.Count.ShouldBe(1); // Telegram receives its own
     }
 
     [Fact]

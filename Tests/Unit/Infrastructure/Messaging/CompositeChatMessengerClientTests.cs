@@ -192,8 +192,8 @@ public class CompositeChatMessengerClientTests
 
         var client1 = new Mock<IChatMessengerClient>();
         client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
-        client1.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
-                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<MessageSource>(), It.IsAny<CancellationToken>()))
+        client1.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
+                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedKey);
 
         var client2 = new Mock<IChatMessengerClient>();
@@ -202,16 +202,16 @@ public class CompositeChatMessengerClientTests
         var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
 
         // Act
-        var result = await composite.CreateTopicIfNeededAsync(123, 456, "agent1", "topic", MessageSource.WebUi);
+        var result = await composite.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic");
 
         // Assert
         result.ShouldBe(expectedKey);
-        client1.Verify(c => c.CreateTopicIfNeededAsync(123, 456, "agent1", "topic", MessageSource.WebUi,
+        client1.Verify(c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic",
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public async Task StartScheduledStreamAsync_DelegatesToAllClients()
+    public async Task StartScheduledStreamAsync_DelegatesToMatchingClient()
     {
         // Arrange
         var agentKey = new AgentKey(1, 1, "agent");
@@ -223,7 +223,7 @@ public class CompositeChatMessengerClientTests
             .Returns(Task.CompletedTask);
 
         var client2 = new Mock<IChatMessengerClient>();
-        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
+        client2.Setup(c => c.Source).Returns(MessageSource.ServiceBus);
         client2.Setup(c => c.StartScheduledStreamAsync(It.IsAny<AgentKey>(), It.IsAny<MessageSource>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -233,10 +233,10 @@ public class CompositeChatMessengerClientTests
         // Act
         await composite.StartScheduledStreamAsync(agentKey, MessageSource.WebUi);
 
-        // Assert
+        // Assert - Only WebUi client should be called
         client1.Verify(c => c.StartScheduledStreamAsync(agentKey, MessageSource.WebUi,
             It.IsAny<CancellationToken>()), Times.Once);
-        client2.Verify(c => c.StartScheduledStreamAsync(agentKey, MessageSource.WebUi,
-            It.IsAny<CancellationToken>()), Times.Once);
+        client2.Verify(c => c.StartScheduledStreamAsync(It.IsAny<AgentKey>(), It.IsAny<MessageSource>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 }

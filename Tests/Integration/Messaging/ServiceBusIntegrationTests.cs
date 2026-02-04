@@ -223,9 +223,10 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         prompts[0].ChatId.ShouldNotBe(prompts[1].ChatId);
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateResponseStream(
-        AgentKey key,
-        string responseText)
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
+        CreateResponseStream(
+            AgentKey key,
+            string responseText)
     {
         await Task.CompletedTask;
 
@@ -233,12 +234,12 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         {
             MessageId = "msg-1",
             Contents = [new TextContent(responseText)]
-        }, null);
+        }, null, MessageSource.ServiceBus);
 
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new StreamCompleteContent()]
-        }, new AiResponse { Content = responseText });
+        }, new AiResponse { Content = responseText }, MessageSource.ServiceBus);
     }
 }

@@ -206,8 +206,9 @@ public class OneShotChatMessengerClientTests
         exists.ShouldBeTrue();
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
-        string content)
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
+        CreateUpdatesWithContent(
+            string content)
     {
         var key = new AgentKey(1, 1);
         await Task.CompletedTask;
@@ -215,15 +216,15 @@ public class OneShotChatMessengerClientTests
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content });
+        }, new AiResponse { Content = content }, MessageSource.Cli);
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning)
     {
@@ -233,16 +234,16 @@ public class OneShotChatMessengerClientTests
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content, Reasoning = reasoning });
+        }, new AiResponse { Content = content, Reasoning = reasoning }, MessageSource.Cli);
     }
 }

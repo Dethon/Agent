@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -50,7 +51,7 @@ public class ServiceBusChatMessengerClientTests
     public async Task CreateTopicIfNeededAsync_WithExistingChatAndThread_ReturnsAgentKey()
     {
         // Act
-        var result = await _client.CreateTopicIfNeededAsync(123, 456, "agent1", "test topic");
+        var result = await _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, "agent1", "test topic");
 
         // Assert
         result.ChatId.ShouldBe(123);
@@ -83,6 +84,6 @@ public class ServiceBusChatMessengerClientTests
     {
         // Act & Assert - should not throw
         await Should.NotThrowAsync(async () =>
-            await _client.StartScheduledStreamAsync(new AgentKey(1, 1, "agent1")));
+            await _client.StartScheduledStreamAsync(new AgentKey(1, 1, "agent1"), MessageSource.ServiceBus));
     }
 }
