@@ -1,13 +1,43 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 
 namespace Infrastructure.Clients.Messaging;
 
-public class ServiceBusResponseWriter(
-    ServiceBusSender sender,
-    ILogger<ServiceBusResponseWriter> logger)
+public class ServiceBusResponseWriter
 {
+    private readonly ServiceBusSender _sender;
+    private readonly ILogger<ServiceBusResponseWriter> _logger;
+    private readonly ResiliencePipeline _retryPipeline;
+
+    public ServiceBusResponseWriter(
+        ServiceBusSender sender,
+        ILogger<ServiceBusResponseWriter> logger)
+    {
+        _sender = sender;
+        _logger = logger;
+        _retryPipeline = new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                ShouldHandle = new PredicateBuilder()
+                    .Handle<ServiceBusException>(ex => ex.IsTransient)
+                    .Handle<TimeoutException>(),
+                MaxRetryAttempts = 3,
+                Delay = TimeSpan.FromSeconds(1),
+                BackoffType = DelayBackoffType.Exponential,
+                OnRetry = args =>
+                {
+                    logger.LogWarning(args.Outcome.Exception,
+                        "Retry {Attempt}/3 for Service Bus send after {Delay}s",
+                        args.AttemptNumber, args.RetryDelay.TotalSeconds);
+                    return ValueTask.CompletedTask;
+                }
+            })
+            .Build();
+    }
+
     public async Task WriteResponseAsync(
         string sourceId,
         string agentId,
@@ -30,12 +60,15 @@ public class ServiceBusResponseWriter(
                 ContentType = "application/json"
             };
 
-            await sender.SendMessageAsync(message, ct);
-            logger.LogDebug("Sent response to queue for sourceId={SourceId}", sourceId);
+            await _retryPipeline.ExecuteAsync(
+                async token => await _sender.SendMessageAsync(message, token),
+                ct);
+
+            _logger.LogDebug("Sent response to queue for sourceId={SourceId}", sourceId);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send response to queue for sourceId={SourceId}", sourceId);
+            _logger.LogError(ex, "Failed to send response to queue after retries for sourceId={SourceId}", sourceId);
         }
     }
 
