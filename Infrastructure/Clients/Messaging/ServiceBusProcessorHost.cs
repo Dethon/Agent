@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.DTOs;
 using Microsoft.Extensions.Hosting;
@@ -8,7 +7,8 @@ namespace Infrastructure.Clients.Messaging;
 
 public sealed class ServiceBusProcessorHost(
     ServiceBusProcessor processor,
-    ServiceBusChatMessengerClient messengerClient,
+    ServiceBusMessageParser parser,
+    ServiceBusPromptReceiver promptReceiver,
     ILogger<ServiceBusProcessorHost> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -29,44 +29,19 @@ public sealed class ServiceBusProcessorHost(
 
     private async Task ProcessMessageAsync(ProcessMessageEventArgs args)
     {
-        try
+        var result = parser.Parse(args.Message);
+
+        switch (result)
         {
-            var body = args.Message.Body.ToString();
-            var message = JsonSerializer.Deserialize<ServiceBusPromptMessage>(body);
+            case ParseSuccess success:
+                await promptReceiver.EnqueueAsync(success.Message, args.CancellationToken);
+                await args.CompleteMessageAsync(args.Message);
+                break;
 
-            if (message is null || string.IsNullOrEmpty(message.Prompt))
-            {
-                logger.LogWarning("Received malformed message: missing prompt field");
-                await args.DeadLetterMessageAsync(args.Message, "MalformedMessage", "Missing required 'prompt' field");
-                return;
-            }
-
-            var sourceId = args.Message.ApplicationProperties.TryGetValue("sourceId", out var sid)
-                ? sid?.ToString() ?? Guid.NewGuid().ToString("N")
-                : Guid.NewGuid().ToString("N");
-
-            var agentId = args.Message.ApplicationProperties.TryGetValue("agentId", out var aid)
-                ? aid?.ToString()
-                : null;
-
-            await messengerClient.EnqueueReceivedMessageAsync(
-                message.Prompt,
-                message.Sender,
-                sourceId,
-                agentId,
-                args.CancellationToken);
-
-            await args.CompleteMessageAsync(args.Message);
-        }
-        catch (JsonException ex)
-        {
-            logger.LogWarning(ex, "Failed to deserialize message body");
-            await args.DeadLetterMessageAsync(args.Message, "DeserializationError", ex.Message);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error processing Service Bus message");
-            throw;
+            case ParseFailure failure:
+                logger.LogWarning("Failed to parse message: {Reason} - {Details}", failure.Reason, failure.Details);
+                await args.DeadLetterMessageAsync(args.Message, failure.Reason, failure.Details);
+                break;
         }
     }
 
