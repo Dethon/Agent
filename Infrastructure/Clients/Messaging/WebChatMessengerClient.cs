@@ -41,10 +41,10 @@ public sealed class WebChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _, _) in updates.WithCancellation(cancellationToken))
         {
             var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
             if (topicId is null)
@@ -155,6 +155,7 @@ public sealed class WebChatMessengerClient(
     }
 
     public async Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -187,7 +188,7 @@ public sealed class WebChatMessengerClient(
 
     private static long GenerateChatId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    public async Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public async Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         var topicId = sessionManager.GetTopicIdByChatId(agentKey.ChatId);
         if (topicId is null)
