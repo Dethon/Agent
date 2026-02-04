@@ -201,8 +201,7 @@ public sealed class WebChatMessengerClient(
             topicId = sessionManager.GetTopicIdByChatId(actualChatId);
         }
 
-        // For non-WebUI sources, create stream and notify WebUI clients
-        if (source == MessageSource.WebUi || topicId is null)
+        if (topicId is null)
         {
             return new AgentKey(actualChatId, actualThreadId, agentId);
         }
@@ -216,12 +215,17 @@ public sealed class WebChatMessengerClient(
                 .SafeAwaitAsync(logger, "Failed to notify topic created for topic {TopicId}", topicId);
         }
 
-        streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
-        streamManager.TryIncrementPending(topicId);
-
-        await hubNotifier.NotifyStreamChangedAsync(
-                new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
-            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        // Ensure stream exists. For new streams, increment pending and notify clients.
+        // For existing streams (e.g., WebUI where EnqueuePromptAndGetResponses already created it),
+        // skip to avoid double-increment.
+        var (_, _, isNewStream) = streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
+        if (isNewStream)
+        {
+            streamManager.TryIncrementPending(topicId);
+            await hubNotifier.NotifyStreamChangedAsync(
+                    new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+                .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        }
 
         return new AgentKey(actualChatId, actualThreadId, agentId);
     }

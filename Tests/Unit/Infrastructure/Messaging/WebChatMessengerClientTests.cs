@@ -86,7 +86,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateTopicIfNeededAsync_WithWebUiSource_DoesNotCreateStream()
+    public async Task CreateTopicIfNeededAsync_WithWebUiSource_CreatesStream()
     {
         _threadStateStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync(
                 It.IsAny<string>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
@@ -97,6 +97,10 @@ public sealed class WebChatMessengerClientTests : IDisposable
 
         _hubNotifier.Setup(n => n.NotifyTopicChangedAsync(
                 It.IsAny<TopicChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _hubNotifier.Setup(n => n.NotifyStreamChangedAsync(
+                It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var result = await _client.CreateTopicIfNeededAsync(
@@ -110,11 +114,13 @@ public sealed class WebChatMessengerClientTests : IDisposable
 
         var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
         topicId.ShouldNotBeNull();
-        _streamManager.IsStreaming(topicId).ShouldBeFalse();
+        _streamManager.IsStreaming(topicId).ShouldBeTrue();
 
         _hubNotifier.Verify(n => n.NotifyStreamChangedAsync(
-            It.IsAny<StreamChangedNotification>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+            It.Is<StreamChangedNotification>(s =>
+                s.ChangeType == StreamChangeType.Started &&
+                s.TopicId == topicId),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
