@@ -191,15 +191,18 @@ public static class InjectorModule
                 .AddSingleton(sp => new ServiceBusResponseWriter(
                     sp.GetRequiredService<ServiceBusSender>(),
                     sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
+                .AddSingleton<ServiceBusPromptReceiver>()
+                .AddSingleton<ServiceBusResponseHandler>()
                 .AddSingleton(sp => new ServiceBusChatMessengerClient(
-                    sp.GetRequiredService<ServiceBusConversationMapper>(),
-                    sp.GetRequiredService<ServiceBusResponseWriter>(),
-                    sp.GetRequiredService<ILogger<ServiceBusChatMessengerClient>>(),
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ServiceBusResponseHandler>(),
                     defaultAgentId))
+                .AddSingleton<IMessageSourceRouter, MessageSourceRouter>()
                 .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient([
                     sp.GetRequiredService<WebChatMessengerClient>(),
                     sp.GetRequiredService<ServiceBusChatMessengerClient>()
-                ]))
+                ],
+                sp.GetRequiredService<IMessageSourceRouter>()))
                 .AddHostedService<ServiceBusProcessorHost>();
         }
     }

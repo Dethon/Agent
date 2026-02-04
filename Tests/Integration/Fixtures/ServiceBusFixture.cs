@@ -135,10 +135,19 @@ public class ServiceBusFixture : IAsyncLifetime
             _responseSender,
             NullLogger<ServiceBusResponseWriter>.Instance);
 
-        return new ServiceBusChatMessengerClient(
+        var promptReceiver = new ServiceBusPromptReceiver(
             sourceMapper,
+            NullLogger<ServiceBusPromptReceiver>.Instance);
+
+        var responseHandler = new ServiceBusResponseHandler(
+            promptReceiver,
             responseWriter,
-            NullLogger<ServiceBusChatMessengerClient>.Instance,
+            DefaultAgentId,
+            NullLogger<ServiceBusResponseHandler>.Instance);
+
+        return new ServiceBusChatMessengerClient(
+            promptReceiver,
+            responseHandler,
             DefaultAgentId);
     }
 

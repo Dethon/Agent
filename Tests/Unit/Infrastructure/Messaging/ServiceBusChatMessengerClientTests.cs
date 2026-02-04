@@ -20,7 +20,8 @@ public class ServiceBusChatMessengerClientTests
         var threadStateStoreMock = new Mock<IThreadStateStore>();
         var mapperLoggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
         var writerLoggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
-        var clientLoggerMock = new Mock<ILogger<ServiceBusChatMessengerClient>>();
+        var receiverLoggerMock = new Mock<ILogger<ServiceBusPromptReceiver>>();
+        var handlerLoggerMock = new Mock<ILogger<ServiceBusResponseHandler>>();
 
         redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(dbMock.Object);
@@ -30,14 +31,21 @@ public class ServiceBusChatMessengerClientTests
             threadStateStoreMock.Object,
             mapperLoggerMock.Object);
 
-        // Note: ServiceBusResponseWriter requires a real ServiceBusSender which we can't easily mock
-        // For these tests, we'll create the client with a null writer (tests don't exercise response writing)
         var writerMock = new Mock<ServiceBusResponseWriter>(null!, writerLoggerMock.Object);
 
-        _client = new ServiceBusChatMessengerClient(
+        var promptReceiver = new ServiceBusPromptReceiver(
             mapper,
+            receiverLoggerMock.Object);
+
+        var responseHandler = new ServiceBusResponseHandler(
+            promptReceiver,
             writerMock.Object,
-            clientLoggerMock.Object,
+            "default",
+            handlerLoggerMock.Object);
+
+        _client = new ServiceBusChatMessengerClient(
+            promptReceiver,
+            responseHandler,
             "default");
     }
 
