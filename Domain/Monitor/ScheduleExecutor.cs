@@ -35,6 +35,7 @@ public class ScheduleExecutor(
             try
             {
                 agentKey = await messengerClient.CreateTopicIfNeededAsync(
+                    MessageSource.WebUi,
                     chatId: null,
                     threadId: null,
                     agentId: schedule.Agent.Id,
@@ -54,11 +55,11 @@ public class ScheduleExecutor(
                 agentKey.ThreadId);
 
 
-            await messengerClient.StartScheduledStreamAsync(agentKey, ct);
+            await messengerClient.StartScheduledStreamAsync(agentKey, MessageSource.WebUi, ct);
 
             var responses = ExecuteScheduleCore(schedule, agentKey, schedule.UserId, ct);
             await messengerClient.ProcessResponseStreamAsync(
-                responses.Select(r => (agentKey, r.Update, r.AiResponse)), ct);
+                responses.Select(r => (agentKey, r.Update, r.AiResponse, MessageSource.WebUi)), ct);
         }
         else
         {
