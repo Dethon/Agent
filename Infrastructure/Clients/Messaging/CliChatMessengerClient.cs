@@ -44,13 +44,13 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         string? currentMessageId = null;
         var messageIndex = 0;
 
-        await foreach (var (_, update, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (_, update, _, _) in updates.WithCancellation(cancellationToken))
         {
             if (update.MessageId is not null && update.MessageId != currentMessageId)
             {
@@ -102,6 +102,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -111,7 +112,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }
