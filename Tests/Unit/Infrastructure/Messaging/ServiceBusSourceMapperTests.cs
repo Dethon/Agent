@@ -154,4 +154,45 @@ public class ServiceBusConversationMapperTests
             It.IsAny<When>(),
             It.IsAny<CommandFlags>()), Times.Once);
     }
+
+    [Fact]
+    public async Task TryGetSourceId_AfterMapping_ReturnsSourceId()
+    {
+        // Arrange
+        const string sourceId = "test-source";
+        const string agentId = "default";
+
+        _dbMock.Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisValue.Null);
+
+        _dbMock.Setup(db => db.StringSetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<bool>(),
+                It.IsAny<When>(),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+
+        _threadStateStoreMock.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var (chatId, _, _, _) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId);
+        var found = _mapper.TryGetSourceId(chatId, out var retrievedSourceId);
+
+        // Assert
+        found.ShouldBeTrue();
+        retrievedSourceId.ShouldBe(sourceId);
+    }
+
+    [Fact]
+    public void TryGetSourceId_UnknownChatId_ReturnsFalse()
+    {
+        // Act
+        var found = _mapper.TryGetSourceId(999999, out var sourceId);
+
+        // Assert
+        found.ShouldBeFalse();
+    }
 }
