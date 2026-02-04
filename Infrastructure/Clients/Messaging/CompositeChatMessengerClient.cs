@@ -8,7 +8,8 @@ using Microsoft.Agents.AI;
 namespace Infrastructure.Clients.Messaging;
 
 public sealed class CompositeChatMessengerClient(
-    IReadOnlyList<IChatMessengerClient> clients) : IChatMessengerClient
+    IReadOnlyList<IChatMessengerClient> clients,
+    IMessageSourceRouter router) : IChatMessengerClient
 {
     public MessageSource Source => MessageSource.WebUi;
 
@@ -66,7 +67,7 @@ public sealed class CompositeChatMessengerClient(
         CancellationToken ct = default)
     {
         Validate();
-        var tasks = GetClientsForSource(source)
+        var tasks = router.GetClientsForSource(clients, source)
             .Select(c => c.CreateTopicIfNeededAsync(source, chatId, threadId, agentId, topicName, ct));
         var results = await Task.WhenAll(tasks);
 
@@ -78,7 +79,7 @@ public sealed class CompositeChatMessengerClient(
     public async Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         Validate();
-        var tasks = GetClientsForSource(source)
+        var tasks = router.GetClientsForSource(clients, source)
             .Select(c => c.StartScheduledStreamAsync(agentKey, source, ct));
         await Task.WhenAll(tasks);
     }
@@ -89,11 +90,6 @@ public sealed class CompositeChatMessengerClient(
         {
             throw new InvalidOperationException($"{nameof(clients)} must contain at least one client");
         }
-    }
-
-    private IEnumerable<IChatMessengerClient> GetClientsForSource(MessageSource source)
-    {
-        return clients.Where(c => c.Source == MessageSource.WebUi || c.Source == source);
     }
 
     private async Task BroadcastUpdatesAsync(
@@ -107,7 +103,7 @@ public sealed class CompositeChatMessengerClient(
             await foreach (var update in source.WithCancellation(ct))
             {
                 var (_, _, _, messageSource) = update;
-                var targetClients = GetClientsForSource(messageSource).ToHashSet();
+                var targetClients = router.GetClientsForSource(clients, messageSource).ToHashSet();
 
                 var writeTasks = clientChannelPairs
                     .Where(pair => targetClients.Contains(pair.client))
