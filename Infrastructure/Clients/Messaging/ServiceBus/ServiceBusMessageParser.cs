@@ -2,7 +2,7 @@ using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.DTOs;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public sealed class ServiceBusMessageParser(string defaultAgentId)
 {
@@ -31,6 +31,7 @@ public sealed class ServiceBusMessageParser(string defaultAgentId)
             {
                 return new ParseFailure("MalformedMessage", "Missing required 'prompt' field");
             }
+
             return new ParseFailure("DeserializationError", ex.Message);
         }
 
@@ -54,5 +55,8 @@ public sealed class ServiceBusMessageParser(string defaultAgentId)
             agentId));
     }
 
-    private static string GenerateSourceId() => Guid.NewGuid().ToString("N");
+    private static string GenerateSourceId()
+    {
+        return Guid.NewGuid().ToString("N");
+    }
 }

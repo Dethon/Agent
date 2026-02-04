@@ -1,6 +1,6 @@
 using Domain.DTOs;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 internal sealed class ApprovalContext : IDisposable
 {

@@ -3,7 +3,7 @@ using Azure.Messaging.ServiceBus;
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StackExchange.Redis;

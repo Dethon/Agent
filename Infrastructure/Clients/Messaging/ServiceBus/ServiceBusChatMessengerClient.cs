@@ -3,7 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Agents.AI;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public sealed class ServiceBusChatMessengerClient(
     ServiceBusPromptReceiver promptReceiver,
@@ -21,13 +21,19 @@ public sealed class ServiceBusChatMessengerClient(
     public Task ProcessResponseStreamAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
-        => responseHandler.ProcessAsync(updates, cancellationToken);
+    {
+        return responseHandler.ProcessAsync(updates, cancellationToken);
+    }
 
     public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-        => Task.FromResult(0);
+    {
+        return Task.FromResult(0);
+    }
 
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId, CancellationToken cancellationToken)
-        => Task.FromResult(false);
+    {
+        return Task.FromResult(false);
+    }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
         MessageSource source,
@@ -36,8 +42,12 @@ public sealed class ServiceBusChatMessengerClient(
         string? agentId,
         string? topicName,
         CancellationToken ct = default)
-        => Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? defaultAgentId));
+    {
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? defaultAgentId));
+    }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
-        => Task.CompletedTask;
+    {
+        return Task.CompletedTask;
+    }
 }

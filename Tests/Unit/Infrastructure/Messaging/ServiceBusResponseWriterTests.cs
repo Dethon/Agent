@@ -1,5 +1,5 @@
 using Azure.Messaging.ServiceBus;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -45,6 +45,7 @@ public class ServiceBusResponseWriterTests
                 {
                     throw new ServiceBusException("Transient", ServiceBusFailureReason.ServiceBusy);
                 }
+
                 return Task.CompletedTask;
             });
 

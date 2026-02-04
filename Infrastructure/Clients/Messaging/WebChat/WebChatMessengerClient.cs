@@ -11,7 +11,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebChatMessengerClient(
     WebChatSessionManager sessionManager,
@@ -230,7 +230,10 @@ public sealed class WebChatMessengerClient(
         return new AgentKey(actualChatId, actualThreadId, agentId);
     }
 
-    private static long GenerateChatId() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    private static long GenerateChatId()
+    {
+        return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    }
 
     public async Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {

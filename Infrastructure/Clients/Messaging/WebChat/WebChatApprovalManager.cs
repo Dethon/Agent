@@ -7,7 +7,7 @@ using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebChatApprovalManager(
     WebChatStreamManager streamManager,

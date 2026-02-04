@@ -6,7 +6,7 @@ using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Hosting;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Cli;
 
 public sealed class OneShotChatMessengerClient(
     string prompt,

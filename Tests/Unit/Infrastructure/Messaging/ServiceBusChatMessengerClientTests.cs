@@ -1,6 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Moq;
 using Shouldly;
 

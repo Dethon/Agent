@@ -1,6 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.WebChat;
 using Moq;
 
 namespace Tests.Unit.Infrastructure;

@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebChatStreamManager(ILogger<WebChatStreamManager> logger) : IDisposable
 {

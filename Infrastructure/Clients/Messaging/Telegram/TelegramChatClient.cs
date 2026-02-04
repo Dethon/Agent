@@ -11,7 +11,7 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Message = Telegram.Bot.Types.Message;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Telegram;
 
 public class TelegramChatClient(
     IEnumerable<(string AgentId, string BotToken)> agentBots,

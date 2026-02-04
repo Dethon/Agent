@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Shouldly;

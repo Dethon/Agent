@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public class ServiceBusResponseWriter
 {

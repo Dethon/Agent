@@ -5,7 +5,7 @@ using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public class ServiceBusResponseHandler(
     ServiceBusPromptReceiver promptReceiver,

@@ -1,6 +1,6 @@
 using Azure.Messaging.ServiceBus;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Messaging;

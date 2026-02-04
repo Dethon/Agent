@@ -8,6 +8,10 @@ using Domain.Monitor;
 using Domain.Routers;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
+using Infrastructure.Clients.Messaging.ServiceBus;
+using Infrastructure.Clients.Messaging.Telegram;
+using Infrastructure.Clients.Messaging.WebChat;
 using Infrastructure.Clients.ToolApproval;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
@@ -15,7 +19,7 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Telegram.Bot;
-using HubNotifier = Infrastructure.Clients.Messaging.HubNotifier;
+using HubNotifier = Infrastructure.Clients.Messaging.WebChat.HubNotifier;
 
 namespace Agent.Modules;
 

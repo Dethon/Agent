@@ -1,6 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;

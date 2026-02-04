@@ -3,7 +3,7 @@ using Domain.DTOs;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public sealed class ServiceBusProcessorHost(
     ServiceBusProcessor processor,

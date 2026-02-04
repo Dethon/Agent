@@ -7,7 +7,7 @@ using Infrastructure.CliGui.Abstractions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Cli;
 
 public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {

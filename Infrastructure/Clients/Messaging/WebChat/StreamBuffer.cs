@@ -1,7 +1,7 @@
 using System.Text;
 using Domain.DTOs.WebChat;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 internal sealed class StreamBuffer
 {

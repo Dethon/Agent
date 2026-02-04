@@ -5,7 +5,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
 using Infrastructure.Clients.ToolApproval;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

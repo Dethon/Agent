@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using Domain.DTOs;
 using Microsoft.Extensions.Logging;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public class ServiceBusPromptReceiver(
     ServiceBusConversationMapper conversationMapper,
@@ -12,7 +12,9 @@ public class ServiceBusPromptReceiver(
     private int _messageIdCounter;
 
     public IAsyncEnumerable<ChatPrompt> ReadPromptsAsync(CancellationToken ct)
-        => _channel.Reader.ReadAllAsync(ct);
+    {
+        return _channel.Reader.ReadAllAsync(ct);
+    }
 
     public async Task EnqueueAsync(ParsedServiceBusMessage message, CancellationToken ct)
     {
@@ -38,5 +40,7 @@ public class ServiceBusPromptReceiver(
     }
 
     public virtual bool TryGetSourceId(long chatId, out string sourceId)
-        => conversationMapper.TryGetSourceId(chatId, out sourceId);
+    {
+        return conversationMapper.TryGetSourceId(chatId, out sourceId);
+    }
 }

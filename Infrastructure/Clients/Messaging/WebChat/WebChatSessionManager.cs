@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebChatSessionManager
 {

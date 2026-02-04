@@ -6,7 +6,7 @@ using Infrastructure.Utils;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public sealed class ServiceBusConversationMapper(
     IConnectionMultiplexer redis,
@@ -67,7 +67,9 @@ public sealed class ServiceBusConversationMapper(
     }
 
     public bool TryGetSourceId(long chatId, out string sourceId)
-        => _chatIdToSourceId.TryGetValue(chatId, out sourceId!);
+    {
+        return _chatIdToSourceId.TryGetValue(chatId, out sourceId!);
+    }
 
     private sealed record SourceMapping(long ChatId, long ThreadId, string TopicId);
 }

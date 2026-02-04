@@ -5,7 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Infrastructure.Agents;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;

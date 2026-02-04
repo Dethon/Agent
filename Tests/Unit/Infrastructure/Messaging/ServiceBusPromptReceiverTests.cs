@@ -1,7 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
