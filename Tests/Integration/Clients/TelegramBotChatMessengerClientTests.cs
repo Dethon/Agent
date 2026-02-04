@@ -184,7 +184,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
     }
 
     [Fact]
-    public async Task CreateThread_ReturnsThreadId()
+    public async Task CreateTopicIfNeededAsync_CreatesNewThread()
     {
         // Arrange
         fixture.Reset();
@@ -197,10 +197,11 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         fixture.SetupSendMessage(chatId);
 
         // Act
-        var threadId = await client.CreateThread(chatId, "Test Topic", fixture.AgentId, CancellationToken.None);
+        var agentKey = await client.CreateTopicIfNeededAsync(
+            MessageSource.Telegram, chatId, null, fixture.AgentId, "Test Topic", CancellationToken.None);
 
         // Assert
-        threadId.ShouldBe(expectedThreadId);
+        agentKey.ThreadId.ShouldBe(expectedThreadId);
     }
 
     [Fact]

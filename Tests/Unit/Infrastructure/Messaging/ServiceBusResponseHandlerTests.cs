@@ -2,7 +2,6 @@ using Domain.Agents;
 using Domain.DTOs;
 using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 using Moq;
 
 namespace Tests.Unit.Infrastructure.Messaging;
@@ -10,7 +9,7 @@ namespace Tests.Unit.Infrastructure.Messaging;
 public class ServiceBusResponseHandlerTests
 {
     [Fact]
-    public async Task ProcessAsync_TextContent_AccumulatesText()
+    public async Task ProcessAsync_CompletedResponse_WritesToServiceBus()
     {
         // Arrange
         var (handler, receiverMock, writerMock) = CreateHandler();
@@ -23,11 +22,7 @@ public class ServiceBusResponseHandlerTests
                 return true;
             });
 
-        var updates = CreateUpdates(chatId, [
-            new AgentResponseUpdate { Contents = [new TextContent("Hello ")] },
-            new AgentResponseUpdate { Contents = [new TextContent("World")] },
-            new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }
-        ]);
+        var updates = CreateUpdates(chatId, "agent-1", new AiResponse { Content = "Hello World" });
 
         // Act
         await handler.ProcessAsync(updates, CancellationToken.None);
@@ -49,9 +44,7 @@ public class ServiceBusResponseHandlerTests
         receiverMock.Setup(r => r.TryGetSourceId(It.IsAny<long>(), out It.Ref<string>.IsAny))
             .Returns(false);
 
-        var updates = CreateUpdates(999, [
-            new AgentResponseUpdate { Contents = [new TextContent("Hello")] }
-        ]);
+        var updates = CreateUpdates(999, "agent-1", new AiResponse { Content = "Hello" });
 
         // Act
         await handler.ProcessAsync(updates, CancellationToken.None);
@@ -65,7 +58,7 @@ public class ServiceBusResponseHandlerTests
     }
 
     [Fact]
-    public async Task ProcessAsync_EmptyAccumulator_DoesNotWriteOnComplete()
+    public async Task ProcessAsync_NullAiResponse_DoesNotWrite()
     {
         // Arrange
         var (handler, receiverMock, writerMock) = CreateHandler();
@@ -78,9 +71,7 @@ public class ServiceBusResponseHandlerTests
                 return true;
             });
 
-        var updates = CreateUpdates(chatId, [
-            new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }
-        ]);
+        var updates = CreateUpdates(chatId, "agent-1", null);
 
         // Act
         await handler.ProcessAsync(updates, CancellationToken.None);
@@ -91,6 +82,60 @@ public class ServiceBusResponseHandlerTests
             It.IsAny<string>(),
             It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_EmptyContent_DoesNotWrite()
+    {
+        // Arrange
+        var (handler, receiverMock, writerMock) = CreateHandler();
+        var chatId = 123L;
+
+        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
+            .Returns((long _, out string s) =>
+            {
+                s = "source-123";
+                return true;
+            });
+
+        var updates = CreateUpdates(chatId, "agent-1", new AiResponse { Content = "" });
+
+        // Act
+        await handler.ProcessAsync(updates, CancellationToken.None);
+
+        // Assert
+        writerMock.Verify(w => w.WriteResponseAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_NullAgentId_UsesDefaultAgentId()
+    {
+        // Arrange
+        var (handler, receiverMock, writerMock) = CreateHandler();
+        var chatId = 123L;
+
+        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
+            .Returns((long _, out string s) =>
+            {
+                s = "source-123";
+                return true;
+            });
+
+        var updates = CreateUpdates(chatId, null, new AiResponse { Content = "Hello" });
+
+        // Act
+        await handler.ProcessAsync(updates, CancellationToken.None);
+
+        // Assert
+        writerMock.Verify(w => w.WriteResponseAsync(
+            "source-123",
+            "default-agent",
+            "Hello",
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static (ServiceBusResponseHandler handler, Mock<ServiceBusPromptReceiver> receiverMock,
@@ -109,13 +154,10 @@ public class ServiceBusResponseHandlerTests
 
     private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> CreateUpdates(
         long chatId,
-        AgentResponseUpdate[] updates)
+        string? agentId,
+        AiResponse? response)
     {
-        foreach (var update in updates)
-        {
-            yield return (new AgentKey(chatId, 1, "agent-1"), update, null, MessageSource.ServiceBus);
-        }
-
         await Task.CompletedTask;
+        yield return (new AgentKey(chatId, 1, agentId), new AgentResponseUpdate(), response, MessageSource.ServiceBus);
     }
 }
