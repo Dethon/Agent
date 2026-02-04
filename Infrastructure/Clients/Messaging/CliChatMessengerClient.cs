@@ -16,6 +16,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private bool _historyRestored;
 
     public bool SupportsScheduledNotifications => false;
+    public MessageSource Source => MessageSource.Cli;
 
     public CliChatMessengerClient(
         ICliChatMessageRouter router,
