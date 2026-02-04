@@ -167,6 +167,10 @@ public sealed class WebChatMessengerClient(
             throw new ArgumentException("agentId is required for WebChat", nameof(agentId));
         }
 
+        string? topicId = null;
+        long actualChatId;
+        long actualThreadId;
+
         if (threadId.HasValue && chatId.HasValue)
         {
             var existingTopic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
@@ -176,12 +180,34 @@ public sealed class WebChatMessengerClient(
             {
                 sessionManager.StartSession(existingTopic.TopicId, existingTopic.AgentId,
                     existingTopic.ChatId, existingTopic.ThreadId);
-                return new AgentKey(existingTopic.ChatId, existingTopic.ThreadId, existingTopic.AgentId);
+                topicId = existingTopic.TopicId;
+                actualChatId = existingTopic.ChatId;
+                actualThreadId = existingTopic.ThreadId;
+            }
+            else
+            {
+                actualChatId = chatId.Value;
+                actualThreadId = await CreateThread(actualChatId, topicName ?? "External message", agentId, ct);
+                topicId = sessionManager.GetTopicIdByChatId(actualChatId);
             }
         }
+        else
+        {
+            actualChatId = chatId ?? GenerateChatId();
+            actualThreadId = await CreateThread(actualChatId, topicName ?? "External message", agentId, ct);
+            topicId = sessionManager.GetTopicIdByChatId(actualChatId);
+        }
 
-        var actualChatId = chatId ?? GenerateChatId();
-        var actualThreadId = await CreateThread(actualChatId, topicName ?? "Scheduled task", agentId, ct);
+        // For non-WebUI sources, create stream and notify WebUI clients
+        if (source != MessageSource.WebUi && topicId is not null)
+        {
+            streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
+            streamManager.TryIncrementPending(topicId);
+
+            await hubNotifier.NotifyStreamChangedAsync(
+                    new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+                .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+        }
 
         return new AgentKey(actualChatId, actualThreadId, agentId);
     }
