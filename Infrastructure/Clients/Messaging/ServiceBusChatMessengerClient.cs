@@ -23,6 +23,7 @@ public sealed class ServiceBusChatMessengerClient(
     private int _messageIdCounter;
 
     public bool SupportsScheduledNotifications => false;
+    public MessageSource Source => MessageSource.ServiceBus;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout,
@@ -121,7 +122,8 @@ public sealed class ServiceBusChatMessengerClient(
             ThreadId = (int)threadId,
             MessageId = messageId,
             Sender = sender,
-            AgentId = actualAgentId
+            AgentId = actualAgentId,
+            Source = MessageSource.ServiceBus
         };
 
         logger.LogInformation(
