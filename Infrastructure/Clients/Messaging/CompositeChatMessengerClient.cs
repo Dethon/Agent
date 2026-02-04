@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
@@ -10,27 +11,44 @@ namespace Infrastructure.Clients.Messaging;
 public sealed class CompositeChatMessengerClient(
     IReadOnlyList<IChatMessengerClient> clients) : IChatMessengerClient
 {
+    private readonly ConcurrentDictionary<long, MessageSource> _chatIdToSource = new();
+
+    public MessageSource Source => MessageSource.WebUi;
+
     public bool SupportsScheduledNotifications => clients.Any(c => c.SupportsScheduledNotifications);
 
-    public IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
     {
-        return clients
+        Validate();
+        var merged = clients
             .Select(c => c.ReadPrompts(timeout, cancellationToken))
             .Merge(cancellationToken);
+
+        await foreach (var prompt in merged.WithCancellation(cancellationToken))
+        {
+            _chatIdToSource[prompt.ChatId] = prompt.Source;
+            yield return prompt;
+        }
     }
 
     public async Task ProcessResponseStreamAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
         CancellationToken cancellationToken)
     {
-        var channels = clients.Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?)>())
+        Validate();
+        var channels = clients
+            .Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?)>())
             .ToArray();
 
-        var broadcastTask = BroadcastUpdatesAsync(updates, channels, cancellationToken);
+        var clientChannelPairs = clients
+            .Zip(channels, (client, channel) => (client, channel))
+            .ToArray();
 
-        var processTasks = clients
-            .Select((client, i) => client.ProcessResponseStreamAsync(
-                channels[i].Reader.ReadAllAsync(cancellationToken),
+        var broadcastTask = BroadcastUpdatesAsync(updates, clientChannelPairs, cancellationToken);
+
+        var processTasks = clientChannelPairs
+            .Select(pair => pair.client.ProcessResponseStreamAsync(
+                pair.channel.Reader.ReadAllAsync(cancellationToken),
                 cancellationToken))
             .ToArray();
 
@@ -38,55 +56,64 @@ public sealed class CompositeChatMessengerClient(
         await Task.WhenAll(processTasks);
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        return clients[0].CreateThread(chatId, name, agentId, cancellationToken);
-    }
-
     public async Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
-        foreach (var client in clients)
-        {
-            if (await client.DoesThreadExist(chatId, threadId, agentId, cancellationToken))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        Validate();
+        var existsTasks = clients
+            .Select(client => client.DoesThreadExist(chatId, threadId, agentId, cancellationToken));
+        var results = await Task.WhenAll(existsTasks);
+        return results.Any(exists => exists);
     }
 
-    public Task<AgentKey> CreateTopicIfNeededAsync(
+    public async Task<AgentKey> CreateTopicIfNeededAsync(
         long? chatId,
         long? threadId,
         string? agentId,
         string? topicName,
         CancellationToken ct = default)
     {
-        return clients[0].CreateTopicIfNeededAsync(chatId, threadId, agentId, topicName, ct);
+        Validate();
+        var agentKeys = clients.Select(x => x.CreateTopicIfNeededAsync(chatId, threadId, agentId, topicName, ct));
+        return (await Task.WhenAll(agentKeys)).First();
     }
 
     public async Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
     {
+        Validate();
         await Task.WhenAll(clients.Select(c => c.StartScheduledStreamAsync(agentKey, ct)));
     }
 
-    private static async Task BroadcastUpdatesAsync(
+    private void Validate()
+    {
+        if (clients.Count == 0)
+        {
+            throw new InvalidOperationException($"{nameof(clients)} must contain at least one client"); 
+        }
+    }
+
+    private async Task BroadcastUpdatesAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> source,
-        Channel<(AgentKey, AgentResponseUpdate, AiResponse?)>[] channels,
+        (IChatMessengerClient client, Channel<(AgentKey, AgentResponseUpdate, AiResponse?)> channel)[] clientChannelPairs,
         CancellationToken ct)
     {
         try
         {
             await foreach (var update in source.WithCancellation(ct))
             {
-                await Task.WhenAll(channels.Select(c => c.Writer.WriteAsync(update, ct).AsTask()));
+                var (agentKey, _, _) = update;
+                var promptSource = _chatIdToSource.GetValueOrDefault(agentKey.ChatId);
+
+                var writeTasks = clientChannelPairs
+                    .Where(pair => pair.client.Source == MessageSource.WebUi || pair.client.Source == promptSource)
+                    .Select(pair => pair.channel.Writer.WriteAsync(update, ct).AsTask());
+
+                await Task.WhenAll(writeTasks);
             }
         }
         finally
         {
-            foreach (var channel in channels)
+            foreach (var (_, channel) in clientChannelPairs)
             {
                 channel.Writer.TryComplete();
             }
