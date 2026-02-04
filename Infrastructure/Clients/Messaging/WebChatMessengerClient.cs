@@ -2,9 +2,9 @@ using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
-using Domain.Extensions;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using Microsoft.Agents.AI;
@@ -83,9 +83,11 @@ public sealed class WebChatMessengerClient(
                     var msg = content switch
                     {
                         TextContent tc when !string.IsNullOrEmpty(tc.Text) =>
-                            new ChatStreamMessage { Content = tc.Text, MessageId = update.MessageId, Timestamp = timestamp },
+                            new ChatStreamMessage
+                                { Content = tc.Text, MessageId = update.MessageId, Timestamp = timestamp },
                         TextReasoningContent rc when !string.IsNullOrEmpty(rc.Text) =>
-                            new ChatStreamMessage { Reasoning = rc.Text, MessageId = update.MessageId, Timestamp = timestamp },
+                            new ChatStreamMessage
+                                { Reasoning = rc.Text, MessageId = update.MessageId, Timestamp = timestamp },
                         ErrorContent ec =>
                             new ChatStreamMessage { IsComplete = true, Error = ec.Message },
                         _ => null
@@ -167,13 +169,14 @@ public sealed class WebChatMessengerClient(
             throw new ArgumentException("agentId is required for WebChat", nameof(agentId));
         }
 
-        string? topicId = null;
+        string? topicId;
         long actualChatId;
         long actualThreadId;
 
+        TopicMetadata? existingTopic = null;
         if (threadId.HasValue && chatId.HasValue)
         {
-            var existingTopic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
+            existingTopic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
                 agentId, chatId.Value, threadId.Value, ct);
 
             if (existingTopic is not null)
@@ -199,15 +202,26 @@ public sealed class WebChatMessengerClient(
         }
 
         // For non-WebUI sources, create stream and notify WebUI clients
-        if (source != MessageSource.WebUi && topicId is not null)
+        if (source == MessageSource.WebUi || topicId is null)
         {
-            streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
-            streamManager.TryIncrementPending(topicId);
-
-            await hubNotifier.NotifyStreamChangedAsync(
-                    new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
-                .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
+            return new AgentKey(actualChatId, actualThreadId, agentId);
         }
+
+        // Notify WebUI about the topic first (if it was an existing topic not created by CreateThread)
+        // This ensures the client has the topic before the stream notification arrives
+        if (existingTopic is not null)
+        {
+            await hubNotifier.NotifyTopicChangedAsync(
+                    new TopicChangedNotification(TopicChangeType.Created, topicId, existingTopic), ct)
+                .SafeAwaitAsync(logger, "Failed to notify topic created for topic {TopicId}", topicId);
+        }
+
+        streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
+        streamManager.TryIncrementPending(topicId);
+
+        await hubNotifier.NotifyStreamChangedAsync(
+                new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+            .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
 
         return new AgentKey(actualChatId, actualThreadId, agentId);
     }

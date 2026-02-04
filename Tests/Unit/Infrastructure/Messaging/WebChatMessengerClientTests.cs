@@ -15,7 +15,6 @@ public sealed class WebChatMessengerClientTests : IDisposable
     private readonly Mock<INotifier> _hubNotifier;
     private readonly WebChatSessionManager _sessionManager;
     private readonly WebChatStreamManager _streamManager;
-    private readonly WebChatApprovalManager _approvalManager;
     private readonly ChatThreadResolver _threadResolver;
     private readonly WebChatMessengerClient _client;
 
@@ -25,7 +24,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
         _streamManager = new WebChatStreamManager(NullLogger<WebChatStreamManager>.Instance);
         _threadStateStore = new Mock<IThreadStateStore>();
         _hubNotifier = new Mock<INotifier>();
-        _approvalManager = new WebChatApprovalManager(
+        var approvalManager = new WebChatApprovalManager(
             _streamManager,
             _hubNotifier.Object,
             NullLogger<WebChatApprovalManager>.Instance);
@@ -34,7 +33,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
         _client = new WebChatMessengerClient(
             _sessionManager,
             _streamManager,
-            _approvalManager,
+            approvalManager,
             _threadResolver,
             _threadStateStore.Object,
             _hubNotifier.Object,
@@ -153,7 +152,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateTopicIfNeededAsync_WithExistingTopic_ServiceBusSource_CreatesStream()
+    public async Task CreateTopicIfNeededAsync_WithExistingTopic_ServiceBusSource_CreatesStreamAndNotifiesTopic()
     {
         var existingTopic = new TopicMetadata(
             TopicId: "existing-topic-123",
@@ -167,6 +166,10 @@ public sealed class WebChatMessengerClientTests : IDisposable
         _threadStateStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync(
                 "test-agent", 100, 200, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingTopic);
+
+        _hubNotifier.Setup(n => n.NotifyTopicChangedAsync(
+                It.IsAny<TopicChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _hubNotifier.Setup(n => n.NotifyStreamChangedAsync(
                 It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
@@ -183,6 +186,14 @@ public sealed class WebChatMessengerClientTests : IDisposable
         result.ThreadId.ShouldBe(200);
 
         _streamManager.IsStreaming("existing-topic-123").ShouldBeTrue();
+
+        // Verify topic notification is sent BEFORE stream notification for existing topics
+        _hubNotifier.Verify(n => n.NotifyTopicChangedAsync(
+            It.Is<TopicChangedNotification>(t =>
+                t.ChangeType == TopicChangeType.Created &&
+                t.TopicId == "existing-topic-123" &&
+                t.Topic == existingTopic),
+            It.IsAny<CancellationToken>()), Times.Once);
 
         _hubNotifier.Verify(n => n.NotifyStreamChangedAsync(
             It.Is<StreamChangedNotification>(s =>
