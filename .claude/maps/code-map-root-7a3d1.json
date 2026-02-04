@@ -1,12 +1,12 @@
 {
   "root": "G:\\repos\\agent",
-  "generatedAt": "2026-02-03T18:00:00Z",
+  "generatedAt": "2026-02-04T10:00:00Z",
   "generator": "LSP documentSymbol",
   "totals": {
-    "directories": 52,
-    "files": 152,
-    "symbols": 1086,
-    "exported": 790
+    "directories": 55,
+    "files": 172,
+    "symbols": 1247,
+    "exported": 892
   },
   "tree": {
     "Agent/": {
@@ -16,9 +16,6 @@
       "App/": {
         "ChatMonitoring.cs": {
           "symbols": ["class ChatMonitoring", "method ExecuteAsync"]
-        },
-        "CleanupMonitoring.cs": {
-          "symbols": ["class CleanupMonitoring", "method ExecuteAsync"]
         },
         "ScheduleMonitoring.cs": {
           "symbols": ["class ScheduleMonitoring", "field _dispatchInterval", "method ExecuteAsync", "method RunDispatcherAsync"]
@@ -37,7 +34,7 @@
           "symbols": ["class ConfigModule", "method GetSettings", "method ConfigureAgents", "method GetCommandLineParams", "method ThrowIfErrors", "method ThrowIfSpecialOption"]
         },
         "InjectorModule.cs": {
-          "symbols": ["class InjectorModule", "method AddAgent", "method AddChatMonitoring", "method AddRedis", "method AddCliClient", "method AddTelegramClient", "method AddOneShotClient", "method AddWebClient"]
+          "symbols": ["class InjectorModule", "method AddAgent", "method AddChatMonitoring", "method AddRedis", "method AddCliClient", "method AddTelegramClient", "method AddOneShotClient", "method AddWebClient", "method AddServiceBusClient"]
         },
         "SchedulingModule.cs": {
           "symbols": ["class SchedulingModule", "method AddScheduling"]
@@ -45,10 +42,13 @@
       },
       "Settings/": {
         "AgentSettings.cs": {
-          "symbols": ["class AgentSettings", "prop OpenRouter", "prop Telegram", "prop Redis", "prop Agents", "class OpenRouterConfiguration", "prop ApiUrl", "prop ApiKey", "class TelegramConfiguration", "prop AllowedUserNames", "class RedisConfiguration", "prop ConnectionString", "prop ExpirationDays"]
+          "symbols": ["class AgentSettings", "prop OpenRouter", "prop Telegram", "prop Redis", "prop ServiceBus", "prop Agents", "class OpenRouterConfiguration", "prop ApiUrl", "prop ApiKey", "class TelegramConfiguration", "prop AllowedUserNames", "class RedisConfiguration", "prop ConnectionString", "prop ExpirationDays"]
         },
         "CommandLineParams.cs": {
           "symbols": ["class CommandLineParams", "prop ChatInterface", "prop Prompt", "prop ShowReasoning", "enum ChatInterface (Cli, Telegram, OneShot, Web)"]
+        },
+        "ServiceBusSettings.cs": {
+          "symbols": ["class ServiceBusSettings", "prop ConnectionString", "prop PromptQueueName", "prop ResponseQueueName", "prop MaxConcurrentCalls"]
         }
       }
     },
@@ -76,6 +76,9 @@
         },
         "ICaptchaSolver.cs": {
           "symbols": ["interface ICaptchaSolver", "method SolveDataDomeAsync", "class DataDomeCaptchaRequest", "class CaptchaSolution"]
+        },
+        "IChatMessengerClient.cs": {
+          "symbols": ["interface IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync"]
         },
         "ICommandRunner.cs": {
           "symbols": ["interface ICommandRunner", "method Run"]
@@ -106,6 +109,9 @@
         },
         "IMemoryStore.cs": {
           "symbols": ["interface IMemoryStore", "method StoreAsync", "method GetByIdAsync", "method GetByUserIdAsync", "method SearchAsync", "method DeleteAsync", "method UpdateAccessAsync", "method UpdateImportanceAsync", "method SupersedeAsync", "method GetProfileAsync", "method SaveProfileAsync", "method GetStatsAsync", "class MemorySearchResult", "class MemoryStats"]
+        },
+        "IMessageSourceRouter.cs": {
+          "symbols": ["interface IMessageSourceRouter", "method GetClientsForSource"]
         },
         "INotifier.cs": {
           "symbols": ["interface INotifier", "method NotifyTopicChangedAsync", "method NotifyStreamChangedAsync", "method NotifyApprovalResolvedAsync", "method NotifyToolCallsAsync", "method NotifyUserMessageAsync"]
@@ -149,7 +155,7 @@
           "symbols": ["class AiResponse", "prop Content", "prop ToolCalls", "prop Reasoning", "prop IsComplete", "prop Error"]
         },
         "ChatPrompt.cs": {
-          "symbols": ["class ChatPrompt", "prop Prompt", "prop ChatId", "prop ThreadId", "prop MessageId", "prop Sender", "prop AgentId"]
+          "symbols": ["class ChatPrompt", "prop Prompt", "prop ChatId", "prop ThreadId", "prop MessageId", "prop Sender", "prop AgentId", "prop Source"]
         },
         "ChatResponseMessage.cs": {
           "symbols": ["class ChatResponseMessage", "field Message", "field CalledTools", "field Reasoning", "field Error", "field Bold", "field IsComplete", "field MessageIndex"]
@@ -159,6 +165,15 @@
         },
         "Memory.cs": {
           "symbols": ["class MemoryEntry", "class MemorySource", "enum MemoryCategory (Preference, Fact, Relationship, Skill, Project, Personality, Instruction)"]
+        },
+        "MessageSource.cs": {
+          "symbols": ["enum MessageSource (WebUi, ServiceBus, Telegram, Cli)"]
+        },
+        "ParseResult.cs": {
+          "symbols": ["class ParseResult", "class ParseSuccess", "class ParseFailure"]
+        },
+        "ParsedServiceBusMessage.cs": {
+          "symbols": ["class ParsedServiceBusMessage"]
         },
         "PersonalityProfile.cs": {
           "symbols": ["class PersonalityProfile", "class CommunicationStyle", "class TechnicalContext"]
@@ -171,6 +186,9 @@
         },
         "SearchResult.cs": {
           "symbols": ["class SearchResult", "prop Title", "prop Category", "prop Id", "prop Size", "prop Seeders", "prop Peers", "prop Link"]
+        },
+        "ServiceBusPromptMessage.cs": {
+          "symbols": ["class ServiceBusPromptMessage", "prop Prompt", "prop Sender"]
         },
         "StreamCompleteContent.cs": {
           "symbols": ["class StreamCompleteContent"]
@@ -217,14 +235,17 @@
         }
       },
       "Monitor/": {
-        "AgentCleanupMonitor.cs": {
-          "symbols": ["class AgentCleanupMonitor", "method Check"]
-        },
         "ChatCommand.cs": {
           "symbols": ["enum ChatCommand (Cancel, Clear)", "class ChatCommandParser", "method Parse"]
         },
+        "ChatMonitor.cs": {
+          "symbols": ["class ChatMonitor", "method Monitor", "method ProcessChatThread", "method GetOrRestoreThread"]
+        },
         "ScheduleDispatcher.cs": {
           "symbols": ["class ScheduleDispatcher", "method DispatchDueSchedulesAsync", "method CalculateNextRun"]
+        },
+        "ScheduleExecutor.cs": {
+          "symbols": ["class ScheduleExecutor", "method ProcessSchedulesAsync", "method ProcessScheduleAsync", "method ExecuteScheduleCore"]
         }
       },
       "Prompts/": {
@@ -250,6 +271,11 @@
       "Resources/": {
         "DownloadResource.cs": {
           "symbols": ["class DownloadResource", "method Get"]
+        }
+      },
+      "Routers/": {
+        "MessageSourceRouter.cs": {
+          "symbols": ["class MessageSourceRouter : IMessageSourceRouter", "method GetClientsForSource"]
         }
       },
       "Tools/": {
@@ -432,7 +458,7 @@
       "CliGui/": {
         "Abstractions/": {
           "ICliChatMessageRouter.cs": {
-            "symbols": ["interface ICliChatMessageRouter"]
+            "symbols": ["interface ICliChatMessageRouter", "prop ChatId", "prop ThreadId", "method ReadPrompts", "method SendResponse", "method RestoreHistory"]
           },
           "ITerminalAdapter.cs": {
             "symbols": ["interface ITerminalAdapter"]
@@ -463,7 +489,7 @@
         },
         "Routing/": {
           "CliChatMessageRouter.cs": {
-            "symbols": ["class CliChatMessageRouter : ICliChatMessageRouter"]
+            "symbols": ["class CliChatMessageRouter : ICliChatMessageRouter", "prop ChatId", "prop ThreadId", "method RestoreHistory", "method ReadPrompts", "method SendResponse", "method CreateThread", "method Dispose", "method DeriveIdsFromAgentName", "method OnInputReceived", "method OnShutdownRequested", "method AddToHistory", "method ResetInputQueue"]
           },
           "CliCommandHandler.cs": {
             "symbols": ["class CliCommandHandler"]
@@ -515,44 +541,76 @@
           }
         },
         "Messaging/": {
-          "ApprovalContext.cs": {
-            "symbols": ["class ApprovalContext"]
+          "CompositeChatMessengerClient.cs": {
+            "symbols": ["class CompositeChatMessengerClient : IChatMessengerClient", "prop Source", "prop SupportsScheduledNotifications", "method ReadPrompts", "method ProcessResponseStreamAsync", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync", "method Validate", "method BroadcastUpdatesAsync"]
           },
-          "BroadcastChannel.cs": {
-            "symbols": ["class BroadcastChannel"]
+          "Cli/": {
+            "CliChatMessengerClient.cs": {
+              "symbols": ["class CliChatMessengerClient : IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync", "method Dispose", "method RestoreHistoryOnceAsync"]
+            },
+            "OneShotChatMessengerClient.cs": {
+              "symbols": ["class OneShotChatMessengerClient : IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync", "method FlushOutput", "method CompleteResponse"]
+            }
           },
-          "CliChatMessengerClient.cs": {
-            "symbols": ["class CliChatMessengerClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method Dispose"]
+          "ServiceBus/": {
+            "ServiceBusChatMessengerClient.cs": {
+              "symbols": ["class ServiceBusChatMessengerClient : IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync"]
+            },
+            "ServiceBusMessageParser.cs": {
+              "symbols": ["class ServiceBusMessageParser"]
+            },
+            "ServiceBusProcessorHost.cs": {
+              "symbols": ["class ServiceBusProcessorHost", "method ExecuteAsync", "method ProcessMessageAsync", "method ProcessErrorAsync"]
+            },
+            "ServiceBusPromptReceiver.cs": {
+              "symbols": ["class ServiceBusPromptReceiver", "field _channel", "field _messageIdCounter", "method ReadPromptsAsync", "method EnqueueAsync", "method TryGetSourceId"]
+            },
+            "ServiceBusResponseHandler.cs": {
+              "symbols": ["class ServiceBusResponseHandler", "method ProcessAsync", "method GetSourceId"]
+            },
+            "ServiceBusResponseWriter.cs": {
+              "symbols": ["class ServiceBusResponseWriter", "method WriteResponseAsync", "class ServiceBusResponseMessage", "prop SourceId", "prop Response", "prop AgentId", "prop CompletedAt"]
+            },
+            "ServiceBusSourceMapper.cs": {
+              "symbols": ["class ServiceBusSourceMapper"]
+            }
           },
-          "HubNotifier.cs": {
-            "symbols": ["class HubNotifier : INotifier"]
+          "Telegram/": {
+            "TelegramBotHelper.cs": {
+              "symbols": ["class TelegramBotHelper", "method CreateBotClient"]
+            },
+            "TelegramChatClient.cs": {
+              "symbols": ["class TelegramChatClient : IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync", "method GetClient", "method PollBotAsync", "method SendResponseWithClient", "method GetIcon", "method IsAuthorized", "method IsBotMessage", "method GetNewOffset", "method GetPromptFromUpdate", "class BotContext"]
+            }
           },
-          "OneShotChatMessengerClient.cs": {
-            "symbols": ["class OneShotChatMessengerClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method FlushOutput", "method CompleteResponse"]
-          },
-          "StreamBuffer.cs": {
-            "symbols": ["class StreamBuffer"]
-          },
-          "TelegramBotHelper.cs": {
-            "symbols": ["class TelegramBotHelper"]
-          },
-          "TelegramChatClient.cs": {
-            "symbols": ["class TelegramChatClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method CreateTopicIfNeededAsync", "method StartScheduledStreamAsync", "class BotContext"]
-          },
-          "WebChatApprovalManager.cs": {
-            "symbols": ["class WebChatApprovalManager"]
-          },
-          "WebChatMessengerClient.cs": {
-            "symbols": ["class WebChatMessengerClient", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method GenerateChatId", "method StartScheduledStreamAsync", "method StartSession", "method TryGetSession", "method EndSession", "method EnqueuePromptAndGetResponses", "method EnqueuePrompt", "method IsProcessing", "method GetStreamState", "method SubscribeToStream", "method CancelProcessing", "method IsApprovalPending", "method GetPendingApprovalForTopic", "method RespondToApprovalAsync", "method Dispose"]
-          },
-          "WebChatSession.cs": {
-            "symbols": ["class WebChatSession"]
-          },
-          "WebChatSessionManager.cs": {
-            "symbols": ["class WebChatSessionManager"]
-          },
-          "WebChatStreamManager.cs": {
-            "symbols": ["class WebChatStreamManager"]
+          "WebChat/": {
+            "ApprovalContext.cs": {
+              "symbols": ["class ApprovalContext", "prop TopicId", "prop Requests", "method TrySetResult", "method WaitForApprovalAsync", "method Dispose"]
+            },
+            "BroadcastChannel.cs": {
+              "symbols": ["class BroadcastChannel<T>", "method Subscribe", "method WriteAsync", "method Complete"]
+            },
+            "HubNotifier.cs": {
+              "symbols": ["class HubNotifier : INotifier"]
+            },
+            "StreamBuffer.cs": {
+              "symbols": ["class StreamBuffer"]
+            },
+            "WebChatApprovalManager.cs": {
+              "symbols": ["class WebChatApprovalManager", "method RequestApprovalAsync", "method NotifyAutoApprovedAsync", "method RespondToApprovalAsync", "method IsApprovalPending", "method GetPendingApprovalForTopic", "method CancelPendingApprovalsForTopic", "method FormatToolCalls", "method FormatArgumentValue"]
+            },
+            "WebChatMessengerClient.cs": {
+              "symbols": ["class WebChatMessengerClient : IChatMessengerClient", "prop SupportsScheduledNotifications", "prop Source", "method ReadPrompts", "method ProcessResponseStreamAsync", "method CreateThread", "method DoesThreadExist", "method CreateTopicIfNeededAsync", "method GenerateChatId", "method StartScheduledStreamAsync", "method StartSession", "method TryGetSession", "method EndSession", "method EnqueuePromptAndGetResponses", "method EnqueuePrompt", "method IsProcessing", "method GetStreamState", "method SubscribeToStream", "method CancelProcessing", "method IsApprovalPending", "method GetPendingApprovalForTopic", "method RespondToApprovalAsync", "method Dispose"]
+            },
+            "WebChatSession.cs": {
+              "symbols": ["class WebChatSession"]
+            },
+            "WebChatSessionManager.cs": {
+              "symbols": ["class WebChatSessionManager", "method StartSession", "method TryGetSession", "method EndSession", "method GetTopicIdByChatId"]
+            },
+            "WebChatStreamManager.cs": {
+              "symbols": ["class WebChatStreamManager"]
+            }
           }
         },
         "ToolApproval/": {
@@ -566,7 +624,7 @@
             "symbols": ["class TelegramToolApprovalHandler : IToolApprovalHandler"]
           },
           "WebToolApprovalHandler.cs": {
-            "symbols": ["class WebToolApprovalHandler : IToolApprovalHandler"]
+            "symbols": ["class WebToolApprovalHandler : IToolApprovalHandler", "method RequestApprovalAsync", "method NotifyAutoApprovedAsync", "class WebToolApprovalHandlerFactory", "method Create"]
           }
         },
         "Torrent/": {
@@ -612,7 +670,7 @@
           "symbols": ["class McpServerExtensions"]
         },
         "TaskExtensions.cs": {
-          "symbols": ["class TaskExtensions"]
+          "symbols": ["class TaskExtensions", "method SafeAwaitAsync"]
         }
       },
       "HtmlProcessing/": {
@@ -905,7 +963,7 @@
     },
     "WebChat/": {
       "Program.cs": {
-        "symbols": ["(top-level statements)"]
+        "symbols": ["(top-level statements)", "class UserConfig", "class AppConfig"]
       }
     },
     "WebChat.Client/": {
@@ -1205,7 +1263,7 @@
             "symbols": ["class MergeTests"]
           },
           "MonitorTests.cs": {
-            "symbols": ["class MonitorTests"]
+            "symbols": ["class FakeAiAgent", "class FakeAgentFactory", "class MonitorTestMocks", "class ChatMonitorTests"]
           },
           "RemoveFileToolTests.cs": {
             "symbols": ["class RemoveFileToolTests"]
@@ -1216,7 +1274,7 @@
           "DTOs/": {
             "WebChat/": {
               "ChatStreamMessageTests.cs": {
-                "symbols": ["class ChatStreamMessageTests", "method ChatStreamMessage_WithUserMessage_IndicatesUserRole", "method ChatStreamMessage_WithoutUserMessage_IndicatesAssistantRole", "method ChatStreamMessage_WithTimestamp_StoresValue", "method ChatStreamMessage_WithoutTimestamp_DefaultsToNull"]
+                "symbols": ["class ChatStreamMessageTests"]
               }
             }
           },
@@ -1236,19 +1294,19 @@
           },
           "Text/": {
             "TextToolBaseTests.cs": {
-              "symbols": ["class TextToolBaseTests", "method ComputeFileHash_SameContent_ReturnsSameHash", "method ComputeFileHash_DifferentContent_ReturnsDifferentHash", "method ValidateExpectedHash_Matching_DoesNotThrow", "method ValidateExpectedHash_Mismatching_ThrowsWithCurrentHash", "method ValidateAndResolvePath_ValidFile_ReturnsFullPath", "method ValidateAndResolvePath_PathOutsideVault_ThrowsException", "method ValidateAndResolvePath_FileNotFound_ThrowsException", "method ValidateAndResolvePath_DisallowedExtension_ThrowsException", "method CreateTestFile", "class TestableTextTool"]
+              "symbols": ["class TextToolBaseTests", "class TestableTextTool"]
             },
             "TextCreateToolTests.cs": {
-              "symbols": ["class TextCreateToolTests", "method Run_CreatesNewFile", "method Run_CreatesParentDirectories", "method Run_WithCreateDirectoriesFalse_FailsIfParentMissing", "method Run_FileAlreadyExists_ThrowsException", "method Run_DisallowedExtension_ThrowsException", "method Run_PathOutsideVault_ThrowsException", "method Run_ReturnsFileMetadata", "method Run_RelativePath_ResolvesCorrectly", "method Run_LeadingSlash_ResolvesCorrectly", "method Run_WithOverwriteTrue_OverwritesExistingFile", "method Run_WithOverwriteFalse_FileExists_ThrowsException", "class TestableTextCreateTool"]
+              "symbols": ["class TextCreateToolTests", "class TestableTextCreateTool"]
             },
             "TextEditToolTests.cs": {
-              "symbols": ["class TextEditToolTests", "method Run_SingleOccurrence_ReplacesText", "method Run_MultipleOccurrences_ReplaceAllFalse_Throws", "method Run_MultipleOccurrences_ReplaceAllTrue_ReplacesAll", "method Run_NotFound_Throws", "method Run_CaseInsensitiveMatch_ThrowsWithSuggestion", "method Run_MultilineOldString_ReplacesAcrossLines", "method Run_ReturnsFileHash", "method Run_ReturnsAffectedLines", "method Run_AtomicWrite_NoTmpFileRemains", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "method Run_FileNotFound_Throws", "method Run_WithMatchingExpectedHash_Succeeds", "method Run_WithMismatchingExpectedHash_Throws", "class TestableTextEditTool"]
+              "symbols": ["class TextEditToolTests", "class TestableTextEditTool"]
             },
             "TextReadToolTests.cs": {
-              "symbols": ["class TextReadToolTests", "method Run_ReturnsWholeFileWithLineNumbers", "method Run_ReturnsFileHash", "method Run_ReturnsTotalLines", "method Run_WithOffset_StartsFromSpecifiedLine", "method Run_WithLimit_ReturnsLimitedLines", "method Run_WithOffsetAndLimit_ReturnsPaginatedContent", "method Run_LargeFile_TruncatesAt500Lines", "method Run_SmallFile_NotTruncated", "method Run_FileNotFound_Throws", "method Run_PathOutsideVault_Throws", "method Run_DisallowedExtension_Throws", "class TestableTextReadTool"]
+              "symbols": ["class TextReadToolTests", "class TestableTextReadTool"]
             },
             "TextSearchToolTests.cs": {
-              "symbols": ["class TextSearchToolTests", "method Run_FindsMatchesAcrossMultipleFiles", "method Run_WithFilePattern_FiltersFiles", "method Run_WithSubdirectory_SearchesRecursively", "method Run_WithRegex_MatchesPattern", "method Run_IncludesNearestHeading", "method Run_WithContextLines_IncludesContext", "method Run_RespectsMaxResults", "method Run_CaseInsensitiveByDefault", "method Run_NoMatches_ReturnsEmptyResults", "method Run_SkipsDisallowedExtensions", "method Run_RelativePathsInResults", "method Run_WithFilePath_SearchesSingleFile", "method Run_WithFilePath_IgnoresDirectoryPathAndFilePattern", "method Run_WithFilePath_FileNotFound_Throws", "method Run_WithFilePath_OutsideVault_Throws", "method Run_WithFilePath_DisallowedExtension_Throws", "method Run_WithFilePath_NoMatches_ReturnsEmpty", "method Run_WithFilePath_WithRegex_MatchesPattern", "method Run_WithOutputModeFilesOnly_ReturnsFilePathsAndCounts", "method Run_WithOutputModeContent_ReturnsFullMatches", "method Run_WithInvalidOutputMode_Throws", "class TestableTextSearchTool"]
+              "symbols": ["class TextSearchToolTests", "class TestableTextSearchTool"]
             }
           }
         },
@@ -1275,7 +1333,7 @@
             "symbols": ["class PlaywrightWebBrowserTests"]
           },
           "RedisChatMessageStoreTests.cs": {
-            "symbols": ["class RedisChatMessageStoreTests", "method InvokingAsync_WithStringKey_UsesKeyDirectly", "method InvokingAsync_WithUndefinedState_UsesGuidKey", "method Serialize_ReturnsKeyAsJsonElement", "method AgentKey_ToString_ReturnsCorrectFormat", "method ToChatResponse_DoesNotPreserveAdditionalPropertiesOnMessages", "method InvokedAsync_ResponseMessages_HaveTimestampAfterStorage", "method CreateStore"]
+            "symbols": ["class RedisChatMessageStoreTests"]
           },
           "TelegramToolApprovalHandlerTests.cs": {
             "symbols": ["class TelegramToolApprovalHandlerTests"]
@@ -1304,6 +1362,38 @@
             "OpenRouterEmbeddingServiceMockTests.cs": {
               "symbols": ["class OpenRouterEmbeddingServiceMockTests"]
             }
+          },
+          "Messaging/": {
+            "CompositeChatMessengerClientTests.cs": {
+              "symbols": ["class CompositeChatMessengerClientTests"]
+            },
+            "MessageSourceRouterTests.cs": {
+              "symbols": ["class MessageSourceRouterTests"]
+            },
+            "MessageSourceRoutingTests.cs": {
+              "symbols": ["class MessageSourceRoutingTests"]
+            },
+            "ServiceBusChatMessengerClientTests.cs": {
+              "symbols": ["class ServiceBusChatMessengerClientTests"]
+            },
+            "ServiceBusMessageParserTests.cs": {
+              "symbols": ["class ServiceBusMessageParserTests"]
+            },
+            "ServiceBusPromptReceiverTests.cs": {
+              "symbols": ["class ServiceBusPromptReceiverTests"]
+            },
+            "ServiceBusResponseHandlerTests.cs": {
+              "symbols": ["class ServiceBusResponseHandlerTests"]
+            },
+            "ServiceBusResponseWriterTests.cs": {
+              "symbols": ["class ServiceBusResponseWriterTests"]
+            },
+            "ServiceBusSourceMapperTests.cs": {
+              "symbols": ["class ServiceBusConversationMapperTests"]
+            },
+            "WebChatMessengerClientTests.cs": {
+              "symbols": ["class WebChatMessengerClientTests"]
+            }
           }
         },
         "McpServerLibrary/": {
@@ -1329,7 +1419,7 @@
               "symbols": ["class TransientErrorFilterTests"]
             },
             "BufferRebuildUtilityTests.cs": {
-              "symbols": ["class BufferRebuildUtilityTests", "method RebuildFromBuffer_WithEmptyBuffer_ReturnsEmptyMessage", "method RebuildFromBuffer_WithSingleTurn_ReturnsStreamingMessage", "method RebuildFromBuffer_WithCompleteFlag_MovesToCompletedTurns", "method RebuildFromBuffer_WithMultipleTurns_SeparatesCompleted", "method RebuildFromBuffer_GroupsByMessageId_PreservesOrder", "method RebuildFromBuffer_WithReasoning_AccumulatesCorrectly", "method RebuildFromBuffer_WithToolCalls_AccumulatesWithNewlines", "method RebuildFromBuffer_SkipsEmptyCompletedTurns", "method RebuildFromBuffer_WithUserMessage_IncludesInCompletedTurns", "method RebuildFromBuffer_WithMixedMessages_PreservesChronologicalOrder", "method RebuildFromBuffer_PropagatesMessageIdToCompletedTurns", "method RebuildFromBuffer_UserMessages_HaveNoMessageId", "method RebuildFromBuffer_WithTimestamp_CarriesTimestampForward", "method RebuildFromBuffer_WithMultipleTimestamps_LastWins", "method RebuildFromBuffer_WithoutTimestamp_RemainsNull", "method ResumeFromBuffer_WithEmptyBuffer_ReturnsHistoryUnchanged", "method ResumeFromBuffer_InterleavesByAnchorPosition", "method ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor", "method ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor", "method ResumeFromBuffer_NoAnchors_AppendsAllAtEnd", "method ResumeFromBuffer_MergesReasoningIntoAnchor", "method ResumeFromBuffer_AddsPromptIfNotInHistory", "method ResumeFromBuffer_DoesNotDuplicatePrompt", "method ResumeFromBuffer_ExcludesCurrentPromptFromBufferTurns", "method ResumeFromBuffer_StripsStreamingMessageContentAgainstHistory", "method ResumeFromBuffer_WithEmptyHistory_ReturnsBufferTurns"]
+              "symbols": ["class BufferRebuildUtilityTests"]
             }
           },
           "Fixtures/": {
@@ -1424,10 +1514,10 @@
             "symbols": ["class OneShotChatMessengerClientTests"]
           },
           "PlaywrightWebBrowserFixture.cs": {
-            "symbols": ["class PlaywrightWebBrowserFixture", "prop Browser", "prop IsAvailable", "prop InitializationError", "method InitializeAsync", "method TryInitializeLocalAsync", "method TryInitializeContainerAsync", "method GetWebSocketDebuggerUrlAsync", "method ClearContextStateAsync", "method DisposeAsync", "class PlaywrightWebBrowserIntegrationCollection"]
+            "symbols": ["class PlaywrightWebBrowserFixture", "class PlaywrightWebBrowserIntegrationCollection"]
           },
           "PlaywrightWebBrowserIntegrationTests.cs": {
-            "symbols": ["class PlaywrightWebBrowserIntegrationTests", "method InitializeAsync", "method DisposeAsync", "method GetUniqueSessionId", "method NavigateAsync_WithSimplePage_ReturnsContent", "method NavigateAsync_WithWikipedia_ReturnsContentWithLinks", "method NavigateAsync_WithCssSelector_ExtractsSpecificContent", "method NavigateAsync_SessionPersistsAcrossCalls", "method ClickAsync_WithValidSelector_ClicksElement", "method ClickAsync_WithTextFilter_ClicksMatchingElement", "method ClickAsync_WithNonexistentSelector_ReturnsElementNotFound", "method ClickAsync_WithNoSession_ReturnsSessionNotFound", "method GetCurrentPageAsync_WithValidSession_ReturnsContent", "method GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound", "method CloseSessionAsync_ClosesSession", "method NavigateAsync_WithInvalidUrl_ReturnsError", "method NavigateAsync_WithNonexistentDomain_ReturnsError", "method NavigateAsync_MultipleSessions_AreIndependent", "method ClickAsync_HoverAction_HoversElement", "method ClickAsync_FillAndPressEnter_SubmitsForm", "method ClickAsync_ClearAction_ClearsInputField", "method NavigateAsync_WithWikipediaUrls_ChecksForRedirect"]
+            "symbols": ["class PlaywrightWebBrowserIntegrationTests"]
           },
           "QBittorrentDownloadClientTests.cs": {
             "symbols": ["class QBittorrentDownloadClientTests"]
@@ -1449,13 +1539,16 @@
             "symbols": ["class JackettFixture"]
           },
           "McpLibraryServerFixture.cs": {
-            "symbols": ["class McpLibraryServerFixture", "method InitializeAsync", "method GetAvailablePort", "method CreateLibraryStructure", "method CreateLibraryFile", "method CreateDownloadFile", "method FileExistsInLibrary", "method FileExistsInDownloads", "method DisposeAsync"]
+            "symbols": ["class McpLibraryServerFixture"]
           },
           "QBittorrentFixture.cs": {
             "symbols": ["class QBittorrentFixture"]
           },
           "RedisFixture.cs": {
             "symbols": ["class RedisFixture"]
+          },
+          "ServiceBusFixture.cs": {
+            "symbols": ["class ServiceBusFixture"]
           },
           "TelegramBotFixture.cs": {
             "symbols": ["class TelegramBotFixture"]
@@ -1493,6 +1586,11 @@
           },
           "RedisMemoryStoreTests.cs": {
             "symbols": ["class RedisMemoryStoreTests"]
+          }
+        },
+        "Messaging/": {
+          "ServiceBusIntegrationTests.cs": {
+            "symbols": ["class ServiceBusIntegrationTests"]
           }
         },
         "StateManagers/": {
