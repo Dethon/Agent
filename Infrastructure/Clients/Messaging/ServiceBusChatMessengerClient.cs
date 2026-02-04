@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace Infrastructure.Clients.Messaging;
 
 public sealed class ServiceBusChatMessengerClient(
-    ServiceBusSourceMapper sourceMapper,
+    ServiceBusConversationMapper sourceMapper,
     ServiceBusResponseWriter responseWriter,
     ILogger<ServiceBusChatMessengerClient> logger,
     string defaultAgentId) : IChatMessengerClient

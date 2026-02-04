@@ -8,23 +8,23 @@ using StackExchange.Redis;
 
 namespace Tests.Unit.Infrastructure.Messaging;
 
-public class ServiceBusSourceMapperTests
+public class ServiceBusConversationMapperTests
 {
     private readonly Mock<IDatabase> _dbMock;
     private readonly Mock<IThreadStateStore> _threadStateStoreMock;
-    private readonly ServiceBusSourceMapper _mapper;
+    private readonly ServiceBusConversationMapper _mapper;
 
-    public ServiceBusSourceMapperTests()
+    public ServiceBusConversationMapperTests()
     {
         var redisMock = new Mock<IConnectionMultiplexer>();
         _dbMock = new Mock<IDatabase>();
         _threadStateStoreMock = new Mock<IThreadStateStore>();
-        var loggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
+        var loggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
 
         redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(_dbMock.Object);
 
-        _mapper = new ServiceBusSourceMapper(
+        _mapper = new ServiceBusConversationMapper(
             redisMock.Object,
             _threadStateStoreMock.Object,
             loggerMock.Object);

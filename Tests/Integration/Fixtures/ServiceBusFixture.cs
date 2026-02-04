@@ -126,10 +126,10 @@ public class ServiceBusFixture : IAsyncLifetime
             .Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
             .Returns(Task.CompletedTask);
 
-        var sourceMapper = new ServiceBusSourceMapper(
+        var sourceMapper = new ServiceBusConversationMapper(
             RedisConnection,
             threadStateStoreMock.Object,
-            NullLogger<ServiceBusSourceMapper>.Instance);
+            NullLogger<ServiceBusConversationMapper>.Instance);
 
         var responseWriter = new ServiceBusResponseWriter(
             _responseSender,

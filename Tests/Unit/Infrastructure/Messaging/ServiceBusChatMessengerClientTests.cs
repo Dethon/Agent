@@ -18,14 +18,14 @@ public class ServiceBusChatMessengerClientTests
         var redisMock = new Mock<IConnectionMultiplexer>();
         var dbMock = new Mock<IDatabase>();
         var threadStateStoreMock = new Mock<IThreadStateStore>();
-        var mapperLoggerMock = new Mock<ILogger<ServiceBusSourceMapper>>();
+        var mapperLoggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
         var writerLoggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
         var clientLoggerMock = new Mock<ILogger<ServiceBusChatMessengerClient>>();
 
         redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(dbMock.Object);
 
-        var mapper = new ServiceBusSourceMapper(
+        var mapper = new ServiceBusConversationMapper(
             redisMock.Object,
             threadStateStoreMock.Object,
             mapperLoggerMock.Object);

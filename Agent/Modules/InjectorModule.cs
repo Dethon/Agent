@@ -187,12 +187,12 @@ public static class InjectorModule
                     var client = sp.GetRequiredService<ServiceBusClient>();
                     return client.CreateSender(sbSettings.ResponseQueueName);
                 })
-                .AddSingleton<ServiceBusSourceMapper>()
+                .AddSingleton<ServiceBusConversationMapper>()
                 .AddSingleton(sp => new ServiceBusResponseWriter(
                     sp.GetRequiredService<ServiceBusSender>(),
                     sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
                 .AddSingleton(sp => new ServiceBusChatMessengerClient(
-                    sp.GetRequiredService<ServiceBusSourceMapper>(),
+                    sp.GetRequiredService<ServiceBusConversationMapper>(),
                     sp.GetRequiredService<ServiceBusResponseWriter>(),
                     sp.GetRequiredService<ILogger<ServiceBusChatMessengerClient>>(),
                     defaultAgentId))
