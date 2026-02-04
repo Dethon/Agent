@@ -13,7 +13,7 @@ public class ServiceBusChatMessengerClientTests
     public ServiceBusChatMessengerClientTests()
     {
         var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
-        var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!, null!, null!);
+        var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!, null!);
 
         _client = new ServiceBusChatMessengerClient(
             receiverMock.Object,
