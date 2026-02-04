@@ -25,11 +25,6 @@ public sealed class ServiceBusChatMessengerClient(
         return responseHandler.ProcessAsync(updates, cancellationToken);
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(0);
-    }
-
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId, CancellationToken cancellationToken)
     {
         return Task.FromResult(false);

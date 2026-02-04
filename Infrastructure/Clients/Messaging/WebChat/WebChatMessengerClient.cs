@@ -119,7 +119,7 @@ public sealed class WebChatMessengerClient(
         }
     }
 
-    public async Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
+    private async Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
     {
         var topicId = TopicIdHasher.GenerateTopicId();
         var threadId = TopicIdHasher.GetThreadIdForTopic(topicId);

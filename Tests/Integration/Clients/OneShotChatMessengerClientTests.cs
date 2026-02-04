@@ -179,20 +179,6 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateThread_ReturnsOne()
-    {
-        // Arrange
-        var lifetime = new Mock<IHostApplicationLifetime>();
-        var client = new OneShotChatMessengerClient("test", false, lifetime.Object);
-
-        // Act
-        var threadId = await client.CreateThread(1, "Test", null, CancellationToken.None);
-
-        // Assert
-        threadId.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task DoesThreadExist_ReturnsTrue()
     {
         // Arrange

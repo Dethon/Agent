@@ -89,12 +89,6 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _router.SendResponse(new ChatResponseMessage { IsComplete = true, MessageIndex = messageIndex });
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        _router.CreateThread(name);
-        return Task.FromResult(_router.ThreadId);
-    }
-
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {

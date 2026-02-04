@@ -81,11 +81,6 @@ public sealed class OneShotChatMessengerClient(
         CompleteResponse();
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(1);
-    }
-
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {

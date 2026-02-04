@@ -91,7 +91,7 @@ public class TelegramChatClient(
         }
     }
 
-    public async Task<int> CreateThread(long chatId, string name, string? agentId,
+    private async Task<int> CreateThread(long chatId, string name, string? agentId,
         CancellationToken cancellationToken)
     {
         var client = GetClient(agentId);

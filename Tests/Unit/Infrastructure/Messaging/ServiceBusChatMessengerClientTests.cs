@@ -56,16 +56,6 @@ public class ServiceBusChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateThread_ReturnsZero()
-    {
-        // Act
-        var result = await _client.CreateThread(123, "test", "agent1", CancellationToken.None);
-
-        // Assert
-        result.ShouldBe(0);
-    }
-
-    [Fact]
     public async Task DoesThreadExist_ReturnsFalse()
     {
         // Act
