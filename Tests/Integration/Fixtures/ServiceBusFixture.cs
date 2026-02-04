@@ -1,10 +1,12 @@
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.Contracts;
+using Domain.DTOs.WebChat;
+using DotNet.Testcontainers.Builders;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StackExchange.Redis;
-using System.Text.Json;
 using Testcontainers.ServiceBus;
 
 namespace Tests.Integration.Fixtures;
@@ -35,6 +37,11 @@ public class ServiceBusFixture : IAsyncLifetime
         _serviceBusContainer = new ServiceBusBuilder("mcr.microsoft.com/azure-messaging/servicebus-emulator:latest")
             .WithAcceptLicenseAgreement(true)
             .WithConfig(configPath)
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilMessageIsLogged("Emulator Service is Successfully Up!")
+                .UntilHttpRequestIsSucceeded(
+                    request => request.ForPort(5300).ForPath("/health"),
+                    waitStrategy => waitStrategy.WithTimeout(TimeSpan.FromMinutes(3))))
             .Build();
 
         await _serviceBusContainer.StartAsync();
@@ -116,7 +123,7 @@ public class ServiceBusFixture : IAsyncLifetime
     {
         var threadStateStoreMock = new Mock<IThreadStateStore>();
         threadStateStoreMock
-            .Setup(s => s.SaveTopicAsync(It.IsAny<global::Domain.DTOs.WebChat.TopicMetadata>()))
+            .Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
             .Returns(Task.CompletedTask);
 
         var sourceMapper = new ServiceBusSourceMapper(
