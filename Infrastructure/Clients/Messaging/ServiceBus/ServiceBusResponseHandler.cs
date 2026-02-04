@@ -1,9 +1,6 @@
-using System.Collections.Concurrent;
-using System.Text;
 using Domain.Agents;
 using Domain.DTOs;
 using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Clients.Messaging.ServiceBus;
 
@@ -12,43 +9,27 @@ public class ServiceBusResponseHandler(
     ServiceBusResponseWriter responseWriter,
     string defaultAgentId)
 {
-    private readonly ConcurrentDictionary<long, StringBuilder> _accumulators = new();
-
     public async Task ProcessAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
+        IAsyncEnumerable<(AgentKey Key, AgentResponseUpdate Update, AiResponse? Response, MessageSource Source)>
+            updates,
         CancellationToken ct)
     {
-        await foreach (var (key, update, _, _) in updates.WithCancellation(ct))
-        {
-            if (!promptReceiver.TryGetSourceId(key.ChatId, out var sourceId))
-            {
-                continue;
-            }
+        var completedResponses = updates
+            .Select(x => (x.Key, x.Response?.Content, SourceId: GetSourceId(x.Key.ChatId)))
+            .Where(x => !string.IsNullOrEmpty(x.Content) && x.SourceId is not null)
+            .Select(x => (x.Key, Content: x.Content!, SourceId: x.SourceId!))
+            .WithCancellation(ct);
 
-            await ProcessUpdateAsync(key, update, sourceId, ct);
+        await foreach (var (key, content, sourceId) in completedResponses)
+        {
+            await responseWriter.WriteResponseAsync(sourceId, key.AgentId ?? defaultAgentId, content, ct);
         }
     }
 
-    private async Task ProcessUpdateAsync(AgentKey key, AgentResponseUpdate update, string sourceId,
-        CancellationToken ct)
+    private string? GetSourceId(long chatId)
     {
-        var accumulator = _accumulators.GetOrAdd(key.ChatId, _ => new StringBuilder());
-
-        foreach (var content in update.Contents)
-        {
-            switch (content)
-            {
-                case TextContent tc when !string.IsNullOrEmpty(tc.Text):
-                    accumulator.Append(tc.Text);
-                    break;
-
-                case StreamCompleteContent when accumulator.Length > 0:
-                    await responseWriter.WriteResponseAsync(
-                        sourceId, key.AgentId ?? defaultAgentId, accumulator.ToString(), ct);
-                    accumulator.Clear();
-                    _accumulators.TryRemove(key.ChatId, out _);
-                    break;
-            }
-        }
+        return promptReceiver.TryGetSourceId(chatId, out var sourceId)
+            ? sourceId
+            : null;
     }
 }
