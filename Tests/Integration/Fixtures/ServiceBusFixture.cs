@@ -119,7 +119,7 @@ public class ServiceBusFixture : IAsyncLifetime
         return messages;
     }
 
-    public ServiceBusChatMessengerClient CreateMessengerClient()
+    public (ServiceBusChatMessengerClient Client, ServiceBusProcessorHost Host) CreateClientAndHost()
     {
         var threadStateStoreMock = new Mock<IThreadStateStore>();
         threadStateStoreMock
@@ -145,40 +145,25 @@ public class ServiceBusFixture : IAsyncLifetime
             DefaultAgentId,
             NullLogger<ServiceBusResponseHandler>.Instance);
 
-        return new ServiceBusChatMessengerClient(
+        var client = new ServiceBusChatMessengerClient(
             promptReceiver,
             responseHandler,
             DefaultAgentId);
-    }
 
-    public ServiceBusProcessorHost CreateProcessorHost(ServiceBusChatMessengerClient client)
-    {
         var processor = _serviceBusClient.CreateProcessor(PromptQueueName, new ServiceBusProcessorOptions
         {
             AutoCompleteMessages = false,
             MaxConcurrentCalls = 1
         });
 
-        var threadStateStoreMock = new Mock<IThreadStateStore>();
-        threadStateStoreMock
-            .Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
-            .Returns(Task.CompletedTask);
-
-        var sourceMapper = new ServiceBusConversationMapper(
-            RedisConnection,
-            threadStateStoreMock.Object,
-            NullLogger<ServiceBusConversationMapper>.Instance);
-
-        var promptReceiver = new ServiceBusPromptReceiver(
-            sourceMapper,
-            NullLogger<ServiceBusPromptReceiver>.Instance);
-
         var messageParser = new ServiceBusMessageParser(DefaultAgentId);
 
-        return new ServiceBusProcessorHost(
+        var host = new ServiceBusProcessorHost(
             processor,
             messageParser,
             promptReceiver,
             NullLogger<ServiceBusProcessorHost>.Instance);
+
+        return (client, host);
     }
 }

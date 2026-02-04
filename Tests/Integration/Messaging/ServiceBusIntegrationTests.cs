@@ -18,8 +18,7 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
 
     public async Task InitializeAsync()
     {
-        _messengerClient = fixture.CreateMessengerClient();
-        _processorHost = fixture.CreateProcessorHost(_messengerClient);
+        (_messengerClient, _processorHost) = fixture.CreateClientAndHost();
         _cts = new CancellationTokenSource();
 
         await _processorHost.StartAsync(_cts.Token);
@@ -136,8 +135,6 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
     public async Task SendPrompt_MissingPromptField_DeadLettered()
     {
         // Arrange - Send JSON without required 'prompt' field
-        // Note: ServiceBusPromptMessage has 'required string Prompt', so missing field
-        // causes JsonException during deserialization, resulting in DeserializationError
         const string missingPromptJson = """{"sender": "test-user"}""";
 
         // Act
@@ -146,13 +143,13 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         // Wait for processing
         await Task.Delay(1000);
 
-        // Assert - Message should be in dead-letter queue with DeserializationError
-        // (required property missing throws JsonException)
+        // Assert - Message should be in dead-letter queue with MalformedMessage
+        // (parser validates prompt field presence and returns MalformedMessage)
         var deadLetterMessages = await fixture.GetDeadLetterMessagesAsync();
         deadLetterMessages.ShouldNotBeEmpty();
 
         var dlMessage = deadLetterMessages.First();
-        dlMessage.DeadLetterReason.ShouldBe("DeserializationError");
+        dlMessage.DeadLetterReason.ShouldBe("MalformedMessage");
     }
 
     [Fact]
