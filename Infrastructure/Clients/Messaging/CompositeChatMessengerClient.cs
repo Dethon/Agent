@@ -12,8 +12,6 @@ namespace Infrastructure.Clients.Messaging;
 public sealed class CompositeChatMessengerClient(
     IReadOnlyList<IChatMessengerClient> clients) : IChatMessengerClient
 {
-    private readonly ConcurrentDictionary<long, MessageSource> _chatIdToSource = new();
-
     public MessageSource Source => MessageSource.WebUi;
 
     public bool SupportsScheduledNotifications => clients.Any(c => c.SupportsScheduledNotifications);
@@ -28,18 +26,17 @@ public sealed class CompositeChatMessengerClient(
 
         await foreach (var prompt in merged)
         {
-            _chatIdToSource[prompt.ChatId] = prompt.Source;
             yield return prompt;
         }
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         Validate();
         var channels = clients
-            .Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?)>())
+            .Select(_ => Channel.CreateUnbounded<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>())
             .ToArray();
 
         var clientChannelPairs = clients
@@ -69,6 +66,7 @@ public sealed class CompositeChatMessengerClient(
     }
 
     public async Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -76,14 +74,20 @@ public sealed class CompositeChatMessengerClient(
         CancellationToken ct = default)
     {
         Validate();
-        var agentKeys = clients.Select(x => x.CreateTopicIfNeededAsync(chatId, threadId, agentId, topicName, ct));
-        return (await Task.WhenAll(agentKeys)).First();
+        var client = clients.FirstOrDefault(c => c.Source == source);
+        return client != null
+            ? await client.CreateTopicIfNeededAsync(source, chatId, threadId, agentId, topicName, ct)
+            : new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? string.Empty);
     }
 
-    public async Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public async Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         Validate();
-        await Task.WhenAll(clients.Select(c => c.StartScheduledStreamAsync(agentKey, ct)));
+        var client = clients.FirstOrDefault(c => c.Source == source);
+        if (client != null)
+        {
+            await client.StartScheduledStreamAsync(agentKey, source, ct);
+        }
     }
 
     private void Validate()
@@ -95,8 +99,8 @@ public sealed class CompositeChatMessengerClient(
     }
 
     private async Task BroadcastUpdatesAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> source,
-        (IChatMessengerClient client, Channel<(AgentKey, AgentResponseUpdate, AiResponse?)> channel)[]
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> source,
+        (IChatMessengerClient client, Channel<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> channel)[]
             clientChannelPairs,
         CancellationToken ct)
     {
@@ -104,14 +108,12 @@ public sealed class CompositeChatMessengerClient(
         {
             await foreach (var update in source.WithCancellation(ct))
             {
-                var (agentKey, _, _) = update;
-                var isKnownChatId = _chatIdToSource.TryGetValue(agentKey.ChatId, out var promptSource);
+                var (_, _, _, messageSource) = update;
 
                 var writeTasks = clientChannelPairs
                     .Where(pair =>
                         pair.client.Source == MessageSource.WebUi || // WebUi always receives
-                        !isKnownChatId || // Unknown ChatId broadcasts to all (fail-safe)
-                        pair.client.Source == promptSource) // Source matches
+                        pair.client.Source == messageSource) // Source matches
                     .Select(pair => pair.channel.Writer.WriteAsync(update, ct).AsTask());
 
                 await Task.WhenAll(writeTasks);
