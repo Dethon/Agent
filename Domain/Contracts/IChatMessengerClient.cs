@@ -8,12 +8,13 @@ public interface IChatMessengerClient
 {
     bool SupportsScheduledNotifications { get; }
 
+    MessageSource Source { get; }
+
     IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken);
 
     Task ProcessResponseStreamAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates, CancellationToken cancellationToken);
 
-    Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken);
     Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId, CancellationToken cancellationToken);
 
     Task<AgentKey> CreateTopicIfNeededAsync(
