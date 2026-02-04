@@ -45,7 +45,7 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         var responses = updates
@@ -93,6 +93,7 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -102,7 +103,7 @@ public sealed class OneShotChatMessengerClient(
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }
