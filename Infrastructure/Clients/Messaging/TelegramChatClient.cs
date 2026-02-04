@@ -29,6 +29,8 @@ public class TelegramChatClient(
 
     public bool SupportsScheduledNotifications => false;
 
+    public MessageSource Source => MessageSource.Telegram;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -309,7 +311,8 @@ public class TelegramChatClient(
                      message.Chat.Username ??
                      message.Chat.FirstName ??
                      $"{message.Chat.Id}",
-            ThreadId = message.MessageThreadId
+            ThreadId = message.MessageThreadId,
+            Source = MessageSource.Telegram
         };
     }
 
