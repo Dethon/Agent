@@ -150,9 +150,26 @@ public class ServiceBusFixture : IAsyncLifetime
             MaxConcurrentCalls = 1
         });
 
+        var threadStateStoreMock = new Mock<IThreadStateStore>();
+        threadStateStoreMock
+            .Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
+            .Returns(Task.CompletedTask);
+
+        var sourceMapper = new ServiceBusConversationMapper(
+            RedisConnection,
+            threadStateStoreMock.Object,
+            NullLogger<ServiceBusConversationMapper>.Instance);
+
+        var promptReceiver = new ServiceBusPromptReceiver(
+            sourceMapper,
+            NullLogger<ServiceBusPromptReceiver>.Instance);
+
+        var messageParser = new ServiceBusMessageParser(DefaultAgentId);
+
         return new ServiceBusProcessorHost(
             processor,
-            client,
+            messageParser,
+            promptReceiver,
             NullLogger<ServiceBusProcessorHost>.Instance);
     }
 }

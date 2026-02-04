@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
 
-public sealed class ServiceBusPromptReceiver(
+public class ServiceBusPromptReceiver(
     ServiceBusConversationMapper conversationMapper,
     ILogger<ServiceBusPromptReceiver> logger)
 {
@@ -37,6 +37,6 @@ public sealed class ServiceBusPromptReceiver(
         await _channel.Writer.WriteAsync(prompt, ct);
     }
 
-    public bool TryGetSourceId(long chatId, out string sourceId)
+    public virtual bool TryGetSourceId(long chatId, out string sourceId)
         => conversationMapper.TryGetSourceId(chatId, out sourceId);
 }

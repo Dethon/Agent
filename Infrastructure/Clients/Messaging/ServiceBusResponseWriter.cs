@@ -38,7 +38,7 @@ public class ServiceBusResponseWriter
             .Build();
     }
 
-    public async Task WriteResponseAsync(
+    public virtual async Task WriteResponseAsync(
         string sourceId,
         string agentId,
         string response,
