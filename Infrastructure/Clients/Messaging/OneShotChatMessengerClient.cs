@@ -21,6 +21,8 @@ public sealed class OneShotChatMessengerClient(
 
     public bool SupportsScheduledNotifications => false;
 
+    public MessageSource Source => MessageSource.Cli;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -37,7 +39,8 @@ public sealed class OneShotChatMessengerClient(
             ChatId = 1,
             ThreadId = 1,
             MessageId = 1,
-            Sender = Environment.UserName
+            Sender = Environment.UserName,
+            Source = MessageSource.Cli
         };
     }
 
