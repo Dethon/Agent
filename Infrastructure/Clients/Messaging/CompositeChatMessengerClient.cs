@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
@@ -17,7 +18,7 @@ public sealed class CompositeChatMessengerClient(
 
     public bool SupportsScheduledNotifications => clients.Any(c => c.SupportsScheduledNotifications);
 
-    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         Validate();
         var merged = clients
@@ -102,10 +103,13 @@ public sealed class CompositeChatMessengerClient(
             await foreach (var update in source.WithCancellation(ct))
             {
                 var (agentKey, _, _) = update;
-                var promptSource = _chatIdToSource.GetValueOrDefault(agentKey.ChatId);
+                var isKnownChatId = _chatIdToSource.TryGetValue(agentKey.ChatId, out var promptSource);
 
                 var writeTasks = clientChannelPairs
-                    .Where(pair => pair.client.Source == MessageSource.WebUi || pair.client.Source == promptSource)
+                    .Where(pair =>
+                        pair.client.Source == MessageSource.WebUi ||  // WebUi always receives
+                        !isKnownChatId ||                             // Unknown ChatId broadcasts to all (fail-safe)
+                        pair.client.Source == promptSource)           // Source matches
                     .Select(pair => pair.channel.Writer.WriteAsync(update, ct).AsTask());
 
                 await Task.WhenAll(writeTasks);

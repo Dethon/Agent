@@ -199,7 +199,8 @@ public class MessageSourceRoutingTests
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // First prompt from ServiceBus
+        // First prompt from ServiceBus, then second from WebUI with SAME ChatId
+        // Both return from same client to ensure deterministic ordering
         var serviceBusPrompt = new ChatPrompt
         {
             Prompt = "First from ServiceBus",
@@ -210,7 +211,6 @@ public class MessageSourceRoutingTests
             Source = MessageSource.ServiceBus
         };
 
-        // Second prompt from WebUI with SAME ChatId
         var webUiPrompt = new ChatPrompt
         {
             Prompt = "Second from WebUI",
@@ -221,12 +221,14 @@ public class MessageSourceRoutingTests
             Source = MessageSource.WebUi
         };
 
+        // Return both prompts from ServiceBus client in order to ensure deterministic sequencing
+        // (ServiceBus prompt first, then WebUI prompt - simulating the source being updated)
         serviceBusClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { serviceBusPrompt }.ToAsyncEnumerable());
+            .Returns(new[] { serviceBusPrompt, webUiPrompt }.ToAsyncEnumerable());
         webUiClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { webUiPrompt }.ToAsyncEnumerable());
+            .Returns(AsyncEnumerable.Empty<ChatPrompt>());
 
-        // Read prompts (ServiceBus first, then WebUI - WebUI overwrites source)
+        // Read prompts - WebUI prompt comes second so it overwrites the source
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await foreach (var _ in composite.ReadPrompts(100, cts.Token).Take(2)) { }
 
