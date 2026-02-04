@@ -11,6 +11,8 @@ namespace Tests.Unit.Infrastructure.Messaging;
 
 public class MessageSourceRoutingTests
 {
+    private readonly IMessageSourceRouter _router = new MessageSourceRouter();
+
     [Fact]
     public async Task ProcessResponseStreamAsync_WebUiClientReceivesAllResponses()
     {
@@ -21,7 +23,7 @@ public class MessageSourceRoutingTests
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
-        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
 
         // Create response for ServiceBus with source in tuple
         var response = (
@@ -51,7 +53,7 @@ public class MessageSourceRoutingTests
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
-        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
 
         // Create response for WebUI with source in tuple
         var response = (
@@ -81,7 +83,7 @@ public class MessageSourceRoutingTests
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
-        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
 
         // Create response with Cli source (only WebUI should receive it as universal viewer)
         var response = (
@@ -110,7 +112,7 @@ public class MessageSourceRoutingTests
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var telegramClient = CreateMockClient(MessageSource.Telegram, telegramUpdates);
 
-        var composite = new CompositeChatMessengerClient([webUiClient.Object, telegramClient.Object]);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, telegramClient.Object], _router);
 
         // Create response for Telegram with source in tuple
         var response = (
@@ -139,7 +141,7 @@ public class MessageSourceRoutingTests
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
-        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
 
         // Two responses with SAME ChatId but different sources - should route correctly based on tuple source
         var serviceBusResponse = (

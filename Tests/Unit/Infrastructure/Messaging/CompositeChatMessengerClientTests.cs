@@ -11,6 +11,8 @@ namespace Tests.Unit.Infrastructure.Messaging;
 
 public class CompositeChatMessengerClientTests
 {
+    private readonly IMessageSourceRouter _router = new MessageSourceRouter();
+
     [Fact]
     public void SupportsScheduledNotifications_WhenAnyClientSupports_ReturnsTrue()
     {
@@ -23,7 +25,7 @@ public class CompositeChatMessengerClientTests
         client2.Setup(c => c.SupportsScheduledNotifications).Returns(true);
         client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act & Assert
         composite.SupportsScheduledNotifications.ShouldBeTrue();
@@ -41,7 +43,7 @@ public class CompositeChatMessengerClientTests
         client2.Setup(c => c.SupportsScheduledNotifications).Returns(false);
         client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act & Assert
         composite.SupportsScheduledNotifications.ShouldBeFalse();
@@ -81,7 +83,7 @@ public class CompositeChatMessengerClientTests
         client2.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns(new[] { prompt2 }.ToAsyncEnumerable());
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act
         var prompts = new List<ChatPrompt>();
@@ -140,7 +142,7 @@ public class CompositeChatMessengerClientTests
                 }
             });
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         var testUpdate = (new AgentKey(1, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Hello")] },
@@ -175,7 +177,7 @@ public class CompositeChatMessengerClientTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act
         var result = await composite.DoesThreadExist(123, 456, "agent1", CancellationToken.None);
@@ -199,7 +201,7 @@ public class CompositeChatMessengerClientTests
         var client2 = new Mock<IChatMessengerClient>();
         client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act
         var result = await composite.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic");
@@ -228,7 +230,7 @@ public class CompositeChatMessengerClientTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
         // Act
         await composite.StartScheduledStreamAsync(agentKey, MessageSource.WebUi);
