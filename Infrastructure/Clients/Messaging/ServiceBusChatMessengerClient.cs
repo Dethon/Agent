@@ -36,10 +36,10 @@ public sealed class ServiceBusChatMessengerClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _, _) in updates.WithCancellation(cancellationToken))
         {
             if (!_chatIdToSourceId.TryGetValue(key.ChatId, out var sourceId))
             {
@@ -86,6 +86,7 @@ public sealed class ServiceBusChatMessengerClient(
     }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -95,7 +96,7 @@ public sealed class ServiceBusChatMessengerClient(
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? defaultAgentId));
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }
