@@ -190,7 +190,7 @@ public class ServiceBusConversationMapperTests
     public void TryGetSourceId_UnknownChatId_ReturnsFalse()
     {
         // Act
-        var found = _mapper.TryGetSourceId(999999, out var sourceId);
+        var found = _mapper.TryGetSourceId(999999, out _);
 
         // Assert
         found.ShouldBeFalse();

@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -14,10 +13,10 @@ public sealed class ServiceBusChatMessengerClient(
     public bool SupportsScheduledNotifications => false;
     public MessageSource Source => MessageSource.ServiceBus;
 
-    public IAsyncEnumerable<ChatPrompt> ReadPrompts(
-        int timeout,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-        => promptReceiver.ReadPromptsAsync(cancellationToken);
+    public IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, CancellationToken cancellationToken)
+    {
+        return promptReceiver.ReadPromptsAsync(cancellationToken);
+    }
 
     public Task ProcessResponseStreamAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,

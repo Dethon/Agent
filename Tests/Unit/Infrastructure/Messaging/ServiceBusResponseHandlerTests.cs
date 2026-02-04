@@ -3,9 +3,7 @@ using Domain.DTOs;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 using Moq;
-using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Messaging;
 
@@ -19,7 +17,11 @@ public class ServiceBusResponseHandlerTests
         var chatId = 123L;
 
         receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
-            .Returns((long _, out string s) => { s = "source-123"; return true; });
+            .Returns((long _, out string s) =>
+            {
+                s = "source-123";
+                return true;
+            });
 
         var updates = CreateUpdates(chatId, [
             new AgentResponseUpdate { Contents = [new TextContent("Hello ")] },
@@ -70,7 +72,11 @@ public class ServiceBusResponseHandlerTests
         var chatId = 123L;
 
         receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
-            .Returns((long _, out string s) => { s = "source-123"; return true; });
+            .Returns((long _, out string s) =>
+            {
+                s = "source-123";
+                return true;
+            });
 
         var updates = CreateUpdates(chatId, [
             new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }
@@ -87,17 +93,16 @@ public class ServiceBusResponseHandlerTests
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private static (ServiceBusResponseHandler handler, Mock<ServiceBusPromptReceiver> receiverMock, Mock<ServiceBusResponseWriter> writerMock) CreateHandler()
+    private static (ServiceBusResponseHandler handler, Mock<ServiceBusPromptReceiver> receiverMock,
+        Mock<ServiceBusResponseWriter> writerMock) CreateHandler()
     {
         var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
         var writerMock = new Mock<ServiceBusResponseWriter>(null!, null!);
-        var loggerMock = new Mock<ILogger<ServiceBusResponseHandler>>();
 
         var handler = new ServiceBusResponseHandler(
             receiverMock.Object,
             writerMock.Object,
-            "default-agent",
-            loggerMock.Object);
+            "default-agent");
 
         return (handler, receiverMock, writerMock);
     }
@@ -110,6 +115,7 @@ public class ServiceBusResponseHandlerTests
         {
             yield return (new AgentKey(chatId, 1, "agent-1"), update, null, MessageSource.ServiceBus);
         }
+
         await Task.CompletedTask;
     }
 }

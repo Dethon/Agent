@@ -120,13 +120,18 @@ public class ServiceBusMessageParserTests
     {
         var props = new Dictionary<string, object>();
         if (sourceId is not null)
+        {
             props["sourceId"] = sourceId;
+        }
+
         if (agentId is not null)
+        {
             props["agentId"] = agentId;
+        }
 
         return ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(body),
             messageId: Guid.NewGuid().ToString(),
-            applicationProperties: props);
+            properties: props);
     }
 }

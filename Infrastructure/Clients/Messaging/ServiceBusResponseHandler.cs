@@ -4,15 +4,13 @@ using Domain.Agents;
 using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
 
 public class ServiceBusResponseHandler(
     ServiceBusPromptReceiver promptReceiver,
     ServiceBusResponseWriter responseWriter,
-    string defaultAgentId,
-    ILogger<ServiceBusResponseHandler> logger)
+    string defaultAgentId)
 {
     private readonly ConcurrentDictionary<long, StringBuilder> _accumulators = new();
 
@@ -23,13 +21,16 @@ public class ServiceBusResponseHandler(
         await foreach (var (key, update, _, _) in updates.WithCancellation(ct))
         {
             if (!promptReceiver.TryGetSourceId(key.ChatId, out var sourceId))
+            {
                 continue;
+            }
 
             await ProcessUpdateAsync(key, update, sourceId, ct);
         }
     }
 
-    private async Task ProcessUpdateAsync(AgentKey key, AgentResponseUpdate update, string sourceId, CancellationToken ct)
+    private async Task ProcessUpdateAsync(AgentKey key, AgentResponseUpdate update, string sourceId,
+        CancellationToken ct)
     {
         var accumulator = _accumulators.GetOrAdd(key.ChatId, _ => new StringBuilder());
 

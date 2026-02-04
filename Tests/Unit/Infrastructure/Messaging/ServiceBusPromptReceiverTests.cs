@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Infrastructure.Clients.Messaging;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -10,27 +11,23 @@ namespace Tests.Unit.Infrastructure.Messaging;
 
 public class ServiceBusPromptReceiverTests
 {
-    private readonly Mock<IConnectionMultiplexer> _redisMock;
-    private readonly Mock<IDatabase> _dbMock;
-    private readonly Mock<IThreadStateStore> _threadStateStoreMock;
-    private readonly ServiceBusConversationMapper _mapper;
     private readonly ServiceBusPromptReceiver _receiver;
 
     public ServiceBusPromptReceiverTests()
     {
-        _redisMock = new Mock<IConnectionMultiplexer>();
-        _dbMock = new Mock<IDatabase>();
-        _threadStateStoreMock = new Mock<IThreadStateStore>();
+        var redisMock = new Mock<IConnectionMultiplexer>();
+        var dbMock = new Mock<IDatabase>();
+        var threadStateStoreMock = new Mock<IThreadStateStore>();
         var mapperLoggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
         var receiverLoggerMock = new Mock<ILogger<ServiceBusPromptReceiver>>();
 
-        _redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
-            .Returns(_dbMock.Object);
+        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(dbMock.Object);
 
-        _dbMock.Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+        dbMock.Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
             .ReturnsAsync(RedisValue.Null);
 
-        _dbMock.Setup(db => db.StringSetAsync(
+        dbMock.Setup(db => db.StringSetAsync(
                 It.IsAny<RedisKey>(),
                 It.IsAny<RedisValue>(),
                 It.IsAny<TimeSpan?>(),
@@ -39,15 +36,15 @@ public class ServiceBusPromptReceiverTests
                 It.IsAny<CommandFlags>()))
             .ReturnsAsync(true);
 
-        _threadStateStoreMock.Setup(s => s.SaveTopicAsync(It.IsAny<Domain.DTOs.WebChat.TopicMetadata>()))
+        threadStateStoreMock.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
             .Returns(Task.CompletedTask);
 
-        _mapper = new ServiceBusConversationMapper(
-            _redisMock.Object,
-            _threadStateStoreMock.Object,
+        var mapper = new ServiceBusConversationMapper(
+            redisMock.Object,
+            threadStateStoreMock.Object,
             mapperLoggerMock.Object);
 
-        _receiver = new ServiceBusPromptReceiver(_mapper, receiverLoggerMock.Object);
+        _receiver = new ServiceBusPromptReceiver(mapper, receiverLoggerMock.Object);
     }
 
     [Fact]
@@ -95,7 +92,7 @@ public class ServiceBusPromptReceiverTests
 
         // Assert
         prompt.ShouldNotBeNull();
-        var found = _receiver.TryGetSourceId(prompt!.ChatId, out var sourceId);
+        var found = _receiver.TryGetSourceId(prompt.ChatId, out var sourceId);
         found.ShouldBeTrue();
         sourceId.ShouldBe("source-123");
     }
@@ -117,7 +114,10 @@ public class ServiceBusPromptReceiverTests
         await foreach (var p in _receiver.ReadPromptsAsync(cts.Token))
         {
             prompts.Add(p);
-            if (prompts.Count >= 2) break;
+            if (prompts.Count >= 2)
+            {
+                break;
+            }
         }
 
         prompts[0].MessageId.ShouldBeLessThan(prompts[1].MessageId);
