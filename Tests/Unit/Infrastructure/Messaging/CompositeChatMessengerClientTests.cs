@@ -17,9 +17,11 @@ public class CompositeChatMessengerClientTests
         // Arrange
         var client1 = new Mock<IChatMessengerClient>();
         client1.Setup(c => c.SupportsScheduledNotifications).Returns(false);
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
         var client2 = new Mock<IChatMessengerClient>();
         client2.Setup(c => c.SupportsScheduledNotifications).Returns(true);
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
         var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
 
@@ -33,9 +35,11 @@ public class CompositeChatMessengerClientTests
         // Arrange
         var client1 = new Mock<IChatMessengerClient>();
         client1.Setup(c => c.SupportsScheduledNotifications).Returns(false);
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
         var client2 = new Mock<IChatMessengerClient>();
         client2.Setup(c => c.SupportsScheduledNotifications).Returns(false);
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
         var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
 
@@ -53,7 +57,8 @@ public class CompositeChatMessengerClientTests
             ChatId = 1,
             ThreadId = 1,
             MessageId = 1,
-            Sender = "user1"
+            Sender = "user1",
+            Source = MessageSource.WebUi
         };
 
         var prompt2 = new ChatPrompt
@@ -62,14 +67,17 @@ public class CompositeChatMessengerClientTests
             ChatId = 2,
             ThreadId = 2,
             MessageId = 2,
-            Sender = "user2"
+            Sender = "user2",
+            Source = MessageSource.WebUi
         };
 
         var client1 = new Mock<IChatMessengerClient>();
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client1.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns(new[] { prompt1 }.ToAsyncEnumerable());
 
         var client2 = new Mock<IChatMessengerClient>();
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client2.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .Returns(new[] { prompt2 }.ToAsyncEnumerable());
 
@@ -98,13 +106,14 @@ public class CompositeChatMessengerClientTests
     }
 
     [Fact]
-    public async Task ProcessResponseStreamAsync_BroadcastsToAllClients()
+    public async Task ProcessResponseStreamAsync_BroadcastsToWebUiClients()
     {
         // Arrange
         var receivedUpdates1 = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
         var receivedUpdates2 = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
 
         var client1 = new Mock<IChatMessengerClient>();
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client1.Setup(c => c.ProcessResponseStreamAsync(
                 It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>>(),
                 It.IsAny<CancellationToken>()))
@@ -118,6 +127,7 @@ public class CompositeChatMessengerClientTests
             });
 
         var client2 = new Mock<IChatMessengerClient>();
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client2.Setup(c => c.ProcessResponseStreamAsync(
                 It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>>(),
                 It.IsAny<CancellationToken>()))
@@ -149,38 +159,17 @@ public class CompositeChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateThread_DelegatesToFirstClient()
-    {
-        // Arrange
-        var client1 = new Mock<IChatMessengerClient>();
-        client1.Setup(c => c.CreateThread(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(42);
-
-        var client2 = new Mock<IChatMessengerClient>();
-
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
-
-        // Act
-        var result = await composite.CreateThread(123, "test", "agent1", CancellationToken.None);
-
-        // Assert
-        result.ShouldBe(42);
-        client1.Verify(c => c.CreateThread(123, "test", "agent1", It.IsAny<CancellationToken>()), Times.Once);
-        client2.Verify(c => c.CreateThread(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string?>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
     public async Task DoesThreadExist_ReturnsTrueIfAnyClientReturnsTrue()
     {
         // Arrange
         var client1 = new Mock<IChatMessengerClient>();
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client1.Setup(c => c.DoesThreadExist(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var client2 = new Mock<IChatMessengerClient>();
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client2.Setup(c => c.DoesThreadExist(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
@@ -201,11 +190,13 @@ public class CompositeChatMessengerClientTests
         var expectedKey = new AgentKey(123, 456, "agent1");
 
         var client1 = new Mock<IChatMessengerClient>();
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client1.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<long?>(), It.IsAny<long?>(),
                 It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedKey);
 
         var client2 = new Mock<IChatMessengerClient>();
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
 
         var composite = new CompositeChatMessengerClient([client1.Object, client2.Object]);
 
@@ -225,10 +216,12 @@ public class CompositeChatMessengerClientTests
         var agentKey = new AgentKey(1, 1, "agent");
 
         var client1 = new Mock<IChatMessengerClient>();
+        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client1.Setup(c => c.StartScheduledStreamAsync(It.IsAny<AgentKey>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var client2 = new Mock<IChatMessengerClient>();
+        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
         client2.Setup(c => c.StartScheduledStreamAsync(It.IsAny<AgentKey>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
