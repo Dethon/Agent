@@ -15,39 +15,20 @@ public class MessageSourceRoutingTests
     public async Task ProcessResponseStreamAsync_WebUiClientReceivesAllResponses()
     {
         // Arrange
-        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
-        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
+        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
+        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
 
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // Simulate reading a prompt from ServiceBus to establish source mapping
-        var serviceBusPrompt = new ChatPrompt
-        {
-            Prompt = "Hello from ServiceBus",
-            ChatId = 123,
-            ThreadId = 1,
-            MessageId = 1,
-            Sender = "user",
-            Source = MessageSource.ServiceBus
-        };
-
-        serviceBusClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { serviceBusPrompt }.ToAsyncEnumerable());
-        webUiClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerable.Empty<ChatPrompt>());
-
-        // Read prompts to establish source tracking
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var _ in composite.ReadPrompts(100, cts.Token).Take(1)) { }
-
-        // Create response for the ServiceBus prompt
+        // Create response for ServiceBus with source in tuple
         var response = (
             new AgentKey(123, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
-            (AiResponse?)null);
+            (AiResponse?)null,
+            MessageSource.ServiceBus);
 
         // Act
         await composite.ProcessResponseStreamAsync(
@@ -64,39 +45,20 @@ public class MessageSourceRoutingTests
     public async Task ProcessResponseStreamAsync_ServiceBusClientDoesNotReceiveWebUiResponses()
     {
         // Arrange
-        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
-        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
+        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
+        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
 
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // Simulate reading a prompt from WebUI
-        var webUiPrompt = new ChatPrompt
-        {
-            Prompt = "Hello from WebUI",
-            ChatId = 456,
-            ThreadId = 1,
-            MessageId = 1,
-            Sender = "user",
-            Source = MessageSource.WebUi
-        };
-
-        webUiClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { webUiPrompt }.ToAsyncEnumerable());
-        serviceBusClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerable.Empty<ChatPrompt>());
-
-        // Read prompts to establish source tracking
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var _ in composite.ReadPrompts(100, cts.Token).Take(1)) { }
-
-        // Create response for the WebUI prompt
+        // Create response for WebUI with source in tuple
         var response = (
             new AgentKey(456, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
-            (AiResponse?)null);
+            (AiResponse?)null,
+            MessageSource.WebUi);
 
         // Act
         await composite.ProcessResponseStreamAsync(
@@ -113,21 +75,20 @@ public class MessageSourceRoutingTests
     public async Task ProcessResponseStreamAsync_UnknownChatIdBroadcastsToAll()
     {
         // Arrange
-        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
-        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
+        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
+        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
 
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // Don't read any prompts - ChatId 789 will be unknown
-
-        // Create response for unknown ChatId
+        // Create response with Unknown source (no source tracking needed)
         var response = (
             new AgentKey(789, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
-            (AiResponse?)null);
+            (AiResponse?)null,
+            MessageSource.Unknown);
 
         // Act
         await composite.ProcessResponseStreamAsync(
@@ -143,39 +104,20 @@ public class MessageSourceRoutingTests
     public async Task ProcessResponseStreamAsync_TelegramClientOnlyReceivesTelegramResponses()
     {
         // Arrange
-        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
-        var telegramUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
+        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
+        var telegramUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
 
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var telegramClient = CreateMockClient(MessageSource.Telegram, telegramUpdates);
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, telegramClient.Object]);
 
-        // Simulate reading a prompt from Telegram
-        var telegramPrompt = new ChatPrompt
-        {
-            Prompt = "Hello from Telegram",
-            ChatId = 100,
-            ThreadId = 1,
-            MessageId = 1,
-            Sender = "user",
-            Source = MessageSource.Telegram
-        };
-
-        telegramClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { telegramPrompt }.ToAsyncEnumerable());
-        webUiClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerable.Empty<ChatPrompt>());
-
-        // Read prompts to establish source tracking
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var _ in composite.ReadPrompts(100, cts.Token).Take(1)) { }
-
-        // Create response for the Telegram prompt
+        // Create response for Telegram with source in tuple
         var response = (
             new AgentKey(100, 1, "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
-            (AiResponse?)null);
+            (AiResponse?)null,
+            MessageSource.Telegram);
 
         // Act
         await composite.ProcessResponseStreamAsync(
@@ -188,77 +130,53 @@ public class MessageSourceRoutingTests
     }
 
     [Fact]
-    public async Task ProcessResponseStreamAsync_SameChatIdDifferentSources_UsesLatestSource()
+    public async Task ProcessResponseStreamAsync_SameChatIdDifferentSources_RoutesCorrectly()
     {
         // Arrange
-        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
-        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?)>();
+        var webUiUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
+        var serviceBusUpdates = new List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>();
 
         var webUiClient = CreateMockClient(MessageSource.WebUi, webUiUpdates);
         var serviceBusClient = CreateMockClient(MessageSource.ServiceBus, serviceBusUpdates);
 
         var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object]);
 
-        // First prompt from ServiceBus, then second from WebUI with SAME ChatId
-        // Both return from same client to ensure deterministic ordering
-        var serviceBusPrompt = new ChatPrompt
-        {
-            Prompt = "First from ServiceBus",
-            ChatId = 200,
-            ThreadId = 1,
-            MessageId = 1,
-            Sender = "user",
-            Source = MessageSource.ServiceBus
-        };
-
-        var webUiPrompt = new ChatPrompt
-        {
-            Prompt = "Second from WebUI",
-            ChatId = 200,
-            ThreadId = 1,
-            MessageId = 2,
-            Sender = "user",
-            Source = MessageSource.WebUi
-        };
-
-        // Return both prompts from ServiceBus client in order to ensure deterministic sequencing
-        // (ServiceBus prompt first, then WebUI prompt - simulating the source being updated)
-        serviceBusClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(new[] { serviceBusPrompt, webUiPrompt }.ToAsyncEnumerable());
-        webUiClient.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .Returns(AsyncEnumerable.Empty<ChatPrompt>());
-
-        // Read prompts - WebUI prompt comes second so it overwrites the source
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var _ in composite.ReadPrompts(100, cts.Token).Take(2)) { }
-
-        // Create response for ChatId 200
-        var response = (
+        // Two responses with SAME ChatId but different sources - should route correctly based on tuple source
+        var serviceBusResponse = (
             new AgentKey(200, 1, "agent"),
-            new AgentResponseUpdate { Contents = [new TextContent("Response")] },
-            (AiResponse?)null);
+            new AgentResponseUpdate { Contents = [new TextContent("ServiceBus Response")] },
+            (AiResponse?)null,
+            MessageSource.ServiceBus);
+
+        var webUiResponse = (
+            new AgentKey(200, 1, "agent"),
+            new AgentResponseUpdate { Contents = [new TextContent("WebUI Response")] },
+            (AiResponse?)null,
+            MessageSource.WebUi);
 
         // Act
         await composite.ProcessResponseStreamAsync(
-            new[] { response }.ToAsyncEnumerable(),
+            new[] { serviceBusResponse, webUiResponse }.ToAsyncEnumerable(),
             CancellationToken.None);
 
-        // Assert - Latest source was WebUI, so ServiceBus should NOT receive
-        webUiUpdates.Count.ShouldBe(1);
-        serviceBusUpdates.Count.ShouldBe(0);
+        // Assert - Both should route correctly based on tuple source (not dictionary tracking)
+        // WebUI receives both (universal viewer)
+        webUiUpdates.Count.ShouldBe(2);
+        // ServiceBus receives only its own response
+        serviceBusUpdates.Count.ShouldBe(1);
     }
 
     private static Mock<IChatMessengerClient> CreateMockClient(
         MessageSource source,
-        List<(AgentKey, AgentResponseUpdate, AiResponse?)> receivedUpdates)
+        List<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> receivedUpdates)
     {
         var mock = new Mock<IChatMessengerClient>();
         mock.Setup(c => c.Source).Returns(source);
         mock.Setup(c => c.SupportsScheduledNotifications).Returns(false);
         mock.Setup(c => c.ProcessResponseStreamAsync(
-                It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>>(),
+                It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>>(),
                 It.IsAny<CancellationToken>()))
-            .Returns(async (IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+            .Returns(async (IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
                 CancellationToken ct) =>
             {
                 await foreach (var update in updates.WithCancellation(ct))
