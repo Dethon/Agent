@@ -18,14 +18,15 @@ public sealed class CompositeChatMessengerClient(
 
     public bool SupportsScheduledNotifications => clients.Any(c => c.SupportsScheduledNotifications);
 
-    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
+        int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         Validate();
         var merged = clients
             .Select(c => c.ReadPrompts(timeout, cancellationToken))
             .Merge(cancellationToken);
 
-        await foreach (var prompt in merged.WithCancellation(cancellationToken))
+        await foreach (var prompt in merged)
         {
             _chatIdToSource[prompt.ChatId] = prompt.Source;
             yield return prompt;
@@ -89,13 +90,14 @@ public sealed class CompositeChatMessengerClient(
     {
         if (clients.Count == 0)
         {
-            throw new InvalidOperationException($"{nameof(clients)} must contain at least one client"); 
+            throw new InvalidOperationException($"{nameof(clients)} must contain at least one client");
         }
     }
 
     private async Task BroadcastUpdatesAsync(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> source,
-        (IChatMessengerClient client, Channel<(AgentKey, AgentResponseUpdate, AiResponse?)> channel)[] clientChannelPairs,
+        (IChatMessengerClient client, Channel<(AgentKey, AgentResponseUpdate, AiResponse?)> channel)[]
+            clientChannelPairs,
         CancellationToken ct)
     {
         try
@@ -107,9 +109,9 @@ public sealed class CompositeChatMessengerClient(
 
                 var writeTasks = clientChannelPairs
                     .Where(pair =>
-                        pair.client.Source == MessageSource.WebUi ||  // WebUi always receives
-                        !isKnownChatId ||                             // Unknown ChatId broadcasts to all (fail-safe)
-                        pair.client.Source == promptSource)           // Source matches
+                        pair.client.Source == MessageSource.WebUi || // WebUi always receives
+                        !isKnownChatId || // Unknown ChatId broadcasts to all (fail-safe)
+                        pair.client.Source == promptSource) // Source matches
                     .Select(pair => pair.channel.Writer.WriteAsync(update, ct).AsTask());
 
                 await Task.WhenAll(writeTasks);

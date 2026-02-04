@@ -24,7 +24,7 @@ public sealed class ServiceBusProcessorHost(
         }
         catch (OperationCanceledException)
         {
-            await processor.StopProcessingAsync();
+            await processor.StopProcessingAsync(stoppingToken);
         }
     }
 
