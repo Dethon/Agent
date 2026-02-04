@@ -17,14 +17,13 @@ public sealed class ServiceBusProcessorHost(
         processor.ProcessErrorAsync += ProcessErrorAsync;
 
         await processor.StartProcessingAsync(stoppingToken);
-
         try
         {
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException)
         {
-            await processor.StopProcessingAsync(stoppingToken);
+            await processor.StopProcessingAsync(CancellationToken.None);
         }
     }
 
