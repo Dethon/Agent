@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging;
 
-public sealed class ServiceBusResponseHandler(
+public class ServiceBusResponseHandler(
     ServiceBusPromptReceiver promptReceiver,
     ServiceBusResponseWriter responseWriter,
     string defaultAgentId,

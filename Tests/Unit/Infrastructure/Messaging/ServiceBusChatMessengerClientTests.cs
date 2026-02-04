@@ -1,11 +1,8 @@
 using Domain.Agents;
-using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Clients.Messaging;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
-using StackExchange.Redis;
 
 namespace Tests.Unit.Infrastructure.Messaging;
 
@@ -15,37 +12,12 @@ public class ServiceBusChatMessengerClientTests
 
     public ServiceBusChatMessengerClientTests()
     {
-        var redisMock = new Mock<IConnectionMultiplexer>();
-        var dbMock = new Mock<IDatabase>();
-        var threadStateStoreMock = new Mock<IThreadStateStore>();
-        var mapperLoggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
-        var writerLoggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
-        var receiverLoggerMock = new Mock<ILogger<ServiceBusPromptReceiver>>();
-        var handlerLoggerMock = new Mock<ILogger<ServiceBusResponseHandler>>();
-
-        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
-            .Returns(dbMock.Object);
-
-        var mapper = new ServiceBusConversationMapper(
-            redisMock.Object,
-            threadStateStoreMock.Object,
-            mapperLoggerMock.Object);
-
-        var writerMock = new Mock<ServiceBusResponseWriter>(null!, writerLoggerMock.Object);
-
-        var promptReceiver = new ServiceBusPromptReceiver(
-            mapper,
-            receiverLoggerMock.Object);
-
-        var responseHandler = new ServiceBusResponseHandler(
-            promptReceiver,
-            writerMock.Object,
-            "default",
-            handlerLoggerMock.Object);
+        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
+        var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!, null!, null!);
 
         _client = new ServiceBusChatMessengerClient(
-            promptReceiver,
-            responseHandler,
+            receiverMock.Object,
+            handlerMock.Object,
             "default");
     }
 
@@ -53,6 +25,12 @@ public class ServiceBusChatMessengerClientTests
     public void SupportsScheduledNotifications_ReturnsFalse()
     {
         _client.SupportsScheduledNotifications.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Source_ReturnsServiceBus()
+    {
+        _client.Source.ShouldBe(MessageSource.ServiceBus);
     }
 
     [Fact]
@@ -65,6 +43,16 @@ public class ServiceBusChatMessengerClientTests
         result.ChatId.ShouldBe(123);
         result.ThreadId.ShouldBe(456);
         result.AgentId.ShouldBe("agent1");
+    }
+
+    [Fact]
+    public async Task CreateTopicIfNeededAsync_WithNullAgentId_UsesDefaultAgentId()
+    {
+        // Act
+        var result = await _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, null, "test topic");
+
+        // Assert
+        result.AgentId.ShouldBe("default");
     }
 
     [Fact]
