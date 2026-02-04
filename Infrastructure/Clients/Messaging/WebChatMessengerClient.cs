@@ -28,6 +28,8 @@ public sealed class WebChatMessengerClient(
 
     public bool SupportsScheduledNotifications => true;
 
+    public MessageSource Source => MessageSource.WebUi;
+
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout,
         [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -277,7 +279,8 @@ public sealed class WebChatMessengerClient(
             ThreadId = (int)session.ThreadId,
             MessageId = messageId,
             Sender = sender,
-            AgentId = session.AgentId
+            AgentId = session.AgentId,
+            Source = MessageSource.WebUi
         };
 
         _promptChannel.Writer.TryWrite(prompt);
@@ -325,7 +328,8 @@ public sealed class WebChatMessengerClient(
             ThreadId = (int)session.ThreadId,
             MessageId = messageId,
             Sender = sender,
-            AgentId = session.AgentId
+            AgentId = session.AgentId,
+            Source = MessageSource.WebUi
         };
 
         _promptChannel.Writer.TryWrite(prompt);
