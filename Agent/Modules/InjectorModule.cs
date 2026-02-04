@@ -124,8 +124,6 @@ public static class InjectorModule
                 ab => ab.Id, ITelegramBotClient (ab) => TelegramBotHelper.CreateBotClient(ab.Item2));
 
             return services
-                .AddHostedService<CleanupMonitoring>()
-                .AddSingleton<AgentCleanupMonitor>()
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByAgentId))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
                     agentBots,

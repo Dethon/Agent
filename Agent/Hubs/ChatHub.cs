@@ -17,6 +17,7 @@ public sealed class ChatHub(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
+    ChatThreadResolver threadResolver,
     INotifier hubNotifier) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
@@ -202,6 +203,7 @@ public sealed class ChatHub(
         var agentKey = new AgentKey(chatId, threadId, agentId);
         await threadStateStore.DeleteAsync(agentKey);
         await threadStateStore.DeleteTopicAsync(agentId, chatId, topicId);
+        await threadResolver.ClearAsync(agentKey);
 
         await hubNotifier.NotifyTopicChangedAsync(
             new TopicChangedNotification(TopicChangeType.Deleted, topicId));
