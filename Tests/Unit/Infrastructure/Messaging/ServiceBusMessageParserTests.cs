@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.DTOs;
 using Infrastructure.Clients.Messaging.ServiceBus;
@@ -34,7 +35,8 @@ public class ServiceBusMessageParserTests
     [Fact]
     public void Parse_MissingPrompt_ReturnsParseFailure()
     {
-        var message = CreateMessage(correlationId: "correlation-123", agentId: "agent-456", prompt: null, sender: "user1");
+        var message = CreateMessage(correlationId: "correlation-123", agentId: "agent-456", prompt: null,
+            sender: "user1");
         var result = _parser.Parse(message);
         result.ShouldBeOfType<ParseFailure>();
         var failure = (ParseFailure)result;
@@ -79,7 +81,8 @@ public class ServiceBusMessageParserTests
     [Fact]
     public void Parse_InvalidAgentId_ReturnsParseFailure()
     {
-        var message = CreateMessage(correlationId: "correlation-123", agentId: "unknown-agent", prompt: "Hello", sender: "user1");
+        var message = CreateMessage(correlationId: "correlation-123", agentId: "unknown-agent", prompt: "Hello",
+            sender: "user1");
         var result = _parser.Parse(message);
         result.ShouldBeOfType<ParseFailure>();
         var failure = (ParseFailure)result;
@@ -90,7 +93,8 @@ public class ServiceBusMessageParserTests
     [Fact]
     public void Parse_EmptyPrompt_ReturnsParseFailure()
     {
-        var message = CreateMessage(correlationId: "correlation-123", agentId: "agent-456", prompt: "", sender: "user1");
+        var message = CreateMessage(correlationId: "correlation-123", agentId: "agent-456", prompt: "",
+            sender: "user1");
         var result = _parser.Parse(message);
         result.ShouldBeOfType<ParseFailure>();
         var failure = (ParseFailure)result;
@@ -119,14 +123,31 @@ public class ServiceBusMessageParserTests
         failure.Details.ShouldContain("agentId");
     }
 
-    private static ServiceBusReceivedMessage CreateMessage(string? correlationId, string? agentId, string? prompt, string? sender)
+    private static ServiceBusReceivedMessage CreateMessage(string? correlationId, string? agentId, string? prompt,
+        string? sender)
     {
         var bodyObj = new Dictionary<string, object?>();
-        if (correlationId is not null) bodyObj["correlationId"] = correlationId;
-        if (agentId is not null) bodyObj["agentId"] = agentId;
-        if (prompt is not null) bodyObj["prompt"] = prompt;
-        if (sender is not null) bodyObj["sender"] = sender;
-        var json = System.Text.Json.JsonSerializer.Serialize(bodyObj);
+        if (correlationId is not null)
+        {
+            bodyObj["correlationId"] = correlationId;
+        }
+
+        if (agentId is not null)
+        {
+            bodyObj["agentId"] = agentId;
+        }
+
+        if (prompt is not null)
+        {
+            bodyObj["prompt"] = prompt;
+        }
+
+        if (sender is not null)
+        {
+            bodyObj["sender"] = sender;
+        }
+
+        var json = JsonSerializer.Serialize(bodyObj);
         return ServiceBusModelFactory.ServiceBusReceivedMessage(
             body: BinaryData.FromString(json),
             messageId: Guid.NewGuid().ToString());
