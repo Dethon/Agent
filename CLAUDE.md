@@ -14,6 +14,21 @@ AI media library agent via Telegram/WebChat/CLI using .NET 10, MCP, and OpenRout
 
 See `.claude/rules/` for layer-specific coding rules.
 
+## Codebase Documentation
+
+Detailed documentation in `docs/codebase/`:
+
+| File | Content |
+|------|---------|
+| `ARCHITECTURE.md` | Agent system, message pipeline, tool approval, MCP integration |
+| `STRUCTURE.md` | Directory layout, module boundaries |
+| `STACK.md` | Tech stack, packages, dependencies |
+| `INTEGRATIONS.md` | External services (OpenRouter, Telegram, Redis, etc.) |
+| `CONVENTIONS.md` | Coding style, patterns, rules |
+| `TESTING.md` | Test framework, TDD workflow, organization |
+| `CONCERNS.md` | Technical debt, risks, security considerations |
+| `maps/code-map-*.json` | Structural code maps |
+
 ## Projects
 
 | Project | Purpose |

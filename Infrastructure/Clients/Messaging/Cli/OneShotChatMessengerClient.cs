@@ -6,7 +6,7 @@ using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Hosting;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Cli;
 
 public sealed class OneShotChatMessengerClient(
     string prompt,
@@ -20,6 +20,8 @@ public sealed class OneShotChatMessengerClient(
     private readonly Lock _lock = new();
 
     public bool SupportsScheduledNotifications => false;
+
+    public MessageSource Source => MessageSource.Cli;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -37,12 +39,13 @@ public sealed class OneShotChatMessengerClient(
             ChatId = 1,
             ThreadId = 1,
             MessageId = 1,
-            Sender = Environment.UserName
+            Sender = Environment.UserName,
+            Source = MessageSource.Cli
         };
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         var responses = updates
@@ -78,11 +81,6 @@ public sealed class OneShotChatMessengerClient(
         CompleteResponse();
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        return Task.FromResult(1);
-    }
-
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
@@ -90,6 +88,7 @@ public sealed class OneShotChatMessengerClient(
     }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -99,7 +98,7 @@ public sealed class OneShotChatMessengerClient(
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }

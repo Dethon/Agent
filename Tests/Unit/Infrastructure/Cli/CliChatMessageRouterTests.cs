@@ -146,18 +146,6 @@ public class CliChatMessageRouterTests : IDisposable
     }
 
     [Fact]
-    public void CreateThread_DisplaysSystemMessage()
-    {
-        // Act
-        _router.CreateThread("New Conversation");
-
-        // Assert
-        _terminalAdapter.DisplayedMessages.Count.ShouldBe(1);
-        var lines = _terminalAdapter.DisplayedMessages[0];
-        lines.ShouldContain(l => l.Text.Contains("New Conversation"));
-    }
-
-    [Fact]
     public async Task ReadPrompts_HelpCommandDoesNotYieldPrompt()
     {
         // Arrange

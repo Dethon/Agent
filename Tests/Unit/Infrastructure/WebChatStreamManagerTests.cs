@@ -1,5 +1,5 @@
 using Domain.DTOs.WebChat;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 

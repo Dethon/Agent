@@ -5,7 +5,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
 using Infrastructure.Clients.ToolApproval;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -122,7 +122,7 @@ public class DependencyInjectionTests
         provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
         provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Length.ShouldBe(3);
+        hostedServices.Length.ShouldBe(2);
     }
 
     [Fact]

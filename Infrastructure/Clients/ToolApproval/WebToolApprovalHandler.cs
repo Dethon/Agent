@@ -1,7 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.WebChat;
 
 namespace Infrastructure.Clients.ToolApproval;
 

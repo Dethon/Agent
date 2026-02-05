@@ -7,7 +7,7 @@ using Infrastructure.CliGui.Abstractions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Cli;
 
 public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
 {
@@ -16,6 +16,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     private bool _historyRestored;
 
     public bool SupportsScheduledNotifications => false;
+    public MessageSource Source => MessageSource.Cli;
 
     public CliChatMessengerClient(
         ICliChatMessageRouter router,
@@ -43,13 +44,13 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         string? currentMessageId = null;
         var messageIndex = 0;
 
-        await foreach (var (_, update, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (_, update, _, _) in updates.WithCancellation(cancellationToken))
         {
             if (update.MessageId is not null && update.MessageId != currentMessageId)
             {
@@ -88,12 +89,6 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         _router.SendResponse(new ChatResponseMessage { IsComplete = true, MessageIndex = messageIndex });
     }
 
-    public Task<int> CreateThread(long chatId, string name, string? agentId, CancellationToken cancellationToken)
-    {
-        _router.CreateThread(name);
-        return Task.FromResult(_router.ThreadId);
-    }
-
     public Task<bool> DoesThreadExist(long chatId, long threadId, string? agentId,
         CancellationToken cancellationToken)
     {
@@ -101,6 +96,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
     }
 
     public Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -110,7 +106,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }

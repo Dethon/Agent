@@ -1,6 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
@@ -179,20 +179,6 @@ public class OneShotChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateThread_ReturnsOne()
-    {
-        // Arrange
-        var lifetime = new Mock<IHostApplicationLifetime>();
-        var client = new OneShotChatMessengerClient("test", false, lifetime.Object);
-
-        // Act
-        var threadId = await client.CreateThread(1, "Test", null, CancellationToken.None);
-
-        // Assert
-        threadId.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task DoesThreadExist_ReturnsTrue()
     {
         // Arrange
@@ -206,8 +192,9 @@ public class OneShotChatMessengerClientTests
         exists.ShouldBeTrue();
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> CreateUpdatesWithContent(
-        string content)
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
+        CreateUpdatesWithContent(
+            string content)
     {
         var key = new AgentKey(1, 1);
         await Task.CompletedTask;
@@ -215,15 +202,15 @@ public class OneShotChatMessengerClientTests
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content });
+        }, new AiResponse { Content = content }, MessageSource.Cli);
     }
 
-    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)>
+    private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning)
     {
@@ -233,16 +220,16 @@ public class OneShotChatMessengerClientTests
         {
             MessageId = "msg-1",
             Contents = [new TextReasoningContent(reasoning)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new TextContent(content)]
-        }, null);
+        }, null, MessageSource.Cli);
         yield return (key, new AgentResponseUpdate
         {
             MessageId = "msg-1",
             Contents = [new UsageContent()]
-        }, new AiResponse { Content = content, Reasoning = reasoning });
+        }, new AiResponse { Content = content, Reasoning = reasoning }, MessageSource.Cli);
     }
 }

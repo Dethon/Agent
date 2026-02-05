@@ -1,11 +1,17 @@
 using Agent.App;
 using Agent.Hubs;
 using Agent.Settings;
+using Azure.Messaging.ServiceBus;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Monitor;
+using Domain.Routers;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.Cli;
+using Infrastructure.Clients.Messaging.ServiceBus;
+using Infrastructure.Clients.Messaging.Telegram;
+using Infrastructure.Clients.Messaging.WebChat;
 using Infrastructure.Clients.ToolApproval;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
@@ -13,7 +19,7 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Telegram.Bot;
-using HubNotifier = Infrastructure.Clients.Messaging.HubNotifier;
+using HubNotifier = Infrastructure.Clients.Messaging.WebChat.HubNotifier;
 
 namespace Agent.Modules;
 
@@ -65,7 +71,7 @@ public static class InjectorModule
                 ChatInterface.Cli => services.AddCliClient(settings, cmdParams),
                 ChatInterface.Telegram => services.AddTelegramClient(settings, cmdParams),
                 ChatInterface.OneShot => services.AddOneShotClient(cmdParams),
-                ChatInterface.Web => services.AddWebClient(),
+                ChatInterface.Web => services.AddWebClient(settings),
                 _ => throw new ArgumentOutOfRangeException(
                     nameof(cmdParams.ChatInterface), "Unsupported chat interface")
             };
@@ -123,8 +129,6 @@ public static class InjectorModule
                 ab => ab.Id, ITelegramBotClient (ab) => TelegramBotHelper.CreateBotClient(ab.Item2));
 
             return services
-                .AddHostedService<CleanupMonitoring>()
-                .AddSingleton<AgentCleanupMonitor>()
                 .AddSingleton<IToolApprovalHandlerFactory>(new TelegramToolApprovalHandlerFactory(botClientsByAgentId))
                 .AddSingleton<IChatMessengerClient>(sp => new TelegramChatClient(
                     agentBots,
@@ -147,20 +151,76 @@ public static class InjectorModule
                 });
         }
 
-        private IServiceCollection AddWebClient()
+        private IServiceCollection AddWebClient(AgentSettings settings)
         {
-            return services
+            services = services
                 .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
                 .AddSingleton<INotifier, HubNotifier>()
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()
                 .AddSingleton<WebChatMessengerClient>()
-                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>())
                 .AddSingleton<IToolApprovalHandlerFactory>(sp =>
                     new WebToolApprovalHandlerFactory(
                         sp.GetRequiredService<WebChatApprovalManager>(),
                         sp.GetRequiredService<WebChatSessionManager>()));
+
+            if (settings.ServiceBus is not null)
+            {
+                return services.AddServiceBusClient(settings.ServiceBus, settings.Agents[0].Id);
+            }
+
+            return services
+                .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>());
+        }
+
+        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings, string defaultAgentId)
+        {
+            return services
+                .AddSingleton(_ => new ServiceBusClient(sbSettings.ConnectionString))
+                .AddSingleton(sp =>
+                {
+                    var client = sp.GetRequiredService<ServiceBusClient>();
+                    return client.CreateProcessor(sbSettings.PromptQueueName, new ServiceBusProcessorOptions
+                    {
+                        AutoCompleteMessages = false,
+                        MaxConcurrentCalls = sbSettings.MaxConcurrentCalls
+                    });
+                })
+                .AddSingleton(sp =>
+                {
+                    var client = sp.GetRequiredService<ServiceBusClient>();
+                    return client.CreateSender(sbSettings.ResponseQueueName);
+                })
+                .AddSingleton<ServiceBusConversationMapper>()
+                .AddSingleton(_ => new ServiceBusMessageParser(defaultAgentId))
+                .AddSingleton(sp => new ServiceBusPromptReceiver(
+                    sp.GetRequiredService<ServiceBusConversationMapper>(),
+                    sp.GetRequiredService<ILogger<ServiceBusPromptReceiver>>()))
+                .AddSingleton(sp => new ServiceBusResponseWriter(
+                    sp.GetRequiredService<ServiceBusSender>(),
+                    sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
+                .AddSingleton(sp => new ServiceBusResponseHandler(
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ServiceBusResponseWriter>(),
+                    defaultAgentId))
+                .AddSingleton(sp => new ServiceBusChatMessengerClient(
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ServiceBusResponseHandler>(),
+                    defaultAgentId))
+                .AddSingleton<IMessageSourceRouter, MessageSourceRouter>()
+                .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient(
+                    [
+                        sp.GetRequiredService<WebChatMessengerClient>(),
+                        sp.GetRequiredService<ServiceBusChatMessengerClient>()
+                    ],
+                    sp.GetRequiredService<IMessageSourceRouter>()))
+                .AddSingleton(sp => new ServiceBusProcessorHost(
+                    sp.GetRequiredService<ServiceBusProcessor>(),
+                    sp.GetRequiredService<ServiceBusMessageParser>(),
+                    sp.GetRequiredService<ServiceBusPromptReceiver>(),
+                    sp.GetRequiredService<ILogger<ServiceBusProcessorHost>>()))
+                .AddHostedService(sp => sp.GetRequiredService<ServiceBusProcessorHost>());
         }
     }
 }

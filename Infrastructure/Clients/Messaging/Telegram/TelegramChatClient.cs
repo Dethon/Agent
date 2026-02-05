@@ -11,7 +11,7 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Message = Telegram.Bot.Types.Message;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.Telegram;
 
 public class TelegramChatClient(
     IEnumerable<(string AgentId, string BotToken)> agentBots,
@@ -28,6 +28,8 @@ public class TelegramChatClient(
     private string? _topicIconId;
 
     public bool SupportsScheduledNotifications => false;
+
+    public MessageSource Source => MessageSource.Telegram;
 
     public async IAsyncEnumerable<ChatPrompt> ReadPrompts(
         int timeout, [EnumeratorCancellation] CancellationToken cancellationToken)
@@ -63,7 +65,7 @@ public class TelegramChatClient(
     }
 
     public async Task ProcessResponseStreamAsync(
-        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> updates,
+        IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
         var responses = updates
@@ -89,7 +91,7 @@ public class TelegramChatClient(
         }
     }
 
-    public async Task<int> CreateThread(long chatId, string name, string? agentId,
+    private async Task<int> CreateThread(long chatId, string name, string? agentId,
         CancellationToken cancellationToken)
     {
         var client = GetClient(agentId);
@@ -137,6 +139,7 @@ public class TelegramChatClient(
     }
 
     public async Task<AgentKey> CreateTopicIfNeededAsync(
+        MessageSource source,
         long? chatId,
         long? threadId,
         string? agentId,
@@ -161,7 +164,7 @@ public class TelegramChatClient(
         return new AgentKey(chatId.Value, newThreadId, agentId);
     }
 
-    public Task StartScheduledStreamAsync(AgentKey agentKey, CancellationToken ct = default)
+    public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
         return Task.CompletedTask;
     }
@@ -309,7 +312,8 @@ public class TelegramChatClient(
                      message.Chat.Username ??
                      message.Chat.FirstName ??
                      $"{message.Chat.Id}",
-            ThreadId = message.MessageThreadId
+            ThreadId = message.MessageThreadId,
+            Source = MessageSource.Telegram
         };
     }
 

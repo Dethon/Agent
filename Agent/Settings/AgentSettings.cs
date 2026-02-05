@@ -8,6 +8,7 @@ public record AgentSettings
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required TelegramConfiguration Telegram { get; init; }
     public required RedisConfiguration Redis { get; init; }
+    public ServiceBusSettings? ServiceBus { get; [UsedImplicitly] init; }
     public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
 }
 

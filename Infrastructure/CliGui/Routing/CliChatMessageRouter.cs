@@ -138,11 +138,6 @@ public sealed class CliChatMessageRouter : ICliChatMessageRouter
         }
     }
 
-    public void CreateThread(string name)
-    {
-        AddToHistory("[System]", $"--- {name} ---", isUser: false, isSystem: true);
-    }
-
     public void Dispose()
     {
         _isRunning = false;

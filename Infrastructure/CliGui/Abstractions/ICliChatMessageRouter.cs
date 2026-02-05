@@ -12,7 +12,6 @@ public interface ICliChatMessageRouter : IDisposable
 
     IEnumerable<ChatPrompt> ReadPrompts(CancellationToken cancellationToken);
     void SendResponse(ChatResponseMessage responseMessage);
-    void CreateThread(string name);
 
     void RestoreHistory(IReadOnlyList<AiChatMessage> messages);
 }

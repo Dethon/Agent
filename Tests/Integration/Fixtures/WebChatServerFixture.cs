@@ -7,7 +7,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
 using Infrastructure.Agents;
-using Infrastructure.Clients.Messaging;
+using Infrastructure.Clients.Messaging.WebChat;
 using Infrastructure.Clients.ToolApproval;
 using Infrastructure.StateManagers;
 using Microsoft.AspNetCore.Builder;

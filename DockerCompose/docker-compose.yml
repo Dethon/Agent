@@ -261,6 +261,7 @@ services:
       - .env
     environment:
       - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
+      - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
     networks:
       - jackbot
     depends_on:

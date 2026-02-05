@@ -23,7 +23,7 @@ public class ChatMonitor(
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
                 .GroupByStreaming(
                     async (x, ct) => await chatMessengerClient.CreateTopicIfNeededAsync(
-                        x.ChatId, x.ThreadId, x.AgentId, x.Prompt, ct),
+                        x.Source, x.ChatId, x.ThreadId, x.AgentId, x.Prompt, ct),
                     cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
@@ -43,12 +43,13 @@ public class ChatMonitor(
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?)> ProcessChatThread(
+    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> ProcessChatThread(
         AgentKey agentKey,
         IAsyncGrouping<AgentKey, ChatPrompt> group,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var firstPrompt = await group.FirstAsync(ct);
+        var promptSource = firstPrompt.Source;
         await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId);
         var context = threadResolver.Resolve(agentKey);
         var thread = await GetOrRestoreThread(agent, agentKey, ct);
@@ -88,7 +89,7 @@ public class ChatMonitor(
 
         await foreach (var (update, aiResponse) in aiResponses.WithCancellation(ct))
         {
-            yield return (agentKey, update, aiResponse);
+            yield return (agentKey, update, aiResponse, promptSource);
         }
     }
 

@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class BroadcastChannel<T>
 {

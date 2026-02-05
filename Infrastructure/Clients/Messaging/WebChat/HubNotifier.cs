@@ -1,7 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
 
-namespace Infrastructure.Clients.Messaging;
+namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
 {
