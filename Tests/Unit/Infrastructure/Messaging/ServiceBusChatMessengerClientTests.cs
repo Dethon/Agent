@@ -12,7 +12,7 @@ public class ServiceBusChatMessengerClientTests
 
     public ServiceBusChatMessengerClientTests()
     {
-        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
+        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!, null!);
         var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!);
 
         _client = new ServiceBusChatMessengerClient(
@@ -48,8 +48,8 @@ public class ServiceBusChatMessengerClientTests
     public async Task CreateTopicIfNeededAsync_WithNullAgentId_ThrowsArgumentNullException()
     {
         // Act & Assert
-        await Should.ThrowAsync<ArgumentNullException>(
-            () => _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, null, "test topic"));
+        await Should.ThrowAsync<ArgumentNullException>(() =>
+            _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, null, "test topic"));
     }
 
     [Fact]

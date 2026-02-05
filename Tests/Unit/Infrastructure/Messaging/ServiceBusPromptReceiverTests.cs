@@ -20,6 +20,7 @@ public class ServiceBusPromptReceiverTests
         var threadStateStoreMock = new Mock<IThreadStateStore>();
         var mapperLoggerMock = new Mock<ILogger<ServiceBusConversationMapper>>();
         var receiverLoggerMock = new Mock<ILogger<ServiceBusPromptReceiver>>();
+        var notifierMock = new Mock<INotifier>();
 
         redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
             .Returns(dbMock.Object);
@@ -44,7 +45,7 @@ public class ServiceBusPromptReceiverTests
             threadStateStoreMock.Object,
             mapperLoggerMock.Object);
 
-        _receiver = new ServiceBusPromptReceiver(mapper, receiverLoggerMock.Object);
+        _receiver = new ServiceBusPromptReceiver(mapper, notifierMock.Object, receiverLoggerMock.Object);
     }
 
     [Fact]
@@ -121,5 +122,50 @@ public class ServiceBusPromptReceiverTests
         }
 
         prompts[0].MessageId.ShouldBeLessThan(prompts[1].MessageId);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_NotifiesWebUiAboutUserMessage()
+    {
+        // Arrange
+        var notifierMock = new Mock<INotifier>();
+        notifierMock.Setup(n => n.NotifyUserMessageAsync(
+                It.IsAny<UserMessageNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var redisMock = new Mock<IConnectionMultiplexer>();
+        var dbMock = new Mock<IDatabase>();
+        var threadStateStoreMock = new Mock<IThreadStateStore>();
+
+        redisMock.Setup(r => r.GetDatabase(It.IsAny<int>(), It.IsAny<object>()))
+            .Returns(dbMock.Object);
+        dbMock.Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(RedisValue.Null);
+        dbMock.Setup(db => db.StringSetAsync(
+                It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<TimeSpan?>(),
+                It.IsAny<bool>(), It.IsAny<When>(), It.IsAny<CommandFlags>()))
+            .ReturnsAsync(true);
+        threadStateStoreMock.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
+            .Returns(Task.CompletedTask);
+
+        var mapper = new ServiceBusConversationMapper(
+            redisMock.Object, threadStateStoreMock.Object,
+            new Mock<ILogger<ServiceBusConversationMapper>>().Object);
+
+        var receiver = new ServiceBusPromptReceiver(
+            mapper, notifierMock.Object, new Mock<ILogger<ServiceBusPromptReceiver>>().Object);
+
+        var message = new ParsedServiceBusMessage("correlation-123", "agent-1", "Hello from SB", "external-user");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+
+        // Act
+        await receiver.EnqueueAsync(message, cts.Token);
+
+        // Assert
+        notifierMock.Verify(n => n.NotifyUserMessageAsync(
+            It.Is<UserMessageNotification>(notification =>
+                notification.Content == "Hello from SB" &&
+                notification.SenderId == "external-user"),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

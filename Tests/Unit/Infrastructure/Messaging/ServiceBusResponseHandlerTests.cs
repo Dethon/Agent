@@ -114,7 +114,7 @@ public class ServiceBusResponseHandlerTests
     private static (ServiceBusResponseHandler handler, Mock<ServiceBusPromptReceiver> receiverMock,
         Mock<ServiceBusResponseWriter> writerMock) CreateHandler()
     {
-        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
+        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!, null!);
         var writerMock = new Mock<ServiceBusResponseWriter>(null!, null!);
 
         var handler = new ServiceBusResponseHandler(

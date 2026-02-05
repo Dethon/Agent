@@ -175,7 +175,8 @@ public static class InjectorModule
                 .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>());
         }
 
-        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings, IReadOnlyList<AgentDefinition> agents)
+        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings,
+            IReadOnlyList<AgentDefinition> agents)
         {
             var validAgentIds = agents.Select(a => a.Id).ToList();
 
@@ -199,6 +200,7 @@ public static class InjectorModule
                 .AddSingleton(_ => new ServiceBusMessageParser(validAgentIds))
                 .AddSingleton(sp => new ServiceBusPromptReceiver(
                     sp.GetRequiredService<ServiceBusConversationMapper>(),
+                    sp.GetRequiredService<INotifier>(),
                     sp.GetRequiredService<ILogger<ServiceBusPromptReceiver>>()))
                 .AddSingleton(sp => new ServiceBusResponseWriter(
                     sp.GetRequiredService<ServiceBusSender>(),

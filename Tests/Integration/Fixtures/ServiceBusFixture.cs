@@ -133,6 +133,7 @@ public class ServiceBusFixture : IAsyncLifetime
 
         var promptReceiver = new ServiceBusPromptReceiver(
             sourceMapper,
+            new Mock<INotifier>().Object,
             NullLogger<ServiceBusPromptReceiver>.Instance);
 
         var responseHandler = new ServiceBusResponseHandler(
