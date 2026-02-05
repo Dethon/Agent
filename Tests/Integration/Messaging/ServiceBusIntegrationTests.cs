@@ -35,13 +35,13 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
     public async Task SendPrompt_ValidMessage_ProcessedAndResponseWritten()
     {
         // Arrange
-        var sourceId = $"test-{Guid.NewGuid():N}";
+        var correlationId = $"test-{Guid.NewGuid():N}";
         const string prompt = "Hello, agent!";
         const string sender = "test-user";
         const string expectedResponse = "Hello back!";
 
         // Act - Send prompt
-        await fixture.SendPromptAsync(prompt, sender, sourceId);
+        await fixture.SendPromptAsync(prompt, sender, correlationId);
 
         // Wait for prompt to be enqueued
         await Task.Delay(500);
@@ -72,43 +72,31 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         response.ShouldNotBeNull();
 
         var responseBody = JsonSerializer.Deserialize<JsonElement>(response.Body.ToString());
-        responseBody.GetProperty("SourceId").GetString().ShouldBe(sourceId);
-        responseBody.GetProperty("Response").GetString().ShouldBe(expectedResponse);
-        responseBody.GetProperty("AgentId").GetString().ShouldBe(ServiceBusFixture.DefaultAgentId);
+        responseBody.GetProperty("correlationId").GetString().ShouldBe(correlationId);
+        responseBody.GetProperty("response").GetString().ShouldBe(expectedResponse);
+        responseBody.GetProperty("agentId").GetString().ShouldBe(ServiceBusFixture.DefaultAgentId);
 
         await fixture.CompleteResponseAsync(response);
     }
 
     [Fact]
-    public async Task SendPrompt_MissingSourceId_GeneratesUuidAndProcesses()
+    public async Task SendPrompt_MissingCorrelationId_DeadLettered()
     {
-        // Arrange
-        const string prompt = "No source ID message";
-        const string sender = "test-user";
+        // Arrange - Send JSON without correlationId field
+        const string missingCorrelationIdJson = """{"agentId": "test-agent", "prompt": "test prompt", "sender": "test-user"}""";
 
-        // Act - Send prompt without correlationId (will be auto-generated)
-        await fixture.SendPromptAsync(prompt, sender, correlationId: null);
+        // Act
+        await fixture.SendRawMessageAsync(missingCorrelationIdJson);
 
-        // Wait for prompt to be enqueued
-        await Task.Delay(500);
+        // Wait for processing
+        await Task.Delay(1000);
 
-        // Read the prompt
-        var prompts = new List<ChatPrompt>();
-        var readTask = Task.Run(async () =>
-        {
-            await foreach (var p in _messengerClient.ReadPrompts(0, _cts.Token))
-            {
-                prompts.Add(p);
-                break;
-            }
-        });
+        // Assert - Message should be in dead-letter queue with MissingField reason
+        var deadLetterMessages = await fixture.GetDeadLetterMessagesAsync();
+        deadLetterMessages.ShouldNotBeEmpty();
 
-        await Task.WhenAny(readTask, Task.Delay(5000));
-
-        // Assert - Prompt was processed (sourceId was auto-generated)
-        prompts.ShouldHaveSingleItem();
-        prompts[0].Prompt.ShouldBe(prompt);
-        prompts[0].ChatId.ShouldBeGreaterThan(0);
+        var dlMessage = deadLetterMessages.First();
+        dlMessage.DeadLetterReason.ShouldBe("MissingField");
     }
 
     [Fact]
@@ -135,7 +123,7 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
     public async Task SendPrompt_MissingPromptField_DeadLettered()
     {
         // Arrange - Send JSON without required 'prompt' field
-        const string missingPromptJson = """{"sender": "test-user"}""";
+        const string missingPromptJson = """{"correlationId": "test-123", "agentId": "test-agent", "sender": "test-user"}""";
 
         // Act
         await fixture.SendRawMessageAsync(missingPromptJson);
@@ -143,26 +131,25 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         // Wait for processing
         await Task.Delay(1000);
 
-        // Assert - Message should be in dead-letter queue with MalformedMessage
-        // (parser validates prompt field presence and returns MalformedMessage)
+        // Assert - Message should be in dead-letter queue with MissingField reason
         var deadLetterMessages = await fixture.GetDeadLetterMessagesAsync();
         deadLetterMessages.ShouldNotBeEmpty();
 
         var dlMessage = deadLetterMessages.First();
-        dlMessage.DeadLetterReason.ShouldBe("MalformedMessage");
+        dlMessage.DeadLetterReason.ShouldBe("MissingField");
     }
 
     [Fact]
-    public async Task SendPrompt_SameSourceId_SameChatIdThreadId()
+    public async Task SendPrompt_SameCorrelationId_SameChatIdThreadId()
     {
         // Arrange
-        var sourceId = $"test-{Guid.NewGuid():N}";
+        var correlationId = $"test-{Guid.NewGuid():N}";
         const string sender = "test-user";
 
-        // Act - Send two prompts with the same sourceId
-        await fixture.SendPromptAsync("First message", sender, sourceId);
+        // Act - Send two prompts with the same correlationId
+        await fixture.SendPromptAsync("First message", sender, correlationId);
         await Task.Delay(300);
-        await fixture.SendPromptAsync("Second message", sender, sourceId);
+        await fixture.SendPromptAsync("Second message", sender, correlationId);
 
         // Collect both prompts
         var prompts = new List<ChatPrompt>();
@@ -187,17 +174,17 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
     }
 
     [Fact]
-    public async Task SendPrompt_DifferentSourceIds_DifferentChatIds()
+    public async Task SendPrompt_DifferentCorrelationIds_DifferentChatIds()
     {
         // Arrange
-        var sourceId1 = $"test-{Guid.NewGuid():N}";
-        var sourceId2 = $"test-{Guid.NewGuid():N}";
+        var correlationId1 = $"test-{Guid.NewGuid():N}";
+        var correlationId2 = $"test-{Guid.NewGuid():N}";
         const string sender = "test-user";
 
-        // Act - Send two prompts with different sourceIds
-        await fixture.SendPromptAsync("First source message", sender, sourceId1);
+        // Act - Send two prompts with different correlationIds
+        await fixture.SendPromptAsync("First correlation message", sender, correlationId1);
         await Task.Delay(300);
-        await fixture.SendPromptAsync("Second source message", sender, sourceId2);
+        await fixture.SendPromptAsync("Second correlation message", sender, correlationId2);
 
         // Collect both prompts
         var prompts = new List<ChatPrompt>();
@@ -218,6 +205,26 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         // Assert - Prompts have different chatIds
         prompts.Count.ShouldBe(2);
         prompts[0].ChatId.ShouldNotBe(prompts[1].ChatId);
+    }
+
+    [Fact]
+    public async Task SendPrompt_InvalidAgentId_DeadLettered()
+    {
+        // Arrange - Send JSON with an agentId that is not configured
+        const string invalidAgentIdJson = """{"correlationId": "test-123", "agentId": "unknown-agent", "prompt": "test prompt", "sender": "test-user"}""";
+
+        // Act
+        await fixture.SendRawMessageAsync(invalidAgentIdJson);
+
+        // Wait for processing
+        await Task.Delay(1000);
+
+        // Assert - Message should be in dead-letter queue with InvalidAgentId reason
+        var deadLetterMessages = await fixture.GetDeadLetterMessagesAsync();
+        deadLetterMessages.ShouldNotBeEmpty();
+
+        var dlMessage = deadLetterMessages.First();
+        dlMessage.DeadLetterReason.ShouldBe("InvalidAgentId");
     }
 
     private static async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>
