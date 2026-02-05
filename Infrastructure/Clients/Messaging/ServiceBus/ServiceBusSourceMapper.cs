@@ -32,6 +32,17 @@ public sealed class ServiceBusConversationMapper(
                 logger.LogDebug(
                     "Found existing mapping for correlationId={CorrelationId}: chatId={ChatId}, threadId={ThreadId}",
                     correlationId, existing.ChatId, existing.ThreadId);
+
+                // Refresh topic TTL to prevent expiration before correlation mapping
+                await threadStateStore.SaveTopicAsync(new TopicMetadata(
+                    TopicId: existing.TopicId,
+                    ChatId: existing.ChatId,
+                    ThreadId: existing.ThreadId,
+                    AgentId: agentId,
+                    Name: $"[SB] {correlationId}",
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    LastMessageAt: DateTimeOffset.UtcNow));
+
                 _chatIdToCorrelationId[existing.ChatId] = correlationId;
                 return (existing.ChatId, existing.ThreadId, existing.TopicId, false);
             }

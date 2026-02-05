@@ -79,7 +79,7 @@ public class ServiceBusConversationMapperTests
     }
 
     [Fact]
-    public async Task GetOrCreateMappingAsync_ExistingCorrelationId_ReturnsCachedMapping()
+    public async Task GetOrCreateMappingAsync_ExistingCorrelationId_ReturnsCachedMappingAndRefreshesTopic()
     {
         // Arrange
         const string correlationId = "cicd-pipeline-1";
@@ -94,6 +94,9 @@ public class ServiceBusConversationMapperTests
         _dbMock.Setup(db => db.StringGetAsync(redisKey, It.IsAny<CommandFlags>()))
             .ReturnsAsync(cachedJson);
 
+        _threadStateStoreMock.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
+            .Returns(Task.CompletedTask);
+
         // Act
         var (chatId, threadId, topicId, isNew) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId);
 
@@ -103,7 +106,14 @@ public class ServiceBusConversationMapperTests
         threadId.ShouldBe(expectedThreadId);
         topicId.ShouldBe(expectedTopicId);
 
-        _threadStateStoreMock.Verify(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()), Times.Never);
+        // Verify topic is re-saved to refresh TTL
+        _threadStateStoreMock.Verify(s => s.SaveTopicAsync(
+            It.Is<TopicMetadata>(t =>
+                t.ChatId == expectedChatId &&
+                t.ThreadId == expectedThreadId &&
+                t.TopicId == expectedTopicId &&
+                t.AgentId == agentId &&
+                t.Name == $"[SB] {correlationId}")), Times.Once);
     }
 
     [Fact]

@@ -188,28 +188,65 @@ public class CompositeChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateTopicIfNeededAsync_DelegatesToFirstClient()
+    public async Task CreateTopicIfNeededAsync_WebUiSource_ReturnsWebUiResult()
     {
         // Arrange
-        var expectedKey = new AgentKey(123, 456, "agent1");
+        var webUiKey = new AgentKey(123, 456, "agent1");
+        var serviceBusKey = new AgentKey(789, 101, "agent1");
 
-        var client1 = new Mock<IChatMessengerClient>();
-        client1.Setup(c => c.Source).Returns(MessageSource.WebUi);
-        client1.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expectedKey);
+        var webUiClient = new Mock<IChatMessengerClient>();
+        webUiClient.Setup(c => c.Source).Returns(MessageSource.WebUi);
+        webUiClient.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(),
+                It.IsAny<long?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(webUiKey);
 
-        var client2 = new Mock<IChatMessengerClient>();
-        client2.Setup(c => c.Source).Returns(MessageSource.WebUi);
+        var serviceBusClient = new Mock<IChatMessengerClient>();
+        serviceBusClient.Setup(c => c.Source).Returns(MessageSource.ServiceBus);
+        serviceBusClient.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(),
+                It.IsAny<long?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(serviceBusKey);
 
-        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
 
         // Act
         var result = await composite.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic");
 
+        // Assert - WebUi source should return WebUi client's result
+        result.ShouldBe(webUiKey);
+        webUiClient.Verify(c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateTopicIfNeededAsync_ServiceBusSource_PrefersSourceSpecificResult()
+    {
+        // Arrange
+        var webUiKey = new AgentKey(999, 888, "agent1");
+        var serviceBusKey = new AgentKey(123, 456, "agent1");
+
+        var webUiClient = new Mock<IChatMessengerClient>();
+        webUiClient.Setup(c => c.Source).Returns(MessageSource.WebUi);
+        webUiClient.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(),
+                It.IsAny<long?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(webUiKey);
+
+        var serviceBusClient = new Mock<IChatMessengerClient>();
+        serviceBusClient.Setup(c => c.Source).Returns(MessageSource.ServiceBus);
+        serviceBusClient.Setup(c => c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(),
+                It.IsAny<long?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(serviceBusKey);
+
+        var composite = new CompositeChatMessengerClient([webUiClient.Object, serviceBusClient.Object], _router);
+
+        // Act - ServiceBus source should prefer ServiceBus client's result, not WebUi's
+        var result = await composite.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, "agent1", "topic");
+
         // Assert
-        result.ShouldBe(expectedKey);
-        client1.Verify(c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 123, 456, "agent1", "topic",
+        result.ShouldBe(serviceBusKey);
+        // Both clients should still be called (for side effects)
+        webUiClient.Verify(c => c.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, "agent1", "topic",
+            It.IsAny<CancellationToken>()), Times.Once);
+        serviceBusClient.Verify(c => c.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, "agent1", "topic",
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
