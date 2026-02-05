@@ -1,0 +1,105 @@
+# External Integrations
+
+## LLM Provider
+
+### OpenRouter
+- **Client**: `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs`
+- **Config**: `OpenRouterConfig` record (ApiUrl, ApiKey, Model)
+- **Features**:
+  - Streaming responses
+  - Reasoning/thinking tokens support
+  - Tool calling with function definitions
+- **Embedding**: `OpenRouterEmbeddingService` for vector embeddings
+
+## Messaging Platforms
+
+### Telegram Bot API
+- **Client**: `Infrastructure/Clients/Messaging/Telegram/TelegramChatClient.cs`
+- **Features**:
+  - Forum topics (threads)
+  - Message polling
+  - Inline keyboard for tool approval
+  - Multi-bot support (one per agent)
+- **Config**: Per-agent `TelegramBotToken` in agent definition
+
+### Azure Service Bus
+- **Client**: `Infrastructure/Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs`
+- **Components**:
+  - `ServiceBusProcessorHost` - Message processing
+  - `ServiceBusPromptReceiver` - Prompt reception
+  - `ServiceBusResponseWriter` - Response streaming
+- **Purpose**: External system integration for chat prompts
+
+### SignalR (WebChat)
+- **Hub**: `Agent/Hubs/ChatHub.cs`
+- **Client**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`
+- **Features**:
+  - Streaming message delivery
+  - Tool approval UI
+  - Topic management
+  - Session persistence
+
+## Data Storage
+
+### Redis Stack
+- **Connection**: `StackExchange.Redis.IConnectionMultiplexer`
+- **Uses**:
+  - **Thread State**: `RedisThreadStateStore` - Chat history persistence
+  - **Schedules**: `RedisScheduleStore` - Scheduled task storage
+  - **Memory**: `RedisStackMemoryStore` - Vector memory with search
+    - HNSW index for semantic search
+    - 1536-dimension embeddings (OpenAI compatible)
+    - Category and tag filtering
+
+## Download Services
+
+### qBittorrent
+- **Client**: `Infrastructure/Clients/Torrent/QBittorrentDownloadClient.cs`
+- **Features**:
+  - Torrent download management
+  - Progress tracking
+  - Category-based organization
+
+### Jackett
+- **Client**: `Infrastructure/Clients/Torrent/JackettSearchClient.cs`
+- **Purpose**: Unified torrent search across multiple trackers
+
+## Web Services
+
+### Brave Search API
+- **Client**: `Infrastructure/Clients/BraveSearchClient.cs`
+- **Purpose**: Web search functionality for agents
+
+### Playwright Browser
+- **Client**: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`
+- **Features**:
+  - Page navigation
+  - Element interaction
+  - Content extraction
+  - Modal dismissal (`ModalDismisser`)
+  - CAPTCHA solving integration (`CapSolverClient`)
+
+### Idealista
+- **Client**: `Infrastructure/Clients/IdealistaClient.cs`
+- **Purpose**: Real estate property search (Spain)
+
+## MCP Server Communication
+
+### Transport
+- HTTP client transport to MCP server endpoints
+- Polly retry policies for resilience
+
+### Features
+- Tool discovery and invocation
+- Prompt loading from servers
+- Resource subscription and updates
+- Sampling handler for nested LLM calls
+
+### Server Endpoints (Configurable)
+Each agent definition specifies `McpServerEndpoints[]`:
+- Library server (downloads, files)
+- Text server (file operations)
+- WebSearch server (browser, search)
+- Memory server (vector store)
+- Idealista server (real estate)
+- CommandRunner server (shell commands)
