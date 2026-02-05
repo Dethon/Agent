@@ -86,8 +86,8 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         const string prompt = "No source ID message";
         const string sender = "test-user";
 
-        // Act - Send prompt without sourceId
-        await fixture.SendPromptAsync(prompt, sender, sourceId: null);
+        // Act - Send prompt without correlationId (will be auto-generated)
+        await fixture.SendPromptAsync(prompt, sender, correlationId: null);
 
         // Wait for prompt to be enqueued
         await Task.Delay(500);

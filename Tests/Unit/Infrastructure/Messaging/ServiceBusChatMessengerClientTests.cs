@@ -13,12 +13,11 @@ public class ServiceBusChatMessengerClientTests
     public ServiceBusChatMessengerClientTests()
     {
         var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
-        var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!, null!);
+        var handlerMock = new Mock<ServiceBusResponseHandler>(null!, null!);
 
         _client = new ServiceBusChatMessengerClient(
             receiverMock.Object,
-            handlerMock.Object,
-            "default");
+            handlerMock.Object);
     }
 
     [Fact]
@@ -46,13 +45,11 @@ public class ServiceBusChatMessengerClientTests
     }
 
     [Fact]
-    public async Task CreateTopicIfNeededAsync_WithNullAgentId_UsesDefaultAgentId()
+    public async Task CreateTopicIfNeededAsync_WithNullAgentId_ThrowsArgumentNullException()
     {
-        // Act
-        var result = await _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, null, "test topic");
-
-        // Assert
-        result.AgentId.ShouldBe("default");
+        // Act & Assert
+        await Should.ThrowAsync<ArgumentNullException>(
+            () => _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, null, "test topic"));
     }
 
     [Fact]

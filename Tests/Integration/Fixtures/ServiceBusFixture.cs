@@ -67,25 +67,21 @@ public class ServiceBusFixture : IAsyncLifetime
     public async Task SendPromptAsync(
         string prompt,
         string sender,
-        string? sourceId = null,
+        string? correlationId = null,
         string? agentId = null)
     {
-        var messageBody = new { prompt, sender };
+        var messageBody = new
+        {
+            correlationId = correlationId ?? Guid.NewGuid().ToString("N"),
+            agentId = agentId ?? DefaultAgentId,
+            prompt,
+            sender
+        };
         var json = JsonSerializer.Serialize(messageBody);
         var message = new ServiceBusMessage(BinaryData.FromString(json))
         {
             ContentType = "application/json"
         };
-
-        if (sourceId is not null)
-        {
-            message.ApplicationProperties["sourceId"] = sourceId;
-        }
-
-        if (agentId is not null)
-        {
-            message.ApplicationProperties["agentId"] = agentId;
-        }
 
         await _promptSender.SendMessageAsync(message);
     }
@@ -145,8 +141,7 @@ public class ServiceBusFixture : IAsyncLifetime
 
         var client = new ServiceBusChatMessengerClient(
             promptReceiver,
-            responseHandler,
-            DefaultAgentId);
+            responseHandler);
 
         var processor = _serviceBusClient.CreateProcessor(PromptQueueName, new ServiceBusProcessorOptions
         {
