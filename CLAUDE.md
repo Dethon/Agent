@@ -1,6 +1,6 @@
 # Agent
 
-AI media library agent via Telegram/WebChat/CLI using .NET 10, MCP, and OpenRouter LLMs.
+AI agent via Telegram/WebChat/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
 
 ## Architecture
 
