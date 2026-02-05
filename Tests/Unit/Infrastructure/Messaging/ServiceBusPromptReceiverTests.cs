@@ -51,7 +51,7 @@ public class ServiceBusPromptReceiverTests
     public async Task EnqueueAsync_ValidMessage_WritesToChannel()
     {
         // Arrange
-        var message = new ParsedServiceBusMessage("Hello", "user1", "source-123", "agent-1");
+        var message = new ParsedServiceBusMessage("correlation-123", "agent-1", "Hello", "user1");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
         // Act
@@ -73,10 +73,10 @@ public class ServiceBusPromptReceiverTests
     }
 
     [Fact]
-    public async Task TryGetSourceId_AfterEnqueue_ReturnsSourceId()
+    public async Task TryGetCorrelationId_AfterEnqueue_ReturnsCorrelationId()
     {
         // Arrange
-        var message = new ParsedServiceBusMessage("Hello", "user1", "source-123", "agent-1");
+        var message = new ParsedServiceBusMessage("correlation-123", "agent-1", "Hello", "user1");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
         // Act
@@ -92,17 +92,17 @@ public class ServiceBusPromptReceiverTests
 
         // Assert
         prompt.ShouldNotBeNull();
-        var found = _receiver.TryGetSourceId(prompt.ChatId, out var sourceId);
+        var found = _receiver.TryGetCorrelationId(prompt.ChatId, out var correlationId);
         found.ShouldBeTrue();
-        sourceId.ShouldBe("source-123");
+        correlationId.ShouldBe("correlation-123");
     }
 
     [Fact]
     public async Task EnqueueAsync_MultipleMessages_IncrementsMessageId()
     {
         // Arrange
-        var message1 = new ParsedServiceBusMessage("First", "user1", "source-1", "agent-1");
-        var message2 = new ParsedServiceBusMessage("Second", "user1", "source-2", "agent-1");
+        var message1 = new ParsedServiceBusMessage("correlation-1", "agent-1", "First", "user1");
+        var message2 = new ParsedServiceBusMessage("correlation-2", "agent-1", "Second", "user1");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
 
         // Act
