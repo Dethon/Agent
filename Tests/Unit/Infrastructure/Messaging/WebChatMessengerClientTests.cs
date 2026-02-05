@@ -158,6 +158,40 @@ public sealed class WebChatMessengerClientTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateTopicIfNeededAsync_WithSender_SetsCurrentSenderIdOnStreamState()
+    {
+        _threadStateStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync(
+                It.IsAny<string>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TopicMetadata?)null);
+
+        _threadStateStore.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>()))
+            .Returns(Task.CompletedTask);
+
+        _hubNotifier.Setup(n => n.NotifyTopicChangedAsync(
+                It.IsAny<TopicChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _hubNotifier.Setup(n => n.NotifyStreamChangedAsync(
+                It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var result = await _client.CreateTopicIfNeededAsync(
+            MessageSource.ServiceBus,
+            chatId: 123,
+            threadId: null,
+            agentId: "test-agent",
+            topicName: "Hello from service bus",
+            sender: "external-user");
+
+        var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
+        topicId.ShouldNotBeNull();
+
+        var streamState = _streamManager.GetStreamState(topicId);
+        streamState.ShouldNotBeNull();
+        streamState.CurrentSenderId.ShouldBe("external-user");
+    }
+
+    [Fact]
     public async Task CreateTopicIfNeededAsync_WithExistingTopic_ServiceBusSource_CreatesStreamAndNotifiesTopic()
     {
         var existingTopic = new TopicMetadata(

@@ -64,12 +64,13 @@ public sealed class CompositeChatMessengerClient(
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
         Validate();
         var allClients = router.GetClientsForSource(clients, source).ToList();
         var tasks = allClients
-            .Select(c => c.CreateTopicIfNeededAsync(source, chatId, threadId, agentId, topicName, ct));
+            .Select(c => c.CreateTopicIfNeededAsync(source, chatId, threadId, agentId, topicName, sender, ct));
         var results = await Task.WhenAll(tasks);
 
         var sourceIndex = allClients.FindIndex(c => c.Source == source);

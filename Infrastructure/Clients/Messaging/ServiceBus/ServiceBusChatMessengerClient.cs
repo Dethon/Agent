@@ -35,6 +35,7 @@ public sealed class ServiceBusChatMessengerClient(
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(agentId);

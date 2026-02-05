@@ -23,7 +23,7 @@ public class ChatMonitor(
             var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
                 .GroupByStreaming(
                     async (x, ct) => await chatMessengerClient.CreateTopicIfNeededAsync(
-                        x.Source, x.ChatId, x.ThreadId, x.AgentId, x.Prompt, ct),
+                        x.Source, x.ChatId, x.ThreadId, x.AgentId, x.Prompt, x.Sender, ct),
                     cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
