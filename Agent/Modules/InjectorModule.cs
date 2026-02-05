@@ -4,6 +4,7 @@ using Agent.Settings;
 using Azure.Messaging.ServiceBus;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Monitor;
 using Domain.Routers;
 using Infrastructure.Agents;
@@ -167,16 +168,17 @@ public static class InjectorModule
 
             if (settings.ServiceBus is not null)
             {
-                var validAgentIds = settings.Agents.Select(a => a.Id).ToList();
-                return services.AddServiceBusClient(settings.ServiceBus, validAgentIds, settings.Agents[0].Id);
+                return services.AddServiceBusClient(settings.ServiceBus, settings.Agents);
             }
 
             return services
                 .AddSingleton<IChatMessengerClient>(sp => sp.GetRequiredService<WebChatMessengerClient>());
         }
 
-        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings, IReadOnlyList<string> validAgentIds, string defaultAgentId)
+        private IServiceCollection AddServiceBusClient(ServiceBusSettings sbSettings, IReadOnlyList<AgentDefinition> agents)
         {
+            var validAgentIds = agents.Select(a => a.Id).ToList();
+
             return services
                 .AddSingleton(_ => new ServiceBusClient(sbSettings.ConnectionString))
                 .AddSingleton(sp =>
@@ -206,8 +208,7 @@ public static class InjectorModule
                     sp.GetRequiredService<ServiceBusResponseWriter>()))
                 .AddSingleton(sp => new ServiceBusChatMessengerClient(
                     sp.GetRequiredService<ServiceBusPromptReceiver>(),
-                    sp.GetRequiredService<ServiceBusResponseHandler>(),
-                    defaultAgentId))
+                    sp.GetRequiredService<ServiceBusResponseHandler>()))
                 .AddSingleton<IMessageSourceRouter, MessageSourceRouter>()
                 .AddSingleton<IChatMessengerClient>(sp => new CompositeChatMessengerClient(
                     [
