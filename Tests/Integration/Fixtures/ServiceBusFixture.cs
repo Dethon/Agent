@@ -155,7 +155,7 @@ public class ServiceBusFixture : IAsyncLifetime
             MaxConcurrentCalls = 1
         });
 
-        var messageParser = new ServiceBusMessageParser(DefaultAgentId);
+        var messageParser = new ServiceBusMessageParser([DefaultAgentId]);
 
         var host = new ServiceBusProcessorHost(
             processor,

@@ -7,14 +7,14 @@ namespace Domain.DTOs;
 public record ServiceBusPromptMessage
 {
     [JsonPropertyName("correlationId")]
-    public required string CorrelationId { get; init; }
+    public string? CorrelationId { get; init; }
 
     [JsonPropertyName("agentId")]
-    public required string AgentId { get; init; }
+    public string? AgentId { get; init; }
 
     [JsonPropertyName("prompt")]
-    public required string Prompt { get; init; }
+    public string? Prompt { get; init; }
 
     [JsonPropertyName("sender")]
-    public required string Sender { get; init; }
+    public string? Sender { get; init; }
 }
