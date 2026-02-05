@@ -49,7 +49,7 @@ public class ServiceBusPromptReceiver(
         await _channel.Writer.WriteAsync(prompt, ct);
     }
 
-    public bool TryGetCorrelationId(long chatId, out string correlationId)
+    public virtual bool TryGetCorrelationId(long chatId, out string correlationId)
     {
         return conversationMapper.TryGetCorrelationId(chatId, out correlationId);
     }
