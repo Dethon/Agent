@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
+using Domain.DTOs;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -39,7 +40,7 @@ public class ServiceBusResponseWriter
     }
 
     public virtual async Task WriteResponseAsync(
-        string sourceId,
+        string correlationId,
         string agentId,
         string response,
         CancellationToken ct = default)
@@ -48,9 +49,9 @@ public class ServiceBusResponseWriter
         {
             var responseMessage = new ServiceBusResponseMessage
             {
-                SourceId = sourceId,
-                Response = response,
+                CorrelationId = correlationId,
                 AgentId = agentId,
+                Response = response,
                 CompletedAt = DateTimeOffset.UtcNow
             };
 
@@ -64,19 +65,11 @@ public class ServiceBusResponseWriter
                 async token => await _sender.SendMessageAsync(message, token),
                 ct);
 
-            _logger.LogDebug("Sent response to queue for sourceId={SourceId}", sourceId);
+            _logger.LogDebug("Sent response to queue for correlationId={CorrelationId}", correlationId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send response to queue after retries for sourceId={SourceId}", sourceId);
+            _logger.LogError(ex, "Failed to send response to queue after retries for correlationId={CorrelationId}", correlationId);
         }
-    }
-
-    private sealed record ServiceBusResponseMessage
-    {
-        public required string SourceId { get; init; }
-        public required string Response { get; init; }
-        public required string AgentId { get; init; }
-        public required DateTimeOffset CompletedAt { get; init; }
     }
 }
