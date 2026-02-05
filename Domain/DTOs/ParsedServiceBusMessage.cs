@@ -1,7 +1,7 @@
 namespace Domain.DTOs;
 
 public sealed record ParsedServiceBusMessage(
+    string CorrelationId,
+    string AgentId,
     string Prompt,
-    string Sender,
-    string SourceId,
-    string AgentId);
+    string Sender);
