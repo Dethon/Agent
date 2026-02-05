@@ -14,25 +14,36 @@ public sealed class ServiceBusConversationMapper(
     ILogger<ServiceBusConversationMapper> logger)
 {
     private readonly IDatabase _db = redis.GetDatabase();
-    private readonly ConcurrentDictionary<long, string> _chatIdToSourceId = new();
+    private readonly ConcurrentDictionary<long, string> _chatIdToCorrelationId = new();
 
     public async Task<(long ChatId, long ThreadId, string TopicId, bool IsNew)> GetOrCreateMappingAsync(
-        string sourceId,
+        string correlationId,
         string agentId,
         CancellationToken ct = default)
     {
-        var redisKey = $"sb-source:{agentId}:{sourceId}";
+        var redisKey = $"sb-correlation:{agentId}:{correlationId}";
         var existingJson = await _db.StringGetAsync(redisKey);
 
         if (existingJson.HasValue)
         {
-            var existing = JsonSerializer.Deserialize<SourceMapping>(existingJson.ToString());
+            var existing = JsonSerializer.Deserialize<CorrelationMapping>(existingJson.ToString());
             if (existing is not null)
             {
                 logger.LogDebug(
-                    "Found existing mapping for sourceId={SourceId}: chatId={ChatId}, threadId={ThreadId}",
-                    sourceId, existing.ChatId, existing.ThreadId);
-                _chatIdToSourceId[existing.ChatId] = sourceId;
+                    "Found existing mapping for correlationId={CorrelationId}: chatId={ChatId}, threadId={ThreadId}",
+                    correlationId, existing.ChatId, existing.ThreadId);
+
+                // Refresh topic TTL to prevent expiration before correlation mapping
+                await threadStateStore.SaveTopicAsync(new TopicMetadata(
+                    TopicId: existing.TopicId,
+                    ChatId: existing.ChatId,
+                    ThreadId: existing.ThreadId,
+                    AgentId: agentId,
+                    Name: $"[SB] {correlationId}",
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    LastMessageAt: DateTimeOffset.UtcNow));
+
+                _chatIdToCorrelationId[existing.ChatId] = correlationId;
                 return (existing.ChatId, existing.ThreadId, existing.TopicId, false);
             }
         }
@@ -40,7 +51,7 @@ public sealed class ServiceBusConversationMapper(
         var topicId = TopicIdHasher.GenerateTopicId();
         var chatId = TopicIdHasher.GetChatIdForTopic(topicId);
         var threadId = TopicIdHasher.GetThreadIdForTopic(topicId);
-        var topicName = $"[SB] {sourceId}";
+        var topicName = $"[SB] {correlationId}";
 
         var topic = new TopicMetadata(
             TopicId: topicId,
@@ -53,23 +64,23 @@ public sealed class ServiceBusConversationMapper(
 
         await threadStateStore.SaveTopicAsync(topic);
 
-        var mapping = new SourceMapping(chatId, threadId, topicId);
+        var mapping = new CorrelationMapping(chatId, threadId, topicId);
         var mappingJson = JsonSerializer.Serialize(mapping);
         await _db.StringSetAsync(redisKey, mappingJson, TimeSpan.FromDays(30), false);
 
-        _chatIdToSourceId[chatId] = sourceId;
+        _chatIdToCorrelationId[chatId] = correlationId;
 
         logger.LogInformation(
-            "Created new mapping for sourceId={SourceId}: chatId={ChatId}, threadId={ThreadId}, topicId={TopicId}",
-            sourceId, chatId, threadId, topicId);
+            "Created new mapping for correlationId={CorrelationId}: chatId={ChatId}, threadId={ThreadId}, topicId={TopicId}",
+            correlationId, chatId, threadId, topicId);
 
         return (chatId, threadId, topicId, true);
     }
 
-    public bool TryGetSourceId(long chatId, out string sourceId)
+    public bool TryGetCorrelationId(long chatId, out string correlationId)
     {
-        return _chatIdToSourceId.TryGetValue(chatId, out sourceId!);
+        return _chatIdToCorrelationId.TryGetValue(chatId, out correlationId!);
     }
 
-    private sealed record SourceMapping(long ChatId, long ThreadId, string TopicId);
+    private sealed record CorrelationMapping(long ChatId, long ThreadId, string TopicId);
 }

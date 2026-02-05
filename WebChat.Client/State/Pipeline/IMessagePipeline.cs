@@ -18,6 +18,8 @@ public interface IMessagePipeline
 
     void Reset(string topicId);
 
+    void ClearTopic(string topicId);
+
     bool WasSentByThisClient(string? correlationId);
 
     PipelineSnapshot GetSnapshot(string topicId);

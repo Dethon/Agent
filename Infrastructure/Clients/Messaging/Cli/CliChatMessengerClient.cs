@@ -101,6 +101,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
         return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));

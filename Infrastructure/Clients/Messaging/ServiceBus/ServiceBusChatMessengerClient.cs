@@ -7,8 +7,7 @@ namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public sealed class ServiceBusChatMessengerClient(
     ServiceBusPromptReceiver promptReceiver,
-    ServiceBusResponseHandler responseHandler,
-    string defaultAgentId) : IChatMessengerClient
+    ServiceBusResponseHandler responseHandler) : IChatMessengerClient
 {
     public bool SupportsScheduledNotifications => false;
     public MessageSource Source => MessageSource.ServiceBus;
@@ -36,9 +35,11 @@ public sealed class ServiceBusChatMessengerClient(
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? defaultAgentId));
+        ArgumentNullException.ThrowIfNull(agentId);
+        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
     }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)

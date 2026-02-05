@@ -2,6 +2,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -14,6 +15,7 @@ public sealed class AgentSelectionEffect : IDisposable
     private readonly ILocalStorageService _localStorage;
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
+    private readonly StreamingStore _streamingStore;
     private string? _previousAgentId;
 
     public AgentSelectionEffect(
@@ -22,13 +24,15 @@ public sealed class AgentSelectionEffect : IDisposable
         IChatSessionService sessionService,
         ILocalStorageService localStorage,
         ITopicService topicService,
-        IStreamResumeService streamResumeService)
+        IStreamResumeService streamResumeService,
+        StreamingStore streamingStore)
     {
         _dispatcher = dispatcher;
         _sessionService = sessionService;
         _localStorage = localStorage;
         _topicService = topicService;
         _streamResumeService = streamResumeService;
+        _streamingStore = streamingStore;
 
         // Subscribe to store to detect agent changes
         _subscription = topicsStore.StateObservable.Subscribe(HandleStateChange);
@@ -68,6 +72,14 @@ public sealed class AgentSelectionEffect : IDisposable
 
     private async Task LoadTopicHistoryAsync(StoredTopic topic)
     {
+        // Skip history reload for streaming topics - they have correct local state
+        // and reloading would lose locally-added messages not yet persisted to server
+        if (_streamingStore.State.StreamingTopics.Contains(topic.TopicId))
+        {
+            _ = _streamResumeService.TryResumeStreamAsync(topic);
+            return;
+        }
+
         var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
         var messages = history.Select(h => h.ToChatMessageModel()).ToList();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, messages));

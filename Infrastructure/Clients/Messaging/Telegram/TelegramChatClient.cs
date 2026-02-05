@@ -144,6 +144,7 @@ public class TelegramChatClient(
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
         if (!chatId.HasValue)

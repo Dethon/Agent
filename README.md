@@ -6,7 +6,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 ## Features
 
 - **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Triple Interface** - Chat via Telegram bot, web browser, or local CLI terminal
+- **Quad Interface** - Chat via Telegram bot, web browser, CLI terminal, or Azure Service Bus
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
@@ -25,12 +25,12 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 ┌─────────────────┐        ┌─────────────────┐     ┌─────────────────┐
 │   Telegram Bot  │───────▶│                 │◀────│   CLI Terminal  │
 └─────────────────┘        │   Jack/Jonas    │     └─────────────────┘
-        ┌─────────────────▶│   (AI Agents)   │
-        │                  └────────┬────────┘
-┌───────┴───────┐                   │
-│    WebChat    │                   │
-│ (Blazor WASM) │                   │
-└───────────────┘                   │
+        ┌─────────────────▶│   (AI Agents)   │◀────────────────┐
+        │                  └────────┬────────┘                 │
+┌───────┴───────┐                   │                 ┌────────┴────────┐
+│    WebChat    │                   │                 │  Azure Service  │
+│ (Blazor WASM) │                   │                 │       Bus       │
+└───────────────┘                   │                 └─────────────────┘
                                     │
       ┌──────────────┬──────────────┼───────────────┬───────────────┬───────────────┐
       ▼              ▼              ▼               ▼               ▼               ▼
@@ -77,6 +77,7 @@ Agent routing:
 - **Telegram**: Each bot token maps to one agent (bot token hash matching)
 - **WebChat**: User selects agent from available list in the UI
 - **CLI**: Uses the first configured agent
+- **Service Bus**: Agent specified in message `agentId` field (falls back to first agent)
 
 ## Projects
 
@@ -158,6 +159,12 @@ AGENTS__1__MCPSERVERENDPOINTS__0=http://mcp-text:8080/sse
 AGENTS__1__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/sse
 AGENTS__1__MCPSERVERENDPOINTS__2=http://mcp-memory:8080/sse
 AGENTS__1__MCPSERVERENDPOINTS__3=http://mcp-idealista:8080/sse
+
+# Service Bus (optional, for external system integration)
+SERVICEBUS__CONNECTIONSTRING=Endpoint=sb://yournamespace.servicebus.windows.net/;SharedAccessKeyName=...
+SERVICEBUS__PROMPTQUEUENAME=agent-prompts
+SERVICEBUS__RESPONSEQUEUENAME=agent-responses
+SERVICEBUS__MAXCONCURRENTCALLS=10
 ```
 
 ### 3. Run with Docker Compose
@@ -245,6 +252,44 @@ Or simply:
 ```bash
 dotnet run --project Agent
 ```
+
+### Service Bus Interface
+
+Enable Azure Service Bus integration for external system connectivity. The agent listens for prompts on a queue and writes responses to another queue.
+
+**Prompt Message Format** (sent to prompt queue):
+```json
+{
+  "prompt": "Your question or command here",
+  "sender": "external-system-id"
+}
+```
+
+Messages must include `agentId` (in application properties or message body) to route to a specific agent, or the first configured agent is used.
+
+**Response Message Format** (written to response queue):
+```json
+{
+  "sourceId": "conversation-thread-id",
+  "agentId": "jack",
+  "response": "Agent's response text",
+  "completedAt": "2024-01-15T10:30:00Z"
+}
+```
+
+Configure via environment variables (see above) or `appsettings.json`:
+```json
+{
+  "serviceBus": {
+    "connectionString": "Endpoint=sb://...",
+    "promptQueueName": "agent-prompts",
+    "responseQueueName": "agent-responses",
+    "maxConcurrentCalls": 10
+  }
+}
+```
+
+The Service Bus processor runs automatically when configured alongside other interfaces.
 
 ### Tool Approval
 

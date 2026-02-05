@@ -2,7 +2,7 @@
   "version": "1.0",
   "generated": "2026-02-05",
   "rootDirectory": "G:/repos/agent",
-  "commitHash": "42df6a1",
+  "commitHash": "3f0bf99",
   "projects": {
     "Agent": {
       "path": "Agent/Agent.csproj",
@@ -55,9 +55,12 @@
         },
         "Modules/InjectorModule.cs": {
           "symbols": [
-            {"name": "InjectorModule", "kind": "class"}
+            {"name": "InjectorModule", "kind": "class"},
+            {"name": "AddAgent", "kind": "method", "signature": "IServiceCollection AddAgent(AgentSettings)"},
+            {"name": "AddChatMonitoring", "kind": "method", "signature": "IServiceCollection AddChatMonitoring(AgentSettings, CommandLineParams)"},
+            {"name": "AddServiceBusClient", "kind": "method", "signature": "IServiceCollection AddServiceBusClient(ServiceBusSettings, IReadOnlyList<AgentDefinition>)"}
           ],
-          "purpose": "Dependency injection module"
+          "purpose": "Dependency injection module with messaging client registration"
         },
         "Modules/SchedulingModule.cs": {
           "symbols": [
@@ -211,6 +214,24 @@
             {"name": "DisposableAgent", "kind": "class"}
           ],
           "purpose": "Base disposable agent class"
+        },
+        "DTOs/ParsedServiceBusMessage.cs": {
+          "symbols": [
+            {"name": "ParsedServiceBusMessage", "kind": "record", "signature": "record ParsedServiceBusMessage(string CorrelationId, string AgentId, string Prompt, string Sender)"}
+          ],
+          "purpose": "Parsed and validated Service Bus prompt message"
+        },
+        "DTOs/ServiceBusPromptMessage.cs": {
+          "symbols": [
+            {"name": "ServiceBusPromptMessage", "kind": "record", "line": 7}
+          ],
+          "purpose": "JSON-serializable Service Bus incoming prompt message"
+        },
+        "DTOs/ServiceBusResponseMessage.cs": {
+          "symbols": [
+            {"name": "ServiceBusResponseMessage", "kind": "record", "line": 7}
+          ],
+          "purpose": "JSON-serializable Service Bus outgoing response message"
         },
         "Tools/Downloads/FileDownloadTool.cs": {
           "symbols": [
@@ -376,9 +397,49 @@
         },
         "Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs": {
           "symbols": [
-            {"name": "ServiceBusChatMessengerClient", "kind": "class"}
+            {"name": "ServiceBusChatMessengerClient", "kind": "class", "line": 8, "signature": "ServiceBusChatMessengerClient(ServiceBusPromptReceiver, ServiceBusResponseHandler)"},
+            {"name": "ReadPrompts", "kind": "method", "signature": "IAsyncEnumerable<ChatPrompt> ReadPrompts(int, CancellationToken)"},
+            {"name": "ProcessResponseStreamAsync", "kind": "method"}
           ],
-          "purpose": "Azure Service Bus messaging client"
+          "purpose": "Azure Service Bus messaging client for external system integration"
+        },
+        "Clients/Messaging/ServiceBus/ServiceBusMessageParser.cs": {
+          "symbols": [
+            {"name": "ServiceBusMessageParser", "kind": "class", "line": 7, "signature": "ServiceBusMessageParser(IReadOnlyList<string> validAgentIds)"},
+            {"name": "Parse", "kind": "method", "signature": "ParseResult Parse(ServiceBusReceivedMessage)"}
+          ],
+          "purpose": "Parses and validates Service Bus messages with strict field and agent validation"
+        },
+        "Clients/Messaging/ServiceBus/ServiceBusPromptReceiver.cs": {
+          "symbols": [
+            {"name": "ServiceBusPromptReceiver", "kind": "class", "line": 7},
+            {"name": "ReadPromptsAsync", "kind": "method", "signature": "IAsyncEnumerable<ChatPrompt> ReadPromptsAsync(CancellationToken)"},
+            {"name": "EnqueueAsync", "kind": "method", "signature": "Task EnqueueAsync(ParsedServiceBusMessage, CancellationToken)"},
+            {"name": "TryGetCorrelationId", "kind": "method", "signature": "bool TryGetCorrelationId(long chatId, out string correlationId)"}
+          ],
+          "purpose": "Receives prompts from Service Bus and maps correlationId to internal chat sessions"
+        },
+        "Clients/Messaging/ServiceBus/ServiceBusResponseHandler.cs": {
+          "symbols": [
+            {"name": "ServiceBusResponseHandler", "kind": "class", "line": 7},
+            {"name": "ProcessAsync", "kind": "method"}
+          ],
+          "purpose": "Handles agent response streaming and writes to Service Bus response queue"
+        },
+        "Clients/Messaging/ServiceBus/ServiceBusResponseWriter.cs": {
+          "symbols": [
+            {"name": "ServiceBusResponseWriter", "kind": "class", "line": 10},
+            {"name": "WriteResponseAsync", "kind": "method", "signature": "Task WriteResponseAsync(string correlationId, string agentId, string response, CancellationToken)"}
+          ],
+          "purpose": "Writes responses to Service Bus with Polly retry resilience"
+        },
+        "Clients/Messaging/ServiceBus/ServiceBusConversationMapper.cs": {
+          "symbols": [
+            {"name": "ServiceBusConversationMapper", "kind": "class", "line": 11},
+            {"name": "GetOrCreateMappingAsync", "kind": "method", "signature": "Task<(long, long, string, bool)> GetOrCreateMappingAsync(string correlationId, string agentId, CancellationToken)"},
+            {"name": "TryGetCorrelationId", "kind": "method", "signature": "bool TryGetCorrelationId(long chatId, out string correlationId)"}
+          ],
+          "purpose": "Maps Service Bus correlationId to internal chatId/threadId with Redis persistence"
         },
         "Clients/Messaging/Cli/CliChatMessengerClient.cs": {
           "symbols": [
@@ -570,7 +631,14 @@
         "Integration/Agents/McpAgentIntegrationTests.cs": {"purpose": "MCP agent integration tests"},
         "Integration/Memory/RedisMemoryStoreTests.cs": {"purpose": "Redis memory store tests"},
         "Integration/WebChat/ChatHubIntegrationTests.cs": {"purpose": "SignalR hub tests"},
+        "Integration/Messaging/ServiceBusIntegrationTests.cs": {"purpose": "Service Bus end-to-end integration tests"},
         "Unit/Domain/ScheduleCreateToolTests.cs": {"purpose": "Schedule tool unit tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusMessageParserTests.cs": {"purpose": "Service Bus message parsing and validation tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusPromptReceiverTests.cs": {"purpose": "Service Bus prompt receiver tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusResponseHandlerTests.cs": {"purpose": "Service Bus response handler tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusResponseWriterTests.cs": {"purpose": "Service Bus response writer tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusChatMessengerClientTests.cs": {"purpose": "Service Bus messenger client tests"},
+        "Unit/Infrastructure/Messaging/ServiceBusSourceMapperTests.cs": {"purpose": "Service Bus conversation mapper tests"},
         "Unit/Infrastructure/ToolPatternMatcherTests.cs": {"purpose": "Tool pattern matching tests"},
         "Unit/WebChat.Client/State/MessagesStoreTests.cs": {"purpose": "Messages store unit tests"}
       }
@@ -578,10 +646,10 @@
   },
   "statistics": {
     "projects": 12,
-    "sourceFiles": 180,
-    "testFiles": 85,
+    "sourceFiles": 186,
+    "testFiles": 92,
     "contracts": 20,
-    "dtos": 25,
+    "dtos": 28,
     "tools": 35,
     "mcpServers": 6
   }

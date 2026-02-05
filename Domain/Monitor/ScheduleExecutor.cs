@@ -40,7 +40,8 @@ public class ScheduleExecutor(
                     threadId: null,
                     agentId: schedule.Agent.Id,
                     topicName: "Scheduled task",
-                    ct);
+                    sender: schedule.UserId,
+                    ct: ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

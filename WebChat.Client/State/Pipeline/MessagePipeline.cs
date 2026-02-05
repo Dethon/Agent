@@ -192,6 +192,16 @@ public sealed class MessagePipeline(
         dispatcher.Dispatch(new ResetStreamingContent(topicId));
     }
 
+    public void ClearTopic(string topicId)
+    {
+        lock (_lock)
+        {
+            _finalizedByTopic.Remove(topicId);
+        }
+
+        logger.LogDebug("Pipeline.ClearTopic: topic={TopicId}", topicId);
+    }
+
     public bool WasSentByThisClient(string? correlationId)
     {
         if (string.IsNullOrEmpty(correlationId))

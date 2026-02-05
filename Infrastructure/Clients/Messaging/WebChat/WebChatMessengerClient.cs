@@ -162,6 +162,7 @@ public sealed class WebChatMessengerClient(
         long? threadId,
         string? agentId,
         string? topicName,
+        string? sender = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(agentId))
@@ -218,7 +219,7 @@ public sealed class WebChatMessengerClient(
         // Ensure stream exists. For new streams, increment pending and notify clients.
         // For existing streams (e.g., WebUI where EnqueuePromptAndGetResponses already created it),
         // skip to avoid double-increment.
-        var (_, _, isNewStream) = streamManager.GetOrCreateStream(topicId, topicName ?? "", null, ct);
+        var (_, _, isNewStream) = streamManager.GetOrCreateStream(topicId, topicName ?? "", sender, ct);
         if (isNewStream)
         {
             streamManager.TryIncrementPending(topicId);

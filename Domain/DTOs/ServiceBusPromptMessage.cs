@@ -6,9 +6,15 @@ namespace Domain.DTOs;
 [PublicAPI]
 public record ServiceBusPromptMessage
 {
+    [JsonPropertyName("correlationId")]
+    public string? CorrelationId { get; init; }
+
+    [JsonPropertyName("agentId")]
+    public string? AgentId { get; init; }
+
     [JsonPropertyName("prompt")]
-    public required string Prompt { get; init; }
+    public string? Prompt { get; init; }
 
     [JsonPropertyName("sender")]
-    public required string Sender { get; init; }
+    public string? Sender { get; init; }
 }

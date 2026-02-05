@@ -4,8 +4,10 @@ using Domain.DTOs;
 
 namespace Infrastructure.Clients.Messaging.ServiceBus;
 
-public sealed class ServiceBusMessageParser(string defaultAgentId)
+public sealed class ServiceBusMessageParser(IReadOnlyList<string> validAgentIds)
 {
+    private readonly HashSet<string> _validAgentIds = validAgentIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
     public ParseResult Parse(ServiceBusReceivedMessage message)
     {
         string body;
@@ -25,38 +27,38 @@ public sealed class ServiceBusMessageParser(string defaultAgentId)
         }
         catch (JsonException ex)
         {
-            // Check if the error is due to missing required properties
-            if (ex.Message.Contains("required", StringComparison.OrdinalIgnoreCase) ||
-                ex.Message.Contains("prompt", StringComparison.OrdinalIgnoreCase))
-            {
-                return new ParseFailure("MalformedMessage", "Missing required 'prompt' field");
-            }
-
             return new ParseFailure("DeserializationError", ex.Message);
         }
 
-        if (parsed is null || string.IsNullOrEmpty(parsed.Prompt))
+        if (parsed is null)
         {
-            return new ParseFailure("MalformedMessage", "Missing required 'prompt' field");
+            return new ParseFailure("DeserializationError", "Message body deserialized to null");
         }
 
-        var sourceId = message.ApplicationProperties.TryGetValue("sourceId", out var sid)
-            ? sid?.ToString() ?? GenerateSourceId()
-            : GenerateSourceId();
+        if (string.IsNullOrEmpty(parsed.CorrelationId))
+        {
+            return new ParseFailure("MissingField", "Missing required 'correlationId' field");
+        }
 
-        var agentId = message.ApplicationProperties.TryGetValue("agentId", out var aid)
-            ? aid?.ToString() ?? defaultAgentId
-            : defaultAgentId;
+        if (string.IsNullOrEmpty(parsed.AgentId))
+        {
+            return new ParseFailure("MissingField", "Missing required 'agentId' field");
+        }
+
+        if (!_validAgentIds.Contains(parsed.AgentId))
+        {
+            return new ParseFailure("InvalidAgentId", $"Agent '{parsed.AgentId}' is not configured");
+        }
+
+        if (string.IsNullOrEmpty(parsed.Prompt))
+        {
+            return new ParseFailure("MissingField", "Missing required 'prompt' field");
+        }
 
         return new ParseSuccess(new ParsedServiceBusMessage(
+            parsed.CorrelationId,
+            parsed.AgentId,
             parsed.Prompt,
-            parsed.Sender,
-            sourceId,
-            agentId));
-    }
-
-    private static string GenerateSourceId()
-    {
-        return Guid.NewGuid().ToString("N");
+            parsed.Sender ?? string.Empty));
     }
 }

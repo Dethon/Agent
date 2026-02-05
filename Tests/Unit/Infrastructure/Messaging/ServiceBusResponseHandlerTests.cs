@@ -15,10 +15,10 @@ public class ServiceBusResponseHandlerTests
         var (handler, receiverMock, writerMock) = CreateHandler();
         var chatId = 123L;
 
-        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
+        receiverMock.Setup(r => r.TryGetCorrelationId(chatId, out It.Ref<string>.IsAny))
             .Returns((long _, out string s) =>
             {
-                s = "source-123";
+                s = "correlation-123";
                 return true;
             });
 
@@ -29,7 +29,7 @@ public class ServiceBusResponseHandlerTests
 
         // Assert
         writerMock.Verify(w => w.WriteResponseAsync(
-            "source-123",
+            "correlation-123",
             "agent-1",
             "Hello World",
             It.IsAny<CancellationToken>()), Times.Once);
@@ -41,7 +41,7 @@ public class ServiceBusResponseHandlerTests
         // Arrange
         var (handler, receiverMock, writerMock) = CreateHandler();
 
-        receiverMock.Setup(r => r.TryGetSourceId(It.IsAny<long>(), out It.Ref<string>.IsAny))
+        receiverMock.Setup(r => r.TryGetCorrelationId(It.IsAny<long>(), out It.Ref<string>.IsAny))
             .Returns(false);
 
         var updates = CreateUpdates(999, "agent-1", new AiResponse { Content = "Hello" });
@@ -64,10 +64,10 @@ public class ServiceBusResponseHandlerTests
         var (handler, receiverMock, writerMock) = CreateHandler();
         var chatId = 123L;
 
-        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
+        receiverMock.Setup(r => r.TryGetCorrelationId(chatId, out It.Ref<string>.IsAny))
             .Returns((long _, out string s) =>
             {
-                s = "source-123";
+                s = "correlation-123";
                 return true;
             });
 
@@ -91,10 +91,10 @@ public class ServiceBusResponseHandlerTests
         var (handler, receiverMock, writerMock) = CreateHandler();
         var chatId = 123L;
 
-        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
+        receiverMock.Setup(r => r.TryGetCorrelationId(chatId, out It.Ref<string>.IsAny))
             .Returns((long _, out string s) =>
             {
-                s = "source-123";
+                s = "correlation-123";
                 return true;
             });
 
@@ -111,43 +111,15 @@ public class ServiceBusResponseHandlerTests
             It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    [Fact]
-    public async Task ProcessAsync_NullAgentId_UsesDefaultAgentId()
-    {
-        // Arrange
-        var (handler, receiverMock, writerMock) = CreateHandler();
-        var chatId = 123L;
-
-        receiverMock.Setup(r => r.TryGetSourceId(chatId, out It.Ref<string>.IsAny))
-            .Returns((long _, out string s) =>
-            {
-                s = "source-123";
-                return true;
-            });
-
-        var updates = CreateUpdates(chatId, null, new AiResponse { Content = "Hello" });
-
-        // Act
-        await handler.ProcessAsync(updates, CancellationToken.None);
-
-        // Assert
-        writerMock.Verify(w => w.WriteResponseAsync(
-            "source-123",
-            "default-agent",
-            "Hello",
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
     private static (ServiceBusResponseHandler handler, Mock<ServiceBusPromptReceiver> receiverMock,
         Mock<ServiceBusResponseWriter> writerMock) CreateHandler()
     {
-        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!);
+        var receiverMock = new Mock<ServiceBusPromptReceiver>(null!, null!, null!);
         var writerMock = new Mock<ServiceBusResponseWriter>(null!, null!);
 
         var handler = new ServiceBusResponseHandler(
             receiverMock.Object,
-            writerMock.Object,
-            "default-agent");
+            writerMock.Object);
 
         return (handler, receiverMock, writerMock);
     }

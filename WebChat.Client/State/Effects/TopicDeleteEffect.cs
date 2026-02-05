@@ -1,5 +1,7 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Approval;
+using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -12,19 +14,22 @@ public sealed class TopicDeleteEffect : IDisposable
     private readonly StreamingStore _streamingStore;
     private readonly IChatMessagingService _messagingService;
     private readonly ITopicService _topicService;
+    private readonly IMessagePipeline _pipeline;
 
     public TopicDeleteEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
         StreamingStore streamingStore,
         IChatMessagingService messagingService,
-        ITopicService topicService)
+        ITopicService topicService,
+        IMessagePipeline pipeline)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
         _streamingStore = streamingStore;
         _messagingService = messagingService;
         _topicService = topicService;
+        _pipeline = pipeline;
 
         dispatcher.RegisterHandler<RemoveTopic>(HandleRemoveTopic);
     }
@@ -50,6 +55,10 @@ public sealed class TopicDeleteEffect : IDisposable
             await _topicService.DeleteTopicAsync(action.AgentId, action.TopicId, action.ChatId.Value,
                 action.ThreadId.Value);
         }
+
+        // Clear cached messages and pipeline state so re-created topics reload from server
+        _dispatcher.Dispatch(new ClearMessages(action.TopicId));
+        _pipeline.ClearTopic(action.TopicId);
 
         // Clear approval if this was the selected topic
         if (_topicsStore.State.SelectedTopicId == action.TopicId)

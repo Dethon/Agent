@@ -198,7 +198,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
 
         // Act
         var agentKey = await client.CreateTopicIfNeededAsync(
-            MessageSource.Telegram, chatId, null, fixture.AgentId, "Test Topic", CancellationToken.None);
+            MessageSource.Telegram, chatId, null, fixture.AgentId, "Test Topic", ct: CancellationToken.None);
 
         // Assert
         agentKey.ThreadId.ShouldBe(expectedThreadId);

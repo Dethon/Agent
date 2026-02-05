@@ -1,11 +1,15 @@
 using System.Threading.Channels;
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging.ServiceBus;
 
 public class ServiceBusPromptReceiver(
     ServiceBusConversationMapper conversationMapper,
+    INotifier notifier,
     ILogger<ServiceBusPromptReceiver> logger)
 {
     private readonly Channel<ChatPrompt> _channel = Channel.CreateUnbounded<ChatPrompt>();
@@ -18,8 +22,8 @@ public class ServiceBusPromptReceiver(
 
     public async Task EnqueueAsync(ParsedServiceBusMessage message, CancellationToken ct)
     {
-        var (chatId, threadId, _, _) = await conversationMapper.GetOrCreateMappingAsync(
-            message.SourceId, message.AgentId, ct);
+        var (chatId, threadId, topicId, _) = await conversationMapper.GetOrCreateMappingAsync(
+            message.CorrelationId, message.AgentId, ct);
 
         var prompt = new ChatPrompt
         {
@@ -33,14 +37,20 @@ public class ServiceBusPromptReceiver(
         };
 
         logger.LogInformation(
-            "Enqueued prompt from Service Bus: sourceId={SourceId}, chatId={ChatId}",
-            message.SourceId, chatId);
+            "Enqueued prompt from Service Bus: correlationId={CorrelationId}, chatId={ChatId}",
+            message.CorrelationId, chatId);
+
+        // Notify WebUI so the user message bubble appears in real-time
+        await notifier.NotifyUserMessageAsync(
+                new UserMessageNotification(topicId, message.Prompt, message.Sender, DateTimeOffset.UtcNow),
+                ct)
+            .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         await _channel.Writer.WriteAsync(prompt, ct);
     }
 
-    public virtual bool TryGetSourceId(long chatId, out string sourceId)
+    public virtual bool TryGetCorrelationId(long chatId, out string correlationId)
     {
-        return conversationMapper.TryGetSourceId(chatId, out sourceId);
+        return conversationMapper.TryGetCorrelationId(chatId, out correlationId);
     }
 }

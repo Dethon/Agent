@@ -139,7 +139,7 @@ public class ChatMonitorTests
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AgentKey(1, 1));
 
         var mockAgent = MonitorTestMocks.CreateAgent();
@@ -167,7 +167,7 @@ public class ChatMonitorTests
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new AgentKey(1, 100));
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -180,7 +180,8 @@ public class ChatMonitorTests
 
         // Assert - CreateTopicIfNeededAsync is called with prompt parameters
         chatMessengerClient.Verify(
-            c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 1, null, null, "Hello", It.IsAny<CancellationToken>()),
+            c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 1, null, null, "Hello", It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -195,7 +196,7 @@ public class ChatMonitorTests
         var agentKey = new AgentKey(1, 1);
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentKey);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
@@ -226,7 +227,7 @@ public class ChatMonitorTests
         var agentKey = new AgentKey(1, 1);
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(agentKey);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
