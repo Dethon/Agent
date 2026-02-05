@@ -125,7 +125,7 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void ClearMessages_RemovesTopicMessages()
+    public void ClearMessages_RemovesTopicFromMessagesByTopic()
     {
         // Arrange
         var messages = new List<ChatMessageModel> { new() { Role = "user", Content = "Test" } };
@@ -135,7 +135,25 @@ public class MessagesStoreTests : IDisposable
         _dispatcher.Dispatch(new ClearMessages("topic-1"));
 
         // Assert
-        _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(0);
+        _store.State.MessagesByTopic.ContainsKey("topic-1").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ClearMessages_RemovesFinalizedMessageIds()
+    {
+        // Arrange
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "Test", MessageId = "msg-1" }
+        };
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
+        _store.State.FinalizedMessageIdsByTopic.ContainsKey("topic-1").ShouldBeTrue();
+
+        // Act
+        _dispatcher.Dispatch(new ClearMessages("topic-1"));
+
+        // Assert
+        _store.State.FinalizedMessageIdsByTopic.ContainsKey("topic-1").ShouldBeFalse();
     }
 
     [Fact]

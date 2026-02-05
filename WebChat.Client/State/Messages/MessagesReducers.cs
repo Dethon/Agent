@@ -40,14 +40,7 @@ public static class MessagesReducers
 
         RemoveLastMessage => state, // No messages to remove
 
-        ClearMessages a => state with
-        {
-            MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
-            {
-                [a.TopicId] = []
-            },
-            LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId))
-        },
+        ClearMessages a => ClearTopicMessages(state, a.TopicId),
 
         _ => state
     };
@@ -76,6 +69,22 @@ public static class MessagesReducers
         return new Dictionary<string, IReadOnlyList<ChatMessageModel>>(messagesByTopic)
         {
             [topicId] = updated
+        };
+    }
+
+    private static MessagesState ClearTopicMessages(MessagesState state, string topicId)
+    {
+        var messages = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic);
+        messages.Remove(topicId);
+
+        var finalized = new Dictionary<string, IReadOnlySet<string>>(state.FinalizedMessageIdsByTopic);
+        finalized.Remove(topicId);
+
+        return state with
+        {
+            MessagesByTopic = messages,
+            LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != topicId)),
+            FinalizedMessageIdsByTopic = finalized
         };
     }
 
