@@ -18,24 +18,26 @@
 Tests/
 +-- Integration/          # Tests with real dependencies
 |   +-- Agents/           # McpAgent, ThreadSession tests
-|   +-- Clients/          # External client tests
+|   +-- Clients/          # External client tests (Telegram)
 |   +-- Domain/           # Domain integration tests
 |   +-- Fixtures/         # Shared test fixtures
 |   +-- McpServerTests/   # MCP server tests
 |   +-- McpTools/         # Tool integration tests
 |   +-- Memory/           # Redis memory tests
+|   +-- Messaging/        # Service Bus end-to-end integration tests
 |   +-- StateManagers/    # State persistence tests
 |   +-- WebChat/          # SignalR hub tests
 |   |   +-- Client/       # WebChat.Client tests
-|   +-- Messaging/        # Service Bus integration tests
 |
 +-- Unit/                 # Isolated unit tests
-    +-- Domain/           # Domain logic tests
+    +-- Domain/           # Domain logic tests (ChatMonitor, ScheduleExecutor)
     +-- Infrastructure/   # Infrastructure tests
-    |   +-- Messaging/    # Service Bus unit tests
+    |   +-- Messaging/    # ServiceBus, Composite, WebChat client unit tests
     +-- McpServerLibrary/ # MCP server unit tests
     +-- WebChat/          # WebChat tests
-    +-- WebChat.Client/   # Client state tests
+    +-- WebChat.Client/   # Client state, pipeline, effect tests
+        +-- State/
+            +-- Pipeline/
 ```
 
 ## Test Fixtures
@@ -70,7 +72,8 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 public class ServiceBusFixture : IAsyncLifetime
 {
     // Provides test helpers for Service Bus integration tests
-    // Uses correlationId-based message creation
+    // Creates ServiceBusReceivedMessage instances with correlationId-based payloads
+    // Manages ServiceBusProcessor, Parser, PromptReceiver, ResponseWriter
 }
 ```
 
@@ -191,6 +194,41 @@ dotnet test --filter "FullyQualifiedName~Integration"
 
 # Specific test class
 dotnet test --filter "FullyQualifiedName~ToolPatternMatcherTests"
+```
+
+### Composite Client Tests
+```csharp
+public class CompositeChatMessengerClientTests
+{
+    [Fact]
+    public async Task ReadPrompts_MergesFromAllClients()
+    {
+        var client1 = new Mock<IChatMessengerClient>();
+        var client2 = new Mock<IChatMessengerClient>();
+        var router = new Mock<IMessageSourceRouter>();
+        var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], router.Object);
+
+        // Verifies merged async enumerable from both clients
+    }
+}
+```
+
+### Pipeline Tests
+```csharp
+public class MessagePipelineTests
+{
+    [Fact]
+    public void FinalizeMessage_DuplicateMessageId_SkipsSecondFinalization()
+    {
+        // Verifies dedup via finalization tracking
+    }
+
+    [Fact]
+    public void ClearTopic_RemovesFinalizationState()
+    {
+        // Verifies cleanup on topic delete
+    }
+}
 ```
 
 ## Mocking Patterns

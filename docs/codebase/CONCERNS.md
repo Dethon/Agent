@@ -102,13 +102,33 @@
 
 ### Multiple Messenger Clients
 - Similar patterns across Telegram/WebChat/ServiceBus/CLI
-- Potential for further abstraction
+- `CompositeChatMessengerClient` adds complexity with channel-based response broadcasting
+- `IMessageSourceRouter` determines which clients receive which updates
+- Potential for further abstraction of the IChatMessengerClient contract
 
 ### Service Bus Correlation Mapping
 - Redis-backed correlationId to chatId mapping (`sb-correlation:{agentId}:{correlationId}`)
 - 30-day TTL on mappings
-- In-memory cache (`ConcurrentDictionary`) for reverse lookups
-- **Note**: Memory cache not persisted across restarts
+- In-memory cache (`ConcurrentDictionary`) for reverse lookups (chatId -> correlationId)
+- **Note**: Memory cache not persisted across restarts; responses for in-flight requests lost on restart
+- **Note**: `TryGetCorrelationId` is virtual to allow test overrides
+
+### Composite Client Complexity
+- `CompositeChatMessengerClient` creates unbounded channels per client for response broadcasting
+- Broadcasting uses `Task.WhenAll` for parallel writes but no backpressure mechanism
+- Topic creation delegates to router-selected clients; returns result from source-matching client
+- `Validate()` throws if no clients registered (defensive but not config-validated at startup)
+
+### Service Bus Error Handling
+- `ServiceBusProcessorHost` dead-letters invalid messages (parse failures)
+- `ServiceBusResponseWriter` swallows exceptions after retry exhaustion (logs but does not propagate)
+- No dead-letter monitoring or alerting configured
+- `ServiceBusPromptReceiver.EnqueueAsync` notifies WebUI but uses `SafeAwaitAsync` (notification failures silently logged)
+
+### WebChat Pipeline State
+- `MessagePipeline` maintains in-memory finalization state and pending user messages
+- State lost on browser refresh (relies on server-side history reload)
+- `ClearTopic` must be called on topic deletion to prevent finalization state leak
 
 ### Test Coverage
 - Integration tests require running services

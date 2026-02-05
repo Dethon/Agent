@@ -25,17 +25,22 @@
 ### Azure Service Bus
 - **Client**: `Infrastructure/Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs`
 - **Components**:
-  - `ServiceBusProcessorHost` - Background message processing
-  - `ServiceBusMessageParser` - Validates required fields and agent IDs
-  - `ServiceBusPromptReceiver` - Prompt reception and channel queueing
-  - `ServiceBusResponseHandler` - Response stream processing
-  - `ServiceBusResponseWriter` - Queue writes with Polly retry resilience
-  - `ServiceBusConversationMapper` - Redis-backed correlationId to chatId mapping
+  - `ServiceBusProcessorHost` - Background service receiving messages from prompt queue
+  - `ServiceBusMessageParser` - Validates required fields and agent IDs, returns `ParseResult` discriminated union
+  - `ServiceBusPromptReceiver` - Maps correlationId via `ServiceBusConversationMapper`, notifies WebUI, queues to channel
+  - `ServiceBusResponseHandler` - Collects completed responses and routes to response writer
+  - `ServiceBusResponseWriter` - Queue writes with Polly exponential backoff retry (3 retries, transient + timeout)
+  - `ServiceBusConversationMapper` - Redis-backed correlationId to chatId/threadId/topicId mapping with 30-day TTL
+- **Composite Client**: `CompositeChatMessengerClient` wraps WebChat + ServiceBus clients when Service Bus is enabled
+  - Uses `IMessageSourceRouter` to route responses to correct clients based on `MessageSource`
+  - Merges prompt streams from all child clients
+  - Broadcasts response updates through per-client channels
 - **Message Contract**:
-  - Prompt: `{ correlationId, agentId, prompt, sender }` (all required)
+  - Prompt: `{ correlationId, agentId, prompt, sender }` (all required, sender optional defaults to empty)
   - Response: `{ correlationId, agentId, response, completedAt }`
-- **Validation**: Strict agent ID validation against configured agents
+- **Validation**: Strict agent ID validation against configured agents; invalid messages dead-lettered
 - **Purpose**: External system integration for chat prompts with request/response correlation
+- **WebUI Integration**: Service Bus prompts appear as topics in WebChat UI via INotifier
 
 ### SignalR (WebChat)
 - **Hub**: `Agent/Hubs/ChatHub.cs`

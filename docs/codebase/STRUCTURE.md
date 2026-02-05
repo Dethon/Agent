@@ -23,15 +23,27 @@ agent/
 |   |   +-- DisposableAgent.cs
 |   +-- Contracts/            # Interfaces consumed by Domain
 |   |   +-- IAgentFactory.cs
+|   |   +-- IChatMessengerClient.cs
 |   |   +-- IMemoryStore.cs
+|   |   +-- IMessageSourceRouter.cs
 |   |   +-- IToolApprovalHandler.cs
 |   +-- DTOs/                 # Data transfer objects
 |   |   +-- AgentDefinition.cs
 |   |   +-- Memory.cs
+|   |   +-- MessageSource.cs
+|   |   +-- ParseResult.cs
+|   |   +-- ParsedServiceBusMessage.cs
+|   |   +-- ServiceBusPromptMessage.cs
+|   |   +-- ServiceBusResponseMessage.cs
 |   |   +-- WebChat/          # WebChat-specific DTOs
 |   +-- Extensions/           # Extension methods
+|   +-- Monitor/              # Chat monitoring and scheduling
+|   |   +-- ChatMonitor.cs
+|   |   +-- ScheduleExecutor.cs
 |   +-- Prompts/              # System prompts
 |   +-- Resources/            # Resource definitions
+|   +-- Routers/              # Message routing logic
+|   |   +-- MessageSourceRouter.cs
 |   +-- Tools/                # Business logic tools
 |       +-- Commands/
 |       +-- Downloads/
@@ -55,13 +67,20 @@ agent/
 |   +-- Clients/              # External service clients
 |   |   +-- Browser/          # Playwright
 |   |   +-- Messaging/        # Telegram, WebChat, ServiceBus, CLI
+|   |   |   +-- CompositeChatMessengerClient.cs  # Multiplexes multiple clients
+|   |   |   +-- Cli/          # CLI messenger clients
+|   |   |   |   +-- CliChatMessengerClient.cs
+|   |   |   |   +-- OneShotChatMessengerClient.cs
 |   |   |   +-- ServiceBus/   # Azure Service Bus integration
-|   |   |       +-- ServiceBusChatMessengerClient.cs
-|   |   |       +-- ServiceBusMessageParser.cs
-|   |   |       +-- ServiceBusPromptReceiver.cs
-|   |   |       +-- ServiceBusResponseHandler.cs
-|   |   |       +-- ServiceBusResponseWriter.cs
-|   |   |       +-- ServiceBusConversationMapper.cs
+|   |   |   |   +-- ServiceBusChatMessengerClient.cs
+|   |   |   |   +-- ServiceBusProcessorHost.cs
+|   |   |   |   +-- ServiceBusMessageParser.cs
+|   |   |   |   +-- ServiceBusPromptReceiver.cs
+|   |   |   |   +-- ServiceBusResponseHandler.cs
+|   |   |   |   +-- ServiceBusResponseWriter.cs
+|   |   |   |   +-- ServiceBusConversationMapper.cs
+|   |   |   +-- Telegram/
+|   |   |   +-- WebChat/
 |   |   +-- ToolApproval/     # Approval handlers
 |   |   +-- Torrent/          # qBittorrent, Jackett
 |   +-- Extensions/           # Infrastructure extensions
@@ -112,18 +131,21 @@ agent/
 |   |   +-- Agents/
 |   |   +-- Clients/
 |   |   +-- Domain/
-|   |   +-- Fixtures/         # Test fixtures
+|   |   +-- Fixtures/         # Test fixtures (Redis, MCP, ServiceBus)
 |   |   +-- McpServerTests/
 |   |   +-- McpTools/
 |   |   +-- Memory/
+|   |   +-- Messaging/        # Service Bus integration tests
 |   |   +-- StateManagers/
 |   |   +-- WebChat/
 |   +-- Unit/                 # Unit tests
 |       +-- Domain/
 |       +-- Infrastructure/
+|       |   +-- Messaging/    # ServiceBus, Composite, WebChat client tests
 |       +-- McpServerLibrary/
 |       +-- WebChat/
 |       +-- WebChat.Client/
+|           +-- State/        # Store, pipeline, effect tests
 |
 +-- DockerCompose/            # Docker configuration
 +-- docs/                     # Documentation
@@ -146,6 +168,12 @@ agent/
 | `*Mapper.cs` | Infrastructure/Clients | `ServiceBusConversationMapper.cs` |
 | `*Parser.cs` | Infrastructure/Clients | `ServiceBusMessageParser.cs` |
 | `*Receiver.cs` | Infrastructure/Clients | `ServiceBusPromptReceiver.cs` |
+| `*Host.cs` | Infrastructure/Clients | `ServiceBusProcessorHost.cs` |
+| `*Router.cs` | Domain/Routers | `MessageSourceRouter.cs` |
+| `*Monitor.cs` | Domain/Monitor | `ChatMonitor.cs` |
+| `*Effect.cs` | WebChat.Client/State/Effects | `TopicDeleteEffect.cs` |
+| `*Pipeline.cs` | WebChat.Client/State/Pipeline | `MessagePipeline.cs` |
+| `*Reducers.cs` | WebChat.Client/State/Messages | `MessagesReducers.cs` |
 | `*Tests.cs` | Tests | `McpAgentIntegrationTests.cs` |
 
 ## Module Boundaries

@@ -59,9 +59,11 @@ ChatPrompt (from Telegram/WebChat/CLI/ServiceBus)
      |
      v
 IChatMessengerClient.ReadPrompts()
+     |  (CompositeChatMessengerClient merges streams when multiple clients active)
      |
      v
-ChatMonitoring (background service)
+ChatMonitor (Domain/Monitor/ChatMonitor.cs)
+     |  Groups prompts by thread via CreateTopicIfNeededAsync
      |
      v
 IAgentFactory.Create(agentKey)
@@ -74,10 +76,23 @@ McpAgent.RunStreamingAsync()
      +-- MCP Tool execution
      |
      v
-AgentResponseUpdate stream
+AgentResponseUpdate stream (tagged with MessageSource)
      |
      v
 IChatMessengerClient.ProcessResponseStreamAsync()
+     |  (CompositeChatMessengerClient routes via IMessageSourceRouter)
+     |  WebUI always receives; source-matching client also receives
+```
+
+### Message Source Routing
+
+```
+MessageSource enum: WebUi | ServiceBus | Telegram | Cli
+
+IMessageSourceRouter.GetClientsForSource()
+     |
+     +-- Always includes WebUI client (dashboard visibility)
+     +-- Also includes client matching the message source
 ```
 
 ### Tool Approval Flow
@@ -152,6 +167,16 @@ Effects (side effects):
    +-- ReconnectionEffect
    +-- SendMessageEffect
    +-- TopicSelectionEffect
+   +-- AgentSelectionEffect (reloads topics on agent change)
+   +-- TopicDeleteEffect (handles topic removal with pipeline cleanup)
+
+Pipeline:
+   +-- IMessagePipeline / MessagePipeline
+        +-- SubmitUserMessage (correlationId tracking)
+        +-- AccumulateChunk (dedup via finalization)
+        +-- FinalizeMessage
+        +-- ClearTopic (cleanup on delete)
+        +-- WasSentByThisClient (multi-browser dedup)
 ```
 
 ## Data Flow Patterns
@@ -188,35 +213,45 @@ Effects (side effects):
 External System
      |
      v
-ServiceBusProcessor (message reception)
+ServiceBusProcessorHost (BackgroundService)
      |
      v
 ServiceBusMessageParser
      +-- Validates required fields (correlationId, agentId, prompt)
      +-- Validates agentId against configured agents
-     +-- Returns ParsedServiceBusMessage or ParseFailure
+     +-- Returns ParseSuccess(ParsedServiceBusMessage) or ParseFailure(reason, details)
+     +-- Invalid messages dead-lettered with reason
      |
      v
 ServiceBusPromptReceiver
-     +-- Maps correlationId to internal chatId via ServiceBusConversationMapper
-     +-- Persists mapping in Redis (sb-correlation:{agentId}:{correlationId})
+     +-- Maps correlationId to internal chatId/threadId/topicId via ServiceBusConversationMapper
+     +-- Persists mapping in Redis (sb-correlation:{agentId}:{correlationId}) with 30-day TTL
+     +-- Notifies WebUI via INotifier (user message appears in real-time)
      +-- Queues ChatPrompt to Channel
      |
      v
-ChatMonitor picks up prompt
+CompositeChatMessengerClient.ReadPrompts() merges ServiceBus + WebChat prompts
+     |
+     v
+ChatMonitor groups by thread and processes
      |
      v
 Agent processes prompt
      |
      v
+CompositeChatMessengerClient.ProcessResponseStreamAsync()
+     +-- Routes to WebChat (always) + ServiceBus (for SB-originated messages) via IMessageSourceRouter
+     |
+     v
 ServiceBusResponseHandler
-     +-- Retrieves correlationId from chatId mapping
-     +-- Writes response to response queue via ServiceBusResponseWriter
+     +-- Retrieves correlationId from chatId via TryGetCorrelationId (virtual, in-memory reverse lookup)
+     +-- Filters to only completed responses with valid correlationId
+     +-- Writes response to response queue via ServiceBusResponseWriter (Polly retry)
      |
      v
 Response Message to External System
 ```
 
 **Message Contract**:
-- Incoming: `{ correlationId, agentId, prompt, sender }` - all required
+- Incoming: `{ correlationId, agentId, prompt, sender }` - correlationId/agentId/prompt required, sender optional
 - Outgoing: `{ correlationId, agentId, response, completedAt }`

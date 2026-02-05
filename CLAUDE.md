@@ -68,6 +68,10 @@ Agents configured in `appsettings.json` under `"agents"` array. Each has id, nam
 
 Redux-like pattern in `WebChat.Client/State/`: Stores + Effects + HubEventDispatcher
 
+## TDD
+
+Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
+
 ## NuGet
 
 The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
