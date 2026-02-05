@@ -181,3 +181,42 @@ Effects (side effects):
 3. RedisStackMemoryStore stores with HNSW index
 4. MemoryRecallTool searches via vector similarity
 5. Results filtered by category/tags/importance
+
+### Service Bus Integration
+
+```
+External System
+     |
+     v
+ServiceBusProcessor (message reception)
+     |
+     v
+ServiceBusMessageParser
+     +-- Validates required fields (correlationId, agentId, prompt)
+     +-- Validates agentId against configured agents
+     +-- Returns ParsedServiceBusMessage or ParseFailure
+     |
+     v
+ServiceBusPromptReceiver
+     +-- Maps correlationId to internal chatId via ServiceBusConversationMapper
+     +-- Persists mapping in Redis (sb-correlation:{agentId}:{correlationId})
+     +-- Queues ChatPrompt to Channel
+     |
+     v
+ChatMonitor picks up prompt
+     |
+     v
+Agent processes prompt
+     |
+     v
+ServiceBusResponseHandler
+     +-- Retrieves correlationId from chatId mapping
+     +-- Writes response to response queue via ServiceBusResponseWriter
+     |
+     v
+Response Message to External System
+```
+
+**Message Contract**:
+- Incoming: `{ correlationId, agentId, prompt, sender }` - all required
+- Outgoing: `{ correlationId, agentId, response, completedAt }`

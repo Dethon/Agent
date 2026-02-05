@@ -104,6 +104,12 @@
 - Similar patterns across Telegram/WebChat/ServiceBus/CLI
 - Potential for further abstraction
 
+### Service Bus Correlation Mapping
+- Redis-backed correlationId to chatId mapping (`sb-correlation:{agentId}:{correlationId}`)
+- 30-day TTL on mappings
+- In-memory cache (`ConcurrentDictionary`) for reverse lookups
+- **Note**: Memory cache not persisted across restarts
+
 ### Test Coverage
 - Integration tests require running services
 - Some edge cases may lack coverage

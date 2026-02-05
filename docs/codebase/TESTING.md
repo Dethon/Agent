@@ -26,11 +26,13 @@ Tests/
 |   +-- Memory/           # Redis memory tests
 |   +-- StateManagers/    # State persistence tests
 |   +-- WebChat/          # SignalR hub tests
-|       +-- Client/       # WebChat.Client tests
+|   |   +-- Client/       # WebChat.Client tests
+|   +-- Messaging/        # Service Bus integration tests
 |
 +-- Unit/                 # Isolated unit tests
     +-- Domain/           # Domain logic tests
     +-- Infrastructure/   # Infrastructure tests
+    |   +-- Messaging/    # Service Bus unit tests
     +-- McpServerLibrary/ # MCP server unit tests
     +-- WebChat/          # WebChat tests
     +-- WebChat.Client/   # Client state tests
@@ -60,6 +62,15 @@ public class ThreadSessionServerFixture : IAsyncLifetime
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
     // Manages Playwright browser lifecycle
+}
+```
+
+### ServiceBusFixture
+```csharp
+public class ServiceBusFixture : IAsyncLifetime
+{
+    // Provides test helpers for Service Bus integration tests
+    // Uses correlationId-based message creation
 }
 ```
 
@@ -117,6 +128,35 @@ public class MessagesStoreTests
         store.Dispatch(action, MessagesReducers.Reduce);
 
         store.State.Messages.ShouldContain(message);
+    }
+}
+```
+
+### Service Bus Parser Tests
+```csharp
+public class ServiceBusMessageParserTests
+{
+    [Fact]
+    public void Parse_MissingCorrelationId_ReturnsParseFailure()
+    {
+        var parser = new ServiceBusMessageParser(["agent1"]);
+        var message = CreateMessage(agentId: "agent1", prompt: "test");
+
+        var result = parser.Parse(message);
+
+        result.ShouldBeOfType<ParseFailure>();
+        ((ParseFailure)result).Reason.ShouldBe("MissingField");
+    }
+
+    [Fact]
+    public void Parse_InvalidAgentId_ReturnsParseFailure()
+    {
+        var parser = new ServiceBusMessageParser(["agent1"]);
+        var message = CreateMessage(correlationId: "123", agentId: "unknown", prompt: "test");
+
+        var result = parser.Parse(message);
+
+        ((ParseFailure)result).Reason.ShouldBe("InvalidAgentId");
     }
 }
 ```

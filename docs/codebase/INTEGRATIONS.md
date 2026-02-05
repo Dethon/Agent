@@ -25,10 +25,17 @@
 ### Azure Service Bus
 - **Client**: `Infrastructure/Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs`
 - **Components**:
-  - `ServiceBusProcessorHost` - Message processing
-  - `ServiceBusPromptReceiver` - Prompt reception
-  - `ServiceBusResponseWriter` - Response streaming
-- **Purpose**: External system integration for chat prompts
+  - `ServiceBusProcessorHost` - Background message processing
+  - `ServiceBusMessageParser` - Validates required fields and agent IDs
+  - `ServiceBusPromptReceiver` - Prompt reception and channel queueing
+  - `ServiceBusResponseHandler` - Response stream processing
+  - `ServiceBusResponseWriter` - Queue writes with Polly retry resilience
+  - `ServiceBusConversationMapper` - Redis-backed correlationId to chatId mapping
+- **Message Contract**:
+  - Prompt: `{ correlationId, agentId, prompt, sender }` (all required)
+  - Response: `{ correlationId, agentId, response, completedAt }`
+- **Validation**: Strict agent ID validation against configured agents
+- **Purpose**: External system integration for chat prompts with request/response correlation
 
 ### SignalR (WebChat)
 - **Hub**: `Agent/Hubs/ChatHub.cs`

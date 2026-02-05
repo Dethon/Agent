@@ -55,6 +55,13 @@ agent/
 |   +-- Clients/              # External service clients
 |   |   +-- Browser/          # Playwright
 |   |   +-- Messaging/        # Telegram, WebChat, ServiceBus, CLI
+|   |   |   +-- ServiceBus/   # Azure Service Bus integration
+|   |   |       +-- ServiceBusChatMessengerClient.cs
+|   |   |       +-- ServiceBusMessageParser.cs
+|   |   |       +-- ServiceBusPromptReceiver.cs
+|   |   |       +-- ServiceBusResponseHandler.cs
+|   |   |       +-- ServiceBusResponseWriter.cs
+|   |   |       +-- ServiceBusConversationMapper.cs
 |   |   +-- ToolApproval/     # Approval handlers
 |   |   +-- Torrent/          # qBittorrent, Jackett
 |   +-- Extensions/           # Infrastructure extensions
@@ -135,6 +142,10 @@ agent/
 | `*Store.cs` | Infrastructure/StateManagers | `RedisThreadStateStore.cs` |
 | `*Client.cs` | Infrastructure/Clients | `TelegramChatClient.cs` |
 | `*Handler.cs` | Infrastructure/Clients | `WebToolApprovalHandler.cs` |
+| `*Writer.cs` | Infrastructure/Clients | `ServiceBusResponseWriter.cs` |
+| `*Mapper.cs` | Infrastructure/Clients | `ServiceBusConversationMapper.cs` |
+| `*Parser.cs` | Infrastructure/Clients | `ServiceBusMessageParser.cs` |
+| `*Receiver.cs` | Infrastructure/Clients | `ServiceBusPromptReceiver.cs` |
 | `*Tests.cs` | Tests | `McpAgentIntegrationTests.cs` |
 
 ## Module Boundaries
