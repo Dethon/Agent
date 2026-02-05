@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Infrastructure.Clients.Messaging.ServiceBus;
 using Microsoft.Extensions.Logging;
@@ -14,19 +15,27 @@ public class ServiceBusResponseWriterTests
         // Arrange
         var senderMock = new Mock<ServiceBusSender>();
         var loggerMock = new Mock<ILogger<ServiceBusResponseWriter>>();
+        ServiceBusMessage? capturedMessage = null;
 
         senderMock.Setup(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), It.IsAny<CancellationToken>()))
+            .Callback<ServiceBusMessage, CancellationToken>((m, _) => capturedMessage = m)
             .Returns(Task.CompletedTask);
 
         var writer = new ServiceBusResponseWriter(senderMock.Object, loggerMock.Object);
 
         // Act
-        await writer.WriteResponseAsync("source-123", "agent-1", "Hello response");
+        await writer.WriteResponseAsync("correlation-123", "agent-1", "Hello response");
 
         // Assert
         senderMock.Verify(s => s.SendMessageAsync(
             It.Is<ServiceBusMessage>(m => m.ContentType == "application/json"),
             It.IsAny<CancellationToken>()), Times.Once);
+
+        // Verify JSON contains correlationId
+        capturedMessage.ShouldNotBeNull();
+        var json = capturedMessage.Body.ToString();
+        var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("correlationId").GetString().ShouldBe("correlation-123");
     }
 
     [Fact]
@@ -52,7 +61,7 @@ public class ServiceBusResponseWriterTests
         var writer = new ServiceBusResponseWriter(senderMock.Object, loggerMock.Object);
 
         // Act
-        await writer.WriteResponseAsync("source-123", "agent-1", "Hello response");
+        await writer.WriteResponseAsync("correlation-123", "agent-1", "Hello response");
 
         // Assert
         callCount.ShouldBe(2); // Initial + 1 retry
@@ -72,7 +81,7 @@ public class ServiceBusResponseWriterTests
 
         // Act - should not throw
         await Should.NotThrowAsync(async () =>
-            await writer.WriteResponseAsync("source-123", "agent-1", "Hello response"));
+            await writer.WriteResponseAsync("correlation-123", "agent-1", "Hello response"));
 
         // Assert - called 4 times (initial + 3 retries)
         senderMock.Verify(s => s.SendMessageAsync(
@@ -94,7 +103,7 @@ public class ServiceBusResponseWriterTests
 
         // Act - should not throw (error is caught and logged)
         await Should.NotThrowAsync(async () =>
-            await writer.WriteResponseAsync("source-123", "agent-1", "Hello response"));
+            await writer.WriteResponseAsync("correlation-123", "agent-1", "Hello response"));
 
         // Assert - called only once (no retry for non-transient)
         senderMock.Verify(s => s.SendMessageAsync(
