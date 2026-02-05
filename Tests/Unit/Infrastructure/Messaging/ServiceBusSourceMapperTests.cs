@@ -31,12 +31,12 @@ public class ServiceBusConversationMapperTests
     }
 
     [Fact]
-    public async Task GetOrCreateMappingAsync_NewSourceId_CreatesMappingAndTopic()
+    public async Task GetOrCreateMappingAsync_NewCorrelationId_CreatesMappingAndTopic()
     {
         // Arrange
-        const string sourceId = "cicd-pipeline-1";
+        const string correlationId = "cicd-pipeline-1";
         const string agentId = "default";
-        var redisKey = $"sb-source:{agentId}:{sourceId}";
+        var redisKey = $"sb-correlation:{agentId}:{correlationId}";
 
         _dbMock.Setup(db => db.StringGetAsync(redisKey, It.IsAny<CommandFlags>()))
             .ReturnsAsync(RedisValue.Null);
@@ -54,7 +54,7 @@ public class ServiceBusConversationMapperTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var (chatId, threadId, topicId, isNew) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId);
+        var (chatId, threadId, topicId, isNew) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId);
 
         // Assert
         isNew.ShouldBeTrue();
@@ -64,7 +64,7 @@ public class ServiceBusConversationMapperTests
 
         _threadStateStoreMock.Verify(s => s.SaveTopicAsync(
             It.Is<TopicMetadata>(t =>
-                t.Name == $"[SB] {sourceId}" &&
+                t.Name == $"[SB] {correlationId}" &&
                 t.AgentId == agentId &&
                 t.ChatId == chatId &&
                 t.ThreadId == threadId)), Times.Once);
@@ -79,15 +79,15 @@ public class ServiceBusConversationMapperTests
     }
 
     [Fact]
-    public async Task GetOrCreateMappingAsync_ExistingSourceId_ReturnsCachedMapping()
+    public async Task GetOrCreateMappingAsync_ExistingCorrelationId_ReturnsCachedMapping()
     {
         // Arrange
-        const string sourceId = "cicd-pipeline-1";
+        const string correlationId = "cicd-pipeline-1";
         const string agentId = "default";
         const long expectedChatId = 12345;
         const long expectedThreadId = 67890;
         const string expectedTopicId = "abc123";
-        var redisKey = $"sb-source:{agentId}:{sourceId}";
+        var redisKey = $"sb-correlation:{agentId}:{correlationId}";
         var cachedJson =
             $"{{\"ChatId\":{expectedChatId},\"ThreadId\":{expectedThreadId},\"TopicId\":\"{expectedTopicId}\"}}";
 
@@ -95,7 +95,7 @@ public class ServiceBusConversationMapperTests
             .ReturnsAsync(cachedJson);
 
         // Act
-        var (chatId, threadId, topicId, isNew) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId);
+        var (chatId, threadId, topicId, isNew) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId);
 
         // Assert
         isNew.ShouldBeFalse();
@@ -110,7 +110,7 @@ public class ServiceBusConversationMapperTests
     public async Task GetOrCreateMappingAsync_DifferentAgentIds_CreatesSeparateMappings()
     {
         // Arrange
-        const string sourceId = "shared-source";
+        const string correlationId = "shared-correlation";
         const string agentId1 = "agent1";
         const string agentId2 = "agent2";
 
@@ -130,8 +130,8 @@ public class ServiceBusConversationMapperTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var (chatId1, _, _, isNew1) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId1);
-        var (chatId2, _, _, isNew2) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId2);
+        var (chatId1, _, _, isNew1) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId1);
+        var (chatId2, _, _, isNew2) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId2);
 
         // Assert
         isNew1.ShouldBeTrue();
@@ -139,7 +139,7 @@ public class ServiceBusConversationMapperTests
         chatId1.ShouldNotBe(chatId2);
 
         _dbMock.Verify(db => db.StringSetAsync(
-            $"sb-source:{agentId1}:{sourceId}",
+            $"sb-correlation:{agentId1}:{correlationId}",
             It.IsAny<RedisValue>(),
             It.IsAny<TimeSpan?>(),
             It.IsAny<bool>(),
@@ -147,7 +147,7 @@ public class ServiceBusConversationMapperTests
             It.IsAny<CommandFlags>()), Times.Once);
 
         _dbMock.Verify(db => db.StringSetAsync(
-            $"sb-source:{agentId2}:{sourceId}",
+            $"sb-correlation:{agentId2}:{correlationId}",
             It.IsAny<RedisValue>(),
             It.IsAny<TimeSpan?>(),
             It.IsAny<bool>(),
@@ -156,10 +156,10 @@ public class ServiceBusConversationMapperTests
     }
 
     [Fact]
-    public async Task TryGetSourceId_AfterMapping_ReturnsSourceId()
+    public async Task TryGetCorrelationId_AfterMapping_ReturnsCorrelationId()
     {
         // Arrange
-        const string sourceId = "test-source";
+        const string correlationId = "test-correlation";
         const string agentId = "default";
 
         _dbMock.Setup(db => db.StringGetAsync(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
@@ -178,19 +178,19 @@ public class ServiceBusConversationMapperTests
             .Returns(Task.CompletedTask);
 
         // Act
-        var (chatId, _, _, _) = await _mapper.GetOrCreateMappingAsync(sourceId, agentId);
-        var found = _mapper.TryGetSourceId(chatId, out var retrievedSourceId);
+        var (chatId, _, _, _) = await _mapper.GetOrCreateMappingAsync(correlationId, agentId);
+        var found = _mapper.TryGetCorrelationId(chatId, out var retrievedCorrelationId);
 
         // Assert
         found.ShouldBeTrue();
-        retrievedSourceId.ShouldBe(sourceId);
+        retrievedCorrelationId.ShouldBe(correlationId);
     }
 
     [Fact]
-    public void TryGetSourceId_UnknownChatId_ReturnsFalse()
+    public void TryGetCorrelationId_UnknownChatId_ReturnsFalse()
     {
         // Act
-        var found = _mapper.TryGetSourceId(999999, out _);
+        var found = _mapper.TryGetCorrelationId(999999, out _);
 
         // Assert
         found.ShouldBeFalse();
