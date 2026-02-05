@@ -141,8 +141,7 @@ public class ServiceBusFixture : IAsyncLifetime
 
         var responseHandler = new ServiceBusResponseHandler(
             promptReceiver,
-            responseWriter,
-            DefaultAgentId);
+            responseWriter);
 
         var client = new ServiceBusChatMessengerClient(
             promptReceiver,

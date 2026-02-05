@@ -203,8 +203,7 @@ public static class InjectorModule
                     sp.GetRequiredService<ILogger<ServiceBusResponseWriter>>()))
                 .AddSingleton(sp => new ServiceBusResponseHandler(
                     sp.GetRequiredService<ServiceBusPromptReceiver>(),
-                    sp.GetRequiredService<ServiceBusResponseWriter>(),
-                    defaultAgentId))
+                    sp.GetRequiredService<ServiceBusResponseWriter>()))
                 .AddSingleton(sp => new ServiceBusChatMessengerClient(
                     sp.GetRequiredService<ServiceBusPromptReceiver>(),
                     sp.GetRequiredService<ServiceBusResponseHandler>(),
