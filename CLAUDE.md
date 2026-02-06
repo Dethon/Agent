@@ -10,8 +10,6 @@ AI agent via Telegram/WebChat/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
 - **Infrastructure**: Implementations, external clients, state management
 - **Agent**: DI, config, entry point
 
-**Interface policy**: Only create interfaces when Domain needs to consume them.
-
 See `.claude/rules/` for layer-specific coding rules.
 
 ## Codebase Documentation
@@ -52,14 +50,6 @@ Detailed documentation in `docs/codebase/`:
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
-## Key Types
-
-- **AgentDefinition** - Agent config (model, MCP endpoints, instructions)
-- **MultiAgentFactory** - Creates/routes agents by config
-- **ChatMonitor** - Streaming message pipeline
-- **IToolApprovalHandler** - User approval for tool execution
-- **IMemoryStore** - Vector memory (Redis-backed)
-
 ## Multi-Agent Config
 
 Agents configured in `appsettings.json` under `"agents"` array. Each has id, name, model, MCP endpoints, whitelist patterns, custom instructions, and optional telegram token.
@@ -87,3 +77,28 @@ Fall back to Grep/Glob when LSP is unavailable or for pattern-based searches (e.
 ## NuGet
 
 The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
+
+## Devcontainer
+
+A Docker-in-Docker devcontainer is available for isolated Claude Code sessions:
+
+```bash
+# Start
+cd .devcontainer && docker compose up -d
+
+# Enter
+docker exec -it dev bash
+
+# First run: install Claude Code and configure
+./setup.sh
+
+# Start Claude Code
+cd /workspace
+claude --dangerously-skip-permissions
+
+# Run the agent stack (inside DinD)
+cd /workspace/DockerCompose
+docker compose up -d
+```
+
+The devcontainer mounts the repo at `/workspace`, `.claude` config at `/home/devuser/.claude`, and .NET User Secrets as read-only. Docker commands inside the container talk to a DinD sidecar, fully isolated from the host Docker daemon.
