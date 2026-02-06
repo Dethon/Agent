@@ -27,6 +27,7 @@ services:
       - devnet
     depends_on:
       - dind
+    command: sleep infinity
     stdin_open: true
     tty: true
 
