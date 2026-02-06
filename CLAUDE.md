@@ -72,6 +72,18 @@ Redux-like pattern in `WebChat.Client/State/`: Stores + Effects + HubEventDispat
 
 Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
 
+## LSP
+
+Prefer using the LSP tool over Grep/Glob for code navigation when possible:
+
+- **goToDefinition** to find where a type/method is defined instead of grepping for `class Foo`
+- **findReferences** to find all usages of a symbol instead of grepping for its name
+- **goToImplementation** to find concrete implementations of interfaces
+- **hover** to check type info and signatures without reading entire files
+- **incomingCalls/outgoingCalls** to trace call chains instead of manual searching
+
+Fall back to Grep/Glob when LSP is unavailable or for pattern-based searches (e.g. finding all TODO comments, searching config files, or matching across non-code files).
+
 ## NuGet
 
 The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
