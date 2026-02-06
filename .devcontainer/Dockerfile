@@ -20,22 +20,19 @@ RUN install -m 0755 -d /etc/apt/keyrings \
     && apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22 LTS
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
 # Install .NET workloads (wasm-tools for Blazor WebAssembly)
 RUN dotnet workload update --skip-sign-check
-
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
 
 # Create non-root user with sudo
 RUN useradd -m -s /bin/bash devuser \
     && echo "devuser ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/devuser \
     && mkdir -p /home/devuser/.nuget/packages \
     && chown -R devuser:devuser /home/devuser
+
+# Install Claude Code natively
+USER devuser
+RUN curl -fsSL https://claude.ai/install.sh | bash
+USER root
 
 # Copy and set entrypoint (before USER switch, strip Windows CRLF)
 COPY .devcontainer/entrypoint.sh /entrypoint.sh
@@ -48,5 +45,6 @@ WORKDIR /workspace
 ENV DOCKER_HOST=tcp://dind:2375
 ENV NUGET_PACKAGES=/home/devuser/.nuget/packages
 ENV DEVCONTAINER=1
+ENV PATH="/home/devuser/.local/bin:${PATH}"
 
 ENTRYPOINT ["/entrypoint.sh"]

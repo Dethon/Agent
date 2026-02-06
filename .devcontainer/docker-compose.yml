@@ -25,7 +25,6 @@ services:
       - nuget-cache:/home/devuser/.nuget/packages
       - shared-tmp:/tmp
       - ${APPDATA}/Microsoft/UserSecrets:/home/devuser/.microsoft/usersecrets:ro
-      - ${USERPROFILE}/.claude:/home/devuser/.claude
     networks:
       - devnet
     depends_on:

@@ -7,9 +7,6 @@ sudo chmod 1777 /tmp
 # Configure git safe directory (mounted workspace)
 git config --global --add safe.directory /workspace
 
-# Clean stale bin/obj from project dirs (build output is redirected via Directory.Build.props)
-find /workspace -maxdepth 2 -type d \( -name obj -o -name bin \) -exec rm -rf {} + 2>/dev/null || true
-
 # Wait for DinD to be ready
 echo "Waiting for Docker daemon (DinD)..."
 timeout=30
