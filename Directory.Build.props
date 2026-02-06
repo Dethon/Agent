@@ -1,0 +1,13 @@
+<Project>
+  <!-- Redirect build output out of project directories on all platforms -->
+  <PropertyGroup Condition="'$(DEVCONTAINER)' != '1'">
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).build\obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory).build\bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+
+  <!-- In devcontainer, use container-local path to avoid bind mount filesystem issues -->
+  <PropertyGroup Condition="'$(DEVCONTAINER)' == '1'">
+    <BaseIntermediateOutputPath>/tmp/build/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>/tmp/build/bin/$(MSBuildProjectName)/</BaseOutputPath>
+  </PropertyGroup>
+</Project>

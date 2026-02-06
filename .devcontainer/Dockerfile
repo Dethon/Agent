@@ -25,6 +25,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Install .NET workloads (wasm-tools for Blazor WebAssembly)
+RUN dotnet workload update --skip-sign-check
+
 # Install Claude Code globally
 RUN npm install -g @anthropic-ai/claude-code
 
@@ -44,5 +47,6 @@ WORKDIR /workspace
 # Set environment
 ENV DOCKER_HOST=tcp://dind:2375
 ENV NUGET_PACKAGES=/home/devuser/.nuget/packages
+ENV DEVCONTAINER=1
 
 ENTRYPOINT ["/entrypoint.sh"]
