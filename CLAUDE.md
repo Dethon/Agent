@@ -83,17 +83,13 @@ The NuGet package cache may be in a non-standard location. Check the `NUGET_PACK
 A Docker-in-Docker devcontainer is available for isolated Claude Code sessions:
 
 ```bash
-# Start
-cd .devcontainer && docker compose up -d
+# Build and start (first time or after Dockerfile changes)
+cd .devcontainer && docker compose up -d --build
 
 # Enter
 docker exec -it dev bash
 
-# First run: install Claude Code and configure
-./setup.sh
-
 # Start Claude Code
-cd /workspace
 claude --dangerously-skip-permissions
 
 # Run the agent stack (inside DinD)
@@ -101,4 +97,4 @@ cd /workspace/DockerCompose
 docker compose up -d
 ```
 
-The devcontainer mounts the repo at `/workspace`, `.claude` config at `/home/devuser/.claude`, and .NET User Secrets as read-only. Docker commands inside the container talk to a DinD sidecar, fully isolated from the host Docker daemon.
+Claude Code is pre-installed in the image. The entrypoint automatically configures git and waits for the DinD sidecar. The devcontainer mounts the repo at `/workspace`, `.claude` config at `/home/devuser/.claude`, and .NET User Secrets as read-only. Docker commands inside the container talk to a DinD sidecar, fully isolated from the host Docker daemon.

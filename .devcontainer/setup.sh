@@ -1,30 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Devcontainer post-create setup ==="
+echo "=== Devcontainer manual setup ==="
+echo "Claude Code and system tools are pre-installed in the image."
+echo "This script is for optional post-start tasks."
 
-# Install Claude Code globally
-echo "Installing Claude Code..."
-sudo npm install -g @anthropic-ai/claude-code
-
-# Ensure NuGet cache directory exists with correct ownership
-mkdir -p "$NUGET_PACKAGES"
-
-# Configure git safe directory (mounted workspace)
-git config --global --add safe.directory /workspace
-
-# Wait for DinD to be ready
-echo "Waiting for Docker daemon (DinD)..."
-timeout=30
-until docker info >/dev/null 2>&1 || [ $timeout -le 0 ]; do
-    sleep 1
-    timeout=$((timeout - 1))
-done
-
-if docker info >/dev/null 2>&1; then
-    echo "Docker daemon is ready."
-else
-    echo "WARNING: Docker daemon not available after 30s. DinD may not be running."
+# Restore NuGet packages if solution exists
+if [ -f /workspace/*.sln ]; then
+    echo "Restoring NuGet packages..."
+    dotnet restore /workspace
 fi
 
 echo "=== Setup complete ==="

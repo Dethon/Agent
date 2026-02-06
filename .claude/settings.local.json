@@ -46,7 +46,9 @@
       "Bash(gh search:*)",
       "Skill(plan-creator)",
       "Bash(git rm:*)",
-      "Skill(plan-schema)"
+      "Skill(plan-schema)",
+      "Bash(docker compose build:*)",
+      "Bash(docker compose:*)"
     ]
   }
 }
