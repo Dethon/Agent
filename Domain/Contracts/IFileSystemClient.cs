@@ -3,6 +3,7 @@
 public interface IFileSystemClient
 {
     Task<Dictionary<string, string[]>> DescribeDirectory(string path, CancellationToken cancellationToken = default);
+    Task<string[]> GlobFiles(string basePath, string pattern, CancellationToken cancellationToken = default);
     Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default);
     Task<string[]> ListFilesIn(string path, CancellationToken cancellationToken = default);
     Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default);

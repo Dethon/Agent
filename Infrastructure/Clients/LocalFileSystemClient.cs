@@ -1,4 +1,5 @@
 ﻿using Domain.Contracts;
+using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Infrastructure.Clients;
 
@@ -12,6 +13,14 @@ public class LocalFileSystemClient : IFileSystemClient
         return !Directory.Exists(path)
             ? throw new DirectoryNotFoundException($"Library directory not found: {path}")
             : Task.FromResult(GetLibraryPaths(path));
+    }
+
+    public Task<string[]> GlobFiles(string basePath, string pattern, CancellationToken cancellationToken = default)
+    {
+        var matcher = new Matcher();
+        matcher.AddInclude(pattern);
+        var result = matcher.GetResultsInFullPath(basePath);
+        return Task.FromResult(result.ToArray());
     }
 
     public Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default)

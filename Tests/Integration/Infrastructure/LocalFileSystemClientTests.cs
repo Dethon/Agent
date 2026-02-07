@@ -286,4 +286,84 @@ public class LocalFileSystemClientTests : IDisposable
         File.Delete(trashPath1);
         File.Delete(trashPath2);
     }
+
+    [Fact]
+    public async Task GlobFiles_WithWildcard_ReturnsMatchingFiles()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mp4"), "content");
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "readme.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "*.mkv");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldEndWith("movie.mkv");
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithRecursivePattern_ReturnsNestedFiles()
+    {
+        // Arrange
+        var subDir = Path.Combine(_testDir, "sub", "deep");
+        Directory.CreateDirectory(subDir);
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "root.txt"), "content");
+        await File.WriteAllTextAsync(Path.Combine(subDir, "nested.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "**/*.txt");
+
+        // Assert
+        files.Length.ShouldBe(2);
+        files.ShouldContain(f => f.EndsWith("root.txt"));
+        files.ShouldContain(f => f.EndsWith("nested.txt"));
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithNoMatches_ReturnsEmptyArray()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "*.pdf");
+
+        // Assert
+        files.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithSubdirectoryPattern_ReturnsOnlyMatchingPath()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        Directory.CreateDirectory(moviesDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "novel.epub"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "movies/**/*");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldEndWith("film.mkv");
+    }
+
+    [Fact]
+    public async Task GlobFiles_ReturnsAbsolutePaths()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "**/*");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldStartWith(_testDir);
+    }
 }
