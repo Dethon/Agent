@@ -82,8 +82,7 @@ public static class ConfigModule
             .WithTools<McpContentRecommendationTool>()
             .WithTools<McpResubscribeDownloadsTool>()
             // Organize tools
-            .WithTools<McpListDirectoriesTool>()
-            .WithTools<McpListFilesTool>()
+            .WithTools<McpGlobFilesTool>()
             .WithTools<McpMoveTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>()

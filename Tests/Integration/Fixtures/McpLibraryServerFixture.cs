@@ -72,8 +72,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpGetDownloadStatusTool>()
             .WithTools<McpCleanupDownloadTool>()
-            .WithTools<McpListDirectoriesTool>()
-            .WithTools<McpListFilesTool>()
+            .WithTools<McpGlobFilesTool>()
             .WithTools<McpMoveTool>();
 
         var app = builder.Build();
