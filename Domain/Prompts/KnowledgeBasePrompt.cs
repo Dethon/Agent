@@ -32,8 +32,8 @@ public static class KnowledgeBasePrompt
 
         ### Core Principles
 
-        1. **Respect the Structure**: The user's vault has an existing organization. Learn it before 
-           making changes. Use ListDirectories and ListFiles to understand the layout.
+        1. **Respect the Structure**: The user's vault has an existing organization. Learn it before
+           making changes. Use GlobFiles to understand the layout.
 
         2. **Preserve Context**: When editing, maintain the document's existing style, formatting, 
            and voice. Don't rewrite entire sections when a targeted edit will suffice.
@@ -48,8 +48,7 @@ public static class KnowledgeBasePrompt
         ### Available Tools
 
         **Discovery Tools (use these first):**
-        - `ListDirectories` - Browse vault folder structure
-        - `ListFiles` - List files in a directory
+        - `GlobFiles` - Search for files matching a glob pattern (e.g., **/*.md, notes/*)
         - `TextSearch` - Search for text/patterns across vault or within a single file
 
         **Document Tools:**
@@ -59,8 +58,8 @@ public static class KnowledgeBasePrompt
         - `TextCreate` - Create a new text/markdown file (supports overwrite)
 
         **File Tools:**
-        - `Move` - Move/rename files or directories (absolute paths from ListDirectories/ListFiles)
-        - `RemoveFile` - Remove a file (absolute path from ListFiles)
+        - `Move` - Move/rename files or directories (absolute paths from GlobFiles)
+        - `RemoveFile` - Remove a file (absolute path from GlobFiles)
 
         ### Workflow Patterns
 
@@ -70,9 +69,8 @@ public static class KnowledgeBasePrompt
         3. Summarize or present the information to the user
 
         **Exploring the Vault:**
-        1. Use ListDirectories to see the folder structure
-        2. Use ListFiles to see what's in each folder
-        3. Present an overview to help the user navigate
+        1. Use GlobFiles to see the vault structure (e.g., **/* for all files, */ for top-level folders)
+        2. Present an overview to help the user navigate
 
         **Editing Documents:**
         1. Use TextRead to see the current content of the file

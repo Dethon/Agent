@@ -16,7 +16,7 @@ public class McpMoveTool(
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        [Description("Absolute source path (from ListDirectories/ListFiles)")]
+        [Description("Absolute source path (from GlobFiles)")]
         string sourcePath,
         [Description("Absolute destination path (must not exist)")]
         string destinationPath,

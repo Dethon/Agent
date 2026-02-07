@@ -21,7 +21,7 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         {
             throw new InvalidOperationException($"""
                                                  {typeof(MoveTool)} parameters must be absolute paths derived from
-                                                 the ListDirectories tool response. 
+                                                 the GlobFiles tool response.
                                                  They must start with the library path: {libraryPath}
                                                  """);
         }

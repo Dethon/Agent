@@ -10,7 +10,7 @@ public class RemoveFileTool(IFileSystemClient client, LibraryPathConfig libraryP
 
     protected const string Description = """
                                          Removes a file by moving it to a trash folder.
-                                         The path must be absolute and derived from the ListFiles tool response.
+                                         The path must be absolute and derived from the GlobFiles tool response.
                                          """;
 
     protected async Task<JsonNode> Run(string filePath, CancellationToken cancellationToken)
