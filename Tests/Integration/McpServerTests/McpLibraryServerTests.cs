@@ -39,8 +39,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         toolNames.ShouldContain("CleanupDownload");
 
         // Library organization tools
-        toolNames.ShouldContain("ListDirectories");
-        toolNames.ShouldContain("ListFiles");
+        toolNames.ShouldContain("GlobFiles");
         toolNames.ShouldContain("Move");
 
         await client.DisposeAsync();
@@ -240,10 +239,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
     #endregion
 
-    #region ListDirectories Tests
+    #region GlobFiles Tests
 
     [Fact]
-    public async Task ListDirectoriesTool_WithEmptyLibrary_ReturnsEmptyList()
+    public async Task GlobFilesTool_WithNoFiles_ReturnsEmptyResult()
     {
         // Arrange
         var client = await McpClient.CreateAsync(
@@ -255,10 +254,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "ListDirectories",
+            "GlobFiles",
             new Dictionary<string, object?>
             {
-                ["path"] = fixture.LibraryPath
+                ["pattern"] = "*.nonexistent"
             },
             cancellationToken: CancellationToken.None);
 
@@ -270,11 +269,12 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     }
 
     [Fact]
-    public async Task ListDirectoriesTool_WithDirectories_ReturnsDirectoryList()
+    public async Task GlobFilesTool_WithMatchingFiles_ReturnsFileList()
     {
         // Arrange
-        fixture.CreateLibraryStructure("TestMovies");
-        fixture.CreateLibraryStructure("TestSeries");
+        fixture.CreateLibraryFile(Path.Combine("GlobTest", "movie1.mkv"));
+        fixture.CreateLibraryFile(Path.Combine("GlobTest", "movie2.mkv"));
+        fixture.CreateLibraryFile(Path.Combine("GlobTest", "readme.txt"));
 
         var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions
@@ -285,48 +285,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "ListDirectories",
+            "GlobFiles",
             new Dictionary<string, object?>
             {
-                ["path"] = fixture.LibraryPath
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("TestMovies");
-        content.ShouldContain("TestSeries");
-
-        await client.DisposeAsync();
-    }
-
-    #endregion
-
-    #region ListFiles Tests
-
-    [Fact]
-    public async Task ListFilesTool_WithFiles_ReturnsFileList()
-    {
-        // Arrange
-        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie1.mkv"));
-        fixture.CreateLibraryFile(Path.Combine("FilesTest", "movie2.mp4"));
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        var filesTestPath = Path.Combine(fixture.LibraryPath, "FilesTest");
-
-        // Act
-        var result = await client.CallToolAsync(
-            "ListFiles",
-            new Dictionary<string, object?>
-            {
-                ["path"] = filesTestPath
+                ["pattern"] = "GlobTest/**/*.mkv"
             },
             cancellationToken: CancellationToken.None);
 
@@ -334,7 +296,40 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain("movie1.mkv");
-        content.ShouldContain("movie2.mp4");
+        content.ShouldContain("movie2.mkv");
+        content.ShouldNotContain("readme.txt");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task GlobFilesTool_WithRecursivePattern_FindsNestedFiles()
+    {
+        // Arrange
+        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub1", "file.txt"));
+        fixture.CreateLibraryFile(Path.Combine("GlobDeep", "sub2", "nested", "deep.txt"));
+
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        // Act
+        var result = await client.CallToolAsync(
+            "GlobFiles",
+            new Dictionary<string, object?>
+            {
+                ["pattern"] = "GlobDeep/**/*.txt"
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.ShouldNotBeNull();
+        var content = GetTextContent(result);
+        content.ShouldContain("file.txt");
+        content.ShouldContain("deep.txt");
 
         await client.DisposeAsync();
     }
