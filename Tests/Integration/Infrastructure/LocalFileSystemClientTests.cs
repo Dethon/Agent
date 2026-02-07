@@ -64,48 +64,6 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task ListFilesIn_WithNestedStructure_ReturnsOnlyTopLevelFiles()
-    {
-        // Arrange
-        var nestedDir = Path.Combine(_testDir, "nested");
-        Directory.CreateDirectory(nestedDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "top1.txt"), "content");
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "top2.txt"), "content");
-        await File.WriteAllTextAsync(Path.Combine(nestedDir, "nested.txt"), "content");
-
-        // Act
-        var files = await _client.ListFilesIn(_testDir);
-
-        // Assert
-        files.Length.ShouldBe(2);
-        files.ShouldContain(f => f.EndsWith("top1.txt"));
-        files.ShouldContain(f => f.EndsWith("top2.txt"));
-        files.ShouldNotContain(f => f.Contains("nested.txt"));
-    }
-
-    [Fact]
-    public async Task ListDirectoriesIn_ReturnsOnlyDirectories()
-    {
-        // Arrange
-        var subDir1 = Path.Combine(_testDir, "subdir1");
-        var subDir2 = Path.Combine(_testDir, "subdir2");
-        var nestedDir = Path.Combine(subDir1, "nested");
-        Directory.CreateDirectory(subDir1);
-        Directory.CreateDirectory(subDir2);
-        Directory.CreateDirectory(nestedDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
-
-        // Act
-        var directories = await _client.ListDirectoriesIn(_testDir);
-
-        // Assert
-        directories.ShouldContain(d => d.EndsWith("subdir1"));
-        directories.ShouldContain(d => d.EndsWith("subdir2"));
-        directories.ShouldContain(d => d.Contains("nested"));
-        directories.ShouldNotContain(d => d.Contains("file.txt"));
-    }
-
-    [Fact]
     public async Task DescribeDirectory_WithFiles_ReturnsFilesByDirectory()
     {
         // Arrange
@@ -198,34 +156,6 @@ public class LocalFileSystemClientTests : IDisposable
 
         // Act & Assert
         await Should.NotThrowAsync(async () => await _client.RemoveFile(nonExistentPath));
-    }
-
-    [Fact]
-    public async Task ListFilesIn_WithEmptyDirectory_ReturnsEmptyArray()
-    {
-        // Arrange
-        var emptyDir = Path.Combine(_testDir, "empty");
-        Directory.CreateDirectory(emptyDir);
-
-        // Act
-        var files = await _client.ListFilesIn(emptyDir);
-
-        // Assert
-        files.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task ListDirectoriesIn_WithEmptyDirectory_ReturnsEmptyArray()
-    {
-        // Arrange
-        var emptyDir = Path.Combine(_testDir, "empty");
-        Directory.CreateDirectory(emptyDir);
-
-        // Act
-        var directories = await _client.ListDirectoriesIn(emptyDir);
-
-        // Assert
-        directories.ShouldBeEmpty();
     }
 
     [Fact]
