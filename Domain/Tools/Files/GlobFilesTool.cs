@@ -27,6 +27,14 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             throw new ArgumentException("Pattern must not contain '..' segments", nameof(pattern));
         }
 
+        if (Path.IsPathRooted(pattern))
+        {
+            if (!pattern.StartsWith(libraryPath.BaseLibraryPath, StringComparison.Ordinal))
+                throw new ArgumentException("Absolute pattern must be under the library root", nameof(pattern));
+
+            pattern = Path.GetRelativePath(libraryPath.BaseLibraryPath, pattern);
+        }
+
         return mode switch
         {
             GlobMode.Directories => await RunDirectories(pattern, cancellationToken),
