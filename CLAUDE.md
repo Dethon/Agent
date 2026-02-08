@@ -4,14 +4,18 @@ AI agent via Telegram/WebChat/MessageBus/CLI using .NET 10 LTS, MCP, and OpenRou
 
 ## Codebase Documentation
 
-@docs/codebase/ARCHITECTURE.md
-@docs/codebase/STRUCTURE.md
-@docs/codebase/STACK.md
-@docs/codebase/INTEGRATIONS.md
-@docs/codebase/CONVENTIONS.md
-@docs/codebase/TESTING.md
-@docs/codebase/CONCERNS.md
-@docs/codebase/maps/code-map-root.json
+Detailed documentation in `docs/codebase/`:
+
+| File | Content |
+|------|---------|
+| `ARCHITECTURE.md` | Agent system, message pipeline, tool approval, MCP integration |
+| `STRUCTURE.md` | Directory layout, module boundaries |
+| `STACK.md` | Tech stack, packages, dependencies |
+| `INTEGRATIONS.md` | External services (OpenRouter, Telegram, Redis, etc.) |
+| `CONVENTIONS.md` | Coding style, patterns, rules |
+| `TESTING.md` | Test framework, TDD workflow, organization |
+| `CONCERNS.md` | Technical debt, risks, security considerations |
+| `maps/code-map-*.json` | Structural code maps |
 
 ## Projects
 

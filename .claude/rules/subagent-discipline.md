@@ -1,6 +1,6 @@
 ---
 paths:
-  - "**/*.md"
+  - "docs/plans/*.md"
 ---
 
 # Subagent-Driven Development Discipline

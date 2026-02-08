@@ -27,8 +27,18 @@ public class LocalFileSystemClient : IFileSystemClient
     {
         var matcher = new Matcher();
         matcher.AddInclude(pattern);
-        var result = matcher.GetResultsInFullPath(basePath)
-            .Select(f => Path.GetDirectoryName(f)!)
+
+        var dirsFromFiles = matcher.GetResultsInFullPath(basePath)
+            .Select(f => Path.GetDirectoryName(f)!);
+
+        var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", SearchOption.AllDirectories)
+            .Select(d => Path.GetRelativePath(basePath, d));
+        var dirsFromDirectories = matcher.Match(basePath, dirRelativePaths)
+            .Files
+            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)));
+
+        var result = dirsFromFiles
+            .Concat(dirsFromDirectories)
             .Where(d => d != basePath)
             .Distinct()
             .Order()

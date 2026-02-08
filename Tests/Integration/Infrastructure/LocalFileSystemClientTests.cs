@@ -368,7 +368,7 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task GlobDirectories_EmptyDirectory_ReturnsEmptyArray()
+    public async Task GlobDirectories_EmptyDirectory_ReturnsTheDirectory()
     {
         // Arrange
         Directory.CreateDirectory(Path.Combine(_testDir, "empty"));
@@ -377,6 +377,21 @@ public class LocalFileSystemClientTests : IDisposable
         var dirs = await _client.GlobDirectories(_testDir, "**/*");
 
         // Assert
-        dirs.ShouldBeEmpty();
+        dirs.Length.ShouldBe(1);
+        dirs[0].ShouldEndWith("empty");
+    }
+
+    [Fact]
+    public async Task GlobDirectories_DirectoryWithOnlySubdirectories_ReturnsBothLevels()
+    {
+        // Arrange
+        Directory.CreateDirectory(Path.Combine(_testDir, "parent", "child"));
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldContain(d => d.EndsWith("parent"));
+        dirs.ShouldContain(d => d.EndsWith("child"));
     }
 }

@@ -1,8 +1,6 @@
 ---
 paths:
-  - "Domain/**/*.cs"
-  - "Infrastructure/**/*.cs"
-  - "Tests/**/*.cs"
+  - "{Domain,Infrastructure,Tests}/**/*.cs"
 ---
 
 # Test-Driven Development
