@@ -258,7 +258,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         [JsonPropertyName("scope")] public string? Scope { get; init; }
     }
 
-    [UsedImplicitly]
+    [PublicAPI]
     private record IdealistaApiResponse
     {
         [JsonPropertyName("actualPage")] public int? ActualPage { get; init; }
@@ -276,7 +276,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         [JsonPropertyName("elementList")] public List<IdealistaApiElement>? ElementList { get; init; }
     }
 
-    [UsedImplicitly]
+    [PublicAPI]
     private record IdealistaApiElement
     {
         [JsonPropertyName("propertyCode")] public string? PropertyCode { get; init; }
@@ -343,8 +343,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
 
         [JsonPropertyName("newDevelopment")] public bool? NewDevelopment { get; init; }
 
-        [JsonPropertyName("newDevelopmentFinished")]
-        public bool? NewDevelopmentFinished { get; init; }
+        [JsonPropertyName("newDevelopmentFinished")] public bool? NewDevelopmentFinished { get; init; }
 
         [JsonPropertyName("newProperty")] public bool? NewProperty { get; init; }
 
@@ -364,7 +363,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         [JsonPropertyName("isSmokingAllowed")] public bool? IsSmokingAllowed { get; init; }
     }
 
-    [UsedImplicitly]
+    [PublicAPI]
     private record IdealistaApiParkingSpace
     {
         [JsonPropertyName("hasParkingSpace")] public bool? HasParkingSpace { get; init; }
@@ -376,7 +375,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         public double? ParkingSpacePrice { get; init; }
     }
 
-    [UsedImplicitly]
+    [PublicAPI]
     private record IdealistaApiDetailedType
     {
         [JsonPropertyName("typology")] public string? Typology { get; init; }
