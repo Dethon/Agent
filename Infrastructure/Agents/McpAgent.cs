@@ -82,7 +82,7 @@ public sealed class McpAgent : DisposableAgent
         _syncLock.Dispose();
     }
 
-    public override ValueTask<AgentSession> GetNewSessionAsync(CancellationToken cancellationToken = default)
+    public override ValueTask<AgentSession> CreateSessionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         return _innerAgent.GetNewSessionAsync(cancellationToken);
@@ -98,6 +98,14 @@ public sealed class McpAgent : DisposableAgent
                 await session.DisposeAsync();
             }
         });
+    }
+    
+    public override JsonElement SerializeSession(
+        AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null)
+    {
+        return session is not ChatClientAgentSession typedSession 
+            ? throw new InvalidOperationException("The provided session is not compatible with the agent. Only sessions created by the agent can be serialized.") 
+            : typedSession.Serialize(jsonSerializerOptions);
     }
 
     public override ValueTask<AgentSession> DeserializeSessionAsync(
@@ -140,7 +148,7 @@ public sealed class McpAgent : DisposableAgent
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        thread ??= await GetNewSessionAsync(cancellationToken);
+        thread ??= await CreateSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
         await session.ResourceManager.EnsureChannelActive(cancellationToken);
         options ??= CreateRunOptions(session);

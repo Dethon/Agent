@@ -77,24 +77,3 @@ Fall back to Grep/Glob when LSP is unavailable or for pattern-based searches (e.
 ## NuGet
 
 The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
-
-## Devcontainer
-
-A Docker-in-Docker devcontainer is available for isolated Claude Code sessions:
-
-```bash
-# Build and start (first time or after Dockerfile changes)
-cd .devcontainer && docker compose up -d --build
-
-# Enter
-docker exec -it dev bash
-
-# Start Claude Code
-claude --dangerously-skip-permissions
-
-# Run the agent stack (inside DinD)
-cd /workspace/DockerCompose
-docker compose up -d
-```
-
-Claude Code is pre-installed in the image. The entrypoint automatically configures git and waits for the DinD sidecar. The devcontainer mounts the repo at `/workspace`, `.claude` config at `/home/devuser/.claude`, and .NET User Secrets as read-only. Docker commands inside the container talk to a DinD sidecar, fully isolated from the host Docker daemon.
