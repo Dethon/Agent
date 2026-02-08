@@ -84,6 +84,43 @@ public class RemoveFileToolTests
     }
 
     [Fact]
+    public async Task Run_WithRelativePath_ResolvesAgainstLibraryRoot()
+    {
+        // Arrange
+        var tool = CreateTool();
+        var relativePath = Path.Combine("movies", "test.mkv");
+        var expectedAbsolutePath = Path.Combine(_libraryPath, "movies", "test.mkv");
+        const string trashPath = "trash-path";
+
+        _fileSystemClientMock
+            .Setup(m => m.MoveToTrash(expectedAbsolutePath, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(trashPath);
+
+        // Act
+        var result = await tool.TestRun(relativePath, CancellationToken.None);
+
+        // Assert
+        result["status"]!.ToString().ShouldBe("success");
+        result["originalPath"]!.ToString().ShouldBe(expectedAbsolutePath);
+        _fileSystemClientMock.Verify(
+            m => m.MoveToTrash(expectedAbsolutePath, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WithDoubleDotInRelativePath_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var tool = CreateTool();
+        var maliciousRelative = Path.Combine("..", "etc", "passwd");
+
+        // Act & Assert
+        var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
+            await tool.TestRun(maliciousRelative, CancellationToken.None));
+
+        exception.Message.ShouldContain("must not contain '..'");
+    }
+
+    [Fact]
     public async Task Run_WithNestedValidPath_Succeeds()
     {
         // Arrange

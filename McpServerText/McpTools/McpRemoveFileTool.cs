@@ -16,7 +16,7 @@ public class McpRemoveFileTool(
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        [Description("Absolute path to the file (from GlobFiles)")]
+        [Description("Path to the file (absolute or relative to library root)")]
         string filePath,
         CancellationToken cancellationToken)
     {
