@@ -30,7 +30,9 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
         if (Path.IsPathRooted(pattern))
         {
             if (!pattern.StartsWith(libraryPath.BaseLibraryPath, StringComparison.Ordinal))
+            {
                 throw new ArgumentException("Absolute pattern must be under the library root", nameof(pattern));
+            }
 
             pattern = Path.GetRelativePath(libraryPath.BaseLibraryPath, pattern);
         }
