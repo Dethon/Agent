@@ -9,17 +9,17 @@ using ModelContextProtocol.Server;
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpTextListFilesTool(
+public class McpRemoveTool(
     IFileSystemClient client,
-    LibraryPathConfig libraryPath) : ListFilesTool(client, libraryPath)
+    LibraryPathConfig libraryPath) : RemoveTool(client, libraryPath)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        [Description("Absolute path to the directory")]
-        string directoryPath,
+        [Description("Path to the file or directory (absolute or relative to library root)")]
+        string path,
         CancellationToken cancellationToken)
     {
-        return ToolResponse.Create(await Run(directoryPath, cancellationToken));
+        return ToolResponse.Create(await Run(path, cancellationToken));
     }
 }

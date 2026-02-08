@@ -1,5 +1,6 @@
 ---
-paths: Infrastructure/**/*.cs
+paths:
+  - "Infrastructure/**/*.cs"
 ---
 
 # Infrastructure Layer Rules

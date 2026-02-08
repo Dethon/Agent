@@ -15,9 +15,15 @@ namespace Tests.Unit.Domain;
 
 internal sealed class FakeAiAgent : DisposableAgent
 {
-    public override ValueTask<AgentSession> GetNewSessionAsync(CancellationToken cancellationToken = default)
+    public override ValueTask<AgentSession> CreateSessionAsync(CancellationToken cancellationToken = default)
     {
         return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
+    }
+
+    public override JsonElement SerializeSession(
+        AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null)
+    {
+        return JsonSerializer.SerializeToElement(new { });
     }
 
     public override ValueTask<AgentSession> DeserializeSessionAsync(

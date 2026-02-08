@@ -23,7 +23,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
+        return new OpenRouterChatClient(apiUrl, apiKey, "z-ai/glm-4.7-flash");
     }
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
@@ -53,7 +53,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "List directories using the ListDirectories tool.",
+                "Find all files using the GlobFiles tool with pattern **/*.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -63,7 +63,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
-        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("ListDirectories");
+        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("GlobFiles");
 
         await agent.DisposeAsync();
     }
@@ -83,7 +83,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "List directories using the ListDirectories tool.",
+                "Find all files using the GlobFiles tool with pattern **/*.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -108,7 +108,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:ListDirectories"]);
+            whitelistPatterns: ["*:GlobFiles"]);
 
         var agent = CreateAgent(approvalClient);
 
@@ -117,7 +117,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
+                "Find all files using the GlobFiles tool with pattern **/*.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -142,7 +142,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistPatterns: ["*:ListDirectories"]);
+            whitelistPatterns: ["*:GlobFiles"]);
 
         var agent = CreateAgent(approvalClient);
 
@@ -156,7 +156,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"First list the directories at '{mcpFixture.LibraryPath}', then move '{sourcePath}' to '{destPath}'.",
+                $"First find all files using GlobFiles with pattern **/*.mkv, then move '{sourcePath}' to '{destPath}'.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -168,7 +168,7 @@ public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpF
         var approvedToolNames = approvingHandler.RequestedApprovals
             .SelectMany(r => r.Select(t => t.ToolName))
             .ToList();
-        approvedToolNames.ShouldNotContain("ListDirectories", "Whitelisted tool should not be in approval requests");
+        approvedToolNames.ShouldNotContain("GlobFiles", "Whitelisted tool should not be in approval requests");
 
         await agent.DisposeAsync();
     }

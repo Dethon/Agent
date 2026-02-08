@@ -39,12 +39,11 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
     }
 
     [SkippableFact]
-    public async Task Agent_WithListDirectoriesTool_CanListLibraryDirectories()
+    public async Task Agent_WithGlobFilesTool_CanFindFiles()
     {
         // Arrange
         var llmClient = CreateLlmClient();
-        mcpFixture.CreateLibraryStructure("AgentMovies");
-        mcpFixture.CreateLibraryStructure("AgentSeries");
+        mcpFixture.CreateLibraryFile(Path.Combine("AgentGlobTest", "movie.mkv"));
 
         var agent = CreateAgent(llmClient);
 
@@ -52,7 +51,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"List all directories in the library at '{mcpFixture.LibraryPath}' using the ListDirectories tool.",
+                "Find all .mkv files in the library using the GlobFiles tool with pattern **/*.mkv",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -94,35 +93,6 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         responses.ShouldNotBeEmpty();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveDestination", "agent-test-file.mkv")).ShouldBeTrue();
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveSource", "agent-test-file.mkv")).ShouldBeFalse();
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithListFilesTool_CanListFilesInLibrary()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        mcpFixture.CreateLibraryFile(Path.Combine("AgentMoviesFiles", "agent-existing-movie.mkv"));
-
-        var agent = CreateAgent(llmClient);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        // Act
-        var moviesPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoviesFiles");
-        var responses = await agent.RunStreamingAsync(
-                $"List all files in '{moviesPath}' using the ListFiles tool.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert - LLM responses are non-deterministic, verify agent processed the request
-        responses.ShouldNotBeEmpty();
-        var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
-        hasContent.ShouldBeTrue("Agent should have produced content or tool calls");
 
         await agent.DisposeAsync();
     }
@@ -195,7 +165,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act - First interaction to create a thread with state
-        var thread = await agent.GetNewSessionAsync(cts.Token);
+        var thread = await agent.CreateSessionAsync(cts.Token);
         var responses1 = await agent.RunStreamingAsync(
                 "Remember: my favorite color is blue.",
                 thread,
@@ -206,7 +176,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
             .ToListAsync(cts.Token);
 
         // Serialize the thread
-        var serialized = thread.Serialize();
+        var serialized = agent.SerializeSession(thread);
         var serializedJson = serialized.GetRawText();
 
         // Deserialize into a new thread

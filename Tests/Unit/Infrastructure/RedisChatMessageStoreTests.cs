@@ -30,7 +30,7 @@ public class RedisChatMessageStoreTests
         var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
-        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext([]), CancellationToken.None);
+        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, null, []), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
@@ -52,7 +52,7 @@ public class RedisChatMessageStoreTests
         var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
 
         // Act
-        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext([]), CancellationToken.None);
+        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, null, []), CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(It.Is<string>(k => IsGuid(k))), Times.Once);
@@ -145,7 +145,7 @@ public class RedisChatMessageStoreTests
         var responseMessage = new ChatMessage(ChatRole.Assistant, "Hello from agent");
 
         var invokedContext = new ChatHistoryProvider.InvokedContext(
-            [new ChatMessage(ChatRole.User, "Hi")], [])
+            new Mock<AIAgent>().Object, null, [new ChatMessage(ChatRole.User, "Hi")], [])
         {
             ResponseMessages = [responseMessage]
         };

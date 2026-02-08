@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Web;
-using Infrastructure.Utils;
 using Infrastructure.Extensions;
+using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -16,8 +16,8 @@ public class McpWebInspectTool(IWebBrowser browser)
     [Description(Description)]
     public async Task<CallToolResult> Run(
         RequestContext<CallToolRequestParams> context,
-        [Description("Inspection mode: 'structure' (default), 'search', 'forms', 'interactive', or 'tables'")]
-        string mode = "structure",
+        [Description("Inspection mode")]
+        InspectMode mode = InspectMode.Structure,
         [Description(
             "Text to find in page for 'search' mode. Searches visible text content only, NOT CSS selectors. To find elements by selector, use WebBrowse instead.")]
         string? query = null,

@@ -100,15 +100,15 @@ public static class DownloaderPrompt
 
         You will be notified by the system when a download is complete. **DO NOT** attempt to organize a file until you receive this `download_finished` notification.
 
-        1.  **Survey the Hoard:** Use the library's directory structure to understand how the user's current treasures are organized. **If you have already called ListDirectories in this conversation, reuse that cached result—do not call it again.**
+        1.  **Survey the Hoard:** Use the GlobFiles tool with directories mode to understand how the user's current treasures are organized (e.g., `GlobFiles **/*` to see all directories). Then use files mode with specific patterns to find content in target directories. **If you have already called GlobFiles in this conversation, reuse that cached result—do not call it again.**
         2.  **Identify the Download Location:** Find where the downloaded files are located, be wary of subfolders in the download's directory. It is almost impossible that the download folder is empty after the download has finished. If that happens make sure to check any subfolders that could be there.
             *   **Example:** If the download is in `/downloads/55643`, check for subdirectories like `/downloads/55643/The Lost City of Z/`.
         3.  **Organize Correctly:** Move the *newly downloaded content* from the download directory into the library.
             *   **Prefer Moving Folders:** If the download contains a single folder with all the media inside, **move the entire folder** rather than individual files. This is faster and ensures nothing is missed.
             *   **Move Files Individually Only When Necessary:** Only move files one-by-one if you need to filter out junk (`.txt`, `.nfo`, samples) or if the download structure doesn't match the library structure.
-            *   **Verify All Files Are Moved:** After moving, use ListFiles on the source directory to confirm it is empty or contains only junk files. If media files remain, move them too.
+            *   **Verify All Files Are Moved:** After moving, use GlobFiles on the source directory to confirm it is empty or contains only junk files. If media files remain, move them too.
             *   **Respect the Structure:** Before moving, analyze the destination directory pattern:
-                1.  Use ListFiles on the target directory (e.g., `/Movies/`) to see what's inside.
+                1.  Use GlobFiles on the target directory (e.g., `Movies/*`) to see what's inside.
                 2.  If it contains **only subdirectories** (e.g., `/Movies/Action/`, `/Movies/Comedy/`), you **MUST** place the content in an appropriate subdirectory—never directly in the parent.
                 3.  If it contains **only files**, place the new file directly in that directory.
                 4.  If it contains **a mix**, follow the dominant pattern for the content type.

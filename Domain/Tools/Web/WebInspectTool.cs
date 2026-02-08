@@ -36,18 +36,16 @@ public class WebInspectTool(IWebBrowser browser)
 
     protected async Task<JsonNode> RunAsync(
         string sessionId,
-        string mode,
+        InspectMode mode,
         string? query,
         bool regex,
         int maxResults,
         string? selector,
         CancellationToken ct)
     {
-        var parsedMode = ParseMode(mode);
-
         var request = new InspectRequest(
             SessionId: sessionId,
-            Mode: parsedMode,
+            Mode: mode,
             Query: query,
             Regex: regex,
             MaxResults: Math.Clamp(maxResults, 1, 100),
@@ -62,7 +60,7 @@ public class WebInspectTool(IWebBrowser browser)
             {
                 ["status"] = "error",
                 ["sessionId"] = result.SessionId,
-                ["mode"] = mode,
+                ["mode"] = mode.ToString().ToLowerInvariant(),
                 ["message"] = result.ErrorMessage
             };
         }
@@ -96,23 +94,6 @@ public class WebInspectTool(IWebBrowser browser)
         }
 
         return response;
-    }
-
-    private static InspectMode ParseMode(string? mode)
-    {
-        if (string.IsNullOrEmpty(mode))
-        {
-            return InspectMode.Structure;
-        }
-
-        return mode.ToLowerInvariant() switch
-        {
-            "search" => InspectMode.Search,
-            "forms" => InspectMode.Forms,
-            "interactive" => InspectMode.Interactive,
-            "tables" => InspectMode.Tables,
-            _ => InspectMode.Structure
-        };
     }
 
     private static void AddStructureToResponse(JsonObject response, InspectStructure structure)

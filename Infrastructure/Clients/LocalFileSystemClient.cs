@@ -1,4 +1,5 @@
 ﻿using Domain.Contracts;
+using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Infrastructure.Clients;
 
@@ -14,20 +15,35 @@ public class LocalFileSystemClient : IFileSystemClient
             : Task.FromResult(GetLibraryPaths(path));
     }
 
-    public Task<string[]> ListDirectoriesIn(string path, CancellationToken cancellationToken = default)
+    public Task<string[]> GlobFiles(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(Directory
-            .EnumerateDirectories(path, "*", SearchOption.AllDirectories)
-            .Where(x => !string.IsNullOrEmpty(x))
-            .ToArray());
+        var matcher = new Matcher();
+        matcher.AddInclude(pattern);
+        var result = matcher.GetResultsInFullPath(basePath);
+        return Task.FromResult(result.ToArray());
     }
 
-    public Task<string[]> ListFilesIn(string path, CancellationToken cancellationToken = default)
+    public Task<string[]> GlobDirectories(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(Directory
-            .EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
-            .Where(x => !string.IsNullOrEmpty(x))
-            .ToArray());
+        var matcher = new Matcher();
+        matcher.AddInclude(pattern);
+
+        var dirsFromFiles = matcher.GetResultsInFullPath(basePath)
+            .Select(f => Path.GetDirectoryName(f)!);
+
+        var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", SearchOption.AllDirectories)
+            .Select(d => Path.GetRelativePath(basePath, d));
+        var dirsFromDirectories = matcher.Match(basePath, dirRelativePaths)
+            .Files
+            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)));
+
+        var result = dirsFromFiles
+            .Concat(dirsFromDirectories)
+            .Where(d => d != basePath)
+            .Distinct()
+            .Order()
+            .ToArray();
+        return Task.FromResult(result);
     }
 
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
@@ -44,7 +60,7 @@ public class LocalFileSystemClient : IFileSystemClient
         }
         else if (Directory.Exists(sourcePath))
         {
-            Directory.Move(sourcePath, destinationPath);
+            MoveDirectory(sourcePath, destinationPath);
         }
 
         return Task.CompletedTask;
@@ -72,19 +88,30 @@ public class LocalFileSystemClient : IFileSystemClient
 
     public Task<string> MoveToTrash(string path, CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(path))
+        var isFile = File.Exists(path);
+        var isDirectory = Directory.Exists(path);
+
+        if (!isFile && !isDirectory)
         {
-            throw new FileNotFoundException($"File not found: {path}");
+            throw new IOException($"Path not found: {path}");
         }
 
-        var fileName = Path.GetFileName(path);
+        var name = Path.GetFileName(path);
         var trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), TrashFolderName);
         var timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
-        var trashPath = Path.Combine(trashDir, $"{timestamp}_{uniqueId}_{fileName}");
+        var trashPath = Path.Combine(trashDir, $"{timestamp}_{uniqueId}_{name}");
 
         CreateDestinationParentPath(trashPath);
-        File.Move(path, trashPath);
+
+        if (isFile)
+        {
+            File.Move(path, trashPath);
+        }
+        else
+        {
+            MoveDirectory(path, trashPath);
+        }
 
         return Task.FromResult(trashPath);
     }
@@ -101,6 +128,36 @@ public class LocalFileSystemClient : IFileSystemClient
             .ToDictionary(
                 x => x.Key,
                 x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
+    }
+
+    private static void MoveDirectory(string sourcePath, string destinationPath)
+    {
+        try
+        {
+            Directory.Move(sourcePath, destinationPath);
+        }
+        catch (IOException)
+        {
+            // Directory.Move fails with EXDEV across filesystem boundaries;
+            // fall back to recursive copy + delete
+            CopyDirectory(sourcePath, destinationPath);
+            Directory.Delete(sourcePath, true);
+        }
+    }
+
+    private static void CopyDirectory(string sourcePath, string destinationPath)
+    {
+        Directory.CreateDirectory(destinationPath);
+
+        foreach (var file in Directory.EnumerateFiles(sourcePath))
+        {
+            File.Copy(file, Path.Combine(destinationPath, Path.GetFileName(file)));
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(sourcePath))
+        {
+            CopyDirectory(dir, Path.Combine(destinationPath, Path.GetFileName(dir)));
+        }
     }
 
     private static void CreateDestinationParentPath(string destinationPath)

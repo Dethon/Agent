@@ -46,11 +46,10 @@ public static class ConfigModule
                 }
             })
             // Discovery tools
-            .WithTools<McpTextListDirectoriesTool>()
-            .WithTools<McpTextListFilesTool>()
+            .WithTools<McpTextGlobFilesTool>()
             // File operations
             .WithTools<McpMoveTool>()
-            .WithTools<McpRemoveFileTool>()
+            .WithTools<McpRemoveTool>()
             // Text tools
             .WithTools<McpTextSearchTool>()
             .WithTools<McpTextReadTool>()

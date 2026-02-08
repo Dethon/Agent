@@ -38,7 +38,7 @@ internal sealed class McpSamplingHandler
         CancellationToken ct)
     {
         var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
-        var thread = await _agent.GetNewSessionAsync(ct);
+        var thread = await _agent.CreateSessionAsync(ct);
         return tracker is null ? thread : _trackedConversations.GetOrAdd(tracker, thread);
     }
 

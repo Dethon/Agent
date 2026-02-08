@@ -1,5 +1,6 @@
 ---
-description: Enforces test-driven development methodology for all feature and bugfix work
+paths:
+  - "{Domain,Infrastructure,Tests}/**/*.cs"
 ---
 
 # Test-Driven Development

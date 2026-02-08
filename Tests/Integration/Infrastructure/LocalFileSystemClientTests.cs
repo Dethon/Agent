@@ -64,48 +64,6 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task ListFilesIn_WithNestedStructure_ReturnsOnlyTopLevelFiles()
-    {
-        // Arrange
-        var nestedDir = Path.Combine(_testDir, "nested");
-        Directory.CreateDirectory(nestedDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "top1.txt"), "content");
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "top2.txt"), "content");
-        await File.WriteAllTextAsync(Path.Combine(nestedDir, "nested.txt"), "content");
-
-        // Act
-        var files = await _client.ListFilesIn(_testDir);
-
-        // Assert
-        files.Length.ShouldBe(2);
-        files.ShouldContain(f => f.EndsWith("top1.txt"));
-        files.ShouldContain(f => f.EndsWith("top2.txt"));
-        files.ShouldNotContain(f => f.Contains("nested.txt"));
-    }
-
-    [Fact]
-    public async Task ListDirectoriesIn_ReturnsOnlyDirectories()
-    {
-        // Arrange
-        var subDir1 = Path.Combine(_testDir, "subdir1");
-        var subDir2 = Path.Combine(_testDir, "subdir2");
-        var nestedDir = Path.Combine(subDir1, "nested");
-        Directory.CreateDirectory(subDir1);
-        Directory.CreateDirectory(subDir2);
-        Directory.CreateDirectory(nestedDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
-
-        // Act
-        var directories = await _client.ListDirectoriesIn(_testDir);
-
-        // Assert
-        directories.ShouldContain(d => d.EndsWith("subdir1"));
-        directories.ShouldContain(d => d.EndsWith("subdir2"));
-        directories.ShouldContain(d => d.Contains("nested"));
-        directories.ShouldNotContain(d => d.Contains("file.txt"));
-    }
-
-    [Fact]
     public async Task DescribeDirectory_WithFiles_ReturnsFilesByDirectory()
     {
         // Arrange
@@ -201,34 +159,6 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task ListFilesIn_WithEmptyDirectory_ReturnsEmptyArray()
-    {
-        // Arrange
-        var emptyDir = Path.Combine(_testDir, "empty");
-        Directory.CreateDirectory(emptyDir);
-
-        // Act
-        var files = await _client.ListFilesIn(emptyDir);
-
-        // Assert
-        files.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task ListDirectoriesIn_WithEmptyDirectory_ReturnsEmptyArray()
-    {
-        // Arrange
-        var emptyDir = Path.Combine(_testDir, "empty");
-        Directory.CreateDirectory(emptyDir);
-
-        // Act
-        var directories = await _client.ListDirectoriesIn(emptyDir);
-
-        // Assert
-        directories.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task MoveToTrash_WithExistingFile_MovesToUserTrashFolder()
     {
         // Arrange
@@ -253,14 +183,39 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task MoveToTrash_WithNonExistentFile_ThrowsFileNotFoundException()
+    public async Task MoveToTrash_WithNonExistentPath_ThrowsIOException()
     {
         // Arrange
         var nonExistentPath = Path.Combine(_testDir, "does-not-exist.txt");
 
         // Act & Assert
-        await Should.ThrowAsync<FileNotFoundException>(async () =>
+        await Should.ThrowAsync<IOException>(async () =>
             await _client.MoveToTrash(nonExistentPath));
+    }
+
+    [Fact]
+    public async Task MoveToTrash_WithDirectory_MovesDirectoryToTrash()
+    {
+        // Arrange
+        var dirPath = Path.Combine(_testDir, "to-trash-dir");
+        Directory.CreateDirectory(dirPath);
+        await File.WriteAllTextAsync(Path.Combine(dirPath, "file.txt"), "content");
+        var trashDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            LocalFileSystemClient.TrashFolderName);
+
+        // Act
+        var trashPath = await _client.MoveToTrash(dirPath);
+
+        // Assert
+        Directory.Exists(dirPath).ShouldBeFalse();
+        Directory.Exists(trashPath).ShouldBeTrue();
+        trashPath.ShouldStartWith(trashDir);
+        trashPath.ShouldContain("to-trash-dir");
+        File.Exists(Path.Combine(trashPath, "file.txt")).ShouldBeTrue();
+
+        // Cleanup
+        Directory.Delete(trashPath, true);
     }
 
     [Fact]
@@ -285,5 +240,183 @@ public class LocalFileSystemClientTests : IDisposable
         // Cleanup
         File.Delete(trashPath1);
         File.Delete(trashPath2);
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithWildcard_ReturnsMatchingFiles()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mp4"), "content");
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "readme.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "*.mkv");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldEndWith("movie.mkv");
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithRecursivePattern_ReturnsNestedFiles()
+    {
+        // Arrange
+        var subDir = Path.Combine(_testDir, "sub", "deep");
+        Directory.CreateDirectory(subDir);
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "root.txt"), "content");
+        await File.WriteAllTextAsync(Path.Combine(subDir, "nested.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "**/*.txt");
+
+        // Assert
+        files.Length.ShouldBe(2);
+        files.ShouldContain(f => f.EndsWith("root.txt"));
+        files.ShouldContain(f => f.EndsWith("nested.txt"));
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithNoMatches_ReturnsEmptyArray()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "*.pdf");
+
+        // Assert
+        files.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GlobFiles_WithSubdirectoryPattern_ReturnsOnlyMatchingPath()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        Directory.CreateDirectory(moviesDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "novel.epub"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "movies/**/*");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldEndWith("film.mkv");
+    }
+
+    [Fact]
+    public async Task GlobFiles_ReturnsAbsolutePaths()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var files = await _client.GlobFiles(_testDir, "**/*");
+
+        // Assert
+        files.Length.ShouldBe(1);
+        files[0].ShouldStartWith(_testDir);
+    }
+
+    [Fact]
+    public async Task GlobDirectories_WithRecursivePattern_ReturnsDistinctDirectories()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        var subDir = Path.Combine(moviesDir, "action");
+        Directory.CreateDirectory(subDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(subDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "book.pdf"), "content");
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "other.mkv"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldContain(d => d.EndsWith("movies"));
+        dirs.ShouldContain(d => d.EndsWith("action"));
+        dirs.ShouldContain(d => d.EndsWith("books"));
+        dirs.Distinct().Count().ShouldBe(dirs.Length);
+    }
+
+    [Fact]
+    public async Task GlobDirectories_WithSpecificPattern_ReturnsOnlyMatchingDirectories()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        Directory.CreateDirectory(moviesDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "book.pdf"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "movies/**/*");
+
+        // Assert
+        dirs.Length.ShouldBe(1);
+        dirs[0].ShouldEndWith("movies");
+    }
+
+    [Fact]
+    public async Task GlobDirectories_WithNoMatches_ReturnsEmptyArray()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "nonexistent/**/*");
+
+        // Assert
+        dirs.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GlobDirectories_ReturnsAbsolutePaths()
+    {
+        // Arrange
+        var subDir = Path.Combine(_testDir, "sub");
+        Directory.CreateDirectory(subDir);
+        await File.WriteAllTextAsync(Path.Combine(subDir, "file.txt"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldAllBe(d => d.StartsWith(_testDir));
+    }
+
+    [Fact]
+    public async Task GlobDirectories_EmptyDirectory_ReturnsTheDirectory()
+    {
+        // Arrange
+        Directory.CreateDirectory(Path.Combine(_testDir, "empty"));
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.Length.ShouldBe(1);
+        dirs[0].ShouldEndWith("empty");
+    }
+
+    [Fact]
+    public async Task GlobDirectories_DirectoryWithOnlySubdirectories_ReturnsBothLevels()
+    {
+        // Arrange
+        Directory.CreateDirectory(Path.Combine(_testDir, "parent", "child"));
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldContain(d => d.EndsWith("parent"));
+        dirs.ShouldContain(d => d.EndsWith("child"));
     }
 }

@@ -1,5 +1,6 @@
 ---
-paths: McpServer*/McpTools/*.cs
+paths:
+  - "McpServer*/McpTools/*.cs"
 ---
 
 # MCP Tool Rules

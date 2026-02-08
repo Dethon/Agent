@@ -30,7 +30,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -61,7 +61,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -88,7 +88,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -120,7 +120,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act
@@ -150,7 +150,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
 
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var session = await ThreadSession.CreateAsync(
@@ -185,7 +185,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // Arrange
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var session = await ThreadSession.CreateAsync(
@@ -212,7 +212,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // is difficult to test without network manipulation
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act - Connect to valid endpoint should succeed
@@ -238,7 +238,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
         // Arrange - Use the same endpoint twice to verify multiple connections
         using var chatClient = CreateChatClient();
         var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.GetNewSessionAsync();
+        var thread = await agent.CreateSessionAsync();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act

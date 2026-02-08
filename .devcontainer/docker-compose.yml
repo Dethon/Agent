@@ -1,0 +1,42 @@
+services:
+  dind:
+    image: docker:dind
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=  # Disable TLS (internal network only)
+    volumes:
+      - docker-data:/var/lib/docker
+      - shared-tmp:/tmp
+    networks:
+      - devnet
+    restart: unless-stopped
+
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    container_name: dev
+    environment:
+      - DOCKER_HOST=tcp://dind:2375
+      - NUGET_PACKAGES=/home/devuser/.nuget/packages
+      - DEVCONTAINER=1
+    volumes:
+      - ..:/workspace
+      - nuget-cache:/home/devuser/.nuget/packages
+      - shared-tmp:/tmp
+      - ${APPDATA}/Microsoft/UserSecrets:/home/devuser/.microsoft/usersecrets:ro
+    networks:
+      - devnet
+    depends_on:
+      - dind
+    command: ["sleep", "infinity"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  docker-data:
+  nuget-cache:
+  shared-tmp:
+
+networks:
+  devnet:

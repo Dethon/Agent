@@ -8,7 +8,7 @@ using Shouldly;
 
 namespace Tests.Unit.Domain;
 
-public class RemoveFileToolTests
+public class RemoveToolTests
 {
     private readonly Mock<IFileSystemClient> _fileSystemClientMock = new();
 
@@ -16,9 +16,9 @@ public class RemoveFileToolTests
         ? @"C:\media\library"
         : "/media/library";
 
-    private TestableRemoveFileTool CreateTool()
+    private TestableRemoveTool CreateTool()
     {
-        return new TestableRemoveFileTool(
+        return new TestableRemoveTool(
             _fileSystemClientMock.Object,
             new LibraryPathConfig(_libraryPath));
     }
@@ -43,7 +43,7 @@ public class RemoveFileToolTests
 
         // Assert
         result["status"]!.ToString().ShouldBe("success");
-        result["message"]!.ToString().ShouldBe("File moved to trash");
+        result["message"]!.ToString().ShouldBe("Moved to trash");
         result["originalPath"]!.ToString().ShouldBe(filePath);
         result["trashPath"]!.ToString().ShouldBe(trashPath);
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
@@ -84,6 +84,43 @@ public class RemoveFileToolTests
     }
 
     [Fact]
+    public async Task Run_WithRelativePath_ResolvesAgainstLibraryRoot()
+    {
+        // Arrange
+        var tool = CreateTool();
+        var relativePath = Path.Combine("movies", "test.mkv");
+        var expectedAbsolutePath = Path.Combine(_libraryPath, "movies", "test.mkv");
+        const string trashPath = "trash-path";
+
+        _fileSystemClientMock
+            .Setup(m => m.MoveToTrash(expectedAbsolutePath, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(trashPath);
+
+        // Act
+        var result = await tool.TestRun(relativePath, CancellationToken.None);
+
+        // Assert
+        result["status"]!.ToString().ShouldBe("success");
+        result["originalPath"]!.ToString().ShouldBe(expectedAbsolutePath);
+        _fileSystemClientMock.Verify(
+            m => m.MoveToTrash(expectedAbsolutePath, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Run_WithDoubleDotInRelativePath_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var tool = CreateTool();
+        var maliciousRelative = Path.Combine("..", "etc", "passwd");
+
+        // Act & Assert
+        var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
+            await tool.TestRun(maliciousRelative, CancellationToken.None));
+
+        exception.Message.ShouldContain("must not contain '..'");
+    }
+
+    [Fact]
     public async Task Run_WithNestedValidPath_Succeeds()
     {
         // Arrange
@@ -103,10 +140,10 @@ public class RemoveFileToolTests
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    private class TestableRemoveFileTool(
+    private class TestableRemoveTool(
         IFileSystemClient client,
         LibraryPathConfig libraryPath)
-        : RemoveFileTool(client, libraryPath)
+        : RemoveTool(client, libraryPath)
     {
         public Task<JsonNode> TestRun(string path, CancellationToken ct)
         {

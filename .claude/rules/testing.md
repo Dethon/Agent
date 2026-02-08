@@ -1,5 +1,6 @@
 ---
-paths: Tests/**/*.cs
+paths:
+  - "Tests/**/*.cs"
 ---
 
 # Testing Rules

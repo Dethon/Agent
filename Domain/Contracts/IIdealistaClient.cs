@@ -1,3 +1,5 @@
+using JetBrains.Annotations;
+
 namespace Domain.Contracts;
 
 public interface IIdealistaClient
@@ -5,6 +7,7 @@ public interface IIdealistaClient
     Task<IdealistaSearchResult> SearchAsync(IdealistaSearchQuery query, CancellationToken ct = default);
 }
 
+[PublicAPI]
 public record IdealistaSearchQuery
 {
     public required string Country { get; init; }
@@ -75,10 +78,11 @@ public record IdealistaSearchQuery
     public string? NewGender { get; init; }
 
     // Bank offer (sale in Spain)
-    public bool? BankOffer { get; init; }
+    public bool? BankOffer { get; [UsedImplicitly] init; }
     public bool? VirtualTour { get; init; }
 }
 
+[PublicAPI]
 public record IdealistaSearchResult
 {
     public required int ActualPage { get; init; }
@@ -90,6 +94,7 @@ public record IdealistaSearchResult
     public required IReadOnlyList<IdealistaProperty> ElementList { get; init; }
 }
 
+[PublicAPI]
 public record IdealistaProperty
 {
     public required string PropertyCode { get; init; }
@@ -135,6 +140,7 @@ public record IdealistaProperty
     public bool? IsSmokingAllowed { get; init; }
 }
 
+[PublicAPI]
 public record IdealistaParkingSpace
 {
     public bool? HasParkingSpace { get; init; }
@@ -142,6 +148,7 @@ public record IdealistaParkingSpace
     public double? ParkingSpacePrice { get; init; }
 }
 
+[PublicAPI]
 public record IdealistaDetailedType
 {
     public string? Typology { get; init; }
