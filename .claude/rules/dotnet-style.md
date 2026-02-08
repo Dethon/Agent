@@ -1,5 +1,6 @@
 ---
-paths: "**/*.cs"
+paths:
+  - "**/*.cs"
 ---
 
 # .NET Coding Style

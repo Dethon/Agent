@@ -1,31 +1,17 @@
 # Agent
 
-AI agent via Telegram/WebChat/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
-
-## Architecture
-
-**Layers** (dependencies flow inward): `Agent` → `Infrastructure` → `Domain`
-
-- **Domain**: Contracts, DTOs, pure business logic (no external deps)
-- **Infrastructure**: Implementations, external clients, state management
-- **Agent**: DI, config, entry point
-
-See `.claude/rules/` for layer-specific coding rules.
+AI agent via Telegram/WebChat/MessageBus/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
 
 ## Codebase Documentation
 
-Detailed documentation in `docs/codebase/`:
-
-| File | Content |
-|------|---------|
-| `ARCHITECTURE.md` | Agent system, message pipeline, tool approval, MCP integration |
-| `STRUCTURE.md` | Directory layout, module boundaries |
-| `STACK.md` | Tech stack, packages, dependencies |
-| `INTEGRATIONS.md` | External services (OpenRouter, Telegram, Redis, etc.) |
-| `CONVENTIONS.md` | Coding style, patterns, rules |
-| `TESTING.md` | Test framework, TDD workflow, organization |
-| `CONCERNS.md` | Technical debt, risks, security considerations |
-| `maps/code-map-*.json` | Structural code maps |
+@docs/codebase/ARCHITECTURE.md
+@docs/codebase/STRUCTURE.md
+@docs/codebase/STACK.md
+@docs/codebase/INTEGRATIONS.md
+@docs/codebase/CONVENTIONS.md
+@docs/codebase/TESTING.md
+@docs/codebase/CONCERNS.md
+@docs/codebase/maps/code-map-root.json
 
 ## Projects
 
@@ -49,10 +35,6 @@ Detailed documentation in `docs/codebase/`:
 | MCP tools | `McpServer*/McpTools/*.cs` |
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
-
-## Multi-Agent Config
-
-Agents configured in `appsettings.json` under `"agents"` array. Each has id, name, model, MCP endpoints, whitelist patterns, custom instructions, and optional telegram token.
 
 ## WebChat State
 

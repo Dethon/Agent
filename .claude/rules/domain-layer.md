@@ -1,5 +1,6 @@
 ---
-paths: Domain/**/*.cs
+paths:
+  - "Domain/**/*.cs"
 ---
 
 # Domain Layer Rules
