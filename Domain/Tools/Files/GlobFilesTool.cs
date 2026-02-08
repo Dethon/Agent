@@ -12,7 +12,7 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
     protected const string Description = """
                                          Searches for files matching a glob pattern relative to the library root.
                                          Supports * (single segment), ** (recursive), and ? (single char).
-                                         Returns absolute file paths. Examples: **/*.pdf, books/*, src/**/*.cs.
+                                         Returns absolute file paths. Examples: **/* (all files), **/*.pdf, books/*, src/**/*.cs.
                                          """;
 
     protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken)
