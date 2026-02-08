@@ -103,9 +103,8 @@ public sealed class McpAgent : DisposableAgent
     public override JsonElement SerializeSession(
         AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null)
     {
-        return session is not ChatClientAgentSession typedSession 
-            ? throw new InvalidOperationException("The provided session is not compatible with the agent. Only sessions created by the agent can be serialized.") 
-            : typedSession.Serialize(jsonSerializerOptions);
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+        return _innerAgent.SerializeSession(session, jsonSerializerOptions);
     }
 
     public override ValueTask<AgentSession> DeserializeSessionAsync(
