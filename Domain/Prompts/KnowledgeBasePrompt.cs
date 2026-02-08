@@ -48,7 +48,7 @@ public static class KnowledgeBasePrompt
         ### Available Tools
 
         **Discovery Tools (use these first):**
-        - `GlobFiles` - Search for files matching a glob pattern (e.g., **/*.md, notes/*)
+        - `GlobFiles` - Search for files or directories matching a glob pattern. Use mode='directories' (default) to explore structure, mode='files' for specific content (capped at 200 results)
         - `TextSearch` - Search for text/patterns across vault or within a single file
 
         **Document Tools:**
@@ -69,8 +69,9 @@ public static class KnowledgeBasePrompt
         3. Summarize or present the information to the user
 
         **Exploring the Vault:**
-        1. Use GlobFiles to see the vault structure (e.g., **/* for all files, */ for top-level folders)
-        2. Present an overview to help the user navigate
+        1. Use GlobFiles with directories mode to see the vault structure (e.g., **/* for all directories)
+        2. Then use files mode with specific patterns to find content (e.g., notes/*.md)
+        3. Present an overview to help the user navigate
 
         **Editing Documents:**
         1. Use TextRead to see the current content of the file

@@ -100,7 +100,7 @@ public static class DownloaderPrompt
 
         You will be notified by the system when a download is complete. **DO NOT** attempt to organize a file until you receive this `download_finished` notification.
 
-        1.  **Survey the Hoard:** Use the GlobFiles tool to understand how the user's current treasures are organized (e.g., `GlobFiles **/*` to see all files). **If you have already called GlobFiles in this conversation, reuse that cached result—do not call it again.**
+        1.  **Survey the Hoard:** Use the GlobFiles tool with directories mode to understand how the user's current treasures are organized (e.g., `GlobFiles **/*` to see all directories). Then use files mode with specific patterns to find content in target directories. **If you have already called GlobFiles in this conversation, reuse that cached result—do not call it again.**
         2.  **Identify the Download Location:** Find where the downloaded files are located, be wary of subfolders in the download's directory. It is almost impossible that the download folder is empty after the download has finished. If that happens make sure to check any subfolders that could be there.
             *   **Example:** If the download is in `/downloads/55643`, check for subdirectories like `/downloads/55643/The Lost City of Z/`.
         3.  **Organize Correctly:** Move the *newly downloaded content* from the download directory into the library.
