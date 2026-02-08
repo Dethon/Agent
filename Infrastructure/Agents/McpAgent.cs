@@ -85,7 +85,7 @@ public sealed class McpAgent : DisposableAgent
     public override ValueTask<AgentSession> CreateSessionAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        return _innerAgent.GetNewSessionAsync(cancellationToken);
+        return _innerAgent.CreateSessionAsync(cancellationToken);
     }
 
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
