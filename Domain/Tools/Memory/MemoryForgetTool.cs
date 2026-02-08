@@ -33,7 +33,7 @@ public class MemoryForgetTool(IMemoryStore store)
         string? query = null,
         string? categories = null,
         string? olderThan = null,
-        string mode = "delete",
+        ForgetMode mode = ForgetMode.Delete,
         string? reason = null,
         CancellationToken ct = default)
     {
@@ -57,7 +57,7 @@ public class MemoryForgetTool(IMemoryStore store)
     private async Task<List<AffectedMemory>> ForgetById(
         string userId,
         string memoryId,
-        string mode,
+        ForgetMode mode,
         CancellationToken ct)
     {
         var memory = await store.GetByIdAsync(userId, memoryId, ct);
@@ -75,7 +75,7 @@ public class MemoryForgetTool(IMemoryStore store)
     private async Task<List<AffectedMemory>> ForgetByFilter(
         string userId,
         MemoryFilter filter,
-        string mode,
+        ForgetMode mode,
         CancellationToken ct)
     {
         var allMemories = await store.GetByUserIdAsync(userId, ct);
@@ -92,13 +92,13 @@ public class MemoryForgetTool(IMemoryStore store)
         return affected;
     }
 
-    private async Task<bool> ApplyForgetMode(string userId, MemoryEntry memory, string mode, CancellationToken ct)
+    private async Task<bool> ApplyForgetMode(string userId, MemoryEntry memory, ForgetMode mode, CancellationToken ct)
     {
-        return mode.ToLowerInvariant() switch
+        return mode switch
         {
-            "delete" => await store.DeleteAsync(userId, memory.Id, ct),
-            "archive" => await store.SupersedeAsync(userId, memory.Id, "archived", ct),
-            _ => throw new ArgumentException($"Invalid mode: {mode}. Valid: delete, archive")
+            ForgetMode.Delete => await store.DeleteAsync(userId, memory.Id, ct),
+            ForgetMode.Archive => await store.SupersedeAsync(userId, memory.Id, "archived", ct),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null)
         };
     }
 
@@ -134,12 +134,12 @@ public class MemoryForgetTool(IMemoryStore store)
         return new JsonObject { ["error"] = message };
     }
 
-    private static JsonObject CreateSuccessResponse(string mode, List<AffectedMemory> affected, string? reason)
+    private static JsonObject CreateSuccessResponse(ForgetMode mode, List<AffectedMemory> affected, string? reason)
     {
         var response = new JsonObject
         {
             ["status"] = "success",
-            ["action"] = mode,
+            ["action"] = mode.ToString().ToLowerInvariant(),
             ["affectedCount"] = affected.Count,
             ["affectedMemories"] = new JsonArray(affected.Select(m => m.ToJson()).ToArray())
         };

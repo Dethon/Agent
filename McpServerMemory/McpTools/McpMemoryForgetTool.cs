@@ -24,8 +24,8 @@ public class McpMemoryForgetTool(IMemoryStore store)
         string? categories = null,
         [Description("Forget memories older than this ISO date")]
         string? olderThan = null,
-        [Description("Mode: delete (permanent), archive (hide from recall). Default: delete")]
-        string mode = "delete",
+        [Description("'Delete' (permanent) or 'Archive' (hide from recall)")]
+        ForgetMode mode = ForgetMode.Delete,
         [Description("Reason for forgetting (for audit)")]
         string? reason = null,
         CancellationToken cancellationToken = default)

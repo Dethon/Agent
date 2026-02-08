@@ -50,13 +50,8 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         string directoryPath = "/",
         int maxResults = 50,
         int contextLines = 1,
-        string outputMode = "content")
+        SearchOutputMode outputMode = SearchOutputMode.Content)
     {
-        if (outputMode is not "content" and not "files_only")
-        {
-            throw new ArgumentException($"Invalid outputMode '{outputMode}'. Must be 'content' or 'files_only'.");
-        }
-
         var searchParams = new SearchParams(
             query,
             regex ? new Regex(query, RegexOptions.IgnoreCase) : null,
@@ -84,7 +79,7 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     }
 
     private JsonNode RunSingleFileSearch(string filePath, string query, bool regex, SearchParams searchParams,
-        string outputMode)
+        SearchOutputMode outputMode)
     {
         var fullPath = ValidateAndResolvePath(filePath);
 
@@ -235,9 +230,9 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         List<FileMatch> results,
         int totalMatches,
         int maxResults,
-        string outputMode)
+        SearchOutputMode outputMode)
     {
-        var resultMapper = outputMode == "files_only"
+        var resultMapper = outputMode == SearchOutputMode.FilesOnly
             ? (Func<FileMatch, JsonNode>)ToFileMatchSummaryJson
             : ToFileMatchJson;
 

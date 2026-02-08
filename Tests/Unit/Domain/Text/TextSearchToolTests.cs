@@ -240,7 +240,7 @@ public class TextSearchToolTests : IDisposable
         CreateTestFile("doc1.md", "Hello World\nHello again");
         CreateTestFile("doc2.md", "Hello there");
 
-        var result = _tool.TestRun("Hello", outputMode: "files_only");
+        var result = _tool.TestRun("Hello", outputMode: SearchOutputMode.FilesOnly);
 
         result["filesWithMatches"]!.GetValue<int>().ShouldBe(2);
         var firstResult = result["results"]!.AsArray()[0]!;
@@ -253,19 +253,10 @@ public class TextSearchToolTests : IDisposable
     {
         CreateTestFile("doc.md", "Hello World");
 
-        var result = _tool.TestRun("Hello", outputMode: "content");
+        var result = _tool.TestRun("Hello", outputMode: SearchOutputMode.Content);
 
         var firstResult = result["results"]!.AsArray()[0]!;
         firstResult["matches"]!.AsArray().Count.ShouldBeGreaterThan(0);
-    }
-
-    [Fact]
-    public void Run_WithInvalidOutputMode_Throws()
-    {
-        CreateTestFile("doc.md", "Hello World");
-
-        Should.Throw<ArgumentException>(() =>
-            _tool.TestRun("Hello", outputMode: "invalid"));
     }
 
     private void CreateTestFile(string relativePath, string content)
@@ -291,7 +282,7 @@ public class TextSearchToolTests : IDisposable
             string directoryPath = "/",
             int maxResults = 50,
             int contextLines = 1,
-            string outputMode = "content")
+            SearchOutputMode outputMode = SearchOutputMode.Content)
         {
             return Run(query, regex, filePath, filePattern, directoryPath, maxResults, contextLines, outputMode);
         }
