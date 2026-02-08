@@ -165,7 +165,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act - First interaction to create a thread with state
-        var thread = await agent.GetNewSessionAsync(cts.Token);
+        var thread = await agent.CreateSessionAsync(cts.Token);
         var responses1 = await agent.RunStreamingAsync(
                 "Remember: my favorite color is blue.",
                 thread,
@@ -176,7 +176,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
             .ToListAsync(cts.Token);
 
         // Serialize the thread
-        var serialized = thread.Serialize();
+        var serialized = agent.SerializeSession(thread);
         var serializedJson = serialized.GetRawText();
 
         // Deserialize into a new thread
