@@ -15,7 +15,6 @@ Detailed documentation in `docs/codebase/`:
 | `CONVENTIONS.md` | Coding style, patterns, rules |
 | `TESTING.md` | Test framework, TDD workflow, organization |
 | `CONCERNS.md` | Technical debt, risks, security considerations |
-| `maps/code-map-*.json` | Structural code maps |
 
 ## Projects
 
