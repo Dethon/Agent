@@ -56,10 +56,64 @@ public class GlobFilesToolTests
             () => _tool.TestRun(pattern, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task Run_DirectoriesMode_CallsGlobDirectoriesAndReturnsArray()
+    {
+        // Arrange
+        _mockClient.Setup(c => c.GlobDirectories(BasePath, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/movies", "/library/books"]);
+
+        // Act
+        var result = await _tool.TestRun("**/*", GlobMode.Directories, CancellationToken.None);
+
+        // Assert
+        var array = result.AsArray();
+        array.Count.ShouldBe(2);
+        array[0]!.GetValue<string>().ShouldBe("/library/movies");
+    }
+
+    [Fact]
+    public async Task Run_FilesMode_UnderCap_ReturnsPlainArray()
+    {
+        // Arrange
+        _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/a.pdf", "/library/b.pdf"]);
+
+        // Act
+        var result = await _tool.TestRun("**/*.pdf", GlobMode.Files, CancellationToken.None);
+
+        // Assert
+        var array = result.AsArray();
+        array.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Run_FilesMode_OverCap_ReturnsTruncatedObject()
+    {
+        // Arrange
+        var files = Enumerable.Range(1, 250).Select(i => $"/library/file{i}.pdf").ToArray();
+        _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(files);
+
+        // Act
+        var result = await _tool.TestRun("**/*.pdf", GlobMode.Files, CancellationToken.None);
+
+        // Assert
+        var obj = result.AsObject();
+        obj["truncated"]!.GetValue<bool>().ShouldBeTrue();
+        obj["total"]!.GetValue<int>().ShouldBe(250);
+        obj["files"]!.AsArray().Count.ShouldBe(200);
+        obj["message"]!.GetValue<string>().ShouldContain("200");
+        obj["message"]!.GetValue<string>().ShouldContain("250");
+    }
+
     private class TestableGlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         : GlobFilesTool(client, libraryPath)
     {
         public Task<JsonNode> TestRun(string pattern, CancellationToken cancellationToken)
-            => Run(pattern, cancellationToken);
+            => Run(pattern, GlobMode.Files, cancellationToken);
+
+        public Task<JsonNode> TestRun(string pattern, GlobMode mode, CancellationToken cancellationToken)
+            => Run(pattern, mode, cancellationToken);
     }
 }

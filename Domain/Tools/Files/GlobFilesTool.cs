@@ -10,12 +10,15 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
     protected const string Name = "GlobFiles";
 
     protected const string Description = """
-                                         Searches for files matching a glob pattern relative to the library root.
+                                         Searches for files or directories matching a glob pattern relative to the library root.
                                          Supports * (single segment), ** (recursive), and ? (single char).
-                                         Returns absolute file paths. Examples: **/* (all files), **/*.pdf, books/*, src/**/*.cs.
+                                         Use mode 'directories' (default) to explore the library structure first, then 'files' with specific patterns to find content.
+                                         In files mode, results are capped at 200—use more specific patterns if truncated.
                                          """;
 
-    protected async Task<JsonNode> Run(string pattern, CancellationToken cancellationToken)
+    private const int FileResultCap = 200;
+
+    protected async Task<JsonNode> Run(string pattern, GlobMode mode, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
 
@@ -24,8 +27,38 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             throw new ArgumentException("Pattern must not contain '..' segments", nameof(pattern));
         }
 
-        var result = await client.GlobFiles(libraryPath.BaseLibraryPath, pattern, cancellationToken);
+        return mode switch
+        {
+            GlobMode.Directories => await RunDirectories(pattern, cancellationToken),
+            GlobMode.Files => await RunFiles(pattern, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Invalid glob mode")
+        };
+    }
+
+    private async Task<JsonNode> RunDirectories(string pattern, CancellationToken cancellationToken)
+    {
+        var result = await client.GlobDirectories(libraryPath.BaseLibraryPath, pattern, cancellationToken);
         return JsonSerializer.SerializeToNode(result)
-               ?? throw new InvalidOperationException("Failed to serialize GlobFiles result");
+               ?? throw new InvalidOperationException("Failed to serialize GlobDirectories result");
+    }
+
+    private async Task<JsonNode> RunFiles(string pattern, CancellationToken cancellationToken)
+    {
+        var result = await client.GlobFiles(libraryPath.BaseLibraryPath, pattern, cancellationToken);
+
+        if (result.Length <= FileResultCap)
+        {
+            return JsonSerializer.SerializeToNode(result)
+                   ?? throw new InvalidOperationException("Failed to serialize GlobFiles result");
+        }
+
+        var truncated = new JsonObject
+        {
+            ["files"] = JsonSerializer.SerializeToNode(result.Take(FileResultCap).ToArray()),
+            ["truncated"] = true,
+            ["total"] = result.Length,
+            ["message"] = $"Showing {FileResultCap} of {result.Length} matches. Use a more specific pattern to narrow results."
+        };
+        return truncated;
     }
 }

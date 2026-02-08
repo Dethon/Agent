@@ -20,6 +20,6 @@ public class McpGlobFilesTool(
         string pattern,
         CancellationToken cancellationToken)
     {
-        return ToolResponse.Create(await Run(pattern, cancellationToken));
+        return ToolResponse.Create(await Run(pattern, GlobMode.Files, cancellationToken));
     }
 }
