@@ -24,7 +24,7 @@ Detailed documentation in `docs/codebase/`:
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations |
 | `McpServer*` | MCP servers (Library, Text, WebSearch, Memory, Idealista, CommandRunner) |
-| `WebChat`/`.Client` | Blazor WebAssembly chat interface |
+| `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Tests` | Unit and integration tests |
 
 ## Key File Locations
@@ -39,25 +39,13 @@ Detailed documentation in `docs/codebase/`:
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
-## WebChat State
-
-Redux-like pattern in `WebChat.Client/State/`: Stores + Effects + HubEventDispatcher
-
 ## TDD
 
 Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
 
 ## LSP
 
-Prefer using the LSP tool over Grep/Glob for code navigation when possible:
-
-- **goToDefinition** to find where a type/method is defined instead of grepping for `class Foo`
-- **findReferences** to find all usages of a symbol instead of grepping for its name
-- **goToImplementation** to find concrete implementations of interfaces
-- **hover** to check type info and signatures without reading entire files
-- **incomingCalls/outgoingCalls** to trace call chains instead of manual searching
-
-Fall back to Grep/Glob when LSP is unavailable or for pattern-based searches (e.g. finding all TODO comments, searching config files, or matching across non-code files).
+Prefer LSP over Grep/Glob for code navigation. Fall back to Grep/Glob for pattern-based or non-code searches.
 
 ## Local Development
 
@@ -89,15 +77,6 @@ Services read secrets from .NET User Secrets mounted into containers at `/home/a
 
 Caddy (port 443, self-signed TLS) is the entry point. It routes `/hubs/*` to the agent's SignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the agent backend.
 
-| URL | Service |
-|-----|---------|
-| `https://localhost` | WebChat UI (via Caddy) |
-| `https://localhost/hubs/*` | Agent SignalR hub (via Caddy) |
-
 ### Debugging with Playwright
 
 When automating the WebChat with Playwright, use `ignoreHTTPSErrors: true` for the browser context since Caddy uses a self-signed certificate. You must select a user identity from the avatar picker in the header before sending messages, otherwise sends are silently rejected with a toast error.
-
-## NuGet
-
-The NuGet package cache may be in a non-standard location. Check the `NUGET_PACKAGES` environment variable to find the actual path before assuming `~/.nuget/packages`.
