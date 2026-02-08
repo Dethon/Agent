@@ -105,9 +105,13 @@ public class LocalFileSystemClient : IFileSystemClient
         CreateDestinationParentPath(trashPath);
 
         if (isFile)
+        {
             File.Move(path, trashPath);
+        }
         else
+        {
             Directory.Move(path, trashPath);
+        }
 
         return Task.FromResult(trashPath);
     }
