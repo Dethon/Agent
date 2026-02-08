@@ -60,7 +60,7 @@ public class LocalFileSystemClient : IFileSystemClient
         }
         else if (Directory.Exists(sourcePath))
         {
-            Directory.Move(sourcePath, destinationPath);
+            MoveDirectory(sourcePath, destinationPath);
         }
 
         return Task.CompletedTask;
@@ -110,7 +110,7 @@ public class LocalFileSystemClient : IFileSystemClient
         }
         else
         {
-            Directory.Move(path, trashPath);
+            MoveDirectory(path, trashPath);
         }
 
         return Task.FromResult(trashPath);
@@ -128,6 +128,36 @@ public class LocalFileSystemClient : IFileSystemClient
             .ToDictionary(
                 x => x.Key,
                 x => x.Where(y => !string.IsNullOrEmpty(y)).ToArray());
+    }
+
+    private static void MoveDirectory(string sourcePath, string destinationPath)
+    {
+        try
+        {
+            Directory.Move(sourcePath, destinationPath);
+        }
+        catch (IOException)
+        {
+            // Directory.Move fails with EXDEV across filesystem boundaries;
+            // fall back to recursive copy + delete
+            CopyDirectory(sourcePath, destinationPath);
+            Directory.Delete(sourcePath, true);
+        }
+    }
+
+    private static void CopyDirectory(string sourcePath, string destinationPath)
+    {
+        Directory.CreateDirectory(destinationPath);
+
+        foreach (var file in Directory.EnumerateFiles(sourcePath))
+        {
+            File.Copy(file, Path.Combine(destinationPath, Path.GetFileName(file)));
+        }
+
+        foreach (var dir in Directory.EnumerateDirectories(sourcePath))
+        {
+            CopyDirectory(dir, Path.Combine(destinationPath, Path.GetFileName(dir)));
+        }
     }
 
     private static void CreateDestinationParentPath(string destinationPath)
