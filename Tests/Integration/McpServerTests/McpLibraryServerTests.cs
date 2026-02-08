@@ -288,7 +288,8 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "GlobFiles",
             new Dictionary<string, object?>
             {
-                ["pattern"] = "GlobTest/**/*.mkv"
+                ["pattern"] = "GlobTest/**/*.mkv",
+                ["mode"] = "files"
             },
             cancellationToken: CancellationToken.None);
 
@@ -321,7 +322,8 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "GlobFiles",
             new Dictionary<string, object?>
             {
-                ["pattern"] = "GlobDeep/**/*.txt"
+                ["pattern"] = "GlobDeep/**/*.txt",
+                ["mode"] = "files"
             },
             cancellationToken: CancellationToken.None);
 
