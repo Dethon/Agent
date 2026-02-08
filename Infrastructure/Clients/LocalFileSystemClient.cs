@@ -23,6 +23,19 @@ public class LocalFileSystemClient : IFileSystemClient
         return Task.FromResult(result.ToArray());
     }
 
+    public Task<string[]> GlobDirectories(string basePath, string pattern, CancellationToken cancellationToken = default)
+    {
+        var matcher = new Matcher();
+        matcher.AddInclude(pattern);
+        var result = matcher.GetResultsInFullPath(basePath)
+            .Select(f => Path.GetDirectoryName(f)!)
+            .Where(d => d != basePath)
+            .Distinct()
+            .Order()
+            .ToArray();
+        return Task.FromResult(result);
+    }
+
     public Task Move(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(sourcePath) && !Directory.Exists(sourcePath))

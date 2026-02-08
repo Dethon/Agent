@@ -296,4 +296,87 @@ public class LocalFileSystemClientTests : IDisposable
         files.Length.ShouldBe(1);
         files[0].ShouldStartWith(_testDir);
     }
+
+    [Fact]
+    public async Task GlobDirectories_WithRecursivePattern_ReturnsDistinctDirectories()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        var subDir = Path.Combine(moviesDir, "action");
+        Directory.CreateDirectory(subDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(subDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "book.pdf"), "content");
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "other.mkv"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldContain(d => d.EndsWith("movies"));
+        dirs.ShouldContain(d => d.EndsWith("action"));
+        dirs.ShouldContain(d => d.EndsWith("books"));
+        dirs.Distinct().Count().ShouldBe(dirs.Length);
+    }
+
+    [Fact]
+    public async Task GlobDirectories_WithSpecificPattern_ReturnsOnlyMatchingDirectories()
+    {
+        // Arrange
+        var moviesDir = Path.Combine(_testDir, "movies");
+        var booksDir = Path.Combine(_testDir, "books");
+        Directory.CreateDirectory(moviesDir);
+        Directory.CreateDirectory(booksDir);
+        await File.WriteAllTextAsync(Path.Combine(moviesDir, "film.mkv"), "content");
+        await File.WriteAllTextAsync(Path.Combine(booksDir, "book.pdf"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "movies/**/*");
+
+        // Assert
+        dirs.Length.ShouldBe(1);
+        dirs[0].ShouldEndWith("movies");
+    }
+
+    [Fact]
+    public async Task GlobDirectories_WithNoMatches_ReturnsEmptyArray()
+    {
+        // Arrange
+        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "nonexistent/**/*");
+
+        // Assert
+        dirs.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GlobDirectories_ReturnsAbsolutePaths()
+    {
+        // Arrange
+        var subDir = Path.Combine(_testDir, "sub");
+        Directory.CreateDirectory(subDir);
+        await File.WriteAllTextAsync(Path.Combine(subDir, "file.txt"), "content");
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldAllBe(d => d.StartsWith(_testDir));
+    }
+
+    [Fact]
+    public async Task GlobDirectories_EmptyDirectory_ReturnsEmptyArray()
+    {
+        // Arrange
+        Directory.CreateDirectory(Path.Combine(_testDir, "empty"));
+
+        // Act
+        var dirs = await _client.GlobDirectories(_testDir, "**/*");
+
+        // Assert
+        dirs.ShouldBeEmpty();
+    }
 }
