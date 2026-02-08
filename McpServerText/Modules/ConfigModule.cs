@@ -49,7 +49,7 @@ public static class ConfigModule
             .WithTools<McpTextGlobFilesTool>()
             // File operations
             .WithTools<McpMoveTool>()
-            .WithTools<McpRemoveFileTool>()
+            .WithTools<McpRemoveTool>()
             // Text tools
             .WithTools<McpTextSearchTool>()
             .WithTools<McpTextReadTool>()

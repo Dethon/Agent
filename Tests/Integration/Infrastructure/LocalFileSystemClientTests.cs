@@ -183,14 +183,39 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task MoveToTrash_WithNonExistentFile_ThrowsFileNotFoundException()
+    public async Task MoveToTrash_WithNonExistentPath_ThrowsIOException()
     {
         // Arrange
         var nonExistentPath = Path.Combine(_testDir, "does-not-exist.txt");
 
         // Act & Assert
-        await Should.ThrowAsync<FileNotFoundException>(async () =>
+        await Should.ThrowAsync<IOException>(async () =>
             await _client.MoveToTrash(nonExistentPath));
+    }
+
+    [Fact]
+    public async Task MoveToTrash_WithDirectory_MovesDirectoryToTrash()
+    {
+        // Arrange
+        var dirPath = Path.Combine(_testDir, "to-trash-dir");
+        Directory.CreateDirectory(dirPath);
+        await File.WriteAllTextAsync(Path.Combine(dirPath, "file.txt"), "content");
+        var trashDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            LocalFileSystemClient.TrashFolderName);
+
+        // Act
+        var trashPath = await _client.MoveToTrash(dirPath);
+
+        // Assert
+        Directory.Exists(dirPath).ShouldBeFalse();
+        Directory.Exists(trashPath).ShouldBeTrue();
+        trashPath.ShouldStartWith(trashDir);
+        trashPath.ShouldContain("to-trash-dir");
+        File.Exists(Path.Combine(trashPath, "file.txt")).ShouldBeTrue();
+
+        // Cleanup
+        Directory.Delete(trashPath, true);
     }
 
     [Fact]

@@ -59,7 +59,7 @@ public static class KnowledgeBasePrompt
 
         **File Tools:**
         - `Move` - Move/rename files or directories (absolute paths from GlobFiles)
-        - `RemoveFile` - Remove a file (absolute path from GlobFiles)
+        - `Remove` - Remove a file or directory (absolute path from GlobFiles)
 
         ### Workflow Patterns
 

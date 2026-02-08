@@ -8,7 +8,7 @@ using Shouldly;
 
 namespace Tests.Unit.Domain;
 
-public class RemoveFileToolTests
+public class RemoveToolTests
 {
     private readonly Mock<IFileSystemClient> _fileSystemClientMock = new();
 
@@ -16,9 +16,9 @@ public class RemoveFileToolTests
         ? @"C:\media\library"
         : "/media/library";
 
-    private TestableRemoveFileTool CreateTool()
+    private TestableRemoveTool CreateTool()
     {
-        return new TestableRemoveFileTool(
+        return new TestableRemoveTool(
             _fileSystemClientMock.Object,
             new LibraryPathConfig(_libraryPath));
     }
@@ -43,7 +43,7 @@ public class RemoveFileToolTests
 
         // Assert
         result["status"]!.ToString().ShouldBe("success");
-        result["message"]!.ToString().ShouldBe("File moved to trash");
+        result["message"]!.ToString().ShouldBe("Moved to trash");
         result["originalPath"]!.ToString().ShouldBe(filePath);
         result["trashPath"]!.ToString().ShouldBe(trashPath);
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
@@ -140,10 +140,10 @@ public class RemoveFileToolTests
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    private class TestableRemoveFileTool(
+    private class TestableRemoveTool(
         IFileSystemClient client,
         LibraryPathConfig libraryPath)
-        : RemoveFileTool(client, libraryPath)
+        : RemoveTool(client, libraryPath)
     {
         public Task<JsonNode> TestRun(string path, CancellationToken ct)
         {
