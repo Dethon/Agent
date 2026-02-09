@@ -17,19 +17,23 @@
           rel="stylesheet"/>
 
     <link href="css/app.css" rel="stylesheet"/>
-    <link href="manifest.webmanifest" rel="manifest"/>
+    <link rel="manifest"/>
     <link href="favicon.svg" rel="icon" type="image/svg+xml"/>
 
-    <!-- Early theme initialization to prevent flash -->
+    <!-- Early theme initialization to prevent flash + per-space manifest -->
     <script>
         (function () {
-            let theme = localStorage.getItem('theme');
+            var theme = localStorage.getItem('theme');
             if (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
                 theme = 'dark';
             }
             if (theme) {
                 document.documentElement.setAttribute('data-theme', theme);
             }
+
+            var slug = location.pathname.split('/')[1] || '';
+            var manifestUrl = '/manifest.webmanifest' + (slug ? '?slug=' + encodeURIComponent(slug) : '');
+            document.querySelector('link[rel="manifest"]').href = manifestUrl;
         })();
     </script>
 </head>

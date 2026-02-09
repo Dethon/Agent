@@ -195,12 +195,20 @@ window.chatScroll = {
 // ===================================
 
 window.faviconHelper = {
+    _baseTitle: document.title,
+
     setColor: function (color) {
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50"><text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="${color}">ᓚᘏᗢ</text></svg>`;
         const link = document.querySelector('link[rel="icon"]');
         if (link) {
             link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
         }
+    },
+
+    setSpaceTitle: function (spaceName) {
+        document.title = spaceName
+            ? this._baseTitle + ' \u2014 ' + spaceName
+            : this._baseTitle;
     }
 };
 

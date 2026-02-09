@@ -27,7 +27,7 @@ public class SpaceStoreTests : IDisposable
     [Fact]
     public void SpaceValidated_UpdatesSlugAndAccentColor()
     {
-        _dispatcher.Dispatch(new SpaceValidated("secret-room", "#6366f1"));
+        _dispatcher.Dispatch(new SpaceValidated("secret-room", "Secret Room", "#6366f1"));
 
         _store.State.CurrentSlug.ShouldBe("secret-room");
         _store.State.AccentColor.ShouldBe("#6366f1");
@@ -36,7 +36,7 @@ public class SpaceStoreTests : IDisposable
     [Fact]
     public void InvalidSpace_ResetsToDefault()
     {
-        _dispatcher.Dispatch(new SpaceValidated("secret-room", "#6366f1"));
+        _dispatcher.Dispatch(new SpaceValidated("secret-room", "Secret Room", "#6366f1"));
         _dispatcher.Dispatch(new InvalidSpace());
 
         _store.State.CurrentSlug.ShouldBe("default");

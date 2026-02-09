@@ -83,19 +83,19 @@ public sealed class InitializationEffect : IDisposable
 
         // Join space
         var spaceSlug = _spaceStore.State.CurrentSlug;
-        var accentColor = await _topicService.JoinSpaceAsync(spaceSlug);
-        if (accentColor is not null)
+        var space = await _topicService.JoinSpaceAsync(spaceSlug);
+        if (space is not null)
         {
-            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, accentColor));
+            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
         }
         else
         {
             _dispatcher.Dispatch(new InvalidSpace());
             spaceSlug = _spaceStore.State.CurrentSlug;
-            accentColor = await _topicService.JoinSpaceAsync(spaceSlug);
-            if (accentColor is not null)
+            space = await _topicService.JoinSpaceAsync(spaceSlug);
+            if (space is not null)
             {
-                _dispatcher.Dispatch(new SpaceValidated(spaceSlug, accentColor));
+                _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
             }
         }
 

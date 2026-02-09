@@ -57,6 +57,7 @@
 @code {
     private bool _isDarkTheme;
     private string _accentColor = "#e94560";
+    private string _spaceName = "Main";
     private IDisposable? _spaceSubscription;
     private DotNetObjectReference<MainLayout>? _selfRef;
 
@@ -65,12 +66,24 @@
         ConnectionService.OnStateChanged += StateHasChanged;
         _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
         {
+            var changed = false;
             if (_accentColor != state.AccentColor)
             {
                 _accentColor = state.AccentColor;
+                changed = true;
+            }
+            if (_spaceName != state.SpaceName)
+            {
+                _spaceName = state.SpaceName;
+                changed = true;
+            }
+            if (changed)
+            {
                 InvokeAsync(async () =>
                 {
+                    var displayName = _spaceName == "Main" ? null : _spaceName;
                     await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
+                    await Js.InvokeVoidAsync("faviconHelper.setSpaceTitle", displayName);
                     StateHasChanged();
                 });
             }

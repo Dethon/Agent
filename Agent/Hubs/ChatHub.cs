@@ -98,7 +98,7 @@ public sealed class ChatHub(
         return await threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
     }
 
-    public async Task<string?> JoinSpace(string spaceSlug)
+    public async Task<SpaceConfig?> JoinSpace(string spaceSlug)
     {
         var spaces = configuration.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
         var space = spaces.FirstOrDefault(s => s.Slug == spaceSlug);
@@ -115,7 +115,7 @@ public sealed class ChatHub(
 
         Context.Items["SpaceSlug"] = spaceSlug;
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
-        return space.AccentColor;
+        return space;
     }
 
     private bool IsValidSpace(string slug)

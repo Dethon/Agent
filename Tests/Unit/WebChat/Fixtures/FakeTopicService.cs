@@ -28,9 +28,9 @@ public sealed class FakeTopicService : ITopicService
             _savedTopics.Where(t => t.AgentId == agentId).ToList());
     }
 
-    public Task<string?> JoinSpaceAsync(string spaceSlug)
+    public Task<SpaceConfig?> JoinSpaceAsync(string spaceSlug)
     {
-        return Task.FromResult<string?>(null);
+        return Task.FromResult<SpaceConfig?>(null);
     }
 
     public Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)

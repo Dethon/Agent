@@ -40,8 +40,8 @@ public sealed class SpaceEffect : IDisposable
             return;
         }
 
-        var accentColor = await _topicService.JoinSpaceAsync(slug);
-        if (accentColor is null)
+        var space = await _topicService.JoinSpaceAsync(slug);
+        if (space is null)
         {
             // If hub isn't connected yet, skip — InitializationEffect handles initial join
             if (!_connectionService.IsConnected)
@@ -59,7 +59,7 @@ public sealed class SpaceEffect : IDisposable
         // Clear topics and messages for space transition
         _dispatcher.Dispatch(new TopicsLoaded([]));
         _dispatcher.Dispatch(new ClearAllMessages());
-        _dispatcher.Dispatch(new SpaceValidated(slug, accentColor));
+        _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));
         _lastValidatedSlug = slug;
     }
 

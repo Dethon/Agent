@@ -575,8 +575,8 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             await connection2.InvokeAsync("RegisterUser", "test-user-2");
 
             // Join different spaces
-            await _connection.InvokeAsync<string?>("JoinSpace", "default");
-            await connection2.InvokeAsync<string?>("JoinSpace", "secret-room");
+            await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "default");
+            await connection2.InvokeAsync<SpaceConfig?>("JoinSpace", "secret-room");
 
             var defaultNotifications = new List<TopicChangedNotification>();
             var secretNotifications = new List<TopicChangedNotification>();
@@ -624,8 +624,8 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     public async Task FullSpaceWorkflow_CreateTopicsInDifferentSpaces_IsolatedCorrectly()
     {
         // Arrange - join default space
-        var accentColor = await _connection.InvokeAsync<string?>("JoinSpace", "default");
-        accentColor.ShouldNotBeNull();
+        var defaultSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "default");
+        defaultSpace.ShouldNotBeNull();
 
         // Create topic in default space
         var defaultTopic = new TopicMetadata(
@@ -634,9 +634,9 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         await _connection.InvokeAsync("SaveTopic", defaultTopic, true);
 
         // Switch to secret space
-        var secretColor = await _connection.InvokeAsync<string?>("JoinSpace", "secret-room");
-        secretColor.ShouldNotBeNull();
-        secretColor.ShouldNotBe(accentColor);
+        var secretSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "secret-room");
+        secretSpace.ShouldNotBeNull();
+        secretSpace.AccentColor.ShouldNotBe(defaultSpace.AccentColor);
 
         // Create topic in secret space
         var secretTopic = new TopicMetadata(
@@ -662,7 +662,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         invalidTopics.ShouldBeEmpty();
 
         // Assert - JoinSpace with invalid slug returns null
-        var invalidColor = await _connection.InvokeAsync<string?>("JoinSpace", "nonexistent");
-        invalidColor.ShouldBeNull();
+        var invalidSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "nonexistent");
+        invalidSpace.ShouldBeNull();
     }
 }
