@@ -21,6 +21,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
         : baseName;
     var themeColor = space?.AccentColor ?? "#1a1a2e";
 
+    var iconColor = Uri.EscapeDataString(space?.AccentColor ?? "#e94560");
     var manifest = new
     {
         name,
@@ -31,10 +32,21 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
         background_color = "#1a1a2e",
         theme_color = themeColor,
         prefer_related_applications = false,
-        icons = new[] { new { src = "/favicon.svg", sizes = "any", type = "image/svg+xml" } }
+        icons = new[] { new { src = $"/icon.svg?color={iconColor}", sizes = "any", type = "image/svg+xml" } }
     };
 
     return Results.Json(manifest, contentType: "application/manifest+json");
+});
+
+app.MapGet("/icon.svg", (string? color) =>
+{
+    var fill = color ?? "#e94560";
+    var svg = $"""
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50">
+            <text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="{fill}">ᓚᘏᗢ</text>
+        </svg>
+        """;
+    return Results.Text(svg, "image/svg+xml");
 });
 
 app.UseStaticFiles();
