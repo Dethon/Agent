@@ -43,10 +43,6 @@ Detailed documentation in `docs/codebase/`:
 
 Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
 
-## LSP
-
-Prefer LSP over Grep/Glob for code navigation. Fall back to Grep/Glob for pattern-based or non-code searches.
-
 ## Local Development
 
 ### Docker Compose files
