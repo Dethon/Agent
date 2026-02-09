@@ -88,6 +88,16 @@ public sealed class InitializationEffect : IDisposable
         {
             _dispatcher.Dispatch(new SpaceValidated(spaceSlug, accentColor));
         }
+        else
+        {
+            _dispatcher.Dispatch(new InvalidSpace());
+            spaceSlug = _spaceStore.State.CurrentSlug;
+            accentColor = await _topicService.JoinSpaceAsync(spaceSlug);
+            if (accentColor is not null)
+            {
+                _dispatcher.Dispatch(new SpaceValidated(spaceSlug, accentColor));
+            }
+        }
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();

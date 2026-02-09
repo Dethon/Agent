@@ -12,6 +12,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IChatConnectionService _connectionService;
     private readonly NavigationManager _navigationManager;
+    private string _lastValidatedSlug = "default";
 
     public SpaceEffect(
         Dispatcher dispatcher,
@@ -34,6 +35,11 @@ public sealed class SpaceEffect : IDisposable
 
     private async Task HandleSelectSpaceAsync(string slug)
     {
+        if (slug == _lastValidatedSlug)
+        {
+            return;
+        }
+
         var accentColor = await _topicService.JoinSpaceAsync(slug);
         if (accentColor is null)
         {
@@ -45,6 +51,7 @@ public sealed class SpaceEffect : IDisposable
 
             // Hub is connected but space is invalid — redirect to default
             _dispatcher.Dispatch(new InvalidSpace());
+            _lastValidatedSlug = "default";
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
@@ -53,6 +60,7 @@ public sealed class SpaceEffect : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded([]));
         _dispatcher.Dispatch(new ClearAllMessages());
         _dispatcher.Dispatch(new SpaceValidated(slug, accentColor));
+        _lastValidatedSlug = slug;
     }
 
     public void Dispose()
