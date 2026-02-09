@@ -241,4 +241,86 @@ public sealed class WebChatMessengerClientTests : IDisposable
                 s.TopicId == "existing-topic-123"),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public void GetSpaceSlug_ReturnsSlugFromSession()
+    {
+        _sessionManager.StartSession("topic-1", "agent-1", 100, 200, spaceSlug: "secret");
+
+        _sessionManager.GetSpaceSlug("topic-1").ShouldBe("secret");
+    }
+
+    [Fact]
+    public void GetSpaceSlug_ReturnsNull_WhenNoSession()
+    {
+        _sessionManager.GetSpaceSlug("nonexistent").ShouldBeNull();
+    }
+
+    [Fact]
+    public void GetSpaceSlug_ReturnsNull_WhenSessionHasNoSlug()
+    {
+        _sessionManager.StartSession("topic-1", "agent-1", 100, 200);
+
+        _sessionManager.GetSpaceSlug("topic-1").ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task CreateTopicIfNeededAsync_IncludesSpaceSlugInStreamStartedNotification()
+    {
+        _sessionManager.StartSession("pre-topic", "test-agent", 500, 600, spaceSlug: "secret");
+
+        var existingTopic = new TopicMetadata(
+            TopicId: "pre-topic",
+            ChatId: 500,
+            ThreadId: 600,
+            AgentId: "test-agent",
+            Name: "Existing topic",
+            CreatedAt: DateTimeOffset.UtcNow,
+            LastMessageAt: null);
+
+        _threadStateStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync(
+                "test-agent", 500, 600, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingTopic);
+
+        _hubNotifier.Setup(n => n.NotifyTopicChangedAsync(
+                It.IsAny<TopicChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        _hubNotifier.Setup(n => n.NotifyStreamChangedAsync(
+                It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        await _client.CreateTopicIfNeededAsync(
+            MessageSource.ServiceBus,
+            chatId: 500,
+            threadId: 600,
+            agentId: "test-agent",
+            topicName: "Test message");
+
+        _hubNotifier.Verify(n => n.NotifyStreamChangedAsync(
+            It.Is<StreamChangedNotification>(s =>
+                s.ChangeType == StreamChangeType.Started &&
+                s.TopicId == "pre-topic" &&
+                s.SpaceSlug == "secret"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task StartScheduledStreamAsync_IncludesSpaceSlugInStreamStartedNotification()
+    {
+        _sessionManager.StartSession("sched-topic", "test-agent", 700, 800, spaceSlug: "private");
+        _hubNotifier.Setup(n => n.NotifyStreamChangedAsync(
+                It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var agentKey = new AgentKey(700, 800, "test-agent");
+        await _client.StartScheduledStreamAsync(agentKey, MessageSource.WebUi);
+
+        _hubNotifier.Verify(n => n.NotifyStreamChangedAsync(
+            It.Is<StreamChangedNotification>(s =>
+                s.ChangeType == StreamChangeType.Started &&
+                s.TopicId == "sched-topic" &&
+                s.SpaceSlug == "private"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

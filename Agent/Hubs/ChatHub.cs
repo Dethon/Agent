@@ -55,7 +55,8 @@ public sealed class ChatHub(
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId);
+        var spaceSlug = Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
+        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId, spaceSlug);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)

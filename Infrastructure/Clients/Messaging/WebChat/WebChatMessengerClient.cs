@@ -64,7 +64,7 @@ public sealed class WebChatMessengerClient(
                         if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
                         {
                             var message = new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId };
-                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId);
+                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: sessionManager.GetSpaceSlug(topicId));
 
                             await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
                             streamManager.CompleteStream(topicId);
@@ -111,7 +111,7 @@ public sealed class WebChatMessengerClient(
                     streamManager.CompleteStream(topicId);
 
                     await hubNotifier.NotifyStreamChangedAsync(
-                            new StreamChangedNotification(StreamChangeType.Completed, topicId),
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)),
                             CancellationToken.None)
                         .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
                 }
@@ -182,8 +182,9 @@ public sealed class WebChatMessengerClient(
 
             if (existingTopic is not null)
             {
+                var existingSlug = sessionManager.GetSpaceSlug(existingTopic.TopicId);
                 sessionManager.StartSession(existingTopic.TopicId, existingTopic.AgentId,
-                    existingTopic.ChatId, existingTopic.ThreadId);
+                    existingTopic.ChatId, existingTopic.ThreadId, existingSlug);
                 topicId = existingTopic.TopicId;
                 actualChatId = existingTopic.ChatId;
                 actualThreadId = existingTopic.ThreadId;
@@ -224,7 +225,7 @@ public sealed class WebChatMessengerClient(
         {
             streamManager.TryIncrementPending(topicId);
             await hubNotifier.NotifyStreamChangedAsync(
-                    new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+                    new StreamChangedNotification(StreamChangeType.Started, topicId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)), ct)
                 .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
         }
 
@@ -249,13 +250,13 @@ public sealed class WebChatMessengerClient(
         streamManager.TryIncrementPending(topicId);
 
         await hubNotifier.NotifyStreamChangedAsync(
-                new StreamChangedNotification(StreamChangeType.Started, topicId), ct)
+                new StreamChangedNotification(StreamChangeType.Started, topicId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)), ct)
             .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
     }
 
-    public bool StartSession(string topicId, string agentId, long chatId, long threadId)
+    public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null)
     {
-        return sessionManager.StartSession(topicId, agentId, chatId, threadId);
+        return sessionManager.StartSession(topicId, agentId, chatId, threadId, spaceSlug);
     }
 
     public bool TryGetSession(string topicId, out WebChatSession? session)
@@ -315,7 +316,7 @@ public sealed class WebChatMessengerClient(
         if (isNewStream)
         {
             await hubNotifier.NotifyStreamChangedAsync(
-                    new StreamChangedNotification(StreamChangeType.Started, topicId), cancellationToken)
+                    new StreamChangedNotification(StreamChangeType.Started, topicId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)), cancellationToken)
                 .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
         }
 

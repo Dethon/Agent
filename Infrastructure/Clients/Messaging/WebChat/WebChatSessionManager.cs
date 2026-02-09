@@ -7,12 +7,17 @@ public sealed class WebChatSessionManager
     private readonly ConcurrentDictionary<string, WebChatSession> _sessions = new();
     private readonly ConcurrentDictionary<long, string> _chatToTopic = new();
 
-    public bool StartSession(string topicId, string agentId, long chatId, long threadId)
+    public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null)
     {
-        var session = new WebChatSession(agentId, chatId, threadId);
+        var session = new WebChatSession(agentId, chatId, threadId, spaceSlug);
         _sessions[topicId] = session;
         _chatToTopic[chatId] = topicId;
         return true;
+    }
+
+    public string? GetSpaceSlug(string topicId)
+    {
+        return _sessions.TryGetValue(topicId, out var session) ? session.SpaceSlug : null;
     }
 
     public bool TryGetSession(string topicId, out WebChatSession? session)
