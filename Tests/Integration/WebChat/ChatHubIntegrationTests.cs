@@ -542,7 +542,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         // Arrange - save topics in different spaces
         var topicDefault = new TopicMetadata(
             "topic-default", 100L, 100L, "test-agent", "Default Topic",
-            DateTimeOffset.UtcNow, null, null, "default");
+            DateTimeOffset.UtcNow, null);
         var topicSecret = new TopicMetadata(
             "topic-secret", 200L, 200L, "test-agent", "Secret Topic",
             DateTimeOffset.UtcNow, null, null, "secret-room");
@@ -587,7 +587,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             // Act - save a topic in default space (triggers notification)
             var topic = new TopicMetadata(
                 "topic-notif", 400L, 400L, "test-agent", "Notif Topic",
-                DateTimeOffset.UtcNow, null, null, "default");
+                DateTimeOffset.UtcNow, null);
             await _connection.InvokeAsync("SaveTopic", topic, true);
 
             // Wait for notifications
@@ -609,7 +609,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         // Arrange - save a topic
         var topic = new TopicMetadata(
             "topic-valid", 300L, 300L, "test-agent", "Valid Topic",
-            DateTimeOffset.UtcNow, null, null, "default");
+            DateTimeOffset.UtcNow, null);
         await _connection.InvokeAsync("SaveTopic", topic, true);
 
         // Act
@@ -630,7 +630,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         // Create topic in default space
         var defaultTopic = new TopicMetadata(
             "e2e-default", 500L, 500L, "test-agent", "Default E2E",
-            DateTimeOffset.UtcNow, null, null, "default");
+            DateTimeOffset.UtcNow, null);
         await _connection.InvokeAsync("SaveTopic", defaultTopic, true);
 
         // Switch to secret space

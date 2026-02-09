@@ -8,7 +8,6 @@ using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Agent.Hubs;
