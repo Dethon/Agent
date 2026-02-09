@@ -619,4 +619,50 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         // Assert
         topics.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task FullSpaceWorkflow_CreateTopicsInDifferentSpaces_IsolatedCorrectly()
+    {
+        // Arrange - join default space
+        var accentColor = await _connection.InvokeAsync<string?>("JoinSpace", "default");
+        accentColor.ShouldNotBeNull();
+
+        // Create topic in default space
+        var defaultTopic = new TopicMetadata(
+            "e2e-default", 500L, 500L, "test-agent", "Default E2E",
+            DateTimeOffset.UtcNow, null, null, "default");
+        await _connection.InvokeAsync("SaveTopic", defaultTopic, true);
+
+        // Switch to secret space
+        var secretColor = await _connection.InvokeAsync<string?>("JoinSpace", "secret-room");
+        secretColor.ShouldNotBeNull();
+        secretColor.ShouldNotBe(accentColor);
+
+        // Create topic in secret space
+        var secretTopic = new TopicMetadata(
+            "e2e-secret", 600L, 600L, "test-agent", "Secret E2E",
+            DateTimeOffset.UtcNow, null, null, "secret-room");
+        await _connection.InvokeAsync("SaveTopic", secretTopic, true);
+
+        // Act - query both spaces
+        var defaultTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "default");
+        var secretTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "secret-room");
+
+        // Assert - topics are isolated
+        defaultTopics.ShouldContain(t => t.TopicId == "e2e-default");
+        defaultTopics.ShouldNotContain(t => t.TopicId == "e2e-secret");
+        secretTopics.ShouldContain(t => t.TopicId == "e2e-secret");
+        secretTopics.ShouldNotContain(t => t.TopicId == "e2e-default");
+
+        // Assert - invalid space returns empty
+        var invalidTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "nonexistent");
+        invalidTopics.ShouldBeEmpty();
+
+        // Assert - JoinSpace with invalid slug returns null
+        var invalidColor = await _connection.InvokeAsync<string?>("JoinSpace", "nonexistent");
+        invalidColor.ShouldBeNull();
+    }
 }
