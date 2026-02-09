@@ -2,6 +2,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 
@@ -16,6 +17,7 @@ public sealed class AgentSelectionEffect : IDisposable
     private readonly ITopicService _topicService;
     private readonly IStreamResumeService _streamResumeService;
     private readonly StreamingStore _streamingStore;
+    private readonly SpaceStore _spaceStore;
     private string? _previousAgentId;
 
     public AgentSelectionEffect(
@@ -25,7 +27,8 @@ public sealed class AgentSelectionEffect : IDisposable
         ILocalStorageService localStorage,
         ITopicService topicService,
         IStreamResumeService streamResumeService,
-        StreamingStore streamingStore)
+        StreamingStore streamingStore,
+        SpaceStore spaceStore)
     {
         _dispatcher = dispatcher;
         _sessionService = sessionService;
@@ -33,6 +36,7 @@ public sealed class AgentSelectionEffect : IDisposable
         _topicService = topicService;
         _streamResumeService = streamResumeService;
         _streamingStore = streamingStore;
+        _spaceStore = spaceStore;
 
         // Subscribe to store to detect agent changes
         _subscription = topicsStore.StateObservable.Subscribe(HandleStateChange);
@@ -59,7 +63,8 @@ public sealed class AgentSelectionEffect : IDisposable
             return;
         }
 
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentId);
+        var spaceSlug = _spaceStore.State.CurrentSlug;
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 

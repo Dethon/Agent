@@ -3,6 +3,7 @@ using WebChat.Client.Models;
 using WebChat.Client.Services.Utilities;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -20,6 +21,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IChatMessagingService _messagingService;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly IMessagePipeline _pipeline;
+    private readonly SpaceStore _spaceStore;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -30,7 +32,8 @@ public sealed class SendMessageEffect : IDisposable
         ITopicService topicService,
         IChatMessagingService messagingService,
         UserIdentityStore userIdentityStore,
-        IMessagePipeline pipeline)
+        IMessagePipeline pipeline,
+        SpaceStore spaceStore)
     {
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
@@ -41,6 +44,7 @@ public sealed class SendMessageEffect : IDisposable
         _messagingService = messagingService;
         _userIdentityStore = userIdentityStore;
         _pipeline = pipeline;
+        _spaceStore = spaceStore;
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
@@ -79,7 +83,8 @@ public sealed class SendMessageEffect : IDisposable
                 ThreadId = TopicIdGenerator.GetThreadIdForTopic(topicId),
                 AgentId = state.SelectedAgentId!,
                 Name = topicName,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                SpaceSlug = _spaceStore.State.CurrentSlug
             };
 
             var success = await _sessionService.StartSessionAsync(topic);

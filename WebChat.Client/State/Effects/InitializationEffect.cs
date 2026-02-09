@@ -3,6 +3,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -21,6 +22,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly IMessagePipeline _pipeline;
+    private readonly SpaceStore _spaceStore;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -33,7 +35,8 @@ public sealed class InitializationEffect : IDisposable
         UserIdentityStore userIdentityStore,
         TopicsStore topicsStore,
         MessagesStore messagesStore,
-        IMessagePipeline pipeline)
+        IMessagePipeline pipeline,
+        SpaceStore spaceStore)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
@@ -46,6 +49,7 @@ public sealed class InitializationEffect : IDisposable
         _topicsStore = topicsStore;
         _messagesStore = messagesStore;
         _pipeline = pipeline;
+        _spaceStore = spaceStore;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
         dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
@@ -71,7 +75,19 @@ public sealed class InitializationEffect : IDisposable
         await RegisterUserAsync();
 
         // Re-register user on reconnection
-        _connectionService.OnReconnected += async () => await RegisterUserAsync();
+        _connectionService.OnReconnected += async () =>
+        {
+            await RegisterUserAsync();
+            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+        };
+
+        // Join space
+        var spaceSlug = _spaceStore.State.CurrentSlug;
+        var accentColor = await _topicService.JoinSpaceAsync(spaceSlug);
+        if (accentColor is not null)
+        {
+            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, accentColor));
+        }
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
@@ -93,7 +109,7 @@ public sealed class InitializationEffect : IDisposable
         }
 
         // Load topics for selected agent
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id);
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
@@ -143,7 +159,8 @@ public sealed class InitializationEffect : IDisposable
                 Name = topic.Name,
                 CreatedAt = topic.CreatedAt,
                 LastMessageAt = topic.LastMessageAt,
-                LastReadMessageId = lastMessageId
+                LastReadMessageId = lastMessageId,
+                SpaceSlug = topic.SpaceSlug
             };
             _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
             await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());
