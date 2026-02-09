@@ -1,13 +1,18 @@
 @inherits LayoutComponentBase
 @using WebChat.Client.Contracts
+@using WebChat.Client.State.Space
 @implements IDisposable
 @inject IChatConnectionService ConnectionService
 @inject IJSRuntime Js
+@inject SpaceStore SpaceStore
 
 <div class="main-layout">
     <header class="header">
         <div class="header-title">
-            <img src="cat-logo.svg" alt="Agent" class="header-logo"/>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50" class="header-logo">
+                <text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40"
+                      fill="@_accentColor">ᓚᘏᗢ</text>
+            </svg>
         </div>
         <div class="header-right">
             <div class="connection-status">
@@ -52,11 +57,21 @@
 
 @code {
     private bool _isDarkTheme;
+    private string _accentColor = "#e94560";
+    private IDisposable? _spaceSubscription;
     private DotNetObjectReference<MainLayout>? _selfRef;
 
     protected override Task OnInitializedAsync()
     {
         ConnectionService.OnStateChanged += StateHasChanged;
+        _spaceSubscription = SpaceStore.StateObservable.Subscribe(state =>
+        {
+            if (_accentColor != state.AccentColor)
+            {
+                _accentColor = state.AccentColor;
+                InvokeAsync(StateHasChanged);
+            }
+        });
         return Task.CompletedTask;
     }
 
@@ -89,6 +104,7 @@
     public void Dispose()
     {
         ConnectionService.OnStateChanged -= StateHasChanged;
+        _spaceSubscription?.Dispose();
         _selfRef?.Dispose();
     }
 }
