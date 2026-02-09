@@ -68,7 +68,11 @@
             if (_accentColor != state.AccentColor)
             {
                 _accentColor = state.AccentColor;
-                InvokeAsync(StateHasChanged);
+                InvokeAsync(async () =>
+                {
+                    await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
+                    StateHasChanged();
+                });
             }
         });
         return Task.CompletedTask;
