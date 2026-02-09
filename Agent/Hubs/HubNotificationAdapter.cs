@@ -9,4 +9,9 @@ public sealed class HubNotificationAdapter(IHubContext<ChatHub> hubContext) : IH
     {
         await hubContext.Clients.All.SendAsync(methodName, notification, cancellationToken);
     }
+
+    public async Task SendToGroupAsync(string groupName, string methodName, object notification, CancellationToken cancellationToken = default)
+    {
+        await hubContext.Clients.Group(groupName).SendAsync(methodName, notification, cancellationToken);
+    }
 }

@@ -17,11 +17,13 @@ public enum StreamChangeType
 public record TopicChangedNotification(
     TopicChangeType ChangeType,
     string TopicId,
-    TopicMetadata? Topic = null);
+    TopicMetadata? Topic = null,
+    string? SpaceSlug = null);
 
 public record StreamChangedNotification(
     StreamChangeType ChangeType,
-    string TopicId);
+    string TopicId,
+    string? SpaceSlug = null);
 
 public record ApprovalResolvedNotification(
     string TopicId,

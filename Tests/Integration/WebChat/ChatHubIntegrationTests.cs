@@ -564,6 +564,46 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     }
 
     [Fact]
+    public async Task TopicNotification_OnlyReceivedByConnectionInSameSpace()
+    {
+        // Arrange - two connections in different spaces
+        var connection2 = fixture.CreateHubConnection();
+        await connection2.StartAsync();
+
+        try
+        {
+            await connection2.InvokeAsync("RegisterUser", "test-user-2");
+
+            // Join different spaces
+            await _connection.InvokeAsync<string?>("JoinSpace", "default");
+            await connection2.InvokeAsync<string?>("JoinSpace", "secret-room");
+
+            var defaultNotifications = new List<TopicChangedNotification>();
+            var secretNotifications = new List<TopicChangedNotification>();
+
+            _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
+            connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
+
+            // Act - save a topic in default space (triggers notification)
+            var topic = new TopicMetadata(
+                "topic-notif", 400L, 400L, "test-agent", "Notif Topic",
+                DateTimeOffset.UtcNow, null, null, "default");
+            await _connection.InvokeAsync("SaveTopic", topic, true);
+
+            // Wait for notifications
+            await Task.Delay(500);
+
+            // Assert
+            defaultNotifications.ShouldContain(n => n.TopicId == "topic-notif");
+            secretNotifications.ShouldNotContain(n => n.TopicId == "topic-notif");
+        }
+        finally
+        {
+            await connection2.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task GetAllTopics_WithInvalidSpace_ReturnsEmpty()
     {
         // Arrange - save a topic

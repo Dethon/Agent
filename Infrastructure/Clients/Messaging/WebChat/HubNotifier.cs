@@ -9,14 +9,29 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         TopicChangedNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnTopicChanged", notification, cancellationToken);
+        var spaceSlug = notification.SpaceSlug ?? notification.Topic?.SpaceSlug;
+        if (spaceSlug is not null)
+        {
+            await sender.SendToGroupAsync($"space:{spaceSlug}", "OnTopicChanged", notification, cancellationToken);
+        }
+        else
+        {
+            await sender.SendAsync("OnTopicChanged", notification, cancellationToken);
+        }
     }
 
     public async Task NotifyStreamChangedAsync(
         StreamChangedNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnStreamChanged", notification, cancellationToken);
+        if (notification.SpaceSlug is not null)
+        {
+            await sender.SendToGroupAsync($"space:{notification.SpaceSlug}", "OnStreamChanged", notification, cancellationToken);
+        }
+        else
+        {
+            await sender.SendAsync("OnStreamChanged", notification, cancellationToken);
+        }
     }
 
     public async Task NotifyApprovalResolvedAsync(
