@@ -8,7 +8,7 @@ public sealed class HubConnectionTopicService(HubConnection connection) : ITopic
 {
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
     {
-        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId);
+        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, "default");
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)

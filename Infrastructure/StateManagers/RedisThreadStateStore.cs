@@ -32,7 +32,7 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         await _db.StringSetAsync(key, json, expiration);
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
     {
         var topics = new List<TopicMetadata>();
 
@@ -51,7 +51,11 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
             }
         }
 
-        return topics.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt).ToList();
+        var filtered = spaceSlug is not null
+            ? topics.Where(t => t.SpaceSlug == spaceSlug)
+            : topics;
+
+        return filtered.OrderByDescending(t => t.LastMessageAt ?? t.CreatedAt).ToList();
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic)

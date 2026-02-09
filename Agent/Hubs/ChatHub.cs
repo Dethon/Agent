@@ -8,6 +8,7 @@ using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Agent.Hubs;
@@ -18,7 +19,8 @@ public sealed class ChatHub(
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
-    INotifier hubNotifier) : Hub
+    INotifier hubNotifier,
+    IConfiguration configuration) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
@@ -78,9 +80,34 @@ public sealed class ChatHub(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId)
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        return await threadStateStore.GetAllTopicsAsync(agentId);
+        if (!IsValidSpace(spaceSlug))
+        {
+            return [];
+        }
+
+        Context.Items["SpaceSlug"] = spaceSlug;
+        return await threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
+    }
+
+    public string? JoinSpace(string spaceSlug)
+    {
+        var spaces = configuration.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
+        var space = spaces.FirstOrDefault(s => s.Slug == spaceSlug);
+        if (space is null)
+        {
+            return null;
+        }
+
+        Context.Items["SpaceSlug"] = spaceSlug;
+        return space.AccentColor;
+    }
+
+    private bool IsValidSpace(string slug)
+    {
+        var spaces = configuration.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
+        return spaces.Any(s => s.Slug == slug);
     }
 
     public bool IsProcessing(string topicId)

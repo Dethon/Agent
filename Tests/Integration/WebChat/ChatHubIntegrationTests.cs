@@ -535,4 +535,48 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             .ToList();
         bufferedReasoningMessages.ShouldNotBeEmpty("Buffer should contain reasoning messages");
     }
+
+    [Fact]
+    public async Task GetAllTopics_WithSpaceSlug_ReturnsOnlyTopicsInThatSpace()
+    {
+        // Arrange - save topics in different spaces
+        var topicDefault = new TopicMetadata(
+            "topic-default", 100L, 100L, "test-agent", "Default Topic",
+            DateTimeOffset.UtcNow, null, null, "default");
+        var topicSecret = new TopicMetadata(
+            "topic-secret", 200L, 200L, "test-agent", "Secret Topic",
+            DateTimeOffset.UtcNow, null, null, "secret-room");
+
+        await _connection.InvokeAsync("SaveTopic", topicDefault, true);
+        await _connection.InvokeAsync("SaveTopic", topicSecret, true);
+
+        // Act
+        var defaultTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "default");
+        var secretTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "secret-room");
+
+        // Assert
+        defaultTopics.ShouldContain(t => t.TopicId == "topic-default");
+        defaultTopics.ShouldNotContain(t => t.TopicId == "topic-secret");
+        secretTopics.ShouldContain(t => t.TopicId == "topic-secret");
+        secretTopics.ShouldNotContain(t => t.TopicId == "topic-default");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_WithInvalidSpace_ReturnsEmpty()
+    {
+        // Arrange - save a topic
+        var topic = new TopicMetadata(
+            "topic-valid", 300L, 300L, "test-agent", "Valid Topic",
+            DateTimeOffset.UtcNow, null, null, "default");
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+
+        // Act
+        var topics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "nonexistent-space");
+
+        // Assert
+        topics.ShouldBeEmpty();
+    }
 }

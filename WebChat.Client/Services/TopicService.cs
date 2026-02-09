@@ -14,7 +14,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             return [];
         }
 
-        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId);
+        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, "default");
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
