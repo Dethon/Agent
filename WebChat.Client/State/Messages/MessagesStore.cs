@@ -23,6 +23,9 @@ public sealed class MessagesStore : IDisposable
 
         dispatcher.RegisterHandler<ClearMessages>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
+
+        dispatcher.RegisterHandler<ClearAllMessages>(action =>
+            _store.Dispatch(action, MessagesReducers.Reduce));
     }
 
 
