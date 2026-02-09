@@ -56,5 +56,6 @@ _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();
+_ = app.Services.GetRequiredService<SpaceEffect>();
 
 await app.RunAsync();

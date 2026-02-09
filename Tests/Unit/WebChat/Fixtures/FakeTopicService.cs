@@ -22,10 +22,15 @@ public sealed class FakeTopicService : ITopicService
     public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
     public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
 
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
         return Task.FromResult<IReadOnlyList<TopicMetadata>>(
             _savedTopics.Where(t => t.AgentId == agentId).ToList());
+    }
+
+    public Task<string?> JoinSpaceAsync(string spaceSlug)
+    {
+        return Task.FromResult<string?>(null);
     }
 
     public Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
