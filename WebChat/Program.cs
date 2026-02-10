@@ -28,6 +28,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
         short_name = space?.Name ?? "Agent",
         start_url = startUrl,
         id = startUrl,
+        scope = startUrl,
         display = "standalone",
         background_color = "#1a1a2e",
         theme_color = themeColor,
