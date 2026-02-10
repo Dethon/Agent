@@ -41,7 +41,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
 
 app.MapGet("/icon.svg", (string? color) =>
 {
-    var fill = color ?? "#e94560";
+    var fill = IsValidHexColor(color) ? color! : "#e94560";
     var svg = $"""
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50">
             <text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="{fill}">ᓚᘏᗢ</text>
@@ -49,6 +49,9 @@ app.MapGet("/icon.svg", (string? color) =>
         """;
     return Results.Text(svg, "image/svg+xml");
 });
+
+static bool IsValidHexColor(string? color) =>
+    color is not null && System.Text.RegularExpressions.Regex.IsMatch(color, @"^#[0-9a-fA-F]{3,8}$");
 
 app.UseStaticFiles();
 

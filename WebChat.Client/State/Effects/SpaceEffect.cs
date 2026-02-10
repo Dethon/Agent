@@ -14,20 +14,22 @@ public sealed class SpaceEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly ConfigService _configService;
     private readonly NavigationManager _navigationManager;
-    private string _lastValidatedSlug = "default";
+    private readonly SpaceStore _spaceStore;
 
     public SpaceEffect(
         Dispatcher dispatcher,
         ITopicService topicService,
         IChatConnectionService connectionService,
         ConfigService configService,
-        NavigationManager navigationManager)
+        NavigationManager navigationManager,
+        SpaceStore spaceStore)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
         _connectionService = connectionService;
         _configService = configService;
         _navigationManager = navigationManager;
+        _spaceStore = spaceStore;
 
         dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
     }
@@ -39,7 +41,7 @@ public sealed class SpaceEffect : IDisposable
 
     private async Task HandleSelectSpaceAsync(string slug)
     {
-        if (slug == _lastValidatedSlug)
+        if (slug == _spaceStore.State.CurrentSlug)
         {
             return;
         }
@@ -55,7 +57,6 @@ public sealed class SpaceEffect : IDisposable
 
             // Space is invalid — redirect to default
             _dispatcher.Dispatch(new InvalidSpace());
-            _lastValidatedSlug = "default";
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
@@ -67,7 +68,6 @@ public sealed class SpaceEffect : IDisposable
         _dispatcher.Dispatch(new TopicsLoaded([]));
         _dispatcher.Dispatch(new ClearAllMessages());
         _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));
-        _lastValidatedSlug = slug;
     }
 
     public void Dispose()

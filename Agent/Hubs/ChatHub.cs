@@ -81,20 +81,17 @@ public sealed class ChatHub(
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        // Leave previous space group if any
-        if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug && prevSlug != spaceSlug)
-        {
-            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"space:{prevSlug}");
-        }
-
-        Context.Items["SpaceSlug"] = spaceSlug;
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
+        await SwitchSpaceGroupAsync(spaceSlug);
         return await threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
     }
 
     public async Task JoinSpace(string spaceSlug)
     {
-        // Leave previous space group if any
+        await SwitchSpaceGroupAsync(spaceSlug);
+    }
+
+    private async Task SwitchSpaceGroupAsync(string spaceSlug)
+    {
         if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug && prevSlug != spaceSlug)
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"space:{prevSlug}");

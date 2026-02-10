@@ -621,6 +621,46 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     }
 
     [Fact]
+    public async Task SaveTopic_WithSpaceSlug_NotifiesOnlyConnectionsInThatSpace()
+    {
+        // Arrange - two connections in different spaces
+        var connection2 = fixture.CreateHubConnection();
+        await connection2.StartAsync();
+
+        try
+        {
+            await connection2.InvokeAsync("RegisterUser", "test-user-2");
+
+            // Join different spaces
+            await _connection.InvokeAsync("JoinSpace", "default");
+            await connection2.InvokeAsync("JoinSpace", "secret-room");
+
+            var defaultNotifications = new List<TopicChangedNotification>();
+            var secretNotifications = new List<TopicChangedNotification>();
+
+            _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
+            connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
+
+            // Act - save a topic explicitly in secret-room space
+            var topic = new TopicMetadata(
+                "topic-secret-notif", 700L, 700L, "test-agent", "Secret Notif Topic",
+                DateTimeOffset.UtcNow, null, null, "secret-room");
+            await _connection.InvokeAsync("SaveTopic", topic, true);
+
+            // Wait for notifications
+            await Task.Delay(500);
+
+            // Assert - only the connection in secret-room receives the notification
+            secretNotifications.ShouldContain(n => n.TopicId == "topic-secret-notif");
+            defaultNotifications.ShouldNotContain(n => n.TopicId == "topic-secret-notif");
+        }
+        finally
+        {
+            await connection2.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task FullSpaceWorkflow_CreateTopicsInDifferentSpaces_IsolatedCorrectly()
     {
         // Arrange - join default space

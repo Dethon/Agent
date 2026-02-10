@@ -25,7 +25,7 @@ public sealed class FakeTopicService : ITopicService
     public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
         return Task.FromResult<IReadOnlyList<TopicMetadata>>(
-            _savedTopics.Where(t => t.AgentId == agentId).ToList());
+            _savedTopics.Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug).ToList());
     }
 
     public Task JoinSpaceAsync(string spaceSlug)
