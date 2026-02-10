@@ -5,264 +5,265 @@
 ## Language and Framework
 
 - **Language**: C# 14 on .NET 10 LTS
-- **Nullable**: Enable nullable reference types in all projects
-- **Implicit Usings**: Enabled across all projects
-- **Namespace Style**: File-scoped namespaces (`namespace Foo;`)
+- **Nullable reference types**: Always enabled (`<Nullable>enable</Nullable>`)
+- **Implicit usings**: Always enabled (`<ImplicitUsings>enable</ImplicitUsings>`)
 
 ## Naming Conventions
 
-### Variables and Functions
+### Classes and Types
+- **Style**: PascalCase
+- **Examples**: `ChatThreadResolver`, `McpAgent`, `WebChatStreamManager`
+- **Interfaces**: Prefix with `I` -- `IChatMessengerClient`, `IScheduleStore`, `IToolApprovalHandler`
+- **Records**: PascalCase, same as classes -- `ChatPrompt`, `AiResponse`, `SpaceState`
 
-- **Local variables / parameters**: camelCase
-- **Private fields**: `_camelCase` (underscore-prefixed camelCase)
-- **Public fields**: PascalCase
-- **Methods / Properties**: PascalCase
-- **Examples**: `_server`, `userId`, `SearchAsync`, `ConnectionString`
+### Methods and Properties
+- **Style**: PascalCase
+- **Async suffix**: Append `Async` to all async methods -- `CreateAsync`, `SearchAsync`, `RunCoreStreamingAsync`
+- **Examples**: `ValidateAndResolvePath`, `GetOrCreateSessionAsync`, `DisposeThreadSessionAsync`
+
+### Fields
+- **Private fields**: `_camelCase` with underscore prefix
+- **Examples**: `_isDisposed`, `_syncLock`, `_threadSessions`, `_customInstructions`
 
 ```csharp
-// Private fields
-private readonly WireMockServer _server;
+// CORRECT
+private readonly SemaphoreSlim _syncLock = new(1, 1);
 private int _isDisposed;
 
-// Parameters and locals
-var userId = $"user_{Guid.NewGuid():N}";
-var result = await store.SearchAsync(userId);
+// INCORRECT
+private readonly SemaphoreSlim syncLock = new(1, 1);
+private int isDisposed;
 ```
-
-See `Infrastructure/Agents/McpAgent.cs:17-27` for canonical field naming.
-
-### Classes and Types
-
-- **Style**: PascalCase
-- **Interfaces**: `I`-prefixed PascalCase (`ISearchClient`, `IChatMessengerClient`)
-- **Abstract classes**: No prefix, descriptive name (`DisposableAgent`)
-- **Examples**: `BraveSearchClient`, `McpAgent`, `ChatThreadResolver`
-
-See `Domain/Contracts/IChatMessengerClient.cs` for interface naming.
 
 ### Constants
-
-- **Style**: PascalCase (not UPPER_SNAKE_CASE)
-- **Examples**: `SearchEndpoint`, `RedisPort`, `EmbeddingDimension`
+- **Style**: PascalCase (NOT UPPER_SNAKE_CASE)
+- **Examples**: `SearchEndpoint`, `RedisPort`, `Name`, `Description`
 
 ```csharp
+// CORRECT - PascalCase constants
 private const string SearchEndpoint = "web/search";
 private const int RedisPort = 6379;
+
+// INCORRECT
+private const string SEARCH_ENDPOINT = "web/search";
 ```
 
-See `Infrastructure/Clients/BraveSearchClient.cs:11`.
+### Local Variables and Parameters
+- **Style**: camelCase
+- **Examples**: `filePath`, `cancellationToken`, `apiKey`, `validAgentIds`
 
 ### Files
-
 - **Style**: PascalCase, matching the primary type name
-- **Pattern**: `{TypeName}.cs` (one primary type per file)
-- **Examples**: `BraveSearchClient.cs`, `ChatPrompt.cs`, `McpFileSearchTool.cs`
+- **Pattern**: `TypeName.cs` (e.g., `ChatThreadResolver.cs`, `BraveSearchClient.cs`)
+- **Test files**: `{ClassUnderTest}Tests.cs` (e.g., `ToolPatternMatcherTests.cs`)
 
 ### Directories
-
 - **Style**: PascalCase
-- **Plural**: Use plural for collections (`Agents/`, `Clients/`, `DTOs/`, `Tools/`)
-- **Singular**: Use singular for specific concerns (`Memory/`, `State/`)
-- **Examples**: `Domain/Contracts/`, `Infrastructure/Clients/Messaging/`, `Domain/Tools/Files/`
+- **Examples**: `Contracts/`, `DTOs/`, `Agents/`, `StateManagers/`, `McpTools/`
+
+### Test Method Names
+- **Pattern**: `{Method}_{Scenario}_{ExpectedResult}`
+- **Examples**: `Run_TextNotFound_ThrowsWithSuggestion`, `CreateAsync_StoresSchedule`, `IsMatch_EmptyPatterns_MatchesNothing`
+
+```csharp
+// CORRECT
+[Fact]
+public void Run_MultipleOccurrences_ReplaceAllFalse_Throws()
+
+// INCORRECT
+[Fact]
+public void TestRunMultipleOccurrences()
+```
 
 ## Code Style
 
-### `var` Preferences
+### Namespaces
+- **File-scoped namespaces only** (enforced as warning in `.editorconfig`)
 
-Use `var` everywhere. Do not spell out types when the compiler can infer them.
+```csharp
+// CORRECT
+namespace Domain.DTOs;
+
+// INCORRECT
+namespace Domain.DTOs
+{
+    // ...
+}
+```
+
+### Primary Constructors
+- Use primary constructors for dependency injection and simple data classes
+
+```csharp
+// CORRECT - Primary constructor for DI
+public class BraveSearchClient(HttpClient httpClient, string apiKey) : IWebSearchClient
+{
+    // ...
+}
+
+// CORRECT - Primary constructor for test helpers
+private class TestableTextEditTool(string vaultPath, string[] allowedExtensions)
+    : TextEditTool(vaultPath, allowedExtensions)
+```
+
+### Record Types
+- Use `record` for DTOs, state objects, and immutable data
+- Use `required` properties or `init`-only setters
+
+```csharp
+// DTO with required properties
+public record ChatPrompt
+{
+    public required string Prompt { get; init; }
+    public required long ChatId { get; init; }
+    public required int? ThreadId { get; init; }
+}
+
+// Simple action records (one-line when possible)
+public record SelectSpace(string Slug) : IAction;
+public record SpaceValidated(string Slug, string Name, string AccentColor) : IAction;
+
+// Internal data records
+internal sealed record ThreadSessionData(
+    McpClientManager ClientManager,
+    McpResourceManager ResourceManager,
+    IReadOnlyList<AITool> Tools);
+```
+
+### `var` Usage
+- Prefer `var` everywhere (enforced as suggestion in `.editorconfig`)
 
 ```csharp
 // CORRECT
 var response = await httpClient.SendAsync(request, ct);
-var items = results.Select(r => new WebSearchResultItem(...)).ToList();
+var braveResponse = await response.Content.ReadFromJsonAsync<BraveSearchResponse>(ct);
 
 // INCORRECT
 HttpResponseMessage response = await httpClient.SendAsync(request, ct);
-List<WebSearchResultItem> items = results.Select(...).ToList();
 ```
-
-### Braces
-
-- **Always required** for `if`, `else`, `for`, `foreach`, `while`, `using`, `lock`, `fixed`
-- **Allman style**: Opening brace on its own line
-
-```csharp
-// CORRECT
-if (string.IsNullOrEmpty(text))
-{
-    return text;
-}
-
-// INCORRECT
-if (string.IsNullOrEmpty(text)) return text;
-```
-
-See `.editorconfig:155` (`csharp_prefer_braces = true:warning`).
 
 ### Imports
-
-Order imports as follows (enforced by `dotnet_sort_system_directives_first`):
+- System usings sorted first (enforced via `dotnet_sort_system_directives_first = true`)
+- External packages next
+- Internal project imports last
 
 ```csharp
 // 1. System namespaces
-using System.Collections.Concurrent;
-using System.Text.Json;
+using System.Net.Http.Json;
+using System.Text.Json.Serialization;
 
-// 2. Third-party packages
-using Azure.Messaging.ServiceBus;
-using ModelContextProtocol.Server;
-
-// 3. Internal project references (Domain first, then Infrastructure)
+// 2. External packages
 using Domain.Contracts;
-using Domain.DTOs;
-using Infrastructure.Agents;
+using JetBrains.Annotations;
+
+// 3. Internal project imports
 using Infrastructure.Utils;
 ```
 
-See `Infrastructure/Agents/McpAgent.cs:1-11` for a representative import block.
-
 ### Exports / Visibility
-
-- **Prefer explicit access modifiers** (`public`, `private`, `internal`)
-- **Default private modifier**: Always write `private` explicitly
-- **`InternalsVisibleTo`**: Use for test access to internals (`Infrastructure.csproj` exposes internals to `Tests`)
-- **`[PublicAPI]`**: Annotate public DTOs and contracts with `JetBrains.Annotations.PublicAPI` to suppress unused warnings
+- **Prefer `internal sealed`** for implementation classes that do not need to be public
+- Use `[InternalsVisibleTo("Tests")]` in Infrastructure to enable test access (`Infrastructure.csproj:22`)
+- Use `[PublicAPI]` from JetBrains.Annotations on public types consumed across project boundaries
 
 ```csharp
+// Internal implementation detail
+internal sealed class ThreadSession : IAsyncDisposable { }
+
+// Public API type
 [PublicAPI]
-public record ChatPrompt
+public record ChatPrompt { }
+```
+
+### Braces
+- **Always required** for `if`, `else`, `for`, `foreach`, `while`, `using`, `lock`, `fixed` (enforced as warning)
+- Open braces on new line (Allman style)
+
+```csharp
+// CORRECT
+if (condition)
 {
-    public required string Prompt { get; init; }
-    // ...
+    DoSomething();
+}
+
+// INCORRECT
+if (condition)
+    DoSomething();
+
+// INCORRECT
+if (condition) {
+    DoSomething();
 }
 ```
 
-See `Domain/DTOs/ChatPrompt.cs:6`.
-
-## Data Types
-
-### DTOs: Use `record` Types
-
-Define DTOs as `record` types. Use positional records for small, simple types and block-body records with `required` / `init` for larger ones.
+### Expression-Bodied Members
+- Use for simple properties and accessors
+- Do NOT use for methods and constructors
 
 ```csharp
-// Simple DTO - positional record
-public record AgentInfo(string Id, string Name, string? Description);
+// CORRECT - Expression-bodied property
+public TState State => _subject.Value;
+public void Dispose() => _subject.Dispose();
 
-// Complex DTO - block-body record with required properties
-public record MemoryEntry
-{
-    public required string Id { get; init; }
-    public required string UserId { get; init; }
-    public required MemoryCategory Category { get; init; }
-    public required string Content { get; init; }
-    public IReadOnlyList<string> Tags { get; init; } = [];
-}
-```
-
-See `Domain/DTOs/WebChat/AgentInfo.cs` and `Domain/DTOs/Memory.cs`.
-
-### Value Objects: Use `readonly record struct`
-
-Use `readonly record struct` for small, identity-less value types.
-
-```csharp
-public readonly record struct AgentKey(long ChatId, long ThreadId, string? AgentId = null);
-```
-
-See `Domain/Agents/AgentKey.cs`.
-
-### Settings: Use `record` with `required`
-
-```csharp
-public record RedisConfiguration
-{
-    public required string ConnectionString { get; [UsedImplicitly] init; }
-    public int? ExpirationDays { get; [UsedImplicitly] init; }
-}
-```
-
-See `Agent/Settings/AgentSettings.cs`.
-
-### Enums: PascalCase Members
-
-```csharp
-public enum MessageSource
-{
-    WebUi,
-    ServiceBus,
-    Telegram,
-    Cli
-}
-```
-
-See `Domain/DTOs/MessageSource.cs`.
-
-## Functions and Methods
-
-### Declaration Style
-
-- Use regular method declarations for class methods
-- Use expression-bodied members for simple properties and single-expression accessors
-- Use arrow functions (lambdas) for inline delegates
-
-```csharp
-// Regular method
+// CORRECT - Block body for methods
 public async Task<WebSearchResult> SearchAsync(WebSearchQuery query, CancellationToken ct = default)
 {
     // ...
 }
-
-// Expression-bodied property
-public TState State => _subject.Value;
-
-// Expression-bodied single-line method
-public void Dispose() => _subject.Dispose();
 ```
 
-### Primary Constructors for DI
-
-Use primary constructors for dependency injection. Do not declare separate `private readonly` fields when primary constructor parameters suffice.
+### Switch Expressions
+- Prefer switch expressions for pattern matching
 
 ```csharp
-// CORRECT - primary constructor
-public class BraveSearchClient(HttpClient httpClient, string apiKey) : IWebSearchClient
+// CORRECT
+public static SpaceState Reduce(SpaceState state, IAction action) => action switch
 {
-    public async Task<WebSearchResult> SearchAsync(...)
-    {
-        // Use httpClient and apiKey directly
-    }
-}
-
-// CORRECT - primary constructor with inheritance
-[McpServerToolType]
-public class McpFileSearchTool(
-    ISearchClient client,
-    ISearchResultsManager searchResultsManager) : FileSearchTool(client, searchResultsManager)
+    SelectSpace a => state with { CurrentSlug = a.Slug },
+    SpaceValidated a => new SpaceState { CurrentSlug = a.Slug, SpaceName = a.Name },
+    InvalidSpace => SpaceState.Initial,
+    _ => state
+};
 ```
 
-See `Infrastructure/Clients/BraveSearchClient.cs:9` and `McpServerLibrary/McpTools/McpFileSearchTool.cs:12-14`.
+## LINQ Over Loops
 
-Use traditional constructors only when initialization logic is complex (e.g., `McpAgent` at `Infrastructure/Agents/McpAgent.cs:32-64`).
+Strongly prefer LINQ over `for`/`foreach`/`while` loops. Only use loops when mutating external state, complex control flow requires it, or in performance-critical hot paths.
+
+```csharp
+// CORRECT
+var items = results.Select(r => new WebSearchResultItem(
+    Title: r.Title ?? string.Empty,
+    Url: r.Url ?? string.Empty
+)).ToList();
+
+var toolNames = session.ClientManager.Tools.Select(t => t.Name).ToList();
+
+// INCORRECT
+var items = new List<WebSearchResultItem>();
+foreach (var r in results)
+{
+    items.Add(new WebSearchResultItem(r.Title ?? string.Empty, r.Url ?? string.Empty));
+}
+```
 
 ## Async Patterns
 
-### Always Use `async`/`await`
-
-Use `async`/`await` throughout. Never use `.Result` or `.Wait()`. Pass `CancellationToken` on all async operations.
+### async/await Throughout
+- Use `async`/`await` for all asynchronous operations
+- Pass `CancellationToken` through all async call chains
+- Use `ct` as the abbreviated parameter name in private methods, `cancellationToken` in public APIs
 
 ```csharp
-public async Task<WebSearchResult> SearchAsync(WebSearchQuery query, CancellationToken ct = default)
-{
-    var response = await httpClient.SendAsync(request, ct);
-    response.EnsureSuccessStatusCode();
-    return await response.Content.ReadFromJsonAsync<BraveSearchResponse>(ct);
-}
+// Public API - full parameter name
+public async Task<WebSearchResult> SearchAsync(WebSearchQuery query, CancellationToken cancellationToken = default)
+
+// Private/internal - abbreviated
+private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
 ```
 
-### Use `IAsyncEnumerable<T>` for Streaming
-
-Streaming operations return `IAsyncEnumerable<T>` with `[EnumeratorCancellation]` on the cancellation token.
+### IAsyncEnumerable for Streaming
+- Use `IAsyncEnumerable<T>` for streaming data
+- Annotate with `[EnumeratorCancellation]` on the `CancellationToken` parameter
 
 ```csharp
 protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
@@ -271,324 +272,162 @@ protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingA
     AgentRunOptions? options = null,
     [EnumeratorCancellation] CancellationToken cancellationToken = default)
 {
-    await foreach (var update in source.WithCancellation(ct))
+    await foreach (var update in source.WithCancellation(cancellationToken))
     {
         yield return update;
     }
 }
 ```
 
-See `Infrastructure/Agents/McpAgent.cs:143-169`.
-
-### Parallel Operations
-
-Use `Promise.all` equivalent patterns via `Task.WhenAll` or the custom `Merge` extension for async streams.
+### Dispose Pattern
+- Use `IAsyncDisposable` for async cleanup
+- Guard against double disposal with `Interlocked.Exchange`
 
 ```csharp
-// Merging async streams
-await foreach (var update in mainResponses.Merge(notificationResponses, cancellationToken))
+public async ValueTask DisposeAsync()
 {
-    yield return update;
+    if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
+    {
+        return;
+    }
+
+    await _data.ResourceManager.DisposeAsync();
+    await _data.ClientManager.DisposeAsync();
 }
 ```
-
-See `Domain/Extensions/IAsyncEnumerableExtensions.cs:89`.
-
-### Fire-and-Forget with `SafeAwaitAsync`
-
-Use `SafeAwaitAsync` for non-critical async operations (notifications, telemetry) that should not block the caller or propagate exceptions. Discard the task with `_ =`.
-
-```csharp
-// Fire-and-forget notification (discard task, log on failure)
-await hubNotifier.NotifyStreamChangedAsync(notification, cancellationToken)
-    .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
-
-// Fire-and-forget from sync context
-_ = hubNotifier.NotifyUserMessageAsync(notification, CancellationToken.None)
-    .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
-```
-
-See `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:74-79` and `Infrastructure/Extensions/`.
-
-## LINQ Over Loops
-
-**Strongly prefer LINQ** over `for`/`foreach`/`while` loops. Only use traditional loops when mutating external state, complex control flow, or performance-critical hot paths.
-
-```csharp
-// CORRECT
-var items = results.Select(r => new WebSearchResultItem(
-    Title: r.Title ?? string.Empty,
-    Url: r.Url ?? string.Empty,
-    Snippet: TruncateSnippet(r.Description ?? string.Empty, 200),
-    Domain: ExtractDomain(r.Url ?? string.Empty),
-    DatePublished: ParseDate(r.PageAge)
-)).ToList();
-
-// INCORRECT
-var items = new List<WebSearchResultItem>();
-foreach (var r in results)
-{
-    items.Add(new WebSearchResultItem(...));
-}
-```
-
-See `Infrastructure/Clients/BraveSearchClient.cs:60-66`.
 
 ## Error Handling
 
 ### Guard Clauses
-
-Use `ArgumentNullException.ThrowIfNull()` and `ObjectDisposedException.ThrowIf()` for guard clauses.
+- Use `ArgumentNullException.ThrowIfNull()` for null checks
+- Use `ObjectDisposedException.ThrowIf()` for disposed object checks
 
 ```csharp
+// CORRECT
 ArgumentNullException.ThrowIfNull(initialState);
 ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+
+// INCORRECT
+if (initialState == null) throw new ArgumentNullException(nameof(initialState));
 ```
 
-See `WebChat.Client/State/Store.cs:13` and `Infrastructure/Agents/McpAgent.cs:87`.
-
-### Domain Exceptions
-
-Throw typed exceptions with descriptive messages. Use `InvalidOperationException` for domain rule violations.
+### Domain Tool Errors
+- Throw typed exceptions: `InvalidOperationException`, `UnauthorizedAccessException`, `FileNotFoundException`
+- Never throw raw `Exception`
 
 ```csharp
-throw new InvalidOperationException(
-    $"{nameof(RemoveTool)} path must not contain '..' segments.");
+// CORRECT - Typed exceptions in domain tools
+throw new UnauthorizedAccessException("Access denied: path must be within vault directory");
+throw new InvalidOperationException($"File type '{ext}' not allowed.");
+throw new FileNotFoundException($"File not found: {filePath}");
 ```
-
-See `Domain/Tools/Files/RemoveTool.cs:33-36`.
 
 ### MCP Tool Error Handling
-
-Error handling for MCP tools is **centralized** via `AddCallToolFilter` in each server's `ConfigModule.cs`. Do NOT add try/catch in individual tool methods.
+- Error handling is centralized via `AddCallToolFilter` in each server's `ConfigModule.cs`
+- Individual MCP tool methods must NOT contain try/catch blocks
+- Exceptions propagate to the global filter which logs and returns `ToolResponse.Create(ex)`
 
 ```csharp
-// In ConfigModule.cs - global error filter
-.AddCallToolFilter(next => async (context, cancellationToken) =>
+// CORRECT - No try/catch in MCP tool
+[McpServerTool(Name = Name)]
+[Description(Description)]
+public async Task<CallToolResult> McpRun(string pattern, GlobMode mode, CancellationToken cancellationToken)
 {
-    try
-    {
-        return await next(context, cancellationToken);
-    }
-    catch (Exception ex)
-    {
-        var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-        logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-        return ToolResponse.Create(ex);
-    }
-})
+    return ToolResponse.Create(await Run(pattern, mode, cancellationToken));
+}
+
+// INCORRECT - Do not add try/catch in individual tools
+[McpServerTool(Name = Name)]
+public async Task<CallToolResult> McpRun(string pattern)
+{
+    try { return ToolResponse.Create(await Run(pattern)); }
+    catch (Exception ex) { return ToolResponse.Create(ex); } // NO - filter handles this
+}
 ```
-
-See `McpServerLibrary/Modules/ConfigModule.cs:64-76`.
-
-### HTTP Error Handling
-
-Use `response.EnsureSuccessStatusCode()` for HTTP calls. Let `HttpRequestException` propagate.
-
-```csharp
-var response = await httpClient.SendAsync(request, ct);
-response.EnsureSuccessStatusCode();
-```
-
-See `Infrastructure/Clients/BraveSearchClient.cs:21-22`.
 
 ### Null Handling
-
-- Use nullable reference types (`?`) consistently
-- Return `null` for "not found" cases from data stores
-- Throw exceptions for invalid arguments and business rule violations
-- Use null-coalescing operators (`??`, `??=`) and null-conditional operators (`?.`)
+- Use null-conditional (`?.`) and null-coalescing (`??`) operators
+- Return `null` for "not found" scenarios, throw for unexpected states
 
 ```csharp
 var braveResponse = await response.Content.ReadFromJsonAsync<BraveSearchResponse>(ct)
-                    ?? throw new InvalidOperationException("Failed to deserialize response");
+    ?? throw new InvalidOperationException("Failed to deserialize response");
 ```
 
-## Pattern Matching
+## Layer Architecture Rules
 
-Use pattern matching over type checks and casts.
+### Domain Layer (`Domain/`)
+- Pure business logic with no external dependencies
+- Never import from `Infrastructure` or `Agent` namespaces
+- Contains: Contracts (interfaces), DTOs (records), Tools (business logic), Agents, Prompts
 
-```csharp
-// Switch expressions
-queryParams["freshness"] = query.DateRange.Value switch
-{
-    DateRange.Day => "pd",
-    DateRange.Week => "pw",
-    DateRange.Month => "pm",
-    DateRange.Year => "py",
-    _ => throw new ArgumentOutOfRangeException(nameof(query.DateRange))
-};
+### Infrastructure Layer (`Infrastructure/`)
+- Implements Domain interfaces, handles external concerns
+- Never import from `Agent` namespace
+- Uses primary constructors for DI
 
-// Pattern matching with is/not
-if (data.StartsWith(ApproveCallbackPrefix, StringComparison.Ordinal))
-{
-    approvalId = data[ApproveCallbackPrefix.Length..];
-    result = ToolApprovalResult.Approved;
-}
-```
+### Agent Layer (`Agent/`)
+- Composition root: DI registration, bootstrapping, Program.cs entry point
 
-See `Infrastructure/Clients/BraveSearchClient.cs:42-49`.
+### MCP Server Projects (`McpServer*/`)
+- Wrap Domain tools via MCP protocol
+- Inherit from Domain tool, add `[McpServerToolType]` and `[McpServerTool]` attributes
 
-## Dependency Injection
+## DI Registration
 
-### Registration
-
-Use extension methods on `IServiceCollection` in `Modules/` classes. Group registrations by concern.
+### Extension Method Pattern
+- Use `extension` blocks (C# 14) or static extension methods for DI configuration
+- Chain `.AddSingleton<>()` calls fluently
 
 ```csharp
-public static class InjectorModule
+// C# 14 extension block pattern (see Agent/Modules/InjectorModule.cs)
+extension(IServiceCollection services)
 {
-    extension(IServiceCollection services)
+    public IServiceCollection AddAgent(AgentSettings settings)
     {
-        public IServiceCollection AddAgent(AgentSettings settings)
-        {
-            return services
-                .AddRedis(settings.Redis)
-                .AddSingleton<ChatThreadResolver>()
-                .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
-                .AddSingleton<IAgentFactory>(sp =>
-                    new MultiAgentFactory(sp, ...));
-        }
+        return services
+            .AddSingleton<ChatThreadResolver>()
+            .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
+            .AddSingleton<IAgentFactory>(sp =>
+                new MultiAgentFactory(sp, ...));
     }
 }
 ```
 
-See `Agent/Modules/InjectorModule.cs`.
+## WebChat State Management (Redux-like)
 
-### Layer Rules
-
-- **Domain**: Pure business logic. No imports from `Infrastructure` or `Agent` namespaces. No framework-specific types.
-- **Infrastructure**: Implements Domain interfaces. No imports from `Agent` namespace.
-- **Agent**: Composition root. Handles DI registration and bootstrapping.
-- **MCP Servers**: Thin wrappers. Inherit from Domain tools, expose via MCP attributes.
-
-See `.claude/rules/domain-layer.md`, `.claude/rules/infrastructure-layer.md`, `.claude/rules/mcp-tools.md`.
-
-## MCP Tool Pattern
-
-MCP tools inherit from the corresponding Domain tool and expose the method via MCP attributes. Name and Description constants come from the base class.
+### Pattern Components
+- **State**: Immutable `sealed record` with `Initial` static property
+- **Actions**: `record` types implementing `IAction`
+- **Reducers**: Pure static functions using switch expressions
+- **Store**: Generic `Store<TState>` wrapping `BehaviorSubject<TState>`
+- **Effects**: Async side-effect handlers
+- **Selectors**: Memoized projections via `Selector<TState, TResult>`
 
 ```csharp
-[McpServerToolType]
-public class McpFileSearchTool(
-    ISearchClient client,
-    ISearchResultsManager searchResultsManager) : FileSearchTool(client, searchResultsManager)
+// State
+public sealed record SpaceState
 {
-    [McpServerTool(Name = Name)]
-    [Description(Description)]
-    public async Task<CallToolResult> Run(
-        RequestContext<CallToolRequestParams> context,
-        string[] searchStrings,
-        CancellationToken cancellationToken)
-    {
-        var sessionId = context.Server.StateKey;
-        return ToolResponse.Create(await Run(sessionId, searchStrings, cancellationToken));
-    }
+    public string CurrentSlug { get; init; } = "default";
+    public static SpaceState Initial => new();
 }
-```
 
-See `McpServerLibrary/McpTools/McpFileSearchTool.cs`.
-
-## WebChat State Pattern
-
-Use a Redux-like pattern with `Store<TState>`, `IAction`, `Dispatcher`, and `Selector` in `WebChat.Client/State/`.
-
-### Core Components
-
-```csharp
-// Store
-public sealed class Store<TState> : IDisposable where TState : class
-{
-    public TState State => _subject.Value;
-    public IObservable<TState> StateObservable => _subject.AsObservable();
-
-    public void Dispatch<TAction>(TAction action, Func<TState, TAction, TState> reducer)
-        where TAction : IAction
-    {
-        var newState = reducer(State, action);
-        _subject.OnNext(newState);
-    }
-}
-```
-
-See `WebChat.Client/State/Store.cs`.
-
-### Feature Store Pattern
-
-Organize each feature as a subdirectory under `State/` with four files: Actions, Reducers, State, and Store. Register actions in the Store constructor via `dispatcher.RegisterHandler<TAction>`.
-
-```
-State/
-├── Space/
-│   ├── SpaceActions.cs      # Action records
-│   ├── SpaceReducers.cs     # Pure reducer (switch expression)
-│   ├── SpaceState.cs        # Immutable state record
-│   └── SpaceStore.cs        # Store class wiring handlers
-├── Messages/
-│   ├── MessagesActions.cs
-│   ├── MessagesReducers.cs
-│   ├── MessagesState.cs
-│   └── MessagesStore.cs
-└── Topics/
-    └── ...
-```
-
-See `WebChat.Client/State/Space/` and `WebChat.Client/State/Messages/` for reference.
-
-### Actions
-
-Define actions as positional records implementing `IAction`. One file per feature, multiple actions per file.
-
-```csharp
-// WebChat.Client/State/Space/SpaceActions.cs
+// Actions
 public record SelectSpace(string Slug) : IAction;
 public record SpaceValidated(string Slug, string Name, string AccentColor) : IAction;
-public record InvalidSpace : IAction;
-```
 
-See `WebChat.Client/State/Space/SpaceActions.cs` and `WebChat.Client/State/Messages/MessagesActions.cs`.
-
-### Reducers
-
-Implement reducers as static methods using switch expressions. Reducers must be pure -- return new state via `with` expressions, never mutate.
-
-```csharp
+// Reducer
 public static class SpaceReducers
 {
     public static SpaceState Reduce(SpaceState state, IAction action) => action switch
     {
         SelectSpace a => state with { CurrentSlug = a.Slug },
-        SpaceValidated a => new SpaceState { CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor },
-        InvalidSpace => SpaceState.Initial,
+        SpaceValidated a => new SpaceState { CurrentSlug = a.Slug, SpaceName = a.Name },
         _ => state
     };
 }
-```
 
-See `WebChat.Client/State/Space/SpaceReducers.cs` and `WebChat.Client/State/Messages/MessagesReducers.cs`.
-
-### State Records
-
-Define state as sealed records with `init`-only properties and a static `Initial` property for the default state.
-
-```csharp
-public sealed record SpaceState
-{
-    public string CurrentSlug { get; init; } = "default";
-    public string SpaceName { get; init; } = "Main";
-    public string AccentColor { get; init; } = SpaceConfig.DefaultAccentColor;
-
-    public static SpaceState Initial => new();
-}
-```
-
-See `WebChat.Client/State/Space/SpaceState.cs`.
-
-### Store Wiring
-
-Feature stores register handlers with the `Dispatcher` in their constructor. Synchronous handlers run before effect async handlers, so effects always read up-to-date state.
-
-```csharp
+// Store
 public sealed class SpaceStore : IDisposable
 {
     private readonly Store<SpaceState> _store;
@@ -596,284 +435,57 @@ public sealed class SpaceStore : IDisposable
     public SpaceStore(Dispatcher dispatcher)
     {
         _store = new Store<SpaceState>(SpaceState.Initial);
-
         dispatcher.RegisterHandler<SelectSpace>(action =>
             _store.Dispatch(action, SpaceReducers.Reduce));
-        dispatcher.RegisterHandler<SpaceValidated>(action =>
-            _store.Dispatch(action, SpaceReducers.Reduce));
-        dispatcher.RegisterHandler<InvalidSpace>(action =>
-            _store.Dispatch(action, SpaceReducers.Reduce));
-    }
-
-    public SpaceState State => _store.State;
-    public IObservable<SpaceState> StateObservable => _store.StateObservable;
-    public void Dispose() => _store.Dispose();
-}
-```
-
-See `WebChat.Client/State/Space/SpaceStore.cs`.
-
-### Dispatcher Handler Registration and Disposal
-
-Handlers registered via `dispatcher.RegisterHandler<TAction>` return an `IDisposable`. Effects that register handlers must store the registration and dispose it on cleanup.
-
-```csharp
-public sealed class SpaceEffect : IDisposable
-{
-    private readonly IDisposable _handlerRegistration;
-
-    public SpaceEffect(Dispatcher dispatcher, ...)
-    {
-        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
-    }
-
-    public void Dispose()
-    {
-        _handlerRegistration.Dispose();
     }
 }
 ```
 
-See `WebChat.Client/State/Effects/SpaceEffect.cs:17,74-77`.
+## Documentation
 
-### Effects
-
-Effects handle side effects (API calls, navigation, cross-store coordination). Place them in `State/Effects/`. Register async handlers by wrapping in a fire-and-forget synchronous handler.
+### Comments
+- Prioritize readable code over comments
+- No XML documentation comments (`///`)
+- Only comment to explain "why", never "what"
+- Use `[PublicAPI]` and `[UsedImplicitly]` from JetBrains.Annotations to suppress unused-code warnings instead of comments
 
 ```csharp
-private void HandleSelectSpace(SelectSpace action)
-{
-    var previousSlug = _previousSlug;
-    _previousSlug = action.Slug;
-    _ = HandleSelectSpaceAsync(action.Slug, previousSlug);
-}
+// CORRECT - Explains "why"
+// Step 1: Create sampling handler with deferred tool access
 
-private async Task HandleSelectSpaceAsync(string slug, string previousSlug)
-{
-    if (slug == previousSlug) return;
-
-    var space = await _configService.GetSpaceAsync(slug);
-    // ... dispatch further actions
-    _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));
-}
+// INCORRECT - Explains "what"
+// Creates a new instance of the sampling handler
 ```
 
-See `WebChat.Client/State/Effects/SpaceEffect.cs` and `WebChat.Client/State/Effects/InitializationEffect.cs`.
+## Formatting
 
-### DI Registration
+### Indentation
+- 4 spaces for C# code files
+- 2 spaces for XML project files (`.csproj`, `.props`)
+- Line endings: CRLF
+- Max line length: 120 characters
+- No final newline required
 
-Register all stores and effects via extension methods in `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`. Stores are `AddScoped`, effects are `AddScoped`.
-
-```csharp
-public IServiceCollection AddWebChatStores()
-{
-    services.AddScoped<Dispatcher>();
-    services.AddScoped<SpaceStore>();
-    services.AddScoped<MessagesStore>();
-    // ...
-    return services;
-}
-
-public IServiceCollection AddWebChatEffects()
-{
-    services.AddScoped<SpaceEffect>();
-    services.AddScoped<InitializationEffect>();
-    // ...
-    return services;
-}
-```
-
-See `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`.
-
-## SignalR Hub Notifications
-
-### Notification DTOs
-
-Define hub notification DTOs as positional records in `Domain/DTOs/WebChat/`. Include an optional `SpaceSlug` parameter for space-scoped routing.
+### Collection Expressions
+- Use collection expression syntax (`[]`) for empty collections
 
 ```csharp
-public record TopicChangedNotification(
-    TopicChangeType ChangeType,
-    string TopicId,
-    TopicMetadata? Topic = null,
-    string? SpaceSlug = null);
-
-public record StreamChangedNotification(
-    StreamChangeType ChangeType,
-    string TopicId,
-    string? SpaceSlug = null);
-```
-
-See `Domain/DTOs/WebChat/HubNotification.cs`.
-
-### Space-Scoped Notification Routing
-
-Use the `INotifier` / `HubNotifier` pattern to route notifications to SignalR groups. When `SpaceSlug` is present, send to the `space:{slug}` group. When absent, broadcast to all.
-
-```csharp
-private async Task SendToSpaceOrAllAsync(
-    string? spaceSlug, string methodName, object notification, CancellationToken cancellationToken)
-{
-    if (spaceSlug is not null)
-    {
-        await sender.SendToGroupAsync($"space:{spaceSlug}", methodName, notification, cancellationToken);
-    }
-    else
-    {
-        await sender.SendAsync(methodName, notification, cancellationToken);
-    }
-}
-```
-
-See `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs:44-55`.
-
-### Adapter Pattern for Hub Context
-
-Abstract `IHubContext<T>` behind a domain interface (`IHubNotificationSender`) so Infrastructure can send notifications without depending on ASP.NET Core types. The Agent layer provides the concrete adapter.
-
-```csharp
-// Domain contract
-public interface IHubNotificationSender
-{
-    Task SendAsync(string methodName, object notification, CancellationToken cancellationToken = default);
-    Task SendToGroupAsync(string groupName, string methodName, object notification, CancellationToken cancellationToken = default);
-}
-
-// Agent adapter
-public sealed class HubNotificationAdapter(IHubContext<ChatHub> hubContext) : IHubNotificationSender { ... }
-```
-
-See `Domain/Contracts/IHubNotificationSender.cs` and `Agent/Hubs/HubNotificationAdapter.cs`.
-
-## SignalR Space Groups
-
-Use SignalR groups named `space:{slug}` to isolate notifications per space. Clients join a space group via `JoinSpace`, and the hub tracks the current space in `Context.Items["SpaceSlug"]`. Validate slugs with `SpaceConfig.IsValidSlug` before joining.
-
-```csharp
-public async Task JoinSpace(string spaceSlug)
-{
-    if (!SpaceConfig.IsValidSlug(spaceSlug))
-    {
-        throw new HubException("Invalid space slug");
-    }
-
-    await SwitchSpaceGroupAsync(spaceSlug);
-}
-```
-
-See `Agent/Hubs/ChatHub.cs:89-113`.
-
-## Validation with Source-Generated Regex
-
-Use `[GeneratedRegex]` with `partial` methods for compile-time regex generation. Place validation methods as static members on the DTO that owns the constraint.
-
-```csharp
-public partial record SpaceConfig(string Slug, string Name, string AccentColor)
-{
-    public const string DefaultAccentColor = "#e94560";
-
-    private static readonly Regex _slugPattern = SpaceSlugRegex();
-
-    public static bool IsValidSlug(string? slug) => slug is not null && _slugPattern.IsMatch(slug);
-
-    [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled)]
-    private static partial Regex SpaceSlugRegex();
-}
-```
-
-See `Domain/DTOs/WebChat/SpaceConfig.cs`.
-
-## Raw String Literals
-
-Use raw string literals (`"""..."""`) for multi-line strings, especially in tool descriptions.
-
-```csharp
-protected const string Description = """
-                                     Removes a file or directory by moving it to a trash folder.
-                                     The path can be absolute (under the library root) or relative
-                                     (resolved against the library root).
-                                     """;
-```
-
-See `Domain/Tools/Files/RemoveTool.cs:11-15`.
-
-## Comments and Documentation
-
-- **Prioritize readable code** over comments
-- **No XML documentation comments** (no `///` summary tags)
-- **Only comment to explain "why"**, never "what"
-- Use `[UsedImplicitly]` from JetBrains.Annotations to suppress unused warnings on serialization properties
-
-```csharp
-// CORRECT - explains why
-// OpenRouter expects a JSON object; using JsonObject avoids anonymous-type serialization quirks.
-["reasoning"] = new JsonObject { ["effort"] = "low" },
-
-// INCORRECT - explains what
-// Set the reasoning effort to low
-["reasoning"] = new JsonObject { ["effort"] = "low" },
-```
-
-See `Infrastructure/Agents/McpAgent.cs:55`.
-
-## Collection Expressions
-
-Use collection expressions (`[]`) for empty collections and initializers.
-
-```csharp
-// Empty collection
-_domainTools = domainTools ?? [];
-public IReadOnlyList<string> Tags { get; init; } = [];
-
-// Collection initializer
-var _threadSessions = new ConcurrentDictionary<AgentSession, ThreadSession>();
-// Equivalent:
+// CORRECT
 private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
+_domainTools = domainTools ?? [];
+
+// INCORRECT
+private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = new();
+_domainTools = domainTools ?? Array.Empty<AIFunction>();
 ```
 
-## Disposal Patterns
-
-- Implement `IAsyncDisposable` for types holding async resources
-- Use `Interlocked.Exchange` for thread-safe disposal flags
-- Use `SemaphoreSlim` with extension methods for synchronized disposal
+### Spread Operator
+- Use `[.. collection]` for creating new collections from existing ones
 
 ```csharp
-public override async ValueTask DisposeAsync()
+var options = new ChatOptions
 {
-    if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
-    {
-        return;
-    }
-
-    await _syncLock.WithLockAsync(async () =>
-    {
-        foreach (var session in _threadSessions.Values)
-        {
-            await session.DisposeAsync();
-        }
-        _threadSessions.Clear();
-    });
-    _syncLock.Dispose();
-}
+    Tools = [.. session.Tools],
+    Instructions = string.Join("\n\n", prompts)
+};
 ```
-
-See `Infrastructure/Agents/McpAgent.cs:66-83`.
-
-## Extension Methods
-
-Place extension methods in the layer that owns the types being extended:
-
-- **Domain extensions**: `Domain/Extensions/` (e.g., `IAsyncEnumerableExtensions`, `SemaphoreSlimExtensions`)
-- **Infrastructure extensions**: `Infrastructure/Extensions/` (e.g., `McpServerExtensions`, `HttpClientBuilderExtensions`)
-
-Use C# 14 `extension` blocks for cohesive sets of extensions.
-
-```csharp
-extension<TSource>(IAsyncEnumerable<TSource> source)
-{
-    public async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TKey>(...) { ... }
-    public IAsyncEnumerable<TSource> Merge(IAsyncEnumerable<TSource> right, CancellationToken ct) { ... }
-}
-```
-
-See `Domain/Extensions/IAsyncEnumerableExtensions.cs:56`.

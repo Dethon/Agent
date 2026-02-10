@@ -4,29 +4,13 @@
 
 ## Test Framework
 
-- **Framework**: xUnit 2.9 with `xunit.runner.visualstudio` 3.1
-- **Assertion Library**: Shouldly 4.3 (use `.ShouldBe()`, `.ShouldNotBeNull()`, `Should.ThrowAsync<>()`)
-- **Mocking**: Moq 4.20 (use sparingly; prefer integration tests with real dependencies)
-- **HTTP Mocking**: WireMock.Net 1.25 for HTTP service stubs
-- **Containers**: Testcontainers 4.10 for Redis, ServiceBus, and other external dependencies
-- **Skippable Tests**: Xunit.SkippableFact 1.5 for tests requiring external secrets
-- **Coverage**: Coverlet 6.0
-
-## TDD Workflow
-
-Follow Red-Green-Refactor for all features and bug fixes:
-
-1. **Red** -- Write a failing test first that defines the expected behavior
-2. **Green** -- Write the minimum implementation code to make the test pass
-3. **Refactor** -- Clean up the code while keeping all tests green
-
-Rules:
-- Never write implementation code without a failing test first
-- Write one test at a time, then make it pass before writing the next
-- Run the test suite after each change to confirm the cycle
-- Tests must actually fail before implementation (verify the "red" step)
-
-Exceptions: Pure configuration changes and trivial one-line changes.
+- **Framework**: xUnit 2.9.3
+- **Assertions**: Shouldly 4.3.0
+- **Mocking**: Moq 4.20.72
+- **Containers**: Testcontainers 4.10.0 (Redis, ServiceBus)
+- **HTTP mocking**: WireMock.Net 1.25.0
+- **Skippable tests**: Xunit.SkippableFact 1.5.61
+- **Coverage**: coverlet.collector 6.0.4
 
 ## Running Tests
 
@@ -40,16 +24,79 @@ dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit"
 # Integration tests only
 dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Integration"
 
-# Specific test class
-dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~BraveSearchClientTests"
+# Single test class
+dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~Tests.Unit.Domain.ChatThreadResolverTests"
 
 # With coverage
 dotnet test Tests/Tests.csproj --collect:"XPlat Code Coverage"
 ```
 
-## Test Runner Configuration
+## Test Organization
 
-Parallelization is enabled in `Tests/xunit.runner.json`:
+### Directory Structure
+
+```
+Tests/
+├── Unit/                          # Fast, isolated unit tests
+│   ├── Domain/                    # Domain logic tests
+│   │   ├── Text/                  # Text tool tests
+│   │   ├── Scheduling/            # Scheduling tool tests
+│   │   └── DTOs/                  # DTO serialization tests
+│   ├── Infrastructure/            # Infrastructure layer tests
+│   │   ├── Messaging/             # Message routing tests
+│   │   ├── Memory/                # Memory/embedding tests
+│   │   └── Cli/                   # CLI component tests
+│   ├── WebChat.Client/            # WebChat state management tests
+│   │   ├── State/                 # Store/reducer/selector tests
+│   │   │   └── Pipeline/          # Message pipeline tests
+│   │   └── Services/              # Service tests
+│   ├── WebChat/Client/            # Legacy WebChat tests
+│   ├── McpServerLibrary/          # MCP server-specific tests
+│   └── Tools/                     # Standalone tool tests
+├── Integration/                   # Tests requiring external resources
+│   ├── Agents/                    # Agent integration tests
+│   ├── Clients/                   # Client integration tests
+│   ├── Domain/                    # Domain integration tests
+│   ├── Infrastructure/            # Infrastructure integration tests
+│   ├── McpServerTests/            # MCP server integration tests
+│   ├── McpTools/                  # MCP tool integration tests
+│   ├── Messaging/                 # ServiceBus integration tests
+│   ├── Memory/                    # Redis memory store tests
+│   ├── StateManagers/             # Redis state store tests
+│   ├── WebChat/                   # WebChat hub integration tests
+│   ├── Fixtures/                  # Shared test fixtures
+│   └── Jack/                      # DI container tests
+└── xunit.runner.json              # Test parallelization config
+```
+
+### File Naming
+- **Pattern**: `{ClassUnderTest}Tests.cs`
+- **Location**: Mirror the source project structure under `Tests/Unit/` or `Tests/Integration/`
+- **Examples**: `ChatThreadResolverTests.cs`, `ToolPatternMatcherTests.cs`, `RedisScheduleStoreTests.cs`
+
+### Test Method Naming
+- **Pattern**: `{Method}_{Scenario}_{ExpectedResult}`
+- Three segments separated by underscores
+
+```csharp
+// CORRECT
+[Fact]
+public void Run_TextNotFound_ThrowsWithSuggestion()
+
+[Fact]
+public async Task CreateAsync_StoresSchedule()
+
+[Fact]
+public void IsMatch_EmptyPatterns_MatchesNothing()
+
+// INCORRECT
+[Fact]
+public void TestTextNotFound()  // No method/scenario/result segments
+```
+
+## Test Parallelization
+
+Tests run in parallel by default, configured in `Tests/xunit.runner.json`:
 
 ```json
 {
@@ -59,277 +106,255 @@ Parallelization is enabled in `Tests/xunit.runner.json`:
 }
 ```
 
-## Test Organization
-
-### Directory Structure
-
-```
-Tests/
-├── Unit/                              # Fast, isolated unit tests
-│   ├── Domain/                        # Domain logic tests
-│   │   ├── Text/                      # Text tool tests
-│   │   ├── Scheduling/               # Schedule tool tests
-│   │   └── DTOs/                      # DTO behavior tests
-│   │       └── WebChat/              # WebChat DTO tests (SpaceConfig, etc.)
-│   ├── Infrastructure/                # Infrastructure tests
-│   │   ├── Messaging/                 # Messaging subsystem tests
-│   │   ├── Memory/                    # Memory subsystem tests
-│   │   └── Cli/                       # CLI tests
-│   ├── WebChat.Client/                # Blazor client state tests
-│   │   ├── State/                     # Store and effect tests
-│   │   │   └── Pipeline/             # Message pipeline tests
-│   │   └── Services/                  # Client service tests
-│   ├── WebChat/                       # WebChat server-side tests
-│   │   └── Fixtures/                  # Fake services for WebChat tests
-│   └── McpServerLibrary/             # MCP server unit tests
-├── Integration/                       # Tests requiring external resources
-│   ├── Agents/                        # Agent integration tests
-│   ├── Clients/                       # Client integration tests
-│   ├── Memory/                        # Redis memory store tests
-│   ├── Messaging/                     # ServiceBus integration tests
-│   ├── McpServerTests/               # MCP server integration tests
-│   ├── McpTools/                      # MCP tool integration tests
-│   ├── StateManagers/                 # Redis state store tests
-│   ├── WebChat/                       # WebChat hub integration tests
-│   │   └── Client/                    # WebChat client integration tests
-│   │       └── Adapters/             # Hub connection test adapters
-│   ├── Infrastructure/                # Infrastructure integration tests
-│   ├── Jack/                          # DI container tests
-│   └── Fixtures/                      # Shared test fixtures
-│       ├── RedisFixture.cs
-│       ├── ServiceBusFixture.cs
-│       ├── WebChatServerFixture.cs
-│       ├── McpLibraryServerFixture.cs
-│       ├── TelegramBotFixture.cs
-│       └── FakeAgentFactory.cs
-└── xunit.runner.json
-```
-
-### File Naming
-
-- **Pattern**: `{ClassUnderTest}Tests.cs`
-- **Location**: Mirror the source project structure under `Tests/Unit/` or `Tests/Integration/`
-- **Examples**: `BraveSearchClientTests.cs`, `RemoveToolTests.cs`, `MessagesStoreTests.cs`
-
-### Namespace Convention
-
-Test namespaces mirror the test directory structure:
-
-```csharp
-namespace Tests.Unit.Infrastructure;           // Tests/Unit/Infrastructure/
-namespace Tests.Unit.Domain.Scheduling;        // Tests/Unit/Domain/Scheduling/
-namespace Tests.Integration.Memory;            // Tests/Integration/Memory/
-namespace Tests.Unit.WebChat.Client.State;     // Tests/Unit/WebChat.Client/State/
-```
-
-## Test Method Naming
-
-Use the pattern: `{Method}_{Scenario}_{ExpectedResult}`
-
-```csharp
-[Fact]
-public async Task SearchAsync_WithValidQuery_ReturnsResults()
-
-[Fact]
-public async Task SearchAsync_OnHttpError_ThrowsException()
-
-[Fact]
-public async Task Run_WithPathContainingDoubleDot_ThrowsInvalidOperationException()
-
-[Fact]
-public async Task StoreAsync_AndGetById_ReturnsStoredMemory()
-
-[Fact]
-public void MessagesLoaded_PopulatesMessagesByTopic()
-```
-
-See `Tests/Unit/Infrastructure/BraveSearchClientTests.cs` and `Tests/Unit/Domain/RemoveToolTests.cs`.
+Use `IClassFixture<T>` to share expensive resources (containers, servers) across tests in a class. Use `ICollectionFixture<T>` for sharing across multiple test classes.
 
 ## Test Types
 
 ### Unit Tests
 
 - **Location**: `Tests/Unit/`
-- **Dependencies**: Mocked or faked
-- **Database/Network**: Never real; always mocked
-- **Speed**: Fast, run in parallel
+- **Dependencies**: All mocked or faked
+- **Database**: Never real, always mocked
+- **Speed**: Fast, no external resources
 
 ```csharp
-public class ServiceBusMessageParserTests
+// Example: Tests/Unit/Domain/ChatThreadResolverTests.cs
+public class ChatThreadResolverTests
 {
-    private readonly ServiceBusMessageParser _parser = new(["agent-456", "default-agent", "test-agent"]);
-
     [Fact]
-    public void Parse_ValidMessage_ReturnsParseSuccess()
+    public void Resolve_WithNewKey_ReturnsNewContext()
     {
         // Arrange
-        var message = CreateMessage(
-            correlationId: "correlation-123",
-            agentId: "agent-456",
-            prompt: "Hello",
-            sender: "user1");
+        var resolver = new ChatThreadResolver();
+        var key = new AgentKey(1, 1);
 
         // Act
-        var result = _parser.Parse(message);
+        var context = resolver.Resolve(key);
 
         // Assert
-        result.ShouldBeOfType<ParseSuccess>();
-        var success = (ParseSuccess)result;
-        success.Message.Prompt.ShouldBe("Hello");
+        context.ShouldNotBeNull();
     }
 }
 ```
-
-See `Tests/Unit/Infrastructure/Messaging/ServiceBusMessageParserTests.cs`.
 
 ### Integration Tests
 
 - **Location**: `Tests/Integration/`
-- **Dependencies**: Real (Redis via Testcontainers, actual HTTP servers via WireMock, MCP servers)
-- **Isolation**: Each test uses unique IDs (`Guid.NewGuid()`) to avoid collisions
-- **Fixtures**: Shared via `IClassFixture<T>` with `IAsyncLifetime` for setup/teardown
-- **Skippable**: Tests requiring external API keys use `[SkippableFact]` with `SkipException`
+- **Dependencies**: Real (Redis via Testcontainers, SignalR, MCP servers)
+- **Cleanup**: Each test cleans up via `IAsyncLifetime` or `IDisposable`
+- **Skippable**: Use `[SkippableFact]` for tests requiring API keys or external services
 
 ```csharp
-public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
+// Example: Tests/Integration/StateManagers/RedisScheduleStoreTests.cs
+public class RedisScheduleStoreTests(RedisFixture fixture)
+    : IClassFixture<RedisFixture>, IAsyncLifetime
 {
-    private RedisStackMemoryStore CreateStore()
+    private readonly RedisScheduleStore _store = new(fixture.Connection);
+    private readonly List<string> _createdIds = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
-        return new RedisStackMemoryStore(redisFixture.Connection);
+        foreach (var id in _createdIds)
+        {
+            await _store.DeleteAsync(id);
+        }
     }
 
     [Fact]
-    public async Task StoreAsync_AndGetById_ReturnsStoredMemory()
+    public async Task CreateAsync_StoresSchedule()
     {
         // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        var memory = CreateMemory(userId, "User prefers TypeScript");
+        var schedule = CreateTestSchedule();
+        _createdIds.Add(schedule.Id);
 
         // Act
-        await store.StoreAsync(memory);
-        var retrieved = await store.GetByIdAsync(userId, memory.Id);
+        var result = await _store.CreateAsync(schedule);
 
         // Assert
-        retrieved.ShouldNotBeNull();
-        retrieved.Content.ShouldBe("User prefers TypeScript");
+        result.Id.ShouldBe(schedule.Id);
+        var stored = await _store.GetAsync(schedule.Id);
+        stored.ShouldNotBeNull();
+        stored.Prompt.ShouldBe(schedule.Prompt);
     }
 }
 ```
-
-See `Tests/Integration/Memory/RedisMemoryStoreTests.cs`.
-
-### Skippable Integration Tests
-
-Tests requiring external secrets (API keys) use `[SkippableFact]` and throw `SkipException` when credentials are missing.
-
-```csharp
-[SkippableFact]
-public async Task Agent_WithGlobFilesTool_CanFindFiles()
-{
-    var llmClient = CreateLlmClient(); // Throws SkipException if API key missing
-
-    // ... test body
-}
-
-private static OpenRouterChatClient CreateLlmClient()
-{
-    var apiKey = _configuration["openRouter:apiKey"]
-                 ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-    // ...
-}
-```
-
-See `Tests/Integration/Agents/McpAgentIntegrationTests.cs:21-27`.
 
 ## Test Patterns
 
 ### Arrange-Act-Assert
 
-All tests follow the AAA pattern with explicit comment markers:
+All tests follow AAA pattern with explicit comment markers:
 
 ```csharp
 [Fact]
-public async Task SearchAsync_WithValidQuery_ReturnsResults()
+public void Run_SingleOccurrence_ReplacesText()
 {
     // Arrange
-    var response = new { query = new { response_time = 0.42 }, web = new { ... } };
-    _server.Given(Request.Create().WithPath("/web/search").UsingGet())
-        .RespondWith(Response.Create().WithStatusCode(200).WithBody(JsonSerializer.Serialize(response)));
+    var filePath = CreateTestFile("test.txt", "Hello World");
 
     // Act
-    var query = new WebSearchQuery("test query");
-    var result = await _client.SearchAsync(query);
+    var result = _tool.TestRun(filePath, "World", "Universe");
 
     // Assert
-    result.ShouldNotBeNull();
-    result.Query.ShouldBe("test query");
-    result.TotalResults.ShouldBe(100);
+    result["status"]!.ToString().ShouldBe("success");
+    File.ReadAllText(filePath).ShouldBe("Hello Universe");
 }
 ```
 
-See `Tests/Unit/Infrastructure/BraveSearchClientTests.cs:28-72`.
+For tests where Act and Assert are combined (e.g., exception tests), use `// Act & Assert`:
+
+```csharp
+[Fact]
+public async Task CleanAsync_WithNonExistentKey_DoesNotThrow()
+{
+    // Arrange
+    var resolver = new ChatThreadResolver();
+    var key = new AgentKey(999, 999);
+
+    // Act & Assert
+    await Should.NotThrowAsync(() => resolver.ClearAsync(key));
+}
+```
 
 ### Testable Wrappers
 
-For classes with `protected` methods, create a private `Testable*` wrapper inside the test class that exposes the method.
+For classes with `protected` methods, create private testable wrapper classes inside the test class:
 
 ```csharp
-public class RemoveToolTests
+// Tests/Unit/Domain/Text/TextEditToolTests.cs
+public class TextEditToolTests : IDisposable
 {
-    // ... test methods calling tool.TestRun(...)
+    private readonly TestableTextEditTool _tool;
 
-    private class TestableRemoveTool(
-        IFileSystemClient client,
-        LibraryPathConfig libraryPath)
-        : RemoveTool(client, libraryPath)
+    // Wrapper exposes protected methods for testing
+    private class TestableTextEditTool(string vaultPath, string[] allowedExtensions)
+        : TextEditTool(vaultPath, allowedExtensions)
     {
-        public Task<JsonNode> TestRun(string path, CancellationToken ct)
+        public JsonNode TestRun(string filePath, string oldString, string newString, bool replaceAll = false)
         {
-            return Run(path, ct);
+            return Run(filePath, oldString, newString, replaceAll);
         }
     }
 }
 ```
 
-See `Tests/Unit/Domain/RemoveToolTests.cs:143-152`.
+### Temp Directory Cleanup
 
-### Factory Methods for Test Data
-
-Create private helper methods in the test class to build test data. Use descriptive names and optional override parameters.
+When tests create filesystem artifacts, use `IDisposable` for cleanup:
 
 ```csharp
-private static MemoryEntry CreateMemory(
-    string userId,
-    string content,
-    MemoryCategory category = MemoryCategory.Fact,
-    double importance = 0.5,
-    float[]? embedding = null,
-    IReadOnlyList<string>? tags = null)
+public class TextEditToolTests : IDisposable
 {
-    return new MemoryEntry
+    private readonly string _testDir;
+
+    public TextEditToolTests()
     {
-        Id = $"mem_{Guid.NewGuid():N}",
-        UserId = userId,
-        Category = category,
-        Content = content,
-        Importance = importance,
-        // ...
-    };
+        _testDir = Path.Combine(Path.GetTempPath(), $"text-edit-tests-{Guid.NewGuid()}");
+        Directory.CreateDirectory(_testDir);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_testDir))
+        {
+            Directory.Delete(_testDir, true);
+        }
+    }
 }
 ```
 
-See `Tests/Integration/Memory/RedisMemoryStoreTests.cs:27-48`.
+### Theory / InlineData for Parameterized Tests
 
-### Inline Fakes Over Mocking
-
-For collaborators, prefer purpose-built fake classes over Moq when the fake is reusable or the interface is complex. Define them as `private sealed class` inside the test class.
+Use `[Theory]` with `[InlineData]` for testing multiple input scenarios:
 
 ```csharp
+// Tests/Unit/Infrastructure/ToolPatternMatcherTests.cs
+[Theory]
+[InlineData("mcp:server:Tool", "mcp:server:Tool", true)]
+[InlineData("mcp:server:Tool", "mcp:server:tool", true)]   // case insensitive
+[InlineData("mcp:server:Tool", "mcp:server:OtherTool", false)]
+public void IsMatch_ExactPattern_MatchesCorrectly(string toolName, string pattern, bool expected)
+{
+    var matcher = new ToolPatternMatcher([pattern]);
+    matcher.IsMatch(toolName).ShouldBe(expected);
+}
+```
+
+## Assertions with Shouldly
+
+Use Shouldly for all assertions. Never use `Assert.*` from xUnit directly.
+
+```csharp
+// Basic assertions
+result.ShouldNotBeNull();
+result.ShouldBe("expected");
+result.ShouldBeTrue();
+result.ShouldBeFalse();
+
+// Collection assertions
+agents.ShouldNotBeEmpty();
+agents.Count.ShouldBe(2);
+agents.ShouldContain(a => a.Id == "test-agent");
+keys.ShouldNotContain(key);
+handler.AutoApprovedNotifications.ShouldHaveSingleItem();
+
+// Reference equality
+secondContext.ShouldBeSameAs(firstContext);
+context1.ShouldNotBeSameAs(context2);
+
+// Comparison
+laterIndex.ShouldBeLessThan(earlierIndex);
+clientCount.ShouldBeGreaterThan(0);
+
+// String contains
+ex.Message.ShouldContain("3 occurrences");
+
+// Exception assertions
+Should.Throw<ObjectDisposedException>(() => resolver.Resolve(key));
+Should.Throw<InvalidOperationException>(() => _tool.TestRun(filePath, "foo", "FOO"));
+await Should.NotThrowAsync(() => resolver.ClearAsync(key));
+
+// Tolerance for dates/floats
+updated.LastRunAt.Value.ShouldBe(lastRun, TimeSpan.FromSeconds(1));
+
+// Custom string message on assertion
+invoked.ShouldBeTrue("Tool should have been invoked after approval");
+
+// All elements match
+results.ShouldAllBe(r => ReferenceEquals(r, firstContext));
+```
+
+## Mocking with Moq
+
+Use Moq for unit tests when real dependencies are impractical.
+
+```csharp
+// Setup mocks in constructor
+private readonly Mock<IScheduleStore> _store = new();
+private readonly Mock<ICronValidator> _cronValidator = new();
+
+// Configure mock behavior
+_cronValidator.Setup(v => v.IsValid("invalid")).Returns(false);
+_store.Setup(s => s.CreateAsync(It.IsAny<Schedule>(), It.IsAny<CancellationToken>()))
+    .ReturnsAsync((Schedule s, CancellationToken _) => s);
+
+// Verify mock interactions
+_store.Verify(s => s.CreateAsync(It.Is<Schedule>(sch =>
+    sch.Agent.Id == "jack" &&
+    sch.Prompt == "test prompt"), It.IsAny<CancellationToken>()), Times.Once);
+```
+
+### Prefer Fakes Over Mocks
+
+For interfaces with complex interaction patterns, create private fake implementations inside the test class instead of using Moq:
+
+```csharp
+// Tests/Unit/Infrastructure/ToolApprovalChatClientTests.cs
 private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
 {
     public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
-    public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
 
     public Task<ToolApprovalResult> RequestApprovalAsync(
         IReadOnlyList<ToolApprovalRequest> requests,
@@ -348,165 +373,87 @@ private sealed class FakeChatClient : IChatClient
 }
 ```
 
-See `Tests/Unit/Infrastructure/ToolApprovalChatClientTests.cs:211-272`.
+## Test Fixtures
 
-### Shared Fake Services
+### Testcontainers for External Dependencies
 
-When a fake is reused across multiple test classes, place it in a `Fixtures/` directory within the relevant test scope (not as a private class). Expose inspection properties for assertions.
+Use Testcontainers to spin up real infrastructure in integration tests:
 
 ```csharp
-// Tests/Unit/WebChat/Fixtures/FakeTopicService.cs
-public sealed class FakeTopicService : ITopicService
+// Tests/Integration/Fixtures/RedisFixture.cs
+public class RedisFixture : IAsyncLifetime
 {
-    private readonly List<TopicMetadata> _savedTopics = new();
-    private readonly HashSet<string> _deletedTopicIds = new();
+    private IContainer _container = null!;
+    public IConnectionMultiplexer Connection { get; private set; } = null!;
+    public string ConnectionString { get; private set; } = null!;
 
-    public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
-    public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
-
-    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
+    public async Task InitializeAsync()
     {
-        return Task.FromResult<IReadOnlyList<TopicMetadata>>(
-            _savedTopics.Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug).ToList());
+        _container = new ContainerBuilder("redis/redis-stack:latest")
+            .WithPortBinding(RedisPort, true)
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilMessageIsLogged("Ready to accept connections"))
+            .Build();
+        await _container.StartAsync();
+
+        var host = _container.Hostname;
+        var port = _container.GetMappedPublicPort(RedisPort);
+        ConnectionString = $"{host}:{port}";
+        Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
     }
 
-    public Task JoinSpaceAsync(string spaceSlug) => Task.CompletedTask;
-    // ...
+    public async Task DisposeAsync()
+    {
+        await Connection.DisposeAsync();
+        await _container.DisposeAsync();
+    }
 }
 ```
 
-See `Tests/Unit/WebChat/Fixtures/FakeTopicService.cs`.
+### WebChat Server Fixture
 
-### Integration Test Adapters
-
-For integration tests that need to call hub methods through a client interface, create adapter classes in `Tests/Integration/WebChat/Client/Adapters/` that wrap `HubConnection` and implement the client contract.
+Integration tests for SignalR/WebChat spin up a full in-process ASP.NET host:
 
 ```csharp
-// Tests/Integration/WebChat/Client/Adapters/HubConnectionTopicService.cs
-public sealed class HubConnectionTopicService(HubConnection connection) : ITopicService
+// Tests/Integration/Fixtures/WebChatServerFixture.cs
+public sealed class WebChatServerFixture : IAsyncLifetime
 {
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
+    private IHost _host = null!;
+
+    public async Task InitializeAsync()
     {
-        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
+        // Starts Redis testcontainer
+        // Builds WebApplication with Kestrel on random port
+        // Registers all required services with fakes
+        // Starts ChatMonitor on background task
     }
 
-    public async Task JoinSpaceAsync(string spaceSlug)
-    {
-        await connection.InvokeAsync("JoinSpace", spaceSlug);
-    }
-    // ...
+    public HubConnection CreateHubConnection() =>
+        new HubConnectionBuilder().WithUrl(HubUrl).WithAutomaticReconnect().Build();
 }
 ```
 
-See `Tests/Integration/WebChat/Client/Adapters/HubConnectionTopicService.cs`.
+### Skippable Tests for API-Dependent Integration Tests
 
-### Moq for Simple Mocks
-
-Use Moq when the mock is simple (1-2 methods) and not reused across test classes.
+Use `[SkippableFact]` with `SkipException` for tests requiring external API keys:
 
 ```csharp
-private readonly Mock<IFileSystemClient> _fileSystemClientMock = new();
-
-[Fact]
-public async Task Run_WithValidPath_MovesToTrash()
+// Tests/Integration/Agents/ThreadSessionIntegrationTests.cs
+[SkippableFact]
+public async Task CreateAsync_CreatesSessionWithToolsPromptsAndResourceManager()
 {
-    var tool = CreateTool();
-    var filePath = Path.Combine(_libraryPath, "movies", "test.mkv");
-
-    _fileSystemClientMock
-        .Setup(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()))
-        .ReturnsAsync(trashPath);
-
-    var result = await tool.TestRun(filePath, CancellationToken.None);
-
-    result["status"]!.ToString().ShouldBe("success");
-    _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
+    var apiKey = _configuration["openRouter:apiKey"]
+        ?? throw new SkipException("openRouter:apiKey not set in user secrets");
+    // Test continues only if API key is available...
 }
 ```
 
-See `Tests/Unit/Domain/RemoveToolTests.cs:13-49`.
+## WebChat State Tests
 
-### Notification Routing Tests
-
-Test notification routing (broadcast vs. group-scoped) by mocking the `IHubNotificationSender` and verifying which send method is called based on the presence of `SpaceSlug`.
+Test stores by creating a real `Dispatcher`, dispatching actions, and asserting state:
 
 ```csharp
-[Fact]
-public async Task NotifyUserMessageAsync_WithSpaceSlug_SendsToGroup()
-{
-    var mockSender = new Mock<IHubNotificationSender>();
-    var notifier = new HubNotifier(mockSender.Object);
-    var notification = new UserMessageNotification("topic-1", "Hello", "alice", DateTimeOffset.UtcNow, SpaceSlug: "secret");
-
-    await notifier.NotifyUserMessageAsync(notification);
-
-    mockSender.Verify(s => s.SendToGroupAsync(
-        "space:secret", "OnUserMessage",
-        It.Is<UserMessageNotification>(n => n.TopicId == "topic-1"),
-        It.IsAny<CancellationToken>()), Times.Once);
-    mockSender.Verify(s => s.SendAsync(
-        It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
-}
-```
-
-See `Tests/Unit/Infrastructure/HubNotifierTests.cs`.
-
-## Assertions
-
-### Use Shouldly Exclusively
-
-Use Shouldly for all assertions. Do not use xUnit's built-in `Assert.*`.
-
-```csharp
-// Value equality
-result.Query.ShouldBe("test query");
-result.TotalResults.ShouldBe(100);
-
-// Null checks
-retrieved.ShouldNotBeNull();
-result.ShouldBeNull();
-
-// Collections
-result.Results.ShouldNotBeEmpty();
-result.Results.ShouldBeEmpty();
-result.Results.Count.ShouldBe(1);
-results.ShouldHaveSingleItem();
-
-// Type checks
-result.ShouldBeOfType<ParseSuccess>();
-
-// Boolean
-invoked.ShouldBeTrue("Tool should have been invoked after approval");
-deleted.ShouldBeFalse();
-
-// Exceptions
-await Should.ThrowAsync<HttpRequestException>(() => _client.SearchAsync(query));
-var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
-    await tool.TestRun(maliciousPath, CancellationToken.None));
-exception.Message.ShouldContain("must not contain '..'");
-
-// String
-result.Results[0].Snippet.ShouldEndWith("...");
-result.Results[0].Snippet.Length.ShouldBeLessThanOrEqualTo(203);
-
-// Comparisons
-retrieved.LastAccessedAt.ShouldBeGreaterThan(originalAccessTime);
-
-// Collection predicate matching
-agents.ShouldContain(a => a.Id == "test-agent");
-defaultTopics.ShouldNotContain(t => t.TopicId == "topic-secret");
-
-// Range assertion (e.g. for serialization drift)
-savedTopic.CreatedAt.ShouldBeInRange(createdAt.AddSeconds(-1), createdAt.AddSeconds(1));
-```
-
-## Store Tests (WebChat State)
-
-### Test Structure
-
-Test Redux-like stores by creating a real `Dispatcher` and `Store`, dispatching actions, and asserting on `State`. Implement `IDisposable` to dispose the store.
-
-```csharp
+// Tests/Unit/WebChat.Client/State/SpaceStoreTests.cs
 public class SpaceStoreTests : IDisposable
 {
     private readonly Dispatcher _dispatcher;
@@ -528,315 +475,65 @@ public class SpaceStoreTests : IDisposable
         _store.State.CurrentSlug.ShouldBe("secret-room");
         _store.State.AccentColor.ShouldBe("#6366f1");
     }
+}
+```
 
-    [Fact]
-    public void InvalidSpace_ResetsToDefault()
+## Test Data Factories
+
+Create static helper methods within test classes for constructing test data:
+
+```csharp
+// Within RedisScheduleStoreTests
+private static Schedule CreateTestSchedule()
+{
+    return new Schedule
     {
-        _dispatcher.Dispatch(new SpaceValidated("secret-room", "Secret Room", "#6366f1"));
-        _dispatcher.Dispatch(new InvalidSpace());
-
-        _store.State.CurrentSlug.ShouldBe("default");
-    }
+        Id = $"test_{Guid.NewGuid():N}",
+        Agent = new AgentDefinition
+        {
+            Id = "test",
+            Name = "Test Agent",
+            Model = "test-model",
+            McpServerEndpoints = []
+        },
+        Prompt = "Test prompt",
+        CronExpression = "0 9 * * *",
+        UserId = "testuser",
+        CreatedAt = DateTime.UtcNow,
+        NextRunAt = DateTime.UtcNow.AddHours(1)
+    };
 }
 ```
 
-See `Tests/Unit/WebChat.Client/State/SpaceStoreTests.cs` and `Tests/Unit/WebChat.Client/State/MessagesStoreTests.cs`.
-
-### What to Test on Stores
-
-- **Initial state**: Verify default values after construction
-- **Each action**: Dispatch and assert resulting state
-- **Immutability**: Assert original state reference is unchanged after dispatch
-- **Observable emission**: Subscribe and verify state changes propagate
-- **State replay**: New subscribers receive current state immediately
-- **Reducer completeness**: Cover the `_ => state` fallback for unhandled actions
-
-```csharp
-[Fact]
-public void ImmutableUpdate_DoesNotMutateOriginalState()
-{
-    _dispatcher.Dispatch(new MessagesLoaded("topic-1", initialMessages));
-    var stateAfterLoad = _store.State;
-
-    _dispatcher.Dispatch(new AddMessage("topic-1", new ChatMessageModel { Content = "Added" }));
-
-    stateAfterLoad.MessagesByTopic["topic-1"].Count.ShouldBe(1); // Original unchanged
-    _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2);   // New state updated
-    _store.State.ShouldNotBeSameAs(stateAfterLoad);
-}
-```
-
-See `Tests/Unit/WebChat.Client/State/MessagesStoreTests.cs:260-276`.
-
-## Parameterized Tests with Theory/InlineData
-
-Use `[Theory]` with `[InlineData]` for testing multiple input cases against the same assertion logic. Particularly useful for validation rules and boundary testing.
-
-```csharp
-[Theory]
-[InlineData("default")]
-[InlineData("secret-room")]
-[InlineData("my-space")]
-[InlineData("x")]
-public void IsValidSlug_ValidSlugs_ReturnsTrue(string slug)
-{
-    SpaceConfig.IsValidSlug(slug).ShouldBeTrue();
-}
-
-[Theory]
-[InlineData(null)]
-[InlineData("")]
-[InlineData("UPPERCASE")]
-[InlineData("has spaces")]
-[InlineData("-leading-dash")]
-[InlineData("<script>alert(1)</script>")]
-[InlineData("../etc/passwd")]
-public void IsValidSlug_InvalidSlugs_ReturnsFalse(string? slug)
-{
-    SpaceConfig.IsValidSlug(slug).ShouldBeFalse();
-}
-```
-
-Include security-relevant edge cases (XSS, path traversal) when testing validation methods.
-
-See `Tests/Unit/Domain/DTOs/WebChat/SpaceConfigTests.cs`.
-
-## SignalR Hub Integration Tests
-
-### Multi-Connection Tests
-
-Test SignalR group-based notification isolation by creating multiple hub connections, joining them to different spaces, and verifying that notifications only reach connections in the correct group.
-
-```csharp
-[Fact]
-public async Task TopicNotification_OnlyReceivedByConnectionInSameSpace()
-{
-    var connection2 = fixture.CreateHubConnection();
-    await connection2.StartAsync();
-
-    try
-    {
-        await connection2.InvokeAsync("RegisterUser", "test-user-2");
-
-        // Join different spaces
-        await _connection.InvokeAsync("JoinSpace", "default");
-        await connection2.InvokeAsync("JoinSpace", "secret-room");
-
-        var defaultNotifications = new List<TopicChangedNotification>();
-        var secretNotifications = new List<TopicChangedNotification>();
-
-        _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
-        connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
-
-        // Trigger notification in default space
-        await _connection.InvokeAsync("SaveTopic", topic, true);
-
-        await Task.Delay(500);
-
-        defaultNotifications.ShouldContain(n => n.TopicId == "topic-notif");
-        secretNotifications.ShouldNotContain(n => n.TopicId == "topic-notif");
-    }
-    finally
-    {
-        await connection2.DisposeAsync();
-    }
-}
-```
-
-See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:567-605`.
-
-### `IAsyncLifetime` for Hub Tests
-
-Use `IAsyncLifetime` on integration test classes to set up and tear down the hub connection per test. Register the user in `InitializeAsync` since most hub methods require it.
-
-```csharp
-public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
-    : IClassFixture<WebChatServerFixture>, IAsyncLifetime
-{
-    private HubConnection _connection = null!;
-
-    public async Task InitializeAsync()
-    {
-        _connection = fixture.CreateHubConnection();
-        await _connection.StartAsync();
-        await _connection.InvokeAsync("RegisterUser", "test-user");
-    }
-
-    public async Task DisposeAsync()
-    {
-        await _connection.DisposeAsync();
-    }
-}
-```
-
-See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:9-26`.
-
-### Hub Exception Testing
-
-Validate hub-level input validation by asserting `HubException` is thrown with the expected message.
-
-```csharp
-[Fact]
-public async Task JoinSpace_WithInvalidSlug_ThrowsHubException()
-{
-    var exception = await Should.ThrowAsync<HubException>(
-        () => _connection.InvokeAsync("JoinSpace", "INVALID SLUG!"));
-
-    exception.Message.ShouldContain("Invalid space slug");
-}
-```
-
-See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:707-713`.
-
-## Fixtures
-
-### Redis Fixture (Testcontainers)
-
-Use `RedisFixture` for any test needing Redis. It starts a Redis container via Testcontainers and provides a `ConnectionMultiplexer`.
-
-```csharp
-public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
-{
-    // Use redisFixture.Connection to create stores
-}
-```
-
-See `Tests/Integration/Fixtures/RedisFixture.cs`.
-
-### WebChat Server Fixture
-
-Use `WebChatServerFixture` for SignalR hub integration tests. It boots a full ASP.NET Core host with Redis, SignalR, and a `FakeAgentFactory`.
-
-```csharp
-public class ChatHubIntegrationTests(WebChatServerFixture fixture)
-    : IClassFixture<WebChatServerFixture>
-{
-    // Use fixture.CreateHubConnection() for SignalR client
-}
-```
-
-See `Tests/Integration/Fixtures/WebChatServerFixture.cs`.
-
-### Fixture Lifecycle
-
-Fixtures implement `IAsyncLifetime` for async setup/teardown:
-
-```csharp
-public class RedisFixture : IAsyncLifetime
-{
-    public async Task InitializeAsync()
-    {
-        _container = new ContainerBuilder("redis/redis-stack:latest")
-            .WithPortBinding(RedisPort, true)
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilMessageIsLogged("Ready to accept connections"))
-            .Build();
-        await _container.StartAsync();
-        Connection = await ConnectionMultiplexer.ConnectAsync(ConnectionString);
-    }
-
-    public async Task DisposeAsync()
-    {
-        await Connection.DisposeAsync();
-        await _container.DisposeAsync();
-    }
-}
-```
-
-## Cleanup and Disposal
-
-### Temp Files
-
-Use `IDisposable` for tests that create temporary files or directories.
-
-```csharp
-public class ExampleToolTests : IDisposable
-{
-    private readonly string _testDir;
-
-    public ExampleToolTests()
-    {
-        _testDir = Path.Combine(Path.GetTempPath(), $"test-{Guid.NewGuid()}");
-        Directory.CreateDirectory(_testDir);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_testDir))
-            Directory.Delete(_testDir, true);
-    }
-}
-```
-
-### WireMock Servers
-
-Dispose WireMock servers via `IDisposable` on the test class.
-
-```csharp
-public class BraveSearchClientTests : IDisposable
-{
-    private readonly WireMockServer _server;
-
-    public BraveSearchClientTests()
-    {
-        _server = WireMockServer.Start();
-    }
-
-    public void Dispose()
-    {
-        _server.Dispose();
-    }
-}
-```
-
-See `Tests/Unit/Infrastructure/BraveSearchClientTests.cs:12-250`.
-
-## Test Isolation
-
-### Unique IDs
-
-Integration tests use unique IDs per test to avoid collisions when running in parallel:
-
-```csharp
-var userId = $"user_{Guid.NewGuid():N}";
-```
-
-### No Shared Mutable State
-
-Each test creates its own instance of the system under test. Do not share mutable state between tests.
-
-```csharp
-// Each test creates a fresh store instance
-private RedisStackMemoryStore CreateStore()
-{
-    return new RedisStackMemoryStore(redisFixture.Connection);
-}
-```
+## TDD Workflow
+
+Follow Red-Green-Refactor for all features and bug fixes:
+
+1. **Red** -- Write a failing test first that defines the expected behavior
+2. **Green** -- Write the minimum implementation code to make the test pass
+3. **Refactor** -- Clean up the code while keeping all tests green
+
+### Rules
+- Never write implementation code without a failing test first
+- Write one test at a time, then make it pass before writing the next
+- Run the test suite after each change to confirm the cycle
+- Tests must actually fail before implementation (verify the "red" step)
+
+### Exceptions
+- Pure configuration changes (appsettings, DI registration) do not require TDD
+- Trivial one-line changes where the risk is negligible
 
 ## What to Test
 
 ### Always Test
-
-- Public API methods and their edge cases
-- Business logic in Domain tools and services
-- Error conditions and validation (path traversal, missing fields, invalid input)
-- Null/empty/boundary conditions
-- State transitions in stores and reducers
-- Notification routing (broadcast vs. group-scoped delivery)
-- DTO validation methods (slug patterns, hex colors) with security edge cases
-- Space-scoped data isolation (topics filtered by space slug)
+- Domain tool logic (validation, business rules, edge cases)
+- State reducers and store behavior (WebChat)
+- Infrastructure service behavior (message routing, pattern matching)
+- Error conditions and exception types
+- Concurrent access scenarios
 
 ### Skip Testing
-
-- Private implementation details (test through public API)
-- Pure DI registration (covered by DI container tests in `Tests/Integration/Jack/DependencyInjectionTests.cs`)
-- MCP tool methods directly (test the underlying Domain tool; MCP wrapper is trivial)
-- Third-party library behavior
-
-## Preference: Integration Over Mocks
-
-Prefer integration tests with real dependencies over unit tests with mocks. Use Testcontainers to spin up Redis, ServiceBus, or other infrastructure. Only use mocks when:
-
-- The external dependency is expensive or slow (external APIs behind keys)
-- The test is specifically verifying interaction patterns (verify calls were made)
-- The component under test has complex conditional logic to isolate
+- DI registration wiring (covered by integration tests indirectly)
+- MCP tool thin wrappers (they just delegate to Domain tools)
+- Framework-provided behavior (ASP.NET middleware, SignalR)
+- Simple record property access
