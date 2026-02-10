@@ -55,11 +55,21 @@ app.UseStaticFiles();
 app.MapGet("/api/config", (IConfiguration config) =>
 {
     var users = config.GetSection("Users").Get<UserConfig[]>() ?? [];
-    var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
     return new AppConfig(
         config["AgentUrl"] ?? "http://localhost:5000",
-        users,
-        spaces);
+        users);
+});
+
+app.MapGet("/api/spaces/{slug}", (string slug, IConfiguration config) =>
+{
+    if (!SpaceConfig.IsValidSlug(slug))
+    {
+        return Results.NotFound();
+    }
+
+    var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
+    var space = spaces.FirstOrDefault(s => s.Slug == slug);
+    return space is not null ? Results.Ok(space) : Results.NotFound();
 });
 
 app.MapFallbackToFile("index.html");
@@ -72,5 +82,5 @@ namespace WebChat
     internal record UserConfig(string Id, string AvatarUrl);
 
     [UsedImplicitly]
-    internal record AppConfig(string AgentUrl, UserConfig[] Users, SpaceConfig[] Spaces);
+    internal record AppConfig(string AgentUrl, UserConfig[] Users);
 }

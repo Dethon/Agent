@@ -11,14 +11,20 @@ public sealed class ConfigService(HttpClient httpClient)
     public async Task<AppConfig> GetConfigAsync()
     {
         return _config ??= await httpClient.GetFromJsonAsync<AppConfig>("/api/config")
-            ?? new AppConfig(null, [], []);
+            ?? new AppConfig(null, []);
     }
 
     public async Task<SpaceConfig?> GetSpaceAsync(string slug)
     {
-        var config = await GetConfigAsync();
-        return config.Spaces?.FirstOrDefault(s => s.Slug == slug);
+        try
+        {
+            return await httpClient.GetFromJsonAsync<SpaceConfig>($"/api/spaces/{Uri.EscapeDataString(slug)}");
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
     }
 }
 
-public record AppConfig(string? AgentUrl, UserConfig[]? Users, SpaceConfig[]? Spaces);
+public record AppConfig(string? AgentUrl, UserConfig[]? Users);
