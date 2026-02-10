@@ -1,4 +1,4 @@
-assistants.herfluffnes.com {
+assistants.herfluffness.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }

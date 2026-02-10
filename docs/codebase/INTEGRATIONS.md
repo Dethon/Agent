@@ -196,7 +196,7 @@ All MCP servers use `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 and expose
   - Dockerfile: `DockerCompose/caddy/Dockerfile`
   - Source: `DockerCompose/docker-compose.yml:304`
 - **Config**: `DockerCompose/Caddyfile`
-- **Domain**: `assistants.herfluffnes.com`
+- **Domain**: `assistants.herfluffness.com`
 - **Routes**:
   - `/hubs/*` -> `agent:8080` (SignalR)
   - `/*` -> `webui:8080` (Blazor frontend)
