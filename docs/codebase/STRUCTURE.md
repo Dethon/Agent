@@ -106,8 +106,9 @@ Agent/                              # Solution root
 |   +-- Settings/
 |   +-- Program.cs
 |
-+-- WebChat/                        # Blazor Server host (serves static files + config API)
++-- WebChat/                        # Blazor Server host (serves static files + config/space APIs)
 |   +-- Program.cs
+|   +-- appsettings.json            # Space definitions, AgentUrl, Users, AllowedDdnsHost
 |
 +-- WebChat.Client/                 # Blazor WebAssembly client application
 |   +-- Components/                 # Razor components
@@ -125,10 +126,11 @@ Agent/                              # Solution root
 |   +-- State/                      # Redux-like state management
 |       +-- Approval/               # Approval state (Actions, Reducers, State, Store)
 |       +-- Connection/             # Connection state
-|       +-- Effects/                # Side-effect handlers (init, send message, topic selection, etc.)
+|       +-- Effects/                # Side-effect handlers (init, send message, topic/agent/space selection, etc.)
 |       +-- Hub/                    # SignalR event dispatching to state
 |       +-- Messages/               # Messages state
 |       +-- Pipeline/               # Message pipeline (batching, deduplication)
+|       +-- Space/                  # Space state (slug, name, accent color)
 |       +-- Streaming/              # Streaming state + selectors
 |       +-- Toast/                  # Toast notification state
 |       +-- Topics/                 # Topics state
@@ -174,6 +176,8 @@ Agent/                              # Solution root
 | MCP tool wrappers | `Mcp{DomainToolName}.cs` | `McpFileDownloadTool.cs` |
 | MCP prompts | `McpSystemPrompt.cs` | `McpSystemPrompt.cs` |
 | Infrastructure clients | `{Service}Client.cs` | `BraveSearchClient.cs`, `IdealistaClient.cs` |
+| Hub adapters | `Hub{Name}Adapter.cs` | `HubNotificationAdapter.cs` |
+| Notification DTOs | `{Name}Notification.cs` (record) | `TopicChangedNotification.cs`, `StreamChangedNotification.cs` |
 | State stores | `Redis{Name}Store.cs` | `RedisThreadStateStore.cs`, `RedisScheduleStore.cs` |
 | Settings records | `{Name}Settings.cs` | `AgentSettings.cs`, `McpSettings.cs` |
 | DI modules | `ConfigModule.cs`, `InjectorModule.cs` | `Agent/Modules/ConfigModule.cs` |
@@ -235,6 +239,13 @@ Agent/                              # Solution root
 7. Register the store in `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`
 8. Write tests in `Tests/Unit/WebChat.Client/State/{Feature}StoreTests.cs`
 
+### Adding a new space
+
+1. Add a new entry to the `Spaces` array in `WebChat/appsettings.json` with `Slug`, `Name`, and `AccentColor`
+2. The slug must match the regex `^[a-z0-9]+(-[a-z0-9]+)*$` (validated by `SpaceConfig.IsValidSlug`)
+3. The accent color must be a valid hex color (`#rgb`, `#rrggbb`, or `#rrggbbaa`, validated by `SpaceConfig.IsValidHexColor`)
+4. The space is accessible at `/{slug}` in the WebChat UI and gets its own PWA manifest, icon, topics, and SignalR notification group
+
 ### Adding a utility
 
 - Shared across Infrastructure: place in `Infrastructure/Utils/{Name}.cs`
@@ -246,6 +257,7 @@ Agent/                              # Solution root
 - Agent-level settings: add property to `Agent/Settings/AgentSettings.cs`
 - MCP server settings: add property to `McpServer*/Settings/McpSettings.cs`
 - Per-agent settings: add property to `Domain/DTOs/AgentDefinition.cs`
+- WebChat space settings: add entry to `Spaces` array in `WebChat/appsettings.json`
 - Environment-based: use `IConfiguration` binding in `ConfigModule.cs`
 
 ## Module Boundaries
@@ -300,7 +312,11 @@ using Agent.Modules;  // VIOLATION - will not compile
 | Chat monitoring loop | `Agent/App/ChatMonitoring.cs` -> `Domain/Monitor/ChatMonitor.cs` |
 | Schedule monitoring loop | `Agent/App/ScheduleMonitoring.cs` |
 | SignalR hub | `Agent/Hubs/ChatHub.cs` (mapped at `/hubs/chat`) |
+| Hub notification adapter | `Agent/Hubs/HubNotificationAdapter.cs` |
 | WebChat server start | `WebChat/Program.cs` |
+| WebChat config API | `WebChat/Program.cs` (`GET /api/config`) |
+| WebChat space API | `WebChat/Program.cs` (`GET /api/spaces/{slug}`) |
+| WebChat PWA manifest | `WebChat/Program.cs` (`GET /manifest.webmanifest?slug=`) |
 | WebChat client start | `WebChat.Client/Program.cs` |
 | MCP Library server start | `McpServerLibrary/Program.cs` |
 | MCP Text server start | `McpServerText/Program.cs` |
@@ -315,6 +331,7 @@ using Agent.Modules;  // VIOLATION - will not compile
 Tests/
 +-- Unit/
 |   +-- Domain/                           # Domain logic (tools, DTOs, monitor, threading)
+|   |   +-- DTOs/WebChat/                 # WebChat DTO tests (SpaceConfigTests, etc.)
 |   |   +-- Scheduling/                   # Schedule tool unit tests
 |   |   +-- Text/                         # Text tool unit tests
 |   +-- Infrastructure/                   # Infrastructure implementations
@@ -328,7 +345,7 @@ Tests/
 |   |   +-- Fixtures/                     # Fake service implementations
 |   +-- WebChat.Client/                   # WebChat.Client state + service tests
 |       +-- Services/                     # Service unit tests
-|       +-- State/                        # Store + effect unit tests
+|       +-- State/                        # Store + effect unit tests (SpaceStoreTests, MessagesStoreTests, TopicsStoreTests, etc.)
 |           +-- Pipeline/                 # Message pipeline tests
 +-- Integration/
     +-- Agents/                           # McpAgent, ThreadSession, ToolApproval integration
@@ -342,8 +359,9 @@ Tests/
     +-- Memory/                           # Embedding + Redis memory store integration
     +-- Messaging/                        # ServiceBus integration
     +-- StateManagers/                    # Redis state manager integration
-    +-- WebChat/                          # ChatHub + SignalR integration
+    +-- WebChat/                          # ChatHub + SignalR integration (ChatHubIntegrationTests, SessionPersistenceIntegrationTests)
         +-- Client/                       # Client-side streaming/resume integration
+            +-- Adapters/                 # Test adapters (HubConnectionTopicService)
 ```
 
 ### Test Frameworks and Libraries

@@ -86,7 +86,13 @@ The system follows a classic three-layer architecture (Agent -> Infrastructure -
 
 - **Interface**: `Domain/Contracts/IThreadStateStore.cs`
 - **Implementation**: `Infrastructure/StateManagers/RedisThreadStateStore.cs`
-- **Purpose**: Persists chat history and topic metadata in Redis. Keyed by `AgentKey` (chatId + threadId + agentId).
+- **Purpose**: Persists chat history and topic metadata in Redis. Keyed by `AgentKey` (chatId + threadId + agentId). Supports space-scoped topic retrieval via optional `spaceSlug` parameter on `GetAllTopicsAsync()`.
+
+### IHubNotificationSender
+
+- **Interface**: `Domain/Contracts/IHubNotificationSender.cs`
+- **Implementation**: `Agent/Hubs/HubNotificationAdapter.cs`
+- **Purpose**: Abstracts SignalR hub notification delivery so Infrastructure can send real-time notifications without depending on the Agent layer. Supports both broadcast (`SendAsync`) and group-scoped (`SendToGroupAsync`) delivery. The `HubNotifier` (`Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs`) consumes this interface to route notifications to specific space groups (`space:{slug}`) or to all clients when no space is specified.
 
 ### Store<TState> (WebChat.Client Redux pattern)
 
@@ -210,7 +216,9 @@ User Output (streamed)
 
 - **Protocol**: SignalR (WebSocket with fallback)
 - **Hub**: `Agent/Hubs/ChatHub.cs` -- handles session management, message sending/receiving, stream resumption, topic CRUD, and tool approval responses.
-- **Notifications**: `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs` pushes server-initiated events (topic changes, stream state changes, approval resolutions) to all connected clients via `IHubContext<ChatHub>`.
+- **Notifications**: `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs` pushes server-initiated events (topic changes, stream state changes, approval resolutions, tool calls, user messages) to clients via `IHubNotificationSender`. Notifications are scoped to SignalR groups (`space:{slug}`) when a `SpaceSlug` is present on the notification DTO; otherwise they broadcast to all clients.
+- **Hub adapter**: `Agent/Hubs/HubNotificationAdapter.cs` implements `IHubNotificationSender` by delegating to `IHubContext<ChatHub>`, bridging Infrastructure's notification calls to the concrete SignalR hub.
+- **Space groups**: Clients join a space group via `ChatHub.JoinSpace(spaceSlug)`. The hub tracks the current space in `Context.Items["SpaceSlug"]` and manages SignalR group membership (`space:{slug}`). All subsequent notifications for that session are delivered to the appropriate group.
 - **Client-side**: `WebChat.Client/State/Hub/HubEventDispatcher.cs` receives SignalR events and dispatches Redux actions to update stores.
 
 ### Scheduling
@@ -218,3 +226,16 @@ User Output (streamed)
 - **Components**: `Domain/Monitor/ScheduleDispatcher.cs` (checks due schedules), `Domain/Monitor/ScheduleExecutor.cs` (executes scheduled agent runs), `Agent/App/ScheduleMonitoring.cs` (background service)
 - **Storage**: `Infrastructure/StateManagers/RedisScheduleStore.cs` via `Domain/Contracts/IScheduleStore.cs`
 - **Tools**: `Domain/Tools/Scheduling/ScheduleCreateTool.cs`, `ScheduleListTool.cs`, `ScheduleDeleteTool.cs` -- registered as `IDomainToolFeature` via `SchedulingToolFeature`
+
+### Spaces (Multi-tenant Isolation)
+
+Spaces provide logical isolation within the WebChat UI. Each space has its own slug, display name, accent color, topics, and SignalR notification group.
+
+- **Domain DTO**: `Domain/DTOs/WebChat/SpaceConfig.cs` -- record with `Slug`, `Name`, `AccentColor`. Includes static validation (`IsValidSlug`, `IsValidHexColor`) using source-generated regexes. Default accent color is `#e94560`.
+- **Domain DTO**: `Domain/DTOs/WebChat/TopicMetadata.cs` -- carries `SpaceSlug` (defaults to `"default"`). All notification DTOs in `Domain/DTOs/WebChat/HubNotification.cs` include an optional `SpaceSlug` for group-scoped delivery.
+- **Server config**: Space definitions live in `WebChat/appsettings.json` under the `Spaces` array. The WebChat server (`WebChat/Program.cs`) exposes `GET /api/spaces/{slug}` to look up a space by slug, and a dynamic `/manifest.webmanifest` endpoint that adapts the PWA manifest per space.
+- **Client state**: `WebChat.Client/State/Space/` (Actions, Reducers, State, Store) tracks the current space. `SpaceEffect` (`WebChat.Client/State/Effects/SpaceEffect.cs`) validates spaces via `ConfigService.GetSpaceAsync()`, joins the SignalR group, and clears topics/messages on space transitions.
+- **Routing**: `ChatContainer.razor` is routable at both `"/"` and `"/{Slug}"`. The `Slug` parameter dispatches `SelectSpace` on parameter changes, with `"default"` as fallback.
+- **Session tracking**: `WebChatSession` (`Infrastructure/Clients/Messaging/WebChat/WebChatSession.cs`) includes an optional `SpaceSlug`. `WebChatSessionManager.StartSession()` accepts a `spaceSlug` parameter. The `HubNotifier` reads `SpaceSlug` from the session to route notifications to the correct group.
+- **Hub**: `ChatHub.JoinSpace(spaceSlug)` validates the slug via `SpaceConfig.IsValidSlug()`, manages SignalR group transitions (removing from the old group, adding to the new), and stores the current space in connection context. `GetAllTopics` accepts a `spaceSlug` parameter to filter topics.
+- **Reconnection**: `InitializationEffect` re-joins the space group on SignalR reconnection via `_topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug)`.

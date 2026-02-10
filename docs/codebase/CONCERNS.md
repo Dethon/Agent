@@ -6,8 +6,8 @@
 
 | Severity | Count | Categories |
 |----------|-------|------------|
-| HIGH | 4 | Security, Reliability |
-| MEDIUM | 8 | Security, Maintainability, Performance, Reliability |
+| HIGH | 5 | Security, Reliability |
+| MEDIUM | 10 | Security, Maintainability, Performance, Reliability |
 | LOW | 5 | Maintainability, Performance |
 
 ---
@@ -44,40 +44,68 @@ return await Run("pwsh", $"-WorkingDirectory \"{workingDirectory}\" -Command \"{
 
 ### ChatHub Has No Authentication or Authorization
 
-**Location**: `Agent/Hubs/ChatHub.cs:15-235`
+**Location**: `Agent/Hubs/ChatHub.cs:15-264`
 **Category**: Security
-**Risk**: The SignalR ChatHub exposes all operations (send messages, delete topics, manage sessions, respond to tool approvals) with no `[Authorize]` attribute. The only guard is `RegisterUser` which accepts any arbitrary string as a userId with no verification. Any client that can connect to the hub can impersonate any user, read any agent's history, delete any topic, and approve tool executions.
+**Risk**: The SignalR ChatHub exposes all operations (send messages, delete topics, manage sessions, join spaces, respond to tool approvals) with no `[Authorize]` attribute. The only guard is `RegisterUser` which accepts any arbitrary string as a userId with no verification. Any client that can connect to the hub can impersonate any user, read any agent's history, delete any topic, join any space, and approve tool executions.
 
 **Evidence**:
 ```csharp
 // ChatHub.cs:15 - No [Authorize] attribute
 public sealed class ChatHub(...) : Hub
 {
-    // ChatHub.cs:32 - Self-registration with no validation
+    // ChatHub.cs:35 - Self-registration with no validation
     public Task RegisterUser(string userId)
     {
         Context.Items["UserId"] = userId;
         return Task.CompletedTask;
     }
 
-    // ChatHub.cs:199 - Any user can delete any topic
+    // ChatHub.cs:89 - Any user can join any space (including private ones)
+    public async Task JoinSpace(string spaceSlug) { ... }
+
+    // ChatHub.cs:228 - Any user can delete any topic
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId) { ... }
 
-    // ChatHub.cs:221 - Any user can approve tool executions
+    // ChatHub.cs:250 - Any user can approve tool executions
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result) { ... }
 }
 ```
 
 **Guidance**:
 - Do NOT deploy the WebChat interface on a public network without adding authentication
+- The new Spaces feature (`JoinSpace`) provides no authorization -- any user can join any space by slug, defeating the purpose of space isolation for privacy
 - The DDNS IP allowlist middleware (`Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs`) provides network-level restriction but is not applied to SignalR connections by default
-- If you must expose WebChat externally: add authentication, authorize users per-topic, and validate userId against an identity provider
+- If you must expose WebChat externally: add authentication, authorize users per-space and per-topic, and validate userId against an identity provider
 - Related files: `Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`
 
 **Mitigation**:
 - Add `[Authorize]` to the Hub class
 - Replace `RegisterUser` with claims-based identity from an authentication middleware
-- Add per-topic authorization checks (users should only access their own topics)
+- Add per-topic and per-space authorization checks (users should only access their own topics and spaces they are members of)
+
+---
+
+### XSS via Unsanitized Markdown Rendering
+
+**Location**: `WebChat.Client/Components/ChatMessage.razor:160`
+**Category**: Security
+**Risk**: Agent responses are rendered as raw HTML via `(MarkupString)RenderMarkdown(Message.Content)`. Markdig converts markdown to HTML which is injected directly into the DOM without sanitization. If an LLM response contains malicious HTML/JavaScript (e.g., from a prompt injection attack or a poisoned web page the agent browsed), it will execute in the user's browser within the application context. This gives the attacker access to the SignalR connection, allowing them to approve tool executions, delete topics, or impersonate the user.
+
+**Evidence**:
+```csharp
+// ChatMessage.razor:160
+@((MarkupString)RenderMarkdown(Message.Content))
+```
+
+**Guidance**:
+- Do NOT trust LLM output as safe HTML; LLMs can be manipulated to produce arbitrary content
+- When modifying the rendering pipeline: add an HTML sanitizer (e.g., HtmlSanitizer NuGet package) between Markdig output and MarkupString rendering
+- This is especially dangerous combined with the lack of authentication on ChatHub -- an XSS payload can silently call hub methods
+- Related files: `WebChat.Client/Components/Chat/MessageList.razor`, `WebChat.Client/Components/Chat/ChatContainer.razor`
+
+**Mitigation**:
+- Add an HTML sanitizer (e.g., `HtmlSanitizer` package) to strip scripts, event handlers, and dangerous HTML elements from the rendered markdown
+- Alternatively, use a Blazor-native markdown renderer that produces component tree output instead of raw HTML strings
 
 ---
 
@@ -163,6 +191,53 @@ protected static async Task<string> Run(string fileName, string args, Cancellati
 ---
 
 ## MEDIUM Risk Areas
+
+### Space Isolation is Presentation-Only, Not Enforced Server-Side
+
+**Location**: `Agent/Hubs/ChatHub.cs:89-113`, `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs:44-55`
+**Category**: Security
+**Risk**: The new Spaces feature provides topic isolation through SignalR groups, but the server does not enforce space membership or access control. Any client can call `JoinSpace("secret-room")` to join any space and receive all notifications for that space. Topics are filtered by `SpaceSlug` in `GetAllTopics`, but since `JoinSpace` accepts any valid slug, a client can enumerate and access all spaces. The only validation is the slug format regex (lowercase alphanumeric with hyphens).
+
+**Evidence**:
+```csharp
+// ChatHub.cs:89-97
+public async Task JoinSpace(string spaceSlug)
+{
+    if (!SpaceConfig.IsValidSlug(spaceSlug))
+    {
+        throw new HubException("Invalid space slug");
+    }
+
+    await SwitchSpaceGroupAsync(spaceSlug);  // No authorization check
+}
+
+// HubNotifier.cs:44-55 - Fallback broadcasts to ALL when SpaceSlug is null
+private async Task SendToSpaceOrAllAsync(
+    string? spaceSlug, string methodName, object notification, CancellationToken cancellationToken)
+{
+    if (spaceSlug is not null)
+    {
+        await sender.SendToGroupAsync($"space:{spaceSlug}", methodName, notification, cancellationToken);
+    }
+    else
+    {
+        await sender.SendAsync(methodName, notification, cancellationToken);  // Broadcast to ALL
+    }
+}
+```
+
+**Guidance**:
+- Do NOT rely on Spaces for access control or privacy; any connected client can join any space
+- If Spaces are meant to provide topic segregation for different users/purposes: add an authorization check in `JoinSpace` that verifies the user has permission to access the requested space
+- The `SendToSpaceOrAllAsync` fallback to broadcast-to-all means notifications for topics without a SpaceSlug reach ALL connected clients regardless of their current space
+- Related files: `Domain/DTOs/WebChat/SpaceConfig.cs`, `WebChat.Client/State/Space/SpaceStore.cs`, `WebChat.Client/State/Effects/SpaceEffect.cs`
+
+**Mitigation**:
+- Add a server-side space membership check in `JoinSpace`
+- Ensure all notifications always include a SpaceSlug to avoid the broadcast fallback
+- Consider storing space membership in Redis and validating against it
+
+---
 
 ### DdnsIpAllowlistMiddleware Swallows All DNS Errors
 
@@ -279,45 +354,51 @@ return existing;
 
 ---
 
-### HtmlInspector is a Large Static Class (1090 Lines)
+### RedisThreadStateStore.GetTopicByChatIdAndThreadIdAsync is N+1
 
-**Location**: `Infrastructure/HtmlProcessing/HtmlInspector.cs:1-1090`
-**Category**: Maintainability
-**Risk**: At 1090 lines, this is the largest file in the codebase. It handles content detection, repeating element detection, navigation detection, outline building, structured data extraction, table parsing, and selector generation - all as static methods. Difficult to test individual behaviors in isolation.
+**Location**: `Infrastructure/StateManagers/RedisThreadStateStore.cs:77-82`
+**Category**: Performance
+**Risk**: `GetTopicByChatIdAndThreadIdAsync` calls `GetAllTopicsAsync(agentId)` which performs a SCAN over all topic keys, fetches every topic's JSON via individual `StringGetAsync` calls (N+1 pattern), deserializes them all, and then filters client-side with `.FirstOrDefault()`. For agents with many topics, this is extremely wasteful -- a lookup for one topic fetches and deserializes ALL topics.
 
 **Evidence**:
-```
-1090 lines with responsibilities spanning:
-- Main content detection (DetectMainContent)
-- Repeating element detection (DetectRepeatingElements)
-- Navigation detection (DetectNavigation)
-- Outline building (BuildOutline)
-- Suggestion generation (GenerateSuggestions)
-- Structured data extraction (ExtractStructuredData)
-- CSS selector generation (GenerateSelector)
-- Table parsing
-- Text search
+```csharp
+// RedisThreadStateStore.cs:77-82
+public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
+    string agentId, long chatId, long threadId, CancellationToken ct = default)
+{
+    var topics = await GetAllTopicsAsync(agentId);  // Fetches ALL topics for this agent
+    return topics.FirstOrDefault(t => t.ChatId == chatId && t.ThreadId == threadId);
+}
+
+// GetAllTopicsAsync performs SCAN + individual StringGetAsync for each key
+await foreach (var key in _server.KeysAsync(pattern: $"topic:{agentId}:*"))
+{
+    var json = await _db.StringGetAsync(key);  // One round-trip per topic
+    // ...
+}
 ```
 
 **Guidance**:
-- When modifying HTML inspection logic: be aware that changes to selector generation or element scoring can affect all downstream features
-- The class is `partial`, so look for additional files before concluding you have the full picture
-- Related files: `Infrastructure/HtmlProcessing/HtmlConverter.cs`, `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` (1012 lines)
+- This method is called from `WebChatMessengerClient.CreateTopicIfNeededAsync` and `DoesThreadExist`, which are invoked on every inbound message -- making this a hot path
+- Do NOT add more callers to `GetTopicByChatIdAndThreadIdAsync` without addressing the performance issue
+- Related files: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:157,184`
 
 **Mitigation**:
-- Split into focused classes: `ContentDetector`, `RepeatingElementDetector`, `NavigationDetector`, `SelectorGenerator`, `StructuredDataExtractor`
+- Add a direct Redis key lookup by constructing a key from `agentId`, `chatId`, and `threadId` (requires a secondary index or key-naming scheme change)
+- Alternatively, maintain an in-memory cache of topic metadata with Redis pub/sub invalidation
+- At minimum, use `MGET` batch operations instead of individual `StringGetAsync` calls in `GetAllTopicsAsync`
 
 ---
 
 ### WebChatMessengerClient.GenerateChatId Uses Timestamp
 
-**Location**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:234-237`
+**Location**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:240-243`
 **Category**: Reliability
 **Risk**: `GenerateChatId` generates IDs using `DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()`. If two topics are created within the same millisecond, they will receive the same chatId, causing session collision and data corruption.
 
 **Evidence**:
 ```csharp
-// WebChatMessengerClient.cs:234-237
+// WebChatMessengerClient.cs:240-243
 private static long GenerateChatId()
 {
     return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -388,6 +469,36 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 ---
 
+### HtmlInspector is a Large Static Class (1090 Lines)
+
+**Location**: `Infrastructure/HtmlProcessing/HtmlInspector.cs:1-1090`
+**Category**: Maintainability
+**Risk**: At 1090 lines, this is the largest file in the codebase. It handles content detection, repeating element detection, navigation detection, outline building, structured data extraction, table parsing, and selector generation -- all as static methods. Difficult to test individual behaviors in isolation.
+
+**Evidence**:
+```
+1090 lines with responsibilities spanning:
+- Main content detection (DetectMainContent)
+- Repeating element detection (DetectRepeatingElements)
+- Navigation detection (DetectNavigation)
+- Outline building (BuildOutline)
+- Suggestion generation (GenerateSuggestions)
+- Structured data extraction (ExtractStructuredData)
+- CSS selector generation (GenerateSelector)
+- Table parsing
+- Text search
+```
+
+**Guidance**:
+- When modifying HTML inspection logic: be aware that changes to selector generation or element scoring can affect all downstream features
+- The class is `partial`, so look for additional files before concluding you have the full picture
+- Related files: `Infrastructure/HtmlProcessing/HtmlConverter.cs`, `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` (1012 lines)
+
+**Mitigation**:
+- Split into focused classes: `ContentDetector`, `RepeatingElementDetector`, `NavigationDetector`, `SelectorGenerator`, `StructuredDataExtractor`
+
+---
+
 ## LOW Risk Areas
 
 ### TerminalGuiAdapter is Large (617 Lines)
@@ -446,9 +557,9 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 | `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` | 1012 | Large test file mirrors large implementation |
 | `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs` | 946 | God class - navigation/clicking/CAPTCHA/stealth all in one |
 | `Tests/Unit/WebChat/Client/StreamingServiceTests.cs` | 899 | Large test file |
+| `Tests/Integration/WebChat/ChatHubIntegrationTests.cs` | 713 | Large integration test, grew with space isolation tests |
 | `Tests/Integration/Clients/PlaywrightWebBrowserIntegrationTests.cs` | 641 | Large integration test |
 | `Infrastructure/CliGui/Ui/TerminalGuiAdapter.cs` | 617 | UI lifecycle management, consider extracting components |
-| `Tests/Integration/WebChat/ChatHubIntegrationTests.cs` | 537 | Large integration test |
 
 ### Complex Functions (high cyclomatic complexity)
 
@@ -456,7 +567,7 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 |------|----------|---------|
 | `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:183` | `NavigateAsync` | ~120 lines, 6+ catch blocks, CAPTCHA retry loop, modal dismissal, selector waiting, scroll-to-load, stability checking |
 | `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:350` | `ClickAsync` | ~130 lines, 5+ catch blocks with different timeout/error handling paths |
-| `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:159` | `CreateTopicIfNeededAsync` | Complex branching on threadId/chatId nullability with session creation side effects |
+| `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:162` | `CreateTopicIfNeededAsync` | Complex branching on threadId/chatId nullability with session creation side effects and space slug propagation |
 | `Infrastructure/HtmlProcessing/HtmlInspector.cs:46` | `DetectMainContent` | Scoring algorithm with multiple candidate sources and magic numbers |
 
 ---
@@ -485,9 +596,9 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 **Locations**:
 - `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs`
-- `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:43-119`
+- `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:43-123`
 - `Infrastructure/Clients/Messaging/WebChat/BroadcastChannel.cs`
-- `Agent/Hubs/ChatHub.cs:96-173`
+- `Agent/Hubs/ChatHub.cs:125-163`
 
 **Why it's fragile**: Stream lifecycle involves coordinating pending prompt counts, broadcast channels, cancellation tokens, stream buffers, and hub notifications across four files. The pending count must be incremented before the agent processes and decremented exactly once per completion. A missed increment or decrement causes either premature stream completion (cutting off responses) or never-completing streams (zombie streams).
 
@@ -514,13 +625,50 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 ---
 
+### Space-Scoped Notification Routing
+
+**Locations**:
+- `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs:44-55`
+- `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:57-58,317-318`
+- `Infrastructure/Clients/Messaging/WebChat/WebChatApprovalManager.cs:80,110`
+- `Agent/Hubs/ChatHub.cs:224-225,237-238,246-247`
+- `Domain/DTOs/WebChat/HubNotification.cs`
+
+**Why it's fragile**: Every notification type (TopicChanged, StreamChanged, ApprovalResolved, ToolCalls, UserMessage) must include a `SpaceSlug` parameter for proper space-scoped routing. The `SpaceSlug` is resolved from the session's `WebChatSession.SpaceSlug` or from the topic metadata, but these can be null. When `SpaceSlug` is null, `HubNotifier.SendToSpaceOrAllAsync` falls back to broadcasting to ALL connected clients, breaking space isolation. Every new notification type or code path that creates notifications must remember to propagate the space slug.
+
+**When modifying**:
+1. Always resolve `SpaceSlug` from the session or topic metadata before sending notifications
+2. Test that notifications for a topic in space "A" do not reach clients in space "B"
+3. If adding new notification types to `HubNotification.cs`: include `SpaceSlug` as a parameter
+4. Verify the `ChatHub` methods that trigger notifications (`CancelTopic`, `DeleteTopic`, `SaveTopic`) always pass `CurrentSpaceSlug` or the topic's SpaceSlug
+
+---
+
+### Effect Handler Registration Leaks
+
+**Locations**:
+- `WebChat.Client/State/Effects/SendMessageEffect.cs:49-50`
+- `WebChat.Client/State/Effects/TopicSelectionEffect.cs:36`
+- `WebChat.Client/State/Effects/InitializationEffect.cs:58-59`
+- `WebChat.Client/State/Effects/TopicDeleteEffect.cs:34`
+- `WebChat.Client/State/Effects/UserIdentityEffect.cs:25-26`
+
+**Why it's fragile**: Most effects register handlers with `dispatcher.RegisterHandler<T>()` in their constructor but do NOT store the returned `IDisposable` and do NOT unregister handlers in their `Dispose()` method. Only `SpaceEffect` and `AgentSelectionEffect` properly dispose their handler registrations. If effects are ever re-created (e.g., due to a Blazor circuit restart or component re-initialization), handlers will accumulate and fire multiple times per dispatch.
+
+**When modifying**:
+1. Store the `IDisposable` returned by `RegisterHandler` in a field
+2. Dispose it in the effect's `Dispose()` method
+3. Verify that adding a new effect follows the same pattern as `SpaceEffect.cs` (which properly disposes `_handlerRegistration`)
+
+---
+
 ## Missing Safeguards
 
 ### No Rate Limiting on ChatHub
 
 **Where**: `Agent/Hubs/ChatHub.cs`
 **What's missing**: No rate limiting on `SendMessage`, `EnqueueMessage`, or any other hub method. A malicious or buggy client can flood the agent with prompts.
-**Risk**: Resource exhaustion - each prompt triggers LLM API calls (which cost money) and spawns concurrent processing tasks.
+**Risk**: Resource exhaustion -- each prompt triggers LLM API calls (which cost money) and spawns concurrent processing tasks.
 **Recommendation**: Add per-user rate limiting via SignalR filters or a middleware.
 
 ### No Maximum Session Count for Browser Sessions
@@ -532,10 +680,17 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 ### No Input Size Validation on WebChat Messages
 
-**Where**: `Agent/Hubs/ChatHub.cs:136-174`
+**Where**: `Agent/Hubs/ChatHub.cs:165-203`
 **What's missing**: The `message` parameter in `SendMessage` has no length validation. Arbitrarily large messages are forwarded to the LLM.
 **Risk**: Excessive token usage/cost and potential LLM context window overflow.
 **Recommendation**: Add maximum message length validation in the hub method.
+
+### No Space Configuration Validation on Server Startup
+
+**Where**: `WebChat/Program.cs:63-73`, `WebChat/appsettings.json`
+**What's missing**: Space configuration is read from `appsettings.json` at runtime when requested. There is no startup validation that configured spaces have valid slugs, valid hex colors, or unique slugs. A misconfigured space slug would silently fail.
+**Risk**: Invalid space configuration causes runtime 404s or unexpected behavior.
+**Recommendation**: Add startup validation that all configured spaces pass `SpaceConfig.IsValidSlug` and `SpaceConfig.IsValidHexColor`.
 
 ---
 
@@ -545,7 +700,7 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 **Area**: `McpServerLibrary/ResourceSubscriptions/SubscriptionMonitor.cs:46-53`
 **Limitation**: `GetResourceCheck` throws `NotImplementedException` for any URI scheme other than `download://`. Only download-based resource subscriptions are supported.
-**Workaround**: N/A - only download monitoring is implemented.
+**Workaround**: N/A -- only download monitoring is implemented.
 **Future fix**: Implement handlers for other resource types as they are added to MCP servers.
 
 ### Single Redis Server Endpoint Assumption
@@ -561,3 +716,10 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 **Limitation**: `_messageIdCounter` resets to 0 on every application restart. Message IDs are not globally unique; they are only locally incrementing integers.
 **Workaround**: The `MessageId` field on `ChatStreamMessage` is a string that may combine this counter with other identifiers.
 **Future fix**: Use a persistent counter (Redis INCR) or GUID-based message IDs for durability across restarts.
+
+### Spaces Are Not Persisted on WebChat Sessions
+
+**Area**: `Infrastructure/Clients/Messaging/WebChat/WebChatSessionManager.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatSession.cs`
+**Limitation**: `WebChatSession` stores `SpaceSlug` in-memory only. If the server restarts, all session-to-space associations are lost. Sessions recreated via `StartSession` from the client will have a null SpaceSlug unless the client re-joins the space first. This can cause notifications to broadcast to all clients instead of the correct space group.
+**Workaround**: The client calls `JoinSpace` on reconnection, which re-establishes the SignalR group membership. However, notifications triggered server-side (e.g., from scheduled tasks or external message sources) before the client reconnects will lack space scoping.
+**Future fix**: Persist session-to-space associations in Redis, or derive the space slug from the topic metadata (which is already persisted).

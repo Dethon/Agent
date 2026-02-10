@@ -6,7 +6,7 @@
 
 - **Primary**: C# 14 (LangVersion 14)
   - Source: all `*.csproj` files declare `<LangVersion>14</LangVersion>`
-- **Secondary**: JavaScript (Blazor WASM interop stealth scripts in `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`)
+- **Secondary**: JavaScript (Blazor WASM interop in `WebChat.Client/wwwroot/app.js`, stealth scripts in `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`)
 
 ## Runtime
 
@@ -23,7 +23,7 @@
 ### Web Framework
 - **Use**: ASP.NET Core 10.0 (minimal APIs)
 - **Agent entry point**: `Agent/Program.cs` -- composition root with `WebApplication.CreateBuilder`
-- **WebChat server entry point**: `WebChat/Program.cs` -- Blazor WASM host with `/api/config` endpoint
+- **WebChat server entry point**: `WebChat/Program.cs` -- Blazor WASM host with `/api/config`, `/api/spaces/{slug}`, dynamic `/manifest.webmanifest`, and `/icon.svg` endpoints
 - **MCP server entry points**: `McpServer*/Program.cs` -- `WebApplication.CreateBuilder` + `app.MapMcp()`
 - **Configuration**: `Agent/appsettings.json`, `McpServer*/appsettings.json`
 - **User secrets**: Enabled for Agent, McpServerLibrary, McpServerWebSearch, McpServerMemory, McpServerIdealista, McpServerCommandRunner
@@ -34,6 +34,8 @@
   - Hub: `Agent/Hubs/ChatHub.cs` -- central WebChat communication hub
   - Client-side: `WebChat.Client` uses `Microsoft.AspNetCore.SignalR.Client` 10.0.2
   - Route: `/hubs/chat` -- mapped in `Agent/Program.cs:32`
+  - Group-based routing: Notifications scoped to SignalR groups by space (`space:{slug}`). Use `JoinSpace` hub method to subscribe a connection to a space group.
+  - Notification adapter: `Agent/Hubs/HubNotificationAdapter.cs` -- implements `IHubNotificationSender`, supports both broadcast and group-targeted sends
 
 ### AI / LLM Framework
 - **Use**: Microsoft.Extensions.AI 10.2.0 + Microsoft.Agents.AI 1.0.0-preview
@@ -54,9 +56,10 @@
   - Client project: `WebChat.Client/WebChat.Client.csproj` (SDK: `Microsoft.NET.Sdk.BlazorWebAssembly`)
   - Server host: `WebChat/WebChat.csproj` with `Microsoft.AspNetCore.Components.WebAssembly.Server`
   - State management: Custom Redux-like pattern in `WebChat.Client/State/`
-    - Stores: `WebChat.Client/State/*/` (Messages, Topics, Connection, Approval, Streaming, UserIdentity, Toast)
-    - Effects: `WebChat.Client/State/Effects/`
+    - Stores: `WebChat.Client/State/*/` (Messages, Topics, Connection, Approval, Streaming, UserIdentity, Toast, Space)
+    - Effects: `WebChat.Client/State/Effects/` (Initialization, SendMessage, TopicSelection, TopicDelete, AgentSelection, Reconnection, UserIdentity, Space)
     - Hub dispatcher: `WebChat.Client/State/Hub/HubEventDispatcher.cs`
+    - Dispatcher returns `IDisposable` handler registrations for cleanup: `WebChat.Client/State/Dispatcher.cs`
   - Markdown rendering: `Markdig` 0.44.0
   - Reactive extensions: `System.Reactive` 6.1.0
   - Service worker: `WebChat.Client/wwwroot/service-worker.js`

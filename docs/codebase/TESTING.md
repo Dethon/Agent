@@ -70,6 +70,7 @@ Tests/
 │   │   ├── Text/                      # Text tool tests
 │   │   ├── Scheduling/               # Schedule tool tests
 │   │   └── DTOs/                      # DTO behavior tests
+│   │       └── WebChat/              # WebChat DTO tests (SpaceConfig, etc.)
 │   ├── Infrastructure/                # Infrastructure tests
 │   │   ├── Messaging/                 # Messaging subsystem tests
 │   │   ├── Memory/                    # Memory subsystem tests
@@ -78,7 +79,8 @@ Tests/
 │   │   ├── State/                     # Store and effect tests
 │   │   │   └── Pipeline/             # Message pipeline tests
 │   │   └── Services/                  # Client service tests
-│   ├── WebChat/Client/                # Additional WebChat tests
+│   ├── WebChat/                       # WebChat server-side tests
+│   │   └── Fixtures/                  # Fake services for WebChat tests
 │   └── McpServerLibrary/             # MCP server unit tests
 ├── Integration/                       # Tests requiring external resources
 │   ├── Agents/                        # Agent integration tests
@@ -90,6 +92,7 @@ Tests/
 │   ├── StateManagers/                 # Redis state store tests
 │   ├── WebChat/                       # WebChat hub integration tests
 │   │   └── Client/                    # WebChat client integration tests
+│   │       └── Adapters/             # Hub connection test adapters
 │   ├── Infrastructure/                # Infrastructure integration tests
 │   ├── Jack/                          # DI container tests
 │   └── Fixtures/                      # Shared test fixtures
@@ -347,6 +350,56 @@ private sealed class FakeChatClient : IChatClient
 
 See `Tests/Unit/Infrastructure/ToolApprovalChatClientTests.cs:211-272`.
 
+### Shared Fake Services
+
+When a fake is reused across multiple test classes, place it in a `Fixtures/` directory within the relevant test scope (not as a private class). Expose inspection properties for assertions.
+
+```csharp
+// Tests/Unit/WebChat/Fixtures/FakeTopicService.cs
+public sealed class FakeTopicService : ITopicService
+{
+    private readonly List<TopicMetadata> _savedTopics = new();
+    private readonly HashSet<string> _deletedTopicIds = new();
+
+    public IReadOnlyList<TopicMetadata> SavedTopics => _savedTopics;
+    public IReadOnlySet<string> DeletedTopicIds => _deletedTopicIds;
+
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
+    {
+        return Task.FromResult<IReadOnlyList<TopicMetadata>>(
+            _savedTopics.Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug).ToList());
+    }
+
+    public Task JoinSpaceAsync(string spaceSlug) => Task.CompletedTask;
+    // ...
+}
+```
+
+See `Tests/Unit/WebChat/Fixtures/FakeTopicService.cs`.
+
+### Integration Test Adapters
+
+For integration tests that need to call hub methods through a client interface, create adapter classes in `Tests/Integration/WebChat/Client/Adapters/` that wrap `HubConnection` and implement the client contract.
+
+```csharp
+// Tests/Integration/WebChat/Client/Adapters/HubConnectionTopicService.cs
+public sealed class HubConnectionTopicService(HubConnection connection) : ITopicService
+{
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
+    {
+        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
+    }
+
+    public async Task JoinSpaceAsync(string spaceSlug)
+    {
+        await connection.InvokeAsync("JoinSpace", spaceSlug);
+    }
+    // ...
+}
+```
+
+See `Tests/Integration/WebChat/Client/Adapters/HubConnectionTopicService.cs`.
+
 ### Moq for Simple Mocks
 
 Use Moq when the mock is simple (1-2 methods) and not reused across test classes.
@@ -372,6 +425,31 @@ public async Task Run_WithValidPath_MovesToTrash()
 ```
 
 See `Tests/Unit/Domain/RemoveToolTests.cs:13-49`.
+
+### Notification Routing Tests
+
+Test notification routing (broadcast vs. group-scoped) by mocking the `IHubNotificationSender` and verifying which send method is called based on the presence of `SpaceSlug`.
+
+```csharp
+[Fact]
+public async Task NotifyUserMessageAsync_WithSpaceSlug_SendsToGroup()
+{
+    var mockSender = new Mock<IHubNotificationSender>();
+    var notifier = new HubNotifier(mockSender.Object);
+    var notification = new UserMessageNotification("topic-1", "Hello", "alice", DateTimeOffset.UtcNow, SpaceSlug: "secret");
+
+    await notifier.NotifyUserMessageAsync(notification);
+
+    mockSender.Verify(s => s.SendToGroupAsync(
+        "space:secret", "OnUserMessage",
+        It.Is<UserMessageNotification>(n => n.TopicId == "topic-1"),
+        It.IsAny<CancellationToken>()), Times.Once);
+    mockSender.Verify(s => s.SendAsync(
+        It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+}
+```
+
+See `Tests/Unit/Infrastructure/HubNotifierTests.cs`.
 
 ## Assertions
 
@@ -413,7 +491,202 @@ result.Results[0].Snippet.Length.ShouldBeLessThanOrEqualTo(203);
 
 // Comparisons
 retrieved.LastAccessedAt.ShouldBeGreaterThan(originalAccessTime);
+
+// Collection predicate matching
+agents.ShouldContain(a => a.Id == "test-agent");
+defaultTopics.ShouldNotContain(t => t.TopicId == "topic-secret");
+
+// Range assertion (e.g. for serialization drift)
+savedTopic.CreatedAt.ShouldBeInRange(createdAt.AddSeconds(-1), createdAt.AddSeconds(1));
 ```
+
+## Store Tests (WebChat State)
+
+### Test Structure
+
+Test Redux-like stores by creating a real `Dispatcher` and `Store`, dispatching actions, and asserting on `State`. Implement `IDisposable` to dispose the store.
+
+```csharp
+public class SpaceStoreTests : IDisposable
+{
+    private readonly Dispatcher _dispatcher;
+    private readonly SpaceStore _store;
+
+    public SpaceStoreTests()
+    {
+        _dispatcher = new Dispatcher();
+        _store = new SpaceStore(_dispatcher);
+    }
+
+    public void Dispose() => _store.Dispose();
+
+    [Fact]
+    public void SpaceValidated_UpdatesSlugAndAccentColor()
+    {
+        _dispatcher.Dispatch(new SpaceValidated("secret-room", "Secret Room", "#6366f1"));
+
+        _store.State.CurrentSlug.ShouldBe("secret-room");
+        _store.State.AccentColor.ShouldBe("#6366f1");
+    }
+
+    [Fact]
+    public void InvalidSpace_ResetsToDefault()
+    {
+        _dispatcher.Dispatch(new SpaceValidated("secret-room", "Secret Room", "#6366f1"));
+        _dispatcher.Dispatch(new InvalidSpace());
+
+        _store.State.CurrentSlug.ShouldBe("default");
+    }
+}
+```
+
+See `Tests/Unit/WebChat.Client/State/SpaceStoreTests.cs` and `Tests/Unit/WebChat.Client/State/MessagesStoreTests.cs`.
+
+### What to Test on Stores
+
+- **Initial state**: Verify default values after construction
+- **Each action**: Dispatch and assert resulting state
+- **Immutability**: Assert original state reference is unchanged after dispatch
+- **Observable emission**: Subscribe and verify state changes propagate
+- **State replay**: New subscribers receive current state immediately
+- **Reducer completeness**: Cover the `_ => state` fallback for unhandled actions
+
+```csharp
+[Fact]
+public void ImmutableUpdate_DoesNotMutateOriginalState()
+{
+    _dispatcher.Dispatch(new MessagesLoaded("topic-1", initialMessages));
+    var stateAfterLoad = _store.State;
+
+    _dispatcher.Dispatch(new AddMessage("topic-1", new ChatMessageModel { Content = "Added" }));
+
+    stateAfterLoad.MessagesByTopic["topic-1"].Count.ShouldBe(1); // Original unchanged
+    _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2);   // New state updated
+    _store.State.ShouldNotBeSameAs(stateAfterLoad);
+}
+```
+
+See `Tests/Unit/WebChat.Client/State/MessagesStoreTests.cs:260-276`.
+
+## Parameterized Tests with Theory/InlineData
+
+Use `[Theory]` with `[InlineData]` for testing multiple input cases against the same assertion logic. Particularly useful for validation rules and boundary testing.
+
+```csharp
+[Theory]
+[InlineData("default")]
+[InlineData("secret-room")]
+[InlineData("my-space")]
+[InlineData("x")]
+public void IsValidSlug_ValidSlugs_ReturnsTrue(string slug)
+{
+    SpaceConfig.IsValidSlug(slug).ShouldBeTrue();
+}
+
+[Theory]
+[InlineData(null)]
+[InlineData("")]
+[InlineData("UPPERCASE")]
+[InlineData("has spaces")]
+[InlineData("-leading-dash")]
+[InlineData("<script>alert(1)</script>")]
+[InlineData("../etc/passwd")]
+public void IsValidSlug_InvalidSlugs_ReturnsFalse(string? slug)
+{
+    SpaceConfig.IsValidSlug(slug).ShouldBeFalse();
+}
+```
+
+Include security-relevant edge cases (XSS, path traversal) when testing validation methods.
+
+See `Tests/Unit/Domain/DTOs/WebChat/SpaceConfigTests.cs`.
+
+## SignalR Hub Integration Tests
+
+### Multi-Connection Tests
+
+Test SignalR group-based notification isolation by creating multiple hub connections, joining them to different spaces, and verifying that notifications only reach connections in the correct group.
+
+```csharp
+[Fact]
+public async Task TopicNotification_OnlyReceivedByConnectionInSameSpace()
+{
+    var connection2 = fixture.CreateHubConnection();
+    await connection2.StartAsync();
+
+    try
+    {
+        await connection2.InvokeAsync("RegisterUser", "test-user-2");
+
+        // Join different spaces
+        await _connection.InvokeAsync("JoinSpace", "default");
+        await connection2.InvokeAsync("JoinSpace", "secret-room");
+
+        var defaultNotifications = new List<TopicChangedNotification>();
+        var secretNotifications = new List<TopicChangedNotification>();
+
+        _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
+        connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
+
+        // Trigger notification in default space
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+
+        await Task.Delay(500);
+
+        defaultNotifications.ShouldContain(n => n.TopicId == "topic-notif");
+        secretNotifications.ShouldNotContain(n => n.TopicId == "topic-notif");
+    }
+    finally
+    {
+        await connection2.DisposeAsync();
+    }
+}
+```
+
+See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:567-605`.
+
+### `IAsyncLifetime` for Hub Tests
+
+Use `IAsyncLifetime` on integration test classes to set up and tear down the hub connection per test. Register the user in `InitializeAsync` since most hub methods require it.
+
+```csharp
+public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
+    : IClassFixture<WebChatServerFixture>, IAsyncLifetime
+{
+    private HubConnection _connection = null!;
+
+    public async Task InitializeAsync()
+    {
+        _connection = fixture.CreateHubConnection();
+        await _connection.StartAsync();
+        await _connection.InvokeAsync("RegisterUser", "test-user");
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _connection.DisposeAsync();
+    }
+}
+```
+
+See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:9-26`.
+
+### Hub Exception Testing
+
+Validate hub-level input validation by asserting `HubException` is thrown with the expected message.
+
+```csharp
+[Fact]
+public async Task JoinSpace_WithInvalidSlug_ThrowsHubException()
+{
+    var exception = await Should.ThrowAsync<HubException>(
+        () => _connection.InvokeAsync("JoinSpace", "INVALID SLUG!"));
+
+    exception.Message.ShouldContain("Invalid space slug");
+}
+```
+
+See `Tests/Integration/WebChat/ChatHubIntegrationTests.cs:707-713`.
 
 ## Fixtures
 
@@ -549,6 +822,9 @@ private RedisStackMemoryStore CreateStore()
 - Error conditions and validation (path traversal, missing fields, invalid input)
 - Null/empty/boundary conditions
 - State transitions in stores and reducers
+- Notification routing (broadcast vs. group-scoped delivery)
+- DTO validation methods (slug patterns, hex colors) with security edge cases
+- Space-scoped data isolation (topics filtered by space slug)
 
 ### Skip Testing
 

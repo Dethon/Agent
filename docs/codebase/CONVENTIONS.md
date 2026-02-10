@@ -294,6 +294,22 @@ await foreach (var update in mainResponses.Merge(notificationResponses, cancella
 
 See `Domain/Extensions/IAsyncEnumerableExtensions.cs:89`.
 
+### Fire-and-Forget with `SafeAwaitAsync`
+
+Use `SafeAwaitAsync` for non-critical async operations (notifications, telemetry) that should not block the caller or propagate exceptions. Discard the task with `_ =`.
+
+```csharp
+// Fire-and-forget notification (discard task, log on failure)
+await hubNotifier.NotifyStreamChangedAsync(notification, cancellationToken)
+    .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
+
+// Fire-and-forget from sync context
+_ = hubNotifier.NotifyUserMessageAsync(notification, CancellationToken.None)
+    .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
+```
+
+See `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:74-79` and `Infrastructure/Extensions/`.
+
 ## LINQ Over Loops
 
 **Strongly prefer LINQ** over `for`/`foreach`/`while` loops. Only use traditional loops when mutating external state, complex control flow, or performance-critical hot paths.
@@ -477,6 +493,8 @@ See `McpServerLibrary/McpTools/McpFileSearchTool.cs`.
 
 Use a Redux-like pattern with `Store<TState>`, `IAction`, `Dispatcher`, and `Selector` in `WebChat.Client/State/`.
 
+### Core Components
+
 ```csharp
 // Store
 public sealed class Store<TState> : IDisposable where TState : class
@@ -494,6 +512,276 @@ public sealed class Store<TState> : IDisposable where TState : class
 ```
 
 See `WebChat.Client/State/Store.cs`.
+
+### Feature Store Pattern
+
+Organize each feature as a subdirectory under `State/` with four files: Actions, Reducers, State, and Store. Register actions in the Store constructor via `dispatcher.RegisterHandler<TAction>`.
+
+```
+State/
+├── Space/
+│   ├── SpaceActions.cs      # Action records
+│   ├── SpaceReducers.cs     # Pure reducer (switch expression)
+│   ├── SpaceState.cs        # Immutable state record
+│   └── SpaceStore.cs        # Store class wiring handlers
+├── Messages/
+│   ├── MessagesActions.cs
+│   ├── MessagesReducers.cs
+│   ├── MessagesState.cs
+│   └── MessagesStore.cs
+└── Topics/
+    └── ...
+```
+
+See `WebChat.Client/State/Space/` and `WebChat.Client/State/Messages/` for reference.
+
+### Actions
+
+Define actions as positional records implementing `IAction`. One file per feature, multiple actions per file.
+
+```csharp
+// WebChat.Client/State/Space/SpaceActions.cs
+public record SelectSpace(string Slug) : IAction;
+public record SpaceValidated(string Slug, string Name, string AccentColor) : IAction;
+public record InvalidSpace : IAction;
+```
+
+See `WebChat.Client/State/Space/SpaceActions.cs` and `WebChat.Client/State/Messages/MessagesActions.cs`.
+
+### Reducers
+
+Implement reducers as static methods using switch expressions. Reducers must be pure -- return new state via `with` expressions, never mutate.
+
+```csharp
+public static class SpaceReducers
+{
+    public static SpaceState Reduce(SpaceState state, IAction action) => action switch
+    {
+        SelectSpace a => state with { CurrentSlug = a.Slug },
+        SpaceValidated a => new SpaceState { CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor },
+        InvalidSpace => SpaceState.Initial,
+        _ => state
+    };
+}
+```
+
+See `WebChat.Client/State/Space/SpaceReducers.cs` and `WebChat.Client/State/Messages/MessagesReducers.cs`.
+
+### State Records
+
+Define state as sealed records with `init`-only properties and a static `Initial` property for the default state.
+
+```csharp
+public sealed record SpaceState
+{
+    public string CurrentSlug { get; init; } = "default";
+    public string SpaceName { get; init; } = "Main";
+    public string AccentColor { get; init; } = SpaceConfig.DefaultAccentColor;
+
+    public static SpaceState Initial => new();
+}
+```
+
+See `WebChat.Client/State/Space/SpaceState.cs`.
+
+### Store Wiring
+
+Feature stores register handlers with the `Dispatcher` in their constructor. Synchronous handlers run before effect async handlers, so effects always read up-to-date state.
+
+```csharp
+public sealed class SpaceStore : IDisposable
+{
+    private readonly Store<SpaceState> _store;
+
+    public SpaceStore(Dispatcher dispatcher)
+    {
+        _store = new Store<SpaceState>(SpaceState.Initial);
+
+        dispatcher.RegisterHandler<SelectSpace>(action =>
+            _store.Dispatch(action, SpaceReducers.Reduce));
+        dispatcher.RegisterHandler<SpaceValidated>(action =>
+            _store.Dispatch(action, SpaceReducers.Reduce));
+        dispatcher.RegisterHandler<InvalidSpace>(action =>
+            _store.Dispatch(action, SpaceReducers.Reduce));
+    }
+
+    public SpaceState State => _store.State;
+    public IObservable<SpaceState> StateObservable => _store.StateObservable;
+    public void Dispose() => _store.Dispose();
+}
+```
+
+See `WebChat.Client/State/Space/SpaceStore.cs`.
+
+### Dispatcher Handler Registration and Disposal
+
+Handlers registered via `dispatcher.RegisterHandler<TAction>` return an `IDisposable`. Effects that register handlers must store the registration and dispose it on cleanup.
+
+```csharp
+public sealed class SpaceEffect : IDisposable
+{
+    private readonly IDisposable _handlerRegistration;
+
+    public SpaceEffect(Dispatcher dispatcher, ...)
+    {
+        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
+    }
+
+    public void Dispose()
+    {
+        _handlerRegistration.Dispose();
+    }
+}
+```
+
+See `WebChat.Client/State/Effects/SpaceEffect.cs:17,74-77`.
+
+### Effects
+
+Effects handle side effects (API calls, navigation, cross-store coordination). Place them in `State/Effects/`. Register async handlers by wrapping in a fire-and-forget synchronous handler.
+
+```csharp
+private void HandleSelectSpace(SelectSpace action)
+{
+    var previousSlug = _previousSlug;
+    _previousSlug = action.Slug;
+    _ = HandleSelectSpaceAsync(action.Slug, previousSlug);
+}
+
+private async Task HandleSelectSpaceAsync(string slug, string previousSlug)
+{
+    if (slug == previousSlug) return;
+
+    var space = await _configService.GetSpaceAsync(slug);
+    // ... dispatch further actions
+    _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));
+}
+```
+
+See `WebChat.Client/State/Effects/SpaceEffect.cs` and `WebChat.Client/State/Effects/InitializationEffect.cs`.
+
+### DI Registration
+
+Register all stores and effects via extension methods in `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`. Stores are `AddScoped`, effects are `AddScoped`.
+
+```csharp
+public IServiceCollection AddWebChatStores()
+{
+    services.AddScoped<Dispatcher>();
+    services.AddScoped<SpaceStore>();
+    services.AddScoped<MessagesStore>();
+    // ...
+    return services;
+}
+
+public IServiceCollection AddWebChatEffects()
+{
+    services.AddScoped<SpaceEffect>();
+    services.AddScoped<InitializationEffect>();
+    // ...
+    return services;
+}
+```
+
+See `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`.
+
+## SignalR Hub Notifications
+
+### Notification DTOs
+
+Define hub notification DTOs as positional records in `Domain/DTOs/WebChat/`. Include an optional `SpaceSlug` parameter for space-scoped routing.
+
+```csharp
+public record TopicChangedNotification(
+    TopicChangeType ChangeType,
+    string TopicId,
+    TopicMetadata? Topic = null,
+    string? SpaceSlug = null);
+
+public record StreamChangedNotification(
+    StreamChangeType ChangeType,
+    string TopicId,
+    string? SpaceSlug = null);
+```
+
+See `Domain/DTOs/WebChat/HubNotification.cs`.
+
+### Space-Scoped Notification Routing
+
+Use the `INotifier` / `HubNotifier` pattern to route notifications to SignalR groups. When `SpaceSlug` is present, send to the `space:{slug}` group. When absent, broadcast to all.
+
+```csharp
+private async Task SendToSpaceOrAllAsync(
+    string? spaceSlug, string methodName, object notification, CancellationToken cancellationToken)
+{
+    if (spaceSlug is not null)
+    {
+        await sender.SendToGroupAsync($"space:{spaceSlug}", methodName, notification, cancellationToken);
+    }
+    else
+    {
+        await sender.SendAsync(methodName, notification, cancellationToken);
+    }
+}
+```
+
+See `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs:44-55`.
+
+### Adapter Pattern for Hub Context
+
+Abstract `IHubContext<T>` behind a domain interface (`IHubNotificationSender`) so Infrastructure can send notifications without depending on ASP.NET Core types. The Agent layer provides the concrete adapter.
+
+```csharp
+// Domain contract
+public interface IHubNotificationSender
+{
+    Task SendAsync(string methodName, object notification, CancellationToken cancellationToken = default);
+    Task SendToGroupAsync(string groupName, string methodName, object notification, CancellationToken cancellationToken = default);
+}
+
+// Agent adapter
+public sealed class HubNotificationAdapter(IHubContext<ChatHub> hubContext) : IHubNotificationSender { ... }
+```
+
+See `Domain/Contracts/IHubNotificationSender.cs` and `Agent/Hubs/HubNotificationAdapter.cs`.
+
+## SignalR Space Groups
+
+Use SignalR groups named `space:{slug}` to isolate notifications per space. Clients join a space group via `JoinSpace`, and the hub tracks the current space in `Context.Items["SpaceSlug"]`. Validate slugs with `SpaceConfig.IsValidSlug` before joining.
+
+```csharp
+public async Task JoinSpace(string spaceSlug)
+{
+    if (!SpaceConfig.IsValidSlug(spaceSlug))
+    {
+        throw new HubException("Invalid space slug");
+    }
+
+    await SwitchSpaceGroupAsync(spaceSlug);
+}
+```
+
+See `Agent/Hubs/ChatHub.cs:89-113`.
+
+## Validation with Source-Generated Regex
+
+Use `[GeneratedRegex]` with `partial` methods for compile-time regex generation. Place validation methods as static members on the DTO that owns the constraint.
+
+```csharp
+public partial record SpaceConfig(string Slug, string Name, string AccentColor)
+{
+    public const string DefaultAccentColor = "#e94560";
+
+    private static readonly Regex _slugPattern = SpaceSlugRegex();
+
+    public static bool IsValidSlug(string? slug) => slug is not null && _slugPattern.IsMatch(slug);
+
+    [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled)]
+    private static partial Regex SpaceSlugRegex();
+}
+```
+
+See `Domain/DTOs/WebChat/SpaceConfig.cs`.
 
 ## Raw String Literals
 

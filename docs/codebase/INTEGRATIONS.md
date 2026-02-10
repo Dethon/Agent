@@ -29,6 +29,9 @@
 - **Thread state store**: `Infrastructure/StateManagers/RedisThreadStateStore.cs` -- implements `IThreadStateStore`
   - Stores chat message history as JSON strings
   - Stores topic metadata with pattern `topic:{agentId}:{chatId}:{topicId}`
+  - Topic metadata includes `SpaceSlug` (defaults to `"default"`) for multi-space filtering
+  - `GetAllTopicsAsync` filters topics by `spaceSlug` parameter when provided
+  - `GetTopicByChatIdAndThreadIdAsync` for reverse lookup by chatId/threadId
   - Default expiration: 30 days (configurable via `redis.expirationDays`)
 - **Schedule store**: `Infrastructure/StateManagers/RedisScheduleStore.cs` -- implements `IScheduleStore`
   - Stores scheduled tasks with pattern `schedule:{id}`
@@ -84,14 +87,46 @@
 ### WebChat (SignalR)
 - **Server hub**: `Agent/Hubs/ChatHub.cs` -- SignalR `Hub` subclass
   - Route: `/hubs/chat`
-  - Methods: `RegisterUser`, `SendMessage`, `GetAgents`, `GetHistory`, `GetAllTopics`, `SaveTopic`, `DeleteTopic`, `StartSession`, `ResumeStream`, `CancelTopic`, `RespondToApprovalAsync`
+  - Methods: `RegisterUser`, `SendMessage`, `EnqueueMessage`, `GetAgents`, `ValidateAgent`, `GetHistory`, `GetAllTopics`, `SaveTopic`, `DeleteTopic`, `StartSession`, `ResumeStream`, `CancelTopic`, `JoinSpace`, `IsProcessing`, `GetStreamState`, `IsApprovalPending`, `GetPendingApprovalForTopic`, `RespondToApprovalAsync`
+  - Space isolation: Connections join SignalR groups via `JoinSpace(spaceSlug)`. The hub tracks the current space slug in `Context.Items["SpaceSlug"]` and passes it to notifications for group-scoped delivery.
 - **Session management**: `Infrastructure/Clients/Messaging/WebChat/WebChatSessionManager.cs`
+  - Sessions include `SpaceSlug` via `WebChatSession` record (`Infrastructure/Clients/Messaging/WebChat/WebChatSession.cs`)
 - **Stream management**: `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs`
 - **Approval management**: `Infrastructure/Clients/Messaging/WebChat/WebChatApprovalManager.cs`
+  - Approval resolution broadcasts include `SpaceSlug` for group-scoped delivery
 - **Messenger client**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs` -- implements `IChatMessengerClient`
 - **Hub notifier**: `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs` -- implements `INotifier`
+  - Routes notifications to space-specific SignalR groups (`space:{slug}`) when `SpaceSlug` is set, falls back to broadcast to all clients otherwise
 - **Hub notification adapter**: `Agent/Hubs/HubNotificationAdapter.cs` -- implements `IHubNotificationSender`
+  - Supports `SendAsync` (all clients) and `SendToGroupAsync` (space-scoped clients)
+- **Notification DTOs**: `Domain/DTOs/WebChat/HubNotification.cs`
+  - `TopicChangedNotification`, `StreamChangedNotification`, `ApprovalResolvedNotification`, `ToolCallsNotification`, `UserMessageNotification` -- all include optional `SpaceSlug` for routing
 - **Broadcast channel**: `Infrastructure/Clients/Messaging/WebChat/BroadcastChannel.cs`
+
+### WebChat Spaces
+- **Configuration**: `WebChat/appsettings.json` section `Spaces` -- array of `SpaceConfig` objects
+  - Each space has `Slug` (URL path), `Name` (display name), `AccentColor` (hex color)
+  - Default space: `{ "Slug": "default", "Name": "Main", "AccentColor": "#e94560" }`
+- **Server endpoints** (in `WebChat/Program.cs`):
+  - `GET /api/spaces/{slug}` -- validate and fetch space config (returns 404 for unknown slugs)
+  - `GET /manifest.webmanifest?slug={slug}` -- dynamic PWA manifest with per-space name, colors, and icon
+  - `GET /icon.svg?color={hex}` -- dynamic SVG favicon with configurable fill color
+- **Validation**: `Domain/DTOs/WebChat/SpaceConfig.cs`
+  - `SpaceConfig.IsValidSlug()` -- slugs must match `^[a-z0-9]+(-[a-z0-9]+)*$`
+  - `SpaceConfig.IsValidHexColor()` -- must match `^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`
+  - `SpaceConfig.DefaultAccentColor` -- `"#e94560"`
+- **Client state**: `WebChat.Client/State/Space/` -- Redux-like store for space management
+  - Store: `SpaceStore` with `SpaceState` (CurrentSlug, SpaceName, AccentColor)
+  - Actions: `SelectSpace`, `SpaceValidated`, `InvalidSpace`
+  - Effect: `WebChat.Client/State/Effects/SpaceEffect.cs` -- validates space via API, joins SignalR group, clears topics/messages on space transition
+  - Service: `WebChat.Client/Services/ConfigService.cs` -- `GetSpaceAsync(slug)` calls `/api/spaces/{slug}`
+- **Client routing**: `WebChat.Client/Components/Chat/ChatContainer.razor` -- routes `/{Slug}` parameter, dispatches `SelectSpace` on parameter change
+- **Client JS interop**: `WebChat.Client/wwwroot/app.js`
+  - `faviconHelper.setColor(hex)` -- updates favicon dynamically with space accent color
+  - `faviconHelper.setSpaceTitle(name)` -- appends space name to page title
+  - Per-space manifest URL set in `index.html` inline script based on URL path
+- **Environment variables**:
+  - `SPACES__0__SLUG`, `SPACES__0__NAME`, `SPACES__0__ACCENTCOLOR` -- space configuration array via .NET config binding
 
 ## External APIs
 
@@ -214,7 +249,7 @@ All MCP servers use `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 and expose
 
 ### DDNS IP Allowlist
 - **Middleware**: `Infrastructure/Extensions/DdnsIpAllowlistExtensions.cs`
-  - Applied in `Agent/Program.cs:30` and `WebChat/Program.cs:9`
+  - Applied in `Agent/Program.cs:30` and `WebChat/Program.cs:10`
   - Restricts access to a configured DDNS hostname
 - **Environment variables**:
   - `ALLOWEDDDNSHOST` -- DDNS hostname for IP allowlisting
@@ -240,6 +275,7 @@ All MCP servers use `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 and expose
 | `ALLOWEDDDNSHOST` | Agent, WebChat | DDNS hostname for IP allowlist |
 | `AGENTURL` | WebChat | Agent backend URL |
 | `USERS__0__ID`, `USERS__0__AVATARURL` | WebChat | WebChat user identity config |
+| `SPACES__0__SLUG`, `SPACES__0__NAME`, `SPACES__0__ACCENTCOLOR` | WebChat | Space configuration (slug, display name, accent color) |
 | `DATA_PATH` | Docker Compose | Shared data/media volume path |
 | `VAULT_PATH` | Docker Compose | Vault directory for McpServerText |
 | `REPOSITORY_PATH` | Docker Compose | Source repo path for Docker builds |
