@@ -145,7 +145,7 @@ public class RedisChatMessageStoreTests
         var responseMessage = new ChatMessage(ChatRole.Assistant, "Hello from agent");
 
         var invokedContext = new ChatHistoryProvider.InvokedContext(
-            new Mock<AIAgent>().Object, null, [new ChatMessage(ChatRole.User, "Hi")], [])
+            new Mock<AIAgent>().Object, null, [new ChatMessage(ChatRole.User, "Hi")])
         {
             ResponseMessages = [responseMessage]
         };

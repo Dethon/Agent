@@ -82,7 +82,7 @@ public sealed class McpAgent : DisposableAgent
         _syncLock.Dispose();
     }
 
-    public override ValueTask<AgentSession> CreateSessionAsync(CancellationToken cancellationToken = default)
+    protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         return _innerAgent.CreateSessionAsync(cancellationToken);
@@ -100,14 +100,14 @@ public sealed class McpAgent : DisposableAgent
         });
     }
     
-    public override JsonElement SerializeSession(
+    protected override JsonElement SerializeSessionCore(
         AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         return _innerAgent.SerializeSession(session, jsonSerializerOptions);
     }
 
-    public override ValueTask<AgentSession> DeserializeSessionAsync(
+    protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
         JsonElement serializedThread,
         JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)

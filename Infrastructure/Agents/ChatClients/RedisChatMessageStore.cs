@@ -30,14 +30,14 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
         return Guid.NewGuid().ToString();
     }
 
-    public override async ValueTask<IEnumerable<ChatMessage>> InvokingAsync(
+    protected override async ValueTask<IEnumerable<ChatMessage>> InvokingCoreAsync(
         InvokingContext context,
         CancellationToken cancellationToken = default)
     {
         return await store.GetMessagesAsync(key) ?? [];
     }
 
-    public override async ValueTask InvokedAsync(
+    protected override async ValueTask InvokedCoreAsync(
         InvokedContext context,
         CancellationToken cancellationToken = default)
     {
