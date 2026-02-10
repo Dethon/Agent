@@ -312,7 +312,7 @@ services:
     ports:
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
     environment:
