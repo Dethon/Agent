@@ -68,7 +68,7 @@ await app.RunAsync();
 return;
 
 static bool isValidHexColor(string? color) =>
-    color is not null && System.Text.RegularExpressions.Regex.IsMatch(color, @"^#[0-9a-fA-F]{3,8}$");
+    color is not null && System.Text.RegularExpressions.Regex.IsMatch(color, @"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$");
 
 namespace WebChat
 {

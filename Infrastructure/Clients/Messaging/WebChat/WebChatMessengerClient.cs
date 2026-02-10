@@ -308,7 +308,7 @@ public sealed class WebChatMessengerClient(
 
         // Notify other browsers about the user message
         await hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender, timestamp, correlationId), cancellationToken)
+                new UserMessageNotification(topicId, message, sender, timestamp, correlationId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)), cancellationToken)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         // Only notify StreamChanged.Started for new streams
@@ -366,7 +366,7 @@ public sealed class WebChatMessengerClient(
 
         // Notify other browsers about the user message
         _ = hubNotifier.NotifyUserMessageAsync(
-                new UserMessageNotification(topicId, message, sender, timestamp, correlationId), CancellationToken.None)
+                new UserMessageNotification(topicId, message, sender, timestamp, correlationId, SpaceSlug: sessionManager.GetSpaceSlug(topicId)), CancellationToken.None)
             .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
 
         var messageId = Interlocked.Increment(ref _messageIdCounter);

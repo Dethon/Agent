@@ -29,16 +29,19 @@ public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,
     string? ToolCalls = null,
-    string? MessageId = null);
+    string? MessageId = null,
+    string? SpaceSlug = null);
 
 public record ToolCallsNotification(
     string TopicId,
     string ToolCalls,
-    string? MessageId = null);
+    string? MessageId = null,
+    string? SpaceSlug = null);
 
 public record UserMessageNotification(
     string TopicId,
     string Content,
     string? SenderId,
     DateTimeOffset? Timestamp,
-    string? CorrelationId = null);
+    string? CorrelationId = null,
+    string? SpaceSlug = null);

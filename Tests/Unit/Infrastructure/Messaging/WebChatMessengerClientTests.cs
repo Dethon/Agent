@@ -26,6 +26,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
         _hubNotifier = new Mock<INotifier>();
         var approvalManager = new WebChatApprovalManager(
             _streamManager,
+            _sessionManager,
             _hubNotifier.Object,
             NullLogger<WebChatApprovalManager>.Instance);
         _threadResolver = new ChatThreadResolver();
