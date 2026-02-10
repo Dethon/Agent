@@ -1,20 +1,8 @@
-# HTTPS for local access (self-signed)
-:443 {
-    tls internal {
-        on_demand
+assistants.herfluffnes.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
     }
 
-    handle /hubs/* {
-        reverse_proxy agent:8080
-    }
-
-    handle {
-        reverse_proxy webui:8080
-    }
-}
-
-# HTTP for Cloudflare Tunnel
-:80 {
     handle /hubs/* {
         reverse_proxy agent:8080
     }
