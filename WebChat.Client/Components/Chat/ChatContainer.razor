@@ -23,16 +23,17 @@
     [Parameter]
     public string? Slug { get; set; }
 
-    protected override void OnInitialized()
-    {
-        var slug = string.IsNullOrEmpty(Slug) ? "default" : Slug;
-        Dispatcher.Dispatch(new SelectSpace(slug));
-        Dispatcher.Dispatch(new Initialize());
-    }
+    private bool _initialized;
 
     protected override void OnParametersSet()
     {
         var slug = string.IsNullOrEmpty(Slug) ? "default" : Slug;
         Dispatcher.Dispatch(new SelectSpace(slug));
+
+        if (!_initialized)
+        {
+            _initialized = true;
+            Dispatcher.Dispatch(new Initialize());
+        }
     }
 }
