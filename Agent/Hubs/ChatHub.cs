@@ -81,14 +81,18 @@ public sealed class ChatHub(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        await SwitchSpaceGroupAsync(spaceSlug);
-        return await threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
+        return threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
     }
 
     public async Task JoinSpace(string spaceSlug)
     {
+        if (!SpaceConfig.IsValidSlug(spaceSlug))
+        {
+            throw new HubException("Invalid space slug");
+        }
+
         await SwitchSpaceGroupAsync(spaceSlug);
     }
 

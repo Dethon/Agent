@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
 using JetBrains.Annotations;
@@ -68,7 +69,7 @@ await app.RunAsync();
 return;
 
 static bool isValidHexColor(string? color) =>
-    color is not null && System.Text.RegularExpressions.Regex.IsMatch(color, @"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$");
+    color is not null && ColorRegex().IsMatch(color);
 
 namespace WebChat
 {
@@ -77,4 +78,10 @@ namespace WebChat
 
     [UsedImplicitly]
     internal record AppConfig(string AgentUrl, UserConfig[] Users, SpaceConfig[] Spaces);
+}
+
+partial class Program
+{
+    [GeneratedRegex("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")]
+    private static partial Regex ColorRegex();
 }

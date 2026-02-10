@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -698,7 +699,16 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             "GetAllTopics", "test-agent", "nonexistent");
         invalidTopics.ShouldBeEmpty();
 
-        // JoinSpace with any slug succeeds (agent is space-agnostic)
+        // JoinSpace with valid but unconfigured slug succeeds (server doesn't check config)
         await _connection.InvokeAsync("JoinSpace", "nonexistent");
+    }
+
+    [Fact]
+    public async Task JoinSpace_WithInvalidSlug_ThrowsHubException()
+    {
+        var exception = await Should.ThrowAsync<HubException>(
+            () => _connection.InvokeAsync("JoinSpace", "INVALID SLUG!"));
+
+        exception.Message.ShouldContain("Invalid space slug");
     }
 }
