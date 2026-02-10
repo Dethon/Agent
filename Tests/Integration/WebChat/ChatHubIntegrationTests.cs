@@ -575,8 +575,8 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             await connection2.InvokeAsync("RegisterUser", "test-user-2");
 
             // Join different spaces
-            await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "default");
-            await connection2.InvokeAsync<SpaceConfig?>("JoinSpace", "secret-room");
+            await _connection.InvokeAsync("JoinSpace", "default");
+            await connection2.InvokeAsync("JoinSpace", "secret-room");
 
             var defaultNotifications = new List<TopicChangedNotification>();
             var secretNotifications = new List<TopicChangedNotification>();
@@ -624,8 +624,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
     public async Task FullSpaceWorkflow_CreateTopicsInDifferentSpaces_IsolatedCorrectly()
     {
         // Arrange - join default space
-        var defaultSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "default");
-        defaultSpace.ShouldNotBeNull();
+        await _connection.InvokeAsync("JoinSpace", "default");
 
         // Create topic in default space
         var defaultTopic = new TopicMetadata(
@@ -634,9 +633,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
         await _connection.InvokeAsync("SaveTopic", defaultTopic, true);
 
         // Switch to secret space
-        var secretSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "secret-room");
-        secretSpace.ShouldNotBeNull();
-        secretSpace.AccentColor.ShouldNotBe(defaultSpace.AccentColor);
+        await _connection.InvokeAsync("JoinSpace", "secret-room");
 
         // Create topic in secret space
         var secretTopic = new TopicMetadata(
@@ -661,8 +658,7 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             "GetAllTopics", "test-agent", "nonexistent");
         invalidTopics.ShouldBeEmpty();
 
-        // Assert - JoinSpace with invalid slug returns null
-        var invalidSpace = await _connection.InvokeAsync<SpaceConfig?>("JoinSpace", "nonexistent");
-        invalidSpace.ShouldBeNull();
+        // JoinSpace with any slug succeeds (agent is space-agnostic)
+        await _connection.InvokeAsync("JoinSpace", "nonexistent");
     }
 }

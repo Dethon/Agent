@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Services;
@@ -10,8 +11,14 @@ public sealed class ConfigService(HttpClient httpClient)
     public async Task<AppConfig> GetConfigAsync()
     {
         return _config ??= await httpClient.GetFromJsonAsync<AppConfig>("/api/config")
-            ?? new AppConfig(null, []);
+            ?? new AppConfig(null, [], []);
+    }
+
+    public async Task<SpaceConfig?> GetSpaceAsync(string slug)
+    {
+        var config = await GetConfigAsync();
+        return config.Spaces?.FirstOrDefault(s => s.Slug == slug);
     }
 }
 
-public record AppConfig(string? AgentUrl, UserConfig[]? Users);
+public record AppConfig(string? AgentUrl, UserConfig[]? Users, SpaceConfig[]? Spaces);

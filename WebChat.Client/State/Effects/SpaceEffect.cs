@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using WebChat.Client.Contracts;
+using WebChat.Client.Services;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
@@ -11,6 +12,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
     private readonly IChatConnectionService _connectionService;
+    private readonly ConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private string _lastValidatedSlug = "default";
 
@@ -18,11 +20,13 @@ public sealed class SpaceEffect : IDisposable
         Dispatcher dispatcher,
         ITopicService topicService,
         IChatConnectionService connectionService,
+        ConfigService configService,
         NavigationManager navigationManager)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
         _connectionService = connectionService;
+        _configService = configService;
         _navigationManager = navigationManager;
 
         dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
@@ -40,7 +44,7 @@ public sealed class SpaceEffect : IDisposable
             return;
         }
 
-        var space = await _topicService.JoinSpaceAsync(slug);
+        var space = await _configService.GetSpaceAsync(slug);
         if (space is null)
         {
             // If hub isn't connected yet, skip — InitializationEffect handles initial join
@@ -49,12 +53,15 @@ public sealed class SpaceEffect : IDisposable
                 return;
             }
 
-            // Hub is connected but space is invalid — redirect to default
+            // Space is invalid — redirect to default
             _dispatcher.Dispatch(new InvalidSpace());
             _lastValidatedSlug = "default";
             _navigationManager.NavigateTo("/", replace: true);
             return;
         }
+
+        // Join SignalR group for the space
+        await _topicService.JoinSpaceAsync(slug);
 
         // Clear topics and messages for space transition
         _dispatcher.Dispatch(new TopicsLoaded([]));

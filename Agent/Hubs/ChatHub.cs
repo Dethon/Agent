@@ -18,8 +18,7 @@ public sealed class ChatHub(
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
-    INotifier hubNotifier,
-    IConfiguration configuration) : Hub
+    INotifier hubNotifier) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
@@ -82,11 +81,6 @@ public sealed class ChatHub(
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        if (!IsValidSpace(spaceSlug))
-        {
-            return [];
-        }
-
         // Leave previous space group if any
         if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug && prevSlug != spaceSlug)
         {
@@ -98,15 +92,8 @@ public sealed class ChatHub(
         return await threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
     }
 
-    public async Task<SpaceConfig?> JoinSpace(string spaceSlug)
+    public async Task JoinSpace(string spaceSlug)
     {
-        var spaces = configuration.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
-        var space = spaces.FirstOrDefault(s => s.Slug == spaceSlug);
-        if (space is null)
-        {
-            return null;
-        }
-
         // Leave previous space group if any
         if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug && prevSlug != spaceSlug)
         {
@@ -115,13 +102,6 @@ public sealed class ChatHub(
 
         Context.Items["SpaceSlug"] = spaceSlug;
         await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
-        return space;
-    }
-
-    private bool IsValidSpace(string slug)
-    {
-        var spaces = configuration.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
-        return spaces.Any(s => s.Slug == slug);
     }
 
     public bool IsProcessing(string topicId)

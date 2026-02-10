@@ -62,15 +62,6 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         FakeAgentFactory.ConfigureAgents(testAgents);
 
         var builder = WebApplication.CreateBuilder();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["Spaces:0:Slug"] = "default",
-            ["Spaces:0:Name"] = "Main",
-            ["Spaces:0:AccentColor"] = "#e94560",
-            ["Spaces:1:Slug"] = "secret-room",
-            ["Spaces:1:Name"] = "Secret Room",
-            ["Spaces:1:AccentColor"] = "#6366f1",
-        });
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, _port));
 
         // Configure services

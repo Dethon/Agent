@@ -31,8 +31,8 @@ public sealed class HubConnectionTopicService(HubConnection connection) : ITopic
         return await connection.InvokeAsync<bool>("StartSession", agentId, topicId, chatId, threadId);
     }
 
-    public async Task<SpaceConfig?> JoinSpaceAsync(string spaceSlug)
+    public async Task JoinSpaceAsync(string spaceSlug)
     {
-        return await connection.InvokeAsync<SpaceConfig?>("JoinSpace", spaceSlug);
+        await connection.InvokeAsync("JoinSpace", spaceSlug);
     }
 }

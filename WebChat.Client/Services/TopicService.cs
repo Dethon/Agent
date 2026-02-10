@@ -51,14 +51,14 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             threadId);
     }
 
-    public async Task<SpaceConfig?> JoinSpaceAsync(string spaceSlug)
+    public async Task JoinSpaceAsync(string spaceSlug)
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
         {
-            return null;
+            return;
         }
 
-        return await hubConnection.InvokeAsync<SpaceConfig?>("JoinSpace", spaceSlug);
+        await hubConnection.InvokeAsync("JoinSpace", spaceSlug);
     }
 }

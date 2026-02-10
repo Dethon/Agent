@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
@@ -15,6 +16,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
+    private readonly ConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
@@ -29,6 +31,7 @@ public sealed class InitializationEffect : IDisposable
         IChatConnectionService connectionService,
         IAgentService agentService,
         ITopicService topicService,
+        ConfigService configService,
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
@@ -42,6 +45,7 @@ public sealed class InitializationEffect : IDisposable
         _connectionService = connectionService;
         _agentService = agentService;
         _topicService = topicService;
+        _configService = configService;
         _localStorage = localStorage;
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
@@ -81,22 +85,20 @@ public sealed class InitializationEffect : IDisposable
             await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
         };
 
-        // Join space
+        // Validate and join space
         var spaceSlug = _spaceStore.State.CurrentSlug;
-        var space = await _topicService.JoinSpaceAsync(spaceSlug);
-        if (space is not null)
-        {
-            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
-        }
-        else
+        var space = await _configService.GetSpaceAsync(spaceSlug);
+        if (space is null)
         {
             _dispatcher.Dispatch(new InvalidSpace());
             spaceSlug = _spaceStore.State.CurrentSlug;
-            space = await _topicService.JoinSpaceAsync(spaceSlug);
-            if (space is not null)
-            {
-                _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
-            }
+            space = await _configService.GetSpaceAsync(spaceSlug);
+        }
+
+        if (space is not null)
+        {
+            await _topicService.JoinSpaceAsync(spaceSlug);
+            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
         }
 
         // Load agents
