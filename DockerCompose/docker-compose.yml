@@ -271,7 +271,7 @@ services:
       - mcp-memory
       - mcp-idealista
       - redis
-
+      
   webui:
     image: webui:latest
     logging:
@@ -290,7 +290,7 @@ services:
       - .env
     environment:
       - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
-      - AGENTURL=${AGENTURL:-http://agent:8080}
+      - AGENTURL=${AGENTURL:-http://localhost:5000}
       - USERS__0__ID=${USERS__0__ID:-Alice}
       - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
       - USERS__1__ID=${USERS__1__ID:-Bob}
@@ -302,7 +302,8 @@ services:
       - agent
 
   caddy:
-    image: caddy:2
+    build:
+      context: ./caddy
     logging:
       options:
         max-size: "5m"
@@ -311,29 +312,17 @@ services:
     ports:
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
+    environment:
+      - CF_API_TOKEN=${CF_API_TOKEN}
     restart: unless-stopped
     networks:
       - jackbot
     depends_on:
       - webui
       - agent
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: cloudflared
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
-    restart: unless-stopped
-    networks:
-      - jackbot
-    depends_on:
-      - caddy
 
 networks:
   jackbot:

@@ -126,7 +126,7 @@
   - Env file: `DockerCompose/.env`
 - **Dev container**: `.devcontainer/Dockerfile` + `.devcontainer/docker-compose.yml`
 - **Reverse proxy**: Caddy 2 -- `DockerCompose/Caddyfile`
-  - HTTPS (self-signed) on port 443, routes `/hubs/*` to agent, everything else to webui
+  - HTTPS (Let's Encrypt DNS-01) on port 443, routes `/hubs/*` to agent, everything else to webui
 
 ## Code Quality
 

@@ -71,8 +71,8 @@ Services read secrets from .NET User Secrets mounted into containers at `/home/a
 
 ### Accessing the WebChat
 
-Caddy (port 443, self-signed TLS) is the entry point. It routes `/hubs/*` to the agent's SignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the agent backend.
+Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to the agent's SignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the agent backend.
 
 ### Debugging with Playwright
 
-When automating the WebChat with Playwright, use `ignoreHTTPSErrors: true` for the browser context since Caddy uses a self-signed certificate. You must select a user identity from the avatar picker in the header before sending messages, otherwise sends are silently rejected with a toast error.
+When automating the WebChat with Playwright, use `ignoreHTTPSErrors: true` for the browser context when testing locally (the Let's Encrypt certificate is valid for `assistants.herfluffness.com`, not `localhost`). You must select a user identity from the avatar picker in the header before sending messages, otherwise sends are silently rejected with a toast error.

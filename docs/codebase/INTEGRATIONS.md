@@ -191,20 +191,19 @@ All MCP servers use `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 and expose
 
 ## Networking / Infrastructure
 
-### Caddy (reverse proxy)
-- **Version**: Caddy 2
+### Caddy (reverse proxy + TLS)
+- **Version**: Caddy 2 (custom build with `caddy-dns/cloudflare` module)
+  - Dockerfile: `DockerCompose/caddy/Dockerfile`
   - Source: `DockerCompose/docker-compose.yml:304`
 - **Config**: `DockerCompose/Caddyfile`
+- **Domain**: `assistants.herfluffness.com`
 - **Routes**:
   - `/hubs/*` -> `agent:8080` (SignalR)
   - `/*` -> `webui:8080` (Blazor frontend)
-- **TLS**: Self-signed internal cert on port 443, plain HTTP on port 80 (for Cloudflare Tunnel)
-
-### Cloudflare Tunnel
-- **Image**: `cloudflare/cloudflared:latest`
-  - Source: `DockerCompose/docker-compose.yml:324`
-- **Purpose**: Expose services through Cloudflare without port forwarding
-- **Environment variable**: `CLOUDFLARE_TUNNEL_TOKEN`
+- **TLS**: Let's Encrypt certificate via DNS-01 ACME challenge using Cloudflare DNS plugin
+  - The domain's A record points to the server's LAN IP (DNS-only, no Cloudflare proxy)
+  - Requires `CF_API_TOKEN` with Zone/DNS/Edit permissions for the domain's zone
+- **Environment variable**: `CF_API_TOKEN`
 
 ### DDNS IP Allowlist
 - **Middleware**: `Infrastructure/Extensions/DdnsIpAllowlistExtensions.cs`
@@ -238,7 +237,7 @@ All MCP servers use `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 and expose
 | `REDISCONNECTIONSTRING` | MCP Memory | Redis connection string |
 | `ALLOWEDDDNSHOST` | Agent, WebChat | DDNS hostname for IP allowlisting |
 | `AGENTURL` | WebChat | Agent backend URL for SignalR |
-| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflared | Tunnel authentication token |
+| `CF_API_TOKEN` | Caddy | Cloudflare API token for DNS-01 TLS challenge |
 | `USERS__0__ID`, `USERS__0__AVATARURL` | WebChat | WebChat user identity config |
 | `DATA_PATH` | Docker Compose | Shared media/data volume path |
 | `VAULT_PATH` | Docker Compose | Vault volume for MCP Text |
