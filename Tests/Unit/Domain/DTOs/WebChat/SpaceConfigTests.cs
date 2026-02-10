@@ -33,4 +33,27 @@ public class SpaceConfigTests
     {
         SpaceConfig.IsValidSlug(slug).ShouldBeFalse();
     }
+
+    [Theory]
+    [InlineData("#e94560")]
+    [InlineData("#fff")]
+    [InlineData("#FF00AA")]
+    [InlineData("#aabbccdd")]
+    public void IsValidHexColor_ValidColors_ReturnsTrue(string color)
+    {
+        SpaceConfig.IsValidHexColor(color).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("red")]
+    [InlineData("#gg0000")]
+    [InlineData("e94560")]
+    [InlineData("#12345")]
+    [InlineData("<script>")]
+    public void IsValidHexColor_InvalidColors_ReturnsFalse(string? color)
+    {
+        SpaceConfig.IsValidHexColor(color).ShouldBeFalse();
+    }
 }

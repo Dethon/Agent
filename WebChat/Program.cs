@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
 using Infrastructure.Extensions;
 using JetBrains.Annotations;
@@ -42,7 +41,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
 
 app.MapGet("/icon.svg", (string? color) =>
 {
-    var fill = isValidHexColor(color) ? color! : "#e94560";
+    var fill = SpaceConfig.IsValidHexColor(color) ? color! : "#e94560";
     var svg = $"""
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50">
             <text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="{fill}">ᓚᘏᗢ</text>
@@ -66,10 +65,6 @@ app.MapGet("/api/config", (IConfiguration config) =>
 app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
-return;
-
-static bool isValidHexColor(string? color) =>
-    color is not null && ColorRegex().IsMatch(color);
 
 namespace WebChat
 {
@@ -78,10 +73,4 @@ namespace WebChat
 
     [UsedImplicitly]
     internal record AppConfig(string AgentUrl, UserConfig[] Users, SpaceConfig[] Spaces);
-}
-
-partial class Program
-{
-    [GeneratedRegex("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")]
-    private static partial Regex ColorRegex();
 }
