@@ -21,7 +21,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
         : baseName;
     var themeColor = space?.AccentColor ?? "#1a1a2e";
 
-    var iconColor = Uri.EscapeDataString(space?.AccentColor ?? "#e94560");
+    var iconColor = Uri.EscapeDataString(space?.AccentColor ?? SpaceConfig.DefaultAccentColor);
     var manifest = new
     {
         name,
@@ -41,7 +41,7 @@ app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
 
 app.MapGet("/icon.svg", (string? color) =>
 {
-    var fill = SpaceConfig.IsValidHexColor(color) ? color! : "#e94560";
+    var fill = SpaceConfig.IsValidHexColor(color) ? color! : SpaceConfig.DefaultAccentColor;
     var svg = $"""
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 50" width="120" height="50">
             <text x="60" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="40" fill="{fill}">ᓚᘏᗢ</text>

@@ -15,6 +15,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly ConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private readonly SpaceStore _spaceStore;
+    private readonly IDisposable _handlerRegistration;
 
     public SpaceEffect(
         Dispatcher dispatcher,
@@ -31,7 +32,7 @@ public sealed class SpaceEffect : IDisposable
         _navigationManager = navigationManager;
         _spaceStore = spaceStore;
 
-        dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
+        _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
     }
 
     private void HandleSelectSpace(SelectSpace action)
@@ -72,6 +73,6 @@ public sealed class SpaceEffect : IDisposable
 
     public void Dispose()
     {
-        // No subscriptions to dispose
+        _handlerRegistration.Dispose();
     }
 }

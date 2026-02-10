@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Shouldly;
 using WebChat.Client.State;
 using WebChat.Client.State.Space;
@@ -21,7 +22,7 @@ public class SpaceStoreTests : IDisposable
     public void Initial_HasDefaultSlugAndColor()
     {
         _store.State.CurrentSlug.ShouldBe("default");
-        _store.State.AccentColor.ShouldBe("#e94560");
+        _store.State.AccentColor.ShouldBe(SpaceConfig.DefaultAccentColor);
     }
 
     [Fact]
@@ -40,7 +41,7 @@ public class SpaceStoreTests : IDisposable
         _dispatcher.Dispatch(new InvalidSpace());
 
         _store.State.CurrentSlug.ShouldBe("default");
-        _store.State.AccentColor.ShouldBe("#e94560");
+        _store.State.AccentColor.ShouldBe(SpaceConfig.DefaultAccentColor);
     }
 
     [Fact]
