@@ -244,28 +244,6 @@ public sealed class WebChatMessengerClientTests : IDisposable
     }
 
     [Fact]
-    public void GetSpaceSlug_ReturnsSlugFromSession()
-    {
-        _sessionManager.StartSession("topic-1", "agent-1", 100, 200, spaceSlug: "secret");
-
-        _sessionManager.GetSpaceSlug("topic-1").ShouldBe("secret");
-    }
-
-    [Fact]
-    public void GetSpaceSlug_ReturnsNull_WhenNoSession()
-    {
-        _sessionManager.GetSpaceSlug("nonexistent").ShouldBeNull();
-    }
-
-    [Fact]
-    public void GetSpaceSlug_ReturnsNull_WhenSessionHasNoSlug()
-    {
-        _sessionManager.StartSession("topic-1", "agent-1", 100, 200);
-
-        _sessionManager.GetSpaceSlug("topic-1").ShouldBeNull();
-    }
-
-    [Fact]
     public async Task CreateTopicIfNeededAsync_IncludesSpaceSlugInStreamStartedNotification()
     {
         _sessionManager.StartSession("pre-topic", "test-agent", 500, 600, spaceSlug: "secret");

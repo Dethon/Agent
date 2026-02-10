@@ -15,11 +15,6 @@ public sealed class WebChatSessionManager
         return true;
     }
 
-    public string? GetSpaceSlug(string topicId)
-    {
-        return _sessions.TryGetValue(topicId, out var session) ? session.SpaceSlug : null;
-    }
-
     public bool TryGetSession(string topicId, out WebChatSession? session)
     {
         return _sessions.TryGetValue(topicId, out session);
