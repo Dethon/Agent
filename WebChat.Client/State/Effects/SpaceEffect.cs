@@ -14,35 +14,35 @@ public sealed class SpaceEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly ConfigService _configService;
     private readonly NavigationManager _navigationManager;
-    private readonly SpaceStore _spaceStore;
     private readonly IDisposable _handlerRegistration;
+    private string _previousSlug = "default";
 
     public SpaceEffect(
         Dispatcher dispatcher,
         ITopicService topicService,
         IChatConnectionService connectionService,
         ConfigService configService,
-        NavigationManager navigationManager,
-        SpaceStore spaceStore)
+        NavigationManager navigationManager)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
         _connectionService = connectionService;
         _configService = configService;
         _navigationManager = navigationManager;
-        _spaceStore = spaceStore;
 
         _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
     }
 
     private void HandleSelectSpace(SelectSpace action)
     {
-        _ = HandleSelectSpaceAsync(action.Slug);
+        var previousSlug = _previousSlug;
+        _previousSlug = action.Slug;
+        _ = HandleSelectSpaceAsync(action.Slug, previousSlug);
     }
 
-    private async Task HandleSelectSpaceAsync(string slug)
+    private async Task HandleSelectSpaceAsync(string slug, string previousSlug)
     {
-        if (slug == _spaceStore.State.CurrentSlug)
+        if (slug == previousSlug)
         {
             return;
         }
