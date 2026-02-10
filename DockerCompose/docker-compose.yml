@@ -271,7 +271,7 @@ services:
       - mcp-memory
       - mcp-idealista
       - redis
-
+      
   webui:
     image: webui:latest
     logging:
@@ -290,7 +290,7 @@ services:
       - .env
     environment:
       - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
-      - AGENTURL=${AGENTURL:-http://agent:8080}
+      - AGENTURL=${AGENTURL:-http://localhost:5000}
       - USERS__0__ID=${USERS__0__ID:-Alice}
       - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
       - USERS__1__ID=${USERS__1__ID:-Bob}
