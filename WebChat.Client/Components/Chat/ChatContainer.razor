@@ -1,4 +1,5 @@
 @page "/"
+@page "/{Slug}"
 @inherits StoreSubscriberComponent
 @inject IDispatcher Dispatcher
 
@@ -19,8 +20,20 @@
 </div>
 
 @code {
-    protected override void OnInitialized()
+    [Parameter]
+    public string? Slug { get; set; }
+
+    private bool _initialized;
+
+    protected override void OnParametersSet()
     {
-        Dispatcher.Dispatch(new Initialize());
+        var slug = string.IsNullOrEmpty(Slug) ? "default" : Slug;
+        Dispatcher.Dispatch(new SelectSpace(slug));
+
+        if (!_initialized)
+        {
+            _initialized = true;
+            Dispatcher.Dispatch(new Initialize());
+        }
     }
 }

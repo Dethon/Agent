@@ -22,6 +22,9 @@ public sealed class ChatHub(
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
+    private string? CurrentSpaceSlug =>
+        Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
+
     private string? GetRegisteredUserId()
     {
         return Context.Items.TryGetValue("UserId", out var userId)
@@ -53,7 +56,7 @@ public sealed class ChatHub(
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId);
+        return ValidateAgent(agentId) && messengerClient.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
@@ -78,9 +81,35 @@ public sealed class ChatHub(
             .ToList();
     }
 
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId)
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
-        return await threadStateStore.GetAllTopicsAsync(agentId);
+        return threadStateStore.GetAllTopicsAsync(agentId, spaceSlug);
+    }
+
+    public async Task JoinSpace(string spaceSlug)
+    {
+        if (!SpaceConfig.IsValidSlug(spaceSlug))
+        {
+            throw new HubException("Invalid space slug");
+        }
+
+        await SwitchSpaceGroupAsync(spaceSlug);
+    }
+
+    private async Task SwitchSpaceGroupAsync(string spaceSlug)
+    {
+        if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug)
+        {
+            if (prevSlug == spaceSlug)
+            {
+                return;
+            }
+
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"space:{prevSlug}");
+        }
+
+        Context.Items["SpaceSlug"] = spaceSlug;
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"space:{spaceSlug}");
     }
 
     public bool IsProcessing(string topicId)
@@ -193,7 +222,7 @@ public sealed class ChatHub(
     {
         messengerClient.CancelProcessing(topicId);
         await hubNotifier.NotifyStreamChangedAsync(
-            new StreamChangedNotification(StreamChangeType.Cancelled, topicId));
+            new StreamChangedNotification(StreamChangeType.Cancelled, topicId, CurrentSpaceSlug));
     }
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
@@ -206,7 +235,7 @@ public sealed class ChatHub(
         await threadResolver.ClearAsync(agentKey);
 
         await hubNotifier.NotifyTopicChangedAsync(
-            new TopicChangedNotification(TopicChangeType.Deleted, topicId));
+            new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: CurrentSpaceSlug));
     }
 
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
@@ -215,7 +244,7 @@ public sealed class ChatHub(
 
         var changeType = isNew ? TopicChangeType.Created : TopicChangeType.Updated;
         await hubNotifier.NotifyTopicChangedAsync(
-            new TopicChangedNotification(changeType, topic.TopicId, topic));
+            new TopicChangedNotification(changeType, topic.TopicId, topic, SpaceSlug: topic.SpaceSlug));
     }
 
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)

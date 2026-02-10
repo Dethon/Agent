@@ -6,7 +6,7 @@ namespace WebChat.Client.Services;
 
 public sealed class TopicService(ChatConnectionService connectionService) : ITopicService
 {
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
         var hubConnection = connectionService.HubConnection;
         if (hubConnection is null)
@@ -14,7 +14,7 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
             return [];
         }
 
-        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId);
+        return await hubConnection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
@@ -49,5 +49,16 @@ public sealed class TopicService(ChatConnectionService connectionService) : ITop
 
         return await hubConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId,
             threadId);
+    }
+
+    public async Task JoinSpaceAsync(string spaceSlug)
+    {
+        var hubConnection = connectionService.HubConnection;
+        if (hubConnection is null)
+        {
+            return;
+        }
+
+        await hubConnection.InvokeAsync("JoinSpace", spaceSlug);
     }
 }

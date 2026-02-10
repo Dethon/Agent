@@ -12,6 +12,7 @@ public class StoredTopic
     public DateTime CreatedAt { get; set; }
     public DateTime? LastMessageAt { get; set; }
     public string? LastReadMessageId { get; set; }
+    public string SpaceSlug { get; set; } = "default";
 
     public static StoredTopic FromMetadata(TopicMetadata metadata)
     {
@@ -24,7 +25,8 @@ public class StoredTopic
             Name = metadata.Name,
             CreatedAt = metadata.CreatedAt.UtcDateTime,
             LastMessageAt = metadata.LastMessageAt?.UtcDateTime,
-            LastReadMessageId = metadata.LastReadMessageId
+            LastReadMessageId = metadata.LastReadMessageId,
+            SpaceSlug = metadata.SpaceSlug
         };
     }
 
@@ -38,6 +40,7 @@ public class StoredTopic
             Name,
             new DateTimeOffset(CreatedAt, TimeSpan.Zero),
             LastMessageAt.HasValue ? new DateTimeOffset(LastMessageAt.Value, TimeSpan.Zero) : null,
-            LastReadMessageId);
+            LastReadMessageId,
+            SpaceSlug);
     }
 }

@@ -6,9 +6,9 @@ namespace Tests.Integration.WebChat.Client.Adapters;
 
 public sealed class HubConnectionTopicService(HubConnection connection) : ITopicService
 {
-    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId)
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string spaceSlug = "default")
     {
-        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId);
+        return await connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", agentId, spaceSlug);
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool isNew = false)
@@ -29,5 +29,10 @@ public sealed class HubConnectionTopicService(HubConnection connection) : ITopic
     public async Task<bool> StartSessionAsync(string agentId, string topicId, long chatId, long threadId)
     {
         return await connection.InvokeAsync<bool>("StartSession", agentId, topicId, chatId, threadId);
+    }
+
+    public async Task JoinSpaceAsync(string spaceSlug)
+    {
+        await connection.InvokeAsync("JoinSpace", spaceSlug);
     }
 }

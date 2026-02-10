@@ -11,6 +11,7 @@ namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebChatApprovalManager(
     WebChatStreamManager streamManager,
+    WebChatSessionManager sessionManager,
     INotifier notifier,
     ILogger<WebChatApprovalManager> logger)
 {
@@ -76,13 +77,15 @@ public sealed class WebChatApprovalManager(
                 ToolCalls = FormatToolCalls(g.ToArray())
             });
 
+        sessionManager.TryGetSession(topicId, out var session);
+
         foreach (var message in messages)
         {
             await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
             // Also broadcast as notification to ensure all browsers receive it
             // (handles race condition where browser subscribes after this message is sent)
             await notifier.NotifyToolCallsAsync(
-                    new ToolCallsNotification(topicId, message.ToolCalls!, message.MessageId), cancellationToken)
+                    new ToolCallsNotification(topicId, message.ToolCalls!, message.MessageId, SpaceSlug: session?.SpaceSlug), cancellationToken)
                 .SafeAwaitAsync(logger, "Failed to notify tool calls for topic {TopicId}", topicId);
         }
     }
@@ -104,8 +107,9 @@ public sealed class WebChatApprovalManager(
         var messageId = context.Requests.FirstOrDefault()?.MessageId;
 
         // Broadcast to all clients so other browsers can dismiss their approval modals and show tool calls
+        sessionManager.TryGetSession(context.TopicId, out var session);
         await notifier.NotifyApprovalResolvedAsync(
-                new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls, messageId))
+                new ApprovalResolvedNotification(context.TopicId, approvalId, toolCalls, messageId, SpaceSlug: session?.SpaceSlug))
             .SafeAwaitAsync(logger, "Failed to notify approval resolved for topic {TopicId}", context.TopicId);
 
         var success = context.TrySetResult(result);

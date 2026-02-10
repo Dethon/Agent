@@ -11,3 +11,5 @@ public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel M
 public record RemoveLastMessage(string TopicId) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
+
+public record ClearAllMessages : IAction;

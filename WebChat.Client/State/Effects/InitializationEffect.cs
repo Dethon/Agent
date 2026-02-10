@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
+using WebChat.Client.Services;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -14,6 +16,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
+    private readonly ConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
@@ -21,24 +24,28 @@ public sealed class InitializationEffect : IDisposable
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
     private readonly IMessagePipeline _pipeline;
+    private readonly SpaceStore _spaceStore;
 
     public InitializationEffect(
         Dispatcher dispatcher,
         IChatConnectionService connectionService,
         IAgentService agentService,
         ITopicService topicService,
+        ConfigService configService,
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
         UserIdentityStore userIdentityStore,
         TopicsStore topicsStore,
         MessagesStore messagesStore,
-        IMessagePipeline pipeline)
+        IMessagePipeline pipeline,
+        SpaceStore spaceStore)
     {
         _dispatcher = dispatcher;
         _connectionService = connectionService;
         _agentService = agentService;
         _topicService = topicService;
+        _configService = configService;
         _localStorage = localStorage;
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
@@ -46,6 +53,7 @@ public sealed class InitializationEffect : IDisposable
         _topicsStore = topicsStore;
         _messagesStore = messagesStore;
         _pipeline = pipeline;
+        _spaceStore = spaceStore;
 
         dispatcher.RegisterHandler<Initialize>(HandleInitialize);
         dispatcher.RegisterHandler<SelectUser>(HandleSelectUser);
@@ -71,7 +79,27 @@ public sealed class InitializationEffect : IDisposable
         await RegisterUserAsync();
 
         // Re-register user on reconnection
-        _connectionService.OnReconnected += async () => await RegisterUserAsync();
+        _connectionService.OnReconnected += async () =>
+        {
+            await RegisterUserAsync();
+            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+        };
+
+        // Validate and join space
+        var spaceSlug = _spaceStore.State.CurrentSlug;
+        var space = await _configService.GetSpaceAsync(spaceSlug);
+        if (space is null)
+        {
+            _dispatcher.Dispatch(new InvalidSpace());
+            spaceSlug = _spaceStore.State.CurrentSlug;
+            space = await _configService.GetSpaceAsync(spaceSlug);
+        }
+
+        if (space is not null)
+        {
+            await _topicService.JoinSpaceAsync(spaceSlug);
+            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
+        }
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
@@ -93,7 +121,7 @@ public sealed class InitializationEffect : IDisposable
         }
 
         // Load topics for selected agent
-        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id);
+        var serverTopics = await _topicService.GetAllTopicsAsync(agentToSelect.Id, spaceSlug);
         var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
         _dispatcher.Dispatch(new TopicsLoaded(topics));
 
@@ -143,7 +171,8 @@ public sealed class InitializationEffect : IDisposable
                 Name = topic.Name,
                 CreatedAt = topic.CreatedAt,
                 LastMessageAt = topic.LastMessageAt,
-                LastReadMessageId = lastMessageId
+                LastReadMessageId = lastMessageId,
+                SpaceSlug = topic.SpaceSlug
             };
             _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
             await _topicService.SaveTopicAsync(updatedTopic.ToMetadata());

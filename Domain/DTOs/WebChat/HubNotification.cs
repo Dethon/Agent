@@ -17,26 +17,31 @@ public enum StreamChangeType
 public record TopicChangedNotification(
     TopicChangeType ChangeType,
     string TopicId,
-    TopicMetadata? Topic = null);
+    TopicMetadata? Topic = null,
+    string? SpaceSlug = null);
 
 public record StreamChangedNotification(
     StreamChangeType ChangeType,
-    string TopicId);
+    string TopicId,
+    string? SpaceSlug = null);
 
 public record ApprovalResolvedNotification(
     string TopicId,
     string ApprovalId,
     string? ToolCalls = null,
-    string? MessageId = null);
+    string? MessageId = null,
+    string? SpaceSlug = null);
 
 public record ToolCallsNotification(
     string TopicId,
     string ToolCalls,
-    string? MessageId = null);
+    string? MessageId = null,
+    string? SpaceSlug = null);
 
 public record UserMessageNotification(
     string TopicId,
     string Content,
     string? SenderId,
     DateTimeOffset? Timestamp,
-    string? CorrelationId = null);
+    string? CorrelationId = null,
+    string? SpaceSlug = null);

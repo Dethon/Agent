@@ -5,288 +5,279 @@
 ## Directory Overview
 
 ```
-Agent/                              # Solution root
-|
-+-- Agent/                          # Composition root (ASP.NET Web host, DI, entry point)
-|   +-- App/                        # BackgroundService hosted services
-|   +-- Hubs/                       # SignalR hubs and adapters
-|   +-- Modules/                    # DI registration modules
-|   +-- Settings/                   # Strongly-typed configuration records
-|   +-- Program.cs                  # Application entry point
-|
-+-- Domain/                         # Pure business logic (no external dependencies)
-|   +-- Agents/                     # Agent abstractions (AgentKey, DisposableAgent, ChatThreadResolver)
-|   +-- Contracts/                  # Interfaces consumed by Domain and implemented by Infrastructure
-|   +-- DTOs/                       # Data transfer objects and value types
-|   |   +-- WebChat/                # DTOs shared between WebChat.Client and Agent
-|   +-- Extensions/                 # Extension methods on framework types
-|   +-- Monitor/                    # Chat monitoring and schedule execution logic
-|   +-- Prompts/                    # System prompt templates for agents
-|   +-- Resources/                  # Domain resource definitions (e.g., DownloadResource)
-|   +-- Routers/                    # Message routing logic
-|   +-- Tools/                      # Domain tool implementations (business logic only)
-|       +-- Commands/               # CLI command tools
-|       +-- Config/                 # Tool configuration records
-|       +-- Downloads/              # File download tools
-|       +-- Files/                  # File system tools (glob, move, remove)
-|       +-- Memory/                 # Memory store/recall tools
-|       +-- RealEstate/             # Property search tools
-|       +-- Scheduling/             # Schedule CRUD tools + feature registration
-|       +-- Text/                   # Text file CRUD tools
-|       +-- Web/                    # Web browsing/search tools
-|
-+-- Infrastructure/                 # External integrations and interface implementations
-|   +-- Agents/                     # Agent implementations
-|   |   +-- ChatClients/            # LLM chat client wrappers (OpenRouter, ToolApproval, Redis store)
-|   |   +-- Mappers/                # Response mapping extensions
-|   |   +-- Mcp/                    # MCP client management (connections, tools, resources, sampling)
-|   +-- CliGui/                     # Terminal UI components
-|   |   +-- Abstractions/           # CLI interface contracts
-|   |   +-- Rendering/              # Chat message formatting and display
-|   |   +-- Routing/                # CLI command routing
-|   |   +-- Ui/                     # Terminal.Gui widgets and adapters
-|   +-- Clients/                    # External service clients
-|   |   +-- Browser/                # Playwright web browser automation
-|   |   +-- Messaging/              # Chat transport implementations
-|   |   |   +-- Cli/                # CLI messenger client
-|   |   |   +-- ServiceBus/         # Azure Service Bus messenger
-|   |   |   +-- Telegram/           # Telegram bot client
-|   |   |   +-- WebChat/            # WebChat messenger, sessions, streams, approvals
-|   |   +-- ToolApproval/           # Tool approval handler implementations
-|   |   +-- Torrent/                # Jackett search + qBittorrent download clients
-|   +-- CommandRunners/             # Shell command execution (Bash, PowerShell, Cmd, Sh)
-|   +-- Extensions/                 # Infrastructure extension methods
-|   +-- HtmlProcessing/             # HTML-to-markdown conversion and inspection
-|   +-- Memory/                     # Embedding service and Redis vector store
-|   +-- Middleware/                  # ASP.NET middleware (DDNS IP allowlist)
-|   +-- StateManagers/              # Redis-backed state stores (threads, schedules, search results)
-|   +-- Utils/                      # Shared utilities (ToolResponse, ToolPatternMatcher, TopicIdHasher)
-|   +-- Validation/                 # Validators (CronValidator)
-|
-+-- McpServerLibrary/               # MCP server: media library (downloads, file search, organize)
-|   +-- McpPrompts/                 # Server-specific system prompts
-|   +-- McpResources/               # MCP resource providers
-|   +-- McpTools/                   # MCP tool wrappers (inherit Domain tools)
-|   +-- Modules/                    # DI registration
-|   +-- ResourceSubscriptions/      # Subscription tracking and monitoring
-|   +-- Settings/                   # Server-specific config
-|   +-- Program.cs
-|
-+-- McpServerText/                  # MCP server: text file operations (read, write, edit, search)
-|   +-- McpPrompts/
-|   +-- McpTools/
-|   +-- Modules/
-|   +-- Settings/
-|   +-- Program.cs
-|
-+-- McpServerWebSearch/             # MCP server: web search and browsing
-|   +-- McpPrompts/
-|   +-- McpTools/
-|   +-- Modules/
-|   +-- Settings/
-|   +-- Program.cs
-|
-+-- McpServerMemory/                # MCP server: semantic memory (store, recall, reflect)
-|   +-- McpPrompts/
-|   +-- McpTools/
-|   +-- Modules/
-|   +-- Settings/
-|   +-- Program.cs
-|
-+-- McpServerIdealista/             # MCP server: real estate search
-|   +-- McpPrompts/
-|   +-- McpTools/
-|   +-- Modules/
-|   +-- Settings/
-|   +-- Program.cs
-|
-+-- McpServerCommandRunner/         # MCP server: shell command execution
-|   +-- McpTools/
-|   +-- Modules/
-|   +-- Settings/
-|   +-- Program.cs
-|
-+-- WebChat/                        # Blazor Server host (serves static files + config API)
-|   +-- Program.cs
-|
-+-- WebChat.Client/                 # Blazor WebAssembly client application
-|   +-- Components/                 # Razor components
-|   |   +-- Chat/                   # Chat-specific components (container, message list, streaming)
-|   |   +-- Toast/                  # Toast notification components
-|   +-- Contracts/                  # Client-side service interfaces
-|   +-- Extensions/                 # Client extension methods
-|   +-- Helpers/                    # UI helpers (avatar, message merge)
-|   +-- Layout/                     # Layout components (MainLayout)
-|   +-- Models/                     # Client-side models (ChatMessageModel, StoredTopic, UserConfig)
-|   +-- Pages/                      # Routable pages
-|   +-- Services/                   # Service implementations
-|   |   +-- Streaming/              # Stream resume, buffer rebuild, transient error handling
-|   |   +-- Utilities/              # Service utilities (TopicIdGenerator)
-|   +-- State/                      # Redux-like state management
-|       +-- Approval/               # Approval state (Actions, Reducers, State, Store)
-|       +-- Connection/             # Connection state
-|       +-- Effects/                # Side-effect handlers (init, send message, topic selection, etc.)
-|       +-- Hub/                    # SignalR event dispatching to state
-|       +-- Messages/               # Messages state
-|       +-- Pipeline/               # Message pipeline (batching, deduplication)
-|       +-- Streaming/              # Streaming state + selectors
-|       +-- Toast/                  # Toast notification state
-|       +-- Topics/                 # Topics state
-|       +-- UserIdentity/           # User identity state
-|
-+-- Tests/                          # All tests (unit + integration)
-|   +-- Unit/                       # Unit tests
-|   |   +-- Domain/                 # Domain logic tests
-|   |   +-- Infrastructure/         # Infrastructure implementation tests
-|   |   +-- McpServerLibrary/       # MCP server-specific tests
-|   |   +-- Tools/                  # Tool-specific tests
-|   |   +-- WebChat/                # WebChat server-side tests
-|   |   +-- WebChat.Client/         # WebChat client-side tests
-|   +-- Integration/                # Integration tests
-|       +-- Agents/                 # Agent integration tests (MCP, OpenRouter, ThreadSession)
-|       +-- Clients/                # External client integration tests
-|       +-- Domain/                 # Domain integration tests
-|       +-- Fixtures/               # Shared test fixtures (Redis, ServiceBus, Playwright, etc.)
-|       +-- Infrastructure/         # Infrastructure integration tests
-|       +-- Jack/                   # DI container validation tests
-|       +-- McpServerTests/         # MCP server integration tests
-|       +-- McpTools/               # MCP tool integration tests
-|       +-- Memory/                 # Memory store integration tests
-|       +-- Messaging/              # Service Bus integration tests
-|       +-- StateManagers/          # Redis state manager integration tests
-|       +-- WebChat/                # WebChat + SignalR integration tests
-|
-+-- DockerCompose/                  # Docker Compose deployment configuration
-    +-- docker-compose.yml
-    +-- docker-compose.override.yml
-    +-- Caddyfile                   # Reverse proxy configuration
+Agent/                          # Composition root, entry point, DI, SignalR hub
+  App/                          # BackgroundService hosted services
+  Hubs/                         # SignalR hub (ChatHub)
+  Modules/                      # DI registration modules (InjectorModule, ConfigModule, SchedulingModule)
+  Settings/                     # Configuration records (AgentSettings, CommandLineParams)
+
+Domain/                         # Pure business logic -- no external dependencies
+  Agents/                       # AgentKey, ChatThreadResolver, ChatThreadContext, DisposableAgent
+  Contracts/                    # Interfaces consumed by domain and implemented by infrastructure
+  DTOs/                         # Data transfer objects and value types
+    WebChat/                    # WebChat-specific DTOs shared with frontend
+  Extensions/                   # Pure extension methods (string, JSON, async)
+  Monitor/                      # ChatMonitor, ScheduleDispatcher, ScheduleExecutor
+  Prompts/                      # System prompt definitions per capability
+  Resources/                    # MCP resource definitions
+  Routers/                      # MessageSourceRouter
+  Tools/                        # Domain tool implementations (pure logic)
+    Commands/                   # CLI command tools
+    Config/                     # Tool configuration records
+    Downloads/                  # Download management tools
+    Files/                      # File system tools (glob, search, move, remove)
+    Memory/                     # Memory CRUD tools
+    RealEstate/                 # Property search tools
+    Scheduling/                 # Schedule CRUD tools + SchedulingToolFeature
+    Text/                       # Text file CRUD tools
+    Web/                        # Web browsing and search tools
+
+Infrastructure/                 # Implementations of domain interfaces
+  Agents/                       # McpAgent, MultiAgentFactory, DomainToolRegistry, ThreadSession
+    ChatClients/                # OpenRouterChatClient, ToolApprovalChatClient, RedisChatMessageStore
+    Mappers/                    # Response mapping extensions
+    Mcp/                        # MCP client management (McpClientManager, McpResourceManager, McpSamplingHandler)
+  CliGui/                       # Terminal UI for CLI mode
+    Abstractions/               # CLI-specific interfaces
+    Rendering/                  # Chat message formatting
+    Routing/                    # CLI command routing
+    Ui/                         # Terminal.Gui widgets
+  Clients/                      # External service clients
+    Browser/                    # Playwright web browser, captcha solver
+    Messaging/                  # Transport implementations
+      Cli/                      # CLI and one-shot messenger clients
+      ServiceBus/               # Azure Service Bus messaging
+      Telegram/                 # Telegram bot client
+      WebChat/                  # WebChat session, stream, approval managers
+    ToolApproval/               # Approval handler implementations per transport
+    Torrent/                    # Jackett + qBittorrent clients
+  CommandRunners/               # Shell command execution (Bash, Cmd, PowerShell, Sh)
+  Extensions/                   # Infrastructure extension methods
+  HtmlProcessing/               # HTML to markdown conversion, inspection
+  Memory/                       # Redis-backed memory store, OpenRouter embeddings
+  Middleware/                   # ASP.NET middleware (DDNS IP allowlist)
+  StateManagers/                # Redis-backed state stores (thread state, schedules, downloads, search results)
+  Utils/                        # ToolPatternMatcher, ToolResponse, TopicIdHasher
+  Validation/                   # CronValidator
+
+McpServerLibrary/               # MCP server: file management, downloads, search
+  McpPrompts/                   # MCP prompt definitions
+  McpResources/                 # MCP resource definitions
+  McpTools/                     # MCP tool wrappers
+  Modules/                      # DI configuration
+  ResourceSubscriptions/        # Subscription tracking and monitoring
+  Settings/                     # Server-specific settings
+
+McpServerText/                  # MCP server: text file operations
+  McpPrompts/
+  McpTools/
+  Modules/
+  Settings/
+
+McpServerWebSearch/             # MCP server: web browsing and search
+  McpPrompts/
+  McpTools/
+  Modules/
+  Settings/
+
+McpServerMemory/                # MCP server: semantic memory store/recall
+  McpPrompts/
+  McpTools/
+  Modules/
+  Settings/
+
+McpServerIdealista/             # MCP server: real estate search
+  McpPrompts/
+  McpTools/
+  Modules/
+  Settings/
+
+McpServerCommandRunner/         # MCP server: shell command execution
+  McpTools/
+  Modules/
+  Settings/
+
+WebChat/                        # ASP.NET server that hosts Blazor WASM files
+WebChat.Client/                 # Blazor WebAssembly frontend
+  Components/                   # Razor components
+    Chat/                       # Chat-specific components (ChatContainer, MessageList, StreamingMessageDisplay)
+    Toast/                      # Toast notification components
+  Contracts/                    # Frontend service interfaces
+  Extensions/                   # Service registration, DTO extensions
+  Helpers/                      # Avatar helpers, message field merger
+  Layout/                       # MainLayout
+  Models/                       # Client-side models (ChatMessageModel, StoredTopic, UserConfig)
+  Pages/                        # Routable pages
+  Services/                     # Service implementations
+    Streaming/                  # Stream resume, buffering, transient error filter
+    Utilities/                  # TopicIdGenerator
+  State/                        # Redux-like state management
+    Approval/                   # Actions, Reducers, State, Store
+    Connection/                 # Actions, Reducers, State, Store
+    Effects/                    # Side-effect handlers (SendMessage, TopicSelection, etc.)
+    Hub/                        # SignalR event dispatchers
+    Messages/                   # Actions, Reducers, State, Store
+    Pipeline/                   # Message pipeline (correlation, deduplication)
+    Space/                      # Actions, Reducers, State, Store
+    Streaming/                  # Actions, Reducers, Selectors, State, Store
+    Toast/                      # Actions, State, Store
+    Topics/                     # Actions, Reducers, State, Store
+    UserIdentity/               # Actions, Reducers, State, Store
+
+Tests/                          # All tests
+  Unit/                         # Unit tests mirroring source structure
+    Domain/                     # Domain logic tests
+    Infrastructure/             # Infrastructure tests
+    McpServerLibrary/           # MCP server tests
+    Tools/                      # Tool-specific tests
+    WebChat/                    # WebChat client tests
+    WebChat.Client/             # WebChat.Client state tests
+  Integration/                  # Integration tests requiring real/containerized services
+    Agents/                     # McpAgent, ThreadSession integration tests
+    Clients/                    # External client integration tests
+    Domain/                     # State manager integration tests
+    Fixtures/                   # Test fixtures (Redis, ServiceBus, Playwright, etc.)
+    Infrastructure/             # Infrastructure integration tests
+    Jack/                       # DI container validation tests
+    McpServerTests/             # MCP server integration tests
+    McpTools/                   # MCP tool integration tests
+    Memory/                     # Memory store integration tests
+    Messaging/                  # ServiceBus integration tests
+    StateManagers/              # State persistence integration tests
+    WebChat/                    # WebChat hub and client integration tests
+
+DockerCompose/                  # Docker composition files
+  docker-compose.yml            # Main service definitions
+  docker-compose.override.*.yml # OS-specific user secrets mounts
+  Caddyfile                     # Reverse proxy config
+  volumes/                      # Persistent data (gitignored)
 ```
 
 ## File Naming Conventions
 
 | Type | Pattern | Example |
 |------|---------|---------|
-| Domain contracts | `I{Name}.cs` | `IChatMessengerClient.cs` |
-| Domain DTOs | `{Name}.cs` (record) | `AgentDefinition.cs` |
-| Domain tools | `{Feature}{Action}Tool.cs` | `FileDownloadTool.cs`, `MemoryStoreTool.cs` |
-| Domain tool features | `{Feature}ToolFeature.cs` | `SchedulingToolFeature.cs` |
-| Prompts | `{Name}Prompt.cs` | `BasePrompt.cs`, `WebBrowsingPrompt.cs` |
-| MCP tool wrappers | `Mcp{DomainToolName}.cs` | `McpFileDownloadTool.cs` |
-| MCP prompts | `McpSystemPrompt.cs` | `McpSystemPrompt.cs` |
-| Infrastructure clients | `{Service}Client.cs` | `BraveSearchClient.cs`, `IdealistaClient.cs` |
-| State stores | `Redis{Name}Store.cs` | `RedisThreadStateStore.cs`, `RedisScheduleStore.cs` |
-| Settings records | `{Name}Settings.cs` | `AgentSettings.cs`, `McpSettings.cs` |
-| DI modules | `ConfigModule.cs`, `InjectorModule.cs` | `Agent/Modules/ConfigModule.cs` |
-| Background services | `{Name}Monitoring.cs` | `ChatMonitoring.cs`, `ScheduleMonitoring.cs` |
-| WebChat stores | `{Feature}Store.cs` | `MessagesStore.cs`, `StreamingStore.cs` |
-| WebChat actions | `{Feature}Actions.cs` | `MessagesActions.cs` |
-| WebChat reducers | `{Feature}Reducers.cs` | `MessagesReducers.cs` |
-| WebChat state records | `{Feature}State.cs` | `MessagesState.cs` |
-| WebChat effects | `{Feature}Effect.cs` | `SendMessageEffect.cs` |
-| Unit tests | `{ClassUnderTest}Tests.cs` | `ToolPatternMatcherTests.cs` |
-| Integration tests | `{Feature}IntegrationTests.cs` | `McpAgentIntegrationTests.cs` |
-| Test fixtures | `{Service}Fixture.cs` | `RedisFixture.cs`, `ServiceBusFixture.cs` |
+| Contracts | `I[Name].cs` | `IChatMessengerClient.cs` |
+| DTOs | `[Name].cs` (record types) | `AgentDefinition.cs` |
+| Domain tools | `[Verb][Noun]Tool.cs` | `FileDownloadTool.cs` |
+| MCP tool wrappers | `Mcp[Verb][Noun]Tool.cs` | `McpFileDownloadTool.cs` |
+| Stores (WebChat) | `[Feature]Store.cs` | `MessagesStore.cs` |
+| Actions (WebChat) | `[Feature]Actions.cs` | `MessagesActions.cs` |
+| Reducers (WebChat) | `[Feature]Reducers.cs` | `MessagesReducers.cs` |
+| State records (WebChat) | `[Feature]State.cs` | `MessagesState.cs` |
+| Effects (WebChat) | `[Feature]Effect.cs` | `SendMessageEffect.cs` |
+| Settings | `[Name]Settings.cs` | `AgentSettings.cs` |
+| DI modules | `[Name]Module.cs` | `InjectorModule.cs` |
+| BackgroundServices | `[Name]Monitoring.cs` | `ChatMonitoring.cs` |
+| Test files | `[ClassUnderTest]Tests.cs` | `ChatMonitorTests.cs` |
+| Test fixtures | `[Name]Fixture.cs` | `RedisFixture.cs` |
 
 ## Where to Put New Code
 
-### Adding a new Domain tool
+### Adding a new domain tool
+1. Pure logic class -> `Domain/Tools/[Category]/[Name]Tool.cs`
+2. Define `Name` and `Description` string constants on the tool class
+3. If it needs external services, add/use interfaces in `Domain/Contracts/`
+4. Implement the interface in `Infrastructure/` if needed
+5. Write unit tests -> `Tests/Unit/Domain/[Category]/[Name]ToolTests.cs`
 
-1. Create the tool class in `Domain/Tools/{Category}/{ToolName}Tool.cs` with protected `Name` and `Description` constants and a protected `Run()` method
-2. If the tool needs a new external service, define the interface in `Domain/Contracts/I{Service}.cs`
-3. Implement the interface in `Infrastructure/Clients/{Service}.cs`
-4. Create the MCP wrapper in the appropriate `McpServer*/McpTools/Mcp{ToolName}Tool.cs` -- inherit from the Domain tool, add `[McpServerToolType]` and `[McpServerTool]` attributes
-5. Register the MCP tool in the server's `Modules/ConfigModule.cs` via `.WithTools<McpToolName>()`
-6. Write unit tests in `Tests/Unit/Domain/{ToolName}Tests.cs`
-
-### Adding a new Domain tool feature (DI-injected tools)
-
-1. Create tool classes in `Domain/Tools/{Feature}/`
-2. Create a feature class implementing `IDomainToolFeature` in `Domain/Tools/{Feature}/{Feature}ToolFeature.cs`
-3. Register in `Agent/Modules/SchedulingModule.cs` (or a new module): `services.AddTransient<IDomainToolFeature, {Feature}ToolFeature>()`
-4. Add the feature name to the agent's `EnabledFeatures` in configuration
-5. Write tests in `Tests/Unit/Domain/{Feature}/`
+### Adding a new MCP tool wrapper
+1. Create wrapper in the appropriate `McpServer*/McpTools/Mcp[Name]Tool.cs`
+2. Inherit from the domain tool, apply `[McpServerToolType]`, `[McpServerTool]`, `[Description]`
+3. Delegate to the base class `Run()` method, return `ToolResponse.Create(result)`
+4. Do NOT add try/catch -- the global `AddCallToolFilter` handles errors
+5. Register dependencies in `McpServer*/Modules/ConfigModule.cs`
 
 ### Adding a new MCP server
+1. Create `McpServer[Name]/` directory at repository root
+2. Add `Program.cs` with `WebApplication.CreateBuilder` -> `ConfigureMcp()` -> `MapMcp()` pattern
+3. Add `Modules/ConfigModule.cs` for DI and MCP tool registration
+4. Add `Settings/McpSettings.cs` for server-specific configuration
+5. Add `McpTools/` directory for tool wrappers
+6. Add `McpPrompts/` directory for system prompts (optional)
+7. Add `Dockerfile` following existing server patterns
+8. Add service entry to `DockerCompose/docker-compose.yml`
 
-1. Create `McpServer{Name}/` directory at solution root
-2. Add `McpServer{Name}.csproj` with `ProjectReference` to `Infrastructure`
-3. Add `Program.cs` following the pattern in `McpServerLibrary/Program.cs`
-4. Add `Modules/ConfigModule.cs` for DI and MCP tool registration
-5. Add `McpTools/` with tool wrappers inheriting Domain tools
-6. Add `Settings/McpSettings.cs` for configuration
-7. Add a service entry in `DockerCompose/docker-compose.yml`
-8. Add the endpoint to agent definitions in configuration
+### Adding a new messaging transport
+1. Implement `IChatMessengerClient` in `Infrastructure/Clients/Messaging/[Transport]/`
+2. Implement `IToolApprovalHandler` in `Infrastructure/Clients/ToolApproval/[Transport]ToolApprovalHandler.cs`
+3. Add registration method in `Agent/Modules/InjectorModule.cs`
+4. Add `ChatInterface` enum value in `Agent/Settings/CommandLineParams.cs`
 
-### Adding a new chat interface
+### Adding a new WebChat.Client state feature
+1. Create `WebChat.Client/State/[Feature]/` directory
+2. Add `[Feature]State.cs` -- immutable record with `static Initial` property
+3. Add `[Feature]Actions.cs` -- record types implementing `IAction`
+4. Add `[Feature]Reducers.cs` -- static pure reducer methods
+5. Add `[Feature]Store.cs` -- wraps `Store<[Feature]State>`, registers handlers in constructor
+6. Register store in `WebChat.Client/Extensions/ServiceCollectionExtensions.cs` -> `AddWebChatStores()`
+7. If side effects needed, add `WebChat.Client/State/Effects/[Feature]Effect.cs` and register in `AddWebChatEffects()`
 
-1. Implement `IChatMessengerClient` in `Infrastructure/Clients/Messaging/{Interface}/`
-2. Implement `IToolApprovalHandler` in `Infrastructure/Clients/ToolApproval/{Interface}ToolApprovalHandler.cs`
-3. Add a case to the `ChatInterface` enum in `Agent/Settings/CommandLineParams.cs`
-4. Add registration in `Agent/Modules/InjectorModule.cs` (new `Add{Interface}Client()` method + switch case in `AddChatMonitoring()`)
-
-### Adding a new WebChat state feature
-
-1. Create `WebChat.Client/State/{Feature}/` directory
-2. Add `{Feature}Actions.cs` -- define action records implementing `IAction`
-3. Add `{Feature}State.cs` -- define the immutable state record
-4. Add `{Feature}Reducers.cs` -- static pure reducer functions
-5. Add `{Feature}Store.cs` -- typed store extending `Store<{Feature}State>`, registers reducers in constructor
-6. If side effects are needed, add `WebChat.Client/State/Effects/{Feature}Effect.cs`
-7. Register the store in `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`
-8. Write tests in `Tests/Unit/WebChat.Client/State/{Feature}StoreTests.cs`
+### Adding a new domain tool feature (feature-flagged)
+1. Create `IDomainToolFeature` implementation in `Domain/Tools/[Category]/[Category]ToolFeature.cs`
+2. Register as `IDomainToolFeature` in `Agent/Modules/SchedulingModule.cs` (or a new module)
+3. Enable it per-agent via `AgentDefinition.EnabledFeatures` in configuration
 
 ### Adding a utility
-
-- Shared across Infrastructure: place in `Infrastructure/Utils/{Name}.cs`
-- Shared across Domain: place in `Domain/Extensions/{Name}Extensions.cs`
-- Feature-specific: keep in the feature directory
+- Shared across Domain -> `Domain/Extensions/[Name]Extensions.cs`
+- Infrastructure-specific -> `Infrastructure/Utils/[Name].cs` or `Infrastructure/Extensions/[Name]Extensions.cs`
+- WebChat.Client-specific -> `WebChat.Client/Helpers/[Name].cs` or `WebChat.Client/Services/Utilities/[Name].cs`
 
 ### Adding configuration
-
-- Agent-level settings: add property to `Agent/Settings/AgentSettings.cs`
-- MCP server settings: add property to `McpServer*/Settings/McpSettings.cs`
-- Per-agent settings: add property to `Domain/DTOs/AgentDefinition.cs`
-- Environment-based: use `IConfiguration` binding in `ConfigModule.cs`
+- Backend settings -> `Agent/Settings/[Name]Settings.cs` (bound from user secrets / env vars)
+- MCP server settings -> `McpServer*/Settings/McpSettings.cs`
+- WebChat frontend config -> Served via `/api/config` endpoint in `WebChat/Program.cs`
 
 ## Module Boundaries
 
-### Project References (Dependency Graph)
-
+### Project Reference Graph
 ```
-Agent ──> Infrastructure ──> Domain
-McpServer* ──> Infrastructure ──> Domain
-WebChat ──> Infrastructure, Domain, WebChat.Client
-WebChat.Client ──> Domain
-Tests ──> Agent, Infrastructure, McpServerLibrary, McpServerMemory, McpServerWebSearch, WebChat.Client
+Agent --> Infrastructure --> Domain
+Agent --> Domain (transitive)
+WebChat.Client --> Domain (shared DTOs only)
+WebChat --> Domain (shared DTOs), Infrastructure (DDNS middleware)
+McpServer* --> Infrastructure --> Domain
+Tests --> Agent, Infrastructure, Domain, McpServer*, WebChat.Client
 ```
 
 ### Import Rules
 
+Place new domain contracts in `Domain/Contracts/`. Infrastructure implementations go in `Infrastructure/` and reference domain interfaces. The `Agent` project wires them together -- it is the only project that should know about concrete implementations from both layers.
+
 ```csharp
-// CORRECT: Domain has no project references
-// Domain/Tools/Downloads/FileDownloadTool.cs
+// CORRECT: Domain defines the interface
+// Domain/Contracts/IMyService.cs
+public interface IMyService { }
+
+// CORRECT: Infrastructure implements it
+// Infrastructure/Clients/MyService.cs
 using Domain.Contracts;
-using Domain.Tools.Config;
+public class MyService : IMyService { }
 
-// CORRECT: Infrastructure references only Domain
-// Infrastructure/Agents/McpAgent.cs
-using Domain.Agents;
-using Domain.Contracts;
-using Infrastructure.Agents.ChatClients;
+// CORRECT: Agent registers the binding
+// Agent/Modules/InjectorModule.cs
+services.AddSingleton<IMyService, MyService>();
 
-// CORRECT: MCP server references Infrastructure
-// McpServerLibrary/McpTools/McpFileDownloadTool.cs
-using Domain.Tools.Downloads;
-using Infrastructure.Utils;
-using ModelContextProtocol.Server;
+// FORBIDDEN: Domain importing Infrastructure
+using Infrastructure.Clients; // NEVER in Domain/
 
-// FORBIDDEN: Domain referencing Infrastructure
-// Domain/SomeClass.cs
-using Infrastructure.Clients;  // VIOLATION - will not compile
+// FORBIDDEN: Infrastructure importing Agent
+using Agent.Modules; // NEVER in Infrastructure/
+```
 
-// FORBIDDEN: Infrastructure referencing Agent
-// Infrastructure/SomeClass.cs
-using Agent.Modules;  // VIOLATION - will not compile
+### WebChat.Client State Boundaries
+
+Components subscribe to stores via `StoreSubscriberComponent`. They dispatch actions via `IDispatcher`. They never call services directly for state-mutating operations -- that is the job of Effects.
+
+```csharp
+// CORRECT: Component dispatches action
+_dispatcher.Dispatch(new SendMessage(topicId, message));
+
+// CORRECT: Effect handles the side effect
+// SendMessageEffect calls services, then dispatches result actions
+
+// FORBIDDEN: Component calling service directly for state mutation
+await _messagingService.SendAsync(message); // NEVER in a component
 ```
 
 ## Entry Points
@@ -294,14 +285,14 @@ using Agent.Modules;  // VIOLATION - will not compile
 | Purpose | File |
 |---------|------|
 | Agent application start | `Agent/Program.cs` |
-| Agent DI orchestration | `Agent/Modules/ConfigModule.cs:ConfigureAgents()` |
-| Agent service registration | `Agent/Modules/InjectorModule.cs` |
-| Scheduling registration | `Agent/Modules/SchedulingModule.cs` |
+| Agent DI registration | `Agent/Modules/InjectorModule.cs` |
+| Agent configuration binding | `Agent/Modules/ConfigModule.cs` |
+| Agent scheduling DI | `Agent/Modules/SchedulingModule.cs` |
+| SignalR hub | `Agent/Hubs/ChatHub.cs` |
 | Chat monitoring loop | `Agent/App/ChatMonitoring.cs` -> `Domain/Monitor/ChatMonitor.cs` |
-| Schedule monitoring loop | `Agent/App/ScheduleMonitoring.cs` |
-| SignalR hub | `Agent/Hubs/ChatHub.cs` (mapped at `/hubs/chat`) |
+| Schedule monitoring loop | `Agent/App/ScheduleMonitoring.cs` -> `Domain/Monitor/ScheduleDispatcher.cs` |
 | WebChat server start | `WebChat/Program.cs` |
-| WebChat client start | `WebChat.Client/Program.cs` |
+| WebChat.Client start | `WebChat.Client/Program.cs` |
 | MCP Library server start | `McpServerLibrary/Program.cs` |
 | MCP Text server start | `McpServerText/Program.cs` |
 | MCP WebSearch server start | `McpServerWebSearch/Program.cs` |
@@ -313,50 +304,46 @@ using Agent.Modules;  // VIOLATION - will not compile
 
 ```
 Tests/
-+-- Unit/
-|   +-- Domain/                           # Domain logic (tools, DTOs, monitor, threading)
-|   |   +-- Scheduling/                   # Schedule tool unit tests
-|   |   +-- Text/                         # Text tool unit tests
-|   +-- Infrastructure/                   # Infrastructure implementations
-|   |   +-- Cli/                          # CLI router tests
-|   |   +-- Memory/                       # Memory entry tests
-|   |   +-- Messaging/                    # All messenger client + ServiceBus tests
-|   +-- McpServerLibrary/                 # MCP server-specific unit tests
-|   +-- Tools/                            # Standalone tool tests
-|   +-- WebChat/                          # WebChat server-side tests
-|   |   +-- Client/                       # Client-side service tests
-|   |   +-- Fixtures/                     # Fake service implementations
-|   +-- WebChat.Client/                   # WebChat.Client state + service tests
-|       +-- Services/                     # Service unit tests
-|       +-- State/                        # Store + effect unit tests
-|           +-- Pipeline/                 # Message pipeline tests
-+-- Integration/
-    +-- Agents/                           # McpAgent, ThreadSession, ToolApproval integration
-    +-- Clients/                          # External client integration (Brave, Jackett, qBittorrent, Playwright, Telegram)
-    +-- Domain/                           # Domain integration tests
-    +-- Fixtures/                         # Shared fixtures (Redis, ServiceBus, Playwright, MCP servers, WebChat)
-    +-- Infrastructure/                   # LocalFileSystem integration
-    +-- Jack/                             # DI container validation
-    +-- McpServerTests/                   # MCP server endpoint integration tests
-    +-- McpTools/                         # MCP tool integration tests
-    +-- Memory/                           # Embedding + Redis memory store integration
-    +-- Messaging/                        # ServiceBus integration
-    +-- StateManagers/                    # Redis state manager integration
-    +-- WebChat/                          # ChatHub + SignalR integration
-        +-- Client/                       # Client-side streaming/resume integration
+  Unit/
+    Domain/                     # Tests for Domain/ classes
+      ChatThreadContextTests.cs
+      ChatThreadResolverTests.cs
+      DTOs/WebChat/             # DTO tests
+      Scheduling/               # Schedule tool tests
+      Text/                     # Text tool tests
+    Infrastructure/             # Tests for Infrastructure/ classes
+      Cli/                      # CLI router tests
+      Memory/                   # Memory store tests
+      Messaging/                # Messenger client tests
+    McpServerLibrary/           # MCP server-specific tests
+    Tools/                      # Cross-cutting tool tests
+    WebChat/                    # WebChat client model and service tests
+      Client/                   # Streaming, buffer, toast tests
+      Fixtures/                 # Fake implementations for testing
+    WebChat.Client/             # State management tests
+      State/                    # Store, reducer, effect, selector tests
+        Pipeline/               # Message pipeline tests
+      Services/                 # Service tests
+  Integration/
+    Agents/                     # McpAgent with real MCP servers
+    Clients/                    # Real external service clients
+    Domain/                     # State managers with Redis
+    Fixtures/                   # Shared test infrastructure
+    Infrastructure/             # File system client tests
+    Jack/                       # DI container validation
+    McpServerTests/             # MCP server end-to-end
+    McpTools/                   # MCP tool end-to-end
+    Memory/                     # Embedding + Redis memory
+    Messaging/                  # ServiceBus end-to-end
+    StateManagers/              # Redis schedule store
+    WebChat/                    # ChatHub + streaming integration
+      Client/                   # Client-side streaming integration
 ```
 
-### Test Frameworks and Libraries
-
-| Library | Purpose |
-|---------|---------|
-| xUnit | Test framework |
-| Moq | Mocking |
-| Shouldly | Assertion library |
-| WireMock.Net | HTTP mocking for integration tests |
-| Testcontainers | Docker-based integration test infrastructure (Redis, ServiceBus) |
-| Microsoft.AspNetCore.Mvc.Testing | In-process server testing |
-
-### Test Naming Convention
-
-Place test files to mirror the source structure: `Tests/Unit/{Project}/{Path}/{ClassUnderTest}Tests.cs`. For example, `Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs` is tested in `Tests/Unit/Infrastructure/ToolApprovalChatClientTests.cs`.
+### Test Conventions
+- **Framework**: xUnit with `Shouldly` assertions and `Moq` mocking
+- **Integration containers**: `Testcontainers` for Redis, ServiceBus
+- **HTTP mocking**: `WireMock.Net` for external API simulation
+- **Skippable tests**: `Xunit.SkippableFact` for tests requiring specific infrastructure
+- **Test naming**: `[Method]_[Scenario]_[ExpectedResult]` or descriptive names
+- **TDD required**: Red-Green-Refactor cycle per `.claude/rules/tdd.md`

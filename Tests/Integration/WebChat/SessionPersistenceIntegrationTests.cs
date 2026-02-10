@@ -67,7 +67,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         await _connection.InvokeAsync("SaveTopic", topic, true);
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent", "default");
 
         // Assert
         allTopics.ShouldNotBeNull();
@@ -121,7 +121,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
         await _connection.InvokeAsync("DeleteTopic", "test-agent", topicId, chatId, threadId);
 
         // Get all topics
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent", "default");
 
         // Assert
         allTopics.ShouldNotContain(t => t.TopicId == topicId);
@@ -208,7 +208,7 @@ public sealed class SessionPersistenceIntegrationTests(WebChatServerFixture fixt
 
         // Act
         await _connection.InvokeAsync("SaveTopic", topic, true);
-        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent");
+        var allTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>("GetAllTopics", "test-agent", "default");
 
         // Assert
         var savedTopic = allTopics.FirstOrDefault(t => t.TopicId == topicId);

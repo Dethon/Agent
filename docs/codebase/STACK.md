@@ -5,141 +5,147 @@
 ## Languages
 
 - **Primary**: C# 14 (LangVersion 14)
-  - Source: all `*.csproj` files declare `<LangVersion>14</LangVersion>`
-- **Secondary**: JavaScript (Blazor WASM interop stealth scripts in `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`)
+  - Source: every `*.csproj` file declares `<LangVersion>14</LangVersion>`
+  - Uses modern features: file-scoped namespaces, primary constructors, extension blocks, records, nullable reference types
+- **Secondary**: HTML/CSS/JavaScript (Blazor WebAssembly client-side)
 
 ## Runtime
 
-- **Runtime**: .NET 10.0 LTS
-  - All projects target `net10.0`
+- **Runtime**: .NET 10 LTS (`net10.0`)
+  - Source: `<TargetFramework>net10.0</TargetFramework>` in all `*.csproj` files
   - Docker base image: `mcr.microsoft.com/dotnet/aspnet:10.0` / `mcr.microsoft.com/dotnet/sdk:10.0`
-  - Source: `Agent/Dockerfile:1-2`
-- **Package Manager**: NuGet (via `dotnet restore`)
-  - Check `NUGET_PACKAGES` environment variable for cache location before assuming `~/.nuget/packages`
-- **Solution file**: `agent.sln` (12 projects)
+    - Source: `Agent/Dockerfile:1-2`, `Agent/Dockerfile:6`
+- **Package Manager**: NuGet
+  - No lock file; restore happens at build time via `dotnet restore`
+- **Solution**: `agent.sln` (root-level solution file)
 
 ## Frameworks
 
 ### Web Framework
-- **Use**: ASP.NET Core 10.0 (minimal APIs)
-- **Agent entry point**: `Agent/Program.cs` -- composition root with `WebApplication.CreateBuilder`
-- **WebChat server entry point**: `WebChat/Program.cs` -- Blazor WASM host with `/api/config` endpoint
-- **MCP server entry points**: `McpServer*/Program.cs` -- `WebApplication.CreateBuilder` + `app.MapMcp()`
-- **Configuration**: `Agent/appsettings.json`, `McpServer*/appsettings.json`
-- **User secrets**: Enabled for Agent, McpServerLibrary, McpServerWebSearch, McpServerMemory, McpServerIdealista, McpServerCommandRunner
+- **Use**: ASP.NET Core (minimal APIs + SignalR)
+- **Agent entry point**: `Agent/Program.cs` -- `WebApplication.CreateBuilder(args)` with SignalR hub
+- **WebChat entry point**: `WebChat/Program.cs` -- serves Blazor WASM, static files, and minimal API endpoints
+- **MCP server entry points**: each `McpServer*/Program.cs` uses `WebApplication.CreateBuilder(args)` + `app.MapMcp()`
 
-### Real-Time Communication
-- **Use**: ASP.NET Core SignalR
-  - Package: `Microsoft.AspNetCore.SignalR.Client` 10.0.2
-  - Hub: `Agent/Hubs/ChatHub.cs` -- central WebChat communication hub
-  - Client-side: `WebChat.Client` uses `Microsoft.AspNetCore.SignalR.Client` 10.0.2
-  - Route: `/hubs/chat` -- mapped in `Agent/Program.cs:32`
+### Blazor WebAssembly (WebChat frontend)
+- **Use**: Blazor WebAssembly (`Microsoft.NET.Sdk.BlazorWebAssembly`)
+  - Source: `WebChat.Client/WebChat.Client.csproj:1`
+- **State management**: Custom Redux-like pattern with Stores, Reducers, Actions, Effects, Dispatcher
+  - Source: `WebChat.Client/State/` -- `Store.cs`, `Dispatcher.cs`, `IAction.cs`, `IDispatcher.cs`
+- **SignalR client**: `Microsoft.AspNetCore.SignalR.Client` 10.0.2
+  - Source: `WebChat.Client/WebChat.Client.csproj:13`
+- **Markdown rendering**: `Markdig` 0.44.0
+  - Source: `WebChat.Client/WebChat.Client.csproj:14`
+- **Reactive extensions**: `System.Reactive` 6.1.0
+  - Source: `WebChat.Client/WebChat.Client.csproj:15`
+- **PWA**: Service worker configured via `ServiceWorkerAssetsManifest`
+  - Source: `WebChat.Client/WebChat.Client.csproj:8`, `WebChat.Client/wwwroot/service-worker.js`
 
 ### AI / LLM Framework
 - **Use**: Microsoft.Extensions.AI 10.2.0 + Microsoft.Agents.AI 1.0.0-preview
-  - `IChatClient` interface from `Microsoft.Extensions.AI`
-  - `ChatClientAgent` from `Microsoft.Agents.AI` for agent orchestration
-  - OpenAI SDK for OpenRouter API compatibility: `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs`
-  - Source: `Infrastructure/Infrastructure.csproj:27-28`
-
-### MCP (Model Context Protocol)
-- **Use**: `ModelContextProtocol` 0.8.0-preview.1 / `ModelContextProtocol.AspNetCore` 0.8.0-preview.1
-  - Client: `Infrastructure/Agents/Mcp/McpClientManager.cs` -- creates MCP clients connecting to SSE endpoints
-  - Server: Each `McpServer*` project exposes tools via `app.MapMcp()`
-  - Transport: HTTP/SSE (Server-Sent Events) via `HttpClientTransport`
-  - Source: `Infrastructure/Infrastructure.csproj:30`
-
-### Blazor WebAssembly
-- **Use**: Blazor WASM (client-side) hosted by ASP.NET Core server
-  - Client project: `WebChat.Client/WebChat.Client.csproj` (SDK: `Microsoft.NET.Sdk.BlazorWebAssembly`)
-  - Server host: `WebChat/WebChat.csproj` with `Microsoft.AspNetCore.Components.WebAssembly.Server`
-  - State management: Custom Redux-like pattern in `WebChat.Client/State/`
-    - Stores: `WebChat.Client/State/*/` (Messages, Topics, Connection, Approval, Streaming, UserIdentity, Toast)
-    - Effects: `WebChat.Client/State/Effects/`
-    - Hub dispatcher: `WebChat.Client/State/Hub/HubEventDispatcher.cs`
-  - Markdown rendering: `Markdig` 0.44.0
-  - Reactive extensions: `System.Reactive` 6.1.0
-  - Service worker: `WebChat.Client/wwwroot/service-worker.js`
+  - Source: `Infrastructure/Infrastructure.csproj:27-28`, `Domain/Domain.csproj:13-14`
+  - `IChatClient` interface from `Microsoft.Extensions.AI` for all LLM interactions
+  - `ChatClientAgent` / `DisposableAgent` from `Microsoft.Agents.AI` for agent orchestration
+- **LLM provider**: OpenRouter API (OpenAI-compatible)
+  - Client wrapper: `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs`
+  - Uses `OpenAI` SDK under the hood pointed at OpenRouter endpoint
+  - Source: `Infrastructure/Infrastructure.csproj:28` (`Microsoft.Extensions.AI.OpenAI` 10.2.0-preview)
+- **MCP Protocol**: `ModelContextProtocol` 0.8.0-preview.1 (client) / `ModelContextProtocol.AspNetCore` 0.8.0-preview.1 (server)
+  - Source: `Infrastructure/Infrastructure.csproj:30`, `McpServerLibrary/McpServerLibrary.csproj:24`
+  - Client manager: `Infrastructure/Agents/Mcp/McpClientManager.cs`
+  - Transport: HTTP SSE (`HttpClientTransport`)
 
 ### Resilience
-- **Use**: Polly 8.6.5 + `Microsoft.Extensions.Http.Polly` 10.0.2
-  - Retry policies on MCP client connections: `Infrastructure/Agents/Mcp/McpClientManager.cs:63-65`
-  - Retry policies on download client: `Infrastructure/Clients/Torrent/QBittorrentDownloadClient.cs:52-56`
-  - HTTP retry handler extensions: `Infrastructure/Extensions/HttpClientBuilderExtensions.cs`
+- **Use**: Polly 8.6.5 + Polly.Extensions.Http 3.0.0
   - Source: `Infrastructure/Infrastructure.csproj:32-33`
+  - Used for MCP client connection retries (`McpClientManager.cs:63-65`)
+  - Used for download status polling (`QBittorrentDownloadClient.cs:52-56`)
+- **HTTP resilience**: `Microsoft.Extensions.Http.Polly` 10.0.2
+  - Source: `Infrastructure/Infrastructure.csproj:29`
 
 ### Browser Automation
-- **Use**: Microsoft.Playwright 1.58.0
-  - Wrapper: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs` -- implements `IWebBrowser`
-  - Headless Chromium with stealth anti-detection scripts
-  - Session management: `Infrastructure/Clients/Browser/BrowserSessionManager.cs`
-  - CAPTCHA solving: `Infrastructure/Clients/Browser/CapSolverClient.cs` -- implements `ICaptchaSolver`
-  - Modal dismissal: `Infrastructure/Clients/Browser/ModalDismisser.cs`
+- **Use**: Microsoft.Playwright 1.58.0 (Chromium, headless)
   - Source: `Infrastructure/Infrastructure.csproj:34`
-  - Browsers installed at Docker runtime, not build time (`PlaywrightSkipBrowserDownload=true`)
+  - Wrapper: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs` -- implements `IWebBrowser`
+  - Session manager: `Infrastructure/Clients/Browser/BrowserSessionManager.cs`
+  - Stealth mode with anti-detection scripts baked in
 
 ### Testing
-- **Use**: xUnit 2.9.3 + xunit.runner.visualstudio 3.1.5
-  - Config: `Tests/Tests.csproj`
-  - Runner config: `Tests/xunit.runner.json`
-  - Run: `dotnet test Tests/Tests.csproj`
-  - **Mocking**: Moq 4.20.72
-  - **Assertions**: Shouldly 4.3.0
-  - **Integration containers**: Testcontainers 4.10.0 + Testcontainers.ServiceBus 4.10.0
-  - **HTTP mocking**: WireMock.Net 1.25.0
-  - **MVC testing**: Microsoft.AspNetCore.Mvc.Testing 10.0.2
-  - **Skippable tests**: Xunit.SkippableFact 1.5.61
-  - **Coverage**: coverlet.collector 6.0.4
-  - Source: `Tests/Tests.csproj`
-
-### CLI / TUI
-- **Use**: Spectre.Console 0.54.0 + Terminal.Gui 1.19.0
-  - CLI routing: `Infrastructure/CliGui/Routing/`
-  - Terminal UI adapter: `Infrastructure/CliGui/Ui/`
-  - Command-line parsing: `System.CommandLine` 2.0.2 -- `Agent/Modules/ConfigModule.cs`
-  - Source: `Infrastructure/Infrastructure.csproj:36-39`, `Agent/Agent.csproj:24`
-
-### Result Types
-- **Use**: FluentResults 4.0.0
-  - Source: `Domain/Domain.csproj:11`
+- **Use**: xUnit 2.9.3
+  - Source: `Tests/Tests.csproj:24`
+  - Runner: `xunit.runner.visualstudio` 3.1.5
+  - Config: `Tests/xunit.runner.json`
+- **Assertions**: Shouldly 4.3.0
+  - Source: `Tests/Tests.csproj:20`
+- **Mocking**: Moq 4.20.72
+  - Source: `Tests/Tests.csproj:19`
+- **HTTP mocking**: WireMock.Net 1.25.0
+  - Source: `Tests/Tests.csproj:23`
+- **Integration containers**: Testcontainers 4.10.0 + Testcontainers.ServiceBus 4.10.0
+  - Source: `Tests/Tests.csproj:21-22`
+- **Code coverage**: coverlet.collector 6.0.4
+  - Source: `Tests/Tests.csproj:13`
+- **Integration testing**: `Microsoft.AspNetCore.Mvc.Testing` 10.0.2
+  - Source: `Tests/Tests.csproj:46`
+- **Skippable tests**: `Xunit.SkippableFact` 1.5.61
+  - Source: `Tests/Tests.csproj:29`
+- **Run tests**: `dotnet test`
 
 ### Scheduling
 - **Use**: NCrontab 3.4.0 for cron expression parsing
   - Source: `Domain/Domain.csproj:17`
-  - Scheduling module: `Agent/Modules/SchedulingModule.cs`
-  - Schedule persistence: `Infrastructure/StateManagers/RedisScheduleStore.cs`
+  - Registration: `Agent/Modules/SchedulingModule.cs`
+  - Hosted service: `Agent/App/ScheduleMonitoring.cs`
 
-### Code Annotations
-- **Use**: JetBrains.Annotations 2025.2.4
+### Result Pattern
+- **Use**: FluentResults 4.0.0
+  - Source: `Domain/Domain.csproj:11`
+
+### CLI Interface
+- **Use**: System.CommandLine 2.0.2
+  - Source: `Agent/Agent.csproj:24`
+  - Parser: `Agent/Modules/ConfigModule.cs:28-71`
+- **Terminal UI**: Terminal.Gui 1.19.0 + Spectre.Console 0.54.0
+  - Source: `Infrastructure/Infrastructure.csproj:36-39`
+
+### Static Analysis
+- **Use**: JetBrains.Annotations 2025.2.4 for `[UsedImplicitly]`, `[PublicAPI]`
   - Source: `Domain/Domain.csproj:12`
-
-### HTML Processing
-- **Use**: SmartReader 0.11.0 (readable content extraction)
-  - Source: `Infrastructure/Infrastructure.csproj:35`
-  - Processing pipeline: `Infrastructure/HtmlProcessing/`
 
 ## Build & Development
 
 - **Build tool**: .NET SDK (`dotnet build`)
 - **Build**: `dotnet build agent.sln`
-- **Dev server**: `dotnet run --project Agent -- --chat Web`
-- **CLI mode**: `dotnet run --project Agent -- --chat Cli`
-- **One-shot mode**: `dotnet run --project Agent -- --prompt "your prompt"`
-- **Telegram mode**: `dotnet run --project Agent -- --chat Telegram`
-- **Type checking**: Built into C# compiler (nullable reference types enabled in all projects)
-- **Containerization**: Docker Compose at `DockerCompose/docker-compose.yml`
-  - Build all: from `DockerCompose/` directory, `docker compose build`
-  - Run all: from `DockerCompose/` directory, `docker compose up -d`
-- **IDE**: JetBrains Rider (shared run configurations at `.run-docker-compose/`)
+- **Run agent**: `dotnet run --project Agent`
+- **Run tests**: `dotnet test Tests/Tests.csproj`
+- **Docker build**: Multi-stage Dockerfiles per project (e.g., `Agent/Dockerfile`)
+  - Uses NuGet cache mount: `--mount=type=cache,target=/root/.nuget/packages,sharing=locked`
+- **Docker Compose**: `DockerCompose/docker-compose.yml` with OS-specific overrides
+  - Linux: `DockerCompose/docker-compose.override.linux.yml`
+  - Windows: `DockerCompose/docker-compose.override.windows.yml`
+  - Env file: `DockerCompose/.env`
+- **Dev container**: `.devcontainer/Dockerfile` + `.devcontainer/docker-compose.yml`
+- **Reverse proxy**: Caddy 2 -- `DockerCompose/Caddyfile`
+  - HTTPS (self-signed) on port 443, routes `/hubs/*` to agent, everything else to webui
 
 ## Code Quality
 
-- **EditorConfig**: `.editorconfig` -- comprehensive C# style rules
-  - Indent: 4 spaces for C# code, 2 spaces for XML/csproj files
-  - File-scoped namespaces: enforced (`csharp_style_namespace_declarations = file_scoped:warning`)
-  - Braces: required for all control flow (`csharp_prefer_braces = true:warning`)
-  - Naming: `_camelCase` for fields, `PascalCase` for types/members, `I` prefix for interfaces
-  - Line endings: CRLF
+- **Code style**: `.editorconfig` (root-level, comprehensive)
+  - File-scoped namespaces: `csharp_style_namespace_declarations = file_scoped:warning`
+  - Braces required: `csharp_prefer_braces = true:warning`
+  - 4-space indent for C# code, 2-space for XML/config
+  - Private fields: `_camelCase` prefix convention
   - Max line length: 120 characters
-- **Formatter**: EditorConfig-based (enforced by IDE / `dotnet format`)
-- **Additional Rider rules**: Resharper settings in `.editorconfig` (brace style, wrap rules, null checks)
+- **IDE support**: JetBrains Rider conventions embedded in `.editorconfig` (Resharper rules)
+- **Nullable reference types**: Enabled in all projects (`<Nullable>enable</Nullable>`)
+- **Implicit usings**: Enabled in all projects (`<ImplicitUsings>enable</ImplicitUsings>`)
+
+## Configuration
+
+- **Pattern**: .NET Configuration (appsettings.json + User Secrets + Environment Variables)
+  - Agent settings: `Agent/Settings/AgentSettings.cs` -- bound from `Agent/appsettings.json`
+  - Each MCP server has its own `appsettings.json`
+- **User Secrets**: Used for sensitive values (API keys, connection strings)
+  - Mounted into Docker containers at `/home/app/.microsoft/usersecrets`
+  - Source: `DockerCompose/docker-compose.override.linux.yml`, `DockerCompose/docker-compose.override.windows.yml`
+- **Environment variables**: Override configuration via Docker Compose `env_file: .env`

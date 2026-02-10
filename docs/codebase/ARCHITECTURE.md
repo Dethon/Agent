@@ -4,217 +4,232 @@
 
 ## Architecture Pattern
 
-**Pattern**: Layered Architecture with MCP Microservices
+**Pattern**: Clean Architecture (Domain-centric layered) with MCP satellite services
 
-The system follows a classic three-layer architecture (Agent -> Infrastructure -> Domain) for the core application, combined with independently deployable MCP (Model Context Protocol) servers that expose tool capabilities over HTTP. The main Agent process connects to MCP servers as a client at runtime, loading tools, prompts, and resources dynamically. A Blazor WebAssembly frontend (WebChat) communicates with the Agent backend via SignalR.
+The system follows a three-layer architecture where `Domain` is the innermost layer with zero external dependencies, `Infrastructure` implements domain contracts against real services, and `Agent` is the composition root that wires everything together. MCP servers run as independent HTTP processes that the agent connects to at runtime via the Model Context Protocol.
 
 ## Layers
 
-### Domain Layer (Innermost)
-
+### Domain (Innermost -- Pure Business Logic)
 - **Location**: `Domain/`
-- **Responsibility**: Pure business logic, contracts, DTOs, domain tools, prompts, and agent abstractions. Contains zero external dependencies.
-- **Can import from**: Only .NET BCL, `Microsoft.Extensions.AI.Abstractions`, `Microsoft.Agents.AI.Abstractions`, `FluentResults`, `NCrontab`, `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.Caching.Abstractions`
-- **Cannot import from**: `Infrastructure`, `Agent`, any MCP server project, any concrete external client library (HttpClient, Redis, Telegram, etc.)
-- **Enforcement**: See `Domain/Domain.csproj` -- no `ProjectReference` to Infrastructure or Agent. Violations will break compilation.
+- **Responsibility**: Contracts, DTOs, domain tools, prompts, agent orchestration, scheduling logic
+- **Can import from**: Only .NET BCL and abstraction packages (`Microsoft.Extensions.AI.Abstractions`, `FluentResults`, `NCrontab`)
+- **Cannot import from**: `Infrastructure`, `Agent`, any framework-specific type (`HttpClient`, `DbContext`, Redis, Telegram, etc.)
+- **Enforced by**: `.claude/rules/domain-layer.md` -- no concrete implementations, no external service references
 
-### Infrastructure Layer (Middle)
-
+### Infrastructure (Middle -- External Integrations)
 - **Location**: `Infrastructure/`
-- **Responsibility**: Implements Domain interfaces. Handles external service clients (OpenRouter, Telegram, Redis, Playwright, Azure Service Bus), MCP client management, agent implementations, state persistence, CLI GUI, and HTML processing.
-- **Can import from**: `Domain`, external NuGet packages (Redis, Telegram.Bot, Playwright, MCP SDK, Polly, etc.)
-- **Cannot import from**: `Agent`, any `McpServer*` project. Infrastructure must never reference the composition root.
-- **Enforcement**: See `Infrastructure/Infrastructure.csproj` -- only `ProjectReference` is to `Domain`.
+- **Responsibility**: Implement domain interfaces against real services (OpenRouter, Redis, Telegram, Playwright, MCP, ServiceBus, qBittorrent, Jackett)
+- **Can import from**: `Domain`, NuGet packages for external clients
+- **Cannot import from**: `Agent` namespace -- the composition root is off-limits
+- **Enforced by**: `.claude/rules/infrastructure-layer.md`
 
-### Agent Layer (Composition Root)
-
+### Agent (Outermost -- Composition Root)
 - **Location**: `Agent/`
-- **Responsibility**: Application entry point, dependency injection wiring, hosted services (ChatMonitoring, ScheduleMonitoring), SignalR hub, configuration binding, and command-line parsing.
-- **Can import from**: `Infrastructure`, `Domain`
-- **Cannot import from**: Any `McpServer*` project, `WebChat`, `WebChat.Client`
-- **Enforcement**: See `Agent/Agent.csproj` -- only `ProjectReference` is to `Infrastructure`.
+- **Responsibility**: DI container setup, hosted service registration, SignalR hub, CLI argument parsing, application entry point
+- **Can import from**: `Domain`, `Infrastructure`
+- **Cannot import from**: Nothing restricts it -- this is the outermost shell
 
-### MCP Server Layer (Sidecar Microservices)
+### WebChat.Client (Parallel -- Blazor WASM Frontend)
+- **Location**: `WebChat.Client/`
+- **Responsibility**: Browser-side UI, Redux-like state management, SignalR client, streaming display
+- **Can import from**: `Domain` (shared DTOs only), System.Reactive, Markdig, SignalR Client
+- **Cannot import from**: `Infrastructure`, `Agent`
 
-- **Location**: `McpServerLibrary/`, `McpServerText/`, `McpServerWebSearch/`, `McpServerMemory/`, `McpServerIdealista/`, `McpServerCommandRunner/`
-- **Responsibility**: Each MCP server is an independent executable that exposes domain tools over the Model Context Protocol via HTTP. They wrap Domain tool classes with MCP attributes and run as standalone ASP.NET processes.
-- **Can import from**: `Infrastructure`, `Domain`
-- **Cannot import from**: `Agent`, other `McpServer*` projects, `WebChat`
-- **Enforcement**: Each `McpServer*.csproj` has a single `ProjectReference` to `Infrastructure`.
+### WebChat (Parallel -- Static File Server)
+- **Location**: `WebChat/`
+- **Responsibility**: Serve Blazor WASM files, provide `/api/config` and `/api/spaces/{slug}` endpoints, dynamic PWA manifest
+- **Can import from**: `Domain` (shared DTOs), `Infrastructure` (DDNS middleware only)
+- **Cannot import from**: `Agent`
 
-### WebChat Layer (Frontend)
-
-- **Location**: `WebChat/` (server host), `WebChat.Client/` (Blazor WASM client)
-- **Responsibility**: Blazor WebAssembly chat UI. The server (`WebChat/`) serves static files and a config endpoint. The client (`WebChat.Client/`) contains components, state management (Redux-like), and SignalR connection logic.
-- **Can import from**: `WebChat.Client` imports `Domain` (for shared DTOs). `WebChat` imports `Domain`, `Infrastructure` (for middleware), and `WebChat.Client`.
-- **Cannot import from**: `Agent`, any `McpServer*` project
+### MCP Servers (Satellite Processes)
+- **Location**: `McpServer*/`
+- **Responsibility**: Expose domain tools as MCP tool endpoints over HTTP, each running as an independent ASP.NET process
+- **Can import from**: `Domain` (base tool classes), `Infrastructure` (client implementations)
+- **Cannot import from**: `Agent`, `WebChat.Client`
 
 ## Key Abstractions
 
 ### IChatMessengerClient
-
 - **Interface**: `Domain/Contracts/IChatMessengerClient.cs`
-- **Implementations**: `Infrastructure/Clients/Messaging/Cli/CliChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/Telegram/TelegramChatClient.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/Cli/OneShotChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/CompositeChatMessengerClient.cs`
-- **Purpose**: Abstracts message input/output across chat interfaces (CLI, Telegram, WebChat, ServiceBus). The `ChatMonitor` consumes this to read user prompts and send AI responses regardless of the transport.
-- **Selection**: Configured at startup via `--chat` CLI flag in `Agent/Modules/InjectorModule.cs`.
+- **Implementations**: `Infrastructure/Clients/Messaging/Telegram/TelegramChatClient.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/Cli/CliChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/Cli/OneShotChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/ServiceBus/ServiceBusChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/CompositeChatMessengerClient.cs`
+- **Purpose**: Abstracts the message transport layer so the `ChatMonitor` is unaware of whether messages arrive from Telegram, WebChat, CLI, or ServiceBus
+- **Selection**: Configured at startup via `--chat` CLI argument in `Agent/Modules/InjectorModule.cs`
 
 ### IAgentFactory / IScheduleAgentFactory
-
 - **Interface**: `Domain/Contracts/IAgentFactory.cs`, `Domain/Contracts/IScheduleAgentFactory.cs`
 - **Implementation**: `Infrastructure/Agents/MultiAgentFactory.cs`
-- **Purpose**: Creates `DisposableAgent` instances (specifically `McpAgent`) based on configuration. Each agent definition specifies its LLM model, MCP server endpoints, custom instructions, and whitelisted tool patterns.
+- **Purpose**: Creates `McpAgent` instances from `AgentDefinition` configuration, wiring up the OpenRouter chat client, tool approval, MCP endpoints, and domain tools
 
-### DisposableAgent / McpAgent
-
-- **Base class**: `Domain/Agents/DisposableAgent.cs` (extends `Microsoft.Agents.AI.AIAgent`)
-- **Implementation**: `Infrastructure/Agents/McpAgent.cs`
-- **Purpose**: Wraps an LLM chat client with MCP tool integration, resource management, and session lifecycle. Each `McpAgent` instance manages its own `ThreadSession` which holds MCP client connections, loaded tools, and resource subscriptions.
-
-### IToolApprovalHandler / IToolApprovalHandlerFactory
-
-- **Interface**: `Domain/Contracts/IToolApprovalHandler.cs`, `Domain/Contracts/IToolApprovalHandlerFactory.cs`
+### IToolApprovalHandler
+- **Interface**: `Domain/Contracts/IToolApprovalHandler.cs`
 - **Implementations**: `Infrastructure/Clients/ToolApproval/AutoToolApprovalHandler.cs`, `Infrastructure/Clients/ToolApproval/CliToolApprovalHandler.cs`, `Infrastructure/Clients/ToolApproval/TelegramToolApprovalHandler.cs`, `Infrastructure/Clients/ToolApproval/WebToolApprovalHandler.cs`
-- **Purpose**: Intercepts tool calls before execution. Tools matching whitelist patterns are auto-approved; others require user confirmation. The `ToolApprovalChatClient` (`Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs`) wraps the LLM chat client and invokes the approval handler before each function call.
-
-### IDomainToolFeature / IDomainToolRegistry
-
-- **Interface**: `Domain/Contracts/IDomainToolFeature.cs`, `Domain/Contracts/IDomainToolRegistry.cs`
-- **Implementation**: `Infrastructure/Agents/DomainToolRegistry.cs`
-- **Purpose**: Registers domain-level tools (e.g., scheduling) that are injected directly into the agent rather than exposed via MCP servers. Each `IDomainToolFeature` provides a named feature with associated `AIFunction` tools. Agent definitions specify which features to enable via `EnabledFeatures`.
+- **Purpose**: Gate tool execution -- each transport has its own approval UX. The `ToolApprovalChatClient` (`Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs`) wraps the inner chat client and intercepts function calls to check whitelist patterns or request human approval
 
 ### IThreadStateStore
-
 - **Interface**: `Domain/Contracts/IThreadStateStore.cs`
 - **Implementation**: `Infrastructure/StateManagers/RedisThreadStateStore.cs`
-- **Purpose**: Persists chat history and topic metadata in Redis. Keyed by `AgentKey` (chatId + threadId + agentId).
+- **Purpose**: Persist chat message history and topic metadata to Redis so conversations survive restarts
 
-### Store<TState> (WebChat.Client Redux pattern)
+### IDomainToolFeature / IDomainToolRegistry
+- **Interface**: `Domain/Contracts/IDomainToolFeature.cs`, `Domain/Contracts/IDomainToolRegistry.cs`
+- **Implementation**: `Infrastructure/Agents/DomainToolRegistry.cs`
+- **Purpose**: Feature-flag system for domain tools. Each `AgentDefinition.EnabledFeatures` array selects which `IDomainToolFeature` implementations contribute tools to that agent instance
 
-- **Base class**: `WebChat.Client/State/Store.cs`
-- **Purpose**: Generic reactive store using `System.Reactive` `BehaviorSubject`. State updates happen through `Dispatch(action, reducer)`. Components subscribe via `StateObservable`. Place new stores in `WebChat.Client/State/{Feature}/`.
-- **Pattern**: Actions (`{Feature}Actions.cs`) -> Reducers (`{Feature}Reducers.cs`) -> Store (`{Feature}Store.cs`). Side effects go in `WebChat.Client/State/Effects/`.
+### Store<TState> (WebChat.Client)
+- **Interface**: `WebChat.Client/State/Store.cs`
+- **Purpose**: Generic reactive store backed by `BehaviorSubject<TState>`. Each feature (Topics, Messages, Streaming, Connection, Approval, UserIdentity, Toast, Space) has its own `Store<T>` instance
 
 ## Data Flow
 
-### Chat Message Pipeline
+### Message Pipeline (Backend)
 
 ```
 User Input
     |
     v
-IChatMessengerClient.ReadPrompts()     <-- Telegram / CLI / WebChat / ServiceBus
+IChatMessengerClient.ReadPrompts()      <-- Telegram / WebChat / CLI / ServiceBus
     |
     v
-ChatMonitor.Monitor()                  <-- Domain/Monitor/ChatMonitor.cs
+ChatMonitor.Monitor()                   <-- Domain/Monitor/ChatMonitor.cs
+    |  groups by AgentKey, processes per-thread
+    v
+IAgentFactory.Create(agentKey)          <-- Creates McpAgent with MCP + domain tools
     |
     v
-ChatThreadResolver.Resolve(agentKey)   <-- Domain/Agents/ChatThreadResolver.cs
+McpAgent.RunStreamingAsync()            <-- Infrastructure/Agents/McpAgent.cs
+    |  creates ThreadSession -> McpClientManager -> connects to MCP servers
+    v
+ToolApprovalChatClient                  <-- Intercepts tool calls for approval
     |
     v
-IAgentFactory.Create(agentKey)         <-- Infrastructure/Agents/MultiAgentFactory.cs
-    |
-    v
-McpAgent.RunStreamingAsync()           <-- Infrastructure/Agents/McpAgent.cs
-    |
-    v
-ToolApprovalChatClient                 <-- Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs
-    |                                       (intercepts tool calls for approval)
-    v
-OpenRouterChatClient                   <-- Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs
-    |                                       (calls OpenRouter LLM API)
-    v
-MCP Tool Execution                     <-- via McpClientManager -> MCP Servers (HTTP)
-    |
+OpenRouterChatClient                    <-- Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs
+    |  streams to OpenRouter LLM API
     v
 IChatMessengerClient.ProcessResponseStreamAsync()
     |
     v
-User Output (streamed)
+User sees response (Telegram / WebChat / CLI / ServiceBus)
 ```
 
-### Typical Request Flow (WebChat)
+### WebChat Real-Time Flow
 
-1. User types message in Blazor WebAssembly UI (`WebChat.Client/Components/ChatInput.razor`)
-2. `SendMessageEffect` dispatches the action, which calls `ChatHub.SendMessage()` via SignalR
-3. `WebChatMessengerClient` enqueues the prompt and creates a response stream
-4. `ChatMonitoring` background service continuously calls `ChatMonitor.Monitor()`
-5. `ChatMonitor` reads prompts from `IChatMessengerClient.ReadPrompts()`, groups by thread
-6. For each thread, it creates/resolves an `McpAgent` via `IAgentFactory`
-7. The agent streams through `ToolApprovalChatClient` -> `OpenRouterChatClient` -> OpenRouter API
-8. Tool calls are intercepted: whitelisted tools auto-execute; others await user approval via `IToolApprovalHandler`
-9. Tools execute against MCP servers over HTTP (loaded dynamically per `AgentDefinition.McpServerEndpoints`)
-10. Response updates stream back through `IChatMessengerClient.ProcessResponseStreamAsync()`
-11. `WebChatMessengerClient` pushes `ChatStreamMessage` chunks to the SignalR client
-12. `HubEventDispatcher` dispatches actions to the Redux-like stores, updating the Blazor UI reactively
+```
+Browser (Blazor WASM)
+    |
+    v  SignalR streaming call
+ChatHub.SendMessage()                   <-- Agent/Hubs/ChatHub.cs
+    |
+    v
+WebChatMessengerClient                  <-- Enqueues prompt, returns live stream
+    |
+    v
+ChatMonitor picks up prompt             <-- Same pipeline as above
+    |
+    v
+Response streams back via:
+  1. SignalR streaming return (for the sender)
+  2. HubNotifier broadcasts to space group (for other viewers)
+```
 
-### MCP Server Request Flow
+### WebChat State Flow (Frontend)
 
-1. `McpAgent` creates `ThreadSession` which initializes `McpClientManager`
-2. `McpClientManager.CreateAsync()` connects to each MCP server endpoint via HTTP
-3. Tools, prompts, and resources are loaded from all connected MCP servers
-4. When the LLM calls a tool, `ToolApprovalChatClient` checks approval, then MCP SDK routes the call to the correct server
-5. MCP server receives the call, resolves DI, executes the MCP tool class (which inherits from the Domain tool)
-6. Result flows back through MCP protocol to the agent
+```
+User Action
+    |
+    v
+Component dispatches IAction            <-- via IDispatcher
+    |
+    v
+Dispatcher fans out to:
+  - Store<T>.Dispatch(action, reducer)  <-- Synchronous state update
+  - Effect handlers                     <-- Async side effects (API calls, streaming)
+    |
+    v
+Store<T> emits new state via BehaviorSubject
+    |
+    v
+StoreSubscriberComponent.Subscribe()   <-- DistinctUntilChanged + InvokeAsync + StateHasChanged
+    |
+    v
+Blazor re-renders
+```
+
+### MCP Tool Execution Flow
+
+```
+LLM decides to call a tool
+    |
+    v
+ToolApprovalChatClient.InvokeFunctionAsync()
+    |  checks whitelist patterns / requests approval
+    v
+QualifiedMcpTool (MCP client-side proxy)
+    |  HTTP call to MCP server
+    v
+McpServer*.McpTools.Mcp*Tool.McpRun()
+    |  delegates to Domain tool base class
+    v
+Domain tool logic (Domain/Tools/*.cs)
+    |  calls domain contracts (IDownloadClient, ISearchClient, etc.)
+    v
+Result returns through MCP protocol -> LLM
+```
 
 ## Dependency Injection
 
-**Pattern**: Module-based registration with extension methods on `IServiceCollection`
+**Pattern**: Module-based registration in the composition root
 
-- **Agent composition root**: `Agent/Modules/ConfigModule.cs` orchestrates registration via `ConfigureAgents()` which calls `AddAgent()`, `AddScheduling()`, `AddChatMonitoring()`
-- **Agent DI module**: `Agent/Modules/InjectorModule.cs` -- registers core services (Redis, ChatThreadResolver, AgentFactory, chat interface clients)
-- **Scheduling DI module**: `Agent/Modules/SchedulingModule.cs` -- registers schedule stores, tools, dispatchers
-- **MCP Server DI**: Each MCP server has its own `Modules/ConfigModule.cs` and optionally `Modules/InjectorModule.cs`
-- **WebChat.Client DI**: `WebChat.Client/Extensions/ServiceCollectionExtensions.cs`
-- **Registration style**: Use `IServiceCollection` extension methods. Group registrations by feature in static module classes using C# 14 `extension` blocks.
+- **Agent DI**: `Agent/Modules/InjectorModule.cs` -- registers all backend services
+- **Agent Config**: `Agent/Modules/ConfigModule.cs` -- binds `AgentSettings` from user secrets
+- **Agent Scheduling**: `Agent/Modules/SchedulingModule.cs` -- registers schedule tools and hosted services
+- **WebChat.Client DI**: `WebChat.Client/Extensions/ServiceCollectionExtensions.cs` -- registers stores, effects, services
+- **MCP Servers DI**: Each `McpServer*/Modules/ConfigModule.cs` configures its own DI
+
+**Registration conventions**:
+- Singletons for stateful services (`ChatThreadResolver`, `WebChatSessionManager`, stores)
+- Transient for stateless tools (`ScheduleCreateTool`, etc.)
+- Scoped for WebChat.Client stores and effects (Blazor WASM scoped = singleton in practice, but follows convention)
+- `IOptions<T>` / `IOptionsMonitor<T>` for configuration that may reload
 
 ## Error Handling
 
-- **MCP tool errors**: Centralized via `AddCallToolFilter` in each MCP server's `ConfigModule.cs`. Catches all exceptions and returns `ToolResponse.Create(ex)`. Do NOT add try/catch in individual MCP tool methods.
-- **Chat pipeline errors**: `ChatMonitor.Monitor()` catches exceptions at the outer and inner levels, logging via `ILogger<ChatMonitor>`.
-- **Tool approval rejection**: `ToolApprovalChatClient` sets `context.Terminate = true` and returns a rejection message to the LLM.
-- **Result type**: `FluentResults` is available in Domain but the primary pattern is exception-based with catch at boundaries.
+### Backend
+- **MCP tools**: Global `AddCallToolFilter` in each server's `ConfigModule.cs` catches exceptions, logs them, and returns `ToolResponse.Create(ex)`. Individual tool methods must NOT add try/catch.
+- **Chat pipeline**: `ChatMonitor` catches exceptions at the monitor level and logs them. Individual agent runs use `WithErrorHandling()` extension for graceful streaming error recovery.
+- **Tool approval rejection**: Returns a descriptive string message instead of throwing, so the LLM can react.
+
+### Frontend
+- **SignalR disconnection**: `ReconnectionEffect` handles automatic reconnection with retry logic
+- **Streaming errors**: `TransientErrorFilter` (`WebChat.Client/Services/Streaming/TransientErrorFilter.cs`) detects transient failures during stream resumption
+- **Toast notifications**: `ToastStore` (`WebChat.Client/State/Toast/ToastStore.cs`) surfaces user-facing error messages
 
 ## Cross-Cutting Concerns
 
-### Logging
-
-- **Pattern**: Inject `ILogger<T>` via primary constructor. Use structured logging with `LogError`, `LogWarning`, `LogInformation`.
-- **Rule**: Never use `Console.WriteLine` or `Console.Log`. Use the `Microsoft.Extensions.Logging` abstractions.
-
-### Authentication / Authorization
-
-- **WebChat**: DDNS IP allowlist middleware (`Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs`) registered via `app.UseDdnsIpAllowlist()`. No token-based auth -- relies on network-level access control.
-- **Telegram**: Allowed usernames configured in `AgentSettings.Telegram.AllowedUserNames`.
-- **MCP Servers**: No built-in auth -- expected to run on a private Docker network.
+### Multi-Transport Messaging
+- **Router**: `Domain/Routers/MessageSourceRouter.cs` -- routes responses to the correct transport when ServiceBus + WebChat run simultaneously
+- **Composite client**: `Infrastructure/Clients/Messaging/CompositeChatMessengerClient.cs` -- multiplexes multiple `IChatMessengerClient` implementations
+- **Pattern**: The `--chat` CLI flag selects the transport at startup. When `Web` mode is active and ServiceBus is configured, both run together via `CompositeChatMessengerClient`
 
 ### Tool Approval
+- **Pipeline**: `ToolApprovalChatClient` wraps the inner `IChatClient` as a `FunctionInvokingChatClient`. Before each tool invocation it checks `ToolPatternMatcher` for whitelist match, then delegates to the transport-specific `IToolApprovalHandler`.
+- **Dynamic approval**: `ApprovedAndRemember` result adds the tool name to a per-agent in-memory set, auto-approving future calls to the same tool within that session.
 
-- **Middleware**: `Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs` wraps the LLM chat client as a `FunctionInvokingChatClient` delegating handler.
-- **Pattern**: Each tool call is checked against whitelist patterns (`AgentDefinition.WhitelistPatterns`). Matching tools auto-execute with notification. Non-matching tools require explicit user approval via the interface-specific `IToolApprovalHandler`.
-- **Dynamic approval**: Users can choose "Approve and Remember" to whitelist a tool for the session.
-
-### Configuration
-
-- **Pattern**: Strongly-typed settings bound from `IConfiguration` (appsettings.json + environment variables + user secrets).
-- **Agent settings**: `Agent/Settings/AgentSettings.cs` -- OpenRouter config, Telegram config, Redis config, ServiceBus config, agent definitions.
-- **MCP settings**: Each MCP server has `Settings/McpSettings.cs` with server-specific config.
-- **CLI params**: `Agent/Settings/CommandLineParams.cs` parsed via `System.CommandLine` in `Agent/Modules/ConfigModule.cs`.
-
-### Resilience
-
-- **HTTP retry**: `Infrastructure/Extensions/HttpClientBuilderExtensions.cs` provides `AddRetryWithExponentialWaitPolicy()` using Polly.
-- **MCP client retry**: `McpClientManager` uses Polly `WaitAndRetryAsync` for initial MCP server connections.
-- **Chat monitoring**: `ChatMonitoring` background service wraps `ChatMonitor.Monitor()` in a `while` loop, restarting on failure.
-
-### Real-time Communication
-
-- **Protocol**: SignalR (WebSocket with fallback)
-- **Hub**: `Agent/Hubs/ChatHub.cs` -- handles session management, message sending/receiving, stream resumption, topic CRUD, and tool approval responses.
-- **Notifications**: `Infrastructure/Clients/Messaging/WebChat/HubNotifier.cs` pushes server-initiated events (topic changes, stream state changes, approval resolutions) to all connected clients via `IHubContext<ChatHub>`.
-- **Client-side**: `WebChat.Client/State/Hub/HubEventDispatcher.cs` receives SignalR events and dispatches Redux actions to update stores.
+### Space Isolation (WebChat)
+- **SignalR groups**: Users join a `space:{slug}` group via `ChatHub.JoinSpace()`. Notifications (topic changes, stream updates) are broadcast only to the relevant space group.
+- **Frontend routing**: `SpaceEffect` (`WebChat.Client/State/Effects/SpaceEffect.cs`) manages space selection and reloads topics when the space changes.
+- **Configuration**: `SpaceConfig` (`Domain/DTOs/WebChat/SpaceConfig.cs`) defines per-space name, slug, accent color.
 
 ### Scheduling
+- **Dispatcher**: `Domain/Monitor/ScheduleDispatcher.cs` polls for due schedules and writes them to a `Channel<Schedule>`
+- **Executor**: `Domain/Monitor/ScheduleExecutor.cs` reads from the channel and triggers agent runs
+- **Storage**: `Infrastructure/StateManagers/RedisScheduleStore.cs` persists schedules to Redis
+- **Hosted services**: `Agent/App/ScheduleMonitoring.cs` runs both dispatcher and executor as background services
 
-- **Components**: `Domain/Monitor/ScheduleDispatcher.cs` (checks due schedules), `Domain/Monitor/ScheduleExecutor.cs` (executes scheduled agent runs), `Agent/App/ScheduleMonitoring.cs` (background service)
-- **Storage**: `Infrastructure/StateManagers/RedisScheduleStore.cs` via `Domain/Contracts/IScheduleStore.cs`
-- **Tools**: `Domain/Tools/Scheduling/ScheduleCreateTool.cs`, `ScheduleListTool.cs`, `ScheduleDeleteTool.cs` -- registered as `IDomainToolFeature` via `SchedulingToolFeature`
+### MCP Resource Subscriptions
+- **Manager**: `Infrastructure/Agents/Mcp/McpResourceManager.cs` syncs MCP resources and subscribes to change notifications
+- **Pattern**: Resource changes from MCP servers are merged into the agent's response stream via `System.Threading.Channels`, so the LLM sees resource updates alongside its own responses
+
+### Chat Thread Management
+- **Resolver**: `Domain/Agents/ChatThreadResolver.cs` maps `AgentKey` to `ChatThreadContext`, managing cancellation tokens and completion callbacks per conversation thread
+- **Persistence**: Thread state (message history) is stored in Redis via `IThreadStateStore`, keyed by `AgentKey.ToString()` format `agent-key:{agentId}:{chatId}:{threadId}`

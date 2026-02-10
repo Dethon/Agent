@@ -6,130 +6,48 @@
 
 | Severity | Count | Categories |
 |----------|-------|------------|
-| HIGH | 4 | Security, Reliability |
-| MEDIUM | 8 | Security, Maintainability, Performance, Reliability |
-| LOW | 5 | Maintainability, Performance |
+| HIGH | 4 | Security, Reliability, Performance |
+| MEDIUM | 7 | Maintainability, Reliability, Performance, Security |
+| LOW | 5 | Maintainability, Code Quality |
 
 ---
 
 ## HIGH Risk Areas
 
-### Command Injection in Shell Runners
+### Command Injection via Shell Runner
 
-**Location**: `Infrastructure/CommandRunners/ShRunner.cs:7`, `Infrastructure/CommandRunners/PowerShellRunner.cs:7`
+**Location**: `Infrastructure/CommandRunners/ShRunner.cs:5-8`
 **Category**: Security
-**Risk**: Arbitrary command injection. The `command` parameter is interpolated directly into a shell invocation string with no sanitization or escaping. An attacker-controlled LLM tool call could execute arbitrary system commands.
+**Risk**: Arbitrary command execution. User-controlled input passed directly to `sh -c` with string interpolation enables shell injection. A malicious or LLM-hallucinated command containing `;`, `&&`, `|`, or backtick subshells can execute arbitrary system commands.
 
 **Evidence**:
 ```csharp
-// ShRunner.cs:7
-return await Run("sh", $"-c \"cd {workingDirectory} && {command}\"", ct);
-
-// PowerShellRunner.cs:7
-return await Run("pwsh", $"-WorkingDirectory \"{workingDirectory}\" -Command \"{command}\"", ct);
-```
-
-**Guidance**:
-- Do NOT pass user/LLM-generated strings to these runners without strict validation
-- The tool approval system (`ToolApprovalChatClient`) is the ONLY safeguard; if a command runner tool is whitelisted or auto-approved, any command can be executed
-- If you must modify these runners: add input validation, command allowlisting, or sandboxing
-- Related files: `Infrastructure/CommandRunners/BaseCliRunner.cs`, `Infrastructure/Clients/ToolApproval/AutoToolApprovalHandler.cs`
-
-**Mitigation**:
-- Consider running commands in a restricted container or namespace
-- Add command allowlisting at the runner level, not just at the approval layer
-- `BaseCliRunner.cs:22` does not capture `StandardError`; errors from shell commands are silently lost
-
----
-
-### ChatHub Has No Authentication or Authorization
-
-**Location**: `Agent/Hubs/ChatHub.cs:15-235`
-**Category**: Security
-**Risk**: The SignalR ChatHub exposes all operations (send messages, delete topics, manage sessions, respond to tool approvals) with no `[Authorize]` attribute. The only guard is `RegisterUser` which accepts any arbitrary string as a userId with no verification. Any client that can connect to the hub can impersonate any user, read any agent's history, delete any topic, and approve tool executions.
-
-**Evidence**:
-```csharp
-// ChatHub.cs:15 - No [Authorize] attribute
-public sealed class ChatHub(...) : Hub
+public override async Task<string> Run(string command, CancellationToken ct)
 {
-    // ChatHub.cs:32 - Self-registration with no validation
-    public Task RegisterUser(string userId)
-    {
-        Context.Items["UserId"] = userId;
-        return Task.CompletedTask;
-    }
-
-    // ChatHub.cs:199 - Any user can delete any topic
-    public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId) { ... }
-
-    // ChatHub.cs:221 - Any user can approve tool executions
-    public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result) { ... }
+    return await Run("sh", $"-c \"cd {workingDirectory} && {command}\"", ct);
 }
 ```
 
 **Guidance**:
-- Do NOT deploy the WebChat interface on a public network without adding authentication
-- The DDNS IP allowlist middleware (`Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs`) provides network-level restriction but is not applied to SignalR connections by default
-- If you must expose WebChat externally: add authentication, authorize users per-topic, and validate userId against an identity provider
-- Related files: `Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`
+- Do NOT pass unsanitized strings to this runner. The `command` parameter is interpolated directly into a shell invocation.
+- If you must modify this: add input validation or argument escaping; consider using `Process.StartInfo.ArgumentList` instead of a single argument string.
+- Related files: `Infrastructure/CommandRunners/BaseCliRunner.cs`, `Infrastructure/CommandRunners/PowerShellRunner.cs`, `McpServerCommandRunner/McpTools/McpRunCommandTool.cs`
 
 **Mitigation**:
-- Add `[Authorize]` to the Hub class
-- Replace `RegisterUser` with claims-based identity from an authentication middleware
-- Add per-topic authorization checks (users should only access their own topics)
+- Implement an allowlist of permitted commands or a strict input sanitization layer
+- Use `Process.StartInfo.ArgumentList` to avoid shell interpretation
+- Ensure the MCP command runner tool has approval gates before execution (currently uses tool approval flow, verify this is always active)
 
 ---
 
-### Redis Index Initialization Race Condition
-
-**Location**: `Infrastructure/Memory/RedisStackMemoryStore.cs:240-257`
-**Category**: Reliability
-**Risk**: `EnsureIndexCreatedAsync` uses a plain boolean `_indexInitialized` without any locking. Under concurrent requests, multiple threads can simultaneously attempt to check and create the index. This can result in duplicate index creation attempts or one thread reading `_indexInitialized = true` before the index is actually ready.
-
-**Evidence**:
-```csharp
-// RedisStackMemoryStore.cs:21
-private bool _indexInitialized;
-
-// RedisStackMemoryStore.cs:240-257
-private async Task EnsureIndexCreatedAsync()
-{
-    if (_indexInitialized) { return; }       // No lock, no volatile
-    try
-    {
-        await _ft.InfoAsync(IndexName);
-        _indexInitialized = true;            // Written without synchronization
-    }
-    catch (RedisServerException)
-    {
-        await CreateIndexAsync();
-        _indexInitialized = true;
-    }
-}
-```
-
-**Guidance**:
-- Do NOT assume `_indexInitialized` is thread-safe as-is
-- If multiple agents start simultaneously and both store memories before the index exists, this can throw or create redundant indexes
-- When modifying `RedisStackMemoryStore`: consider adding `SemaphoreSlim` or `Lazy<Task>` pattern for initialization
-- Related files: `Infrastructure/Memory/OpenRouterEmbeddingService.cs`
-
-**Mitigation**:
-- Wrap `EnsureIndexCreatedAsync` in a `SemaphoreSlim` or use `Lazy<Task>` for one-time async initialization
-- Alternatively, mark `_indexInitialized` as `volatile` (partial fix; still has TOCTOU window)
-
----
-
-### BaseCliRunner Does Not Capture StandardError
+### Missing Standard Error Capture in Process Execution
 
 **Location**: `Infrastructure/CommandRunners/BaseCliRunner.cs:10-27`
 **Category**: Reliability
-**Risk**: `BaseCliRunner.Run` only reads `StandardOutput`. If a command writes errors to stderr, they are silently discarded. The caller receives an empty or partial result with no indication of failure. The process exit code is also not checked.
+**Risk**: Process failures are silent. Only stdout is captured; stderr is completely ignored. Commands that fail will return empty strings with no error indication. Additionally, the `Process` object is never disposed, causing handle leaks.
 
 **Evidence**:
 ```csharp
-// BaseCliRunner.cs:10-27
 protected static async Task<string> Run(string fileName, string args, CancellationToken ct)
 {
     var process = new Process
@@ -138,295 +56,309 @@ protected static async Task<string> Run(string fileName, string args, Cancellati
         {
             FileName = fileName,
             Arguments = args,
-            RedirectStandardOutput = true,  // Only stdout
+            RedirectStandardOutput = true,  // stderr not redirected
             UseShellExecute = false,
             CreateNoWindow = true
-            // RedirectStandardError is NOT set
         }
     };
     process.Start();
     var result = await process.StandardOutput.ReadToEndAsync(ct);
     await process.WaitForExitAsync(ct);
-    return result;  // Exit code not checked
+    return result;  // No exit code check, no stderr
 }
 ```
 
 **Guidance**:
-- Do NOT rely on the return value to determine success; a non-zero exit code will still return whatever stdout was captured
-- If you modify command runners: add `RedirectStandardError = true`, read both streams, and check `process.ExitCode`
-- Related files: `Infrastructure/CommandRunners/ShRunner.cs`, `Infrastructure/CommandRunners/PowerShellRunner.cs`, `Infrastructure/CommandRunners/CommandRunnerFactory.cs`
+- Do NOT assume an empty return value means "no output." It may mean the command failed and all output went to stderr.
+- If you must modify this: add `RedirectStandardError = true`, capture stderr, check `process.ExitCode`, and wrap `Process` in a `using` statement.
+- Related files: `Infrastructure/CommandRunners/ShRunner.cs`, `Infrastructure/CommandRunners/PowerShellRunner.cs`
 
 **Mitigation**:
-- Add stderr capture and exit code checking
-- Return a structured result (stdout, stderr, exit code) instead of a plain string
+- Add `RedirectStandardError = true` and merge or return stderr
+- Check `process.ExitCode` and throw or return error info on non-zero
+- Dispose the `Process` via `using`
+
+---
+
+### Static Mutable State in TelegramToolApprovalHandler
+
+**Location**: `Infrastructure/Clients/ToolApproval/TelegramToolApprovalHandler.cs:24`
+**Category**: Reliability
+**Risk**: `_pendingApprovals` is a `static ConcurrentDictionary` shared across ALL instances of `TelegramToolApprovalHandler`. Since each approval handler is created per-request via `TelegramToolApprovalHandlerFactory.Create()`, this static field is the only thing linking the callback query handler to the original requester. If the process restarts or the dictionary grows unboundedly (e.g., timeouts fail to clean up), approvals are orphaned. There is also a subtle leak: `cancellationToken.Register()` (line 287) creates a callback registration that is never disposed if the token is not cancelled.
+
+**Evidence**:
+```csharp
+private static readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
+// ...
+public Task<ToolApprovalResult> WaitForApprovalAsync(CancellationToken cancellationToken)
+{
+    cancellationToken.Register(() => _tcs.TrySetCanceled(cancellationToken));
+    return _tcs.Task;
+}
+```
+
+**Guidance**:
+- Do NOT rely on this surviving process restarts; pending approvals are lost on restart.
+- If you must modify this: ensure the cancellation registration is stored and disposed in the `finally` block of `RequestApprovalAsync`. Consider a bounded or expiring cache instead of an unbounded dictionary.
+
+**Mitigation**:
+- Dispose the `CancellationTokenRegistration` returned by `.Register()`
+- Add a periodic cleanup of stale entries as a safeguard
+- Consider persisting pending approvals to Redis for cross-restart resilience
+
+---
+
+### IP Allowlist Middleware Performs DNS Lookup Per Request
+
+**Location**: `Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs:29-40`
+**Category**: Performance / Security
+**Risk**: Every incoming HTTP request triggers a DNS resolution (`Dns.GetHostAddressesAsync`). Under load, this causes excessive DNS queries, increased latency, and potential rate-limiting by the DNS provider. If DNS resolution fails (network blip, DNS outage), ALL requests are rejected (the `catch` block returns `false`). This creates a denial-of-service condition where a transient DNS failure locks out all legitimate users.
+
+**Evidence**:
+```csharp
+private async Task<bool> IsIpAllowedAsync(string clientIp)
+{
+    try
+    {
+        var allowedIps = await Dns.GetHostAddressesAsync(ddnsHostname);
+        var clientIpParsed = IPAddress.Parse(clientIp);
+        return allowedIps.Any(ip => ip.Equals(clientIpParsed));
+    }
+    catch
+    {
+        return false;  // DNS failure = deny all traffic
+    }
+}
+```
+
+**Guidance**:
+- Do NOT add more endpoints behind this middleware without adding DNS caching first.
+- If you must modify this: implement a time-based cache (30-60 seconds) for resolved IPs, and consider a fallback behavior when DNS fails (e.g., use last known good IPs).
+- Related files: `Infrastructure/Extensions/DdnsIpAllowlistExtensions.cs`
+
+**Mitigation**:
+- Cache DNS results with a configurable TTL (e.g., `MemoryCache` with 60-second expiry)
+- On DNS failure, fall back to previously cached IPs rather than denying all traffic
+- Log DNS failures for monitoring
 
 ---
 
 ## MEDIUM Risk Areas
 
-### DdnsIpAllowlistMiddleware Swallows All DNS Errors
+### WebChatStreamManager Has Six Parallel ConcurrentDictionaries
 
-**Location**: `Infrastructure/Middleware/DdnsIpAllowlistMiddleware.cs:31-39`
-**Category**: Security
-**Risk**: The `IsIpAllowedAsync` method catches all exceptions and returns `false`. If DNS resolution fails (network issue, DNS outage), ALL requests are denied including legitimate ones. No logging means operators cannot diagnose why requests are being rejected.
-
-**Evidence**:
-```csharp
-// DdnsIpAllowlistMiddleware.cs:31-39
-private async Task<bool> IsIpAllowedAsync(string clientIp)
-{
-    try { ... }
-    catch
-    {
-        return false;  // No logging, no differentiation between DNS failure and invalid IP
-    }
-}
-```
-
-**Guidance**:
-- If you experience unexplained 403 errors: check DNS resolution for the DDNS hostname first
-- When modifying this middleware: add logging for DNS resolution failures
-- The middleware resolves DNS on every request with no caching, which adds latency and is susceptible to DNS throttling
-
-**Mitigation**:
-- Add logging in the catch block
-- Cache DNS results for a configurable TTL (e.g., 5 minutes) to reduce per-request DNS lookups
-- Differentiate between "DNS failed" (allow with warning or deny with log) and "IP not in list" (deny silently)
-
----
-
-### BroadcastChannel Unbounded Subscriber Growth
-
-**Location**: `Infrastructure/Clients/Messaging/WebChat/BroadcastChannel.cs:1-44`
-**Category**: Reliability / Performance
-**Risk**: `BroadcastChannel.Subscribe()` creates unbounded channels and adds them to a list. Subscribers are never removed (only cleared on `Complete()`). If a client disconnects without the stream completing, its channel remains in the list, and every `WriteAsync` call sends data to dead channels, wasting memory and CPU.
+**Location**: `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs:9-14`
+**Category**: Maintainability / Reliability
+**Risk**: Six `ConcurrentDictionary` fields are managed in parallel, keyed by `topicId`. The `GetOrCreateStream` method (lines 18-63) accesses these dictionaries without holding the `_streamLock`, creating a window where dictionaries can become inconsistent (e.g., a channel exists but its CTS does not). The `_streamLock` is only used in `CompleteStream`, `CancelStream`, `TryIncrementPending`, and `DecrementPendingAndCheckIfShouldComplete`, leaving a race between `GetOrCreateStream` and these locked methods.
 
 **Evidence**:
 ```csharp
-// BroadcastChannel.cs:10-18
-public ChannelReader<T> Subscribe()
-{
-    var channel = Channel.CreateUnbounded<T>();
-    lock (_lock)
-    {
-        _subscribers.Add(channel);  // Never removed until Complete()
-    }
-    return channel.Reader;
-}
+private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
+private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
+private readonly ConcurrentDictionary<string, StreamBuffer> _streamBuffers = new();
+private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
+private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
+private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
 ```
 
 **Guidance**:
-- Do NOT assume subscriber count is bounded; in a scenario with many browser reconnections, this list grows unbounded
-- When modifying `BroadcastChannel`: add a mechanism to detect and remove stale subscribers
-- Related files: `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`
-
-**Mitigation**:
-- Track subscriber liveness (e.g., detect when `WriteAsync` fails for a subscriber and remove it)
-- Add an `Unsubscribe` method or use `WeakReference` for subscriber tracking
+- When modifying stream lifecycle logic: trace ALL six dictionaries to ensure they are updated atomically.
+- If adding new per-topic state: consider consolidating into a single `ConcurrentDictionary<string, StreamState>` to avoid multi-dictionary synchronization bugs.
+- Related files: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs`, `Infrastructure/Clients/Messaging/WebChat/StreamBuffer.cs`
 
 ---
 
-### Browser Session Leak - No Automatic Cleanup
+### Fire-and-Forget Patterns in WebChatMessengerClient
 
-**Location**: `Infrastructure/Clients/Browser/BrowserSessionManager.cs:1-103`
-**Category**: Performance / Reliability
-**Risk**: Browser sessions (Playwright pages) are created on demand but never automatically cleaned up based on age or inactivity. The `LastAccessedAt` field is tracked but never used for eviction. Long-running agents accumulate open browser tabs that consume memory.
-
-**Evidence**:
-```csharp
-// BrowserSessionManager.cs:18-19
-_sessions[sessionId] = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
-return existing;
-// LastAccessedAt is set but there is no background cleanup using it
-```
-
-**Guidance**:
-- Do NOT rely on `DisposeAsync` being called promptly; browser sessions accumulate until the process shuts down
-- If modifying browser infrastructure: add a periodic cleanup task that closes sessions idle beyond a threshold
-- Related files: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`
-
-**Mitigation**:
-- Add a background timer that closes sessions older than a configurable TTL (e.g., 30 minutes)
-- Limit the maximum number of concurrent sessions
-
----
-
-### PlaywrightWebBrowser is a God Class (946 Lines)
-
-**Location**: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:1-946`
-**Category**: Maintainability
-**Risk**: This single class handles navigation, CAPTCHA solving, modal dismissal, stealth scripting, element clicking, content extraction, session management, DOM stability waiting, and more. It has 900+ lines including a ~180-line JavaScript stealth script embedded as a string constant. Any change risks unintended side effects.
-
-**Evidence**:
-```csharp
-// PlaywrightWebBrowser.cs - 946 lines total
-// - Lines 28-181: StealthScript constant (JavaScript)
-// - Lines 183-347: NavigateAsync with CAPTCHA/timeout/modal handling
-// - Lines 350-478: ClickAsync with multiple timeout/error catch blocks
-// - Lines 480-620: InspectAsync, ScrollAsync, etc.
-```
-
-**Guidance**:
-- Do NOT add new methods to this class; it already violates SRP significantly
-- When modifying navigation or clicking: trace ALL catch blocks carefully; there are 10+ catch clauses with different behaviors
-- The stealth script (lines 28-181) must stay synchronized with Chrome version constants (line 23: `ChromeMajorVersion = "145"` and line 148: brand version `'145'`)
-- Related files: `Infrastructure/Clients/Browser/BrowserSessionManager.cs`, `Infrastructure/Clients/Browser/ModalDismisser.cs`, `Infrastructure/Clients/Browser/CapSolverClient.cs`
-
-**Mitigation**:
-- Extract stealth scripting into its own class
-- Extract navigation, clicking, and inspection into separate strategy classes
-- Extract CAPTCHA handling into a dedicated middleware/handler
-
----
-
-### HtmlInspector is a Large Static Class (1090 Lines)
-
-**Location**: `Infrastructure/HtmlProcessing/HtmlInspector.cs:1-1090`
-**Category**: Maintainability
-**Risk**: At 1090 lines, this is the largest file in the codebase. It handles content detection, repeating element detection, navigation detection, outline building, structured data extraction, table parsing, and selector generation - all as static methods. Difficult to test individual behaviors in isolation.
-
-**Evidence**:
-```
-1090 lines with responsibilities spanning:
-- Main content detection (DetectMainContent)
-- Repeating element detection (DetectRepeatingElements)
-- Navigation detection (DetectNavigation)
-- Outline building (BuildOutline)
-- Suggestion generation (GenerateSuggestions)
-- Structured data extraction (ExtractStructuredData)
-- CSS selector generation (GenerateSelector)
-- Table parsing
-- Text search
-```
-
-**Guidance**:
-- When modifying HTML inspection logic: be aware that changes to selector generation or element scoring can affect all downstream features
-- The class is `partial`, so look for additional files before concluding you have the full picture
-- Related files: `Infrastructure/HtmlProcessing/HtmlConverter.cs`, `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` (1012 lines)
-
-**Mitigation**:
-- Split into focused classes: `ContentDetector`, `RepeatingElementDetector`, `NavigationDetector`, `SelectorGenerator`, `StructuredDataExtractor`
-
----
-
-### WebChatMessengerClient.GenerateChatId Uses Timestamp
-
-**Location**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:234-237`
+**Location**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:370-377`
 **Category**: Reliability
-**Risk**: `GenerateChatId` generates IDs using `DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()`. If two topics are created within the same millisecond, they will receive the same chatId, causing session collision and data corruption.
+**Risk**: Multiple fire-and-forget operations (`_ = ...SafeAwaitAsync(...)`) in `EnqueuePrompt` mean that user messages could fail to be buffered or notifications could fail to be sent, with only a log warning as indication. If `WriteMessageAsync` fails, the user message is lost from the buffer and won't appear for other browsers joining the stream.
 
 **Evidence**:
 ```csharp
-// WebChatMessengerClient.cs:234-237
-private static long GenerateChatId()
+// Fire and forget - don't block the enqueue
+_ = streamManager.WriteMessageAsync(topicId, userMessage, CancellationToken.None)
+    .SafeAwaitAsync(logger, "Failed to buffer user message for topic {TopicId}", topicId);
+
+// Notify other browsers about the user message
+_ = hubNotifier.NotifyUserMessageAsync(...)
+    .SafeAwaitAsync(logger, "Failed to notify user message for topic {TopicId}", topicId);
+```
+
+**Guidance**:
+- Do NOT add more fire-and-forget operations without considering the failure impact.
+- If the buffer write fails, consider returning `false` from `EnqueuePrompt` or retrying.
+- Related files: `Infrastructure/Extensions/TaskExtensions.cs`, `WebChat.Client/State/Effects/AgentSelectionEffect.cs`, `WebChat.Client/State/Effects/InitializationEffect.cs`
+
+---
+
+### ChatHub Lacks Authorization on Sensitive Operations
+
+**Location**: `Agent/Hubs/ChatHub.cs:57-61, 228-239`
+**Category**: Security
+**Risk**: `StartSession`, `DeleteTopic`, `SaveTopic`, `CancelTopic`, `EnqueueMessage`, and `RespondToApprovalAsync` only check `IsRegistered` (i.e., that a user ID was set via `RegisterUser`). There is no verification that the calling user owns or has access to the topic they are operating on. Any registered user can delete, modify, or cancel any other user's topic by knowing (or guessing) the topicId. The `RegisterUser` method itself accepts any string as a userId with no authentication.
+
+**Evidence**:
+```csharp
+public Task RegisterUser(string userId)
 {
-    return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    if (string.IsNullOrWhiteSpace(userId))
+    {
+        throw new HubException("User ID cannot be empty");
+    }
+    Context.Items["UserId"] = userId;
+    return Task.CompletedTask;
+}
+// ...
+public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
+{
+    messengerClient.EndSession(topicId);
+    // No ownership check
+    await threadStateStore.DeleteAsync(agentKey);
+    // ...
 }
 ```
 
 **Guidance**:
-- Do NOT create topics in rapid succession via the WebChat interface without awareness of this limitation
-- When modifying ID generation: switch to `Interlocked.Increment` or combine timestamp with a counter
-- Related files: `Infrastructure/Utils/TopicIdHasher.cs`, `Infrastructure/Clients/Messaging/WebChat/WebChatSessionManager.cs`
+- Do NOT expose this hub to untrusted networks without adding authentication and authorization.
+- If this is intended for trusted internal use only: document this assumption prominently and ensure the DDNS IP allowlist middleware is applied.
+- If you must add multi-user support: add topic ownership validation before mutations.
 
-**Mitigation**:
-- Use an atomic counter (`Interlocked.Increment`) or GUID-based ID generation
+---
+
+### Stealth Script and User-Agent Require Manual Version Bumps
+
+**Location**: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:23-181`
+**Category**: Maintainability
+**Risk**: The Chrome version (`145`), user agent string, stealth script brand arrays, and `userAgentData` values are all hardcoded. When the bundled Chromium in Playwright updates, these values become stale and may trigger bot detection. The version appears in at least 4 separate places within the stealth script, making it easy to miss one during updates.
+
+**Evidence**:
+```csharp
+private const string ChromeMajorVersion = "145";
+// ...in StealthScript:
+{ brand: 'Google Chrome', version: '145' },
+{ brand: 'Chromium', version: '145' }
+// ...
+values.uaFullVersion = '145.0.0.0';
+```
+
+**Guidance**:
+- When updating Playwright: also update `ChromeMajorVersion` and verify ALL occurrences in `StealthScript` match.
+- Consider extracting the version into a single constant and using string interpolation throughout the stealth script.
+- Related files: `Infrastructure/Infrastructure.csproj` (Playwright version)
+
+---
+
+### SubscriptionMonitor N+1 Download Queries
+
+**Location**: `McpServerLibrary/ResourceSubscriptions/SubscriptionMonitor.cs:129-135`
+**Category**: Performance
+**Risk**: `MonitorAllDownloads` issues one HTTP call per tracked download ID via `downloadClient.GetDownloadItem()`. With many active downloads, this creates an N+1 query pattern on every 5-second polling cycle. The TODO comment acknowledges this issue.
+
+**Evidence**:
+```csharp
+//TODO: Check all downloads in a single call
+var downloadTasks = downloadIds
+    .Select(async x => (
+        DownloadId: x,
+        DownloadItem: await downloadClient.GetDownloadItem(x, cancellationToken)
+    ));
+var downloads = await Task.WhenAll(downloadTasks);
+```
+
+**Guidance**:
+- If you add more download features: prioritize implementing a batch download status API.
+- The `Task.WhenAll` parallelizes the calls but still generates N requests per poll cycle.
+
+---
+
+### OpenRouterChatClient Reasoning Queue Is Instance-Scoped but Accessed Across Threads
+
+**Location**: `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs:18, 88-111`
+**Category**: Reliability
+**Risk**: The `_reasoningQueue` is a `ConcurrentQueue<string>` used to pass reasoning content from the HTTP handler (which intercepts SSE streams on the HTTP thread) to `AppendReasoningContent` (called during async enumeration of streaming responses). If two concurrent streaming calls share the same `OpenRouterChatClient` instance, reasoning chunks from one call could leak into the other call's response. The `DrainReasoningQueue` method empties the entire queue indiscriminately.
+
+**Evidence**:
+```csharp
+private readonly ConcurrentQueue<string> _reasoningQueue = new();
+// ...
+private string DrainReasoningQueue()
+{
+    if (_reasoningQueue.IsEmpty) return string.Empty;
+    var sb = new StringBuilder();
+    while (_reasoningQueue.TryDequeue(out var chunk))
+    {
+        sb.Append(chunk);
+    }
+    return sb.ToString();
+}
+```
+
+**Guidance**:
+- Do NOT use the same `OpenRouterChatClient` instance for concurrent conversations. If the client is registered as a singleton or shared, reasoning will cross-contaminate.
+- If you must support concurrent calls: key the reasoning queue per request/correlation ID.
 
 ---
 
 ### Preview Packages in Production Dependencies
 
-**Location**: `Infrastructure/Infrastructure.csproj:26-30`, `Domain/Domain.csproj:13`
+**Location**: `Infrastructure/Infrastructure.csproj:26,28,30`
 **Category**: Reliability
-**Risk**: Multiple preview packages are used in production code. Preview packages may have breaking changes, missing features, or bugs that are not yet resolved.
+**Risk**: Three packages are preview/pre-release versions. These may have breaking API changes, bugs, or missing features. Upgrading to stable releases may require code changes.
 
 **Evidence**:
 ```xml
-<!-- Infrastructure.csproj -->
 <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-preview.260205.1" />
 <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.2.0-preview.1.26063.2"/>
 <PackageReference Include="ModelContextProtocol" Version="0.8.0-preview.1" />
-
-<!-- Domain.csproj -->
-<PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.0.0-preview.260205.1" />
 ```
 
 **Guidance**:
-- Do NOT upgrade these packages without checking release notes for breaking changes
-- `Microsoft.Agents.AI` and `ModelContextProtocol` are both early preview; API surface may change significantly between versions
-- Pin exact versions in a central package management file to avoid accidental upgrades
-
-**Mitigation**:
-- Track stable release dates for these packages
-- Add integration tests that exercise the critical paths through these APIs to catch breaking changes early
-
----
-
-### OpenRouterHttpHelpers Silent Error Swallowing
-
-**Location**: `Infrastructure/Agents/ChatClients/OpenRouterHttpHelpers.cs:193-197`
-**Category**: Reliability
-**Risk**: The `ProcessBytes` method in `ReasoningTeeStream` catches and silently discards all exceptions. If the SSE stream contains malformed data, reasoning content is silently lost with no logging or error reporting.
-
-**Evidence**:
-```csharp
-// OpenRouterHttpHelpers.cs:193-197
-private void ProcessBytes(ReadOnlySpan<byte> bytes)
-{
-    try { ... }
-    catch
-    {
-        // best-effort
-    }
-}
-```
-
-**Guidance**:
-- If reasoning content is unexpectedly missing from agent responses: this is a likely culprit
-- When modifying the reasoning extraction pipeline: add logging for parse failures at minimum
-- Related files: `Infrastructure/Agents/ChatClients/OpenRouterChatClient.cs`
+- Track release milestones for these packages and plan migration when stable versions ship.
+- Pin exact versions and test thoroughly before upgrading.
+- `Microsoft.Agents.AI` is particularly risky as a `1.0.0-preview`; its API surface may change significantly.
 
 ---
 
 ## LOW Risk Areas
 
-### TerminalGuiAdapter is Large (617 Lines)
+### PlaywrightWebBrowser Is the Largest Source File (946 lines)
 
-**Location**: `Infrastructure/CliGui/Ui/TerminalGuiAdapter.cs`
+**Location**: `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs`
 **Category**: Maintainability
-**Note**: At 617 lines, this is on the boundary. It manages the entire Terminal.Gui lifecycle including layout, input handling, scrolling, thinking indicators, and Ctrl+C handling. Consider extracting layout setup and input handling into separate classes if this continues to grow.
+**Note**: At 946 lines, this file combines navigation, clicking, inspection, CAPTCHA solving, session management, stealth scripting, and DOM stability checking. The 181-line `StealthScript` constant alone accounts for ~19% of the file. Consider extracting the stealth script into a resource file and splitting navigation/click/inspect into separate strategy classes.
 
 ---
 
-### ModalDismisser is Complex (374 Lines)
+### HtmlInspector Is 1090 Lines of Static Methods
 
-**Location**: `Infrastructure/Clients/Browser/ModalDismisser.cs`
+**Location**: `Infrastructure/HtmlProcessing/HtmlInspector.cs`
 **Category**: Maintainability
-**Note**: Contains heuristic-based logic for dismissing cookie banners, popups, and overlays on arbitrary websites. Fragile by nature since it relies on pattern matching against class names, button text, and DOM structure. Changes here may fix one site while breaking another.
+**Note**: All methods are static, making it a utility class rather than a cohesive object. The file handles structure detection, search, form extraction, button extraction, link extraction, table extraction, selector generation, and structured data parsing. While each method is reasonably sized, the file as a whole is difficult to navigate.
 
 ---
 
-### Telegram Authorization is Username-Based
+### TerminalGuiAdapter Uses Background Thread with Thread.Sleep
 
-**Location**: `Infrastructure/Clients/Messaging/Telegram/TelegramChatClient.cs:285-288`
-**Category**: Security
-**Note**: Authorization checks use `allowedUserNames.Contains(prompt.Sender)` where `Sender` is the Telegram username. Telegram usernames can be changed by users. If a user changes their username, they lose access. If someone obtains a previously-allowed username, they gain access. Low risk for a personal bot, but worth noting.
-
----
-
-### IdealistaClient Token Expiry Uses DateTime.UtcNow
-
-**Location**: `Infrastructure/Clients/IdealistaClient.cs:15-16`
-**Category**: Reliability
-**Note**: Uses `DateTime.UtcNow` directly rather than `TimeProvider` for token expiry checks. Not testable without real time progression. Low risk since OAuth tokens have multi-minute lifetimes, but inconsistent with the codebase convention of using `TimeProvider` for testable time-dependent code.
+**Location**: `Infrastructure/CliGui/Ui/TerminalGuiAdapter.cs:54-56`
+**Category**: Maintainability
+**Note**: `new Thread(RunTerminalGui) { IsBackground = true }.Start()` followed by `Thread.Sleep(500)` is a brittle initialization pattern. The 500ms sleep is a timing assumption that the Terminal.Gui framework has initialized. A `TaskCompletionSource` or `ManualResetEventSlim` would be more reliable.
 
 ---
 
-### StreamBuffer RemoveOldestMessage Has O(n) Index Adjustment
+### StreamBuffer Uses List.RemoveAt(0) for Eviction
 
-**Location**: `Infrastructure/Clients/Messaging/WebChat/StreamBuffer.cs:76-94`
+**Location**: `Infrastructure/Clients/Messaging/WebChat/StreamBuffer.cs:78-95`
 **Category**: Performance
-**Note**: When the buffer exceeds `MaxBufferSize` (100), `RemoveOldestMessage` performs `RemoveAt(0)` on a `List<T>` (O(n) shift) and then iterates all tracked indices to decrement them. With `MaxBufferSize = 100` this is negligible, but the pattern would not scale.
+**Note**: `RemoveOldestMessage()` calls `_messages.RemoveAt(0)` which is O(n) for a `List<T>`. It then iterates all `_messageIndexByMessageId` keys to decrement indices. With `MaxBufferSize = 100` this is acceptable, but if the buffer size increases significantly, consider using a `LinkedList` or circular buffer.
+
+---
+
+### Bare `catch` Blocks in HtmlInspector Navigation Detection
+
+**Location**: `Infrastructure/HtmlProcessing/HtmlInspector.cs:248-251, 266-269`
+**Category**: Code Quality
+**Note**: Empty `catch` blocks swallow all exceptions during selector queries. While the comment says "Some patterns may not be supported," this hides genuine bugs. Consider catching only the specific exception types that AngleSharp throws for unsupported selectors.
 
 ---
 
@@ -436,28 +368,28 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 
 | File | Line | Comment |
 |------|------|---------|
-| `McpServerLibrary/ResourceSubscriptions/SubscriptionMonitor.cs` | 129 | `TODO: Check all downloads in a single call` |
+| `McpServerLibrary/ResourceSubscriptions/SubscriptionMonitor.cs` | 129 | `//TODO: Check all downloads in a single call` |
 
 ### Large Files (>500 lines)
 
 | File | Lines | Concern |
 |------|-------|---------|
-| `Infrastructure/HtmlProcessing/HtmlInspector.cs` | 1090 | God class - multiple responsibilities, consider splitting |
-| `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` | 1012 | Large test file mirrors large implementation |
-| `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs` | 946 | God class - navigation/clicking/CAPTCHA/stealth all in one |
-| `Tests/Unit/WebChat/Client/StreamingServiceTests.cs` | 899 | Large test file |
-| `Tests/Integration/Clients/PlaywrightWebBrowserIntegrationTests.cs` | 641 | Large integration test |
-| `Infrastructure/CliGui/Ui/TerminalGuiAdapter.cs` | 617 | UI lifecycle management, consider extracting components |
-| `Tests/Integration/WebChat/ChatHubIntegrationTests.cs` | 537 | Large integration test |
+| `Infrastructure/HtmlProcessing/HtmlInspector.cs` | 1090 | Static utility god-class; handles 8+ distinct responsibilities |
+| `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs` | 946 | Navigation, clicking, inspection, CAPTCHA, stealth - too many concerns |
+| `Tests/Unit/Infrastructure/HtmlInspectorTests.cs` | 1012 | Large test file, acceptable for test coverage |
+| `Tests/Unit/WebChat/Client/StreamingServiceTests.cs` | 899 | Large test file, acceptable for test coverage |
+| `Tests/Integration/WebChat/ChatHubIntegrationTests.cs` | 713 | Large integration test file |
+| `Tests/Integration/Clients/PlaywrightWebBrowserIntegrationTests.cs` | 641 | Large integration test file |
+| `Infrastructure/CliGui/Ui/TerminalGuiAdapter.cs` | 617 | UI adapter with mixed layout, event wiring, and input handling |
 
-### Complex Functions (high cyclomatic complexity)
+### Complex Functions
 
 | File | Function | Concern |
 |------|----------|---------|
-| `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:183` | `NavigateAsync` | ~120 lines, 6+ catch blocks, CAPTCHA retry loop, modal dismissal, selector waiting, scroll-to-load, stability checking |
-| `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:350` | `ClickAsync` | ~130 lines, 5+ catch blocks with different timeout/error handling paths |
-| `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:159` | `CreateTopicIfNeededAsync` | Complex branching on threadId/chatId nullability with session creation side effects |
-| `Infrastructure/HtmlProcessing/HtmlInspector.cs:46` | `DetectMainContent` | Scoring algorithm with multiple candidate sources and magic numbers |
+| `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:183` | `NavigateAsync` | ~165 lines, multiple try/catch layers, CAPTCHA retry loop, modal dismissal, stability check |
+| `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:162` | `CreateTopicIfNeededAsync` | ~76 lines, multiple branches for existing/new topics with side effects |
+| `Infrastructure/HtmlProcessing/HtmlInspector.cs:103` | `DetectRepeatingElements` | Iterates all elements, groups by class, validates level - could be split |
+| `Domain/Monitor/ChatMonitor.cs:46` | `ProcessChatThread` | Deeply nested LINQ pipeline with async lambdas and streaming merge |
 
 ---
 
@@ -466,98 +398,78 @@ private void ProcessBytes(ReadOnlySpan<byte> bytes)
 ### Chrome Version Synchronization
 
 **Locations**:
-- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:23` (`ChromeMajorVersion = "145"`)
-- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:26` (UserAgent string)
-- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:148-150` (navigator.userAgentData brands)
-- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:164` (uaFullVersion)
+- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:23` (`ChromeMajorVersion`)
+- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:148-149` (brands in StealthScript)
+- `Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs:164` (uaFullVersion in StealthScript)
+- `Infrastructure/Infrastructure.csproj:34` (Playwright package version)
 
-**Why it's fragile**: The Chrome version appears in four separate places: the constant, the UserAgent string, the brands array in the stealth script, and the uaFullVersion. If you update one but not the others, anti-bot detection systems will flag the mismatched fingerprint.
+**Why it's fragile**: The Playwright package bundles a specific Chromium version. The stealth script spoofs a Chrome version number in multiple places. If these drift apart, anti-bot detection increases dramatically.
 
 **When modifying**:
-1. Update `ChromeMajorVersion` constant (line 23)
-2. Verify `UserAgent` string uses the constant (line 26) -- it does via interpolation
-3. Update brand versions in the stealth script `navigator.userAgentData` section (lines 148, 150, 164) -- these are hardcoded string literals, NOT referencing the constant
-4. Test against a site with anti-bot protection (e.g., Cloudflare, DataDome)
+1. Update `Microsoft.Playwright` package version
+2. Update `ChromeMajorVersion` constant
+3. Search the entire `StealthScript` for the old version number
+4. Verify by running integration tests against a bot-detection service
 
----
-
-### WebChat Stream Lifecycle Coordination
+### Six-Dictionary Stream State in WebChatStreamManager
 
 **Locations**:
-- `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs`
-- `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:43-119`
-- `Infrastructure/Clients/Messaging/WebChat/BroadcastChannel.cs`
-- `Agent/Hubs/ChatHub.cs:96-173`
+- `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs:9-14`
+- `Infrastructure/Clients/Messaging/WebChat/WebChatStreamManager.cs:173-183` (cleanup)
 
-**Why it's fragile**: Stream lifecycle involves coordinating pending prompt counts, broadcast channels, cancellation tokens, stream buffers, and hub notifications across four files. The pending count must be incremented before the agent processes and decremented exactly once per completion. A missed increment or decrement causes either premature stream completion (cutting off responses) or never-completing streams (zombie streams).
+**Why it's fragile**: Adding or removing per-stream state requires updating six dictionaries and the `CleanupStreamState` method. Missing one dictionary causes state leaks or null reference errors.
 
 **When modifying**:
-1. Trace the full lifecycle: `GetOrCreateStream` -> `TryIncrementPending` -> `WriteMessageAsync` -> `DecrementPendingAndCheckIfShouldComplete` -> `CompleteStream`
-2. Ensure every path that creates a stream eventually completes it (even error paths)
-3. Test with multiple concurrent prompts to the same topic
-4. Test browser reconnection during an active stream
-
----
-
-### Tool Approval Whitelist Pattern Matching
-
-**Locations**:
-- `Infrastructure/Utils/ToolPatternMatcher.cs`
-- `Infrastructure/Agents/ChatClients/ToolApprovalChatClient.cs:41`
-
-**Why it's fragile**: The whitelist uses glob-to-regex conversion (`*` becomes `.*`). A pattern like `*` auto-approves ALL tools including dangerous ones (command execution, file deletion). The `_dynamicallyApproved` set grows during a session and is never cleared, meaning "approve and remember" is permanent for the session lifetime.
-
-**When modifying**:
-1. Review all configured whitelist patterns before deploying
-2. Verify `_dynamicallyApproved` does not persist across sessions (it does not - it is per `ToolApprovalChatClient` instance)
-3. Test that dangerous tools (command runners, file operations) are NOT matched by overly broad patterns
+1. Check all six dictionaries in `GetOrCreateStream`, `CompleteStream`, `CancelStream`, and `CleanupStreamState`
+2. Ensure any new state is also cleaned up in `Dispose`
+3. Verify the `_streamLock` is held for operations that must be atomic
 
 ---
 
 ## Missing Safeguards
 
-### No Rate Limiting on ChatHub
+### No Rate Limiting on ChatHub SignalR Methods
 
 **Where**: `Agent/Hubs/ChatHub.cs`
-**What's missing**: No rate limiting on `SendMessage`, `EnqueueMessage`, or any other hub method. A malicious or buggy client can flood the agent with prompts.
-**Risk**: Resource exhaustion - each prompt triggers LLM API calls (which cost money) and spawns concurrent processing tasks.
-**Recommendation**: Add per-user rate limiting via SignalR filters or a middleware.
+**What's missing**: No rate limiting on `SendMessage`, `EnqueueMessage`, or any hub methods.
+**Risk**: A misbehaving or malicious client can flood the system with messages, triggering expensive LLM calls with no throttle.
+**Recommendation**: Add per-connection rate limiting via a custom `IHubFilter` or middleware.
 
-### No Maximum Session Count for Browser Sessions
+### No Input Length Validation on Chat Messages
 
-**Where**: `Infrastructure/Clients/Browser/BrowserSessionManager.cs`
-**What's missing**: No limit on the number of concurrent browser sessions. Each session creates a new Playwright page.
-**Risk**: Memory exhaustion if the agent is asked to browse many sites simultaneously.
-**Recommendation**: Add a configurable maximum session count with eviction of least-recently-used sessions.
+**Where**: `Agent/Hubs/ChatHub.cs:165-203`, `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:288-349`
+**What's missing**: The `message` parameter in `SendMessage` and `EnqueuePromptAndGetResponses` has no maximum length check.
+**Risk**: Extremely long messages are forwarded to the LLM, potentially exceeding token limits and incurring high costs.
+**Recommendation**: Add a maximum message length constant and reject messages that exceed it.
 
-### No Input Size Validation on WebChat Messages
+### No Process Timeout in BaseCliRunner
 
-**Where**: `Agent/Hubs/ChatHub.cs:136-174`
-**What's missing**: The `message` parameter in `SendMessage` has no length validation. Arbitrarily large messages are forwarded to the LLM.
-**Risk**: Excessive token usage/cost and potential LLM context window overflow.
-**Recommendation**: Add maximum message length validation in the hub method.
+**Where**: `Infrastructure/CommandRunners/BaseCliRunner.cs:10-27`
+**What's missing**: No timeout on the spawned process. If a command hangs, the thread blocks indefinitely.
+**Risk**: Hung processes consume resources and block the caller.
+**Recommendation**: Use `process.WaitForExitAsync()` with a `CancellationTokenSource` that has a timeout, and kill the process on timeout.
 
 ---
 
 ## Known Limitations
 
-### SubscriptionMonitor Only Supports Download Resources
+### MCP SDK Is Pre-Release (0.8.0-preview.1)
 
-**Area**: `McpServerLibrary/ResourceSubscriptions/SubscriptionMonitor.cs:46-53`
-**Limitation**: `GetResourceCheck` throws `NotImplementedException` for any URI scheme other than `download://`. Only download-based resource subscriptions are supported.
-**Workaround**: N/A - only download monitoring is implemented.
-**Future fix**: Implement handlers for other resource types as they are added to MCP servers.
+**Area**: `Infrastructure/Agents/Mcp/`, all `McpServer*` projects
+**Limitation**: The ModelContextProtocol package is at version 0.8.0-preview.1. The API surface is not stable and may change with each release.
+**Workaround**: Pin the exact version and test before upgrading.
+**Future fix**: Migrate to stable 1.0 release when available.
 
-### Single Redis Server Endpoint Assumption
+### Idealista Token Cache Is In-Memory Only
 
-**Area**: `Infrastructure/Memory/RedisStackMemoryStore.cs:27`
-**Limitation**: `_server = redis.GetServer(redis.GetEndPoints()[0])` always uses the first endpoint. In a Redis cluster or sentinel setup, this may not target the correct node for SCAN operations.
-**Workaround**: Deploy with a single Redis endpoint.
-**Future fix**: Use `IServer` selection logic that accounts for cluster topology, or avoid `KeysAsync` (SCAN) in favor of index-based queries.
+**Area**: `Infrastructure/Clients/IdealistaClient.cs:14-15`
+**Limitation**: OAuth tokens are cached in instance fields (`_accessToken`, `_tokenExpiry`). In a multi-instance deployment, each instance refreshes tokens independently, potentially hitting rate limits.
+**Workaround**: Currently single-instance deployment.
+**Future fix**: Store tokens in Redis with shared expiry.
 
-### WebChatMessengerClient _messageIdCounter is In-Memory
+### WebChat Has No Persistent Session Recovery Across Restarts
 
-**Area**: `Infrastructure/Clients/Messaging/WebChat/WebChatMessengerClient.cs:26`
-**Limitation**: `_messageIdCounter` resets to 0 on every application restart. Message IDs are not globally unique; they are only locally incrementing integers.
-**Workaround**: The `MessageId` field on `ChatStreamMessage` is a string that may combine this counter with other identifiers.
-**Future fix**: Use a persistent counter (Redis INCR) or GUID-based message IDs for durability across restarts.
+**Area**: `Infrastructure/Clients/Messaging/WebChat/WebChatSessionManager.cs`, `WebChatStreamManager.cs`
+**Limitation**: All active sessions and streaming state are in-memory `ConcurrentDictionary` instances. A process restart loses all active chat sessions and streaming state.
+**Workaround**: Topics and message history are persisted in Redis; only active stream state is lost.
+**Future fix**: Persist active stream metadata to Redis and implement session recovery on startup.

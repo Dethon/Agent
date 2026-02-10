@@ -42,6 +42,8 @@ public static class MessagesReducers
 
         ClearMessages a => ClearTopicMessages(state, a.TopicId),
 
+        ClearAllMessages => MessagesState.Initial,
+
         _ => state
     };
 

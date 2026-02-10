@@ -8,4 +8,5 @@ public record TopicMetadata(
     string Name,
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastMessageAt,
-    string? LastReadMessageId = null);
+    string? LastReadMessageId = null,
+    string SpaceSlug = "default");

@@ -247,6 +247,39 @@ public class TopicsStoreTests : IDisposable
         receivedState.Topics.Count.ShouldBe(1);
     }
 
+    [Fact]
+    public void FromMetadata_PreservesSpaceSlug()
+    {
+        // Arrange
+        var metadata = new TopicMetadata(
+            "topic-1", 123L, 456L, "agent-1", "Test",
+            DateTimeOffset.UtcNow, null, null, "my-space");
+
+        // Act
+        var topic = StoredTopic.FromMetadata(metadata);
+
+        // Assert
+        topic.SpaceSlug.ShouldBe("my-space");
+    }
+
+    [Fact]
+    public void ToMetadata_PreservesSpaceSlug()
+    {
+        // Arrange
+        var topic = new StoredTopic
+        {
+            TopicId = "topic-1", ChatId = 123, ThreadId = 456,
+            AgentId = "agent-1", Name = "Test", SpaceSlug = "my-space",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        // Act
+        var metadata = topic.ToMetadata();
+
+        // Assert
+        metadata.SpaceSlug.ShouldBe("my-space");
+    }
+
     private static StoredTopic CreateTopic(string topicId, string name, string agentId = "agent-1")
     {
         return new StoredTopic

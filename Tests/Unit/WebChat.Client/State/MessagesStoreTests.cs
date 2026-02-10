@@ -242,6 +242,22 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
+    public void ClearAllMessages_RemovesAllTopicMessages()
+    {
+        // Arrange
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Content = "msg1" }]));
+        _dispatcher.Dispatch(new MessagesLoaded("topic-2", [new ChatMessageModel { Content = "msg2" }]));
+
+        // Act
+        _dispatcher.Dispatch(new ClearAllMessages());
+
+        // Assert
+        _store.State.MessagesByTopic.ShouldBeEmpty();
+        _store.State.LoadedTopics.ShouldBeEmpty();
+        _store.State.FinalizedMessageIdsByTopic.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void ImmutableUpdate_DoesNotMutateOriginalState()
     {
         // Arrange

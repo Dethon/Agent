@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -534,5 +535,180 @@ public sealed class ChatHubIntegrationTests(WebChatServerFixture fixture)
             .Where(m => !string.IsNullOrEmpty(m.Reasoning))
             .ToList();
         bufferedReasoningMessages.ShouldNotBeEmpty("Buffer should contain reasoning messages");
+    }
+
+    [Fact]
+    public async Task GetAllTopics_WithSpaceSlug_ReturnsOnlyTopicsInThatSpace()
+    {
+        // Arrange - save topics in different spaces
+        var topicDefault = new TopicMetadata(
+            "topic-default", 100L, 100L, "test-agent", "Default Topic",
+            DateTimeOffset.UtcNow, null);
+        var topicSecret = new TopicMetadata(
+            "topic-secret", 200L, 200L, "test-agent", "Secret Topic",
+            DateTimeOffset.UtcNow, null, null, "secret-room");
+
+        await _connection.InvokeAsync("SaveTopic", topicDefault, true);
+        await _connection.InvokeAsync("SaveTopic", topicSecret, true);
+
+        // Act
+        var defaultTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "default");
+        var secretTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "secret-room");
+
+        // Assert
+        defaultTopics.ShouldContain(t => t.TopicId == "topic-default");
+        defaultTopics.ShouldNotContain(t => t.TopicId == "topic-secret");
+        secretTopics.ShouldContain(t => t.TopicId == "topic-secret");
+        secretTopics.ShouldNotContain(t => t.TopicId == "topic-default");
+    }
+
+    [Fact]
+    public async Task TopicNotification_OnlyReceivedByConnectionInSameSpace()
+    {
+        // Arrange - two connections in different spaces
+        var connection2 = fixture.CreateHubConnection();
+        await connection2.StartAsync();
+
+        try
+        {
+            await connection2.InvokeAsync("RegisterUser", "test-user-2");
+
+            // Join different spaces
+            await _connection.InvokeAsync("JoinSpace", "default");
+            await connection2.InvokeAsync("JoinSpace", "secret-room");
+
+            var defaultNotifications = new List<TopicChangedNotification>();
+            var secretNotifications = new List<TopicChangedNotification>();
+
+            _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
+            connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
+
+            // Act - save a topic in default space (triggers notification)
+            var topic = new TopicMetadata(
+                "topic-notif", 400L, 400L, "test-agent", "Notif Topic",
+                DateTimeOffset.UtcNow, null);
+            await _connection.InvokeAsync("SaveTopic", topic, true);
+
+            // Wait for notifications
+            await Task.Delay(500);
+
+            // Assert
+            defaultNotifications.ShouldContain(n => n.TopicId == "topic-notif");
+            secretNotifications.ShouldNotContain(n => n.TopicId == "topic-notif");
+        }
+        finally
+        {
+            await connection2.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetAllTopics_WithInvalidSpace_ReturnsEmpty()
+    {
+        // Arrange - save a topic
+        var topic = new TopicMetadata(
+            "topic-valid", 300L, 300L, "test-agent", "Valid Topic",
+            DateTimeOffset.UtcNow, null);
+        await _connection.InvokeAsync("SaveTopic", topic, true);
+
+        // Act
+        var topics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "nonexistent-space");
+
+        // Assert
+        topics.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SaveTopic_WithSpaceSlug_NotifiesOnlyConnectionsInThatSpace()
+    {
+        // Arrange - two connections in different spaces
+        var connection2 = fixture.CreateHubConnection();
+        await connection2.StartAsync();
+
+        try
+        {
+            await connection2.InvokeAsync("RegisterUser", "test-user-2");
+
+            // Join different spaces
+            await _connection.InvokeAsync("JoinSpace", "default");
+            await connection2.InvokeAsync("JoinSpace", "secret-room");
+
+            var defaultNotifications = new List<TopicChangedNotification>();
+            var secretNotifications = new List<TopicChangedNotification>();
+
+            _connection.On<TopicChangedNotification>("OnTopicChanged", n => defaultNotifications.Add(n));
+            connection2.On<TopicChangedNotification>("OnTopicChanged", n => secretNotifications.Add(n));
+
+            // Act - save a topic explicitly in secret-room space
+            var topic = new TopicMetadata(
+                "topic-secret-notif", 700L, 700L, "test-agent", "Secret Notif Topic",
+                DateTimeOffset.UtcNow, null, null, "secret-room");
+            await _connection.InvokeAsync("SaveTopic", topic, true);
+
+            // Wait for notifications
+            await Task.Delay(500);
+
+            // Assert - only the connection in secret-room receives the notification
+            secretNotifications.ShouldContain(n => n.TopicId == "topic-secret-notif");
+            defaultNotifications.ShouldNotContain(n => n.TopicId == "topic-secret-notif");
+        }
+        finally
+        {
+            await connection2.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task FullSpaceWorkflow_CreateTopicsInDifferentSpaces_IsolatedCorrectly()
+    {
+        // Arrange - join default space
+        await _connection.InvokeAsync("JoinSpace", "default");
+
+        // Create topic in default space
+        var defaultTopic = new TopicMetadata(
+            "e2e-default", 500L, 500L, "test-agent", "Default E2E",
+            DateTimeOffset.UtcNow, null);
+        await _connection.InvokeAsync("SaveTopic", defaultTopic, true);
+
+        // Switch to secret space
+        await _connection.InvokeAsync("JoinSpace", "secret-room");
+
+        // Create topic in secret space
+        var secretTopic = new TopicMetadata(
+            "e2e-secret", 600L, 600L, "test-agent", "Secret E2E",
+            DateTimeOffset.UtcNow, null, null, "secret-room");
+        await _connection.InvokeAsync("SaveTopic", secretTopic, true);
+
+        // Act - query both spaces
+        var defaultTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "default");
+        var secretTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "secret-room");
+
+        // Assert - topics are isolated
+        defaultTopics.ShouldContain(t => t.TopicId == "e2e-default");
+        defaultTopics.ShouldNotContain(t => t.TopicId == "e2e-secret");
+        secretTopics.ShouldContain(t => t.TopicId == "e2e-secret");
+        secretTopics.ShouldNotContain(t => t.TopicId == "e2e-default");
+
+        // Assert - invalid space returns empty
+        var invalidTopics = await _connection.InvokeAsync<IReadOnlyList<TopicMetadata>>(
+            "GetAllTopics", "test-agent", "nonexistent");
+        invalidTopics.ShouldBeEmpty();
+
+        // JoinSpace with valid but unconfigured slug succeeds (server doesn't check config)
+        await _connection.InvokeAsync("JoinSpace", "nonexistent");
+    }
+
+    [Fact]
+    public async Task JoinSpace_WithInvalidSlug_ThrowsHubException()
+    {
+        var exception = await Should.ThrowAsync<HubException>(
+            () => _connection.InvokeAsync("JoinSpace", "INVALID SLUG!"));
+
+        exception.Message.ShouldContain("Invalid space slug");
     }
 }

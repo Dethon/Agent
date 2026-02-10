@@ -9,34 +9,48 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         TopicChangedNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnTopicChanged", notification, cancellationToken);
+        var spaceSlug = notification.SpaceSlug ?? notification.Topic?.SpaceSlug;
+        await SendToSpaceOrAllAsync(spaceSlug, "OnTopicChanged", notification, cancellationToken);
     }
 
     public async Task NotifyStreamChangedAsync(
         StreamChangedNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnStreamChanged", notification, cancellationToken);
+        await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnStreamChanged", notification, cancellationToken);
     }
 
     public async Task NotifyApprovalResolvedAsync(
         ApprovalResolvedNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnApprovalResolved", notification, cancellationToken);
+        await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnApprovalResolved", notification, cancellationToken);
     }
 
     public async Task NotifyToolCallsAsync(
         ToolCallsNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnToolCalls", notification, cancellationToken);
+        await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnToolCalls", notification, cancellationToken);
     }
 
     public async Task NotifyUserMessageAsync(
         UserMessageNotification notification,
         CancellationToken cancellationToken = default)
     {
-        await sender.SendAsync("OnUserMessage", notification, cancellationToken);
+        await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnUserMessage", notification, cancellationToken);
+    }
+
+    private async Task SendToSpaceOrAllAsync(
+        string? spaceSlug, string methodName, object notification, CancellationToken cancellationToken)
+    {
+        if (spaceSlug is not null)
+        {
+            await sender.SendToGroupAsync($"space:{spaceSlug}", methodName, notification, cancellationToken);
+        }
+        else
+        {
+            await sender.SendAsync(methodName, notification, cancellationToken);
+        }
     }
 }

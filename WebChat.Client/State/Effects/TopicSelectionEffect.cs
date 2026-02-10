@@ -93,7 +93,8 @@ public sealed class TopicSelectionEffect : IDisposable
                 Name = topic.Name,
                 CreatedAt = topic.CreatedAt,
                 LastMessageAt = topic.LastMessageAt,
-                LastReadMessageId = lastMessageId
+                LastReadMessageId = lastMessageId,
+                SpaceSlug = topic.SpaceSlug
             };
             _dispatcher.Dispatch(new UpdateTopic(updatedTopic));
 
