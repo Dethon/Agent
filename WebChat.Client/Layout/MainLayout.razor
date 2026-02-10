@@ -53,6 +53,7 @@
 
 @code {
     private bool _isDarkTheme;
+    private bool _disposed;
     private string _accentColor = "#e94560";
     private string _spaceName = "Main";
     private IDisposable? _spaceSubscription;
@@ -78,6 +79,7 @@
             {
                 InvokeAsync(async () =>
                 {
+                    if (_disposed) return;
                     var displayName = _spaceName == "Main" ? null : _spaceName;
                     await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
                     await Js.InvokeVoidAsync("faviconHelper.setSpaceTitle", displayName);
@@ -116,6 +118,7 @@
 
     public void Dispose()
     {
+        _disposed = true;
         ConnectionService.OnStateChanged -= StateHasChanged;
         _spaceSubscription?.Dispose();
         _selfRef?.Dispose();
