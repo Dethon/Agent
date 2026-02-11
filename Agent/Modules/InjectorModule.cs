@@ -84,8 +84,9 @@ public static class InjectorModule
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(config.ExpirationDays ?? 30))
-                );
+                    TimeSpan.FromDays(config.ExpirationDays ?? 30)))
+                .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
 
         private IServiceCollection AddCliClient(AgentSettings settings, CommandLineParams cmdParams)
@@ -157,6 +158,7 @@ public static class InjectorModule
             services = services
                 .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
                 .AddSingleton<INotifier, HubNotifier>()
+                .AddSingleton<IPushNotificationService, NullPushNotificationService>()
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()

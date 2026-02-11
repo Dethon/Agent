@@ -82,6 +82,11 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         // Add fake agent factory
         builder.Services.AddSingleton<IAgentFactory>(FakeAgentFactory);
 
+        // Add push notification services
+        builder.Services.AddSingleton<IPushSubscriptionStore>(sp =>
+            new RedisPushSubscriptionStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        builder.Services.AddSingleton<IPushNotificationService, NullPushNotificationService>();
+
         // Add web chat components
         builder.Services.AddSingleton<IHubNotificationSender, HubNotificationAdapter>();
         builder.Services.AddSingleton<INotifier, HubNotifier>();
@@ -147,6 +152,11 @@ public sealed class WebChatServerFixture : IAsyncLifetime
             .WithUrl(HubUrl)
             .WithAutomaticReconnect()
             .Build();
+    }
+
+    public T GetService<T>() where T : notnull
+    {
+        return _host.Services.GetRequiredService<T>();
     }
 
     public async Task DisposeAsync()

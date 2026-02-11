@@ -18,7 +18,8 @@ public sealed class ChatHub(
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
-    INotifier hubNotifier) : Hub
+    INotifier hubNotifier,
+    IPushSubscriptionStore pushSubscriptionStore) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
@@ -41,6 +42,20 @@ public sealed class ChatHub(
 
         Context.Items["UserId"] = userId;
         return Task.CompletedTask;
+    }
+
+    public async Task SubscribePush(PushSubscriptionDto subscription)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+        await pushSubscriptionStore.SaveAsync(userId, subscription);
+    }
+
+    public async Task UnsubscribePush(string endpoint)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+        await pushSubscriptionStore.RemoveAsync(userId, endpoint);
     }
 
     public IReadOnlyList<AgentInfo> GetAgents()
