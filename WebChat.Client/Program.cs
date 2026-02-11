@@ -24,6 +24,7 @@ builder.Services.AddScoped<ChatConnectionService>();
 builder.Services.AddScoped<IChatConnectionService>(sp => sp.GetRequiredService<ChatConnectionService>());
 
 // Core services
+builder.Services.AddScoped<PushNotificationService>();
 builder.Services.AddScoped<IChatSessionService, ChatSessionService>();
 builder.Services.AddScoped<IChatMessagingService, ChatMessagingService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
