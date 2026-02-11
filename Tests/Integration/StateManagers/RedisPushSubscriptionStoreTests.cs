@@ -114,6 +114,65 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
+    public async Task SaveAsync_EndpointWithQueryParams_RoundTripsCorrectly()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/abc?key=val&foo=bar#fragment";
+        var sub = CreateSubscription(endpoint);
+
+        await _store.SaveAsync(userId, sub);
+
+        var all = await _store.GetAllAsync();
+        var match = all.First(x => x.UserId == userId);
+        match.Subscription.Endpoint.ShouldBe(endpoint);
+        match.Subscription.P256dh.ShouldBe(sub.P256dh);
+        match.Subscription.Auth.ShouldBe(sub.Auth);
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_NonExistentEndpoint_DoesNotThrow()
+    {
+        await Should.NotThrowAsync(() =>
+            _store.RemoveByEndpointAsync("https://nonexistent.example.com/does-not-exist"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_PreservesP256dhAndAuth_AfterRoundTrip()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        const string p256dh = "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbIGesvTRiX0np+LXJWs3zyJ0eHTI/aSKP3K+pQNKOo=";
+        const string auth = "tBHItJI5svbpC7sc9d8M2w==";
+        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/roundtrip", p256dh, auth);
+
+        await _store.SaveAsync(userId, sub);
+
+        var all = await _store.GetAllAsync();
+        var match = all.First(x => x.UserId == userId);
+        match.Subscription.P256dh.ShouldBe(p256dh);
+        match.Subscription.Auth.ShouldBe(auth);
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_SharedEndpoint_RemovesFromAllUsers()
+    {
+        var userId1 = $"test-user-{Guid.NewGuid():N}";
+        var userId2 = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId1);
+        _createdUserIds.Add(userId2);
+        var sharedEndpoint = "https://fcm.googleapis.com/fcm/send/shared-multi";
+
+        await _store.SaveAsync(userId1, CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(userId2, CreateSubscription(sharedEndpoint));
+
+        await _store.RemoveByEndpointAsync(sharedEndpoint);
+
+        var all = await _store.GetAllAsync();
+        all.ShouldNotContain(x => x.Subscription.Endpoint == sharedEndpoint);
+    }
+
+    [Fact]
     public async Task GetAllAsync_EmptyStore_ReturnsEmptyList()
     {
         var all = await _store.GetAllAsync();
