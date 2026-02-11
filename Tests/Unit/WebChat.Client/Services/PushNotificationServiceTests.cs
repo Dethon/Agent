@@ -97,4 +97,54 @@ public sealed class PushNotificationServiceTests
 
         result.ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .ThrowsAsync(new JSException("JS error"));
+
+        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
+    }
+
+    [Fact]
+    public async Task UnsubscribeAsync_WhenHubConnectionIsNull_DoesNotThrow()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .ReturnsAsync(true);
+        _mockConnectionService
+            .Setup(c => c.HubConnection)
+            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
+
+        await Should.NotThrowAsync(() => _sut.UnsubscribeAsync());
+    }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenPermissionDefault_ReturnsFalse()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .ReturnsAsync("default");
+
+        var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenSubscribeReturnsNull_ReturnsFalse()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .ReturnsAsync("granted");
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
+            .ReturnsAsync((PushSubscriptionResult?)null!);
+
+        var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
+
+        result.ShouldBeFalse();
+    }
 }
