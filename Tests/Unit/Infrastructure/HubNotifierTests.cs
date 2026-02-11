@@ -163,4 +163,70 @@ public sealed class HubNotifierTests
             It.IsAny<StreamChangedNotification>(),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task NotifyStreamChangedAsync_Completed_NullSpaceSlug_SendsPushToDefault()
+    {
+        var mockSender = new Mock<IHubNotificationSender>();
+        var mockPush = new Mock<IPushNotificationService>();
+        var notifier = new HubNotifier(mockSender.Object, mockPush.Object);
+        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1");
+
+        await notifier.NotifyStreamChangedAsync(notification);
+
+        mockPush.Verify(p => p.SendToSpaceAsync(
+            "default",
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            "/",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NotifyTopicChangedAsync_DoesNotTriggerPush()
+    {
+        var mockSender = new Mock<IHubNotificationSender>();
+        var mockPush = new Mock<IPushNotificationService>();
+        var notifier = new HubNotifier(mockSender.Object, mockPush.Object);
+        var notification = new TopicChangedNotification(TopicChangeType.Created, "topic-1", SpaceSlug: "myspace");
+
+        await notifier.NotifyTopicChangedAsync(notification);
+
+        mockPush.Verify(p => p.SendToSpaceAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task NotifyUserMessageAsync_DoesNotTriggerPush()
+    {
+        var mockSender = new Mock<IHubNotificationSender>();
+        var mockPush = new Mock<IPushNotificationService>();
+        var notifier = new HubNotifier(mockSender.Object, mockPush.Object);
+        var notification = new UserMessageNotification("topic-1", "Hello", "alice", DateTimeOffset.UtcNow, SpaceSlug: "myspace");
+
+        await notifier.NotifyUserMessageAsync(notification);
+
+        mockPush.Verify(p => p.SendToSpaceAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task NotifyStreamChangedAsync_Completed_PushUrlContainsSpaceSlug()
+    {
+        var mockSender = new Mock<IHubNotificationSender>();
+        var mockPush = new Mock<IPushNotificationService>();
+        var notifier = new HubNotifier(mockSender.Object, mockPush.Object);
+        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1", "my-space");
+
+        await notifier.NotifyStreamChangedAsync(notification);
+
+        mockPush.Verify(p => p.SendToSpaceAsync(
+            "my-space",
+            "New response",
+            "The agent has finished responding",
+            "/my-space",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }
