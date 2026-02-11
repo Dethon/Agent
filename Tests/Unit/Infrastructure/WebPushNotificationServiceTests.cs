@@ -133,4 +133,84 @@ public sealed class WebPushNotificationServiceTests
         capturedPayload.ShouldContain("Agent replied");
         capturedPayload.ShouldContain("/myspace");
     }
+
+    [Fact]
+    public async Task SendToSpaceAsync_FailureOnFirstSubscription_StillSendsToSecond()
+    {
+        var subs = new List<(string UserId, PushSubscriptionDto Subscription)>
+        {
+            ("user1", new PushSubscriptionDto("https://failing-endpoint", "key1", "auth1")),
+            ("user2", new PushSubscriptionDto("https://good-endpoint", "key2", "auth2"))
+        };
+        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+
+        var callCount = 0;
+        _mockWebPushClient
+            .Setup(c => c.SendNotificationAsync(
+                It.IsAny<PushSubscription>(),
+                It.IsAny<string>(),
+                It.IsAny<VapidDetails>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<PushSubscription, string, VapidDetails, CancellationToken>((sub, _, _, _) =>
+            {
+                callCount++;
+                if (sub.Endpoint == "https://failing-endpoint")
+                    throw new WebPushException("Error", new PushSubscription(),
+                        new HttpResponseMessage(HttpStatusCode.InternalServerError));
+                return Task.CompletedTask;
+            });
+
+        await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
+
+        callCount.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task SendToSpaceAsync_PassesVapidDetailsToEachSend()
+    {
+        var subs = new List<(string UserId, PushSubscriptionDto Subscription)>
+        {
+            ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
+        };
+        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+
+        await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
+
+        _mockWebPushClient.Verify(c => c.SendNotificationAsync(
+            It.IsAny<PushSubscription>(),
+            It.IsAny<string>(),
+            It.Is<VapidDetails>(v => v.Subject == "mailto:test@example.com"
+                && v.PublicKey == "BPublicKey"
+                && v.PrivateKey == "PrivateKey"),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendToSpaceAsync_NonWebPushException_DoesNotThrow()
+    {
+        var subs = new List<(string UserId, PushSubscriptionDto Subscription)>
+        {
+            ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
+        };
+        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockWebPushClient
+            .Setup(c => c.SendNotificationAsync(
+                It.IsAny<PushSubscription>(),
+                It.IsAny<string>(),
+                It.IsAny<VapidDetails>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Network error"));
+
+        await Should.NotThrowAsync(() => _sut.SendToSpaceAsync("default", "Title", "Body", "/default"));
+    }
+
+    [Fact]
+    public async Task SendToSpaceAsync_StoreGetAllThrows_Propagates()
+    {
+        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("Redis down"));
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => _sut.SendToSpaceAsync("default", "Title", "Body", "/default"));
+    }
 }
