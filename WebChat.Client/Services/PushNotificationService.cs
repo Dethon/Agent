@@ -12,13 +12,18 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
     public async Task<bool> RequestAndSubscribeAsync(string vapidPublicKey)
     {
         var permission = await jsRuntime.InvokeAsync<string>("pushNotifications.requestPermission");
-        if (permission != "granted") return false;
+        if (permission != "granted")
+        {
+            return false;
+        }
 
         var result = await jsRuntime.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", vapidPublicKey);
-        if (result is null) return false;
 
         var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
-        if (connectionService.HubConnection is null) return false;
+        if (connectionService.HubConnection is null)
+        {
+            return false;
+        }
 
         await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
         return true;

@@ -81,8 +81,7 @@ public sealed class WebChatServerFixture : IAsyncLifetime
         // Add push notification services
         builder.Services.AddSingleton<IPushSubscriptionStore>(sp =>
             new RedisPushSubscriptionStore(sp.GetRequiredService<IConnectionMultiplexer>()));
-        builder.Services.AddSingleton<IPushNotificationService>(
-            new Mock<IPushNotificationService>().Object);
+        builder.Services.AddSingleton(new Mock<IPushNotificationService>().Object);
 
         // Configure agent registry
         builder.Services.Configure<AgentRegistryOptions>(options => options.Agents = testAgents);

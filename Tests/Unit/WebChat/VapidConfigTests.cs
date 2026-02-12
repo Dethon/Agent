@@ -18,7 +18,7 @@ public sealed class VapidConfigTests
     [Fact]
     public void AppConfig_WithoutVapidPublicKey_IsNull()
     {
-        var config = new AppConfig("http://localhost:5000", [], null);
+        var config = new AppConfig("http://localhost:5000", []);
 
         config.VapidPublicKey.ShouldBeNull();
     }
@@ -82,8 +82,8 @@ public sealed class VapidConfigTests
         var config = new AppConfig("http://localhost:5000", [], "BPublicKey123");
         var json = JsonSerializer.Serialize(config);
 
-        json.ShouldNotContain("PrivateKey", Case.Insensitive);
-        json.ShouldNotContain("private", Case.Insensitive);
+        json.ShouldNotContain("PrivateKey");
+        json.ShouldNotContain("private");
     }
 
     [Fact]
