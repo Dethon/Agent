@@ -45,6 +45,7 @@ builder.Services.AddScoped<IMessagePipeline, MessagePipeline>();
 
 // Notification handling
 builder.Services.AddScoped<ISignalREventSubscriber, SignalREventSubscriber>();
+builder.Services.AddScoped<PushNotificationService>();
 
 var app = builder.Build();
 

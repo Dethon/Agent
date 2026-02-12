@@ -1,3 +1,31 @@
+self.addEventListener('push', event => {
+    const data = event.data?.json() ?? { title: 'New message', body: '' };
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+            .then(clients => {
+                const anyVisible = clients.some(c => c.visibilityState === 'visible');
+                if (!anyVisible) {
+                    return self.registration.showNotification(data.title, {
+                        body: data.body,
+                        icon: '/icon.svg',
+                        data: { url: data.url }
+                    });
+                }
+            })
+    );
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const url = event.notification.data?.url ?? '/';
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+            const existing = clients.find(c => c.url.includes(url));
+            return existing ? existing.focus() : self.clients.openWindow(url);
+        })
+    );
+});
+
 // Caution! Be sure you understand the caveats before publishing an application with
 // offline support. See https://aka.ms/blazor-offline-considerations
 

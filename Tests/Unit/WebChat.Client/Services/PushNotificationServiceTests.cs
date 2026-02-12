@@ -10,16 +10,16 @@ public sealed class PushNotificationServiceTests
 {
     private readonly Mock<IJSRuntime> _mockJsRuntime;
     private readonly Mock<IChatConnectionService> _mockConnectionService;
-    // private readonly PushNotificationService _sut;
+    private readonly PushNotificationService _sut;
 
     public PushNotificationServiceTests()
     {
         _mockJsRuntime = new Mock<IJSRuntime>();
         _mockConnectionService = new Mock<IChatConnectionService>();
-        // _sut = new PushNotificationService(_mockJsRuntime.Object, _mockConnectionService.Object);
+        _sut = new PushNotificationService(_mockJsRuntime.Object, _mockConnectionService.Object);
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task RequestAndSubscribeAsync_WhenPermissionGranted_ReturnsTrue()
     {
         _mockJsRuntime
@@ -34,7 +34,7 @@ public sealed class PushNotificationServiceTests
         result.ShouldBeTrue();
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task RequestAndSubscribeAsync_WhenPermissionDenied_ReturnsFalse()
     {
         _mockJsRuntime
@@ -46,7 +46,7 @@ public sealed class PushNotificationServiceTests
         result.ShouldBeFalse();
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task RequestAndSubscribeAsync_WhenPermissionGranted_SendsSubscriptionToHub()
     {
         _mockJsRuntime
@@ -61,7 +61,7 @@ public sealed class PushNotificationServiceTests
         _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task UnsubscribeAsync_CallsJsUnsubscribe()
     {
         _mockJsRuntime
@@ -74,7 +74,7 @@ public sealed class PushNotificationServiceTests
             "pushNotifications.unsubscribe", It.IsAny<object[]>()), Times.Once);
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task IsSubscribedAsync_WhenSubscribed_ReturnsTrue()
     {
         _mockJsRuntime
@@ -86,7 +86,7 @@ public sealed class PushNotificationServiceTests
         result.ShouldBeTrue();
     }
 
-    [Fact(Skip = "Implementation pending")]
+    [Fact]
     public async Task IsSubscribedAsync_WhenNotSubscribed_ReturnsFalse()
     {
         _mockJsRuntime
