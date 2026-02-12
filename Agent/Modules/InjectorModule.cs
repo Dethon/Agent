@@ -20,6 +20,7 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Telegram.Bot;
+using WebPush;
 using HubNotifier = Infrastructure.Clients.Messaging.WebChat.HubNotifier;
 
 namespace Agent.Modules;
@@ -84,8 +85,9 @@ public static class InjectorModule
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(config.ConnectionString))
                 .AddSingleton<IThreadStateStore>(sp => new RedisThreadStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    TimeSpan.FromDays(config.ExpirationDays ?? 30))
-                );
+                    TimeSpan.FromDays(config.ExpirationDays ?? 30)))
+                .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
 
         private IServiceCollection AddCliClient(AgentSettings settings, CommandLineParams cmdParams)
@@ -165,6 +167,22 @@ public static class InjectorModule
                     new WebToolApprovalHandlerFactory(
                         sp.GetRequiredService<WebChatApprovalManager>(),
                         sp.GetRequiredService<WebChatSessionManager>()));
+
+            services = services
+                .AddSingleton<IPushNotificationService>(sp =>
+                {
+                    var config = settings.WebPush;
+                    if (config?.PublicKey is null || config.PrivateKey is null || config.Subject is null)
+                    {
+                        return new NullPushNotificationService();
+                    }
+                    var vapidDetails = new VapidDetails(config.Subject, config.PublicKey, config.PrivateKey);
+                    return new WebPushNotificationService(
+                        sp.GetRequiredService<IPushSubscriptionStore>(),
+                        new WebPushClient(),
+                        vapidDetails,
+                        sp.GetRequiredService<ILogger<WebPushNotificationService>>());
+                });
 
             if (settings.ServiceBus is not null)
             {
