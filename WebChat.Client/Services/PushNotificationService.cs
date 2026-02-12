@@ -18,22 +18,20 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
         if (result is null) return false;
 
         var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
-        if (connectionService.HubConnection is not null)
-        {
-            await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
-        }
+        if (connectionService.HubConnection is null) return false;
 
+        await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
         return true;
     }
 
     public async Task UnsubscribeAsync()
     {
-        var wasSubscribed = await jsRuntime.InvokeAsync<bool>("pushNotifications.unsubscribe");
-        if (wasSubscribed && connectionService.HubConnection is not null)
+        var endpoint = await jsRuntime.InvokeAsync<string?>("pushNotifications.unsubscribe");
+        if (endpoint is not null && connectionService.HubConnection is not null)
         {
             try
             {
-                await connectionService.HubConnection.InvokeAsync("UnsubscribePush", "");
+                await connectionService.HubConnection.InvokeAsync("UnsubscribePush", endpoint);
             }
             catch
             {

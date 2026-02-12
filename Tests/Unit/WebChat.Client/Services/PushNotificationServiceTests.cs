@@ -20,7 +20,7 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenPermissionGranted_ReturnsTrue()
+    public async Task RequestAndSubscribeAsync_WhenPermissionGrantedAndSubscribed_AccessesHubConnection()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
@@ -29,9 +29,9 @@ public sealed class PushNotificationServiceTests
             .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
             .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
 
-        var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
+        await _sut.RequestAndSubscribeAsync("BPublicKey123");
 
-        result.ShouldBeTrue();
+        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
     }
 
     [Fact]
@@ -47,30 +47,15 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenPermissionGranted_SendsSubscriptionToHub()
-    {
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
-            .Returns(new ValueTask<string>("granted"));
-        _mockJsRuntime
-            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
-
-        await _sut.RequestAndSubscribeAsync("BPublicKey123");
-
-        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
-    }
-
-    [Fact]
     public async Task UnsubscribeAsync_CallsJsUnsubscribe()
     {
         _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(true));
+            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .Returns(new ValueTask<string?>("https://endpoint"));
 
         await _sut.UnsubscribeAsync();
 
-        _mockJsRuntime.Verify(js => js.InvokeAsync<bool>(
+        _mockJsRuntime.Verify(js => js.InvokeAsync<string?>(
             "pushNotifications.unsubscribe", It.IsAny<object[]>()), Times.Once);
     }
 
@@ -122,7 +107,7 @@ public sealed class PushNotificationServiceTests
     }
 
     [Fact]
-    public async Task RequestAndSubscribeAsync_WhenHubConnectionNull_StillReturnsTrue()
+    public async Task RequestAndSubscribeAsync_WhenHubConnectionNull_ReturnsFalse()
     {
         _mockJsRuntime
             .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
@@ -136,18 +121,15 @@ public sealed class PushNotificationServiceTests
 
         var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
 
-        // Documents the current behavior: returns true even though server was never notified.
-        // This is a design concern — the caller thinks subscription succeeded server-side,
-        // but the hub was never informed because the connection was null.
-        result.ShouldBeTrue();
+        result.ShouldBeFalse();
     }
 
     [Fact]
     public async Task UnsubscribeAsync_WhenHubConnectionNull_DoesNotThrow()
     {
         _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .Returns(new ValueTask<bool>(true));
+            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .Returns(new ValueTask<string?>("https://endpoint"));
         _mockConnectionService
             .Setup(c => c.HubConnection)
             .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);

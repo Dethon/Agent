@@ -1,5 +1,7 @@
 self.addEventListener('push', event => {
-    const data = event.data?.json() ?? { title: 'New message', body: '' };
+    let data;
+    try { data = event.data?.json(); } catch { data = null; }
+    data ??= { title: 'New message', body: '' };
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then(clients => {

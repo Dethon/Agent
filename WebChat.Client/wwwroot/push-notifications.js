@@ -5,6 +5,7 @@ window.pushNotifications = {
     },
 
     async subscribe(vapidPublicKey) {
+        if (!('serviceWorker' in navigator)) return null;
         const registration = await navigator.serviceWorker.ready;
         const applicationServerKey = this._urlBase64ToUint8Array(vapidPublicKey);
         const subscription = await registration.pushManager.subscribe({
@@ -27,12 +28,15 @@ window.pushNotifications = {
     },
 
     async unsubscribe() {
+        if (!('serviceWorker' in navigator)) return null;
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
-            return await subscription.unsubscribe();
+            const endpoint = subscription.endpoint;
+            await subscription.unsubscribe();
+            return endpoint;
         }
-        return false;
+        return null;
     },
 
     _urlBase64ToUint8Array(base64String) {
