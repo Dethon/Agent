@@ -3,7 +3,7 @@ using Domain.DTOs.WebChat;
 
 namespace Infrastructure.Clients.Messaging.WebChat;
 
-public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
+public sealed class HubNotifier(IHubNotificationSender sender, IPushNotificationService pushService) : INotifier
 {
     public async Task NotifyTopicChangedAsync(
         TopicChangedNotification notification,
@@ -18,6 +18,24 @@ public sealed class HubNotifier(IHubNotificationSender sender) : INotifier
         CancellationToken cancellationToken = default)
     {
         await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnStreamChanged", notification, cancellationToken);
+
+        if (notification.ChangeType == StreamChangeType.Completed)
+        {
+            var url = notification.SpaceSlug is not null ? $"/{notification.SpaceSlug}" : "/";
+            try
+            {
+                await pushService.SendToSpaceAsync(
+                    notification.SpaceSlug ?? "default",
+                    "New response",
+                    "The agent has finished responding",
+                    url,
+                    cancellationToken);
+            }
+            catch
+            {
+                // Push notification failures must not block the SignalR notification
+            }
+        }
     }
 
     public async Task NotifyApprovalResolvedAsync(
