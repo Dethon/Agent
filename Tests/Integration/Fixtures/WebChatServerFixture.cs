@@ -28,6 +28,7 @@ public sealed class WebChatServerFixture : IAsyncLifetime
     private Task _monitorTask = null!;
 
     public FakeAgentFactory FakeAgentFactory { get; } = new();
+    public IServiceProvider Services => _host.Services;
     private RedisFixture RedisFixture { get; } = new();
 
     private string BaseUrl => $"http://localhost:{_port}";
