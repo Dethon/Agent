@@ -97,4 +97,86 @@ public sealed class PushNotificationServiceTests
 
         result.ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenJsInteropThrows_PropagatesException()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .Throws(new JSException("navigator.serviceWorker is undefined"));
+
+        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
+    }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenSubscribeJsThrows_PropagatesException()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .Returns(new ValueTask<string>("granted"));
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
+            .Throws(new JSException("pushManager.subscribe failed"));
+
+        await Should.ThrowAsync<JSException>(() => _sut.RequestAndSubscribeAsync("BPublicKey123"));
+    }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenHubConnectionNull_StillReturnsTrue()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .Returns(new ValueTask<string>("granted"));
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
+            .Returns(new ValueTask<PushSubscriptionResult>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
+        _mockConnectionService
+            .Setup(c => c.HubConnection)
+            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
+
+        var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
+
+        // Documents the current behavior: returns true even though server was never notified.
+        // This is a design concern — the caller thinks subscription succeeded server-side,
+        // but the hub was never informed because the connection was null.
+        result.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task UnsubscribeAsync_WhenHubConnectionNull_DoesNotThrow()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .Returns(new ValueTask<bool>(true));
+        _mockConnectionService
+            .Setup(c => c.HubConnection)
+            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
+
+        await Should.NotThrowAsync(() => _sut.UnsubscribeAsync());
+    }
+
+    [Fact]
+    public async Task RequestAndSubscribeAsync_WhenSubscribeReturnsNull_ReturnsFalse()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<string>("pushNotifications.requestPermission", It.IsAny<object[]>()))
+            .Returns(new ValueTask<string>("granted"));
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", It.IsAny<object[]>()))
+            .Returns(new ValueTask<PushSubscriptionResult>((PushSubscriptionResult?)null!));
+
+        var result = await _sut.RequestAndSubscribeAsync("BPublicKey123");
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task IsSubscribedAsync_WhenJsInteropThrows_PropagatesException()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<bool>("pushNotifications.isSubscribed", It.IsAny<object[]>()))
+            .Throws(new JSException("Service worker not available"));
+
+        await Should.ThrowAsync<JSException>(() => _sut.IsSubscribedAsync());
+    }
 }
