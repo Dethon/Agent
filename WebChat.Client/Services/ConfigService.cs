@@ -27,4 +27,4 @@ public sealed class ConfigService(HttpClient httpClient)
     }
 }
 
-public record AppConfig(string? AgentUrl, UserConfig[]? Users);
+public record AppConfig(string? AgentUrl, UserConfig[]? Users, string? VapidPublicKey = null);

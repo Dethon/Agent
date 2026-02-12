@@ -55,9 +55,11 @@ app.UseStaticFiles();
 app.MapGet("/api/config", (IConfiguration config) =>
 {
     var users = config.GetSection("Users").Get<UserConfig[]>() ?? [];
+    var vapidPublicKey = config["WebPush:PublicKey"];
     return new AppConfig(
         config["AgentUrl"] ?? "http://localhost:5000",
-        users);
+        users,
+        vapidPublicKey);
 });
 
 app.MapGet("/api/spaces/{slug}", (string slug, IConfiguration config) =>
@@ -82,5 +84,5 @@ namespace WebChat
     internal record UserConfig(string Id, string AvatarUrl);
 
     [UsedImplicitly]
-    internal record AppConfig(string AgentUrl, UserConfig[] Users);
+    internal record AppConfig(string AgentUrl, UserConfig[] Users, string? VapidPublicKey);
 }
