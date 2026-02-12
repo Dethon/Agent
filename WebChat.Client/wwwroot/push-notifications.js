@@ -30,9 +30,11 @@ window.pushNotifications = {
         const registration = await navigator.serviceWorker.ready;
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
-            return await subscription.unsubscribe();
+            const endpoint = subscription.endpoint;
+            const unsubscribed = await subscription.unsubscribe();
+            return unsubscribed ? endpoint : null;
         }
-        return false;
+        return null;
     },
 
     _urlBase64ToUint8Array(base64String) {

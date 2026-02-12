@@ -65,12 +65,12 @@ public sealed class PushNotificationServiceTests
     public async Task UnsubscribeAsync_CallsJsUnsubscribe()
     {
         _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .ReturnsAsync(true);
+            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .ReturnsAsync("https://endpoint");
 
         await _sut.UnsubscribeAsync();
 
-        _mockJsRuntime.Verify(js => js.InvokeAsync<bool>(
+        _mockJsRuntime.Verify(js => js.InvokeAsync<string?>(
             "pushNotifications.unsubscribe", It.IsAny<object[]>()), Times.Once);
     }
 
@@ -112,8 +112,8 @@ public sealed class PushNotificationServiceTests
     public async Task UnsubscribeAsync_WhenHubConnectionIsNull_DoesNotThrow()
     {
         _mockJsRuntime
-            .Setup(js => js.InvokeAsync<bool>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
-            .ReturnsAsync(true);
+            .Setup(js => js.InvokeAsync<string?>("pushNotifications.unsubscribe", It.IsAny<object[]>()))
+            .ReturnsAsync("https://endpoint");
         _mockConnectionService
             .Setup(c => c.HubConnection)
             .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);

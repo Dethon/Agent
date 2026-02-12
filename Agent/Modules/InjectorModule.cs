@@ -20,6 +20,7 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Telegram.Bot;
+using WebPush;
 using HubNotifier = Infrastructure.Clients.Messaging.WebChat.HubNotifier;
 
 namespace Agent.Modules;
@@ -158,7 +159,20 @@ public static class InjectorModule
             services = services
                 .AddSingleton<IHubNotificationSender, HubNotificationAdapter>()
                 .AddSingleton<INotifier, HubNotifier>()
-                .AddSingleton<IPushNotificationService, NullPushNotificationService>()
+                .AddSingleton<IPushNotificationService>(sp =>
+                {
+                    var config = settings.WebPush;
+                    if (config?.PublicKey is null || config.PrivateKey is null || config.Subject is null)
+                    {
+                        return new NullPushNotificationService();
+                    }
+                    var vapidDetails = new WebPush.VapidDetails(config.Subject, config.PublicKey, config.PrivateKey);
+                    return new WebPushNotificationService(
+                        sp.GetRequiredService<IPushSubscriptionStore>(),
+                        new WebPush.WebPushClient(),
+                        vapidDetails,
+                        sp.GetRequiredService<ILogger<WebPushNotificationService>>());
+                })
                 .AddSingleton<WebChatSessionManager>()
                 .AddSingleton<WebChatStreamManager>()
                 .AddSingleton<WebChatApprovalManager>()
