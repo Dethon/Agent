@@ -136,4 +136,105 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         all.ShouldContain(x => x.UserId == userId1);
         all.ShouldContain(x => x.UserId == userId2);
     }
+
+    // --- Adversarial tests ---
+
+    [Fact]
+    public async Task SaveAsync_EndpointWithQueryParameters_PreservesFullUrl()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/abc?key=val&foo=bar#fragment";
+        var sub = new PushSubscriptionDto(endpoint, "p256dh-key", "auth-key");
+
+        await _store.SaveAsync(userId, sub);
+
+        var all = await _store.GetAllAsync();
+        var match = all.FirstOrDefault(x => x.UserId == userId);
+        match.Subscription.ShouldNotBeNull();
+        match.Subscription.Endpoint.ShouldBe(endpoint);
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_EndpointDoesNotExist_DoesNotThrow()
+    {
+        await Should.NotThrowAsync(
+            () => _store.RemoveByEndpointAsync("https://nonexistent.example.com/totally-missing"));
+    }
+
+    [Fact]
+    public async Task SaveAsync_RoundTrip_PreservesP256dhAndAuthExactly()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var p256dh = "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbIDS7Iq2jGPayfP+szs0yzE1hLCpMQUcGN3MkrjXQ0=";
+        var auth = "tBHItJI5svbpC7sc9d8M2w==";
+        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/roundtrip", p256dh, auth);
+
+        await _store.SaveAsync(userId, sub);
+
+        var all = await _store.GetAllAsync();
+        var match = all.First(x => x.UserId == userId);
+        match.Subscription.P256dh.ShouldBe(p256dh);
+        match.Subscription.Auth.ShouldBe(auth);
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_SharedEndpointAcrossMultipleUsers_RemovesFromAll()
+    {
+        var userId1 = $"test-user-{Guid.NewGuid():N}";
+        var userId2 = $"test-user-{Guid.NewGuid():N}";
+        var userId3 = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId1);
+        _createdUserIds.Add(userId2);
+        _createdUserIds.Add(userId3);
+        var sharedEndpoint = "https://fcm.googleapis.com/fcm/send/shared-across-all";
+
+        await _store.SaveAsync(userId1, CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(userId2, CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(userId3, CreateSubscription(sharedEndpoint));
+
+        await _store.RemoveByEndpointAsync(sharedEndpoint);
+
+        var all = await _store.GetAllAsync();
+        all.ShouldNotContain(x => x.Subscription.Endpoint == sharedEndpoint);
+    }
+
+    [Fact]
+    public async Task SaveAsync_EndpointWithSpecialCharacters_HandlesCorrectly()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://example.com/push/endpoint?token=abc%20def&lang=en&special=<>&quote=\"test\"";
+        var sub = new PushSubscriptionDto(endpoint, "key123", "auth456");
+
+        await _store.SaveAsync(userId, sub);
+
+        var all = await _store.GetAllAsync();
+        var match = all.FirstOrDefault(x => x.UserId == userId);
+        match.Subscription.ShouldNotBeNull();
+        match.Subscription.Endpoint.ShouldBe(endpoint);
+        match.Subscription.P256dh.ShouldBe("key123");
+        match.Subscription.Auth.ShouldBe("auth456");
+    }
+
+    [Fact]
+    public async Task RemoveAsync_OnlyRemovesTargetEndpoint_LeavesOthersIntact()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var sub1 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/keep", "k1", "a1");
+        var sub2 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/remove", "k2", "a2");
+
+        await _store.SaveAsync(userId, sub1);
+        await _store.SaveAsync(userId, sub2);
+        await _store.RemoveAsync(userId, sub2.Endpoint);
+
+        var all = await _store.GetAllAsync();
+        var userSubs = all.Where(x => x.UserId == userId).ToList();
+        userSubs.Count.ShouldBe(1);
+        userSubs[0].Subscription.Endpoint.ShouldBe(sub1.Endpoint);
+        userSubs[0].Subscription.P256dh.ShouldBe("k1");
+        userSubs[0].Subscription.Auth.ShouldBe("a1");
+    }
 }
