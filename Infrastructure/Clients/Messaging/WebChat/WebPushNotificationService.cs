@@ -14,7 +14,7 @@ public sealed class WebPushNotificationService(
         CancellationToken ct = default)
     {
         var subscriptions = await store.GetBySpaceAsync(spaceSlug, ct);
-        var payload = JsonSerializer.Serialize(new { title, body, url });
+        var payload = JsonSerializer.Serialize(new { title, body, url, spaceSlug });
 
         foreach (var (_, subscription) in subscriptions)
         {

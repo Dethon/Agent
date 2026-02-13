@@ -118,6 +118,7 @@ public sealed class WebPushNotificationServiceTests
         capturedPayload.ShouldContain("New Response");
         capturedPayload.ShouldContain("Agent replied");
         capturedPayload.ShouldContain("/myspace");
+        capturedPayload.ShouldContain("myspace");
     }
 
     [Fact]
@@ -200,6 +201,7 @@ public sealed class WebPushNotificationServiceTests
         doc.RootElement.GetProperty("title").GetString().ShouldBe("My Title");
         doc.RootElement.GetProperty("body").GetString().ShouldBe("My Body");
         doc.RootElement.GetProperty("url").GetString().ShouldBe("/myspace");
+        doc.RootElement.GetProperty("spaceSlug").GetString().ShouldBe("myspace");
     }
 
     [Fact]
