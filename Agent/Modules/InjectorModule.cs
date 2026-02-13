@@ -171,7 +171,7 @@ public static class InjectorModule
                 .AddSingleton<IPushNotificationService>(sp =>
                 {
                     var config = settings.WebPush;
-                    if (config?.PublicKey is null || config.PrivateKey is null || config.Subject is null)
+                    if (string.IsNullOrEmpty(config?.PublicKey) || string.IsNullOrEmpty(config.PrivateKey) || string.IsNullOrEmpty(config.Subject))
                     {
                         return new NullPushNotificationService();
                     }

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,7 +20,7 @@ public sealed class ModernWebPushSender(string publicKey, string privateKey, str
     {
         var request = BuildRequest(endpoint, p256dh, auth, payload);
         var response = await _httpClient.SendAsync(request, ct);
-        HandleResponse(response, endpoint);
+        await HandleResponse(response, endpoint);
     }
 
     private HttpRequestMessage BuildRequest(string endpoint, string p256dh, string auth, string payload)
@@ -116,7 +117,7 @@ public sealed class ModernWebPushSender(string publicKey, string privateKey, str
         var pos = 0;
 
         salt.CopyTo(result, pos); pos += 16;
-        result[pos++] = 0; result[pos++] = 0; result[pos++] = 0x10; result[pos++] = 0; // rs = 4096
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(pos), 4096); pos += 4; // rs = 4096
         result[pos++] = 65;
         ephemeralPub.CopyTo(result, pos); pos += 65;
         ciphertext.CopyTo(result, pos); pos += ciphertext.Length;
@@ -146,14 +147,14 @@ public sealed class ModernWebPushSender(string publicKey, string privateKey, str
         return result;
     }
 
-    private static void HandleResponse(HttpResponseMessage response, string endpoint)
+    private static async Task HandleResponse(HttpResponseMessage response, string endpoint)
     {
         if (response.IsSuccessStatusCode)
         {
             return;
         }
 
-        var body = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        var body = await response.Content.ReadAsStringAsync();
         var message = $"Push to {endpoint} failed: {(int)response.StatusCode} {response.ReasonPhrase}";
         if (!string.IsNullOrEmpty(body))
         {

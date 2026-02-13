@@ -1,0 +1,32 @@
+self.addEventListener('push', event => {
+    let data;
+    try {
+        data = event.data?.json();
+    } catch {
+        data = null;
+    }
+    data ??= { title: 'New message', body: '' };
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: false })
+            .then(clients => {
+                const hasVisibleClient = clients.some(c => c.visibilityState === 'visible');
+                if (hasVisibleClient) return;
+                return self.registration.showNotification(data.title, {
+                    body: data.body,
+                    icon: '/icon.svg',
+                    data: { url: data.url }
+                });
+            })
+    );
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const url = event.notification.data?.url ?? '/';
+    event.waitUntil(
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+            const existing = clients.find(c => c.url.includes(url));
+            return existing ? existing.focus() : self.clients.openWindow(url);
+        })
+    );
+});

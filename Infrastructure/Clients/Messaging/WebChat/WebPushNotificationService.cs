@@ -13,7 +13,7 @@ public sealed class WebPushNotificationService(
     public async Task SendToSpaceAsync(string spaceSlug, string title, string body, string url,
         CancellationToken ct = default)
     {
-        var subscriptions = await store.GetAllAsync(ct);
+        var subscriptions = await store.GetBySpaceAsync(spaceSlug, ct);
         var payload = JsonSerializer.Serialize(new { title, body, url });
 
         foreach (var (_, subscription) in subscriptions)

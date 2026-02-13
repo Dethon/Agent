@@ -80,17 +80,16 @@ public sealed class InitializationEffect : IDisposable
 
         // Register user after initial connection
         await RegisterUserAsync();
-        await SubscribePushAsync();
 
         // Re-register user on reconnection
         _connectionService.OnReconnected += async () =>
         {
             await RegisterUserAsync();
-            await SubscribePushAsync();
             await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+            await SubscribePushAsync();
         };
 
-        // Validate and join space
+        // Validate and join space (must happen before push subscribe so space context is set)
         var spaceSlug = _spaceStore.State.CurrentSlug;
         var space = await _configService.GetSpaceAsync(spaceSlug);
         if (space is null)
@@ -105,6 +104,8 @@ public sealed class InitializationEffect : IDisposable
             await _topicService.JoinSpaceAsync(spaceSlug);
             _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
         }
+
+        await SubscribePushAsync();
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
