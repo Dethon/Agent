@@ -20,7 +20,8 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Telegram.Bot;
-using WebPush;
+using Lib.Net.Http.WebPush;
+using Lib.Net.Http.WebPush.Authentication;
 using HubNotifier = Infrastructure.Clients.Messaging.WebChat.HubNotifier;
 
 namespace Agent.Modules;
@@ -176,11 +177,14 @@ public static class InjectorModule
                     {
                         return new NullPushNotificationService();
                     }
-                    var vapidDetails = new VapidDetails(config.Subject, config.PublicKey, config.PrivateKey);
+                    var vapidAuth = new VapidAuthentication(config.PublicKey, config.PrivateKey)
+                    {
+                        Subject = config.Subject
+                    };
                     return new WebPushNotificationService(
                         sp.GetRequiredService<IPushSubscriptionStore>(),
-                        new WebPushClient(),
-                        vapidDetails,
+                        new PushServiceClientAdapter(new PushServiceClient()),
+                        vapidAuth,
                         sp.GetRequiredService<ILogger<WebPushNotificationService>>());
                 });
 

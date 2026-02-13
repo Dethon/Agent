@@ -1,15 +1,16 @@
 using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
+using Lib.Net.Http.WebPush;
+using Lib.Net.Http.WebPush.Authentication;
 using Microsoft.Extensions.Logging;
-using WebPush;
 
 namespace Infrastructure.Clients.Messaging.WebChat;
 
 public sealed class WebPushNotificationService(
     IPushSubscriptionStore store,
-    IWebPushClient webPushClient,
-    VapidDetails vapidDetails,
+    IPushMessageSender pushClient,
+    VapidAuthentication vapidAuth,
     ILogger<WebPushNotificationService> logger) : IPushNotificationService
 {
     public async Task SendToSpaceAsync(string spaceSlug, string title, string body, string url,
@@ -17,15 +18,22 @@ public sealed class WebPushNotificationService(
     {
         var subscriptions = await store.GetAllAsync(ct);
         var payload = JsonSerializer.Serialize(new { title, body, url });
+        var message = new PushMessage(payload);
 
         foreach (var (_, subscription) in subscriptions)
         {
-            var pushSubscription = new PushSubscription(subscription.Endpoint, subscription.P256dh, subscription.Auth);
+            var pushSubscription = new PushSubscription
+            {
+                Endpoint = subscription.Endpoint
+            };
+            pushSubscription.SetKey(PushEncryptionKeyName.P256DH, subscription.P256dh);
+            pushSubscription.SetKey(PushEncryptionKeyName.Auth, subscription.Auth);
+
             try
             {
-                await webPushClient.SendNotificationAsync(pushSubscription, payload, vapidDetails, ct);
+                await pushClient.SendAsync(pushSubscription, message, vapidAuth, ct);
             }
-            catch (WebPushException ex) when (ex.StatusCode == HttpStatusCode.Gone)
+            catch (PushServiceClientException ex) when (ex.StatusCode == HttpStatusCode.Gone)
             {
                 await store.RemoveByEndpointAsync(subscription.Endpoint, ct);
             }
