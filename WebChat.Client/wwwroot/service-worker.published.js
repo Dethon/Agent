@@ -1,6 +1,13 @@
 self.addEventListener('push', event => {
+    console.log('[SW] push event fired, has data:', !!event.data);
     let data;
-    try { data = event.data?.json(); } catch { data = null; }
+    try {
+        data = event.data?.json();
+        console.log('[SW] parsed push data:', JSON.stringify(data));
+    } catch (e) {
+        console.error('[SW] failed to parse push data:', e);
+        data = null;
+    }
     data ??= { title: 'New message', body: '' };
     event.waitUntil(
         self.registration.showNotification(data.title, {
