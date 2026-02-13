@@ -78,7 +78,7 @@ public sealed class ModernWebPushSender(
         return $"{unsignedToken}.{Base64UrlEncode(signature)}";
     }
 
-    private static byte[] EncryptPayload(string p256dh, string authKey, byte[] plaintext)
+    internal static byte[] EncryptPayload(string p256dh, string authKey, byte[] plaintext)
     {
         var subscriberPub = Base64UrlDecode(p256dh);
         var authBytes = Base64UrlDecode(authKey);
@@ -130,7 +130,7 @@ public sealed class ModernWebPushSender(
         return result;
     }
 
-    private static byte[] BuildKeyInfo(byte[] subscriberPub, byte[] ephemeralPub)
+    internal static byte[] BuildKeyInfo(byte[] subscriberPub, byte[] ephemeralPub)
     {
         // "WebPush: info\0" || subscriberPublicKey(65) || ephemeralPublicKey(65)
         var label = "WebPush: info\0"u8;
@@ -168,14 +168,14 @@ public sealed class ModernWebPushSender(
         throw new WebPushSendException(message, response.StatusCode);
     }
 
-    private static byte[] Base64UrlDecode(string input)
+    internal static byte[] Base64UrlDecode(string input)
     {
         var s = input.Replace('-', '+').Replace('_', '/');
         s += (s.Length % 4) switch { 2 => "==", 3 => "=", _ => "" };
         return Convert.FromBase64String(s);
     }
 
-    private static string Base64UrlEncode(ReadOnlySpan<byte> input)
+    internal static string Base64UrlEncode(ReadOnlySpan<byte> input)
         => Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     public void Dispose() => _httpClient.Dispose();
@@ -185,10 +185,11 @@ public sealed class ModernWebPushSender(
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken ct)
         {
-            logger.LogInformation("WebPush → {Method} {Uri} Content-Length={ContentLength} Headers=[{Headers}]",
-                request.Method, request.RequestUri,
-                request.Content?.Headers.ContentLength,
-                string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(", ", h.Value)}")));
+            var allHeaders = request.Headers
+                .Concat(request.Content?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>())
+                .Select(h => $"{h.Key}: {string.Join(", ", h.Value)}");
+            logger.LogInformation("WebPush → {Method} {Uri} Headers=[{Headers}]",
+                request.Method, request.RequestUri, string.Join(" | ", allHeaders));
 
             var response = await base.SendAsync(request, ct);
 
