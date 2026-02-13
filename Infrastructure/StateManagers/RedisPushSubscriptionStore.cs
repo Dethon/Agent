@@ -60,11 +60,24 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         }
     }
 
+    private async Task RemoveFromAllSpaceSetsAsync(IDatabase db, string endpoint)
+    {
+        foreach (var redisEndpoint in redis.GetEndPoints())
+        {
+            var server = redis.GetServer(redisEndpoint);
+            await foreach (var key in server.KeysAsync(pattern: $"{SpacePrefix}*"))
+            {
+                await db.SetRemoveAsync(key, endpoint);
+            }
+        }
+    }
+
     public async Task RemoveAsync(string userId, string endpoint, CancellationToken ct = default)
     {
         var db = redis.GetDatabase();
         await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);
         await db.KeyDeleteAsync($"{EndpointPrefix}{endpoint}");
+        await RemoveFromAllSpaceSetsAsync(db, endpoint);
     }
 
     public async Task RemoveByEndpointAsync(string endpoint, CancellationToken ct = default)
@@ -81,6 +94,7 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
 
         await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);
         await db.KeyDeleteAsync(endpointIndexKey);
+        await RemoveFromAllSpaceSetsAsync(db, endpoint);
     }
 
     public async Task<IReadOnlyList<(string UserId, PushSubscriptionDto Subscription)>> GetAllAsync(

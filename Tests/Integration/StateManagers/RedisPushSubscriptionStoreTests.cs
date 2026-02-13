@@ -424,6 +424,48 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
+    public async Task RemoveAsync_CleansUpSpaceSets()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/remove-space-cleanup";
+        var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
+
+        await _store.SaveAsync(userId, sub, "space-a");
+        await _store.SaveAsync(userId, sub, "space-b");
+
+        await _store.RemoveAsync(userId, endpoint);
+
+        // Verify at Redis level — space sets must not contain the endpoint
+        var db = fixture.Connection.GetDatabase();
+        (await db.SetContainsAsync("push:space:space-a", endpoint)).ShouldBeFalse(
+            "Endpoint should be removed from space-a set after RemoveAsync");
+        (await db.SetContainsAsync("push:space:space-b", endpoint)).ShouldBeFalse(
+            "Endpoint should be removed from space-b set after RemoveAsync");
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_CleansUpSpaceSets()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/remove-ep-space-cleanup";
+        var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
+
+        await _store.SaveAsync(userId, sub, "space-x");
+        await _store.SaveAsync(userId, sub, "space-y");
+
+        await _store.RemoveByEndpointAsync(endpoint);
+
+        // Verify at Redis level — space sets must not contain the endpoint
+        var db = fixture.Connection.GetDatabase();
+        (await db.SetContainsAsync("push:space:space-x", endpoint)).ShouldBeFalse(
+            "Endpoint should be removed from space-x set after RemoveByEndpointAsync");
+        (await db.SetContainsAsync("push:space:space-y", endpoint)).ShouldBeFalse(
+            "Endpoint should be removed from space-y set after RemoveByEndpointAsync");
+    }
+
+    [Fact]
     public async Task RemoveAsync_OnlyRemovesTargetEndpoint_LeavesOthersIntact()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";
