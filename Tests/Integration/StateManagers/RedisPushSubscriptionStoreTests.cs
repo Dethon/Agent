@@ -137,6 +137,67 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         all.ShouldContain(x => x.UserId == userId2);
     }
 
+    [Fact]
+    public async Task GetBySpaceAsync_FiltersSubscriptionsBySpace()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var sub1 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-a", "k1", "a1");
+        var sub2 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-b", "k2", "a2");
+
+        await _store.SaveAsync(userId, sub1, "space-a");
+        await _store.SaveAsync(userId, sub2, "space-b");
+
+        var spaceASubs = await _store.GetBySpaceAsync("space-a");
+        spaceASubs.ShouldContain(x => x.Subscription.Endpoint == sub1.Endpoint);
+        spaceASubs.ShouldNotContain(x => x.Subscription.Endpoint == sub2.Endpoint);
+    }
+
+    [Fact]
+    public async Task GetBySpaceAsync_DefaultSpace_IncludesSubscriptionsWithoutExplicitSpace()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/default-space", "k1", "a1");
+
+        await _store.SaveAsync(userId, sub);
+
+        var defaultSubs = await _store.GetBySpaceAsync("default");
+        defaultSubs.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
+    }
+
+    [Fact]
+    public async Task GetBySpaceAsync_NoMatchingSpace_ReturnsEmpty()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/other-space", "k1", "a1");
+
+        await _store.SaveAsync(userId, sub, "some-space");
+
+        var result = await _store.GetBySpaceAsync("nonexistent-space");
+        result.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
+    }
+
+    [Fact]
+    public async Task SaveAsync_WithSpaceSlug_PreservesSpaceInRoundTrip()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-rt", "k1", "a1");
+
+        await _store.SaveAsync(userId, sub, "my-space");
+
+        var all = await _store.GetAllAsync();
+        all.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
+
+        var spaceFiltered = await _store.GetBySpaceAsync("my-space");
+        spaceFiltered.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
+
+        var otherSpace = await _store.GetBySpaceAsync("other-space");
+        otherSpace.ShouldNotContain(x => x.Subscription.Endpoint == sub.Endpoint);
+    }
+
     // --- Adversarial tests ---
 
     [Fact]

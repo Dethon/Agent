@@ -34,7 +34,7 @@ public sealed class WebPushNotificationServiceTests
             ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1")),
             ("user2", new PushSubscriptionDto("https://endpoint2", "key2", "auth2"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
@@ -46,7 +46,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task SendToSpaceAsync_WithNoSubscriptions_DoesNotSend()
     {
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<(string, PushSubscriptionDto)>());
 
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
@@ -63,7 +63,7 @@ public sealed class WebPushNotificationServiceTests
         {
             ("user1", new PushSubscriptionDto("https://expired-endpoint", "key1", "auth1"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         _mockPushClient
             .Setup(c => c.SendAsync(
@@ -84,7 +84,7 @@ public sealed class WebPushNotificationServiceTests
         {
             ("user1", new PushSubscriptionDto("https://error-endpoint", "key1", "auth1"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         _mockPushClient
             .Setup(c => c.SendAsync(
@@ -102,7 +102,7 @@ public sealed class WebPushNotificationServiceTests
         {
             ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
         string? capturedPayload = null;
         _mockPushClient
             .Setup(c => c.SendAsync(
@@ -129,7 +129,7 @@ public sealed class WebPushNotificationServiceTests
             ("user2", new PushSubscriptionDto("https://healthy-endpoint", "key2", "auth2")),
             ("user3", new PushSubscriptionDto("https://also-healthy", "key3", "auth3"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         _mockPushClient
             .Setup(c => c.SendAsync(
@@ -150,7 +150,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task SendToSpaceAsync_StoreGetAllThrows_PropagatesException()
     {
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Redis connection failed"));
 
         await Should.ThrowAsync<InvalidOperationException>(
@@ -164,7 +164,7 @@ public sealed class WebPushNotificationServiceTests
         {
             ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         _mockPushClient
             .Setup(c => c.SendAsync(
@@ -182,7 +182,7 @@ public sealed class WebPushNotificationServiceTests
         {
             ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         string? capturedPayload = null;
         _mockPushClient
@@ -203,13 +203,24 @@ public sealed class WebPushNotificationServiceTests
     }
 
     [Fact]
+    public async Task SendToSpaceAsync_QueriesCorrectSpace()
+    {
+        _mockStore.Setup(s => s.GetBySpaceAsync("myspace", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<(string, PushSubscriptionDto)>());
+
+        await _sut.SendToSpaceAsync("myspace", "Title", "Body", "/myspace");
+
+        _mockStore.Verify(s => s.GetBySpaceAsync("myspace", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task SendToSpaceAsync_PassesCorrectSubscriptionFields()
     {
         var subs = new List<(string UserId, PushSubscriptionDto Subscription)>
         {
             ("user1", new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/abc", "p256dh-val", "auth-val"))
         };
-        _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
+        _mockStore.Setup(s => s.GetBySpaceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
