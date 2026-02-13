@@ -40,6 +40,16 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
         return true;
     }
 
+    public async Task ResubscribeAsync()
+    {
+        var result = await jsRuntime.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription");
+        if (result is null) return;
+        if (connectionService.HubConnection is null) return;
+
+        var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
+        await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
+    }
+
     public async Task UnsubscribeAsync()
     {
         var endpoint = await jsRuntime.InvokeAsync<string?>("pushNotifications.unsubscribe");

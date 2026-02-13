@@ -14,6 +14,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly IChatConnectionService _connectionService;
     private readonly ConfigService _configService;
     private readonly NavigationManager _navigationManager;
+    private readonly PushNotificationService _pushNotificationService;
     private readonly IDisposable _handlerRegistration;
     private string _previousSlug = "default";
 
@@ -22,13 +23,15 @@ public sealed class SpaceEffect : IDisposable
         ITopicService topicService,
         IChatConnectionService connectionService,
         ConfigService configService,
-        NavigationManager navigationManager)
+        NavigationManager navigationManager,
+        PushNotificationService pushNotificationService)
     {
         _dispatcher = dispatcher;
         _topicService = topicService;
         _connectionService = connectionService;
         _configService = configService;
         _navigationManager = navigationManager;
+        _pushNotificationService = pushNotificationService;
 
         _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(HandleSelectSpace);
     }
@@ -64,6 +67,10 @@ public sealed class SpaceEffect : IDisposable
 
         // Join SignalR group for the space
         await _topicService.JoinSpaceAsync(slug);
+
+        // Re-register push subscription for the new space (best-effort)
+        try { await _pushNotificationService.ResubscribeAsync(); }
+        catch { /* best-effort — don't block space transition */ }
 
         // Clear topics and messages for space transition
         _dispatcher.Dispatch(new TopicsLoaded([]));

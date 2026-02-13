@@ -25,9 +25,12 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
                 var endpoint = entry.Name.ToString();
                 await db.KeyDeleteAsync($"push:ep:{endpoint}");
 
-                var data = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(entry.Value.ToString());
-                var spaceSlug = data.TryGetProperty("SpaceSlug", out var s) ? s.GetString() ?? "default" : "default";
-                await db.SetRemoveAsync($"push:space:{spaceSlug}", endpoint);
+                // Endpoints can be in multiple space sets — scan and remove from all
+                var server = fixture.Connection.GetServer(fixture.Connection.GetEndPoints().First());
+                await foreach (var key in server.KeysAsync(pattern: "push:space:*"))
+                {
+                    await db.SetRemoveAsync(key, endpoint);
+                }
             }
 
             await db.KeyDeleteAsync($"push:subs:{userId}");
@@ -318,7 +321,7 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
-    public async Task SaveAsync_EndpointTransferToNewUser_CleansUpOldSpaceSet()
+    public async Task SaveAsync_EndpointTransferToNewUser_PreservesNewSpaceSet()
     {
         var userA = $"test-user-{Guid.NewGuid():N}";
         var userB = $"test-user-{Guid.NewGuid():N}";
@@ -333,15 +336,32 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         // Endpoint transfers to userB in "space-new"
         await _store.SaveAsync(userB, sub, "space-new");
 
-        // The endpoint must NOT appear in the old space anymore
-        var oldSpaceSubs = await _store.GetBySpaceAsync("space-old");
-        oldSpaceSubs.ShouldNotContain(x => x.Subscription.Endpoint == endpoint,
-            "Stale endpoint should be removed from old space set when ownership transfers");
-
-        // It should appear only in the new space
+        // It should appear in the new space under userB
         var newSpaceSubs = await _store.GetBySpaceAsync("space-new");
         newSpaceSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint);
         newSpaceSubs.First(x => x.Subscription.Endpoint == endpoint).UserId.ShouldBe(userB);
+    }
+
+    [Fact]
+    public async Task SaveAsync_SameEndpointDifferentSpaces_AccumulatesInBothSpaceSets()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/multi-space";
+        var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
+
+        // User visits space-a then space-b
+        await _store.SaveAsync(userId, sub, "space-a");
+        await _store.SaveAsync(userId, sub, "space-b");
+
+        // Endpoint should be retrievable from BOTH spaces
+        var spaceASubs = await _store.GetBySpaceAsync("space-a");
+        spaceASubs.ShouldContain(x => x.Subscription.Endpoint == endpoint,
+            "Endpoint should remain in space-a after saving to space-b");
+
+        var spaceBSubs = await _store.GetBySpaceAsync("space-b");
+        spaceBSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint,
+            "Endpoint should be added to space-b");
     }
 
     [Fact]

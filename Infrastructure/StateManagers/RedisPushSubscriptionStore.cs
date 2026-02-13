@@ -21,18 +21,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         var previousOwner = await db.StringGetAsync(endpointIndexKey);
         if (previousOwner.HasValue)
         {
-            // Read existing entry BEFORE any deletion to get old SpaceSlug
-            var existing = await db.HashGetAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
-            if (existing.HasValue)
-            {
-                var existingData = JsonSerializer.Deserialize<JsonElement>(existing.ToString());
-                var oldSpace = existingData.TryGetProperty("SpaceSlug", out var s) ? s.GetString() ?? "default" : "default";
-                if (oldSpace != spaceSlug)
-                {
-                    await db.SetRemoveAsync($"{SpacePrefix}{oldSpace}", subscription.Endpoint);
-                }
-            }
-
             // Remove from previous owner's hash if transferring to a different user
             if (previousOwner.ToString() != userId)
             {
@@ -51,16 +39,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
     public async Task RemoveAsync(string userId, string endpoint, CancellationToken ct = default)
     {
         var db = redis.GetDatabase();
-
-        // Read spaceSlug from primary hash before deleting
-        var existing = await db.HashGetAsync($"{KeyPrefix}{userId}", endpoint);
-        if (existing.HasValue)
-        {
-            var data = JsonSerializer.Deserialize<JsonElement>(existing.ToString());
-            var spaceSlug = data.TryGetProperty("SpaceSlug", out var s) ? s.GetString() ?? "default" : "default";
-            await db.SetRemoveAsync($"{SpacePrefix}{spaceSlug}", endpoint);
-        }
-
         await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);
         await db.KeyDeleteAsync($"{EndpointPrefix}{endpoint}");
     }
@@ -75,15 +53,6 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         if (!userId.HasValue)
         {
             return;
-        }
-
-        // Read spaceSlug from primary hash
-        var existing = await db.HashGetAsync($"{KeyPrefix}{userId}", endpoint);
-        if (existing.HasValue)
-        {
-            var data = JsonSerializer.Deserialize<JsonElement>(existing.ToString());
-            var spaceSlug = data.TryGetProperty("SpaceSlug", out var s) ? s.GetString() ?? "default" : "default";
-            await db.SetRemoveAsync($"{SpacePrefix}{spaceSlug}", endpoint);
         }
 
         await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);

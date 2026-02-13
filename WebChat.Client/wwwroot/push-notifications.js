@@ -36,6 +36,19 @@ window.pushNotifications = {
         return subscription !== null;
     },
 
+    async getSubscription() {
+        if (!('serviceWorker' in navigator)) return null;
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        if (!subscription) return null;
+        const json = subscription.toJSON();
+        return {
+            endpoint: json.endpoint,
+            p256dh: json.keys.p256dh,
+            auth: json.keys.auth
+        };
+    },
+
     async unsubscribe() {
         if (!('serviceWorker' in navigator)) return null;
         const registration = await navigator.serviceWorker.ready;

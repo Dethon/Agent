@@ -161,4 +161,43 @@ public sealed class PushNotificationServiceTests
 
         await Should.ThrowAsync<JSException>(() => _sut.IsSubscribedAsync());
     }
+
+    [Fact]
+    public async Task ResubscribeAsync_WhenSubscriptionExists_AccessesHubConnection()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
+            .Returns(new ValueTask<PushSubscriptionResult?>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
+
+        await _sut.ResubscribeAsync();
+
+        _mockJsRuntime.Verify(js => js.InvokeAsync<PushSubscriptionResult?>(
+            "pushNotifications.getSubscription", It.IsAny<object[]>()), Times.Once);
+        _mockConnectionService.Verify(c => c.HubConnection, Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public async Task ResubscribeAsync_WhenNoSubscription_DoesNotAccessHub()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
+            .Returns(new ValueTask<PushSubscriptionResult?>((PushSubscriptionResult?)null));
+
+        await _sut.ResubscribeAsync();
+
+        _mockConnectionService.Verify(c => c.HubConnection, Times.Never);
+    }
+
+    [Fact]
+    public async Task ResubscribeAsync_WhenHubConnectionNull_DoesNotThrow()
+    {
+        _mockJsRuntime
+            .Setup(js => js.InvokeAsync<PushSubscriptionResult?>("pushNotifications.getSubscription", It.IsAny<object[]>()))
+            .Returns(new ValueTask<PushSubscriptionResult?>(new PushSubscriptionResult("https://endpoint", "key", "auth")));
+        _mockConnectionService
+            .Setup(c => c.HubConnection)
+            .Returns((Microsoft.AspNetCore.SignalR.Client.HubConnection?)null);
+
+        await Should.NotThrowAsync(() => _sut.ResubscribeAsync());
+    }
 }
