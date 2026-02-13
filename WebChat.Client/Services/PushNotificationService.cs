@@ -17,7 +17,11 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
             return false;
         }
 
-        var result = await jsRuntime.InvokeAsync<PushSubscriptionResult>("pushNotifications.subscribe", vapidPublicKey);
+        var result = await jsRuntime.InvokeAsync<PushSubscriptionResult?>("pushNotifications.subscribe", vapidPublicKey);
+        if (result is null)
+        {
+            return false;
+        }
 
         var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
         if (connectionService.HubConnection is null)
