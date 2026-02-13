@@ -3,6 +3,7 @@ using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Hub;
@@ -18,6 +19,7 @@ public sealed class ReconnectionEffect : IDisposable
     public ReconnectionEffect(
         ConnectionStore connectionStore,
         TopicsStore topicsStore,
+        SpaceStore spaceStore,
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService,
         Dispatcher dispatcher,
@@ -56,15 +58,26 @@ public sealed class ReconnectionEffect : IDisposable
                 }
 
                 _wasDisconnectedSinceLastConnect = false;
-                _ = HandleReconnectedAsync(topicsStore, sessionService, streamResumeService);
+                _ = HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService);
             });
     }
 
     private async Task HandleReconnectedAsync(
         TopicsStore topicsStore,
+        SpaceStore spaceStore,
         IChatSessionService sessionService,
         IStreamResumeService streamResumeService)
     {
+        // Re-fetch topics from server to pick up changes made while disconnected
+        var agentId = topicsStore.State.SelectedAgentId;
+        if (agentId is not null)
+        {
+            var spaceSlug = spaceStore.State.CurrentSlug;
+            var serverTopics = await _topicService.GetAllTopicsAsync(agentId, spaceSlug);
+            var topics = serverTopics.Select(StoredTopic.FromMetadata).ToList();
+            _dispatcher.Dispatch(new TopicsLoaded(topics));
+        }
+
         var currentState = topicsStore.State;
 
         // Reload history and restart session for selected topic
