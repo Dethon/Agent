@@ -6,28 +6,21 @@ window.pushNotifications = {
 
     async subscribe(vapidPublicKey) {
         if (!('serviceWorker' in navigator)) return null;
-        console.log('[Push] subscribe called, vapidKey length:', vapidPublicKey?.length);
         const registration = await navigator.serviceWorker.ready;
 
         // Force-refresh: unsubscribe existing to get a fresh push channel
-        // This fixes stale WNS channels that accept pushes (201) but never deliver
         const existing = await registration.pushManager.getSubscription();
         const oldEndpoint = existing?.endpoint ?? null;
-        console.log('[Push] existing subscription:', oldEndpoint ? oldEndpoint.substring(0, 60) + '...' : 'none');
         if (existing) {
             await existing.unsubscribe();
-            console.log('[Push] unsubscribed old subscription');
         }
 
         const applicationServerKey = this._urlBase64ToUint8Array(vapidPublicKey);
-        console.log('[Push] applicationServerKey bytes:', applicationServerKey.length);
         const subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey
         });
         const json = subscription.toJSON();
-        console.log('[Push] new subscription endpoint:', json.endpoint?.substring(0, 60) + '...');
-        console.log('[Push] endpoint changed:', oldEndpoint !== json.endpoint);
         return {
             endpoint: json.endpoint,
             p256dh: json.keys.p256dh,

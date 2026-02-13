@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
-using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Messaging.WebChat;
 
@@ -10,14 +9,10 @@ namespace Infrastructure.Clients.Messaging.WebChat;
 /// vapid Authorization header (RFC 8292).
 /// Required for WNS (Edge/Windows) which rejects the legacy aesgcm + "WebPush" auth.
 /// </summary>
-public sealed class ModernWebPushSender(
-    string publicKey,
-    string privateKey,
-    string subject,
-    ILogger<ModernWebPushSender> logger)
+public sealed class ModernWebPushSender(string publicKey, string privateKey, string subject)
     : IPushMessageSender, IDisposable
 {
-    private readonly HttpClient _httpClient = new(new LoggingHandler(logger) { InnerHandler = new HttpClientHandler() });
+    private readonly HttpClient _httpClient = new();
 
     public async Task SendAsync(string endpoint, string p256dh, string auth, string payload,
         CancellationToken ct = default)
@@ -179,26 +174,4 @@ public sealed class ModernWebPushSender(
         => Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     public void Dispose() => _httpClient.Dispose();
-
-    private sealed class LoggingHandler(ILogger logger) : DelegatingHandler
-    {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken ct)
-        {
-            var allHeaders = request.Headers
-                .Concat(request.Content?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>())
-                .Select(h => $"{h.Key}: {string.Join(", ", h.Value)}");
-            logger.LogInformation("WebPush → {Method} {Uri} Headers=[{Headers}]",
-                request.Method, request.RequestUri, string.Join(" | ", allHeaders));
-
-            var response = await base.SendAsync(request, ct);
-
-            var body = await response.Content.ReadAsStringAsync(ct);
-            logger.LogInformation("WebPush ← {StatusCode} from {Uri} Body=[{Body}]",
-                (int)response.StatusCode, request.RequestUri,
-                string.IsNullOrEmpty(body) ? "(empty)" : body);
-
-            return response;
-        }
-    }
 }

@@ -16,9 +16,6 @@ public sealed class WebPushNotificationService(
         var subscriptions = await store.GetAllAsync(ct);
         var payload = JsonSerializer.Serialize(new { title, body, url });
 
-        logger.LogInformation("Sending push to {Count} subscription(s) for space {Space}",
-            subscriptions.Count, spaceSlug);
-
         foreach (var (_, subscription) in subscriptions)
         {
             try

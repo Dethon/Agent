@@ -176,8 +176,7 @@ public static class InjectorModule
                         return new NullPushNotificationService();
                     }
                     var sender = new ModernWebPushSender(
-                        config.PublicKey, config.PrivateKey, config.Subject,
-                        sp.GetRequiredService<ILogger<ModernWebPushSender>>());
+                        config.PublicKey, config.PrivateKey, config.Subject);
                     return new WebPushNotificationService(
                         sp.GetRequiredService<IPushSubscriptionStore>(),
                         sender,

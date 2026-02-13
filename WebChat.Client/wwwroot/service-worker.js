@@ -1,20 +1,22 @@
 self.addEventListener('push', event => {
-    console.log('[SW] push event fired, has data:', !!event.data);
     let data;
     try {
         data = event.data?.json();
-        console.log('[SW] parsed push data:', JSON.stringify(data));
-    } catch (e) {
-        console.error('[SW] failed to parse push data:', e);
+    } catch {
         data = null;
     }
     data ??= { title: 'New message', body: '' };
     event.waitUntil(
-        self.registration.showNotification(data.title, {
-            body: data.body,
-            icon: '/icon.svg',
-            data: { url: data.url }
-        })
+        self.clients.matchAll({ type: 'window', includeUncontrolled: false })
+            .then(clients => {
+                const hasVisibleClient = clients.some(c => c.visibilityState === 'visible');
+                if (hasVisibleClient) return;
+                return self.registration.showNotification(data.title, {
+                    body: data.body,
+                    icon: '/icon.svg',
+                    data: { url: data.url }
+                });
+            })
     );
 });
 
