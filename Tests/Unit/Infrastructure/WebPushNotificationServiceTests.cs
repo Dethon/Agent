@@ -3,8 +3,6 @@ using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.WebChat;
 using Infrastructure.Clients.Messaging.WebChat;
-using Lib.Net.Http.WebPush;
-using Lib.Net.Http.WebPush.Authentication;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
@@ -21,17 +19,10 @@ public sealed class WebPushNotificationServiceTests
     {
         _mockStore = new Mock<IPushSubscriptionStore>();
         _mockPushClient = new Mock<IPushMessageSender>();
-        var vapidAuth = new VapidAuthentication(
-            "BHw5WliRQEQee09v4l79C0a6nD16_LjAJmvO08pL_r71yMMFsWZbGnlNL9b9JJOm-hyc0rBLIqM_LGArbzcXJtQ",
-            "M09VTdjxZdIjB03mgl2BUINGnP6x3imOrIUdrFH2MhQ")
-        {
-            Subject = "mailto:test@example.com"
-        };
 
         _sut = new WebPushNotificationService(
             _mockStore.Object,
             _mockPushClient.Object,
-            vapidAuth,
             NullLogger<WebPushNotificationService>.Instance);
     }
 
@@ -48,10 +39,8 @@ public sealed class WebPushNotificationServiceTests
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
         _mockPushClient.Verify(c => c.SendAsync(
-            It.IsAny<PushSubscription>(),
-            It.IsAny<PushMessage>(),
-            It.IsAny<VapidAuthentication>(),
-            It.IsAny<CancellationToken>()), Times.Exactly(2));
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -63,10 +52,8 @@ public sealed class WebPushNotificationServiceTests
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
         _mockPushClient.Verify(c => c.SendAsync(
-            It.IsAny<PushSubscription>(),
-            It.IsAny<PushMessage>(),
-            It.IsAny<VapidAuthentication>(),
-            It.IsAny<CancellationToken>()), Times.Never);
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -80,11 +67,9 @@ public sealed class WebPushNotificationServiceTests
 
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new PushServiceClientException("Gone", HttpStatusCode.Gone));
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new WebPushSendException("Gone", HttpStatusCode.Gone));
 
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
@@ -103,11 +88,9 @@ public sealed class WebPushNotificationServiceTests
 
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new PushServiceClientException("Server Error", HttpStatusCode.InternalServerError));
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new WebPushSendException("Server Error", HttpStatusCode.InternalServerError));
 
         await Should.NotThrowAsync(() => _sut.SendToSpaceAsync("default", "Title", "Body", "/default"));
     }
@@ -120,23 +103,21 @@ public sealed class WebPushNotificationServiceTests
             ("user1", new PushSubscriptionDto("https://endpoint1", "key1", "auth1"))
         };
         _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
-        PushMessage? capturedMessage = null;
+        string? capturedPayload = null;
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<PushSubscription, PushMessage, VapidAuthentication, CancellationToken>(
-                (_, msg, _, _) => capturedMessage = msg)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, string, CancellationToken>(
+                (_, _, _, payload, _) => capturedPayload = payload)
             .Returns(Task.CompletedTask);
 
         await _sut.SendToSpaceAsync("myspace", "New Response", "Agent replied", "/myspace");
 
-        capturedMessage.ShouldNotBeNull();
-        capturedMessage.Content.ShouldContain("New Response");
-        capturedMessage.Content.ShouldContain("Agent replied");
-        capturedMessage.Content.ShouldContain("/myspace");
+        capturedPayload.ShouldNotBeNull();
+        capturedPayload.ShouldContain("New Response");
+        capturedPayload.ShouldContain("Agent replied");
+        capturedPayload.ShouldContain("/myspace");
     }
 
     [Fact]
@@ -152,24 +133,18 @@ public sealed class WebPushNotificationServiceTests
 
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.Is<PushSubscription>(p => p.Endpoint == "https://failing-endpoint"),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new PushServiceClientException("Server Error", HttpStatusCode.InternalServerError));
+                "https://failing-endpoint", It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new WebPushSendException("Server Error", HttpStatusCode.InternalServerError));
 
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
         _mockPushClient.Verify(c => c.SendAsync(
-            It.Is<PushSubscription>(p => p.Endpoint == "https://healthy-endpoint"),
-            It.IsAny<PushMessage>(),
-            It.IsAny<VapidAuthentication>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+            "https://healthy-endpoint", It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _mockPushClient.Verify(c => c.SendAsync(
-            It.Is<PushSubscription>(p => p.Endpoint == "https://also-healthy"),
-            It.IsAny<PushMessage>(),
-            It.IsAny<VapidAuthentication>(),
-            It.IsAny<CancellationToken>()), Times.Once);
+            "https://also-healthy", It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -193,10 +168,8 @@ public sealed class WebPushNotificationServiceTests
 
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("Network unreachable"));
 
         await Should.NotThrowAsync(() => _sut.SendToSpaceAsync("default", "Title", "Body", "/default"));
@@ -211,28 +184,26 @@ public sealed class WebPushNotificationServiceTests
         };
         _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
-        PushMessage? capturedMessage = null;
+        string? capturedPayload = null;
         _mockPushClient
             .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<PushSubscription, PushMessage, VapidAuthentication, CancellationToken>(
-                (_, msg, _, _) => capturedMessage = msg)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, string, CancellationToken>(
+                (_, _, _, payload, _) => capturedPayload = payload)
             .Returns(Task.CompletedTask);
 
         await _sut.SendToSpaceAsync("myspace", "My Title", "My Body", "/myspace");
 
-        capturedMessage.ShouldNotBeNull();
-        var doc = JsonDocument.Parse(capturedMessage.Content);
+        capturedPayload.ShouldNotBeNull();
+        var doc = JsonDocument.Parse(capturedPayload);
         doc.RootElement.GetProperty("title").GetString().ShouldBe("My Title");
         doc.RootElement.GetProperty("body").GetString().ShouldBe("My Body");
         doc.RootElement.GetProperty("url").GetString().ShouldBe("/myspace");
     }
 
     [Fact]
-    public async Task SendToSpaceAsync_SubscriptionEndpointMappedCorrectly()
+    public async Task SendToSpaceAsync_PassesCorrectSubscriptionFields()
     {
         var subs = new List<(string UserId, PushSubscriptionDto Subscription)>
         {
@@ -240,22 +211,10 @@ public sealed class WebPushNotificationServiceTests
         };
         _mockStore.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(subs);
 
-        PushSubscription? capturedSub = null;
-        _mockPushClient
-            .Setup(c => c.SendAsync(
-                It.IsAny<PushSubscription>(),
-                It.IsAny<PushMessage>(),
-                It.IsAny<VapidAuthentication>(),
-                It.IsAny<CancellationToken>()))
-            .Callback<PushSubscription, PushMessage, VapidAuthentication, CancellationToken>(
-                (sub, _, _, _) => capturedSub = sub)
-            .Returns(Task.CompletedTask);
-
         await _sut.SendToSpaceAsync("default", "Title", "Body", "/default");
 
-        capturedSub.ShouldNotBeNull();
-        capturedSub.Endpoint.ShouldBe("https://fcm.googleapis.com/fcm/send/abc");
-        capturedSub.GetKey(PushEncryptionKeyName.P256DH).ShouldBe("p256dh-val");
-        capturedSub.GetKey(PushEncryptionKeyName.Auth).ShouldBe("auth-val");
+        _mockPushClient.Verify(c => c.SendAsync(
+            "https://fcm.googleapis.com/fcm/send/abc", "p256dh-val", "auth-val",
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }
