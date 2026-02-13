@@ -104,7 +104,12 @@ public sealed class InitializationEffect : IDisposable
         {
             await RegisterUserAsync();
             await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
-            await SubscribePushAsync();
+
+            // Re-send existing push subscription without force-refreshing the push channel.
+            // Using RequestAndSubscribeAsync here would unsubscribe+resubscribe, generating a
+            // new endpoint in Chrome and losing accumulated space memberships.
+            try { await _pushNotificationService.ResubscribeAsync(); }
+            catch { /* best-effort — don't block reconnection */ }
         };
 
         // Load agents
