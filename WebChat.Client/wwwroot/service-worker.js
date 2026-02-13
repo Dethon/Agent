@@ -3,17 +3,11 @@ self.addEventListener('push', event => {
     try { data = event.data?.json(); } catch { data = null; }
     data ??= { title: 'New message', body: '' };
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(clients => {
-                const anyVisible = clients.some(c => c.visibilityState === 'visible');
-                if (!anyVisible) {
-                    return self.registration.showNotification(data.title, {
-                        body: data.body,
-                        icon: '/icon.svg',
-                        data: { url: data.url }
-                    });
-                }
-            })
+        self.registration.showNotification(data.title, {
+            body: data.body,
+            icon: '/icon.svg',
+            data: { url: data.url }
+        })
     );
 });
 

@@ -3,17 +3,11 @@ self.addEventListener('push', event => {
     try { data = event.data?.json(); } catch { data = null; }
     data ??= { title: 'New message', body: '' };
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(clients => {
-                const anyVisible = clients.some(c => c.visibilityState === 'visible');
-                if (!anyVisible) {
-                    return self.registration.showNotification(data.title, {
-                        body: data.body,
-                        icon: '/icon.svg',
-                        data: { url: data.url }
-                    });
-                }
-            })
+        self.registration.showNotification(data.title, {
+            body: data.body,
+            icon: '/icon.svg',
+            data: { url: data.url }
+        })
     );
 });
 
@@ -50,6 +44,9 @@ async function onInstall(event) {
         .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
         .map(asset => new Request(asset.url, {integrity: asset.hash, cache: 'no-cache'}));
     await caches.open(cacheName).then(cache => cache.addAll(assetsRequests));
+
+    // Activate immediately so new push handlers take effect without waiting for tab close
+    self.skipWaiting();
 }
 
 async function onActivate(event) {
@@ -60,6 +57,9 @@ async function onActivate(event) {
     await Promise.all(cacheKeys
         .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
         .map(key => caches.delete(key)));
+
+    // Take control of all open tabs immediately
+    self.clients.claim();
 }
 
 async function onFetch(event) {
