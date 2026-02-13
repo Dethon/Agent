@@ -84,9 +84,13 @@ public sealed class InitializationEffect : IDisposable
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
 
-        // Register user after initial connection
-        await RegisterUserAsync();
-        await SubscribePushAsync();
+        // Register user and subscribe push only if user is already selected
+        var userId = _userIdentityStore.State.SelectedUserId;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            await RegisterUserAsync(userId);
+            await SubscribePushAsync();
+        }
 
         // Re-register user on reconnection
         _connectionService.OnReconnected += async () =>
