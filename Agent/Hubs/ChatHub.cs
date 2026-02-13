@@ -46,8 +46,7 @@ public sealed class ChatHub(
 
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
-        var userId = GetRegisteredUserId()
-            ?? throw new HubException("User not registered. Call RegisterUser first.");
+        var userId = GetRegisteredUserId() ?? Context.ConnectionId;
         await pushSubscriptionStore.SaveAsync(userId, subscription);
     }
 

@@ -64,13 +64,7 @@ public sealed class InitializationEffect : IDisposable
 
     private void HandleSelectUser(SelectUser action)
     {
-        _ = RegisterAndSubscribeAsync(action.UserId);
-    }
-
-    private async Task RegisterAndSubscribeAsync(string userId)
-    {
-        await RegisterUserAsync(userId);
-        await SubscribePushAsync();
+        _ = RegisterUserAsync(action.UserId);
     }
 
     private void HandleInitialize(Initialize action)
@@ -84,13 +78,9 @@ public sealed class InitializationEffect : IDisposable
         await _connectionService.ConnectAsync();
         _eventSubscriber.Subscribe();
 
-        // Register user and subscribe push only if user is already selected
-        var userId = _userIdentityStore.State.SelectedUserId;
-        if (!string.IsNullOrEmpty(userId))
-        {
-            await RegisterUserAsync(userId);
-            await SubscribePushAsync();
-        }
+        // Register user after initial connection
+        await RegisterUserAsync();
+        await SubscribePushAsync();
 
         // Re-register user on reconnection
         _connectionService.OnReconnected += async () =>
