@@ -72,7 +72,8 @@ public sealed class ModernWebPushSender(
 
         var unsignedToken = $"{header}.{claimsB64}";
         var signature = ecdsa.SignData(
-            Encoding.ASCII.GetBytes(unsignedToken), HashAlgorithmName.SHA256);
+            Encoding.ASCII.GetBytes(unsignedToken), HashAlgorithmName.SHA256,
+            DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
 
         return $"{unsignedToken}.{Base64UrlEncode(signature)}";
     }

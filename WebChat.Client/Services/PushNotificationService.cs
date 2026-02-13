@@ -5,7 +5,7 @@ using WebChat.Client.Contracts;
 
 namespace WebChat.Client.Services;
 
-public record PushSubscriptionResult(string Endpoint, string P256dh, string Auth);
+public record PushSubscriptionResult(string Endpoint, string P256dh, string Auth, string? OldEndpoint = null);
 
 public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectionService connectionService)
 {
@@ -23,12 +23,19 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
             return false;
         }
 
-        var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
         if (connectionService.HubConnection is null)
         {
             return false;
         }
 
+        // Remove stale endpoint from server if the push channel changed
+        if (result.OldEndpoint is not null)
+        {
+            try { await connectionService.HubConnection.InvokeAsync("UnsubscribePush", result.OldEndpoint); }
+            catch { /* best-effort cleanup */ }
+        }
+
+        var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
         await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
         return true;
     }
