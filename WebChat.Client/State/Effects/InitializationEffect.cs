@@ -64,7 +64,13 @@ public sealed class InitializationEffect : IDisposable
 
     private void HandleSelectUser(SelectUser action)
     {
-        _ = RegisterUserAsync(action.UserId);
+        _ = RegisterAndSubscribeAsync(action.UserId);
+    }
+
+    private async Task RegisterAndSubscribeAsync(string userId)
+    {
+        await RegisterUserAsync(userId);
+        await SubscribePushAsync();
     }
 
     private void HandleInitialize(Initialize action)
