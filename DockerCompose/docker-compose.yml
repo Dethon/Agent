@@ -262,6 +262,9 @@ services:
     environment:
       - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
       - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
+      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
+      - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
+      - WEBPUSH__SUBJECT=${WEBPUSH__SUBJECT}
     networks:
       - jackbot
     depends_on:
@@ -295,6 +298,7 @@ services:
       - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
       - USERS__1__ID=${USERS__1__ID:-Bob}
       - USERS__1__AVATARURL=${USERS__1__AVATARURL:-avatars/green.png}
+      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
     restart: unless-stopped
     networks:
       - jackbot

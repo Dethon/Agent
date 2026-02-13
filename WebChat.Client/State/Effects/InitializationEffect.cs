@@ -20,6 +20,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ILocalStorageService _localStorage;
     private readonly ISignalREventSubscriber _eventSubscriber;
     private readonly IStreamResumeService _streamResumeService;
+    private readonly PushNotificationService _pushNotificationService;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly TopicsStore _topicsStore;
     private readonly MessagesStore _messagesStore;
@@ -35,6 +36,7 @@ public sealed class InitializationEffect : IDisposable
         ILocalStorageService localStorage,
         ISignalREventSubscriber eventSubscriber,
         IStreamResumeService streamResumeService,
+        PushNotificationService pushNotificationService,
         UserIdentityStore userIdentityStore,
         TopicsStore topicsStore,
         MessagesStore messagesStore,
@@ -49,6 +51,7 @@ public sealed class InitializationEffect : IDisposable
         _localStorage = localStorage;
         _eventSubscriber = eventSubscriber;
         _streamResumeService = streamResumeService;
+        _pushNotificationService = pushNotificationService;
         _userIdentityStore = userIdentityStore;
         _topicsStore = topicsStore;
         _messagesStore = messagesStore;
@@ -78,14 +81,7 @@ public sealed class InitializationEffect : IDisposable
         // Register user after initial connection
         await RegisterUserAsync();
 
-        // Re-register user on reconnection
-        _connectionService.OnReconnected += async () =>
-        {
-            await RegisterUserAsync();
-            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
-        };
-
-        // Validate and join space
+        // Validate and join space (must happen before push subscribe so space context is set)
         var spaceSlug = _spaceStore.State.CurrentSlug;
         var space = await _configService.GetSpaceAsync(spaceSlug);
         if (space is null)
@@ -100,6 +96,21 @@ public sealed class InitializationEffect : IDisposable
             await _topicService.JoinSpaceAsync(spaceSlug);
             _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
         }
+
+        await SubscribePushAsync();
+
+        // Re-register user on reconnection (after initial subscribe to avoid race)
+        _connectionService.OnReconnected += async () =>
+        {
+            await RegisterUserAsync();
+            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+
+            // Re-send existing push subscription without force-refreshing the push channel.
+            // Using RequestAndSubscribeAsync here would unsubscribe+resubscribe, generating a
+            // new endpoint in Chrome and losing accumulated space memberships.
+            try { await _pushNotificationService.ResubscribeAsync(); }
+            catch { /* best-effort — don't block reconnection */ }
+        };
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
@@ -138,6 +149,22 @@ public sealed class InitializationEffect : IDisposable
         if (!string.IsNullOrEmpty(userId) && _connectionService.HubConnection is not null)
         {
             await _connectionService.HubConnection.InvokeAsync("RegisterUser", userId);
+        }
+    }
+
+    private async Task SubscribePushAsync()
+    {
+        try
+        {
+            var config = await _configService.GetConfigAsync();
+            if (!string.IsNullOrEmpty(config.VapidPublicKey))
+            {
+                await _pushNotificationService.RequestAndSubscribeAsync(config.VapidPublicKey);
+            }
+        }
+        catch
+        {
+            // Push subscription is best-effort — don't block the app
         }
     }
 

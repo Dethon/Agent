@@ -18,7 +18,8 @@ public sealed class ChatHub(
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
-    INotifier hubNotifier) : Hub
+    INotifier hubNotifier,
+    IPushSubscriptionStore pushSubscriptionStore) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
@@ -41,6 +42,54 @@ public sealed class ChatHub(
 
         Context.Items["UserId"] = userId;
         return Task.CompletedTask;
+    }
+
+    public async Task SubscribePush(PushSubscriptionDto subscription)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        ValidateSubscription(subscription);
+
+        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default");
+    }
+
+    public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        ValidateSubscription(subscription);
+
+        if (string.IsNullOrWhiteSpace(oldEndpoint))
+        {
+            throw new HubException("Old endpoint is required for replacement.");
+        }
+
+        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default",
+            replacingEndpoint: oldEndpoint);
+    }
+
+    private static void ValidateSubscription(PushSubscriptionDto subscription)
+    {
+        if (string.IsNullOrWhiteSpace(subscription.Endpoint)
+            || !Uri.TryCreate(subscription.Endpoint, UriKind.Absolute, out var uri)
+            || uri.Scheme != "https")
+        {
+            throw new HubException("Endpoint must be a valid HTTPS URL.");
+        }
+
+        if (string.IsNullOrWhiteSpace(subscription.P256dh) || string.IsNullOrWhiteSpace(subscription.Auth))
+        {
+            throw new HubException("P256dh and Auth keys are required.");
+        }
+    }
+
+    public async Task UnsubscribePush(string endpoint)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+        await pushSubscriptionStore.RemoveAsync(userId, endpoint);
     }
 
     public IReadOnlyList<AgentInfo> GetAgents()

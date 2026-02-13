@@ -1,10 +1,12 @@
 using Domain.DTOs.WebChat;
 using Moq;
+using Shouldly;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Hub;
+using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
 
 namespace Tests.Unit.WebChat.Client.State;
@@ -14,6 +16,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ConnectionStore _connectionStore;
     private readonly TopicsStore _topicsStore;
+    private readonly SpaceStore _spaceStore;
     private readonly Mock<IChatSessionService> _mockSessionService;
     private readonly Mock<IStreamResumeService> _mockStreamResumeService;
     private readonly Mock<ITopicService> _mockTopicService;
@@ -24,6 +27,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher = new Dispatcher();
         _connectionStore = new ConnectionStore(_dispatcher);
         _topicsStore = new TopicsStore(_dispatcher);
+        _spaceStore = new SpaceStore(_dispatcher);
         _mockSessionService = new Mock<IChatSessionService>();
         _mockStreamResumeService = new Mock<IStreamResumeService>();
         _mockTopicService = new Mock<ITopicService>();
@@ -38,6 +42,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _sut = new ReconnectionEffect(
             _connectionStore,
             _topicsStore,
+            _spaceStore,
             _mockSessionService.Object,
             _mockStreamResumeService.Object,
             _dispatcher,
@@ -207,10 +212,44 @@ public sealed class ReconnectionEffectTests : IDisposable
             Times.Never);
     }
 
+    [Fact]
+    public async Task WhenConnectionReconnected_RefetchesTopicsFromServer()
+    {
+        var existingTopic = new StoredTopic
+            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Existing" };
+        _dispatcher.Dispatch(new TopicsLoaded([existingTopic]));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+
+        // Server now has an additional topic that was created while disconnected
+        var now = DateTimeOffset.UtcNow;
+        var serverTopics = new List<TopicMetadata>
+        {
+            new("topic-1", 123, 456, "agent-1", "Existing", now, null),
+            new("topic-2", 789, 101, "agent-1", "New Topic", now, null)
+        };
+        _mockTopicService
+            .Setup(s => s.GetAllTopicsAsync("agent-1", "default"))
+            .ReturnsAsync(serverTopics);
+
+        CreateEffect();
+
+        // Simulate reconnection
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await Task.Delay(50);
+
+        _mockTopicService.Verify(s => s.GetAllTopicsAsync("agent-1", "default"), Times.Once);
+        _topicsStore.State.Topics.Count.ShouldBe(2);
+        _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
+    }
+
     public void Dispose()
     {
         _sut?.Dispose();
         _connectionStore.Dispose();
         _topicsStore.Dispose();
+        _spaceStore.Dispose();
     }
 }

@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Moq;
 using StackExchange.Redis;
 
 namespace Tests.Integration.Fixtures;
@@ -27,6 +28,7 @@ public sealed class WebChatServerFixture : IAsyncLifetime
     private Task _monitorTask = null!;
 
     public FakeAgentFactory FakeAgentFactory { get; } = new();
+    public IServiceProvider Services => _host.Services;
     private RedisFixture RedisFixture { get; } = new();
 
     private string BaseUrl => $"http://localhost:{_port}";
@@ -75,6 +77,11 @@ public sealed class WebChatServerFixture : IAsyncLifetime
             new RedisThreadStateStore(
                 sp.GetRequiredService<IConnectionMultiplexer>(),
                 TimeSpan.FromMinutes(10)));
+
+        // Add push notification services
+        builder.Services.AddSingleton<IPushSubscriptionStore>(sp =>
+            new RedisPushSubscriptionStore(sp.GetRequiredService<IConnectionMultiplexer>()));
+        builder.Services.AddSingleton(new Mock<IPushNotificationService>().Object);
 
         // Configure agent registry
         builder.Services.Configure<AgentRegistryOptions>(options => options.Agents = testAgents);
