@@ -3,11 +3,17 @@ self.addEventListener('push', event => {
     try { data = event.data?.json(); } catch { data = null; }
     data ??= { title: 'New message', body: '' };
     event.waitUntil(
-        self.registration.showNotification(data.title, {
-            body: data.body,
-            icon: '/icon.svg',
-            data: { url: data.url }
-        })
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+            .then(clients => {
+                const anyFocused = clients.some(c => c.visibilityState === 'visible' && c.focused);
+                if (!anyFocused) {
+                    return self.registration.showNotification(data.title, {
+                        body: data.body,
+                        icon: '/icon.svg',
+                        data: { url: data.url }
+                    });
+                }
+            })
     );
 });
 
