@@ -81,14 +81,6 @@ public sealed class InitializationEffect : IDisposable
         // Register user after initial connection
         await RegisterUserAsync();
 
-        // Re-register user on reconnection
-        _connectionService.OnReconnected += async () =>
-        {
-            await RegisterUserAsync();
-            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
-            await SubscribePushAsync();
-        };
-
         // Validate and join space (must happen before push subscribe so space context is set)
         var spaceSlug = _spaceStore.State.CurrentSlug;
         var space = await _configService.GetSpaceAsync(spaceSlug);
@@ -106,6 +98,14 @@ public sealed class InitializationEffect : IDisposable
         }
 
         await SubscribePushAsync();
+
+        // Re-register user on reconnection (after initial subscribe to avoid race)
+        _connectionService.OnReconnected += async () =>
+        {
+            await RegisterUserAsync();
+            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+            await SubscribePushAsync();
+        };
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();

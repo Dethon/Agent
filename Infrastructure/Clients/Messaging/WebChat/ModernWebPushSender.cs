@@ -10,16 +10,14 @@ namespace Infrastructure.Clients.Messaging.WebChat;
 /// vapid Authorization header (RFC 8292).
 /// Required for WNS (Edge/Windows) which rejects the legacy aesgcm + "WebPush" auth.
 /// </summary>
-public sealed class ModernWebPushSender(string publicKey, string privateKey, string subject)
-    : IPushMessageSender, IDisposable
+public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey, string privateKey, string subject)
+    : IPushMessageSender
 {
-    private readonly HttpClient _httpClient = new();
-
     public async Task SendAsync(string endpoint, string p256dh, string auth, string payload,
         CancellationToken ct = default)
     {
         var request = BuildRequest(endpoint, p256dh, auth, payload);
-        var response = await _httpClient.SendAsync(request, ct);
+        var response = await httpClient.SendAsync(request, ct);
         await HandleResponse(response, endpoint);
     }
 
@@ -173,6 +171,4 @@ public sealed class ModernWebPushSender(string publicKey, string privateKey, str
 
     internal static string Base64UrlEncode(ReadOnlySpan<byte> input)
         => Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    public void Dispose() => _httpClient.Dispose();
 }

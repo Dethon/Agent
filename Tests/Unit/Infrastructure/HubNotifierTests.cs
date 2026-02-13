@@ -145,6 +145,22 @@ public sealed class HubNotifierTests
     }
 
     [Fact]
+    public async Task NotifyStreamChangedAsync_PushThrowsOperationCanceled_PropagatesException()
+    {
+        var mockSender = new Mock<IHubNotificationSender>();
+        var mockPush = new Mock<IPushNotificationService>();
+        mockPush.Setup(p => p.SendToSpaceAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        var notifier = new HubNotifier(mockSender.Object, mockPush.Object);
+        var notification = new StreamChangedNotification(StreamChangeType.Completed, "topic-1", "myspace");
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            () => notifier.NotifyStreamChangedAsync(notification));
+    }
+
+    [Fact]
     public async Task NotifyStreamChangedAsync_PushThrows_DoesNotBlockSignalR()
     {
         var mockSender = new Mock<IHubNotificationSender>();

@@ -18,6 +18,18 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var db = fixture.Connection.GetDatabase();
         foreach (var userId in _createdUserIds)
         {
+            // Read endpoints from the user's hash before deleting, to clean up index keys
+            var entries = await db.HashGetAllAsync($"push:subs:{userId}");
+            foreach (var entry in entries)
+            {
+                var endpoint = entry.Name.ToString();
+                await db.KeyDeleteAsync($"push:ep:{endpoint}");
+
+                var data = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(entry.Value.ToString());
+                var spaceSlug = data.TryGetProperty("SpaceSlug", out var s) ? s.GetString() ?? "default" : "default";
+                await db.SetRemoveAsync($"push:space:{spaceSlug}", endpoint);
+            }
+
             await db.KeyDeleteAsync($"push:subs:{userId}");
         }
     }
@@ -277,6 +289,32 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         match.Subscription.Endpoint.ShouldBe(endpoint);
         match.Subscription.P256dh.ShouldBe("key123");
         match.Subscription.Auth.ShouldBe("auth456");
+    }
+
+    [Fact]
+    public async Task RemoveByEndpointAsync_UsesIndexForDirectLookup()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/indexed";
+        var sub = CreateSubscription(endpoint);
+
+        await _store.SaveAsync(userId, sub);
+
+        // Verify index key exists
+        var db = fixture.Connection.GetDatabase();
+        var indexValue = await db.StringGetAsync($"push:ep:{endpoint}");
+        indexValue.HasValue.ShouldBeTrue();
+        indexValue.ToString().ShouldBe(userId);
+
+        // Remove by endpoint and verify index is cleaned up
+        await _store.RemoveByEndpointAsync(endpoint);
+
+        var indexAfter = await db.StringGetAsync($"push:ep:{endpoint}");
+        indexAfter.HasValue.ShouldBeFalse();
+
+        var all = await _store.GetAllAsync();
+        all.ShouldNotContain(x => x.Subscription.Endpoint == endpoint);
     }
 
     [Fact]

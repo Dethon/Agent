@@ -103,4 +103,31 @@ public sealed class ChatHubPushSubscriptionTests(WebChatServerFixture fixture)
         await Should.ThrowAsync<HubException>(() =>
             _connection.InvokeAsync("SubscribePush", subscription));
     }
+
+    [Fact]
+    public async Task SubscribePush_NonUrlEndpoint_ThrowsHubException()
+    {
+        var subscription = new PushSubscriptionDto("not-a-url", "key", "auth");
+
+        await Should.ThrowAsync<HubException>(() =>
+            _connection.InvokeAsync("SubscribePush", subscription));
+    }
+
+    [Fact]
+    public async Task SubscribePush_WhitespaceOnlyP256dh_ThrowsHubException()
+    {
+        var subscription = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/test", "   ", "auth");
+
+        await Should.ThrowAsync<HubException>(() =>
+            _connection.InvokeAsync("SubscribePush", subscription));
+    }
+
+    [Fact]
+    public async Task SubscribePush_WhitespaceOnlyAuth_ThrowsHubException()
+    {
+        var subscription = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/test", "key", "   ");
+
+        await Should.ThrowAsync<HubException>(() =>
+            _connection.InvokeAsync("SubscribePush", subscription));
+    }
 }

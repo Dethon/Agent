@@ -31,7 +31,7 @@ public sealed class HubNotifier(IHubNotificationSender sender, IPushNotification
                     url,
                     cancellationToken);
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // Push notification failures must not block the SignalR notification
             }
