@@ -28,15 +28,18 @@ public sealed class PushNotificationService(IJSRuntime jsRuntime, IChatConnectio
             return false;
         }
 
-        // Remove stale endpoint from server if the push channel changed
+        var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
+
         if (result.OldEndpoint is not null)
         {
-            try { await connectionService.HubConnection.InvokeAsync("UnsubscribePush", result.OldEndpoint); }
-            catch { /* best-effort cleanup */ }
+            // Endpoint rotated — transfer space memberships from old to new
+            await connectionService.HubConnection.InvokeAsync("ReplacePushSubscription", subscription, result.OldEndpoint);
+        }
+        else
+        {
+            await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
         }
 
-        var subscription = new PushSubscriptionDto(result.Endpoint, result.P256dh, result.Auth);
-        await connectionService.HubConnection.InvokeAsync("SubscribePush", subscription);
         return true;
     }
 

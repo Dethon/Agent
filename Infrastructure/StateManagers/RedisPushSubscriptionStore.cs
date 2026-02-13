@@ -12,10 +12,18 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
     private const string SpacePrefix = "push:space:";
 
     public async Task SaveAsync(string userId, PushSubscriptionDto subscription, string spaceSlug = "default",
-        CancellationToken ct = default)
+        string? replacingEndpoint = null, CancellationToken ct = default)
     {
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{subscription.Endpoint}";
+
+        // Transfer space memberships from the old endpoint to the new one
+        if (replacingEndpoint is not null && replacingEndpoint != subscription.Endpoint)
+        {
+            await TransferSpaceMembershipsAsync(db, replacingEndpoint, subscription.Endpoint);
+            await db.HashDeleteAsync($"{KeyPrefix}{userId}", replacingEndpoint);
+            await db.KeyDeleteAsync($"{EndpointPrefix}{replacingEndpoint}");
+        }
 
         // Clean up old indices before writing new data
         var previousOwner = await db.StringGetAsync(endpointIndexKey);
@@ -34,6 +42,22 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         await db.HashSetAsync($"{KeyPrefix}{userId}", subscription.Endpoint, value);
         await db.StringSetAsync(endpointIndexKey, userId);
         await db.SetAddAsync($"{SpacePrefix}{spaceSlug}", subscription.Endpoint);
+    }
+
+    private async Task TransferSpaceMembershipsAsync(IDatabase db, string oldEndpoint, string newEndpoint)
+    {
+        foreach (var endpoint in redis.GetEndPoints())
+        {
+            var server = redis.GetServer(endpoint);
+            await foreach (var key in server.KeysAsync(pattern: $"{SpacePrefix}*"))
+            {
+                if (await db.SetContainsAsync(key, oldEndpoint))
+                {
+                    await db.SetAddAsync(key, newEndpoint);
+                    await db.SetRemoveAsync(key, oldEndpoint);
+                }
+            }
+        }
     }
 
     public async Task RemoveAsync(string userId, string endpoint, CancellationToken ct = default)

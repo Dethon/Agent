@@ -365,6 +365,65 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
+    public async Task SaveAsync_WithReplacingEndpoint_TransfersSpaceMemberships()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var oldEndpoint = "https://fcm.googleapis.com/fcm/send/old-ep";
+        var newEndpoint = "https://fcm.googleapis.com/fcm/send/new-ep";
+        var oldSub = new PushSubscriptionDto(oldEndpoint, "k1", "a1");
+        var newSub = new PushSubscriptionDto(newEndpoint, "k2", "a2");
+
+        // Device visits default then x with old endpoint
+        await _store.SaveAsync(userId, oldSub);
+        await _store.SaveAsync(userId, oldSub, "x");
+
+        // Endpoint rotates — new endpoint replaces old, saved under "x" (current space)
+        await _store.SaveAsync(userId, newSub, "x", replacingEndpoint: oldEndpoint);
+
+        // New endpoint should be in BOTH spaces (transferred from old)
+        var defaultSubs = await _store.GetBySpaceAsync("default");
+        defaultSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint,
+            "New endpoint should inherit default space membership from old endpoint");
+
+        var xSubs = await _store.GetBySpaceAsync("x");
+        xSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint);
+
+        // Old endpoint should be fully cleaned up
+        defaultSubs.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
+        xSubs.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
+    }
+
+    [Fact]
+    public async Task SaveAsync_WithReplacingEndpoint_CleansUpOldHashAndIndex()
+    {
+        var userId = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userId);
+        var oldEndpoint = "https://fcm.googleapis.com/fcm/send/old-cleanup";
+        var newEndpoint = "https://fcm.googleapis.com/fcm/send/new-cleanup";
+        var oldSub = new PushSubscriptionDto(oldEndpoint, "k1", "a1");
+        var newSub = new PushSubscriptionDto(newEndpoint, "k2", "a2");
+
+        await _store.SaveAsync(userId, oldSub);
+        await _store.SaveAsync(userId, newSub, replacingEndpoint: oldEndpoint);
+
+        // Old endpoint should not appear in any query
+        var all = await _store.GetAllAsync();
+        all.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
+
+        // New endpoint should exist with correct keys
+        var match = all.First(x => x.UserId == userId);
+        match.Subscription.Endpoint.ShouldBe(newEndpoint);
+        match.Subscription.P256dh.ShouldBe("k2");
+        match.Subscription.Auth.ShouldBe("a2");
+
+        // Endpoint index should point to new endpoint, not old
+        var db = fixture.Connection.GetDatabase();
+        var oldIndex = await db.StringGetAsync($"push:ep:{oldEndpoint}");
+        oldIndex.HasValue.ShouldBeFalse("Old endpoint index should be cleaned up");
+    }
+
+    [Fact]
     public async Task RemoveAsync_OnlyRemovesTargetEndpoint_LeavesOthersIntact()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";

@@ -49,6 +49,29 @@ public sealed class ChatHub(
         var userId = GetRegisteredUserId()
             ?? throw new HubException("User not registered. Call RegisterUser first.");
 
+        ValidateSubscription(subscription);
+
+        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default");
+    }
+
+    public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        ValidateSubscription(subscription);
+
+        if (string.IsNullOrWhiteSpace(oldEndpoint))
+        {
+            throw new HubException("Old endpoint is required for replacement.");
+        }
+
+        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default",
+            replacingEndpoint: oldEndpoint);
+    }
+
+    private static void ValidateSubscription(PushSubscriptionDto subscription)
+    {
         if (string.IsNullOrWhiteSpace(subscription.Endpoint)
             || !Uri.TryCreate(subscription.Endpoint, UriKind.Absolute, out var uri)
             || uri.Scheme != "https")
@@ -60,8 +83,6 @@ public sealed class ChatHub(
         {
             throw new HubException("P256dh and Auth keys are required.");
         }
-
-        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default");
     }
 
     public async Task UnsubscribePush(string endpoint)
