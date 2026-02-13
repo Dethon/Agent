@@ -5,11 +5,6 @@ using System.Text;
 
 namespace Infrastructure.Clients.Messaging.WebChat;
 
-/// <summary>
-/// Web Push sender using aes128gcm content encoding (RFC 8188/8291) and
-/// vapid Authorization header (RFC 8292).
-/// Required for WNS (Edge/Windows) which rejects the legacy aesgcm + "WebPush" auth.
-/// </summary>
 public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey, string privateKey, string subject)
     : IPushMessageSender
 {
@@ -162,7 +157,7 @@ public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey,
         throw new WebPushSendException(message, response.StatusCode);
     }
 
-    internal static byte[] Base64UrlDecode(string input)
+    private static byte[] Base64UrlDecode(string input)
     {
         var s = input.Replace('-', '+').Replace('_', '/');
         s += (s.Length % 4) switch { 2 => "==", 3 => "=", _ => "" };

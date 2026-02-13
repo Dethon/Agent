@@ -318,6 +318,33 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     }
 
     [Fact]
+    public async Task SaveAsync_EndpointTransferToNewUser_CleansUpOldSpaceSet()
+    {
+        var userA = $"test-user-{Guid.NewGuid():N}";
+        var userB = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.Add(userA);
+        _createdUserIds.Add(userB);
+        var endpoint = "https://fcm.googleapis.com/fcm/send/transfer-space";
+        var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
+
+        // userA subscribes in "space-old"
+        await _store.SaveAsync(userA, sub, "space-old");
+
+        // Endpoint transfers to userB in "space-new"
+        await _store.SaveAsync(userB, sub, "space-new");
+
+        // The endpoint must NOT appear in the old space anymore
+        var oldSpaceSubs = await _store.GetBySpaceAsync("space-old");
+        oldSpaceSubs.ShouldNotContain(x => x.Subscription.Endpoint == endpoint,
+            "Stale endpoint should be removed from old space set when ownership transfers");
+
+        // It should appear only in the new space
+        var newSpaceSubs = await _store.GetBySpaceAsync("space-new");
+        newSpaceSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint);
+        newSpaceSubs.First(x => x.Subscription.Endpoint == endpoint).UserId.ShouldBe(userB);
+    }
+
+    [Fact]
     public async Task RemoveAsync_OnlyRemovesTargetEndpoint_LeavesOthersIntact()
     {
         var userId = $"test-user-{Guid.NewGuid():N}";

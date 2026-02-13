@@ -95,10 +95,7 @@ public sealed class ModernWebPushEncryptionTests
         decrypted1.ShouldBe(plaintext);
         decrypted2.ShouldBe(plaintext);
     }
-
-    /// <summary>
-    /// Decrypts an aes128gcm payload (RFC 8188/8291), simulating what the browser does.
-    /// </summary>
+    
     private static byte[] DecryptAes128Gcm(
         byte[] payload, ECDiffieHellman subscriberPrivateKey, byte[] subscriberPub, byte[] authSecret)
     {

@@ -17,16 +17,11 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{subscription.Endpoint}";
 
-        // Check if this endpoint was previously owned by a different user
+        // Clean up old indices before writing new data
         var previousOwner = await db.StringGetAsync(endpointIndexKey);
-        if (previousOwner.HasValue && previousOwner.ToString() != userId)
-        {
-            await db.HashDeleteAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
-        }
-
-        // Check if spaceSlug changed for existing entry under same user
         if (previousOwner.HasValue)
         {
+            // Read existing entry BEFORE any deletion to get old SpaceSlug
             var existing = await db.HashGetAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
             if (existing.HasValue)
             {
@@ -36,6 +31,12 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
                 {
                     await db.SetRemoveAsync($"{SpacePrefix}{oldSpace}", subscription.Endpoint);
                 }
+            }
+
+            // Remove from previous owner's hash if transferring to a different user
+            if (previousOwner.ToString() != userId)
+            {
+                await db.HashDeleteAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
             }
         }
 
