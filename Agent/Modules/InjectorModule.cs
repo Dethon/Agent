@@ -183,7 +183,8 @@ public static class InjectorModule
                     };
                     return new WebPushNotificationService(
                         sp.GetRequiredService<IPushSubscriptionStore>(),
-                        new PushServiceClientAdapter(new PushServiceClient()),
+                        new PushServiceClientAdapter(
+                            sp.GetRequiredService<ILogger<PushServiceClientAdapter>>()),
                         vapidAuth,
                         sp.GetRequiredService<ILogger<WebPushNotificationService>>());
                 });
