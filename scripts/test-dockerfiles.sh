@@ -179,5 +179,75 @@ grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
 check_inverse "Does not copy Infrastructure/ source" "$rc"
 
 echo ""
+echo "=== Adversarial Checks: Special Dockerfiles ==="
+
+# --- McpServerWebSearch: playwright-base stage must be line-by-line identical to original ---
+echo ""
+echo "Adversarial checks for McpServerWebSearch/Dockerfile..."
+df="McpServerWebSearch/Dockerfile"
+
+# The playwright-base comment must be preserved
+grep -q '# Install Chromium dependencies and Playwright browsers' "$df" && rc=0 || rc=$?
+check "playwright-base stage retains Chromium install comment" "$rc"
+
+# ENTRYPOINT must reference correct DLL
+grep -q 'ENTRYPOINT \["dotnet", "McpServerWebSearch.dll"\]' "$df" && rc=0 || rc=$?
+check "ENTRYPOINT references McpServerWebSearch.dll" "$rc"
+
+# Final stage must use playwright-base (NOT base)
+grep -q 'FROM playwright-base AS final' "$df" && rc=0 || rc=$?
+check "Final stage uses playwright-base (not base)" "$rc"
+
+# syntax header must be present
+first_line=$(head -1 "$df")
+[ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
+check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
+
+# --- McpServerCommandRunner: adversarial checks ---
+echo ""
+echo "Adversarial checks for McpServerCommandRunner/Dockerfile..."
+df="McpServerCommandRunner/Dockerfile"
+
+# syntax header must be present (was missing before migration)
+first_line=$(head -1 "$df")
+[ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
+check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
+
+# Must NOT have a separate 'build' stage (was build+publish, now just publish)
+grep -q 'AS build' "$df" && rc=0 || rc=$?
+check_inverse "Does not have a separate build stage" "$rc"
+
+# ENTRYPOINT must reference correct DLL
+grep -q 'ENTRYPOINT \["dotnet", "McpServerCommandRunner.dll"\]' "$df" && rc=0 || rc=$?
+check "ENTRYPOINT references McpServerCommandRunner.dll" "$rc"
+
+# NuGet cache mount (sharing=locked) must appear on BOTH restore and publish RUN commands
+cache_mount_count=$(grep -c 'mount=type=cache,target=/root/.nuget/packages,sharing=locked' "$df" || true)
+[ "$cache_mount_count" -eq 2 ] && rc=0 || rc=1
+check "NuGet cache mount (sharing=locked) on both RUN commands (found ${cache_mount_count})" "$rc"
+
+# --- WebChat: adversarial checks ---
+echo ""
+echo "Adversarial checks for WebChat/Dockerfile..."
+df="WebChat/Dockerfile"
+
+# ENV ASPNETCORE_ENVIRONMENT=Production must be present in final stage
+grep -q 'ENV ASPNETCORE_ENVIRONMENT=Production' "$df" && rc=0 || rc=$?
+check "ENV ASPNETCORE_ENVIRONMENT=Production is present" "$rc"
+
+# ENTRYPOINT must reference correct DLL
+grep -q 'ENTRYPOINT \["dotnet", "WebChat.dll"\]' "$df" && rc=0 || rc=$?
+check "ENTRYPOINT references WebChat.dll" "$rc"
+
+# syntax header must be present
+first_line=$(head -1 "$df")
+[ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
+check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
+
+# Final stage must use FROM base AS final
+grep -q 'FROM base AS final' "$df" && rc=0 || rc=$?
+check "Final stage uses FROM base AS final" "$rc"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
