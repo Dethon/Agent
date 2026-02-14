@@ -25,7 +25,7 @@ public class McpCalendarToolTests
         var result = await tool.McpRun("token-1");
 
         result.ShouldNotBeNull();
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         result.Content.ShouldNotBeEmpty();
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("cal-1");
@@ -46,7 +46,7 @@ public class McpCalendarToolTests
         var tool = new McpEventListTool(_providerMock.Object);
         var result = await tool.McpRun("token", start.ToString("o"), end.ToString("o"));
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("evt-1");
         text.ShouldContain("Meeting");
@@ -79,7 +79,7 @@ public class McpCalendarToolTests
         var tool = new McpEventGetTool(_providerMock.Object);
         var result = await tool.McpRun("token", "evt-1");
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("evt-1");
         text.ShouldContain("Review");
@@ -101,7 +101,7 @@ public class McpCalendarToolTests
         var result = await tool.McpRun("token", "Meeting",
             "2026-03-15T10:00:00+00:00", "2026-03-15T11:00:00+00:00");
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("evt-new");
     }
@@ -120,7 +120,7 @@ public class McpCalendarToolTests
         var tool = new McpEventUpdateTool(_providerMock.Object);
         var result = await tool.McpRun("token", "evt-1", subject: "Updated Meeting");
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("Updated Meeting");
     }
@@ -134,7 +134,7 @@ public class McpCalendarToolTests
         var tool = new McpEventDeleteTool(_providerMock.Object);
         var result = await tool.McpRun("token", "evt-1");
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         _providerMock.Verify(p => p.DeleteEventAsync("token", "evt-1", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -152,7 +152,7 @@ public class McpCalendarToolTests
         var tool = new McpCheckAvailabilityTool(_providerMock.Object);
         var result = await tool.McpRun("token", start.ToString("o"), end.ToString("o"));
 
-        result.IsError.ShouldBeFalse();
+        result.IsError.ShouldBe(false);
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("Busy");
     }
