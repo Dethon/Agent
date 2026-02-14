@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.DTOs;
 using Infrastructure.Calendar;
 using Moq;
@@ -108,5 +109,96 @@ public class RedisCalendarTokenStoreTests
         var result = await _store.HasTokensAsync("user-1");
 
         result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task StoreAndGet_RoundTrip_PreservesAllFields()
+    {
+        var original = new OAuthTokens
+        {
+            AccessToken = "access-roundtrip",
+            RefreshToken = "refresh-roundtrip",
+            ExpiresAt = DateTimeOffset.Parse("2026-06-15T14:30:00+02:00")
+        };
+
+        RedisValue capturedValue = RedisValue.Null;
+        _dbMock.Setup(db => db.StringSetAsync(
+                It.IsAny<RedisKey>(),
+                It.IsAny<RedisValue>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<bool>(),
+                It.IsAny<When>(),
+                It.IsAny<CommandFlags>()))
+            .Callback<RedisKey, RedisValue, TimeSpan?, bool, When, CommandFlags>(
+                (_, value, _, _, _, _) => capturedValue = value)
+            .ReturnsAsync(true);
+
+        await _store.StoreTokensAsync("user-rt", original);
+
+        _dbMock.Setup(db => db.StringGetAsync(
+                It.Is<RedisKey>(k => k.ToString() == "calendar:tokens:user-rt"),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(capturedValue);
+
+        var retrieved = await _store.GetTokensAsync("user-rt");
+
+        retrieved.ShouldNotBeNull();
+        retrieved.AccessToken.ShouldBe(original.AccessToken);
+        retrieved.RefreshToken.ShouldBe(original.RefreshToken);
+        retrieved.ExpiresAt.ShouldBe(original.ExpiresAt);
+    }
+
+    [Fact]
+    public async Task StoreTokensAsync_OverwritesExistingTokens_UsesWhenAlways()
+    {
+        var tokens = new OAuthTokens
+        {
+            AccessToken = "new-access",
+            RefreshToken = "new-refresh",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        };
+
+        await _store.StoreTokensAsync("user-1", tokens);
+
+        _dbMock.Verify(db => db.StringSetAsync(
+            It.IsAny<RedisKey>(),
+            It.IsAny<RedisValue>(),
+            It.IsAny<TimeSpan?>(),
+            It.IsAny<bool>(),
+            When.Always,
+            It.IsAny<CommandFlags>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetTokensAsync_WhenRedisContainsMalformedJson_ThrowsJsonException()
+    {
+        _dbMock.Setup(db => db.StringGetAsync(
+                It.Is<RedisKey>(k => k.ToString() == "calendar:tokens:user-corrupt"),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(new RedisValue("{not valid json!!!"));
+
+        await Should.ThrowAsync<JsonException>(
+            () => _store.GetTokensAsync("user-corrupt"));
+    }
+
+    [Fact]
+    public async Task StoreTokensAsync_SetsTtlTo90Days()
+    {
+        var tokens = new OAuthTokens
+        {
+            AccessToken = "a",
+            RefreshToken = "r",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1)
+        };
+
+        await _store.StoreTokensAsync("user-ttl", tokens);
+
+        _dbMock.Verify(db => db.StringSetAsync(
+            It.IsAny<RedisKey>(),
+            It.IsAny<RedisValue>(),
+            TimeSpan.FromDays(90),
+            It.IsAny<bool>(),
+            It.IsAny<When>(),
+            It.IsAny<CommandFlags>()), Times.Once);
     }
 }
