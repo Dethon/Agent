@@ -48,5 +48,85 @@ for svc in "${BUILT_SERVICES[@]}"; do
 done
 
 echo ""
+echo "=== Adversarial Checks ==="
+
+# --- Check 1: docker compose config validates YAML is well-formed ---
+DUMMY_ENV="REPOSITORY_PATH=. DATA_PATH=. VAULT_PATH=. PUID=1000 PGID=1000 CF_API_TOKEN=x ALLOWEDDDNSHOST=x SERVICEBUS__CONNECTIONSTRING=x WEBPUSH__PUBLICKEY=x WEBPUSH__PRIVATEKEY=x WEBPUSH__SUBJECT=x AGENTURL=x USERS__0__ID=x USERS__0__AVATARURL=x USERS__1__ID=x USERS__1__AVATARURL=x"
+env $DUMMY_ENV docker compose -f "$COMPOSE_FILE" config > /dev/null 2>&1 && rc=0 || rc=$?
+check "docker compose config succeeds (valid YAML)" "$rc"
+
+# --- Check 2: Pre-existing depends_on relationships are preserved ---
+# Use docker compose config (canonical YAML) to verify deps via python/grep on resolved output
+RESOLVED=$(env $DUMMY_ENV docker compose -f "$COMPOSE_FILE" config 2>/dev/null)
+
+# agent must still depend on: mcp-library, mcp-text, mcp-websearch, mcp-memory, mcp-idealista, redis
+for dep in mcp-library mcp-text mcp-websearch mcp-memory mcp-idealista redis; do
+    echo "$RESOLVED" | python3 -c "
+import sys, yaml
+config = yaml.safe_load(sys.stdin)
+deps = config.get('services',{}).get('agent',{}).get('depends_on',{})
+sys.exit(0 if '${dep}' in deps else 1)
+" && rc=0 || rc=$?
+    check "agent preserves depends_on: ${dep}" "$rc"
+done
+
+# mcp-library must still depend on: qbittorrent, jackett
+for dep in qbittorrent jackett; do
+    echo "$RESOLVED" | python3 -c "
+import sys, yaml
+config = yaml.safe_load(sys.stdin)
+deps = config.get('services',{}).get('mcp-library',{}).get('depends_on',{})
+sys.exit(0 if '${dep}' in deps else 1)
+" && rc=0 || rc=$?
+    check "mcp-library preserves depends_on: ${dep}" "$rc"
+done
+
+# mcp-memory must still depend on: redis
+echo "$RESOLVED" | python3 -c "
+import sys, yaml
+config = yaml.safe_load(sys.stdin)
+deps = config.get('services',{}).get('mcp-memory',{}).get('depends_on',{})
+sys.exit(0 if 'redis' in deps else 1)
+" && rc=0 || rc=$?
+check "mcp-memory preserves depends_on: redis" "$rc"
+
+# webui must still depend on: agent
+echo "$RESOLVED" | python3 -c "
+import sys, yaml
+config = yaml.safe_load(sys.stdin)
+deps = config.get('services',{}).get('webui',{}).get('depends_on',{})
+sys.exit(0 if 'agent' in deps else 1)
+" && rc=0 || rc=$?
+check "webui preserves depends_on: agent" "$rc"
+
+# caddy must still depend on: webui, agent
+for dep in webui agent; do
+    echo "$RESOLVED" | python3 -c "
+import sys, yaml
+config = yaml.safe_load(sys.stdin)
+deps = config.get('services',{}).get('caddy',{}).get('depends_on',{})
+sys.exit(0 if '${dep}' in deps else 1)
+" && rc=0 || rc=$?
+    check "caddy preserves depends_on: ${dep}" "$rc"
+done
+
+# --- Check 3: base-sdk has no unnecessary properties ---
+BASE_SDK_BLOCK=$(awk '/^  base-sdk:/,/^  [a-z]/' "$COMPOSE_FILE")
+for prop in "ports:" "volumes:" "env_file:" "container_name:" "environment:"; do
+    echo "$BASE_SDK_BLOCK" | grep -q "$prop" && rc=1 || rc=0
+    check "base-sdk does NOT have ${prop}" "$rc"
+done
+
+# --- Check 4: caddy does NOT depend on base-sdk (not a .NET project) ---
+awk '/^  caddy:/,/^  [a-z]/' "$COMPOSE_FILE" | grep -q 'base-sdk' && rc=1 || rc=0
+check "caddy does NOT depend on base-sdk" "$rc"
+
+# --- Check 5: non-built services do NOT depend on base-sdk ---
+for svc in redis qbittorrent filebrowser jackett plex; do
+    awk "found && /^  [a-z]/{exit} /^  ${svc}:/{found=1} found{print}" "$COMPOSE_FILE" | grep -q 'base-sdk' && rc=1 || rc=0
+    check "${svc} does NOT depend on base-sdk" "$rc"
+done
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
