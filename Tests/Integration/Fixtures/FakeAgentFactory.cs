@@ -97,10 +97,12 @@ public sealed class FakeAgentFactory : IAgentFactory
             return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
         }
 
-        protected override JsonElement SerializeSessionCore(
-            AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null)
+        protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
+            AgentSession session, 
+            JsonSerializerOptions? jsonSerializerOptions = null,
+            CancellationToken cancellationToken = default)
         {
-            return JsonSerializer.SerializeToElement(new { });
+            return ValueTask.FromResult(JsonSerializer.SerializeToElement(new { }));
         }
 
         protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(

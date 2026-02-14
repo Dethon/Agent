@@ -49,4 +49,3 @@ nuget.config
 
 # Unused projects (not in docker-compose)
 BlazorUI
-McpServerCommandRunner

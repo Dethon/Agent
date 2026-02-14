@@ -176,7 +176,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
             .ToListAsync(cts.Token);
 
         // Serialize the thread
-        var serialized = agent.SerializeSession(thread);
+        var serialized = await agent.SerializeSessionAsync(thread, cancellationToken: cts.Token);
         var serializedJson = serialized.GetRawText();
 
         // Deserialize into a new thread
