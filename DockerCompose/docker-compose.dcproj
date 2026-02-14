@@ -16,5 +16,6 @@
       <Content Include=".env" />
       <Content Include="caddy\Caddyfile" />
       <Content Include="caddy\Dockerfile" />
+      <Content Include="docker-compose.override.linux.yml" />
     </ItemGroup>
 </Project>
