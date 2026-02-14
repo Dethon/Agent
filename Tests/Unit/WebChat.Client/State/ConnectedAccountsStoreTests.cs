@@ -116,4 +116,40 @@ public class ConnectedAccountsStoreTests : IDisposable
         receivedState.Providers.ShouldContainKey("microsoft");
         receivedState.Providers["microsoft"].Connected.ShouldBeTrue();
     }
+
+    [Fact]
+    public void AccountDisconnected_NonExistentProvider_DoesNotThrow()
+    {
+        Should.NotThrow(() => _dispatcher.Dispatch(new AccountDisconnected("nonexistent")));
+
+        _store.State.Providers.ShouldContainKey("nonexistent");
+        _store.State.Providers["nonexistent"].Connected.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Reducer_DoesNotMutateOriginalStateDictionary()
+    {
+        _dispatcher.Dispatch(new AccountStatusLoaded("microsoft", true, "ms@example.com"));
+
+        var stateBeforeSecondDispatch = _store.State;
+        var providersBefore = stateBeforeSecondDispatch.Providers;
+
+        _dispatcher.Dispatch(new AccountStatusLoaded("google", true, "g@example.com"));
+
+        providersBefore.Count.ShouldBe(1);
+        providersBefore.ShouldContainKey("microsoft");
+        providersBefore.ShouldNotContainKey("google");
+
+        _store.State.Providers.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void AccountStatusLoaded_NotConnected_CreatesProviderEntry()
+    {
+        _dispatcher.Dispatch(new AccountStatusLoaded("microsoft", false, null));
+
+        _store.State.Providers.ShouldContainKey("microsoft");
+        _store.State.Providers["microsoft"].Connected.ShouldBeFalse();
+        _store.State.Providers["microsoft"].Email.ShouldBeNull();
+    }
 }
