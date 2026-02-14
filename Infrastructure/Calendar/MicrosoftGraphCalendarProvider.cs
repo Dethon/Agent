@@ -48,7 +48,11 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
     public async Task<CalendarEvent> GetEventAsync(string accessToken, string eventId, string? calendarId,
         CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/me/events/{eventId}");
+        var path = calendarId is not null
+            ? $"/me/calendars/{calendarId}/events/{eventId}"
+            : $"/me/events/{eventId}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         var response = await httpClient.SendAsync(request, ct);
@@ -93,7 +97,11 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
     public async Task DeleteEventAsync(string accessToken, string eventId, string? calendarId,
         CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/me/events/{eventId}");
+        var path = calendarId is not null
+            ? $"/me/calendars/{calendarId}/events/{eventId}"
+            : $"/me/events/{eventId}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
         var response = await httpClient.SendAsync(request, ct);
