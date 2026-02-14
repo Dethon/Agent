@@ -278,7 +278,6 @@ services:
     env_file:
       - .env
     environment:
-      - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
       - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
       - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
       - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
@@ -311,7 +310,6 @@ services:
     env_file:
       - .env
     environment:
-      - ALLOWEDDDNSHOST=${ALLOWEDDDNSHOST}
       - AGENTURL=${AGENTURL:-http://localhost:5000}
       - USERS__0__ID=${USERS__0__ID:-Alice}
       - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
