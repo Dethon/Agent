@@ -7,6 +7,7 @@ using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.ConnectedAccounts;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<UserIdentityStore>();
             services.AddScoped<ToastStore>();
             services.AddScoped<SpaceStore>();
+            services.AddScoped<ConnectedAccountsStore>();
 
             // State coordination
             services.AddScoped<RenderCoordinator>();
