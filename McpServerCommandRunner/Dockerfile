@@ -1,22 +1,19 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+# syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 USER $APP_UID
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
-WORKDIR /src
+FROM base-sdk:latest AS dependencies
 COPY ["McpServerCommandRunner/McpServerCommandRunner.csproj", "McpServerCommandRunner/"]
-COPY ["Domain/Domain.csproj", "Domain/"]
-COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN dotnet restore "McpServerCommandRunner/McpServerCommandRunner.csproj"
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
+    dotnet restore "McpServerCommandRunner/McpServerCommandRunner.csproj"
 
-FROM dependencies AS build
+FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
-COPY . .
+COPY ["McpServerCommandRunner/", "McpServerCommandRunner/"]
 WORKDIR "/src/McpServerCommandRunner"
-RUN dotnet build "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/build
-
-FROM build AS publish
-RUN dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
+    dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
 WORKDIR /app

@@ -3,7 +3,6 @@
 # Stage 1: Runtime base with Playwright browsers
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS playwright-base
 
-# Install Chromium dependencies and Playwright browsers (Node.js removed after install)
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm \
@@ -18,19 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/*
 
 # Stage 2: Restore dependencies
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dependencies
-WORKDIR /src
+FROM base-sdk:latest AS dependencies
 COPY ["McpServerWebSearch/McpServerWebSearch.csproj", "McpServerWebSearch/"]
-COPY ["Domain/Domain.csproj", "Domain/"]
-COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet restore "McpServerWebSearch/McpServerWebSearch.csproj"
 
 # Stage 3: Publish
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
-COPY ["Domain/", "Domain/"]
-COPY ["Infrastructure/", "Infrastructure/"]
 COPY ["McpServerWebSearch/", "McpServerWebSearch/"]
 WORKDIR "/src/McpServerWebSearch"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
