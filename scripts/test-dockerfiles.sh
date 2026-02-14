@@ -65,5 +65,49 @@ for df in "${STANDARD_DOCKERFILES[@]}"; do
 done
 
 echo ""
+echo "=== Adversarial Checks: Preserved Properties ==="
+
+# Derive the expected DLL name from the directory portion of each Dockerfile path
+declare -A EXPECTED_DLLS=(
+    ["Agent/Dockerfile"]="Agent.dll"
+    ["McpServerText/Dockerfile"]="McpServerText.dll"
+    ["McpServerLibrary/Dockerfile"]="McpServerLibrary.dll"
+    ["McpServerMemory/Dockerfile"]="McpServerMemory.dll"
+    ["McpServerIdealista/Dockerfile"]="McpServerIdealista.dll"
+)
+
+for df in "${STANDARD_DOCKERFILES[@]}"; do
+    echo ""
+    echo "Adversarial checks for $df..."
+
+    # 1. syntax=docker/dockerfile:1 header must be present on the very first line
+    first_line=$(head -1 "$df")
+    [ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
+    check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
+
+    # 2. Runtime base image must be aspnet:10.0
+    grep -q 'FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base' "$df" && rc=0 || rc=$?
+    check "Runtime base image is aspnet:10.0" "$rc"
+
+    # 3. ENTRYPOINT must reference the correct DLL for this service
+    expected_dll="${EXPECTED_DLLS[$df]}"
+    grep -q "ENTRYPOINT \[\"dotnet\", \"${expected_dll}\"\]" "$df" && rc=0 || rc=$?
+    check "ENTRYPOINT references correct DLL (${expected_dll})" "$rc"
+
+    # 4. NuGet cache mount with sharing=locked must appear on BOTH restore and publish RUN commands
+    cache_mount_count=$(grep -c 'mount=type=cache,target=/root/.nuget/packages,sharing=locked' "$df" || true)
+    [ "$cache_mount_count" -eq 2 ] && rc=0 || rc=1
+    check "NuGet cache mount (sharing=locked) present on both RUN commands (found ${cache_mount_count})" "$rc"
+
+    # 5. Final stage must use FROM base AS final
+    grep -q 'FROM base AS final' "$df" && rc=0 || rc=$?
+    check "Final stage uses FROM base AS final" "$rc"
+
+    # 6. Final stage must COPY from publish stage
+    grep -q 'COPY --from=publish /app/publish' "$df" && rc=0 || rc=$?
+    check "Final stage copies from publish stage" "$rc"
+done
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
