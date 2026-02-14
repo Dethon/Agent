@@ -156,4 +156,140 @@ public class McpCalendarToolTests
         var text = result.Content.OfType<TextContentBlock>().First().Text;
         text.ShouldContain("Busy");
     }
+
+    [Fact]
+    public async Task McpEventListTool_InvalidDateString_ThrowsFormatException()
+    {
+        var tool = new McpEventListTool(_providerMock.Object);
+
+        await Should.ThrowAsync<FormatException>(
+            () => tool.McpRun("token", "not-a-date", "2026-03-31T00:00:00+00:00"));
+    }
+
+    [Fact]
+    public async Task McpEventUpdateTool_OnlySubjectProvided_PassesNullForAllOtherFields()
+    {
+        EventUpdateRequest? capturedRequest = null;
+        var updated = new CalendarEvent
+        {
+            Id = "evt-1", Subject = "Only Subject",
+            Start = DateTimeOffset.UtcNow, End = DateTimeOffset.UtcNow.AddHours(1)
+        };
+        _providerMock.Setup(p => p.UpdateEventAsync("token", "evt-1", It.IsAny<EventUpdateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, EventUpdateRequest, CancellationToken>((_, _, req, _) => capturedRequest = req)
+            .ReturnsAsync(updated);
+
+        var tool = new McpEventUpdateTool(_providerMock.Object);
+        await tool.McpRun("token", "evt-1", subject: "Only Subject");
+
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest.Subject.ShouldBe("Only Subject");
+        capturedRequest.Start.ShouldBeNull();
+        capturedRequest.End.ShouldBeNull();
+        capturedRequest.Location.ShouldBeNull();
+        capturedRequest.Body.ShouldBeNull();
+        capturedRequest.Attendees.ShouldBeNull();
+        capturedRequest.IsAllDay.ShouldBeNull();
+        capturedRequest.Recurrence.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task McpEventCreateTool_AttendeesString_ParsedIntoList()
+    {
+        EventCreateRequest? capturedRequest = null;
+        var created = new CalendarEvent
+        {
+            Id = "evt-new", Subject = "Team Sync",
+            Start = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero),
+            End = new DateTimeOffset(2026, 3, 15, 11, 0, 0, TimeSpan.Zero)
+        };
+        _providerMock.Setup(p => p.CreateEventAsync("token", It.IsAny<EventCreateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, EventCreateRequest, CancellationToken>((_, req, _) => capturedRequest = req)
+            .ReturnsAsync(created);
+
+        var tool = new McpEventCreateTool(_providerMock.Object);
+        await tool.McpRun("token", "Team Sync",
+            "2026-03-15T10:00:00+00:00", "2026-03-15T11:00:00+00:00",
+            attendees: "alice@example.com, bob@example.com , carol@example.com");
+
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest.Attendees.ShouldNotBeNull();
+        capturedRequest.Attendees.Count.ShouldBe(3);
+        capturedRequest.Attendees[0].ShouldBe("alice@example.com");
+        capturedRequest.Attendees[1].ShouldBe("bob@example.com");
+        capturedRequest.Attendees[2].ShouldBe("carol@example.com");
+    }
+
+    [Fact]
+    public async Task McpEventCreateTool_NullAttendees_PassesNullToRequest()
+    {
+        EventCreateRequest? capturedRequest = null;
+        var created = new CalendarEvent
+        {
+            Id = "evt-new", Subject = "Solo Meeting",
+            Start = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero),
+            End = new DateTimeOffset(2026, 3, 15, 11, 0, 0, TimeSpan.Zero)
+        };
+        _providerMock.Setup(p => p.CreateEventAsync("token", It.IsAny<EventCreateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, EventCreateRequest, CancellationToken>((_, req, _) => capturedRequest = req)
+            .ReturnsAsync(created);
+
+        var tool = new McpEventCreateTool(_providerMock.Object);
+        await tool.McpRun("token", "Solo Meeting",
+            "2026-03-15T10:00:00+00:00", "2026-03-15T11:00:00+00:00");
+
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest.Attendees.ShouldBeNull();
+        capturedRequest.CalendarId.ShouldBeNull();
+        capturedRequest.Location.ShouldBeNull();
+        capturedRequest.Body.ShouldBeNull();
+        capturedRequest.IsAllDay.ShouldBeNull();
+        capturedRequest.Recurrence.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task McpCheckAvailabilityTool_InvalidDateString_ThrowsFormatException()
+    {
+        var tool = new McpCheckAvailabilityTool(_providerMock.Object);
+
+        await Should.ThrowAsync<FormatException>(
+            () => tool.McpRun("token", "yesterday", "tomorrow"));
+    }
+
+    [Fact]
+    public async Task McpEventCreateTool_AllOptionalParams_PassedCorrectly()
+    {
+        EventCreateRequest? capturedRequest = null;
+        var created = new CalendarEvent
+        {
+            Id = "evt-full", Subject = "Full Event",
+            Start = new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero),
+            End = new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero)
+        };
+        _providerMock.Setup(p => p.CreateEventAsync("token", It.IsAny<EventCreateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, EventCreateRequest, CancellationToken>((_, req, _) => capturedRequest = req)
+            .ReturnsAsync(created);
+
+        var tool = new McpEventCreateTool(_providerMock.Object);
+        await tool.McpRun("token", "Full Event",
+            "2026-04-01T09:00:00+00:00", "2026-04-01T10:00:00+00:00",
+            calendarId: "cal-work",
+            location: "Room 42",
+            body: "Discuss Q2 plans",
+            attendees: "a@x.com,b@x.com",
+            isAllDay: false,
+            recurrence: "weekly");
+
+        capturedRequest.ShouldNotBeNull();
+        capturedRequest.Subject.ShouldBe("Full Event");
+        capturedRequest.Start.ShouldBe(new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero));
+        capturedRequest.End.ShouldBe(new DateTimeOffset(2026, 4, 1, 10, 0, 0, TimeSpan.Zero));
+        capturedRequest.CalendarId.ShouldBe("cal-work");
+        capturedRequest.Location.ShouldBe("Room 42");
+        capturedRequest.Body.ShouldBe("Discuss Q2 plans");
+        capturedRequest.Attendees.ShouldNotBeNull();
+        capturedRequest.Attendees.Count.ShouldBe(2);
+        capturedRequest.IsAllDay.ShouldBe(false);
+        capturedRequest.Recurrence.ShouldBe("weekly");
+    }
 }
