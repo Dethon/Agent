@@ -3,6 +3,7 @@
 # Stage 1: Runtime base with Playwright browsers
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS playwright-base
 
+# Install Chromium dependencies and Playwright browsers (Node.js removed after install)
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs npm \
