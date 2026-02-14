@@ -109,5 +109,75 @@ for df in "${STANDARD_DOCKERFILES[@]}"; do
 done
 
 echo ""
+echo "=== Special Dockerfile Structural Checks ==="
+
+# --- McpServerWebSearch ---
+echo ""
+echo "Checking McpServerWebSearch/Dockerfile..."
+df="McpServerWebSearch/Dockerfile"
+
+grep -q 'FROM base-sdk:latest AS dependencies' "$df" && rc=0 || rc=$?
+check "Uses base-sdk:latest as dependencies base" "$rc"
+
+# Must still have playwright-base stage
+grep -q 'playwright-base' "$df" && rc=0 || rc=$?
+check "Retains playwright-base runtime stage" "$rc"
+
+# Must NOT have sdk:10.0 in dependencies stage (may still have it in playwright-base)
+# Check specifically that no FROM line references dotnet/sdk
+grep -E '^FROM mcr.microsoft.com/dotnet/sdk' "$df" && rc=0 || rc=$?
+check_inverse "No direct sdk:10.0 dependency stage" "$rc"
+
+grep -q 'COPY.*"Domain/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Domain/ source" "$rc"
+
+grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Infrastructure/ source" "$rc"
+
+# --- McpServerCommandRunner ---
+echo ""
+echo "Checking McpServerCommandRunner/Dockerfile..."
+df="McpServerCommandRunner/Dockerfile"
+
+grep -q 'FROM base-sdk:latest AS dependencies' "$df" && rc=0 || rc=$?
+check "Uses base-sdk:latest as dependencies base" "$rc"
+
+# Must NOT use COPY . . (old pattern)
+grep -q 'COPY \. \.' "$df" && rc=0 || rc=$?
+check_inverse "Does not use COPY . ." "$rc"
+
+grep -q 'COPY.*"Domain/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Domain/ source" "$rc"
+
+grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Infrastructure/ source" "$rc"
+
+# Should use cache mount for restore
+grep -q 'mount=type=cache' "$df" && rc=0 || rc=$?
+check "Uses NuGet cache mount" "$rc"
+
+# --- WebChat ---
+echo ""
+echo "Checking WebChat/Dockerfile..."
+df="WebChat/Dockerfile"
+
+grep -q 'FROM base-sdk:latest AS dependencies' "$df" && rc=0 || rc=$?
+check "Uses base-sdk:latest as dependencies base" "$rc"
+
+# Must still copy WebChat.Client .csproj
+grep -q 'COPY.*WebChat\.Client/WebChat\.Client\.csproj' "$df" && rc=0 || rc=$?
+check "Still copies WebChat.Client.csproj" "$rc"
+
+# Must still copy WebChat.Client/ source
+grep -q 'COPY.*"WebChat\.Client/"' "$df" && rc=0 || rc=$?
+check "Still copies WebChat.Client/ source" "$rc"
+
+grep -q 'COPY.*"Domain/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Domain/ source" "$rc"
+
+grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
+check_inverse "Does not copy Infrastructure/ source" "$rc"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
