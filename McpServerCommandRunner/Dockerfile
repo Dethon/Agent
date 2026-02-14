@@ -13,7 +13,7 @@ ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerCommandRunner/", "McpServerCommandRunner/"]
 WORKDIR "/src/McpServerCommandRunner"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+    dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
 
 FROM base AS final
 WORKDIR /app

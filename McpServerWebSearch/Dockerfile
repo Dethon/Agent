@@ -30,7 +30,7 @@ ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerWebSearch/", "McpServerWebSearch/"]
 WORKDIR "/src/McpServerWebSearch"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+    dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
 
 # Stage 4: Final runtime image (inherits Playwright + deps from playwright-base)
 FROM playwright-base AS final
