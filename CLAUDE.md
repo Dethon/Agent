@@ -39,6 +39,16 @@ Detailed documentation in `docs/codebase/`:
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
+## Environment Variables
+
+When adding code that reads new environment variables or configuration values, you **must** update all relevant infrastructure files in the same change:
+
+- `DockerCompose/docker-compose.yml` — add the variable to the appropriate service's `environment` section (use placeholder values like `${VAR_NAME}` or `changeme`).
+- `DockerCompose/.env` — add a placeholder entry for the new variable.
+- `appsettings.json` / `appsettings.Development.json` — add the corresponding configuration key with a placeholder value.
+
+Do not defer these updates to a later step. The skeleton must exist at the same time the code that maps the variable is created.
+
 ## TDD
 
 Follow Red-Green-Refactor for all features and bug fixes. Write a failing test first, then implement. See `.claude/rules/tdd.md` for full workflow.
