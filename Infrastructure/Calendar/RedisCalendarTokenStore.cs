@@ -7,20 +7,24 @@ namespace Infrastructure.Calendar;
 
 public class RedisCalendarTokenStore(IConnectionMultiplexer redis) : ICalendarTokenStore
 {
-    private static readonly TimeSpan DefaultTtl = TimeSpan.FromDays(90);
+    private static readonly TimeSpan _defaultTtl = TimeSpan.FromDays(90);
     private readonly IDatabase _db = redis.GetDatabase();
 
     public async Task<OAuthTokens?> GetTokensAsync(string userId, CancellationToken ct = default)
     {
         var value = await _db.StringGetAsync(Key(userId));
-        if (value.IsNullOrEmpty) return null;
+        if (value.IsNullOrEmpty)
+        {
+            return null;
+        }
+
         return JsonSerializer.Deserialize<OAuthTokens>(value.ToString());
     }
 
     public async Task StoreTokensAsync(string userId, OAuthTokens tokens, CancellationToken ct = default)
     {
         var json = JsonSerializer.Serialize(tokens);
-        await _db.StringSetAsync(Key(userId), json, DefaultTtl, false, When.Always, CommandFlags.None);
+        await _db.StringSetAsync(Key(userId), json, _defaultTtl, false);
     }
 
     public async Task RemoveTokensAsync(string userId, CancellationToken ct = default)

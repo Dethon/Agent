@@ -56,7 +56,7 @@ public class RedisCalendarTokenStoreTests
     [Fact]
     public async Task GetTokensAsync_WhenKeyExists_DeserializesAndReturnsTokens()
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(new OAuthTokens
+        var json = JsonSerializer.Serialize(new OAuthTokens
         {
             AccessToken = "access-123",
             RefreshToken = "refresh-456",

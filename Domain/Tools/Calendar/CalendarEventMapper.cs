@@ -16,7 +16,7 @@ internal static class CalendarEventMapper
         ["location"] = e.Location,
         ["isAllDay"] = e.IsAllDay,
         ["recurrence"] = e.Recurrence,
-        ["attendees"] = new JsonArray(e.Attendees.Select(a => (JsonNode)JsonValue.Create(a)!).ToArray()),
+        ["attendees"] = new JsonArray(e.Attendees.Select(JsonNode (a) => JsonValue.Create(a)).ToArray()),
         ["organizer"] = e.Organizer,
         ["status"] = e.Status
     };

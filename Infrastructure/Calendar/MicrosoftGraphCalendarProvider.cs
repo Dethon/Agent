@@ -10,7 +10,7 @@ namespace Infrastructure.Calendar;
 
 public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarProvider
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -24,7 +24,7 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
-        var graphResponse = await response.Content.ReadFromJsonAsync<GraphListResponse<GraphCalendar>>(JsonOptions, ct);
+        var graphResponse = await response.Content.ReadFromJsonAsync<GraphListResponse<GraphCalendar>>(_jsonOptions, ct);
         return graphResponse!.Value.Select(MapToCalendarInfo).ToList();
     }
 
@@ -41,7 +41,7 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
-        var graphResponse = await response.Content.ReadFromJsonAsync<GraphListResponse<GraphEvent>>(JsonOptions, ct);
+        var graphResponse = await response.Content.ReadFromJsonAsync<GraphListResponse<GraphEvent>>(_jsonOptions, ct);
         return graphResponse!.Value.Select(MapToCalendarEvent).ToList();
     }
 
@@ -58,7 +58,7 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
-        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(JsonOptions, ct);
+        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(_jsonOptions, ct);
         return MapToCalendarEvent(graphEvent!);
     }
 
@@ -71,12 +71,12 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
 
         using var request = new HttpRequestMessage(HttpMethod.Post, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(BuildCreateBody(createRequest), options: JsonOptions);
+        request.Content = JsonContent.Create(BuildCreateBody(createRequest), options: _jsonOptions);
 
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
-        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(JsonOptions, ct);
+        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(_jsonOptions, ct);
         return MapToCalendarEvent(graphEvent!);
     }
 
@@ -85,12 +85,12 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"/me/events/{eventId}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Content = JsonContent.Create(BuildUpdateBody(updateRequest), options: JsonOptions);
+        request.Content = JsonContent.Create(BuildUpdateBody(updateRequest), options: _jsonOptions);
 
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
-        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(JsonOptions, ct);
+        var graphEvent = await response.Content.ReadFromJsonAsync<GraphEvent>(_jsonOptions, ct);
         return MapToCalendarEvent(graphEvent!);
     }
 
@@ -126,13 +126,13 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
                 DateTime = end.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 TimeZone = "UTC"
             }
-        }, options: JsonOptions);
+        }, options: _jsonOptions);
 
         var response = await httpClient.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var graphResponse =
-            await response.Content.ReadFromJsonAsync<GraphListResponse<GraphScheduleResponse>>(JsonOptions, ct);
+            await response.Content.ReadFromJsonAsync<GraphListResponse<GraphScheduleResponse>>(_jsonOptions, ct);
         return graphResponse!.Value
             .SelectMany(s => s.ScheduleItems)
             .Select(MapToFreeBusySlot)
@@ -170,7 +170,7 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
 
     private static DateTimeOffset ParseGraphDateTime(GraphDateTimeTimeZone dt)
     {
-        var parsed = System.DateTime.Parse(dt.DateTime, CultureInfo.InvariantCulture, DateTimeStyles.None);
+        var parsed = DateTime.Parse(dt.DateTime, CultureInfo.InvariantCulture, DateTimeStyles.None);
         return new DateTimeOffset(parsed, TimeSpan.Zero);
     }
 
@@ -212,28 +212,52 @@ public class MicrosoftGraphCalendarProvider(HttpClient httpClient) : ICalendarPr
     {
         var body = new Dictionary<string, object>();
 
-        if (r.Subject is not null) body["subject"] = r.Subject;
-        if (r.Body is not null) body["body"] = new { content = r.Body, contentType = "text" };
+        if (r.Subject is not null)
+        {
+            body["subject"] = r.Subject;
+        }
+
+        if (r.Body is not null)
+        {
+            body["body"] = new { content = r.Body, contentType = "text" };
+        }
+
         if (r.Start is not null)
+        {
             body["start"] = new GraphDateTimeTimeZone
             {
                 DateTime = r.Start.Value.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 TimeZone = "UTC"
             };
+        }
+
         if (r.End is not null)
+        {
             body["end"] = new GraphDateTimeTimeZone
             {
                 DateTime = r.End.Value.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 TimeZone = "UTC"
             };
-        if (r.Location is not null) body["location"] = new { displayName = r.Location };
-        if (r.IsAllDay is not null) body["isAllDay"] = r.IsAllDay.Value;
+        }
+
+        if (r.Location is not null)
+        {
+            body["location"] = new { displayName = r.Location };
+        }
+
+        if (r.IsAllDay is not null)
+        {
+            body["isAllDay"] = r.IsAllDay.Value;
+        }
+
         if (r.Attendees is not null)
+        {
             body["attendees"] = r.Attendees.Select(a => new
             {
                 emailAddress = new { address = a },
                 type = "required"
             }).ToArray();
+        }
 
         return body;
     }

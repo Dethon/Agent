@@ -12,8 +12,8 @@ public class CheckAvailabilityToolTests
     private readonly Mock<ICalendarProvider> _providerMock = new();
     private readonly TestableCheckAvailabilityTool _tool;
 
-    private static readonly DateTimeOffset StartDate = new(2026, 3, 15, 8, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset EndDate = new(2026, 3, 15, 18, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _startDate = new(2026, 3, 15, 8, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _endDate = new(2026, 3, 15, 18, 0, 0, TimeSpan.Zero);
 
     public CheckAvailabilityToolTests()
     {
@@ -23,12 +23,12 @@ public class CheckAvailabilityToolTests
     [Fact]
     public async Task Run_PassesDateRangeToProvider()
     {
-        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FreeBusySlot>());
 
-        await _tool.InvokeRun("token", StartDate, EndDate);
+        await _tool.InvokeRun("token", _startDate, _endDate);
 
-        _providerMock.Verify(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()), Times.Once);
+        _providerMock.Verify(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -38,21 +38,21 @@ public class CheckAvailabilityToolTests
         {
             new()
             {
-                Start = StartDate,
-                End = StartDate.AddHours(1),
+                Start = _startDate,
+                End = _startDate.AddHours(1),
                 Status = FreeBusyStatus.Busy
             },
             new()
             {
-                Start = StartDate.AddHours(1),
-                End = StartDate.AddHours(2),
+                Start = _startDate.AddHours(1),
+                End = _startDate.AddHours(2),
                 Status = FreeBusyStatus.Free
             }
         };
-        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(slots);
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         var array = result.AsArray();
         array.Count.ShouldBe(2);
@@ -67,10 +67,10 @@ public class CheckAvailabilityToolTests
         {
             new() { Start = slotStart, End = slotEnd, Status = FreeBusyStatus.Busy }
         };
-        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(slots);
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         var slot = result.AsArray()[0]!;
         slot["start"].ShouldNotBeNull();
@@ -83,14 +83,14 @@ public class CheckAvailabilityToolTests
     {
         var slots = new List<FreeBusySlot>
         {
-            new() { Start = StartDate, End = StartDate.AddHours(1), Status = FreeBusyStatus.Free },
-            new() { Start = StartDate.AddHours(1), End = StartDate.AddHours(2), Status = FreeBusyStatus.Tentative },
-            new() { Start = StartDate.AddHours(2), End = StartDate.AddHours(3), Status = FreeBusyStatus.OutOfOffice }
+            new() { Start = _startDate, End = _startDate.AddHours(1), Status = FreeBusyStatus.Free },
+            new() { Start = _startDate.AddHours(1), End = _startDate.AddHours(2), Status = FreeBusyStatus.Tentative },
+            new() { Start = _startDate.AddHours(2), End = _startDate.AddHours(3), Status = FreeBusyStatus.OutOfOffice }
         };
-        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(slots);
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         var array = result.AsArray();
         array[0]!["status"]!.GetValue<string>().ShouldBe("Free");
@@ -101,10 +101,10 @@ public class CheckAvailabilityToolTests
     [Fact]
     public async Task Run_WhenNoSlots_ReturnsEmptyArray()
     {
-        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.CheckAvailabilityAsync("token", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<FreeBusySlot>());
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         result.AsArray().Count.ShouldBe(0);
     }

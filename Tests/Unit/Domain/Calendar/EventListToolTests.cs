@@ -12,8 +12,8 @@ public class EventListToolTests
     private readonly Mock<ICalendarProvider> _providerMock = new();
     private readonly TestableEventListTool _tool;
 
-    private static readonly DateTimeOffset StartDate = new(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset EndDate = new(2026, 3, 31, 23, 59, 59, TimeSpan.Zero);
+    private static readonly DateTimeOffset _startDate = new(2026, 3, 1, 0, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _endDate = new(2026, 3, 31, 23, 59, 59, TimeSpan.Zero);
 
     public EventListToolTests()
     {
@@ -23,23 +23,23 @@ public class EventListToolTests
     [Fact]
     public async Task Run_WithCalendarId_PassesCalendarIdToProvider()
     {
-        _providerMock.Setup(p => p.ListEventsAsync("token", "cal-1", StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.ListEventsAsync("token", "cal-1", _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<CalendarEvent>());
 
-        await _tool.InvokeRun("token", StartDate, EndDate, "cal-1");
+        await _tool.InvokeRun("token", _startDate, _endDate, "cal-1");
 
-        _providerMock.Verify(p => p.ListEventsAsync("token", "cal-1", StartDate, EndDate, It.IsAny<CancellationToken>()), Times.Once);
+        _providerMock.Verify(p => p.ListEventsAsync("token", "cal-1", _startDate, _endDate, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Run_WithoutCalendarId_PassesNullToProvider()
     {
-        _providerMock.Setup(p => p.ListEventsAsync("token", null, StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.ListEventsAsync("token", null, _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<CalendarEvent>());
 
-        await _tool.InvokeRun("token", StartDate, EndDate);
+        await _tool.InvokeRun("token", _startDate, _endDate);
 
-        _providerMock.Verify(p => p.ListEventsAsync("token", null, StartDate, EndDate, It.IsAny<CancellationToken>()), Times.Once);
+        _providerMock.Verify(p => p.ListEventsAsync("token", null, _startDate, _endDate, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -51,8 +51,8 @@ public class EventListToolTests
             {
                 Id = "evt-1",
                 Subject = "Team Standup",
-                Start = StartDate.AddHours(9),
-                End = StartDate.AddHours(9).AddMinutes(30),
+                Start = _startDate.AddHours(9),
+                End = _startDate.AddHours(9).AddMinutes(30),
                 CalendarId = "cal-1",
                 Location = "Room A",
                 IsAllDay = false,
@@ -61,10 +61,10 @@ public class EventListToolTests
                 Status = "accepted"
             }
         };
-        _providerMock.Setup(p => p.ListEventsAsync("token", null, StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.ListEventsAsync("token", null, _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(events);
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         var array = result.AsArray();
         array.Count.ShouldBe(1);
@@ -77,10 +77,10 @@ public class EventListToolTests
     [Fact]
     public async Task Run_WhenNoEvents_ReturnsEmptyArray()
     {
-        _providerMock.Setup(p => p.ListEventsAsync("token", null, StartDate, EndDate, It.IsAny<CancellationToken>()))
+        _providerMock.Setup(p => p.ListEventsAsync("token", null, _startDate, _endDate, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<CalendarEvent>());
 
-        var result = await _tool.InvokeRun("token", StartDate, EndDate);
+        var result = await _tool.InvokeRun("token", _startDate, _endDate);
 
         result.AsArray().Count.ShouldBe(0);
     }
