@@ -54,6 +54,24 @@ for entry in "${SERVICES[@]}"; do
     check "$tag contains $dll" "$rc"
 done
 
+# Step 4: Verify base-sdk image contains ONLY Domain and Infrastructure under /src
+echo ""
+echo "Verifying base-sdk image contents..."
+src_dirs=$(docker run --rm base-sdk:latest ls /src/)
+expected_dirs=$'Domain\nInfrastructure'
+[ "$src_dirs" = "$expected_dirs" ] && rc=0 || rc=1
+check "base-sdk /src contains only Domain and Infrastructure" "$rc"
+
+# Step 5: Verify no sensitive files leaked into base-sdk image
+sensitive_count=$(docker run --rm base-sdk:latest find /src -name "*.env" -o -name "*.secret*" -o -name "*.key" -o -name "*.pfx" -o -name "*.pem" -o -name "appsettings.Development.json" -o -name "launchSettings.json" -o -name "*.user" 2>/dev/null | wc -l)
+[ "$sensitive_count" -eq 0 ] && rc=0 || rc=1
+check "base-sdk contains no sensitive files (found ${sensitive_count})" "$rc"
+
+# Step 6: Verify base-sdk WORKDIR is /src
+workdir=$(docker run --rm base-sdk:latest pwd)
+[ "$workdir" = "/src" ] && rc=0 || rc=1
+check "base-sdk WORKDIR is /src" "$rc"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1

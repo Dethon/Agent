@@ -249,5 +249,54 @@ grep -q 'FROM base AS final' "$df" && rc=0 || rc=$?
 check "Final stage uses FROM base AS final" "$rc"
 
 echo ""
+echo "=== Final Adversarial Checks ==="
+
+# --- Check: Dockerfile.base-sdk has NuGet cache mounts on BOTH RUN commands ---
+echo ""
+echo "Adversarial checks for Dockerfile.base-sdk..."
+df="Dockerfile.base-sdk"
+
+cache_mount_count=$(grep -c 'mount=type=cache,target=/root/.nuget/packages,sharing=locked' "$df" || true)
+[ "$cache_mount_count" -eq 2 ] && rc=0 || rc=1
+check "base-sdk has NuGet cache mount on both RUN commands (found ${cache_mount_count})" "$rc"
+
+# base-sdk must set WORKDIR /src
+grep -q 'WORKDIR /src' "$df" && rc=0 || rc=$?
+check "base-sdk sets WORKDIR /src" "$rc"
+
+# base-sdk must build with -c Release
+grep -q '\-c Release' "$df" && rc=0 || rc=$?
+check "base-sdk builds in Release configuration" "$rc"
+
+# --- Check: No service Dockerfile references dotnet/sdk directly ---
+echo ""
+echo "Checking no service Dockerfile uses raw dotnet/sdk..."
+ALL_SERVICE_DOCKERFILES=(
+    "Agent/Dockerfile"
+    "McpServerText/Dockerfile"
+    "McpServerLibrary/Dockerfile"
+    "McpServerMemory/Dockerfile"
+    "McpServerIdealista/Dockerfile"
+    "McpServerWebSearch/Dockerfile"
+    "McpServerCommandRunner/Dockerfile"
+    "WebChat/Dockerfile"
+)
+for df in "${ALL_SERVICE_DOCKERFILES[@]}"; do
+    grep -q 'FROM mcr.microsoft.com/dotnet/sdk' "$df" && rc=0 || rc=$?
+    check_inverse "$df does not reference dotnet/sdk directly" "$rc"
+done
+
+# --- Check: All 8 service Dockerfiles have both dependencies and publish stages ---
+echo ""
+echo "Checking all service Dockerfiles have consistent stage naming..."
+for df in "${ALL_SERVICE_DOCKERFILES[@]}"; do
+    grep -q 'AS dependencies' "$df" && rc=0 || rc=$?
+    check "$df has dependencies stage" "$rc"
+
+    grep -q 'AS publish' "$df" && rc=0 || rc=$?
+    check "$df has publish stage" "$rc"
+done
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1

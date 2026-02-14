@@ -128,5 +128,21 @@ for svc in redis qbittorrent filebrowser jackett plex; do
 done
 
 echo ""
+echo "=== Final Adversarial Checks ==="
+
+# --- Check: base-sdk build context uses REPOSITORY_PATH variable ---
+grep -A5 'base-sdk:' "$COMPOSE_FILE" | grep -q 'context: ${REPOSITORY_PATH}' && rc=0 || rc=$?
+check "base-sdk build context uses REPOSITORY_PATH variable" "$rc"
+
+# --- Check: base-sdk is on jackbot network ---
+awk '/^  base-sdk:/{found=1; next} found && /^  [a-z]/{exit} found{print}' "$COMPOSE_FILE" | grep -q 'jackbot' && rc=0 || rc=$?
+check "base-sdk is on jackbot network" "$rc"
+
+# --- Check: Exactly 7 built services depend on base-sdk (not more, not fewer) ---
+base_sdk_dep_count=$(grep -c '^\s*- base-sdk' "$COMPOSE_FILE" || true)
+[ "$base_sdk_dep_count" -eq 7 ] && rc=0 || rc=1
+check "Exactly 7 services depend on base-sdk (found ${base_sdk_dep_count})" "$rc"
+
+echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ] || exit 1
