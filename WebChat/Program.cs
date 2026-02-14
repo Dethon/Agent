@@ -1,13 +1,17 @@
 using Domain.DTOs.WebChat;
-using Infrastructure.Extensions;
 using JetBrains.Annotations;
 using WebChat;
+using WebChat.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var app = builder.Build();
+var ddnsHostname = app.Configuration["AllowedDdnsHost"];
+if (!string.IsNullOrEmpty(ddnsHostname))
+{
+    app.UseMiddleware<DdnsIpAllowlistMiddleware>(ddnsHostname);
+}
 
-app.UseDdnsIpAllowlist(app.Configuration);
 app.UseBlazorFrameworkFiles();
 
 app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
