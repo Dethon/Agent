@@ -259,6 +259,28 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-calendar:
+    image: mcp-calendar:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-calendar
+    ports:
+      - "6006:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerCalendar/Dockerfile
+      cache_from:
+        - mcp-calendar:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+
   agent:
     image: agent:latest
     logging:
@@ -290,6 +312,7 @@ services:
       - mcp-websearch
       - mcp-memory
       - mcp-idealista
+      - mcp-calendar
       - redis
       - base-sdk
 
