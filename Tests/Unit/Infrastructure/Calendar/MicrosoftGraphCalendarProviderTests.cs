@@ -461,5 +461,312 @@ public class MicrosoftGraphCalendarProviderTests : IDisposable
         secondAuth.ShouldBe("Bearer token-second");
     }
 
+    [Fact]
+    public async Task UpdateEventAsync_PatchBody_ContainsOnlyProvidedFields()
+    {
+        // Arrange - only set Subject and Location, leave everything else null
+        var eventId = "evt-patch";
+        var request = new EventUpdateRequest
+        {
+            Subject = "Only Subject",
+            Location = "Only Location"
+            // Body, Start, End, IsAllDay, Attendees, Recurrence are all null
+        };
+
+        var graphResponse = new
+        {
+            id = "evt-patch",
+            subject = "Only Subject",
+            body = new { content = "Unchanged body", contentType = "text" },
+            start = new { dateTime = "2026-02-15T09:00:00.0000000", timeZone = "UTC" },
+            end = new { dateTime = "2026-02-15T10:00:00.0000000", timeZone = "UTC" },
+            location = new { displayName = "Only Location" },
+            isAllDay = false,
+            attendees = Array.Empty<object>(),
+            organizer = new { emailAddress = new { address = "me@example.com" } }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath($"/me/events/{eventId}")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingPatch())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        await _provider.UpdateEventAsync(AccessToken, eventId, request);
+
+        // Assert - verify request body contains only subject and location
+        var requestBody = _server.LogEntries.First().RequestMessage.Body;
+        var json = JsonDocument.Parse(requestBody!);
+        var root = json.RootElement;
+
+        root.TryGetProperty("subject", out var subjectProp).ShouldBeTrue();
+        subjectProp.GetString().ShouldBe("Only Subject");
+
+        root.TryGetProperty("location", out var locationProp).ShouldBeTrue();
+        locationProp.GetProperty("displayName").GetString().ShouldBe("Only Location");
+
+        // These null fields should NOT be present in the PATCH body
+        root.TryGetProperty("body", out _).ShouldBeFalse("body should not be in PATCH when null");
+        root.TryGetProperty("start", out _).ShouldBeFalse("start should not be in PATCH when null");
+        root.TryGetProperty("end", out _).ShouldBeFalse("end should not be in PATCH when null");
+        root.TryGetProperty("isAllDay", out _).ShouldBeFalse("isAllDay should not be in PATCH when null");
+        root.TryGetProperty("attendees", out _).ShouldBeFalse("attendees should not be in PATCH when null");
+    }
+
+    [Theory]
+    [InlineData("free", FreeBusyStatus.Free)]
+    [InlineData("busy", FreeBusyStatus.Busy)]
+    [InlineData("tentative", FreeBusyStatus.Tentative)]
+    [InlineData("oof", FreeBusyStatus.OutOfOffice)]
+    [InlineData("workingElsewhere", FreeBusyStatus.Free)]
+    [InlineData("unknown", FreeBusyStatus.Free)]
+    public async Task CheckAvailabilityAsync_MapsAllFreeBusyStatusValues(string graphStatus, FreeBusyStatus expected)
+    {
+        // Arrange
+        var start = new DateTimeOffset(2026, 2, 15, 8, 0, 0, TimeSpan.Zero);
+        var end = new DateTimeOffset(2026, 2, 15, 18, 0, 0, TimeSpan.Zero);
+
+        var graphResponse = new
+        {
+            value = new[]
+            {
+                new
+                {
+                    scheduleItems = new[]
+                    {
+                        new
+                        {
+                            start = new { dateTime = "2026-02-15T09:00:00.0000000", timeZone = "UTC" },
+                            end = new { dateTime = "2026-02-15T10:00:00.0000000", timeZone = "UTC" },
+                            status = graphStatus
+                        }
+                    }
+                }
+            }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/me/calendar/getSchedule")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        var result = await _provider.CheckAvailabilityAsync(AccessToken, start, end);
+
+        // Assert
+        result.Count.ShouldBe(1);
+        result[0].Status.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task ListEventsAsync_WithNullCalendarId_UsesSlashMeEventsEndpoint()
+    {
+        // Arrange - set up ONLY the /me/events endpoint, NOT /me/calendars/null/events
+        var start = new DateTimeOffset(2026, 2, 15, 0, 0, 0, TimeSpan.Zero);
+        var end = new DateTimeOffset(2026, 2, 16, 0, 0, 0, TimeSpan.Zero);
+
+        var graphResponse = new
+        {
+            value = new[]
+            {
+                new
+                {
+                    id = "evt-null-check",
+                    subject = "Null CalendarId Test",
+                    body = (object?)null,
+                    start = new { dateTime = "2026-02-15T12:00:00.0000000", timeZone = "UTC" },
+                    end = new { dateTime = "2026-02-15T13:00:00.0000000", timeZone = "UTC" },
+                    location = (object?)null,
+                    isAllDay = false,
+                    attendees = Array.Empty<object>(),
+                    organizer = new { emailAddress = new { address = "me@example.com" } }
+                }
+            }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/me/events")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        var result = await _provider.ListEventsAsync(AccessToken, null, start, end);
+
+        // Assert
+        result.Count.ShouldBe(1);
+        result[0].Id.ShouldBe("evt-null-check");
+
+        // Verify the request path is exactly /me/events (not /me/calendars/null/events)
+        var requestPath = _server.LogEntries.First().RequestMessage.Path;
+        requestPath.ShouldBe("/me/events");
+        requestPath.ShouldNotContain("null");
+    }
+
+    [Fact]
+    public async Task GetEventAsync_NullBodyAndLocation_DoesNotThrow()
+    {
+        // Arrange - Graph API can return null body and null location
+        var eventId = "evt-nulls";
+        var graphResponse = new
+        {
+            id = "evt-nulls",
+            subject = "Minimal Event",
+            body = (object?)null,
+            start = new { dateTime = "2026-02-15T09:00:00.0000000", timeZone = "UTC" },
+            end = new { dateTime = "2026-02-15T10:00:00.0000000", timeZone = "UTC" },
+            location = (object?)null,
+            isAllDay = false,
+            attendees = (object?)null,
+            organizer = (object?)null
+        };
+
+        _server.Given(Request.Create()
+                .WithPath($"/me/events/{eventId}")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        var result = await _provider.GetEventAsync(AccessToken, eventId, null);
+
+        // Assert - should not throw and nullable fields should be null
+        result.Id.ShouldBe("evt-nulls");
+        result.Subject.ShouldBe("Minimal Event");
+        result.Body.ShouldBeNull();
+        result.Location.ShouldBeNull();
+        result.Attendees.ShouldBeEmpty();
+        result.Organizer.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetEventAsync_WithCalendarId_UsesCalendarSpecificEndpoint()
+    {
+        // Arrange - when calendarId is provided, should use /me/calendars/{calendarId}/events/{eventId}
+        var eventId = "evt-cal-specific";
+        var calendarId = "cal-work";
+
+        var graphResponse = new
+        {
+            id = "evt-cal-specific",
+            subject = "Calendar-Specific Event",
+            body = (object?)null,
+            start = new { dateTime = "2026-02-15T09:00:00.0000000", timeZone = "UTC" },
+            end = new { dateTime = "2026-02-15T10:00:00.0000000", timeZone = "UTC" },
+            location = (object?)null,
+            isAllDay = false,
+            attendees = Array.Empty<object>(),
+            organizer = new { emailAddress = new { address = "me@example.com" } }
+        };
+
+        // Set up ONLY the calendar-specific endpoint
+        _server.Given(Request.Create()
+                .WithPath($"/me/calendars/{calendarId}/events/{eventId}")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        var result = await _provider.GetEventAsync(AccessToken, eventId, calendarId);
+
+        // Assert
+        result.Id.ShouldBe("evt-cal-specific");
+        var requestPath = _server.LogEntries.First().RequestMessage.Path;
+        requestPath.ShouldBe($"/me/calendars/{calendarId}/events/{eventId}");
+    }
+
+    [Fact]
+    public async Task DeleteEventAsync_WithCalendarId_UsesCalendarSpecificEndpoint()
+    {
+        // Arrange - when calendarId is provided, should use /me/calendars/{calendarId}/events/{eventId}
+        var eventId = "evt-to-delete-cal";
+        var calendarId = "cal-work";
+
+        // Set up ONLY the calendar-specific endpoint
+        _server.Given(Request.Create()
+                .WithPath($"/me/calendars/{calendarId}/events/{eventId}")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingDelete())
+            .RespondWith(Response.Create()
+                .WithStatusCode(204));
+
+        // Act
+        var result = async () => await _provider.DeleteEventAsync(AccessToken, eventId, calendarId);
+
+        // Assert - should hit the calendar-specific endpoint, not /me/events/{eventId}
+        await result.ShouldNotThrowAsync();
+        var requestPath = _server.LogEntries.First().RequestMessage.Path;
+        requestPath.ShouldBe($"/me/calendars/{calendarId}/events/{eventId}");
+    }
+
+    [Fact]
+    public async Task CheckAvailabilityAsync_RequestBody_ContainsCorrectScheduleAndTimeFormat()
+    {
+        // Arrange
+        var start = new DateTimeOffset(2026, 3, 10, 14, 30, 0, TimeSpan.FromHours(5));
+        var end = new DateTimeOffset(2026, 3, 10, 18, 0, 0, TimeSpan.FromHours(5));
+
+        var graphResponse = new
+        {
+            value = new[]
+            {
+                new { scheduleItems = Array.Empty<object>() }
+            }
+        };
+
+        _server.Given(Request.Create()
+                .WithPath("/me/calendar/getSchedule")
+                .WithHeader("Authorization", "Bearer " + AccessToken)
+                .UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(JsonSerializer.Serialize(graphResponse)));
+
+        // Act
+        await _provider.CheckAvailabilityAsync(AccessToken, start, end);
+
+        // Assert - verify request body structure
+        var requestBody = _server.LogEntries.First().RequestMessage.Body;
+        var json = JsonDocument.Parse(requestBody!);
+        var root = json.RootElement;
+
+        // schedules array should contain "me"
+        root.TryGetProperty("schedules", out var schedules).ShouldBeTrue();
+        schedules.GetArrayLength().ShouldBe(1);
+        schedules[0].GetString().ShouldBe("me");
+
+        // startTime should be in UTC (converted from +05:00 offset)
+        root.TryGetProperty("startTime", out var startTime).ShouldBeTrue();
+        startTime.GetProperty("timeZone").GetString().ShouldBe("UTC");
+        var startDt = startTime.GetProperty("dateTime").GetString()!;
+        // 14:30 +05:00 = 09:30 UTC
+        startDt.ShouldContain("09:30:00");
+
+        // endTime should be in UTC
+        root.TryGetProperty("endTime", out var endTime).ShouldBeTrue();
+        endTime.GetProperty("timeZone").GetString().ShouldBe("UTC");
+        var endDt = endTime.GetProperty("dateTime").GetString()!;
+        // 18:00 +05:00 = 13:00 UTC
+        endDt.ShouldContain("13:00:00");
+    }
+
     public void Dispose() => _server.Dispose();
 }
