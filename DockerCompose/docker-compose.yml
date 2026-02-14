@@ -127,6 +127,16 @@ services:
       - VERSION=docker
     restart: unless-stopped
     
+  base-sdk:
+    image: base-sdk:latest
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Dockerfile.base-sdk
+    entrypoint: ["true"]
+    restart: "no"
+    networks:
+      - jackbot
+
   mcp-library:
     image: mcp-library:latest
     logging:
@@ -153,6 +163,7 @@ services:
     depends_on:
       - qbittorrent
       - jackett
+      - base-sdk
 
   mcp-text:
     image: mcp-text:latest
@@ -176,6 +187,8 @@ services:
       - .env
     networks:
       - jackbot
+    depends_on:
+      - base-sdk
 
   mcp-websearch:
     image: mcp-websearch:latest
@@ -196,6 +209,8 @@ services:
       - .env
     networks:
       - jackbot
+    depends_on:
+      - base-sdk
 
   mcp-memory:
     image: mcp-memory:latest
@@ -220,6 +235,7 @@ services:
       - jackbot
     depends_on:
       - redis
+      - base-sdk
 
   mcp-idealista:
     image: mcp-idealista:latest
@@ -240,6 +256,8 @@ services:
       - .env
     networks:
       - jackbot
+    depends_on:
+      - base-sdk
 
   agent:
     image: agent:latest
@@ -274,7 +292,8 @@ services:
       - mcp-memory
       - mcp-idealista
       - redis
-      
+      - base-sdk
+
   webui:
     image: webui:latest
     logging:
@@ -304,6 +323,7 @@ services:
       - jackbot
     depends_on:
       - agent
+      - base-sdk
 
   caddy:
     build:

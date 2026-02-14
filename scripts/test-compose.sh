@@ -43,7 +43,7 @@ check "base-sdk has image: base-sdk:latest" "$rc"
 BUILT_SERVICES=("mcp-library" "mcp-text" "mcp-websearch" "mcp-memory" "mcp-idealista" "agent" "webui")
 for svc in "${BUILT_SERVICES[@]}"; do
     # Find the service block's depends_on and check for base-sdk
-    awk "/^  ${svc}:/,/^  [a-z]/" "$COMPOSE_FILE" | grep -q 'base-sdk' && rc=0 || rc=$?
+    awk "found && /^  [a-z]/{exit} /^  ${svc}:/{found=1} found{print}" "$COMPOSE_FILE" | grep -q 'base-sdk' && rc=0 || rc=$?
     check "$svc depends_on includes base-sdk" "$rc"
 done
 
