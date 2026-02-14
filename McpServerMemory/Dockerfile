@@ -13,7 +13,7 @@ ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerMemory/", "McpServerMemory/"]
 WORKDIR "McpServerMemory"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerMemory.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+    dotnet publish "./McpServerMemory.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
 
 FROM base AS final
 WORKDIR /app

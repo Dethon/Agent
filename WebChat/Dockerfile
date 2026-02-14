@@ -15,7 +15,7 @@ COPY ["WebChat/", "WebChat/"]
 COPY ["WebChat.Client/", "WebChat.Client/"]
 WORKDIR "/src/WebChat"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./WebChat.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+    dotnet publish "./WebChat.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
 
 FROM base AS final
 WORKDIR /app

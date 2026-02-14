@@ -1,7 +1,6 @@
 using Agent.Hubs;
 using Agent.Modules;
 using Agent.Settings;
-using Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 var cmdParams = ConfigModule.GetCommandLineParams(args);
@@ -27,7 +26,6 @@ var app = builder.Build();
 
 if (cmdParams.ChatInterface == ChatInterface.Web)
 {
-    app.UseDdnsIpAllowlist(app.Configuration);
     app.UseCors();
     app.MapHub<ChatHub>("/hubs/chat");
 }

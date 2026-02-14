@@ -1,13 +1,10 @@
 using Domain.DTOs.WebChat;
-using Infrastructure.Extensions;
 using JetBrains.Annotations;
 using WebChat;
 
 var builder = WebApplication.CreateBuilder(args);
 
 var app = builder.Build();
-
-app.UseDdnsIpAllowlist(app.Configuration);
 app.UseBlazorFrameworkFiles();
 
 app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>

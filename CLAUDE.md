@@ -2,6 +2,10 @@
 
 AI agent via Telegram/WebChat/MessageBus/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
 
+## Verify Before Assuming
+
+Before proposing any architectural change or debugging hypothesis, first verify your assumptions by checking the actual current state (read the file, run the command, check the config). Never assume something is missing or broken without evidence.
+
 ## Codebase Documentation
 
 Detailed documentation in `docs/codebase/`:
@@ -38,6 +42,36 @@ Detailed documentation in `docs/codebase/`:
 | MCP tools | `McpServer*/McpTools/*.cs` |
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
+
+## Environment Variables
+
+When adding code that reads new environment variables or configuration values, you **must** update all relevant infrastructure files in the same change:
+
+- `DockerCompose/docker-compose.yml` — add the variable to the appropriate service's `environment` section (use placeholder values like `${VAR_NAME}` or `changeme`).
+- `DockerCompose/.env` — add a placeholder entry for the new variable.
+- `appsettings.json` / `appsettings.Development.json` — add the corresponding configuration key with a placeholder value.
+
+Do not defer these updates to a later step. The skeleton must exist at the same time the code that maps the variable is created.
+
+## Multi-Agent Patterns
+
+### Architecture: Two Levels Max
+
+Use at most **orchestrator + workers** (two levels). Never nest teams inside teams. The orchestrator creates tasks, spawns workers, and collects results. Workers execute a single task and report back. If a task is too large for one worker, the orchestrator should split it into smaller tasks — not delegate sub-orchestration.
+
+### Handling Agent Failures
+
+- If a worker agent appears stuck (no progress after a reasonable period), **replace it** — spawn a fresh agent for the same task rather than retrying the stuck one indefinitely.
+- Do not retry the same failing action more than twice. After two failures, reassess the approach or escalate to the user.
+- When a worker reports an error, the orchestrator should decide whether to reassign, adjust the task, or abort — not blindly re-dispatch.
+
+### Layer Completion Verification
+
+Before marking a layer of work as done, **verify every agent in that layer has completed**. Do not assume completion from partial signals. Check `TaskList` to confirm all tasks in the layer are `completed` before proceeding to dependent work or reporting success.
+
+### Auto-Commit After Triplets
+
+When executing TDD plans with triplet tasks (RED → GREEN → REVIEW), **commit after each triplet completes successfully**. This keeps the history granular and makes rollbacks cheap. The commit message should reference the triplet's feature or task name.
 
 ## TDD
 
