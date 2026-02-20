@@ -55,10 +55,6 @@ Do not defer these updates to a later step. The skeleton must exist at the same 
 
 ## Multi-Agent Patterns
 
-### Architecture: Two Levels Max
-
-Use at most **orchestrator + workers** (two levels). Never nest teams inside teams. The orchestrator creates tasks, spawns workers, and collects results. Workers execute a single task and report back. If a task is too large for one worker, the orchestrator should split it into smaller tasks — not delegate sub-orchestration.
-
 ### Handling Agent Failures
 
 - If a worker agent appears stuck (no progress after a reasonable period), **replace it** — spawn a fresh agent for the same task rather than retrying the stuck one indefinitely.
