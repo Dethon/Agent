@@ -269,4 +269,111 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
             await connection2.DisposeAsync();
         }
     }
+
+    [Fact]
+    public async Task UnregisterCustomAgent_CannotUnregisterAnotherUsersAgent()
+    {
+        // Arrange - use a unique user for isolation
+        var user1Connection = fixture.CreateHubConnection();
+        await user1Connection.StartAsync();
+        var user1Id = $"cross-unreg-user1-{Guid.NewGuid():N}";
+        await user1Connection.InvokeAsync("RegisterUser", user1Id);
+
+        var user2Connection = fixture.CreateHubConnection();
+        await user2Connection.StartAsync();
+        await user2Connection.InvokeAsync("RegisterUser", $"cross-unreg-user2-{Guid.NewGuid():N}");
+
+        try
+        {
+            var registration = new CustomAgentRegistration
+            {
+                Name = "User1OnlyBot",
+                Model = "gpt-4",
+                McpServerEndpoints = []
+            };
+            var agentInfo = await user1Connection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration);
+
+            // Act - user2 tries to unregister user1's agent
+            var result = await user2Connection.InvokeAsync<bool>("UnregisterCustomAgent", agentInfo.Id);
+
+            // Assert - should fail (return false) since user2 doesn't own it
+            result.ShouldBeFalse();
+
+            // Verify user1 still sees the agent
+            var user1Agents = await user1Connection.InvokeAsync<IReadOnlyList<AgentInfo>>("GetAgents");
+            user1Agents.ShouldContain(a => a.Id == agentInfo.Id);
+        }
+        finally
+        {
+            await user1Connection.DisposeAsync();
+            await user2Connection.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task RegisterCustomAgent_MultipleAgents_AllVisibleWithUniqueIds()
+    {
+        // Arrange - use a unique user for isolation
+        var conn = fixture.CreateHubConnection();
+        await conn.StartAsync();
+        await conn.InvokeAsync("RegisterUser", $"multi-reg-user-{Guid.NewGuid():N}");
+
+        try
+        {
+            var reg1 = new CustomAgentRegistration
+            {
+                Name = "Bot1",
+                Model = "gpt-4",
+                McpServerEndpoints = []
+            };
+            var reg2 = new CustomAgentRegistration
+            {
+                Name = "Bot2",
+                Model = "claude-3",
+                McpServerEndpoints = []
+            };
+            var agent1 = await conn.InvokeAsync<AgentInfo>("RegisterCustomAgent", reg1);
+            var agent2 = await conn.InvokeAsync<AgentInfo>("RegisterCustomAgent", reg2);
+
+            // Assert - both should have unique IDs
+            agent1.Id.ShouldNotBe(agent2.Id);
+            agent1.Id.ShouldStartWith("custom-");
+            agent2.Id.ShouldStartWith("custom-");
+
+            // GetAgents should include both custom agents plus built-in
+            var agents = await conn.InvokeAsync<IReadOnlyList<AgentInfo>>("GetAgents");
+            agents.ShouldContain(a => a.Id == agent1.Id);
+            agents.ShouldContain(a => a.Id == agent2.Id);
+            // Built-in (2) + custom (2)
+            agents.Count.ShouldBe(4);
+        }
+        finally
+        {
+            await conn.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GetAgents_WithoutRegisteredUser_ReturnsBuiltInAgentsOnly()
+    {
+        // Arrange - create a fresh connection without calling RegisterUser
+        var unregisteredConnection = fixture.CreateHubConnection();
+        await unregisteredConnection.StartAsync();
+
+        try
+        {
+            // Act - GetAgents should still work for unregistered users
+            var agents = await unregisteredConnection.InvokeAsync<IReadOnlyList<AgentInfo>>("GetAgents");
+
+            // Assert - should return built-in agents only (no throw, no custom agents)
+            agents.ShouldNotBeNull();
+            agents.ShouldContain(a => a.Id == "test-agent");
+            agents.ShouldContain(a => a.Id == "second-agent");
+            agents.ShouldAllBe(a => !a.Id.StartsWith("custom-"));
+        }
+        finally
+        {
+            await unregisteredConnection.DisposeAsync();
+        }
+    }
 }
