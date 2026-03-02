@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -14,6 +15,8 @@ public sealed class MultiAgentFactory(
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry) : IAgentFactory, IScheduleAgentFactory
 {
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
+
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
     {
         var agents = registryOptions.CurrentValue.Agents;
@@ -24,8 +27,14 @@ public sealed class MultiAgentFactory(
 
         var agent = string.IsNullOrEmpty(agentId)
             ? agents[0]
-            : // CLI mode - use first agent
-            agents.FirstOrDefault(a => a.Id == agentId);
+            : agents.FirstOrDefault(a => a.Id == agentId);
+
+        if (agent is null && agentId is not null &&
+            _customAgents.TryGetValue(userId, out var userAgents) &&
+            userAgents.TryGetValue(agentId, out var customAgent))
+        {
+            agent = customAgent;
+        }
 
         _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{agentId}'.");
 
@@ -34,16 +43,47 @@ public sealed class MultiAgentFactory(
 
     public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
     {
-        return registryOptions.CurrentValue.Agents
+        var builtIn = registryOptions.CurrentValue.Agents
             .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
             .ToList();
+
+        if (userId is not null &&
+            _customAgents.TryGetValue(userId, out var userAgents))
+        {
+            builtIn.AddRange(userAgents.Values.Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
+        }
+
+        return builtIn;
     }
 
     public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
-        => throw new NotImplementedException();
+    {
+        var id = $"custom-{Guid.NewGuid()}";
+        var definition = new AgentDefinition
+        {
+            Id = id,
+            Name = registration.Name,
+            Description = registration.Description,
+            Model = registration.Model,
+            McpServerEndpoints = registration.McpServerEndpoints,
+            WhitelistPatterns = registration.WhitelistPatterns,
+            CustomInstructions = registration.CustomInstructions,
+            EnabledFeatures = registration.EnabledFeatures
+        };
+
+        var userAgents = _customAgents.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
+        userAgents[id] = definition;
+
+        return new AgentInfo(id, registration.Name, registration.Description);
+    }
 
     public bool UnregisterCustomAgent(string userId, string agentId)
-        => throw new NotImplementedException();
+    {
+        if (!_customAgents.TryGetValue(userId, out var userAgents))
+            return false;
+
+        return userAgents.TryRemove(agentId, out _);
+    }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition)
     {
