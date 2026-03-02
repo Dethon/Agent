@@ -59,10 +59,16 @@ public sealed class FakeAgentFactory : IAgentFactory
         return new FakeDisposableAgent(responses, _responseDelayMs);
     }
 
-    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
     {
         return _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
     }
+
+    public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+        => throw new NotImplementedException();
+
+    public bool UnregisterCustomAgent(string userId, string agentId)
+        => throw new NotImplementedException();
 
     private record QueuedResponse
     {

@@ -32,12 +32,18 @@ public sealed class MultiAgentFactory(
         return CreateFromDefinition(agentKey, userId, agent);
     }
 
-    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
     {
         return registryOptions.CurrentValue.Agents
             .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
             .ToList();
     }
+
+    public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+        => throw new NotImplementedException();
+
+    public bool UnregisterCustomAgent(string userId, string agentId)
+        => throw new NotImplementedException();
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition)
     {
