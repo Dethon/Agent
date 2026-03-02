@@ -228,4 +228,70 @@ public sealed class MultiAgentFactoryTests
 
         agent.ShouldNotBeNull();
     }
+
+    // --- Adversarial edge-case tests ---
+
+    [Fact]
+    public void Create_AfterUnregister_Throws()
+    {
+        var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
+        _sut.UnregisterCustomAgent("user1", info.Id);
+        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+
+        var ex = Should.Throw<InvalidOperationException>(
+            () => _sut.Create(agentKey, "user1", info.Id));
+
+        ex.Message.ShouldContain(info.Id);
+    }
+
+    [Fact]
+    public void Create_WithCustomAgentIdOfDifferentUser_Throws()
+    {
+        var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
+        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+
+        var ex = Should.Throw<InvalidOperationException>(
+            () => _sut.Create(agentKey, "user2", info.Id));
+
+        ex.Message.ShouldContain(info.Id);
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_NullDescription_ReturnsNullDescription()
+    {
+        var result = _sut.RegisterCustomAgent("user1", MakeRegistration(description: null));
+
+        result.Description.ShouldBeNull();
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_AllFieldsMapped_CreateSucceeds()
+    {
+        var registration = new CustomAgentRegistration
+        {
+            Name = "FullBot",
+            Description = "Full description",
+            Model = "test-model",
+            McpServerEndpoints = [],
+            WhitelistPatterns = ["pattern1"],
+            CustomInstructions = "Be helpful",
+            EnabledFeatures = ["feature1"]
+        };
+        var info = _sut.RegisterCustomAgent("user1", registration);
+        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+
+        var agent = _sut.Create(agentKey, "user1", info.Id);
+
+        agent.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void GetAvailableAgents_BuiltInAgentsAlwaysFirst()
+    {
+        _sut.RegisterCustomAgent("user1", MakeRegistration(name: "Custom1"));
+
+        var agents = _sut.GetAvailableAgents("user1");
+
+        agents.First().Id.ShouldBe("built-in-id");
+    }
 }
