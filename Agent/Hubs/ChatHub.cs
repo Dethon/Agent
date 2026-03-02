@@ -103,10 +103,14 @@ public sealed class ChatHub(
             ?? throw new HubException("User not registered. Call RegisterUser first.");
 
         if (string.IsNullOrWhiteSpace(registration.Name))
+        {
             throw new HubException("Name cannot be empty.");
+        }
 
         if (string.IsNullOrWhiteSpace(registration.Model))
+        {
             throw new HubException("Model cannot be empty.");
+        }
 
         return agentFactory.RegisterCustomAgent(userId, registration);
     }

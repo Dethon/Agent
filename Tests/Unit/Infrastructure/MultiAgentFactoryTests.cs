@@ -13,11 +13,11 @@ namespace Tests.Unit.Infrastructure;
 
 public sealed class MultiAgentFactoryTests
 {
-    private static readonly Regex CustomIdPattern = new(
-        @"^custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    private static readonly Regex _customIdPattern = new(
+        "^custom-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
         RegexOptions.Compiled);
 
-    private static readonly AgentDefinition BuiltInAgent = new()
+    private static readonly AgentDefinition _builtInAgent = new()
     {
         Id = "built-in-id",
         Name = "Built-In",
@@ -29,7 +29,7 @@ public sealed class MultiAgentFactoryTests
 
     public MultiAgentFactoryTests()
     {
-        var registryOptions = new AgentRegistryOptions { Agents = [BuiltInAgent] };
+        var registryOptions = new AgentRegistryOptions { Agents = [_builtInAgent] };
 
         var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
         optionsMonitor.Setup(o => o.CurrentValue).Returns(registryOptions);
@@ -85,7 +85,7 @@ public sealed class MultiAgentFactoryTests
         var result = _sut.RegisterCustomAgent("user1", registration);
 
         result.ShouldNotBeNull();
-        CustomIdPattern.IsMatch(result.Id).ShouldBeTrue($"Id '{result.Id}' should match custom-{{guid}} pattern");
+        _customIdPattern.IsMatch(result.Id).ShouldBeTrue($"Id '{result.Id}' should match custom-{{guid}} pattern");
         result.Name.ShouldBe("MyBot");
         result.Description.ShouldBe("A custom bot");
     }
@@ -168,7 +168,7 @@ public sealed class MultiAgentFactoryTests
     {
         _sut.RegisterCustomAgent("user1", MakeRegistration(name: "Custom1"));
 
-        var agents = _sut.GetAvailableAgents(null);
+        var agents = _sut.GetAvailableAgents();
 
         agents.Count.ShouldBe(1);
         agents.ShouldAllBe(a => !a.Id.StartsWith("custom-"));
@@ -179,7 +179,7 @@ public sealed class MultiAgentFactoryTests
     {
         var agents = _sut.GetAvailableAgents("user1");
 
-        var nullAgents = _sut.GetAvailableAgents(null);
+        var nullAgents = _sut.GetAvailableAgents();
         agents.Count.ShouldBe(nullAgents.Count);
     }
 

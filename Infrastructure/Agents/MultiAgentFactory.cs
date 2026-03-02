@@ -80,7 +80,9 @@ public sealed class MultiAgentFactory(
     public bool UnregisterCustomAgent(string userId, string agentId)
     {
         if (!_customAgents.TryGetValue(userId, out var userAgents))
+        {
             return false;
+        }
 
         return userAgents.TryRemove(agentId, out _);
     }

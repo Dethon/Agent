@@ -59,7 +59,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
         // Act & Assert
         var ex = await Should.ThrowAsync<HubException>(
             () => _connection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration));
-        ex.Message.ShouldContain("Name", Case.Insensitive);
+        ex.Message.ShouldContain("Name");
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
         // Act & Assert
         var ex = await Should.ThrowAsync<HubException>(
             () => _connection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration));
-        ex.Message.ShouldContain("Name", Case.Insensitive);
+        ex.Message.ShouldContain("Name");
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
         // Act & Assert
         var ex = await Should.ThrowAsync<HubException>(
             () => _connection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration));
-        ex.Message.ShouldContain("Model", Case.Insensitive);
+        ex.Message.ShouldContain("Model");
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
         // Act & Assert
         var ex = await Should.ThrowAsync<HubException>(
             () => _connection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration));
-        ex.Message.ShouldContain("Model", Case.Insensitive);
+        ex.Message.ShouldContain("Model");
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
             // Act & Assert
             var ex = await Should.ThrowAsync<HubException>(
                 () => unregisteredConnection.InvokeAsync<AgentInfo>("RegisterCustomAgent", registration));
-            ex.Message.ShouldContain("not registered", Case.Insensitive);
+            ex.Message.ShouldContain("not registered");
         }
         finally
         {
@@ -181,7 +181,7 @@ public sealed class ChatHubCustomAgentTests(WebChatServerFixture fixture)
             // Act & Assert
             var ex = await Should.ThrowAsync<HubException>(
                 () => unregisteredConnection.InvokeAsync<bool>("UnregisterCustomAgent", "some-id"));
-            ex.Message.ShouldContain("not registered", Case.Insensitive);
+            ex.Message.ShouldContain("not registered");
         }
         finally
         {
