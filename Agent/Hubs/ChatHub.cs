@@ -94,7 +94,29 @@ public sealed class ChatHub(
 
     public IReadOnlyList<AgentInfo> GetAgents()
     {
-        return agentFactory.GetAvailableAgents();
+        return agentFactory.GetAvailableAgents(GetRegisteredUserId());
+    }
+
+    public AgentInfo RegisterCustomAgent(CustomAgentRegistration registration)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        if (string.IsNullOrWhiteSpace(registration.Name))
+            throw new HubException("Name cannot be empty.");
+
+        if (string.IsNullOrWhiteSpace(registration.Model))
+            throw new HubException("Model cannot be empty.");
+
+        return agentFactory.RegisterCustomAgent(userId, registration);
+    }
+
+    public bool UnregisterCustomAgent(string agentId)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        return agentFactory.UnregisterCustomAgent(userId, agentId);
     }
 
     public bool ValidateAgent(string agentId)

@@ -14,6 +14,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 {
     private readonly ConcurrentQueue<QueuedResponse> _responseQueue = new();
     private readonly List<AgentDefinition> _agents = [];
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
     private readonly int _responseDelayMs = 10;
 
     public void ConfigureAgents(params AgentDefinition[] agents)
@@ -61,14 +62,44 @@ public sealed class FakeAgentFactory : IAgentFactory
 
     public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
     {
-        return _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
+        var builtIn = _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
+
+        if (userId is not null && _customAgents.TryGetValue(userId, out var userAgents))
+        {
+            builtIn.AddRange(userAgents.Values.Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
+        }
+
+        return builtIn;
     }
 
     public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
-        => throw new NotImplementedException();
+    {
+        var id = $"custom-{Guid.NewGuid()}";
+        var definition = new AgentDefinition
+        {
+            Id = id,
+            Name = registration.Name,
+            Description = registration.Description,
+            Model = registration.Model,
+            McpServerEndpoints = registration.McpServerEndpoints,
+            WhitelistPatterns = registration.WhitelistPatterns,
+            CustomInstructions = registration.CustomInstructions,
+            EnabledFeatures = registration.EnabledFeatures
+        };
+
+        var userAgents = _customAgents.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
+        userAgents[id] = definition;
+
+        return new AgentInfo(id, registration.Name, registration.Description);
+    }
 
     public bool UnregisterCustomAgent(string userId, string agentId)
-        => throw new NotImplementedException();
+    {
+        if (!_customAgents.TryGetValue(userId, out var userAgents))
+            return false;
+
+        return userAgents.TryRemove(agentId, out _);
+    }
 
     private record QueuedResponse
     {
