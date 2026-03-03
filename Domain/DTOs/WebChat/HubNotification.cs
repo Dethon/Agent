@@ -23,7 +23,8 @@ public record TopicChangedNotification(
 public record StreamChangedNotification(
     StreamChangeType ChangeType,
     string TopicId,
-    string? SpaceSlug = null);
+    string? SpaceSlug = null,
+    MessageSource? Source = null);
 
 public record ApprovalResolvedNotification(
     string TopicId,

@@ -44,7 +44,7 @@ public sealed class WebChatMessengerClient(
         IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
         CancellationToken cancellationToken)
     {
-        await foreach (var (key, update, _, _) in updates.WithCancellation(cancellationToken))
+        await foreach (var (key, update, _, source) in updates.WithCancellation(cancellationToken))
         {
             var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
             if (topicId is null)
@@ -67,7 +67,7 @@ public sealed class WebChatMessengerClient(
                         if (streamManager.DecrementPendingAndCheckIfShouldComplete(topicId))
                         {
                             var message = new ChatStreamMessage { IsComplete = true, MessageId = update.MessageId };
-                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: spaceSlug);
+                            var notification = new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: spaceSlug, Source: source);
 
                             await streamManager.WriteMessageAsync(topicId, message, cancellationToken);
                             streamManager.CompleteStream(topicId);
@@ -114,7 +114,7 @@ public sealed class WebChatMessengerClient(
                     streamManager.CompleteStream(topicId);
 
                     await hubNotifier.NotifyStreamChangedAsync(
-                            new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: spaceSlug),
+                            new StreamChangedNotification(StreamChangeType.Completed, topicId, SpaceSlug: spaceSlug, Source: source),
                             CancellationToken.None)
                         .SafeAwaitAsync(logger, "Failed to notify stream completed for topic {TopicId}", topicId);
                 }
