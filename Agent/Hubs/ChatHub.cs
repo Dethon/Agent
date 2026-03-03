@@ -4,17 +4,14 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
-using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 
 namespace Agent.Hubs;
 
 public sealed class ChatHub(
     IAgentFactory agentFactory,
-    IOptionsMonitor<AgentRegistryOptions> registryOptions,
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
