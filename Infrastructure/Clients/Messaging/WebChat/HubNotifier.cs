@@ -1,5 +1,4 @@
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.DTOs.WebChat;
 
 namespace Infrastructure.Clients.Messaging.WebChat;
@@ -20,7 +19,7 @@ public sealed class HubNotifier(IHubNotificationSender sender, IPushNotification
     {
         await SendToSpaceOrAllAsync(notification.SpaceSlug, "OnStreamChanged", notification, cancellationToken);
 
-        if (notification is { ChangeType: StreamChangeType.Completed, Source: MessageSource.WebUi })
+        if (notification is { ChangeType: StreamChangeType.Completed, SpaceSlug: not null })
         {
             var url = notification.SpaceSlug is not null ? $"/{notification.SpaceSlug}" : "/";
             try
