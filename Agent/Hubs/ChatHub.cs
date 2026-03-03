@@ -125,8 +125,7 @@ public sealed class ChatHub(
 
     public bool ValidateAgent(string agentId)
     {
-        var agents = registryOptions.CurrentValue.Agents;
-        return agents.Any(a => a.Id == agentId);
+        return agentFactory.GetAvailableAgents(GetRegisteredUserId()).Any(a => a.Id == agentId);
     }
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)
