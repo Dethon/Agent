@@ -34,8 +34,12 @@ public static class BufferRebuildUtility
         var followingNew = new Dictionary<string, List<ChatMessageModel>>();
         var leadingNew = new List<ChatMessageModel>();
 
+        // Exclude user messages from the merge loop: they lack MessageIds in the buffer
+        // so they can't be anchored, and since the server already persists them in history
+        // they'd be incorrectly treated as "new" and duplicated on each reconnection.
+        // The current prompt is handled separately below (lines 102-112).
         foreach (var turn in completedTurns.Where(t =>
-                     t.HasContent && !(t.Role == "user" && t.Content == currentPrompt)))
+                     t.HasContent && t.Role != "user"))
         {
             if (!string.IsNullOrEmpty(turn.MessageId) && historyById.ContainsKey(turn.MessageId))
             {
