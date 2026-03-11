@@ -11,6 +11,9 @@ public sealed class ChatConnectionService(
     NavigationManager navigationManager) : IChatConnectionService
 {
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
+    private readonly SemaphoreSlim _reconnectLock = new(1, 1);
+    private bool _disposed;
+
     public bool IsConnected => HubConnection?.State == HubConnectionState.Connected;
     public bool IsReconnecting => HubConnection?.State == HubConnectionState.Reconnecting;
 
@@ -43,11 +46,17 @@ public sealed class ChatConnectionService(
             .WithKeepAliveInterval(TimeSpan.FromSeconds(10))
             .Build();
 
-        HubConnection.Closed += exception =>
+        HubConnection.Closed += async exception =>
         {
             _connectionEventDispatcher.HandleClosed(exception);
             OnStateChanged?.Invoke();
-            return Task.CompletedTask;
+
+            // On mobile, the browser suspends JS when backgrounded, so SignalR's
+            // automatic reconnect can't run. When the app resumes, the transport
+            // may be dead and all queued retries fail at once, firing Closed.
+            // Wait briefly then rebuild the connection from scratch.
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            await ReconnectIfNeededAsync();
         };
 
         HubConnection.Reconnecting += _ =>
@@ -58,15 +67,19 @@ public sealed class ChatConnectionService(
             return Task.CompletedTask;
         };
 
-        HubConnection.Reconnected += async _ =>
+        HubConnection.Reconnected += connectionId =>
         {
             _connectionEventDispatcher.HandleReconnected();
+            OnStateChanged?.Invoke();
+
+            // Run post-reconnection work (re-register user, rejoin space, etc.)
+            // without blocking the UI update — keeps "Connected" instant.
             if (OnReconnected is not null)
             {
-                await OnReconnected.Invoke();
+                _ = OnReconnected.Invoke();
             }
 
-            OnStateChanged?.Invoke();
+            return Task.CompletedTask;
         };
 
         _connectionEventDispatcher.HandleConnecting();
@@ -77,29 +90,44 @@ public sealed class ChatConnectionService(
 
     public async Task ReconnectIfNeededAsync()
     {
-        if (HubConnection is null)
+        if (_disposed)
         {
             return;
         }
 
-        if (HubConnection.State is HubConnectionState.Connected)
+        if (!await _reconnectLock.WaitAsync(0))
         {
             return;
         }
 
-        if (HubConnection.State is HubConnectionState.Reconnecting or HubConnectionState.Connecting)
+        try
         {
-            return;
-        }
+            if (_disposed || HubConnection is null)
+            {
+                return;
+            }
 
-        // Connection is disconnected — dispose and rebuild
-        await HubConnection.DisposeAsync();
-        HubConnection = null;
-        await ConnectAsync();
+            if (HubConnection.State is HubConnectionState.Connected
+                or HubConnectionState.Reconnecting
+                or HubConnectionState.Connecting)
+            {
+                return;
+            }
+
+            // Connection is disconnected — dispose and rebuild
+            await HubConnection.DisposeAsync();
+            HubConnection = null;
+            await ConnectAsync();
+        }
+        finally
+        {
+            _reconnectLock.Release();
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         if (HubConnection is not null)
         {
             await HubConnection.DisposeAsync();
@@ -111,6 +139,10 @@ internal sealed class AggressiveRetryPolicy : IRetryPolicy
 {
     public TimeSpan? NextRetryDelay(RetryContext retryContext)
     {
-        return TimeSpan.FromSeconds(1);
+        // First retry is immediate for fast mobile resume; subsequent retries
+        // back off slightly to avoid hammering a temporarily unavailable server.
+        return retryContext.PreviousRetryCount == 0
+            ? TimeSpan.Zero
+            : TimeSpan.FromSeconds(1);
     }
 }

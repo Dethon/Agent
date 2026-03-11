@@ -100,16 +100,18 @@ public sealed class InitializationEffect : IDisposable
         await SubscribePushAsync();
 
         // Re-register user on reconnection (after initial subscribe to avoid race)
-        _connectionService.OnReconnected += async () =>
+        _connectionService.OnReconnected += () =>
         {
-            await RegisterUserAsync();
-            await _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
+            var registerTask = RegisterUserAsync();
+            var joinTask = _topicService.JoinSpaceAsync(_spaceStore.State.CurrentSlug);
 
             // Re-send existing push subscription without force-refreshing the push channel.
             // Using RequestAndSubscribeAsync here would unsubscribe+resubscribe, generating a
             // new endpoint in Chrome and losing accumulated space memberships.
-            try { await _pushNotificationService.ResubscribeAsync(); }
-            catch { /* best-effort — don't block reconnection */ }
+            var pushTask = _pushNotificationService.ResubscribeAsync()
+                .ContinueWith(_ => { }, TaskContinuationOptions.OnlyOnFaulted);
+
+            return Task.WhenAll(registerTask, joinTask, pushTask);
         };
 
         // Load agents
