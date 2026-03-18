@@ -5,22 +5,36 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Infrastructure.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
+using Moq;
 
 namespace Tests.Integration.Fixtures;
 
 public sealed class FakeAgentFactory : IAgentFactory
 {
     private readonly ConcurrentQueue<QueuedResponse> _responseQueue = new();
-    private readonly List<AgentDefinition> _agents = [];
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
-    private readonly int _responseDelayMs = 10;
+    private readonly AgentRegistryOptions _registryOptions = new();
+    private readonly MultiAgentFactory _inner;
+    private const int ResponseDelayMs = 10;
+
+    public FakeAgentFactory()
+    {
+        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
+        optionsMonitor.Setup(o => o.CurrentValue).Returns(() => _registryOptions);
+
+        _inner = new MultiAgentFactory(
+            new Mock<IServiceProvider>().Object,
+            optionsMonitor.Object,
+            new OpenRouterConfig { ApiUrl = "http://fake", ApiKey = "fake" },
+            new Mock<IDomainToolRegistry>().Object);
+    }
 
     public void ConfigureAgents(params AgentDefinition[] agents)
     {
-        _agents.Clear();
-        _agents.AddRange(agents);
+        _registryOptions.Agents = agents;
     }
 
     public void EnqueueResponses(params string[] responses)
@@ -57,51 +71,17 @@ public sealed class FakeAgentFactory : IAgentFactory
             responses.Add(response);
         }
 
-        return new FakeDisposableAgent(responses, _responseDelayMs);
+        return new FakeDisposableAgent(responses, ResponseDelayMs);
     }
 
     public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
-    {
-        var builtIn = _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
-
-        if (userId is not null && _customAgents.TryGetValue(userId, out var userAgents))
-        {
-            builtIn.AddRange(userAgents.Values.Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
-        }
-
-        return builtIn;
-    }
+        => _inner.GetAvailableAgents(userId);
 
     public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
-    {
-        var id = $"custom-{Guid.NewGuid()}";
-        var definition = new AgentDefinition
-        {
-            Id = id,
-            Name = registration.Name,
-            Description = registration.Description,
-            Model = registration.Model,
-            McpServerEndpoints = registration.McpServerEndpoints,
-            WhitelistPatterns = registration.WhitelistPatterns,
-            CustomInstructions = registration.CustomInstructions,
-            EnabledFeatures = registration.EnabledFeatures
-        };
-
-        var userAgents = _customAgents.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
-        userAgents[id] = definition;
-
-        return new AgentInfo(id, registration.Name, registration.Description);
-    }
+        => _inner.RegisterCustomAgent(userId, registration);
 
     public bool UnregisterCustomAgent(string userId, string agentId)
-    {
-        if (!_customAgents.TryGetValue(userId, out var userAgents))
-        {
-            return false;
-        }
-
-        return userAgents.TryRemove(agentId, out _);
-    }
+        => _inner.UnregisterCustomAgent(userId, agentId);
 
     private record QueuedResponse
     {
