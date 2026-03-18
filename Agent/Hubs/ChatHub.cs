@@ -4,17 +4,14 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
-using Infrastructure.Agents;
 using Infrastructure.Clients.Messaging.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Options;
 
 namespace Agent.Hubs;
 
 public sealed class ChatHub(
     IAgentFactory agentFactory,
-    IOptionsMonitor<AgentRegistryOptions> registryOptions,
     IThreadStateStore threadStateStore,
     WebChatMessengerClient messengerClient,
     ChatThreadResolver threadResolver,
@@ -94,13 +91,38 @@ public sealed class ChatHub(
 
     public IReadOnlyList<AgentInfo> GetAgents()
     {
-        return agentFactory.GetAvailableAgents();
+        return agentFactory.GetAvailableAgents(GetRegisteredUserId());
+    }
+
+    public AgentInfo RegisterCustomAgent(CustomAgentRegistration registration)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        if (string.IsNullOrWhiteSpace(registration.Name))
+        {
+            throw new HubException("Name cannot be empty.");
+        }
+
+        if (string.IsNullOrWhiteSpace(registration.Model))
+        {
+            throw new HubException("Model cannot be empty.");
+        }
+
+        return agentFactory.RegisterCustomAgent(userId, registration);
+    }
+
+    public bool UnregisterCustomAgent(string agentId)
+    {
+        var userId = GetRegisteredUserId()
+            ?? throw new HubException("User not registered. Call RegisterUser first.");
+
+        return agentFactory.UnregisterCustomAgent(userId, agentId);
     }
 
     public bool ValidateAgent(string agentId)
     {
-        var agents = registryOptions.CurrentValue.Agents;
-        return agents.Any(a => a.Id == agentId);
+        return agentFactory.GetAvailableAgents(GetRegisteredUserId()).Any(a => a.Id == agentId);
     }
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)

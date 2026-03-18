@@ -80,7 +80,9 @@ public sealed class ReconnectionEffect : IDisposable
 
         var currentState = topicsStore.State;
 
-        // Reload history and restart session for selected topic
+        // Reload history, restart session, and resume streams all in parallel
+        var tasks = new List<Task>();
+
         if (currentState.SelectedTopicId is not null)
         {
             var selectedTopic = currentState.Topics
@@ -88,16 +90,14 @@ public sealed class ReconnectionEffect : IDisposable
 
             if (selectedTopic is not null)
             {
-                await ReloadTopicHistoryAsync(selectedTopic);
-                _ = sessionService.StartSessionAsync(selectedTopic);
+                tasks.Add(ReloadTopicHistoryAsync(selectedTopic));
+                tasks.Add(sessionService.StartSessionAsync(selectedTopic));
             }
         }
 
-        // Resume streams for all topics (fire-and-forget)
-        foreach (var topic in currentState.Topics)
-        {
-            _ = streamResumeService.TryResumeStreamAsync(topic);
-        }
+        tasks.AddRange(currentState.Topics.Select(streamResumeService.TryResumeStreamAsync));
+
+        await Task.WhenAll(tasks);
     }
 
     private async Task ReloadTopicHistoryAsync(StoredTopic topic)

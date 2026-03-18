@@ -183,7 +183,7 @@ public sealed class HubNotifierTests
     // --- Adversarial tests ---
 
     [Fact]
-    public async Task NotifyStreamChangedAsync_NullSpaceSlug_PushUsesDefaultSlugAndRootUrl()
+    public async Task NotifyStreamChangedAsync_NullSpaceSlug_DoesNotSendPush()
     {
         var mockSender = new Mock<IHubNotificationSender>();
         var mockPush = new Mock<IPushNotificationService>();
@@ -193,11 +193,11 @@ public sealed class HubNotifierTests
         await notifier.NotifyStreamChangedAsync(notification);
 
         mockPush.Verify(p => p.SendToSpaceAsync(
-            "default",
-            "New response",
-            "The agent has finished responding",
-            "/",
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

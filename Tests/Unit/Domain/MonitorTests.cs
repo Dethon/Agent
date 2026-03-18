@@ -75,10 +75,16 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
         return agent;
     }
 
-    public IReadOnlyList<AgentInfo> GetAvailableAgents()
+    public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
     {
         return [];
     }
+
+    public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+        => throw new NotImplementedException();
+
+    public bool UnregisterCustomAgent(string userId, string agentId)
+        => throw new NotImplementedException();
 }
 
 internal static class MonitorTestMocks

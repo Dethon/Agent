@@ -469,5 +469,72 @@ public sealed class BufferRebuildUtilityTests
         result.StreamingMessage.Content.ShouldBe("Second");
     }
 
+    [Fact]
+    public void ResumeFromBuffer_DoesNotDuplicateNonCurrentPromptUserMessages()
+    {
+        // Scenario: multi-turn topic reconnects with buffer containing previous user messages.
+        // The first user message is in both history (with ID) and buffer (without ID).
+        // It should NOT be duplicated in the merged result.
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "First question", MessageId = "user-1" },
+            new() { Role = "assistant", Content = "First answer", MessageId = "asst-1" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "First question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
+            new() { Content = "First answer", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
+            new() { Content = "Second question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 3 },
+            new() { Content = "Streaming response", MessageId = "asst-2", SequenceNumber = 4 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(
+            buffer, history, "Second question", "alice");
+
+        // First question should appear exactly once (from history, not duplicated from buffer)
+        var firstQuestionCount = result.MergedMessages
+            .Count(m => m is { Role: "user", Content: "First question" });
+        firstQuestionCount.ShouldBe(1);
+
+        // Second question (current prompt) should also appear exactly once
+        var secondQuestionCount = result.MergedMessages
+            .Count(m => m is { Role: "user", Content: "Second question" });
+        secondQuestionCount.ShouldBe(1);
+
+        // Total messages: user1, asst1, user2
+        result.MergedMessages.Count.ShouldBe(3);
+        result.StreamingMessage.Content.ShouldBe("Streaming response");
+    }
+
+    [Fact]
+    public void ResumeFromBuffer_DoesNotDuplicateUserMessagesOnRepeatedReconnections()
+    {
+        // Simulate what happens after a first reconnection left duplicates in existingHistory.
+        // Even with dirty history, user messages from buffer should not be re-added.
+        var dirtyHistory = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Hello", MessageId = "user-1" },
+            new() { Role = "user", Content = "Hello" }, // leftover from previous bad merge
+            new() { Role = "assistant", Content = "Hi there", MessageId = "asst-1" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
+            new() { Content = "Hi there", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
+            new() { Content = "New question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 3 },
+            new() { Content = "Response", MessageId = "asst-2", SequenceNumber = 4 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(
+            buffer, dirtyHistory, "New question", "alice");
+
+        // Buffer user messages should not add more copies
+        var helloCount = result.MergedMessages
+            .Count(m => m is { Role: "user", Content: "Hello" });
+        helloCount.ShouldBeLessThanOrEqualTo(2); // at most the existing dirty count, not worse
+    }
+
     #endregion
 }

@@ -5,21 +5,36 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Infrastructure.Agents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
+using Moq;
 
 namespace Tests.Integration.Fixtures;
 
 public sealed class FakeAgentFactory : IAgentFactory
 {
     private readonly ConcurrentQueue<QueuedResponse> _responseQueue = new();
-    private readonly List<AgentDefinition> _agents = [];
-    private readonly int _responseDelayMs = 10;
+    private readonly AgentRegistryOptions _registryOptions = new();
+    private readonly MultiAgentFactory _inner;
+    private const int ResponseDelayMs = 10;
+
+    public FakeAgentFactory()
+    {
+        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
+        optionsMonitor.Setup(o => o.CurrentValue).Returns(() => _registryOptions);
+
+        _inner = new MultiAgentFactory(
+            new Mock<IServiceProvider>().Object,
+            optionsMonitor.Object,
+            new OpenRouterConfig { ApiUrl = "http://fake", ApiKey = "fake" },
+            new Mock<IDomainToolRegistry>().Object);
+    }
 
     public void ConfigureAgents(params AgentDefinition[] agents)
     {
-        _agents.Clear();
-        _agents.AddRange(agents);
+        _registryOptions.Agents = agents;
     }
 
     public void EnqueueResponses(params string[] responses)
@@ -56,13 +71,17 @@ public sealed class FakeAgentFactory : IAgentFactory
             responses.Add(response);
         }
 
-        return new FakeDisposableAgent(responses, _responseDelayMs);
+        return new FakeDisposableAgent(responses, ResponseDelayMs);
     }
 
-    public IReadOnlyList<AgentInfo> GetAvailableAgents()
-    {
-        return _agents.Select(a => new AgentInfo(a.Id, a.Name, a.Description)).ToList();
-    }
+    public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
+        => _inner.GetAvailableAgents(userId);
+
+    public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+        => _inner.RegisterCustomAgent(userId, registration);
+
+    public bool UnregisterCustomAgent(string userId, string agentId)
+        => _inner.UnregisterCustomAgent(userId, agentId);
 
     private record QueuedResponse
     {
