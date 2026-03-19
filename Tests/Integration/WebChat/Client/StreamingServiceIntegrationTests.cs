@@ -175,7 +175,7 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
     }
 
     [Fact]
-    public async Task StreamResponseAsync_OnError_StopsCleanlyWithoutErrorMessage()
+    public async Task StreamResponseAsync_OnError_StopsCleanlyAndAddsInlineErrorMessage()
     {
         // Arrange
         var topic = await CreateAndRegisterTopicAsync();
@@ -187,11 +187,10 @@ public sealed class StreamingServiceIntegrationTests(WebChatServerFixture fixtur
         AddUserMessageAndStartStreaming(topic, "Trigger error");
         await _service.StreamResponseAsync(topic, "Trigger error");
 
-        // Assert - streaming should stop but no error message should be shown
-        // (reconnection flow handles recovery seamlessly)
+        // Assert - streaming should stop and inline error message should be added
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError);
     }
 
     [Fact]

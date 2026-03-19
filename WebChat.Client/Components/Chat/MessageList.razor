@@ -173,6 +173,7 @@
 
         if (wasStreaming && !_isStreaming)
         {
+            _isRetrying = false;
             UpdateMessages();
         }
     }
@@ -214,6 +215,17 @@
     private void HandleSuggestionClicked(string suggestion)
     {
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
+    }
+
+    private bool _isRetrying;
+
+    private void HandleRetry()
+    {
+        if (_topicId is not null && !_isRetrying)
+        {
+            _isRetrying = true;
+            Dispatcher.Dispatch(new RetryLastMessage(_topicId));
+        }
     }
 
     private bool ShouldShowAvatar(int index)
@@ -269,7 +281,9 @@
         {
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
-                         IsOwnMessage="@IsOwnMessage(message)" />
+                         IsOwnMessage="@IsOwnMessage(message)"
+                         ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
+                         OnRetry="@HandleRetry" />
         }
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))

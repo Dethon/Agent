@@ -138,6 +138,7 @@ public sealed class StreamingService(
                     if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
                     {
                         dispatcher.Dispatch(new ShowError(chunk.Error));
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage(chunk.Error)));
                     }
 
                     continue;
@@ -226,6 +227,7 @@ public sealed class StreamingService(
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
         {
             dispatcher.Dispatch(new ShowError(ex.Message));
+            dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage(ex.Message)));
         }
         catch
         {
@@ -236,6 +238,14 @@ public sealed class StreamingService(
             dispatcher.Dispatch(new StreamCompleted(topic.TopicId));
         }
     }
+
+    private static ChatMessageModel CreateErrorMessage(string content) => new()
+    {
+        Role = "assistant",
+        Content = content,
+        IsError = true,
+        Timestamp = DateTimeOffset.UtcNow
+    };
 
     private async Task UpdateLastReadMessage(StoredTopic topic, ChatStreamMessage chunk)
     {
