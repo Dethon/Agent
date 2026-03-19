@@ -176,7 +176,8 @@ public static class InjectorModule
                         return new NullPushNotificationService();
                     }
                     var sender = new ModernWebPushSender(
-                        new HttpClient(), config.PublicKey, config.PrivateKey, config.Subject);
+                        new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
+                        config.PublicKey, config.PrivateKey, config.Subject);
                     return new WebPushNotificationService(
                         sp.GetRequiredService<IPushSubscriptionStore>(),
                         sender,
