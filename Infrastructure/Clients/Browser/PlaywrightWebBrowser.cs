@@ -19,6 +19,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private readonly Random _random = new();
     private bool _initialized;
     private const int MaxCaptchaRetries = 2;
+    private const int DefaultOperationTimeoutMs = 15_000;
 
     private const string ChromeMajorVersion = "145";
 
@@ -711,6 +712,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                     ["Accept-Language"] = "en-US,en;q=0.9"
                 }
             });
+
+            _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
 
             await _context.AddInitScriptAsync(StealthScript);
 
