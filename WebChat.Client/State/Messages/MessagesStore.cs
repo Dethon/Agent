@@ -21,6 +21,9 @@ public sealed class MessagesStore : IDisposable
         dispatcher.RegisterHandler<RemoveLastMessage>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
 
+        dispatcher.RegisterHandler<RemoveTrailingErrors>(action =>
+            _store.Dispatch(action, MessagesReducers.Reduce));
+
         dispatcher.RegisterHandler<ClearMessages>(action =>
             _store.Dispatch(action, MessagesReducers.Reduce));
 

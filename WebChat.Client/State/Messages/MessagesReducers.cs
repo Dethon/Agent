@@ -40,6 +40,17 @@ public static class MessagesReducers
 
         RemoveLastMessage => state, // No messages to remove
 
+        RemoveTrailingErrors a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) =>
+            state with
+            {
+                MessagesByTopic = new Dictionary<string, IReadOnlyList<ChatMessageModel>>(state.MessagesByTopic)
+                {
+                    [a.TopicId] = msgs.Reverse().SkipWhile(m => m.IsError).Reverse().ToList()
+                }
+            },
+
+        RemoveTrailingErrors => state,
+
         ClearMessages a => ClearTopicMessages(state, a.TopicId),
 
         ClearAllMessages => MessagesState.Initial,

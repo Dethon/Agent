@@ -29,5 +29,3 @@ public record CancelStreaming(string TopicId) : IAction;
 public record RequestContentFinalization(string TopicId) : IAction;
 
 public record ClearFinalizationRequest(string TopicId) : IAction;
-
-public record RetryLastMessage(string TopicId) : IAction;

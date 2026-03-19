@@ -258,6 +258,99 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
+    public void RemoveTrailingErrors_RemovesAllTrailingErrorMessages()
+    {
+        // Arrange
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Hello" },
+            new() { Role = "assistant", Content = "Hi there" },
+            new() { Role = "assistant", Content = "Error 1", IsError = true },
+            new() { Role = "assistant", Content = "Error 2", IsError = true }
+        };
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
+
+        // Act
+        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
+
+        // Assert
+        var remaining = _store.State.MessagesByTopic["topic-1"];
+        remaining.Count.ShouldBe(2);
+        remaining[0].Content.ShouldBe("Hello");
+        remaining[1].Content.ShouldBe("Hi there");
+    }
+
+    [Fact]
+    public void RemoveTrailingErrors_PreservesNonTrailingErrors()
+    {
+        // Arrange
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "Earlier error", IsError = true },
+            new() { Role = "user", Content = "Hello" },
+            new() { Role = "assistant", Content = "Trailing error", IsError = true }
+        };
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
+
+        // Act
+        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
+
+        // Assert
+        var remaining = _store.State.MessagesByTopic["topic-1"];
+        remaining.Count.ShouldBe(2);
+        remaining[0].Content.ShouldBe("Earlier error");
+        remaining[1].Content.ShouldBe("Hello");
+    }
+
+    [Fact]
+    public void RemoveTrailingErrors_NoopWhenNoTrailingErrors()
+    {
+        // Arrange
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Hello" },
+            new() { Role = "assistant", Content = "Hi there" }
+        };
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
+
+        // Act
+        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
+
+        // Assert
+        var remaining = _store.State.MessagesByTopic["topic-1"];
+        remaining.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void RemoveTrailingErrors_NoopForNonExistentTopic()
+    {
+        // Act
+        _dispatcher.Dispatch(new RemoveTrailingErrors("non-existent"));
+
+        // Assert
+        _store.State.MessagesByTopic.ContainsKey("non-existent").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RemoveTrailingErrors_RemovesAllMessagesWhenAllAreErrors()
+    {
+        // Arrange
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "Error 1", IsError = true },
+            new() { Role = "assistant", Content = "Error 2", IsError = true }
+        };
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
+
+        // Act
+        _dispatcher.Dispatch(new RemoveTrailingErrors("topic-1"));
+
+        // Assert
+        var remaining = _store.State.MessagesByTopic["topic-1"];
+        remaining.Count.ShouldBe(0);
+    }
+
+    [Fact]
     public void ImmutableUpdate_DoesNotMutateOriginalState()
     {
         // Arrange

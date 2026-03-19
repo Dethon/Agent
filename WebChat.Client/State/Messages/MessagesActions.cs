@@ -12,4 +12,8 @@ public record RemoveLastMessage(string TopicId) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
 
+public record RemoveTrailingErrors(string TopicId) : IAction;
+
+public record RetryLastMessage(string TopicId) : IAction;
+
 public record ClearAllMessages : IAction;

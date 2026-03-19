@@ -135,16 +135,9 @@ public sealed class SendMessageEffect : IDisposable
 
     private void HandleRetryLastMessage(RetryLastMessage action)
     {
+        _dispatcher.Dispatch(new RemoveTrailingErrors(action.TopicId));
+
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
-
-        // Remove trailing error messages
-        while (messages.Count > 0 && messages[^1].IsError)
-        {
-            _dispatcher.Dispatch(new RemoveLastMessage(action.TopicId));
-            messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
-        }
-
-        // Find last user message
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
