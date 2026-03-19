@@ -173,6 +173,7 @@
 
         if (wasStreaming && !_isStreaming)
         {
+            _isRetrying = false;
             UpdateMessages();
         }
     }
@@ -216,10 +217,13 @@
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
+    private bool _isRetrying;
+
     private void HandleRetry()
     {
-        if (_topicId is not null)
+        if (_topicId is not null && !_isRetrying)
         {
+            _isRetrying = true;
             Dispatcher.Dispatch(new RetryLastMessage(_topicId));
         }
     }
