@@ -1,4 +1,5 @@
 @using WebChat.Client.Helpers
+@using WebChat.Client.State.Streaming
 @inherits StoreSubscriberComponent
 
 @inject MessagesStore MessagesStore
@@ -216,6 +217,14 @@
         Dispatcher.Dispatch(new SendMessage(_topicId, suggestion));
     }
 
+    private void HandleRetry()
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new RetryLastMessage(_topicId));
+        }
+    }
+
     private bool ShouldShowAvatar(int index)
     {
         if (index == 0)
@@ -269,7 +278,9 @@
         {
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
-                         IsOwnMessage="@IsOwnMessage(message)" />
+                         IsOwnMessage="@IsOwnMessage(message)"
+                         ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
+                         OnRetry="@HandleRetry" />
         }
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))

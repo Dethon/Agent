@@ -15,6 +15,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topicsStore;
     private readonly StreamingStore _streamingStore;
+    private readonly MessagesStore _messagesStore;
     private readonly IChatSessionService _sessionService;
     private readonly IStreamingService _streamingService;
     private readonly ITopicService _topicService;
@@ -27,6 +28,7 @@ public sealed class SendMessageEffect : IDisposable
         Dispatcher dispatcher,
         TopicsStore topicsStore,
         StreamingStore streamingStore,
+        MessagesStore messagesStore,
         IChatSessionService sessionService,
         IStreamingService streamingService,
         ITopicService topicService,
@@ -38,6 +40,7 @@ public sealed class SendMessageEffect : IDisposable
         _dispatcher = dispatcher;
         _topicsStore = topicsStore;
         _streamingStore = streamingStore;
+        _messagesStore = messagesStore;
         _sessionService = sessionService;
         _streamingService = streamingService;
         _topicService = topicService;
@@ -48,6 +51,7 @@ public sealed class SendMessageEffect : IDisposable
 
         dispatcher.RegisterHandler<SendMessage>(HandleSendMessage);
         dispatcher.RegisterHandler<CancelStreaming>(HandleCancelStreaming);
+        dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
     }
 
     private void HandleSendMessage(SendMessage action)
@@ -127,6 +131,25 @@ public sealed class SendMessageEffect : IDisposable
 
         // Delegate to streaming service (handles stream reuse internally)
         _ = _streamingService.SendMessageAsync(topic, action.Message, correlationId);
+    }
+
+    private void HandleRetryLastMessage(RetryLastMessage action)
+    {
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
+
+        // Remove trailing error messages
+        while (messages.Count > 0 && messages[^1].IsError)
+        {
+            _dispatcher.Dispatch(new RemoveLastMessage(action.TopicId));
+            messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
+        }
+
+        // Find last user message
+        var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
+        if (lastUserMessage is not null)
+        {
+            _dispatcher.Dispatch(new SendMessage(action.TopicId, lastUserMessage.Content));
+        }
     }
 
     public void Dispose()

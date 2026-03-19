@@ -952,6 +952,27 @@ html, body {
     color: var(--error);
 }
 
+.btn-retry {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-top: 0.625rem;
+    padding: 0.375rem 0.75rem;
+    background: transparent;
+    border: 1px solid var(--error);
+    border-radius: 8px;
+    color: var(--error);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+}
+
+.btn-retry:hover {
+    background: var(--error);
+    color: white;
+}
+
 /* Message Content */
 .message-content {
     font-size: 0.9375rem;

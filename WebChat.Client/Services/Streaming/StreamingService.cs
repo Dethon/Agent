@@ -138,6 +138,14 @@ public sealed class StreamingService(
                     if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
                     {
                         dispatcher.Dispatch(new ShowError(chunk.Error));
+                        var errorMessage = new ChatMessageModel
+                        {
+                            Role = "assistant",
+                            Content = chunk.Error,
+                            IsError = true,
+                            Timestamp = DateTimeOffset.UtcNow
+                        };
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, errorMessage));
                     }
 
                     continue;
@@ -226,6 +234,14 @@ public sealed class StreamingService(
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
         {
             dispatcher.Dispatch(new ShowError(ex.Message));
+            var errorMessage = new ChatMessageModel
+            {
+                Role = "assistant",
+                Content = ex.Message,
+                IsError = true,
+                Timestamp = DateTimeOffset.UtcNow
+            };
+            dispatcher.Dispatch(new AddMessage(topic.TopicId, errorMessage));
         }
         catch
         {

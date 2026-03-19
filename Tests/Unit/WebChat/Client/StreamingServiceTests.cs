@@ -316,7 +316,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    public async Task StreamResponseAsync_WithEmptyMessageException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -327,11 +327,11 @@ public sealed class StreamingServiceTests : IDisposable
         await _service.StreamResponseAsync(topic, "test");
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError);
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithAnyException_DoesNotAddErrorMessage()
+    public async Task StreamResponseAsync_WithAnyException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -341,13 +341,12 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.StreamResponseAsync(topic, "test");
 
-        // All errors are silently ignored - reconnection flow handles recovery
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError && m.Content == "Something went wrong");
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithOperationCanceledMessageException_DoesNotAddErrorMessage()
+    public async Task StreamResponseAsync_WithOperationCanceledMessageException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -359,7 +358,7 @@ public sealed class StreamingServiceTests : IDisposable
         await _service.StreamResponseAsync(topic, "test");
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError);
     }
 
     [Fact]
@@ -408,7 +407,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StreamResponseAsync_WithAnyErrorChunk_DoesNotAddErrorMessage()
+    public async Task StreamResponseAsync_WithNonTransientErrorChunk_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -418,9 +417,8 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.StreamResponseAsync(topic, "test");
 
-        // All errors are silently ignored - reconnection flow handles recovery
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError && m.Content == "Connection reset by peer");
     }
 
     [Fact]
@@ -653,7 +651,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithEmptyMessageException_DoesNotAddErrorMessage()
+    public async Task ResumeStreamResponseAsync_WithEmptyMessageException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -665,11 +663,11 @@ public sealed class StreamingServiceTests : IDisposable
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError);
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithAnyException_DoesNotAddErrorMessage()
+    public async Task ResumeStreamResponseAsync_WithAnyException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -680,13 +678,12 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
-        // All errors are silently ignored - reconnection flow handles recovery
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError && m.Content == "Something went wrong");
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithOperationCanceledMessageException_DoesNotAddErrorMessage()
+    public async Task ResumeStreamResponseAsync_WithOperationCanceledMessageException_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -699,7 +696,7 @@ public sealed class StreamingServiceTests : IDisposable
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError);
     }
 
     [Fact]
@@ -751,7 +748,7 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeStreamResponseAsync_WithAnyErrorChunk_DoesNotAddErrorMessage()
+    public async Task ResumeStreamResponseAsync_WithNonTransientErrorChunk_AddsInlineErrorMessage()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
@@ -762,9 +759,8 @@ public sealed class StreamingServiceTests : IDisposable
 
         await _service.ResumeStreamResponseAsync(topic, existingMessage, "msg-1");
 
-        // All errors are silently ignored - reconnection flow handles recovery
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
-        messages.ShouldNotContain(m => m.IsError);
+        messages.ShouldContain(m => m.IsError && m.Content == "Connection reset by peer");
     }
 
     #endregion
