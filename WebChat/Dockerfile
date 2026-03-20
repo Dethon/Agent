@@ -13,6 +13,7 @@ ARG BUILD_CONFIGURATION=Release
 COPY ["WebChat/", "WebChat/"]
 COPY ["WebChat.Client/", "WebChat.Client/"]
 WORKDIR "/src/WebChat"
+RUN dotnet build "../WebChat.Client/WebChat.Client.csproj" -c $BUILD_CONFIGURATION --no-restore
 RUN dotnet publish "./WebChat.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final
