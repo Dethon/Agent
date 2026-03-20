@@ -5,15 +5,13 @@ WORKDIR /app
 
 FROM base-sdk:latest AS dependencies
 COPY ["McpServerCommandRunner/McpServerCommandRunner.csproj", "McpServerCommandRunner/"]
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "McpServerCommandRunner/McpServerCommandRunner.csproj"
+RUN dotnet restore "McpServerCommandRunner/McpServerCommandRunner.csproj"
 
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerCommandRunner/", "McpServerCommandRunner/"]
 WORKDIR "/src/McpServerCommandRunner"
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
+RUN dotnet publish "./McpServerCommandRunner.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final
 WORKDIR /app

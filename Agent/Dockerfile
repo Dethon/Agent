@@ -5,15 +5,13 @@ WORKDIR /app
 
 FROM base-sdk:latest AS dependencies
 COPY ["Agent/Agent.csproj", "Agent/"]
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "Agent/Agent.csproj"
+RUN dotnet restore "Agent/Agent.csproj"
 
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["Agent/", "Agent/"]
 WORKDIR "Agent"
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./Agent.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
+RUN dotnet publish "./Agent.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final
 WORKDIR /app
