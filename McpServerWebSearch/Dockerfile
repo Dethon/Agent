@@ -18,6 +18,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-RUN chmod +x .playwright/node/linux-x64/node
+RUN chmod -R +x .playwright/
 USER $APP_UID
 ENTRYPOINT ["dotnet", "McpServerWebSearch.dll"]
