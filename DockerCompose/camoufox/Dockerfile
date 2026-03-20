@@ -1,6 +1,27 @@
 FROM node:22-slim
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libasound2 \
+    libdbus-glib-1-2 \
+    libgbm1 \
+    libnss3 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxkbcommon0 \
+    fonts-liberation \
+    xvfb \
+    curl \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g camoufox-js && npx camoufox-js fetch
+
+WORKDIR /app
+
+RUN npm install camoufox-js playwright-core && npx camoufox-js fetch
+
+COPY server.js .
+
 EXPOSE 9377
-CMD ["npx", "camoufox-js", "server", "--port", "9377", "--ws-path", "browser"]
+
+CMD ["node", "server.js"]
