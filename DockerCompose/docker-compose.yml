@@ -11,6 +11,8 @@ services:
       - "6379:6379"
     volumes:
       - ./volumes/redis_data:/data
+    environment:
+      - REDIS_ARGS=--appendonly yes
     restart: unless-stopped
     networks:
       - jackbot
