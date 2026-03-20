@@ -114,7 +114,6 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         {
             IsAvailable = false;
             InitializationError = $"Container initialization failed: {ex.Message}";
-            Browser = new PlaywrightWebBrowser(wsEndpoint: "ws://unavailable:9377/browser");
         }
     }
 

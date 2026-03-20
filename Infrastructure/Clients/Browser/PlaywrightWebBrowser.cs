@@ -87,7 +87,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             var captchaRetries = 0;
             while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
             {
-                var captchaResult = await TrySolveCaptchaAsync(request.Url, html, ct);
+                var captchaResult = await TrySolveCaptchaAsync(page, request.Url, html, ct);
                 if (!captchaResult.Solved)
                 {
                     return new BrowseResult(
@@ -184,7 +184,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             return CreateErrorResult(request.SessionId, request.Url, "Request timed out");
         }
-        catch (InvalidOperationException)
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Camoufox"))
         {
             throw;
         }
@@ -532,6 +532,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 }
             }
 
+            if (_browser is null)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to connect to Camoufox at {wsEndpoint} after {ConnectionRetryAttempts} attempts.");
+            }
+
             _context = await _browser!.NewContextAsync(new BrowserNewContextOptions
             {
                 ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
@@ -687,6 +693,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     }
 
     private async Task<(bool Solved, string? Message)> TrySolveCaptchaAsync(
+        IPage page,
         string websiteUrl,
         string html,
         CancellationToken ct)
@@ -702,10 +709,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             return (false, "CAPTCHA detected but could not extract CAPTCHA URL");
         }
 
-        // Retrieve the actual UA from the browser context (Camoufox generates its own)
-        var userAgent = _context?.Pages.Count > 0
-            ? await _context.Pages[0].EvaluateAsync<string>("navigator.userAgent")
-            : "Mozilla/5.0";
+        // Retrieve the actual UA from the active page (Camoufox generates its own)
+        var userAgent = await page.EvaluateAsync<string>("navigator.userAgent");
 
         var request = new DataDomeCaptchaRequest(
             WebsiteUrl: websiteUrl,
