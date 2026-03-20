@@ -11,3 +11,5 @@ COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
     dotnet build "Infrastructure/Infrastructure.csproj" -c Release --no-restore
+    
+LABEL keep=true
