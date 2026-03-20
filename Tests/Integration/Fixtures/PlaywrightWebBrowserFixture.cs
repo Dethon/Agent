@@ -1,7 +1,7 @@
 using Domain.Contracts;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using DotNet.Testcontainers.Images;
+
 using Infrastructure.Clients.Browser;
 
 namespace Tests.Integration.Fixtures;
@@ -9,7 +9,6 @@ namespace Tests.Integration.Fixtures;
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
     private IContainer? _container;
-    private IFutureDockerImage? _image;
     private string? _initializationError;
 
     public PlaywrightWebBrowser Browser { get; private set; } = null!;
@@ -71,21 +70,42 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         }
     }
 
+    private static string FindSolutionRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            if (dir.GetFiles("*.sln").Length > 0)
+            {
+                return dir.FullName;
+            }
+
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find solution root directory.");
+    }
+
     private async Task<bool> TryInitializeContainerAsync()
     {
         try
         {
+            var solutionRoot = FindSolutionRoot();
+            var dockerfileDir = Path.Combine(solutionRoot, "DockerCompose", "camoufox");
+
             // Build Camoufox image from the project's Dockerfile
-            _image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory("DockerCompose/camoufox")
+            var image = new ImageFromDockerfileBuilder()
+                .WithDockerfileDirectory(dockerfileDir)
                 .WithDockerfile("Dockerfile")
                 .WithName("camoufox-test")
+                .WithDeleteIfExists(false)
+                .WithCleanUp(false)
                 .Build();
 
             using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            await _image.CreateAsync(buildCts.Token);
+            await image.CreateAsync(buildCts.Token);
 
-            _container = new ContainerBuilder(_image)
+            _container = new ContainerBuilder(image)
                 .WithPortBinding(9377, true)
                 .WithWaitStrategy(Wait.ForUnixContainer()
                     .UntilHttpRequestIsSucceeded(r => r.ForPort(9377).ForPath("/json")))
@@ -132,10 +152,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
             await _container.DisposeAsync();
         }
 
-        if (_image != null)
-        {
-            await _image.DisposeAsync();
-        }
+        // Image is intentionally not disposed to preserve Docker layer cache across test runs
     }
 }
 
