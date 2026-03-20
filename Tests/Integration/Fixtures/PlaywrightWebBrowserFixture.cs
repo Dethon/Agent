@@ -10,10 +10,11 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
     private IContainer? _container;
     private IFutureDockerImage? _image;
+    private string? _initializationError;
 
     public PlaywrightWebBrowser Browser { get; private set; } = null!;
-    public bool IsAvailable { get; private set; }
-    public string? InitializationError { get; private set; }
+    public bool IsAvailable => true;
+    public string? InitializationError => null;
 
     public async Task InitializeAsync()
     {
@@ -24,7 +25,13 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         }
 
         // Fall back to containerized Camoufox
-        await TryInitializeContainerAsync();
+        if (await TryInitializeContainerAsync())
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Could not initialize Camoufox browser. {_initializationError}");
     }
 
     private async Task<bool> TryInitializeLocalAsync()
@@ -48,24 +55,23 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 
             if (result.Status == BrowseStatus.Success)
             {
-                IsAvailable = true;
                 await Browser.CloseSessionAsync("test-init", cts.Token);
                 return true;
             }
 
             await Browser.DisposeAsync();
-            InitializationError = result.ErrorMessage;
+            _initializationError = result.ErrorMessage;
             return false;
         }
         catch (Exception ex)
         {
-            InitializationError = $"Local Camoufox failed: {ex.Message}";
+            _initializationError = $"Local Camoufox failed: {ex.Message}";
             await Browser.DisposeAsync();
             return false;
         }
     }
 
-    private async Task TryInitializeContainerAsync()
+    private async Task<bool> TryInitializeContainerAsync()
     {
         try
         {
@@ -100,32 +106,23 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
                 MaxLength: 1000);
             var result = await Browser.NavigateAsync(request, warmupCts.Token);
 
-            IsAvailable = result.Status == BrowseStatus.Success;
-            if (!IsAvailable)
-            {
-                InitializationError = $"Container browser failed: {result.ErrorMessage}";
-            }
-            else
+            if (result.Status == BrowseStatus.Success)
             {
                 await Browser.CloseSessionAsync("test-init", warmupCts.Token);
+                return true;
             }
+
+            _initializationError = $"Container browser failed: {result.ErrorMessage}";
+            return false;
         }
         catch (Exception ex)
         {
-            IsAvailable = false;
-            InitializationError = $"Container initialization failed: {ex.Message}";
+            _initializationError = $"Container initialization failed: {ex.Message}";
+            return false;
         }
     }
 
-    public async Task ClearContextStateAsync()
-    {
-        if (!IsAvailable)
-        {
-            return;
-        }
-
-        await Browser.ClearCookiesAsync();
-    }
+    public Task ClearContextStateAsync() => Browser.ClearCookiesAsync();
 
     public async Task DisposeAsync()
     {
