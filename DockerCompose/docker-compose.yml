@@ -132,6 +132,8 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Dockerfile.base-sdk
+      labels:
+        keep: "true"
     entrypoint: ["true"]
     restart: "no"
     networks:

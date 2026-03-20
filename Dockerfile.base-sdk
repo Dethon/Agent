@@ -9,5 +9,3 @@ RUN dotnet restore "Infrastructure/Infrastructure.csproj"
 COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
 RUN dotnet build "Infrastructure/Infrastructure.csproj" -c Release --no-restore
-    
-LABEL keep=true
