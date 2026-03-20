@@ -4,6 +4,7 @@ public record McpSettings
 {
     public required BraveSearchConfiguration BraveSearch { get; init; }
     public CapSolverConfiguration? CapSolver { get; init; }
+    public CamoufoxConfiguration? Camoufox { get; init; }
 }
 
 public record BraveSearchConfiguration
@@ -15,4 +16,9 @@ public record BraveSearchConfiguration
 public record CapSolverConfiguration
 {
     public required string ApiKey { get; init; }
+}
+
+public record CamoufoxConfiguration
+{
+    public required string WsEndpoint { get; init; }
 }

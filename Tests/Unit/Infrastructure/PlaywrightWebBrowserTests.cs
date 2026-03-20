@@ -10,7 +10,7 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _browser = new PlaywrightWebBrowser();
+        _browser = new PlaywrightWebBrowser(wsEndpoint: "ws://dummy:9377/browser");
         return Task.CompletedTask;
     }
 
@@ -105,5 +105,19 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     {
         // Act & Assert - should not throw
         await _browser.CloseSessionAsync("non-existent-session");
+    }
+
+    [Fact]
+    public async Task NavigateAsync_WithValidUrl_ButNoWsEndpoint_ThrowsInvalidOperation()
+    {
+        // Arrange
+        await using var browser = new PlaywrightWebBrowser(wsEndpoint: null);
+        var request = new BrowseRequest(
+            SessionId: "test",
+            Url: "https://example.com");
+
+        // Act & Assert
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => browser.NavigateAsync(request));
     }
 }

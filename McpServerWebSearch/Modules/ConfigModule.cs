@@ -30,7 +30,8 @@ public static class ConfigModule
         // Bind nested sections explicitly for environment variable support
         settings = settings with
         {
-            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>()
+            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>(),
+            Camoufox = config.GetSection("Camoufox").Get<CamoufoxConfiguration>()
         };
 
         return settings;
@@ -94,7 +95,7 @@ public static class ConfigModule
             services.AddSingleton<IWebBrowser>(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
-                return new PlaywrightWebBrowser(captchaSolver);
+                return new PlaywrightWebBrowser(captchaSolver, settings.Camoufox?.WsEndpoint);
             });
 
             return services;

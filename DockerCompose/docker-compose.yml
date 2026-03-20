@@ -190,6 +190,24 @@ services:
     depends_on:
       - base-sdk
 
+  camoufox:
+    build: ./camoufox
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: camoufox
+    ports:
+      - "9377:9377"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9377/json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - jackbot
+
   mcp-websearch:
     image: mcp-websearch:latest
     logging:
@@ -207,10 +225,15 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - CAMOUFOX__WSENDPOINT=ws://camoufox:9377/browser
     networks:
       - jackbot
     depends_on:
-      - base-sdk
+      camoufox:
+        condition: service_healthy
+      base-sdk:
+        condition: service_started
 
   mcp-memory:
     image: mcp-memory:latest
