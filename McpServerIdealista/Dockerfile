@@ -13,7 +13,7 @@ ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerIdealista/", "McpServerIdealista/"]
 WORKDIR "McpServerIdealista"
 RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
+    dotnet publish "./McpServerIdealista.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final
 WORKDIR /app
