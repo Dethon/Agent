@@ -154,12 +154,13 @@ public static class IAsyncEnumerableExtensions
     {
         return Task.Run(async () =>
         {
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var tasks = new List<Task>();
             try
             {
-                await foreach (var stream in sources.WithCancellation(ct))
+                await foreach (var stream in sources.WithCancellation(linkedCts.Token))
                 {
-                    tasks.Add(ConsumeStream(stream, writer, ct));
+                    tasks.Add(ConsumeStream(stream, writer, linkedCts));
                 }
 
                 await Task.WhenAll(tasks);
@@ -179,11 +180,19 @@ public static class IAsyncEnumerableExtensions
     private static async Task ConsumeStream<T>(
         IAsyncEnumerable<T> stream,
         ChannelWriter<T> writer,
-        CancellationToken ct)
+        CancellationTokenSource cts)
     {
-        await foreach (var item in stream.WithCancellation(ct))
+        try
         {
-            await writer.WriteAsync(item, ct);
+            await foreach (var item in stream.WithCancellation(cts.Token))
+            {
+                await writer.WriteAsync(item, cts.Token);
+            }
+        }
+        catch when (!cts.Token.IsCancellationRequested)
+        {
+            await cts.CancelAsync();
+            throw;
         }
     }
 

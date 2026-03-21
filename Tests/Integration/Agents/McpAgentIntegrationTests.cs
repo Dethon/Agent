@@ -211,7 +211,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act - Create thread from AgentKey (simulating how ChatMonitor works)
-        var agentKeyJson = JsonSerializer.SerializeToElement(agentKey);
+        var agentKeyJson = JsonSerializer.SerializeToElement(agentKey.ToString());
         var thread = await agent.DeserializeSessionAsync(agentKeyJson, cancellationToken: cts.Token);
 
         // First interaction
