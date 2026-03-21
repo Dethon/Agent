@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
@@ -23,16 +24,41 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureChannel(this IServiceCollection services, ChannelSettings settings)
     {
+        var notificationEmitter = new ChannelNotificationEmitter(
+            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
+
         services
             .AddSingleton(settings)
-            .AddSingleton<IStreamService, StubStreamService>()
-            .AddSingleton<IApprovalService, StubApprovalService>()
-            .AddSingleton<ISessionService, StubSessionService>()
+            .AddSingleton(notificationEmitter)
+            .AddSingleton<StreamService>()
+            .AddSingleton<IStreamService>(sp => sp.GetRequiredService<StreamService>())
+            .AddSingleton<SessionService>()
+            .AddSingleton<ISessionService>(sp => sp.GetRequiredService<SessionService>())
+            .AddSingleton<ApprovalService>()
+            .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
+            .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSignalR();
 
         services
             .AddMcpServer()
-            .WithHttpTransport()
+            .WithHttpTransport(options =>
+            {
+#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
+                options.RunSessionHandler = async (_, server, ct) =>
+                {
+                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
+                    notificationEmitter.RegisterSession(sessionId, server);
+                    try
+                    {
+                        await server.RunAsync(ct);
+                    }
+                    finally
+                    {
+                        notificationEmitter.UnregisterSession(sessionId);
+                    }
+                };
+#pragma warning restore MCPEXP002
+            })
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
