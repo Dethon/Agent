@@ -11,5 +11,4 @@ public record ChatPrompt
     public required int MessageId { get; init; }
     public required string Sender { get; init; }
     public string? AgentId { get; init; }
-    public MessageSource Source { get; init; } = MessageSource.WebUi;
 }
