@@ -32,7 +32,7 @@ public static class ConfigModule
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
-            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
@@ -44,7 +44,7 @@ public static class ConfigModule
                     logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
                     return ToolResponse.Create(ex);
                 }
-            })
+            }))
             // Discovery tools
             .WithTools<McpTextGlobFilesTool>()
             // File operations

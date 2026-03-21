@@ -83,7 +83,7 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
 
         // Assert
         var request = _server.LogEntries.First();
-        var body = request.RequestMessage.Body!;
+        var body = request.RequestMessage?.Body!;
         body.ShouldContain("\"model\":\"test-model\"");
         body.ShouldContain("\"input\":\"test input\"");
     }
@@ -197,7 +197,7 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
 
         // Assert - Should be a single request with array input
         _server.LogEntries.Count.ShouldBe(1);
-        var body = _server.LogEntries.First().RequestMessage.Body!;
+        var body = _server.LogEntries[0].RequestMessage?.Body!;
         body.ShouldContain("\"input\":[\"text1\",\"text2\"]");
     }
 

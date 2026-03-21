@@ -45,6 +45,7 @@ public static class ConfigModule
             .AddMcpServer()
             .WithHttpTransport(options =>
             {
+#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
                 options.RunSessionHandler = async (_, server, ct) =>
                 {
                     try
@@ -60,8 +61,9 @@ public static class ConfigModule
                         }
                     }
                 };
+#pragma warning restore MCPEXP002
             })
-            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
@@ -73,7 +75,7 @@ public static class ConfigModule
                     logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
                     return ToolResponse.Create(ex);
                 }
-            })
+            }))
             // Download tools
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()

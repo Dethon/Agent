@@ -29,7 +29,7 @@ public static class ConfigModule
             .AddSingleton(await CommandRunnerFactory.Create(settings.WorkingDirectory, CancellationToken.None))
             .AddMcpServer()
             .WithHttpTransport()
-            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
@@ -41,7 +41,7 @@ public static class ConfigModule
                     logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
                     return ToolResponse.Create(ex);
                 }
-            })
+            }))
             .WithTools<McpRunCommandTool>()
             .WithTools<McpGetCliPlatformTool>();
 

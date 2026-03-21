@@ -59,7 +59,7 @@ public sealed class McpAgent : DisposableAgent
                 }
             },
             Description = description,
-            ChatHistoryProviderFactory = (ctx, ct) => RedisChatMessageStore.Create(stateStore, ctx, ct)
+            ChatHistoryProvider = new RedisChatMessageStore(stateStore)
         });
     }
 

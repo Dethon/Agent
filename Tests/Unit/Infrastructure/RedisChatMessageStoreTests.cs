@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Extensions;
@@ -20,39 +19,32 @@ public class RedisChatMessageStoreTests
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
         var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
-        {
-            SerializedState = serializedState,
-            JsonSerializerOptions = new JsonSerializerOptions()
-        };
-
-        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var session = CreateSessionWithKey(agentKey.ToString());
+        var store = new RedisChatMessageStore(mockStore.Object);
 
         // Act
-        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, null, []), CancellationToken.None);
+        await store.InvokingAsync(
+            new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, session, []),
+            CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(agentKey.ToString()), Times.Once);
     }
 
     [Fact]
-    public async Task InvokingAsync_WithUndefinedState_UsesGuidKey()
+    public async Task InvokingAsync_WithNoState_UsesGuidKey()
     {
         // Arrange
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
-        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
-        {
-            SerializedState = default, // JsonValueKind.Undefined
-            JsonSerializerOptions = new JsonSerializerOptions()
-        };
-
-        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
+        var session = new Mock<AgentSession>().Object;
+        var store = new RedisChatMessageStore(mockStore.Object);
 
         // Act
-        await store.InvokingAsync(new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, null, []), CancellationToken.None);
+        await store.InvokingAsync(
+            new ChatHistoryProvider.InvokingContext(new Mock<AIAgent>().Object, session, []),
+            CancellationToken.None);
 
         // Assert
         mockStore.Verify(s => s.GetMessagesAsync(It.Is<string>(k => IsGuid(k))), Times.Once);
@@ -61,31 +53,6 @@ public class RedisChatMessageStoreTests
     private static bool IsGuid(string value)
     {
         return Guid.TryParse(value, out _);
-    }
-
-    [Fact]
-    public async Task Serialize_ReturnsKeyAsJsonElement()
-    {
-        // Arrange
-        var mockStore = new Mock<IThreadStateStore>();
-        mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
-
-        var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
-        {
-            SerializedState = serializedState,
-            JsonSerializerOptions = new JsonSerializerOptions()
-        };
-
-        var store = await RedisChatMessageStore.Create(mockStore.Object, ctx);
-
-        // Act
-        var serialized = store.Serialize();
-
-        // Assert
-        serialized.ValueKind.ShouldBe(JsonValueKind.String);
-        serialized.GetString().ShouldBe(agentKey.ToString());
     }
 
     [Fact]
@@ -138,17 +105,18 @@ public class RedisChatMessageStoreTests
             .Callback<string, ChatMessage[]>((_, msgs) => savedMessages = msgs)
             .Returns(Task.CompletedTask);
 
-        var store = await CreateStore(mockStore.Object);
+        var session = CreateSessionWithKey("test-key");
+        var store = new RedisChatMessageStore(mockStore.Object);
 
         // Simulate what the framework produces: response messages without timestamps
         // (ToChatResponse drops AdditionalProperties from streaming updates)
         var responseMessage = new ChatMessage(ChatRole.Assistant, "Hello from agent");
 
         var invokedContext = new ChatHistoryProvider.InvokedContext(
-            new Mock<AIAgent>().Object, null, [new ChatMessage(ChatRole.User, "Hi")])
-        {
-            ResponseMessages = [responseMessage]
-        };
+            new Mock<AIAgent>().Object,
+            session,
+            [new ChatMessage(ChatRole.User, "Hi")],
+            [responseMessage]);
 
         // Act
         await store.InvokedAsync(invokedContext, CancellationToken.None);
@@ -159,15 +127,10 @@ public class RedisChatMessageStoreTests
         assistantMsg.GetTimestamp().ShouldNotBeNull();
     }
 
-    private static async Task<ChatHistoryProvider> CreateStore(IThreadStateStore threadStore)
+    private static AgentSession CreateSessionWithKey(string key)
     {
-        var agentKey = new AgentKey(123, 456);
-        var serializedState = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var ctx = new ChatClientAgentOptions.ChatHistoryProviderFactoryContext
-        {
-            SerializedState = serializedState,
-            JsonSerializerOptions = new JsonSerializerOptions()
-        };
-        return await RedisChatMessageStore.Create(threadStore, ctx);
+        var session = new Mock<AgentSession>().Object;
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, key);
+        return session;
     }
 }

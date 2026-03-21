@@ -57,7 +57,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
             .AddSingleton<IFileSystemClient, LocalFileSystemClient>()
             .AddMcpServer()
             .WithHttpTransport()
-            .AddCallToolFilter(next => async (context, cancellationToken) =>
+            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
                 {
@@ -67,7 +67,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
                 {
                     return ToolResponse.Create(ex);
                 }
-            })
+            }))
             .WithTools<McpFileSearchTool>()
             .WithTools<McpFileDownloadTool>()
             .WithTools<McpGetDownloadStatusTool>()
