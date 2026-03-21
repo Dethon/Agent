@@ -30,7 +30,8 @@ public static class ConfigModule
         // Bind nested sections explicitly for environment variable support
         settings = settings with
         {
-            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>()
+            CapSolver = config.GetSection("CapSolver").Get<CapSolverConfiguration>(),
+            Camoufox = config.GetSection("Camoufox").Get<CamoufoxConfiguration>()
         };
 
         return settings;
@@ -45,7 +46,7 @@ public static class ConfigModule
                 .AddWebSearchClients(settings)
                 .AddMcpServer()
                 .WithHttpTransport()
-                .AddCallToolFilter(next => async (context, cancellationToken) =>
+                .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
                 {
                     try
                     {
@@ -57,7 +58,7 @@ public static class ConfigModule
                         logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
                         return ToolResponse.Create(ex);
                     }
-                })
+                }))
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebClickTool>()
@@ -94,7 +95,7 @@ public static class ConfigModule
             services.AddSingleton<IWebBrowser>(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
-                return new PlaywrightWebBrowser(captchaSolver);
+                return new PlaywrightWebBrowser(captchaSolver, settings.Camoufox?.WsEndpoint);
             });
 
             return services;

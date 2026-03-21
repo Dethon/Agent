@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Domain.Contracts;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
@@ -6,42 +5,40 @@ using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class RedisChatMessageStore(IThreadStateStore store, string key) : ChatHistoryProvider
+public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistoryProvider
 {
+    internal const string StateKey = "ChatHistoryProviderState";
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    public static ValueTask<ChatHistoryProvider> Create(
-        IThreadStateStore store,
-        ChatClientAgentOptions.ChatHistoryProviderFactoryContext ctx,
-        CancellationToken ct = default)
-    {
-        var redisKey = ResolveRedisKey(ctx);
-        var chatStore = new RedisChatMessageStore(store, redisKey);
-        return ValueTask.FromResult<ChatHistoryProvider>(chatStore);
-    }
+    public override IReadOnlyList<string> StateKeys => [StateKey];
 
-    private static string ResolveRedisKey(ChatClientAgentOptions.ChatHistoryProviderFactoryContext ctx)
+    private static string ResolveRedisKey(AgentSession session)
     {
-        if (ctx.SerializedState.ValueKind == JsonValueKind.String)
+        if (session.StateBag.TryGetValue<string>(StateKey, out var key) && !string.IsNullOrEmpty(key))
         {
-            return ctx.SerializedState.GetString() ?? Guid.NewGuid().ToString();
+            return key;
         }
 
-        return Guid.NewGuid().ToString();
+        var newKey = Guid.NewGuid().ToString();
+        session.StateBag.SetValue(StateKey, newKey);
+        return newKey;
     }
 
-    protected override async ValueTask<IEnumerable<ChatMessage>> InvokingCoreAsync(
+    protected override async ValueTask<IEnumerable<ChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context,
         CancellationToken cancellationToken = default)
     {
-        return await store.GetMessagesAsync(key) ?? [];
+        ArgumentNullException.ThrowIfNull(context.Session);
+        var redisKey = ResolveRedisKey(context.Session);
+        return await store.GetMessagesAsync(redisKey) ?? [];
     }
 
-    protected override async ValueTask InvokedCoreAsync(
+    protected override async ValueTask StoreChatHistoryAsync(
         InvokedContext context,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(context.Session);
+        var redisKey = ResolveRedisKey(context.Session);
 
         // ToChatResponse does not preserve AdditionalProperties on ChatMessage objects,
         // so response messages arrive without timestamps. Stamp them before persisting.
@@ -51,7 +48,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
             message.SetTimestamp(now);
         }
 
-        var existingMessages = await store.GetMessagesAsync(key) ?? [];
+        var existingMessages = await store.GetMessagesAsync(redisKey) ?? [];
         var allMessages = existingMessages
             .Concat(context.RequestMessages)
             .Concat(context.ResponseMessages ?? [])
@@ -59,16 +56,11 @@ public sealed class RedisChatMessageStore(IThreadStateStore store, string key) :
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            await store.SetMessagesAsync(key, allMessages);
+            await store.SetMessagesAsync(redisKey, allMessages);
         }
         finally
         {
             _lock.Release();
         }
-    }
-
-    public override JsonElement Serialize(JsonSerializerOptions? jsonSerializerOptions = null)
-    {
-        return JsonSerializer.SerializeToElement(key, jsonSerializerOptions);
     }
 }

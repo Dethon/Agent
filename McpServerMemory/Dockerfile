@@ -5,15 +5,13 @@ WORKDIR /app
 
 FROM base-sdk:latest AS dependencies
 COPY ["McpServerMemory/McpServerMemory.csproj", "McpServerMemory/"]
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "McpServerMemory/McpServerMemory.csproj"
+RUN dotnet restore "McpServerMemory/McpServerMemory.csproj"
 
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerMemory/", "McpServerMemory/"]
 WORKDIR "McpServerMemory"
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet publish "./McpServerMemory.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false --no-restore
+RUN dotnet publish "./McpServerMemory.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final
 WORKDIR /app

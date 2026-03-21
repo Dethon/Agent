@@ -96,8 +96,8 @@ public class BraveSearchClientTests : IDisposable
         // Assert - check the request was made with site prefix
         var requests = _server.LogEntries;
         requests.ShouldNotBeEmpty();
-        var firstRequest = requests.First();
-        firstRequest.RequestMessage.Query?["q"].ToString().ShouldContain("site:imdb.com");
+        var firstRequest = requests[0];
+        firstRequest.RequestMessage?.Query?["q"].ToString().ShouldContain("site:imdb.com");
     }
 
     [Fact]
@@ -125,8 +125,8 @@ public class BraveSearchClientTests : IDisposable
         // Assert
         var requests = _server.LogEntries;
         requests.ShouldNotBeEmpty();
-        var firstRequest = requests.First();
-        firstRequest.RequestMessage.Query?["freshness"].ToString().ShouldBe("pw");
+        var firstRequest = requests[0];
+        firstRequest.RequestMessage?.Query?["freshness"].ToString().ShouldBe("pw");
     }
 
     [Fact]

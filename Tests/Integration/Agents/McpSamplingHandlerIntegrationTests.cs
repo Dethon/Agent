@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
@@ -72,7 +72,7 @@ public class McpSamplingHandlerIntegrationTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var trackerValue = "test-conversation-tracker";
-        var metadata = JsonSerializer.SerializeToElement(new { tracker = trackerValue });
+        var metadata = new JsonObject { ["tracker"] = trackerValue };
 
         // First message in conversation
         var firstParams = new CreateMessageRequestParams

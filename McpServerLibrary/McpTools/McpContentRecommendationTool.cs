@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Tools;
 using Infrastructure.Utils;
@@ -53,10 +52,10 @@ public class McpContentRecommendationTool : ContentRecommendationTool
             SystemPrompt = SystemPrompt,
             IncludeContext = ContextInclusion.None,
             MaxTokens = 5000,
-            Metadata = JsonSerializer.Deserialize<JsonElement>(new JsonObject
+            Metadata = new JsonObject
             {
                 ["tracker"] = Name
-            }.ToJsonString())
+            }
         };
     }
 }

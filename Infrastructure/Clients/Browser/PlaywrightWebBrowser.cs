@@ -7,7 +7,7 @@ using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
 
-public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? cdpEndpoint = null)
+public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? wsEndpoint = null)
     : IWebBrowser, IAsyncDisposable
 {
     private IPlaywright? _playwright;
@@ -20,166 +20,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private bool _initialized;
     private const int MaxCaptchaRetries = 2;
     private const int DefaultOperationTimeoutMs = 15_000;
-
-    private const string ChromeMajorVersion = "145";
-
-    private const string UserAgent =
-        $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{ChromeMajorVersion}.0.0.0 Safari/537.36";
-
-    private const string StealthScript = """
-                                         // --- navigator.webdriver ---
-                                         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                                         delete Object.getPrototypeOf(navigator).webdriver;
-
-                                         // --- navigator.plugins ---
-                                         Object.defineProperty(navigator, 'plugins', {
-                                             get: () => [
-                                                 { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' },
-                                                 { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai' },
-                                                 { name: 'Native Client', filename: 'internal-nacl-plugin' }
-                                             ]
-                                         });
-
-                                         // --- navigator.languages ---
-                                         Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-
-                                         // --- navigator.permissions ---
-                                         const originalQuery = window.navigator.permissions.query;
-                                         window.navigator.permissions.query = (parameters) => (
-                                             parameters.name === 'notifications'
-                                                 ? Promise.resolve({ state: Notification.permission })
-                                                 : originalQuery(parameters)
-                                         );
-
-                                         // --- window.chrome (app, csi, loadTimes, runtime) ---
-                                         if (!window.chrome) {
-                                             Object.defineProperty(window, 'chrome', {
-                                                 writable: true,
-                                                 enumerable: true,
-                                                 configurable: false,
-                                                 value: {}
-                                             });
-                                         }
-
-                                         if (!window.chrome.app) {
-                                             window.chrome.app = {
-                                                 isInstalled: false,
-                                                 InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
-                                                 RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' },
-                                                 getDetails: function() { return null; },
-                                                 getIsInstalled: function() { return false; },
-                                                 runningState: function() { return 'cannot_run'; }
-                                             };
-                                         }
-
-                                         if (!window.chrome.csi) {
-                                             window.chrome.csi = function() {
-                                                 const t = window.performance && window.performance.timing;
-                                                 if (!t) return {};
-                                                 return {
-                                                     onloadT: t.domContentLoadedEventEnd,
-                                                     startE: t.navigationStart,
-                                                     pageT: Date.now() - t.navigationStart,
-                                                     tran: 15
-                                                 };
-                                             };
-                                         }
-
-                                         if (!window.chrome.loadTimes) {
-                                             window.chrome.loadTimes = function() {
-                                                 const t = window.performance && window.performance.timing;
-                                                 if (!t) return {};
-                                                 const ntEntry = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || {};
-                                                 return {
-                                                     requestTime: t.navigationStart / 1000,
-                                                     startLoadTime: t.navigationStart / 1000,
-                                                     commitLoadTime: t.responseStart / 1000,
-                                                     finishDocumentLoadTime: t.domContentLoadedEventEnd / 1000,
-                                                     finishLoadTime: t.loadEventEnd / 1000,
-                                                     firstPaintTime: 0,
-                                                     firstPaintAfterLoadTime: 0,
-                                                     navigationType: ntEntry.type || 'other',
-                                                     connectionInfo: ntEntry.nextHopProtocol || 'h2',
-                                                     npnNegotiatedProtocol: ntEntry.nextHopProtocol || 'unknown',
-                                                     wasAlternateProtocolAvailable: false,
-                                                     wasFetchedViaSpdy: ['h2', 'hq'].includes(ntEntry.nextHopProtocol || ''),
-                                                     wasNpnNegotiated: ['h2', 'hq'].includes(ntEntry.nextHopProtocol || '')
-                                                 };
-                                             };
-                                         }
-
-                                         if (!window.chrome.runtime) {
-                                             window.chrome.runtime = {
-                                                 OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' },
-                                                 OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' },
-                                                 PlatformArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
-                                                 PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' },
-                                                 PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' },
-                                                 RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' },
-                                                 connect: function() { throw new TypeError("Cannot read properties of undefined (reading 'connect')"); },
-                                                 sendMessage: function() { throw new TypeError("Cannot read properties of undefined (reading 'sendMessage')"); }
-                                             };
-                                         }
-
-                                         // --- WebGL vendor/renderer (mask SwiftShader) ---
-                                         const getParameterProxyHandler = {
-                                             apply: function(target, ctx, args) {
-                                                 const param = (args || [])[0];
-                                                 if (param === 37445) return 'Intel Inc.';          // UNMASKED_VENDOR_WEBGL
-                                                 if (param === 37446) return 'Intel Iris OpenGL Engine'; // UNMASKED_RENDERER_WEBGL
-                                                 return Reflect.apply(target, ctx, args);
-                                             }
-                                         };
-                                         ['WebGLRenderingContext', 'WebGL2RenderingContext'].forEach(ctx => {
-                                             if (window[ctx] && window[ctx].prototype.getParameter) {
-                                                 window[ctx].prototype.getParameter = new Proxy(
-                                                     window[ctx].prototype.getParameter, getParameterProxyHandler);
-                                             }
-                                         });
-
-                                         // --- window.outerWidth/outerHeight (0 in headless) ---
-                                         if (!window.outerWidth || !window.outerHeight) {
-                                             Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
-                                             Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight + 85 });
-                                         }
-
-                                         // --- navigator.userAgentData (empty in headless Playwright) ---
-                                         if (navigator.userAgentData) {
-                                             const brands = [
-                                                 { brand: 'Google Chrome', version: '145' },
-                                                 { brand: 'Not?A_Brand', version: '99' },
-                                                 { brand: 'Chromium', version: '145' }
-                                             ];
-                                             Object.defineProperty(navigator.userAgentData, 'brands', { get: () => brands });
-                                             Object.defineProperty(navigator.userAgentData, 'mobile', { get: () => false });
-                                             Object.defineProperty(navigator.userAgentData, 'platform', { get: () => 'Windows' });
-                                             const origGetHigh = navigator.userAgentData.getHighEntropyValues;
-                                             navigator.userAgentData.getHighEntropyValues = function(hints) {
-                                                 return origGetHigh.call(this, hints).then(values => {
-                                                     values.brands = brands;
-                                                     values.mobile = false;
-                                                     values.platform = 'Windows';
-                                                     values.platformVersion = '15.0.0';
-                                                     values.architecture = 'x86';
-                                                     values.model = '';
-                                                     values.uaFullVersion = '145.0.0.0';
-                                                     values.fullVersionList = brands.map(b => ({ ...b }));
-                                                     return values;
-                                                 });
-                                             };
-                                         }
-
-                                         // --- media codecs (Chromium vs Chrome) ---
-                                         const origCanPlayType = HTMLMediaElement.prototype.canPlayType;
-                                         HTMLMediaElement.prototype.canPlayType = function(type) {
-                                             if (!type) return origCanPlayType.call(this, type);
-                                             const [mime] = type.trim().split(';');
-                                             if (mime === 'video/mp4' && type.includes('avc1.42E01E')) return 'probably';
-                                             if (mime === 'audio/x-m4a' && !type.includes('codecs')) return 'maybe';
-                                             if (mime === 'audio/aac' && !type.includes('codecs')) return 'probably';
-                                             return origCanPlayType.call(this, type);
-                                         };
-                                         """;
+    private const int ConnectionRetryAttempts = 3;
+    private const int ConnectionRetryDelayMs = 2_000;
 
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
@@ -245,7 +87,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             var captchaRetries = 0;
             while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
             {
-                var captchaResult = await TrySolveCaptchaAsync(request.Url, html, ct);
+                var captchaResult = await TrySolveCaptchaAsync(page, request.Url, html, ct);
                 if (!captchaResult.Solved)
                 {
                     return new BrowseResult(
@@ -341,6 +183,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         catch (TimeoutException)
         {
             return CreateErrorResult(request.SessionId, request.Url, "Request timed out");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Camoufox"))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -664,39 +510,36 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 return;
             }
 
+            if (string.IsNullOrEmpty(wsEndpoint))
+            {
+                throw new InvalidOperationException(
+                    "Camoufox WebSocket endpoint is not configured. Set the CAMOUFOX__WSENDPOINT environment variable.");
+            }
+
             _playwright = await Playwright.CreateAsync();
 
-            if (!string.IsNullOrEmpty(cdpEndpoint))
+            // Connect to Camoufox sidecar with retry
+            for (var attempt = 1; attempt <= ConnectionRetryAttempts; attempt++)
             {
-                _browser = await _playwright.Chromium.ConnectOverCDPAsync(cdpEndpoint);
-            }
-            else
-            {
-                _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                try
                 {
-                    Headless = true,
-                    Args =
-                    [
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-features=IsolateOrigins,site-per-process",
-                        "--disable-site-isolation-trials",
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-accelerated-2d-canvas",
-                        "--disable-gpu",
-                        "--window-size=1920,1080",
-                        "--disable-infobars",
-                        "--disable-extensions",
-                        "--disable-plugins-discovery",
-                        "--disable-background-networking"
-                    ]
-                });
+                    _browser = await _playwright.Firefox.ConnectAsync(wsEndpoint);
+                    break;
+                }
+                catch (PlaywrightException) when (attempt < ConnectionRetryAttempts)
+                {
+                    await Task.Delay(ConnectionRetryDelayMs);
+                }
             }
 
-            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
+            if (_browser is null)
             {
-                UserAgent = UserAgent,
+                throw new InvalidOperationException(
+                    $"Failed to connect to Camoufox at {wsEndpoint} after {ConnectionRetryAttempts} attempts.");
+            }
+
+            _context = await _browser!.NewContextAsync(new BrowserNewContextOptions
+            {
                 ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
                 Locale = "en-US",
                 TimezoneId = "America/New_York",
@@ -705,17 +548,11 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 JavaScriptEnabled = true,
                 ExtraHTTPHeaders = new Dictionary<string, string>
                 {
-                    ["sec-ch-ua"] =
-                        $"\"Google Chrome\";v=\"{ChromeMajorVersion}\", \"Not?A_Brand\";v=\"99\", \"Chromium\";v=\"{ChromeMajorVersion}\"",
-                    ["sec-ch-ua-mobile"] = "?0",
-                    ["sec-ch-ua-platform"] = "\"Windows\"",
                     ["Accept-Language"] = "en-US,en;q=0.9"
                 }
             });
 
             _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
-
-            await _context.AddInitScriptAsync(StealthScript);
 
             _initialized = true;
         }
@@ -856,6 +693,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     }
 
     private async Task<(bool Solved, string? Message)> TrySolveCaptchaAsync(
+        IPage page,
         string websiteUrl,
         string html,
         CancellationToken ct)
@@ -871,10 +709,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             return (false, "CAPTCHA detected but could not extract CAPTCHA URL");
         }
 
+        // Retrieve the actual UA from the active page (Camoufox generates its own)
+        var userAgent = await page.EvaluateAsync<string>("navigator.userAgent");
+
         var request = new DataDomeCaptchaRequest(
             WebsiteUrl: websiteUrl,
             CaptchaUrl: captchaUrl,
-            UserAgent: UserAgent
+            UserAgent: userAgent
         );
 
         var solution = await captchaSolver.SolveDataDomeAsync(request, ct);

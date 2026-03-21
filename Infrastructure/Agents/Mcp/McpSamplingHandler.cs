@@ -37,7 +37,9 @@ internal sealed class McpSamplingHandler
     private async ValueTask<AgentSession> GetOrCreateThread(CreateMessageRequestParams? parameters,
         CancellationToken ct)
     {
-        var tracker = parameters?.Metadata?.GetProperty("tracker").GetString();
+        var tracker = parameters?.Metadata?.TryGetPropertyValue("tracker", out var trackerNode) == true
+            ? trackerNode?.GetValue<string>()
+            : null;
         var thread = await _agent.CreateSessionAsync(ct);
         return tracker is null ? thread : _trackedConversations.GetOrAdd(tracker, thread);
     }

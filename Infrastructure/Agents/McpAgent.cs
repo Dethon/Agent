@@ -59,7 +59,7 @@ public sealed class McpAgent : DisposableAgent
                 }
             },
             Description = description,
-            ChatHistoryProviderFactory = (ctx, ct) => RedisChatMessageStore.Create(stateStore, ctx, ct)
+            ChatHistoryProvider = new RedisChatMessageStore(stateStore)
         });
     }
 
@@ -115,17 +115,20 @@ public sealed class McpAgent : DisposableAgent
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
-        if (serializedThread.TryGetProperty(
-                "ChatHistoryProviderState",
-                StringComparison.InvariantCultureIgnoreCase,
-                out _))
+
+        // ChatClientAgentSession expects { "stateBag": { "ChatHistoryProviderState": "..." }, "conversationId": ... }
+        if (serializedThread.TryGetProperty("stateBag", StringComparison.InvariantCultureIgnoreCase, out _))
         {
             return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);
         }
 
+        // Legacy format: plain AgentKey string or other value — wrap into stateBag
         var json = new JsonObject
         {
-            ["ChatHistoryProviderState"] = serializedThread.ToJsonNode()
+            ["stateBag"] = new JsonObject
+            {
+                [RedisChatMessageStore.StateKey] = serializedThread.ToJsonNode()
+            }
         };
         serializedThread = JsonSerializer.Deserialize<JsonElement>(json.ToJsonString());
         return _innerAgent.DeserializeSessionAsync(serializedThread, jsonSerializerOptions, cancellationToken);

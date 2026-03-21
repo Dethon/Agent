@@ -4,10 +4,8 @@ WORKDIR /src
 
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet restore "Infrastructure/Infrastructure.csproj"
+RUN dotnet restore "Infrastructure/Infrastructure.csproj"
 
 COPY ["Domain/", "Domain/"]
 COPY ["Infrastructure/", "Infrastructure/"]
-RUN --mount=type=cache,target=/root/.nuget/packages,sharing=locked \
-    dotnet build "Infrastructure/Infrastructure.csproj" -c Release --no-restore
+RUN dotnet build "Infrastructure/Infrastructure.csproj" -c Release --no-restore

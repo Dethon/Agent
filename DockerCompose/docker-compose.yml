@@ -11,6 +11,8 @@ services:
       - "6379:6379"
     volumes:
       - ./volumes/redis_data:/data
+    environment:
+      - REDIS_ARGS=--appendonly yes
     restart: unless-stopped
     networks:
       - jackbot
@@ -132,6 +134,12 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Dockerfile.base-sdk
+      cache_from:
+        - base-sdk:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+      labels:
+        keep: "true"
     entrypoint: ["true"]
     restart: "no"
     networks:
@@ -151,6 +159,8 @@ services:
       dockerfile: McpServerLibrary/Dockerfile
       cache_from:
         - mcp-library:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
@@ -179,6 +189,8 @@ services:
       dockerfile: McpServerText/Dockerfile
       cache_from:
         - mcp-text:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${VAULT_PATH:-./volumes/vault}:/vault
@@ -189,6 +201,24 @@ services:
       - jackbot
     depends_on:
       - base-sdk
+
+  camoufox:
+    build: ./camoufox
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: camoufox
+    ports:
+      - "9377:9377"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9377/json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - jackbot
 
   mcp-websearch:
     image: mcp-websearch:latest
@@ -204,13 +234,20 @@ services:
       dockerfile: McpServerWebSearch/Dockerfile
       cache_from:
         - mcp-websearch:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - CAMOUFOX__WSENDPOINT=ws://camoufox:9377/browser
     networks:
       - jackbot
     depends_on:
-      - base-sdk
+      camoufox:
+        condition: service_healthy
+      base-sdk:
+        condition: service_started
 
   mcp-memory:
     image: mcp-memory:latest
@@ -226,6 +263,8 @@ services:
       dockerfile: McpServerMemory/Dockerfile
       cache_from:
         - mcp-memory:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -251,6 +290,8 @@ services:
       dockerfile: McpServerIdealista/Dockerfile
       cache_from:
         - mcp-idealista:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
     env_file:
       - .env
@@ -273,6 +314,8 @@ services:
       dockerfile: Agent/Dockerfile
       cache_from:
         - agent:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
     env_file:
@@ -307,6 +350,8 @@ services:
       dockerfile: WebChat/Dockerfile
       cache_from:
         - webui:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     env_file:
       - .env
     environment:
