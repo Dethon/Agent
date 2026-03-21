@@ -1,8 +1,10 @@
 using System.Runtime.CompilerServices;
+using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using McpChannelSignalR.Services;
+using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -11,7 +13,9 @@ public sealed class ChatHub(
     SessionService sessionService,
     StreamService streamService,
     ApprovalService approvalService,
-    ChannelNotificationEmitter notificationEmitter) : Hub
+    ChannelNotificationEmitter notificationEmitter,
+    ChannelSettings settings,
+    RedisStateService redisStateService) : Hub
 {
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
 
@@ -36,9 +40,22 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
+    public IReadOnlyList<AgentInfo> GetAgents()
+    {
+        return settings.Agents
+            .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
+            .ToList();
+    }
+
+    public bool ValidateAgent(string agentId)
+    {
+        return settings.Agents.Any(a => a.Id == agentId);
+    }
+
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        return sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
+        return ValidateAgent(agentId)
+            && sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
     }
 
     public async Task JoinSpace(string spaceSlug)
@@ -212,13 +229,35 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
-    public Task DeleteTopic(string topicId)
+    public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
+    {
+        return await redisStateService.GetAllTopicsAsync(agentId, spaceSlug);
+    }
+
+    public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
+    {
+        await redisStateService.SaveTopicAsync(topic);
+    }
+
+    public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
+    {
+        return await redisStateService.GetHistoryAsync(agentId, chatId, threadId);
+    }
+
+    public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
         sessionService.EndSession(topicId);
         streamService.CancelStream(topicId);
         approvalService.CancelPendingApprovalsForTopic(topicId);
-        return Task.CompletedTask;
+
+        var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
+        await redisStateService.DeleteMessagesAsync(agentKey);
+        await redisStateService.DeleteTopicAsync(agentId, chatId, topicId);
     }
+
+    public Task SubscribePush(PushSubscriptionDto subscription) => Task.CompletedTask;
+
+    public Task UnsubscribePush(string endpoint) => Task.CompletedTask;
 
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {

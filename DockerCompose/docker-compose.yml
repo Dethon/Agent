@@ -318,6 +318,9 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     environment:
       - REDIS__CONNECTIONSTRING=redis:6379
+      - AGENTS__0__ID=jack
+      - AGENTS__0__NAME=Jack
+      - AGENTS__0__DESCRIPTION=General assistant
     restart: unless-stopped
     networks:
       - jackbot

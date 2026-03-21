@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using StackExchange.Redis;
 
 namespace McpChannelSignalR.Modules;
 
@@ -27,9 +28,13 @@ public static class ConfigModule
         var notificationEmitter = new ChannelNotificationEmitter(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
 
+        var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
+
         services
+            .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
             .AddSingleton(settings)
             .AddSingleton(notificationEmitter)
+            .AddSingleton<RedisStateService>()
             .AddSingleton<StreamService>()
             .AddSingleton<IStreamService>(sp => sp.GetRequiredService<StreamService>())
             .AddSingleton<SessionService>()
