@@ -28,7 +28,7 @@ public static class ConfigModule
         var notificationEmitter = new ChannelNotificationEmitter(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
 
-        var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
+        var redisMultiplexer = ConnectionMultiplexer.Connect($"{settings.RedisConnectionString},abortConnect=false");
 
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
