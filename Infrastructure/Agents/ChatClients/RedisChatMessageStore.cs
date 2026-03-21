@@ -24,7 +24,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
         return newKey;
     }
 
-    protected override async ValueTask<IEnumerable<ChatMessage>> InvokingCoreAsync(
+    protected override async ValueTask<IEnumerable<ChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context,
         CancellationToken cancellationToken = default)
     {
@@ -33,7 +33,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
         return await store.GetMessagesAsync(redisKey) ?? [];
     }
 
-    protected override async ValueTask InvokedCoreAsync(
+    protected override async ValueTask StoreChatHistoryAsync(
         InvokedContext context,
         CancellationToken cancellationToken = default)
     {
