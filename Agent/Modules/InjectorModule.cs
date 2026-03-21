@@ -13,6 +13,7 @@ using Infrastructure.Clients.Messaging.Cli;
 using Infrastructure.Clients.Messaging.ServiceBus;
 using Infrastructure.Clients.Messaging.Telegram;
 using Infrastructure.Clients.Messaging.WebChat;
+using Infrastructure.Clients.Channels;
 using Infrastructure.Clients.ToolApproval;
 using Infrastructure.CliGui.Routing;
 using Infrastructure.CliGui.Ui;
@@ -64,6 +65,10 @@ public static class InjectorModule
             }
 
             services = services
+                .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
+                    sp.GetServices<IChannelConnection>().ToList())
+                .AddSingleton<Func<IChannelConnection, string, IToolApprovalHandler>>(
+                    _ => (ch, convId) => new ChannelToolApprovalHandler(ch, convId))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>();
 

@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Monitor;
 
 public class ChatMonitor(
-    IChatMessengerClient chatMessengerClient,
+    IReadOnlyList<IChannelConnection> channels,
     IAgentFactory agentFactory,
-    IToolApprovalHandlerFactory approvalHandlerFactory,
+    Func<IChannelConnection, string, IToolApprovalHandler> approvalHandlerFactory,
     ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
@@ -21,22 +21,18 @@ public class ChatMonitor(
     {
         try
         {
-            var responses = chatMessengerClient.ReadPrompts(1000, cancellationToken)
+            var merged = channels
+                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: m)))
+                .Merge(cancellationToken);
+
+            var groups = merged
                 .GroupByStreaming(
-                    async (x, ct) => await chatMessengerClient.CreateTopicIfNeededAsync(
-                        x.Source, x.ChatId, x.ThreadId, x.AgentId, x.Prompt, x.Sender, ct),
+                    (x, _) => ValueTask.FromResult(new AgentKey(x.Message.ConversationId, x.Message.AgentId)),
                     cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
-            try
-            {
-                await chatMessengerClient.ProcessResponseStreamAsync(responses, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Inner ChatMonitor exception: {exceptionMessage}", ex.Message);
-            }
+            await foreach (var _ in groups.WithCancellation(cancellationToken)) { }
         }
         catch (Exception ex)
         {
@@ -44,15 +40,14 @@ public class ChatMonitor(
         }
     }
 
-    private async IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> ProcessChatThread(
+    private async IAsyncEnumerable<bool> ProcessChatThread(
         AgentKey agentKey,
-        IAsyncGrouping<AgentKey, ChatPrompt> group,
+        IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> group,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var firstPrompt = await group.FirstAsync(ct);
-        var promptSource = firstPrompt.Source;
-        var approvalHandler = approvalHandlerFactory.Create(agentKey);
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId, approvalHandler);
+        var first = await group.FirstAsync(ct);
+        var approvalHandler = approvalHandlerFactory(first.Channel, first.Message.ConversationId);
+        await using var agent = agentFactory.Create(agentKey, first.Message.Sender, first.Message.AgentId, approvalHandler);
         var context = threadResolver.Resolve(agentKey);
         var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
@@ -61,22 +56,21 @@ public class ChatMonitor(
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
-        // ReSharper disable once AccessToDisposedClosure - agent and threadCts are disposed after await foreach completes
-        var aiResponses = group.Prepend(firstPrompt)
+        var aiResponses = group.Prepend(first)
             .Select(async (x, _, _) =>
             {
-                var command = ChatCommandParser.Parse(x.Prompt);
+                var command = ChatCommandParser.Parse(x.Message.Content);
                 switch (command)
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response, IChannelConnection Channel, string ConversationId)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate, AiResponse?)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response, IChannelConnection Channel, string ConversationId)>();
                     default:
-                        var userMessage = new ChatMessage(ChatRole.User, x.Prompt);
-                        userMessage.SetSenderId(x.Sender);
+                        var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
+                        userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
@@ -84,15 +78,35 @@ public class ChatMonitor(
                             .ToUpdateAiResponsePairs()
                             .Append((
                                 new AgentResponseUpdate { Contents = [new StreamCompleteContent()] },
-                                null));
+                                (AiResponse?)null))
+                            .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
                 }
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, aiResponse) in aiResponses.WithCancellation(ct))
+        await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
         {
-            yield return (agentKey, update, aiResponse, promptSource);
+            var (content, contentType, isComplete) = MapResponseUpdate(update);
+            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, ct);
+            yield return true;
         }
+    }
+
+    private static (string Content, string ContentType, bool IsComplete) MapResponseUpdate(AgentResponseUpdate update)
+    {
+        var aiContent = update.Contents.FirstOrDefault();
+        return aiContent switch
+        {
+            TextContent text => (text.Text ?? string.Empty, ReplyContentType.Text, false),
+            TextReasoningContent reasoning => (reasoning.Text ?? string.Empty, ReplyContentType.Reasoning, false),
+            FunctionCallContent functionCall => (
+                JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
+                ReplyContentType.ToolCall,
+                false),
+            ErrorContent error => (error.Message ?? string.Empty, ReplyContentType.Error, false),
+            StreamCompleteContent => (string.Empty, ReplyContentType.StreamComplete, true),
+            _ => (string.Empty, ReplyContentType.Text, false)
+        };
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(
