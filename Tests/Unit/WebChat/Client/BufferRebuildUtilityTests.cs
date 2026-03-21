@@ -564,4 +564,72 @@ public sealed class BufferRebuildUtilityTests
     }
 
     #endregion
+
+    #region Same-MessageId IsComplete Split Tests
+
+    [Fact]
+    public void RebuildFromBuffer_SameMessageId_ChunksAfterIsComplete_AccumulatesIntoSingleMessage()
+    {
+        // During streaming, all chunks with the same MessageId are accumulated into ONE message.
+        // RebuildFromBuffer should match: IsComplete mid-stream should NOT split the message
+        // when more chunks follow with the same MessageId.
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Reasoning = "Thinking...", MessageId = "msg-1", SequenceNumber = 1 },
+            new() { ToolCalls = "search(query)", MessageId = "msg-1", IsComplete = true, SequenceNumber = 2 },
+            new() { Content = "Here is the answer", MessageId = "msg-1", IsComplete = true, SequenceNumber = 3 }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        // Should be ONE completed message with all fields, not split into two
+        completedTurns.Count.ShouldBe(1);
+        completedTurns[0].Reasoning.ShouldBe("Thinking...");
+        completedTurns[0].ToolCalls.ShouldBe("search(query)");
+        completedTurns[0].Content.ShouldBe("Here is the answer");
+        completedTurns[0].MessageId.ShouldBe("msg-1");
+        streamingMessage.HasContent.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_SameMessageId_ChunksAfterIsComplete_StillStreamingIfLastNotComplete()
+    {
+        // Same MessageId continues after IsComplete, but last chunk is NOT complete → streaming
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { ToolCalls = "tool1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "partial answer", MessageId = "msg-1", SequenceNumber = 2 }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        completedTurns.ShouldBeEmpty();
+        streamingMessage.ToolCalls.ShouldBe("tool1");
+        streamingMessage.Content.ShouldBe("partial answer");
+        streamingMessage.MessageId.ShouldBe("msg-1");
+    }
+
+    [Fact]
+    public void RebuildFromBuffer_DifferentMessageIds_WithIsComplete_StillSplitsCorrectly()
+    {
+        // Different MessageIds should still produce separate messages (unchanged behavior)
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Reasoning = "R1", ToolCalls = "TC1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+            new() { Reasoning = "R2", Content = "Answer", MessageId = "msg-2", IsComplete = true, SequenceNumber = 2 }
+        };
+
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        completedTurns.Count.ShouldBe(2);
+        completedTurns[0].Reasoning.ShouldBe("R1");
+        completedTurns[0].ToolCalls.ShouldBe("TC1");
+        completedTurns[0].MessageId.ShouldBe("msg-1");
+        completedTurns[1].Reasoning.ShouldBe("R2");
+        completedTurns[1].Content.ShouldBe("Answer");
+        completedTurns[1].MessageId.ShouldBe("msg-2");
+        streamingMessage.HasContent.ShouldBeFalse();
+    }
+
+    #endregion
 }

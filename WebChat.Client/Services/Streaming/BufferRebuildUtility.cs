@@ -131,9 +131,12 @@ public static class BufferRebuildUtility
             return (completedTurns, currentAssistantMessage);
         }
 
+        var ordered = bufferedMessages.OrderBy(m => m.SequenceNumber).ToList();
         string? currentMessageId = null;
-        foreach (var msg in bufferedMessages.OrderBy(m => m.SequenceNumber))
+        for (var i = 0; i < ordered.Count; i++)
         {
+            var msg = ordered[i];
+
             if (msg.UserMessage is not null)
             {
                 currentAssistantMessage = FinalizeAssistantTurn(completedTurns, currentAssistantMessage);
@@ -162,18 +165,35 @@ public static class BufferRebuildUtility
                 currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg);
             }
 
-            if (msg is { IsComplete: false, Error: null })
+            if (!msg.IsComplete)
             {
                 continue;
             }
 
-            if (msg.IsComplete)
+            // Only finalize on IsComplete when the next assistant chunk has a different
+            // MessageId (or there is none). This matches streaming, which accumulates all
+            // chunks for the same MessageId into a single message regardless of IsComplete.
+            var nextMessageId = NextAssistantMessageId(ordered, i);
+            if (nextMessageId is null || nextMessageId != currentMessageId)
             {
                 currentAssistantMessage = FinalizeAssistantTurn(completedTurns, currentAssistantMessage);
             }
         }
 
         return (completedTurns, currentAssistantMessage);
+    }
+
+    private static string? NextAssistantMessageId(List<ChatStreamMessage> ordered, int currentIndex)
+    {
+        for (var j = currentIndex + 1; j < ordered.Count; j++)
+        {
+            if (ordered[j].UserMessage is null)
+            {
+                return ordered[j].MessageId;
+            }
+        }
+
+        return null;
     }
 
     private static ChatMessageModel FinalizeAssistantTurn(
