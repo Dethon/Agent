@@ -201,7 +201,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
             MessageSource.Telegram, chatId, null, fixture.AgentId, "Test Topic", ct: CancellationToken.None);
 
         // Assert
-        agentKey.ThreadId.ShouldBe(expectedThreadId);
+        agentKey.ConversationId.ShouldContain(expectedThreadId.ToString());
     }
 
     [Fact]
@@ -282,7 +282,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         CreateUpdatesWithContent(
             string content, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, agentId);
+        var key = new AgentKey($"{chatId}:{threadId ?? 0}", agentId);
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {
@@ -300,7 +300,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, agentId);
+        var key = new AgentKey($"{chatId}:{threadId ?? 0}", agentId);
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {
@@ -323,7 +323,7 @@ public class TelegramBotChatMessengerClientTests(TelegramBotFixture fixture) : I
         CreateUpdatesWithContentAndToolCall(
             string content, string toolName, object args, long chatId, long? threadId, string? agentId)
     {
-        var key = new AgentKey(chatId, threadId ?? 0, agentId);
+        var key = new AgentKey($"{chatId}:{threadId ?? 0}", agentId);
         var toolCalls = $"{toolName}({JsonSerializer.Serialize(args)})";
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate

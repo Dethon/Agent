@@ -298,6 +298,6 @@ public sealed class TelegramToolApprovalHandlerFactory(
         ArgumentNullException.ThrowIfNull(agentKey.AgentId);
         return !botsByAgentId.TryGetValue(agentKey.AgentId, out var client)
             ? throw new ArgumentException("Invalid agent ID", nameof(agentKey))
-            : new TelegramToolApprovalHandler(client, agentKey.ChatId, (int?)agentKey.ThreadId);
+            : new TelegramToolApprovalHandler(client, long.Parse(agentKey.ConversationId.Split(':')[0]), (int?)long.Parse(agentKey.ConversationId.Split(':')[1]));
     }
 }

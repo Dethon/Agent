@@ -30,9 +30,9 @@ public sealed class WebToolApprovalHandlerFactory(
 {
     public IToolApprovalHandler Create(AgentKey agentKey)
     {
-        var topicId = sessionManager.GetTopicIdByChatId(agentKey.ChatId)
+        var topicId = sessionManager.GetTopicIdByConversationId(agentKey.ConversationId)
                       ?? throw new InvalidOperationException(
-                          $"No active topic found for chatId {agentKey.ChatId}");
+                          $"No active topic found for conversationId {agentKey.ConversationId}");
 
         return new WebToolApprovalHandler(approvalManager, topicId);
     }

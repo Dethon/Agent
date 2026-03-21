@@ -80,14 +80,17 @@ public class TelegramChatClient(
             }
 
             var client = GetClient(key.AgentId);
-            await SendResponseWithClient(client, key.ChatId,
+            var parts = key.ConversationId.Split(':');
+            var chatIdVal = long.Parse(parts[0]);
+            var threadIdVal = long.Parse(parts[1]);
+            await SendResponseWithClient(client, chatIdVal,
                 new ChatResponseMessage
                 {
                     Message = response.Content,
                     Reasoning = response.Reasoning,
                     CalledTools = response.ToolCalls
                 },
-                key.ThreadId, cancellationToken);
+                threadIdVal, cancellationToken);
         }
     }
 
@@ -157,12 +160,12 @@ public class TelegramChatClient(
             var exists = await DoesThreadExist(chatId.Value, threadId.Value, agentId, ct);
             if (exists)
             {
-                return new AgentKey(chatId.Value, threadId.Value, agentId);
+                return new AgentKey($"{chatId.Value}:{threadId.Value}", agentId);
             }
         }
 
         var newThreadId = await CreateThread(chatId.Value, topicName ?? "Scheduled task", agentId, ct);
-        return new AgentKey(chatId.Value, newThreadId, agentId);
+        return new AgentKey($"{chatId.Value}:{newThreadId}", agentId);
     }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)

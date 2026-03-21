@@ -53,7 +53,7 @@ public class ScheduleExecutor(
                 "Executing schedule {ScheduleId} for agent {AgentName} on thread {ThreadId}",
                 schedule.Id,
                 schedule.Agent.Name,
-                agentKey.ThreadId);
+                agentKey.ConversationId);
 
 
             await messengerClient.StartScheduledStreamAsync(agentKey, MessageSource.WebUi, ct);
@@ -69,7 +69,7 @@ public class ScheduleExecutor(
                 schedule.Id,
                 schedule.Agent.Name);
 
-            agentKey = new AgentKey(0, 0, schedule.Agent.Id);
+            agentKey = new AgentKey("scheduled", schedule.Agent.Id);
 
             await foreach (var _ in ExecuteScheduleCore(schedule, agentKey, schedule.UserId, ct))
             {

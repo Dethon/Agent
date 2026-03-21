@@ -104,7 +104,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
         string? sender = null,
         CancellationToken ct = default)
     {
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
+        return Task.FromResult(new AgentKey($"{chatId ?? 0}:{threadId ?? 0}", agentId));
     }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
@@ -126,7 +126,7 @@ public sealed class CliChatMessengerClient : IChatMessengerClient, IDisposable
 
         _historyRestored = true;
 
-        var agentKey = new AgentKey(_router.ChatId, _router.ThreadId);
+        var agentKey = new AgentKey($"{_router.ChatId}:{_router.ThreadId}");
         var history = await _threadStateStore.GetMessagesAsync(agentKey.ToString());
         if (history is not { Length: > 0 })
         {

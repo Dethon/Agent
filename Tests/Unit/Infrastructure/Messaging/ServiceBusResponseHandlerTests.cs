@@ -130,6 +130,6 @@ public class ServiceBusResponseHandlerTests
         AiResponse? response)
     {
         await Task.CompletedTask;
-        yield return (new AgentKey(chatId, 1, agentId), new AgentResponseUpdate(), response, MessageSource.ServiceBus);
+        yield return (new AgentKey($"{chatId}:1", agentId), new AgentResponseUpdate(), response, MessageSource.ServiceBus);
     }
 }

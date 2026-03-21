@@ -196,7 +196,7 @@ public class OneShotChatMessengerClientTests
         CreateUpdatesWithContent(
             string content)
     {
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {
@@ -214,7 +214,7 @@ public class OneShotChatMessengerClientTests
         CreateUpdatesWithContentAndReasoning(
             string content, string reasoning)
     {
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         await Task.CompletedTask;
         yield return (key, new AgentResponseUpdate
         {

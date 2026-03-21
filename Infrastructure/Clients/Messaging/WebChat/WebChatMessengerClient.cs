@@ -46,10 +46,10 @@ public sealed class WebChatMessengerClient(
     {
         await foreach (var (key, update, _, _) in updates.WithCancellation(cancellationToken))
         {
-            var topicId = sessionManager.GetTopicIdByChatId(key.ChatId);
+            var topicId = sessionManager.GetTopicIdByConversationId(key.ConversationId);
             if (topicId is null)
             {
-                logger.LogWarning("ProcessResponseStreamAsync: chatId {ChatId} not found", key.ChatId);
+                logger.LogWarning("ProcessResponseStreamAsync: conversationId {ConversationId} not found", key.ConversationId);
                 continue;
             }
 
@@ -210,7 +210,7 @@ public sealed class WebChatMessengerClient(
 
         if (topicId is null)
         {
-            return new AgentKey(actualChatId, actualThreadId, agentId);
+            return new AgentKey($"{actualChatId}:{actualThreadId}", agentId);
         }
 
         // Notify WebUI about the topic first (if it was an existing topic not created by CreateThread)
@@ -234,7 +234,7 @@ public sealed class WebChatMessengerClient(
                 .SafeAwaitAsync(logger, "Failed to notify stream started for topic {TopicId}", topicId);
         }
 
-        return new AgentKey(actualChatId, actualThreadId, agentId);
+        return new AgentKey($"{actualChatId}:{actualThreadId}", agentId);
     }
 
     private static long GenerateChatId()
@@ -244,10 +244,10 @@ public sealed class WebChatMessengerClient(
 
     public async Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)
     {
-        var topicId = sessionManager.GetTopicIdByChatId(agentKey.ChatId);
+        var topicId = sessionManager.GetTopicIdByConversationId(agentKey.ConversationId);
         if (topicId is null)
         {
-            logger.LogWarning("StartScheduledStreamAsync: topicId not found for chatId={ChatId}", agentKey.ChatId);
+            logger.LogWarning("StartScheduledStreamAsync: topicId not found for conversationId={ConversationId}", agentKey.ConversationId);
             return;
         }
 
@@ -276,7 +276,7 @@ public sealed class WebChatMessengerClient(
         // Get session before removing it so we can cancel the agent
         if (sessionManager.TryGetSession(topicId, out var session) && session is not null)
         {
-            var agentKey = new AgentKey(session.ChatId, session.ThreadId, session.AgentId);
+            var agentKey = new AgentKey($"{session.ChatId}:{session.ThreadId}", session.AgentId);
             threadResolver.Cancel(agentKey);
         }
 
@@ -412,7 +412,7 @@ public sealed class WebChatMessengerClient(
     {
         if (sessionManager.TryGetSession(topicId, out var session) && session is not null)
         {
-            var agentKey = new AgentKey(session.ChatId, session.ThreadId, session.AgentId);
+            var agentKey = new AgentKey($"{session.ChatId}:{session.ThreadId}", session.AgentId);
             threadResolver.Cancel(agentKey);
         }
 

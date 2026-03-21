@@ -28,7 +28,7 @@ public class MessageSourceRoutingTests
 
         // Create response for ServiceBus with source in tuple
         var response = (
-            new AgentKey(123, 1, "agent"),
+            new AgentKey("123:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
             (AiResponse?)null,
             MessageSource.ServiceBus);
@@ -58,7 +58,7 @@ public class MessageSourceRoutingTests
 
         // Create response for WebUI with source in tuple
         var response = (
-            new AgentKey(456, 1, "agent"),
+            new AgentKey("456:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
             (AiResponse?)null,
             MessageSource.WebUi);
@@ -88,7 +88,7 @@ public class MessageSourceRoutingTests
 
         // Create response with Cli source (only WebUI should receive it as universal viewer)
         var response = (
-            new AgentKey(789, 1, "agent"),
+            new AgentKey("789:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
             (AiResponse?)null,
             MessageSource.Cli);
@@ -117,7 +117,7 @@ public class MessageSourceRoutingTests
 
         // Create response for Telegram with source in tuple
         var response = (
-            new AgentKey(100, 1, "agent"),
+            new AgentKey("100:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Response")] },
             (AiResponse?)null,
             MessageSource.Telegram);
@@ -146,13 +146,13 @@ public class MessageSourceRoutingTests
 
         // Two responses with SAME ChatId but different sources - should route correctly based on tuple source
         var serviceBusResponse = (
-            new AgentKey(200, 1, "agent"),
+            new AgentKey("200:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("ServiceBus Response")] },
             (AiResponse?)null,
             MessageSource.ServiceBus);
 
         var webUiResponse = (
-            new AgentKey(200, 1, "agent"),
+            new AgentKey("200:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("WebUI Response")] },
             (AiResponse?)null,
             MessageSource.WebUi);

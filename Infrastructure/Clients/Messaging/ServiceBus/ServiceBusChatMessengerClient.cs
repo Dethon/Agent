@@ -39,7 +39,7 @@ public sealed class ServiceBusChatMessengerClient(
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(agentId);
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
+        return Task.FromResult(new AgentKey($"{chatId ?? 0}:{threadId ?? 0}", agentId));
     }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)

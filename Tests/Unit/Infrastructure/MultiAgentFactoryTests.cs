@@ -201,7 +201,7 @@ public sealed class MultiAgentFactoryTests
     public void Create_WithCustomAgentId_CreatesAgent()
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var agent = _sut.Create(agentKey, "user1", info.Id);
 
@@ -211,7 +211,7 @@ public sealed class MultiAgentFactoryTests
     [Fact]
     public void Create_WithUnknownAgentId_Throws()
     {
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
             () => _sut.Create(agentKey, "user1", "unknown-id"));
@@ -222,7 +222,7 @@ public sealed class MultiAgentFactoryTests
     [Fact]
     public void Create_WithBuiltInAgentId_StillWorks()
     {
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var agent = _sut.Create(agentKey, "user1", "built-in-id");
 
@@ -236,7 +236,7 @@ public sealed class MultiAgentFactoryTests
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
         _sut.UnregisterCustomAgent("user1", info.Id);
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
             () => _sut.Create(agentKey, "user1", info.Id));
@@ -248,7 +248,7 @@ public sealed class MultiAgentFactoryTests
     public void Create_WithCustomAgentIdOfDifferentUser_Throws()
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
             () => _sut.Create(agentKey, "user2", info.Id));
@@ -278,7 +278,7 @@ public sealed class MultiAgentFactoryTests
             EnabledFeatures = ["feature1"]
         };
         var info = _sut.RegisterCustomAgent("user1", registration);
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var agent = _sut.Create(agentKey, "user1", info.Id);
 

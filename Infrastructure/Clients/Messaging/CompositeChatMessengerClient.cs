@@ -80,7 +80,7 @@ public sealed class CompositeChatMessengerClient(
         }
 
         return results
-            .DefaultIfEmpty(new AgentKey(chatId ?? 0, threadId ?? 0, agentId ?? string.Empty))
+            .DefaultIfEmpty(new AgentKey($"{chatId ?? 0}:{threadId ?? 0}", agentId ?? string.Empty))
             .First();
     }
 

@@ -145,7 +145,7 @@ public class CompositeChatMessengerClientTests
 
         var composite = new CompositeChatMessengerClient([client1.Object, client2.Object], _router);
 
-        var testUpdate = (new AgentKey(1, 1, "agent"),
+        var testUpdate = (new AgentKey("1:1", "agent"),
             new AgentResponseUpdate { Contents = [new TextContent("Hello")] },
             (AiResponse?)null,
             MessageSource.WebUi);
@@ -191,8 +191,8 @@ public class CompositeChatMessengerClientTests
     public async Task CreateTopicIfNeededAsync_WebUiSource_ReturnsWebUiResult()
     {
         // Arrange
-        var webUiKey = new AgentKey(123, 456, "agent1");
-        var serviceBusKey = new AgentKey(789, 101, "agent1");
+        var webUiKey = new AgentKey("123:456", "agent1");
+        var serviceBusKey = new AgentKey("789:101", "agent1");
 
         var webUiClient = new Mock<IChatMessengerClient>();
         webUiClient.Setup(c => c.Source).Returns(MessageSource.WebUi);
@@ -224,8 +224,8 @@ public class CompositeChatMessengerClientTests
     public async Task CreateTopicIfNeededAsync_ServiceBusSource_PrefersSourceSpecificResult()
     {
         // Arrange
-        var webUiKey = new AgentKey(999, 888, "agent1");
-        var serviceBusKey = new AgentKey(123, 456, "agent1");
+        var webUiKey = new AgentKey("999:888", "agent1");
+        var serviceBusKey = new AgentKey("123:456", "agent1");
 
         var webUiClient = new Mock<IChatMessengerClient>();
         webUiClient.Setup(c => c.Source).Returns(MessageSource.WebUi);
@@ -261,7 +261,7 @@ public class CompositeChatMessengerClientTests
     public async Task StartScheduledStreamAsync_DelegatesToMatchingClient()
     {
         // Arrange
-        var agentKey = new AgentKey(1, 1, "agent");
+        var agentKey = new AgentKey("1:1", "agent");
 
         var client1 = new Mock<IChatMessengerClient>();
         client1.Setup(c => c.Source).Returns(MessageSource.WebUi);

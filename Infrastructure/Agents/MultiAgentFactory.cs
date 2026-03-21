@@ -93,7 +93,7 @@ public sealed class MultiAgentFactory(
         var approvalHandlerFactory = serviceProvider.GetRequiredService<IToolApprovalHandlerFactory>();
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
-        var name = $"{definition.Name}-{agentKey.ChatId}-{agentKey.ThreadId}";
+        var name = $"{definition.Name}-{agentKey.ConversationId}";
         var handler = approvalHandlerFactory.Create(agentKey);
         var effectiveClient = new ToolApprovalChatClient(chatClient, handler, definition.WhitelistPatterns);
 

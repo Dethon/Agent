@@ -63,7 +63,7 @@ public class ServiceBusIntegrationTests(ServiceBusFixture fixture)
         prompts[0].Sender.ShouldBe(sender);
 
         // Simulate agent response
-        var agentKey = new AgentKey(prompts[0].ChatId, prompts[0].ThreadId ?? 0, ServiceBusFixture.DefaultAgentId);
+        var agentKey = new AgentKey($"{prompts[0].ChatId}:{prompts[0].ThreadId ?? 0}", ServiceBusFixture.DefaultAgentId);
         var responseStream = CreateResponseStream(agentKey, expectedResponse);
         await _messengerClient.ProcessResponseStreamAsync(responseStream, _cts.Token);
 

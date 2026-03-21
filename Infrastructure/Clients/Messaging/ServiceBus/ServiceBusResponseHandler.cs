@@ -14,7 +14,7 @@ public class ServiceBusResponseHandler(
         CancellationToken ct)
     {
         var completedResponses = updates
-            .Select(x => (x.Key, x.Response?.Content, CorrelationId: GetCorrelationId(x.Key.ChatId)))
+            .Select(x => (x.Key, x.Response?.Content, CorrelationId: GetCorrelationId(x.Key.ConversationId)))
             .Where(x => !string.IsNullOrEmpty(x.Content) && x.CorrelationId is not null)
             .Select(x => (x.Key, Content: x.Content!, CorrelationId: x.CorrelationId!))
             .WithCancellation(ct);
@@ -25,9 +25,11 @@ public class ServiceBusResponseHandler(
         }
     }
 
-    private string? GetCorrelationId(long chatId)
+    private string? GetCorrelationId(string conversationId)
     {
-        return promptReceiver.TryGetCorrelationId(chatId, out var correlationId)
+        var parts = conversationId.Split(':');
+        return parts.Length > 0 && long.TryParse(parts[0], out var chatId) &&
+               promptReceiver.TryGetCorrelationId(chatId, out var correlationId)
             ? correlationId
             : null;
     }

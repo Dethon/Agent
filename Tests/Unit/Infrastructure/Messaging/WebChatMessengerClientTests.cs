@@ -75,7 +75,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
 
         result.AgentId.ShouldBe("test-agent");
 
-        var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
+        var topicId = _sessionManager.GetTopicIdByConversationId(result.ConversationId);
         topicId.ShouldNotBeNull();
         _streamManager.IsStreaming(topicId).ShouldBeTrue();
 
@@ -113,7 +113,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
 
         result.AgentId.ShouldBe("test-agent");
 
-        var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
+        var topicId = _sessionManager.GetTopicIdByConversationId(result.ConversationId);
         topicId.ShouldNotBeNull();
         _streamManager.IsStreaming(topicId).ShouldBeTrue();
 
@@ -149,7 +149,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
             agentId: "test-agent",
             topicName: "Telegram message");
 
-        var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
+        var topicId = _sessionManager.GetTopicIdByConversationId(result.ConversationId);
         topicId.ShouldNotBeNull();
         _streamManager.IsStreaming(topicId).ShouldBeTrue();
 
@@ -184,7 +184,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
             topicName: "Hello from service bus",
             sender: "external-user");
 
-        var topicId = _sessionManager.GetTopicIdByChatId(result.ChatId);
+        var topicId = _sessionManager.GetTopicIdByConversationId(result.ConversationId);
         topicId.ShouldNotBeNull();
 
         var streamState = _streamManager.GetStreamState(topicId);
@@ -223,8 +223,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
             agentId: "test-agent",
             topicName: "Follow-up message");
 
-        result.ChatId.ShouldBe(100);
-        result.ThreadId.ShouldBe(200);
+        result.ConversationId.ShouldBe("100:200");
 
         _streamManager.IsStreaming("existing-topic-123").ShouldBeTrue();
 
@@ -292,7 +291,7 @@ public sealed class WebChatMessengerClientTests : IDisposable
                 It.IsAny<StreamChangedNotification>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var agentKey = new AgentKey(700, 800, "test-agent");
+        var agentKey = new AgentKey("700:800", "test-agent");
         await _client.StartScheduledStreamAsync(agentKey, MessageSource.WebUi);
 
         _hubNotifier.Verify(n => n.NotifyStreamChangedAsync(

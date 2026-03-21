@@ -39,8 +39,7 @@ public class ServiceBusChatMessengerClientTests
         var result = await _client.CreateTopicIfNeededAsync(MessageSource.ServiceBus, 123, 456, "agent1", "test topic");
 
         // Assert
-        result.ChatId.ShouldBe(123);
-        result.ThreadId.ShouldBe(456);
+        result.ConversationId.ShouldBe("123:456");
         result.AgentId.ShouldBe("agent1");
     }
 
@@ -67,6 +66,6 @@ public class ServiceBusChatMessengerClientTests
     {
         // Act & Assert - should not throw
         await Should.NotThrowAsync(async () =>
-            await _client.StartScheduledStreamAsync(new AgentKey(1, 1, "agent1"), MessageSource.ServiceBus));
+            await _client.StartScheduledStreamAsync(new AgentKey("1:1", "agent1"), MessageSource.ServiceBus));
     }
 }

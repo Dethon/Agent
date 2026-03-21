@@ -154,7 +154,7 @@ public class ChatMonitorTests
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
                     It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentKey(1, 1));
+            .ReturnsAsync(new AgentKey("1:1"));
 
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
@@ -182,7 +182,7 @@ public class ChatMonitorTests
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
                     It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentKey(1, 100));
+            .ReturnsAsync(new AgentKey("1:100"));
         var mockAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
@@ -207,7 +207,7 @@ public class ChatMonitorTests
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var agentKey = new AgentKey(1, 1);
+        var agentKey = new AgentKey("1:1");
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
                     It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
@@ -238,7 +238,7 @@ public class ChatMonitorTests
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
         var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/clear") };
         var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var agentKey = new AgentKey(1, 1);
+        var agentKey = new AgentKey("1:1");
         chatMessengerClient.Setup(c =>
                 c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
                     It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))

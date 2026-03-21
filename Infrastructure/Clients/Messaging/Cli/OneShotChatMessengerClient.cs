@@ -96,7 +96,7 @@ public sealed class OneShotChatMessengerClient(
         string? sender = null,
         CancellationToken ct = default)
     {
-        return Task.FromResult(new AgentKey(chatId ?? 0, threadId ?? 0, agentId));
+        return Task.FromResult(new AgentKey($"{chatId ?? 0}:{threadId ?? 0}", agentId));
     }
 
     public Task StartScheduledStreamAsync(AgentKey agentKey, MessageSource source, CancellationToken ct = default)

@@ -106,7 +106,7 @@ public class TelegramToolApprovalHandlerTests : IAsyncLifetime
         const string agentId = "test-agent";
         var botsByAgentId = new Dictionary<string, ITelegramBotClient> { [agentId] = _botClient };
         var factory = new TelegramToolApprovalHandlerFactory(botsByAgentId);
-        var agentKey = new AgentKey(TestChatId, TestThreadId, agentId);
+        var agentKey = new AgentKey($"{TestChatId}:{TestThreadId}", agentId);
 
         // Act
         var handler = factory.Create(agentKey);
