@@ -94,9 +94,13 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string ChannelId { get; init; } = "test-channel";
 
+    public string? ConversationIdToReturn { get; init; }
+
     public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
 
     public List<(string ConversationId, string Content, string ContentType, bool IsComplete)> SentReplies { get; } = [];
+
+    public List<(string AgentId, string TopicName, string Sender)> CreatedConversations { get; } = [];
 
     public Task SendReplyAsync(string conversationId, string content, string contentType, bool isComplete, CancellationToken ct)
     {
@@ -111,7 +115,10 @@ internal sealed class FakeChannelConnection : IChannelConnection
         => Task.CompletedTask;
 
     public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, CancellationToken ct)
-        => Task.FromResult<string?>(null);
+    {
+        CreatedConversations.Add((agentId, topicName, sender));
+        return Task.FromResult(ConversationIdToReturn);
+    }
 
     public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(message);
 

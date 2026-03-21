@@ -325,6 +325,7 @@ services:
       - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
       - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
       - WEBPUSH__SUBJECT=${WEBPUSH__SUBJECT}
+      - DefaultScheduleChannelId=${DEFAULT_SCHEDULE_CHANNEL_ID:-}
     networks:
       - jackbot
     depends_on:
