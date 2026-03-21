@@ -1,5 +1,6 @@
 @using Markdig
 @inject UserIdentityStore UserIdentityStore
+@inject IJSRuntime Js
 
 @code {
     [Parameter] public ChatMessageModel Message { get; set; } = new();
@@ -11,6 +12,18 @@
 
     private bool _showReasoning;
     private bool _showToolCalls;
+    private bool _copied;
+
+    private async Task CopyMessage()
+    {
+        var text = Message.Content;
+        await Js.InvokeVoidAsync("clipboardHelper.copy", text);
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(1500);
+        _copied = false;
+        StateHasChanged();
+    }
 
     // Static pipeline to avoid allocation on every render
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
@@ -62,15 +75,11 @@
 
     private string GetMessageWrapperClass()
     {
-        var classes = new List<string> { "message-wrapper" };
-        if (Message.Role == "assistant")
+        var classes = new List<string>
         {
-            classes.Add("agent");
-        }
-        else
-        {
-            classes.Add("user");
-        }
+            "message-wrapper",
+            Message.Role == "assistant" ? "agent" : "user"
+        };
         return string.Join(" ", classes);
     }
 
@@ -165,10 +174,31 @@
         @{
             var timestamp = GetFormattedTimestamp();
         }
-        @if (!string.IsNullOrEmpty(timestamp))
-        {
-            <div class="message-timestamp">@timestamp</div>
-        }
+        <div class="message-footer">
+            @if (!string.IsNullOrEmpty(timestamp))
+            {
+                <span class="message-timestamp">@timestamp</span>
+            }
+
+            @if (!string.IsNullOrEmpty(Message.Content))
+            {
+                <button class="btn-copy @(_copied ? "copied" : "")" @onclick="CopyMessage" title="Copy message">
+                    @if (_copied)
+                    {
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    }
+                    else
+                    {
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                    }
+                </button>
+            }
+        </div>
 
         @if (ShowRetry)
         {

@@ -16,7 +16,6 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     public McpAgentDeserializationTests()
     {
         var chatClient = new Mock<IChatClient>();
-        chatClient.Setup(c => c.GetService(It.IsAny<Type>(), It.IsAny<object?>())).Returns(null);
         var stateStore = new Mock<IThreadStateStore>();
         _agent = new McpAgent(
             [],
