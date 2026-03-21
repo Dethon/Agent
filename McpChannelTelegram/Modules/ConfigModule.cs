@@ -1,9 +1,11 @@
+using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
+using Telegram.Bot;
 
 namespace McpChannelTelegram.Modules;
 
@@ -27,7 +29,11 @@ public static class ConfigModule
 
         services
             .AddSingleton(settings)
-            .AddSingleton(notificationEmitter);
+            .AddSingleton(notificationEmitter)
+            .AddSingleton<ITelegramBotClient>(new TelegramBotClient(settings.BotToken))
+            .AddSingleton<MessageAccumulator>()
+            .AddSingleton<ApprovalCallbackRouter>()
+            .AddHostedService<TelegramBotService>();
 
         services
             .AddMcpServer()
@@ -49,6 +55,8 @@ public static class ConfigModule
                 };
 #pragma warning restore MCPEXP002
             })
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
