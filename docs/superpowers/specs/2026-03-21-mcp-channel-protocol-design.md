@@ -39,13 +39,14 @@ Each channel is a standard MCP server (HTTP/SSE transport, Docker container) tha
   "params": {
     "conversationId": "string",
     "content": "string",
-    "reasoning": "string | null",
+    "contentType": "text | reasoning | tool_call | error | stream_complete",
     "isComplete": "bool"
   }
 }
 ```
 
 - Called per response chunk during streaming. `isComplete: true` signals the final chunk.
+- `contentType` distinguishes different kinds of response content (see content type mapping below).
 - The channel handles platform-specific formatting, message splitting, typing indicators, etc.
 
 #### Outbound: `request_approval` tool (Agent → Channel)
@@ -68,30 +69,16 @@ Each channel is a standard MCP server (HTTP/SSE transport, Docker container) tha
 - `mode: "request"` — the channel renders approval UI appropriate to its platform (inline keyboard, dialog, auto-approve). Blocks until the user responds or a timeout occurs.
 - `mode: "notify"` — fire-and-forget notification that a tool was auto-approved (whitelisted or dynamically remembered). The channel displays this to the user but does not wait for a response. This covers the current `NotifyAutoApprovedAsync` behavior.
 
-#### Outbound: `send_reply` content types
+#### Content type mapping
 
-The `send_reply` tool carries a `contentType` field to distinguish different kinds of response content:
-
-```json
-{
-  "name": "send_reply",
-  "params": {
-    "conversationId": "string",
-    "content": "string",
-    "contentType": "text | reasoning | tool_call | error | stream_complete",
-    "isComplete": "bool"
-  }
-}
-```
-
-This replaces the previous `reasoning` string field with a more extensible content-typed approach. The agent-side mapping from `AgentResponseUpdate` to `send_reply` calls:
+The agent-side mapping from `AgentResponseUpdate` to `send_reply` calls:
 
 | `AgentResponseUpdate` content | `contentType` | `content` value |
 |-------------------------------|---------------|-----------------|
 | `TextContent` | `text` | The text chunk |
 | `TextReasoningContent` | `reasoning` | The reasoning text |
 | `FunctionCallContent` | `tool_call` | JSON-serialized tool name + arguments |
-| `ErrorContent` | `error` | Error message |
+| Error text from `WithErrorHandling()` | `error` | Error message |
 | `StreamCompleteContent` | `stream_complete` | Empty (signals end of response) |
 
 Each channel decides how to render each content type. For example, Telegram may ignore `reasoning`, WebChat may show it in a collapsible panel, ServiceBus may include it in the response payload.
@@ -152,8 +139,8 @@ public async Task Monitor(CancellationToken ct)
         .Select(group => ProcessChatThread(group, ct))
         .Merge(ct);
 
-    await foreach (var (channel, agentKey, update) in responses.WithCancellation(ct))
-        await channel.SendReplyAsync(agentKey.ConversationId, update);
+    await foreach (var (channel, conversationId, content, contentType, isComplete) in responses.WithCancellation(ct))
+        await channel.SendReplyAsync(conversationId, content, contentType, isComplete, ct);
 }
 ```
 
@@ -206,6 +193,7 @@ The channel already resolved the conversation identity — `ChatId` + `ThreadId`
 
 - Only channels that support scheduling expose this tool. Others (ServiceBus, Telegram) do not.
 - The `SupportsScheduledNotifications` check becomes: "does the target channel expose `create_conversation`?" — discoverable via MCP tool listing.
+- If multiple channels expose `create_conversation`, the schedule's target channel is determined by configuration (default channel ID in appsettings). Future enhancement: allow per-schedule channel targeting.
 - After creating a conversation, `ScheduleExecutor` uses `send_reply` to push response chunks, same as `ChatMonitor`.
 
 ### Redis Key Migration
@@ -250,6 +238,7 @@ Each channel is a Docker container. Agent connects via HTTP/SSE transport (same 
 
 ### From Domain
 - `IChatMessengerClient` interface
+- `IToolApprovalHandlerFactory` interface
 - `MessageSource` enum
 - `ChatPrompt` record (replaced by `ChannelMessage`)
 - `ChatPrompt.ChatId`, `ThreadId`, `MessageId` fields
