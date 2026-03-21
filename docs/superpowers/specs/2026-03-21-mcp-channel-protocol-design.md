@@ -308,7 +308,7 @@ Each channel is a Docker container. Agent connects via HTTP/SSE transport (same 
 ## Design Decisions
 
 - **`IChannelConnection` in Domain**: The interface uses only domain primitives (strings, records). MCP-specific types are confined to the `McpChannelConnection` implementation in Infrastructure. This follows the existing pattern where Domain defines transport-agnostic interfaces.
-- **Channel-owned persistence**: Each channel is responsible for persisting its own state — topics, user mappings, forum threads, sender allowlists, correlation IDs, etc. The agent stores only conversation history (keyed by `AgentKey`). This means each channel server needs its own storage (e.g., Redis, SQLite, or the platform's own API as source of truth).
+- **Channel-owned persistence**: Each channel is responsible for persisting its own state — topics, user mappings, forum threads, sender allowlists, correlation IDs, etc. The agent stores only conversation history (keyed by `AgentKey`). Channels can use the existing shared Redis instance (with their own key prefix) — no need to spin up a separate Redis server per channel.
 - **`MessageId` dropped from `ChannelMessage`**: Platform-specific message IDs (used for reply-to threading in Telegram) are now internal to the channel. The channel tracks them as needed.
 - **Bounded buffer sizes**: Configurable via environment variables / appsettings, following existing configuration conventions. Defaults TBD during implementation.
 
