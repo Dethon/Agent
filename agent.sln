@@ -36,8 +36,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionItems", "SolutionIt
 		CLAUDE.md = CLAUDE.md
 		README.md = README.md
 		LICENSE = LICENSE
-		Dockerfile.base-sdk = Dockerfile.base-sdk 
+		Dockerfile.base-sdk = Dockerfile.base-sdk
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpChannelSignalR", "McpChannelSignalR\McpChannelSignalR.csproj", "{4887E218-01FE-46FF-8951-887DDB9F6D61}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -193,6 +195,18 @@ Global
 		{EA854E2F-6BC7-4873-B596-07AB0CA69C3F}.Release|x64.Build.0 = Release|Any CPU
 		{EA854E2F-6BC7-4873-B596-07AB0CA69C3F}.Release|x86.ActiveCfg = Release|Any CPU
 		{EA854E2F-6BC7-4873-B596-07AB0CA69C3F}.Release|x86.Build.0 = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|x64.Build.0 = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Debug|x86.Build.0 = Debug|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|x64.ActiveCfg = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|x64.Build.0 = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|x86.ActiveCfg = Release|Any CPU
+		{4887E218-01FE-46FF-8951-887DDB9F6D61}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
