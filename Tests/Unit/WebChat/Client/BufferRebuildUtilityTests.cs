@@ -536,5 +536,32 @@ public sealed class BufferRebuildUtilityTests
         helloCount.ShouldBeLessThanOrEqualTo(2); // at most the existing dirty count, not worse
     }
 
+    [Fact]
+    public void ResumeFromBuffer_CurrentPromptAppearsBeforeUnanchoredBufferContent()
+    {
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Response to new question", MessageId = "msg-3", IsComplete = true, SequenceNumber = 1 },
+            new() { Content = "Still responding", MessageId = "msg-4", SequenceNumber = 2 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "New question", "alice");
+
+        // Order should be: Q1, A1, New question, Response to new question
+        result.MergedMessages.Count.ShouldBe(4);
+        result.MergedMessages[0].Content.ShouldBe("Q1");
+        result.MergedMessages[1].Content.ShouldBe("A1");
+        result.MergedMessages[2].Role.ShouldBe("user");
+        result.MergedMessages[2].Content.ShouldBe("New question");
+        result.MergedMessages[3].Content.ShouldBe("Response to new question");
+        result.StreamingMessage.Content.ShouldBe("Still responding");
+    }
+
     #endregion
 }

@@ -97,13 +97,9 @@ public static class BufferRebuildUtility
             }
         }
 
-        // Append leading new if no anchors were found
-        if (!leadingInserted)
-        {
-            merged.AddRange(leadingNew);
-        }
-
-        // Add current prompt if not already present
+        // Add current prompt before unanchored buffer content so the user message
+        // appears before the assistant responses it triggered (fixes ordering on
+        // page refresh while the agent is still responding).
         if (!string.IsNullOrEmpty(currentPrompt) &&
             !existingHistory.Any(m => m.Role == "user" && m.Content == currentPrompt))
         {
@@ -113,6 +109,12 @@ public static class BufferRebuildUtility
                 Content = currentPrompt,
                 SenderId = currentSenderId
             });
+        }
+
+        // Append leading new if no anchors were found
+        if (!leadingInserted)
+        {
+            merged.AddRange(leadingNew);
         }
 
         return new BufferResumeResult(merged, streamingMessage);
