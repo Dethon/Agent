@@ -55,6 +55,7 @@ Each channel is a standard MCP server (HTTP/SSE transport, Docker container) tha
   "name": "request_approval",
   "params": {
     "conversationId": "string",
+    "mode": "request | notify",
     "requests": [{ "toolName": "string", "arguments": "object" }]
   },
   "returns": {
@@ -64,8 +65,36 @@ Each channel is a standard MCP server (HTTP/SSE transport, Docker container) tha
 }
 ```
 
-- The channel renders approval UI appropriate to its platform (inline keyboard, dialog, auto-approve).
-- Blocks until the user responds or a timeout occurs.
+- `mode: "request"` — the channel renders approval UI appropriate to its platform (inline keyboard, dialog, auto-approve). Blocks until the user responds or a timeout occurs.
+- `mode: "notify"` — fire-and-forget notification that a tool was auto-approved (whitelisted or dynamically remembered). The channel displays this to the user but does not wait for a response. This covers the current `NotifyAutoApprovedAsync` behavior.
+
+#### Outbound: `send_reply` content types
+
+The `send_reply` tool carries a `contentType` field to distinguish different kinds of response content:
+
+```json
+{
+  "name": "send_reply",
+  "params": {
+    "conversationId": "string",
+    "content": "string",
+    "contentType": "text | reasoning | tool_call | error | stream_complete",
+    "isComplete": "bool"
+  }
+}
+```
+
+This replaces the previous `reasoning` string field with a more extensible content-typed approach. The agent-side mapping from `AgentResponseUpdate` to `send_reply` calls:
+
+| `AgentResponseUpdate` content | `contentType` | `content` value |
+|-------------------------------|---------------|-----------------|
+| `TextContent` | `text` | The text chunk |
+| `TextReasoningContent` | `reasoning` | The reasoning text |
+| `FunctionCallContent` | `tool_call` | JSON-serialized tool name + arguments |
+| `ErrorContent` | `error` | Error message |
+| `StreamCompleteContent` | `stream_complete` | Empty (signals end of response) |
+
+Each channel decides how to render each content type. For example, Telegram may ignore `reasoning`, WebChat may show it in a collapsible panel, ServiceBus may include it in the response payload.
 
 ### ChatMonitor Refactoring
 
@@ -79,17 +108,35 @@ public class ChatMonitor(
     ILogger<ChatMonitor> logger)
 ```
 
-`IChannelConnection` wraps an MCP client connected to one channel server:
+`IChannelConnection` wraps an MCP client connected to one channel server. This interface lives in Domain — it contains no MCP-specific types, only domain primitives (`string`, `ChannelMessage`, `ToolApprovalRequest`). The MCP transport details are encapsulated in the Infrastructure implementation (`McpChannelConnection`).
 
 ```csharp
 public interface IChannelConnection
 {
     string ChannelId { get; }
     IAsyncEnumerable<ChannelMessage> Messages { get; }
-    Task SendReplyAsync(string conversationId, string content, string? reasoning, bool isComplete, CancellationToken ct);
+    Task SendReplyAsync(string conversationId, string content, string contentType, bool isComplete, CancellationToken ct);
     Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct);
+    Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct);
 }
 ```
+
+#### Tool Approval Wiring
+
+`IToolApprovalHandlerFactory` is replaced by a single `ChannelToolApprovalHandler` that receives the originating `IChannelConnection` and `conversationId` at construction time. `MultiAgentFactory` creates one per agent, passing the channel that originated the conversation:
+
+```csharp
+public class ChannelToolApprovalHandler(IChannelConnection channel, string conversationId) : IToolApprovalHandler
+{
+    public Task<ToolApprovalResult> RequestApprovalAsync(IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => channel.RequestApprovalAsync(conversationId, requests, ct);
+
+    public Task NotifyAutoApprovedAsync(IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => channel.NotifyAutoApprovedAsync(conversationId, requests, ct);
+}
+```
+
+This means `ProcessChatThread` must track which channel originated each conversation and pass it through to agent creation.
 
 `Monitor()` merges messages from all channels:
 
@@ -134,6 +181,38 @@ public readonly record struct AgentKey(string ConversationId, string? AgentId = 
 The channel already resolved the conversation identity — `ChatId` + `ThreadId` collapse into a single opaque `ConversationId`.
 
 **`MessageSource` enum** — removed entirely. Replaced by `ChannelId` (string) on `ChannelMessage` and `IChannelConnection`.
+
+### ScheduleExecutor Migration
+
+`ScheduleExecutor` currently depends on `IChatMessengerClient` to create topics, start scheduled streams, and push responses. In the channel architecture:
+
+- `ScheduleExecutor` receives `IReadOnlyList<IChannelConnection>` instead of `IChatMessengerClient`
+- It targets a configurable default channel for scheduled output (e.g., the SignalR channel, since `SupportsScheduledNotifications` was only true for WebChat)
+- **Topic creation**: The channel must support agent-initiated conversations. Add a `create_conversation` tool to channels that support scheduling:
+
+```json
+{
+  "name": "create_conversation",
+  "params": {
+    "agentId": "string",
+    "topicName": "string",
+    "sender": "string"
+  },
+  "returns": {
+    "conversationId": "string"
+  }
+}
+```
+
+- Only channels that support scheduling expose this tool. Others (ServiceBus, Telegram) do not.
+- The `SupportsScheduledNotifications` check becomes: "does the target channel expose `create_conversation`?" — discoverable via MCP tool listing.
+- After creating a conversation, `ScheduleExecutor` uses `send_reply` to push response chunks, same as `ChatMonitor`.
+
+### Redis Key Migration
+
+Changing `AgentKey` from `(long ChatId, long ThreadId, string? AgentId)` to `(string ConversationId, string? AgentId)` changes the Redis key format from `agent-key:{AgentId}:{ChatId}:{ThreadId}` to `agent-key:{AgentId}:{ConversationId}`.
+
+Migration strategy: **dual-read fallback** in `RedisThreadStateStore`. On session restore, if the new key format yields no result, attempt a lookup with the legacy format. Each channel defines how it constructs `conversationId` from the old `ChatId`/`ThreadId` pair, making reverse mapping possible. This allows gradual migration without data loss. Legacy fallback can be removed after one TTL cycle (30 days).
 
 ## Channel Server Implementations
 
@@ -237,8 +316,13 @@ Each channel is a Docker container. Agent connects via HTTP/SSE transport (same 
 - Telegram/WebChat-specific tests move to respective channel server projects
 - `CompositeChatMessengerClient` tests deleted (replaced by ChatMonitor multiplexing tests)
 
+## Design Decisions
+
+- **`IChannelConnection` in Domain**: The interface uses only domain primitives (strings, records). MCP-specific types are confined to the `McpChannelConnection` implementation in Infrastructure. This follows the existing pattern where Domain defines transport-agnostic interfaces.
+- **`MessageId` dropped from `ChannelMessage`**: Platform-specific message IDs (used for reply-to threading in Telegram) are now internal to the channel. The channel tracks them as needed.
+- **Bounded buffer sizes**: Configurable via environment variables / appsettings, following existing configuration conventions. Defaults TBD during implementation.
+
 ## Non-Goals
 
 - CLI transport: removed entirely (was unused)
-- Scheduled notifications: out of scope for initial implementation; can be added as a channel-level concern later
 - OneShot mode: removed with CLI
