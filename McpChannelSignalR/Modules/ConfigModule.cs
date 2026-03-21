@@ -1,3 +1,5 @@
+using McpChannelSignalR.McpTools;
+using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,11 +25,17 @@ public static class ConfigModule
     {
         services
             .AddSingleton(settings)
+            .AddSingleton<IStreamService, StubStreamService>()
+            .AddSingleton<IApprovalService, StubApprovalService>()
+            .AddSingleton<ISessionService, StubSessionService>()
             .AddSignalR();
 
         services
             .AddMcpServer()
             .WithHttpTransport()
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>()
+            .WithTools<CreateConversationTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
@@ -45,7 +53,6 @@ public static class ConfigModule
                     };
                 }
             }));
-            // Tools will be added in subsequent tasks
 
         return services;
     }
