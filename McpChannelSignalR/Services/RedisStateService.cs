@@ -10,16 +10,16 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
 {
     private static readonly TimeSpan Expiration = TimeSpan.FromDays(30);
 
-    private readonly IDatabase _db = redis.GetDatabase();
-    private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
+    private IDatabase Db => redis.GetDatabase();
+    private IServer Server => redis.GetServer(redis.GetEndPoints()[0]);
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
     {
         var topics = new List<TopicMetadata>();
 
-        await foreach (var key in _server.KeysAsync(pattern: $"topic:{agentId}:*"))
+        await foreach (var key in Server.KeysAsync(pattern: $"topic:{agentId}:*"))
         {
-            var json = await _db.StringGetAsync(key);
+            var json = await Db.StringGetAsync(key);
             if (json.IsNullOrEmpty)
             {
                 continue;
@@ -42,23 +42,23 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
     public async Task SaveTopicAsync(TopicMetadata topic)
     {
         var json = JsonSerializer.Serialize(topic);
-        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, Expiration);
+        await Db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, Expiration);
     }
 
     public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)
     {
-        await _db.KeyDeleteAsync(TopicKey(agentId, chatId, topicId));
+        await Db.KeyDeleteAsync(TopicKey(agentId, chatId, topicId));
     }
 
     public async Task DeleteMessagesAsync(AgentKey agentKey)
     {
-        await _db.KeyDeleteAsync(agentKey.ToString());
+        await Db.KeyDeleteAsync(agentKey.ToString());
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
         var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
-        var value = await _db.StringGetAsync(agentKey.ToString());
+        var value = await Db.StringGetAsync(agentKey.ToString());
 
         if (!value.HasValue)
         {
