@@ -64,13 +64,27 @@ public static class InjectorModule
                 }).Services;
             }
 
+            var channelConnections = settings.ChannelEndpoints
+                .Select(ep => new McpChannelConnection(ep.ChannelId))
+                .ToList();
+
+            foreach (var conn in channelConnections)
+            {
+                services = services.AddSingleton<IChannelConnection>(conn);
+            }
+
             services = services
                 .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
                     sp.GetServices<IChannelConnection>().ToList())
                 .AddSingleton<Func<IChannelConnection, string, IToolApprovalHandler>>(
                     _ => (ch, convId) => new ChannelToolApprovalHandler(ch, convId))
                 .AddSingleton<ChatMonitor>()
-                .AddHostedService<ChatMonitoring>();
+                .AddHostedService<ChatMonitoring>()
+                .AddHostedService(sp =>
+                    new ChannelConnectionHost(
+                        settings.ChannelEndpoints,
+                        sp.GetServices<IChannelConnection>().OfType<McpChannelConnection>().ToList(),
+                        sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
 
             return cmdParams.ChatInterface switch
             {

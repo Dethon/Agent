@@ -300,6 +300,84 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-channel-signalr:
+    image: mcp-channel-signalr:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-signalr
+    ports:
+      - "6010:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelSignalR/Dockerfile
+      cache_from:
+        - mcp-channel-signalr:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    environment:
+      - REDIS__CONNECTIONSTRING=redis:6379
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+      - redis
+
+  mcp-channel-telegram:
+    image: mcp-channel-telegram:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-telegram
+    ports:
+      - "6011:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelTelegram/Dockerfile
+      cache_from:
+        - mcp-channel-telegram:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    environment:
+      - REDIS__CONNECTIONSTRING=redis:6379
+      - BOTTOKEN=${CHANNEL_TELEGRAM_BOTTOKEN}
+      - ALLOWEDUSERNAMES=${CHANNEL_TELEGRAM_ALLOWEDUSERNAMES}
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+      - redis
+
+  mcp-channel-servicebus:
+    image: mcp-channel-servicebus:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-servicebus
+    ports:
+      - "6012:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelServiceBus/Dockerfile
+      cache_from:
+        - mcp-channel-servicebus:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    environment:
+      - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
+      - PROMPTQUEUENAME=${PROMPTQUEUENAME:-prompt-queue}
+      - RESPONSEQUEUENAME=${RESPONSEQUEUENAME:-response-queue}
+    restart: unless-stopped
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+
   agent:
     image: agent:latest
     logging:
@@ -326,6 +404,12 @@ services:
       - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
       - WEBPUSH__SUBJECT=${WEBPUSH__SUBJECT}
       - DefaultScheduleChannelId=${DEFAULT_SCHEDULE_CHANNEL_ID:-}
+      - CHANNELENDPOINTS__0__CHANNELID=signalr
+      - CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/sse
+      - CHANNELENDPOINTS__1__CHANNELID=telegram
+      - CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/sse
+      - CHANNELENDPOINTS__2__CHANNELID=servicebus
+      - CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/sse
     networks:
       - jackbot
     depends_on:
@@ -334,6 +418,9 @@ services:
       - mcp-websearch
       - mcp-memory
       - mcp-idealista
+      - mcp-channel-signalr
+      - mcp-channel-telegram
+      - mcp-channel-servicebus
       - redis
       - base-sdk
 

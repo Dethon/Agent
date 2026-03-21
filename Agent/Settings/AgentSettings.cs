@@ -11,6 +11,7 @@ public record AgentSettings
     public ServiceBusSettings? ServiceBus { get; [UsedImplicitly] init; }
     public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
     public WebPushConfiguration? WebPush { get; init; }
+    public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
 }
 
 public record OpenRouterConfiguration
@@ -35,4 +36,10 @@ public record WebPushConfiguration
     public string? PublicKey { get; init; }
     public string? PrivateKey { get; init; }
     public string? Subject { get; init; }
+}
+
+public record ChannelEndpoint
+{
+    public required string ChannelId { get; init; }
+    public required string Endpoint { get; init; }
 }
