@@ -17,7 +17,7 @@ public sealed class MultiAgentFactory(
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
         var agents = registryOptions.CurrentValue.Agents;
         if (agents.Length == 0)
@@ -38,7 +38,7 @@ public sealed class MultiAgentFactory(
 
         _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{agentId}'.");
 
-        return CreateFromDefinition(agentKey, userId, agent);
+        return CreateFromDefinition(agentKey, userId, agent, approvalHandler);
     }
 
     public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
@@ -87,15 +87,13 @@ public sealed class MultiAgentFactory(
         return userAgents.TryRemove(agentId, out _);
     }
 
-    public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition)
+    public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
         var chatClient = CreateChatClient(definition.Model);
-        var approvalHandlerFactory = serviceProvider.GetRequiredService<IToolApprovalHandlerFactory>();
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var handler = approvalHandlerFactory.Create(agentKey);
-        var effectiveClient = new ToolApprovalChatClient(chatClient, handler, definition.WhitelistPatterns);
+        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns);
 
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures)

@@ -63,7 +63,7 @@ public sealed class FakeAgentFactory : IAgentFactory
         _responseQueue.Enqueue(new QueuedResponse { Error = errorMessage });
     }
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
         var responses = new List<QueuedResponse>();
         while (_responseQueue.TryDequeue(out var response))

@@ -70,7 +70,7 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
         return agent;
     }
@@ -160,7 +160,9 @@ public class ChatMonitorTests
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var approvalHandlerFactory = new Mock<IToolApprovalHandlerFactory>();
+        approvalHandlerFactory.Setup(f => f.Create(It.IsAny<AgentKey>())).Returns(new Mock<IToolApprovalHandler>().Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, approvalHandlerFactory.Object, threadResolver, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -187,7 +189,9 @@ public class ChatMonitorTests
         var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var approvalHandlerFactory = new Mock<IToolApprovalHandlerFactory>();
+        approvalHandlerFactory.Setup(f => f.Create(It.IsAny<AgentKey>())).Returns(new Mock<IToolApprovalHandler>().Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, approvalHandlerFactory.Object, threadResolver, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -219,7 +223,9 @@ public class ChatMonitorTests
         // First resolve a context for the agent key so we can verify it gets canceled but not cleaned
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var approvalHandlerFactory = new Mock<IToolApprovalHandlerFactory>();
+        approvalHandlerFactory.Setup(f => f.Create(It.IsAny<AgentKey>())).Returns(new Mock<IToolApprovalHandler>().Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, approvalHandlerFactory.Object, threadResolver, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -250,7 +256,9 @@ public class ChatMonitorTests
         // First resolve a context for the agent key so we can verify it gets cleaned
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var approvalHandlerFactory = new Mock<IToolApprovalHandlerFactory>();
+        approvalHandlerFactory.Setup(f => f.Create(It.IsAny<AgentKey>())).Returns(new Mock<IToolApprovalHandler>().Object);
+        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, approvalHandlerFactory.Object, threadResolver, logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);

@@ -14,6 +14,7 @@ namespace Domain.Monitor;
 public class ScheduleExecutor(
     IScheduleStore store,
     IScheduleAgentFactory agentFactory,
+    IToolApprovalHandlerFactory approvalHandlerFactory,
     IChatMessengerClient messengerClient,
     Channel<Schedule> scheduleChannel,
     ILogger<ScheduleExecutor> logger)
@@ -89,10 +90,12 @@ public class ScheduleExecutor(
         string? userId,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        var approvalHandler = approvalHandlerFactory.Create(agentKey);
         await using var agent = agentFactory.CreateFromDefinition(
             agentKey,
             schedule.UserId ?? "scheduler",
-            schedule.Agent);
+            schedule.Agent,
+            approvalHandler);
 
         var thread = await agent.DeserializeSessionAsync(
             JsonSerializer.SerializeToElement(agentKey.ToString()),

@@ -13,6 +13,7 @@ namespace Domain.Monitor;
 public class ChatMonitor(
     IChatMessengerClient chatMessengerClient,
     IAgentFactory agentFactory,
+    IToolApprovalHandlerFactory approvalHandlerFactory,
     ChatThreadResolver threadResolver,
     ILogger<ChatMonitor> logger)
 {
@@ -50,7 +51,8 @@ public class ChatMonitor(
     {
         var firstPrompt = await group.FirstAsync(ct);
         var promptSource = firstPrompt.Source;
-        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId);
+        var approvalHandler = approvalHandlerFactory.Create(agentKey);
+        await using var agent = agentFactory.Create(agentKey, firstPrompt.Sender, firstPrompt.AgentId, approvalHandler);
         var context = threadResolver.Resolve(agentKey);
         var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
