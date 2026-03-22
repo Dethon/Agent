@@ -14,6 +14,11 @@ public sealed class BotRegistry
         _botsByAgent = bots.ToDictionary(b => b.AgentId, b => (ITelegramBotClient)new TelegramBotClient(b.BotToken));
     }
 
+    internal BotRegistry(Dictionary<string, ITelegramBotClient> botsByAgent)
+    {
+        _botsByAgent = botsByAgent;
+    }
+
     public ITelegramBotClient GetBotForAgent(string agentId) =>
         _botsByAgent.TryGetValue(agentId, out var client)
             ? client
