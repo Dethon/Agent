@@ -41,6 +41,7 @@
     <ProjectReference Include="..\WebChat.Client\WebChat.Client.csproj"/>
     <ProjectReference Include="..\McpChannelSignalR\McpChannelSignalR.csproj"/>
     <ProjectReference Include="..\McpChannelTelegram\McpChannelTelegram.csproj"/>
+    <ProjectReference Include="..\McpChannelServiceBus\McpChannelServiceBus.csproj"/>
   </ItemGroup>
 
   <ItemGroup>

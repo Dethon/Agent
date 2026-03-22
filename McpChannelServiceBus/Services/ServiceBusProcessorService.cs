@@ -28,7 +28,7 @@ public sealed class ServiceBusProcessorService(
         }
     }
 
-    private async Task ProcessMessageAsync(ProcessMessageEventArgs args)
+    internal async Task ProcessMessageAsync(ProcessMessageEventArgs args)
     {
         try
         {
