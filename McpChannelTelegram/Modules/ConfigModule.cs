@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
-using Telegram.Bot;
 
 namespace McpChannelTelegram.Modules;
 
@@ -30,7 +29,7 @@ public static class ConfigModule
         services
             .AddSingleton(settings)
             .AddSingleton(notificationEmitter)
-            .AddSingleton<ITelegramBotClient>(new TelegramBotClient(settings.BotToken))
+            .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
             .AddHostedService<TelegramBotService>();

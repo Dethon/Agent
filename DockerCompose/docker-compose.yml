@@ -340,8 +340,10 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     environment:
-      - BOTTOKEN=${BOTTOKEN}
-      - ALLOWEDUSERNAMES=${ALLOWEDUSERNAMES}
+      - BOTS__0__AGENTID=${BOTS__0__AGENTID:-jack}
+      - BOTS__0__BOTTOKEN=${BOTS__0__BOTTOKEN}
+      - ALLOWEDUSERNAMES__0=${ALLOWEDUSERNAMES__0}
+      - ALLOWEDUSERNAMES__1=${ALLOWEDUSERNAMES__1}
     restart: unless-stopped
     networks:
       - jackbot

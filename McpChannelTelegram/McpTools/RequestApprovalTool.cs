@@ -29,9 +29,11 @@ public sealed class RequestApprovalTool
             Requests = requests
         };
 
-        var botClient = services.GetRequiredService<ITelegramBotClient>();
+        var registry = services.GetRequiredService<BotRegistry>();
         var router = services.GetRequiredService<ApprovalCallbackRouter>();
         var (chatId, threadId) = ParseConversationId(p.ConversationId);
+        var botClient = registry.GetBotForChat(chatId)
+                        ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
         var toolRequests = JsonSerializer.Deserialize<List<ToolRequest>>(p.Requests,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];

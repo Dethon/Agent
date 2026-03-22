@@ -29,9 +29,11 @@ public sealed class SendReplyTool
             MessageId = messageId
         };
 
-        var botClient = services.GetRequiredService<ITelegramBotClient>();
+        var registry = services.GetRequiredService<BotRegistry>();
         var accumulator = services.GetRequiredService<MessageAccumulator>();
         var (chatId, threadId) = ParseConversationId(p.ConversationId);
+        var botClient = registry.GetBotForChat(chatId)
+                        ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
         switch (p.ContentType)
         {

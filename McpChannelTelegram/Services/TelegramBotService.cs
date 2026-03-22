@@ -8,7 +8,7 @@ using Telegram.Bot.Types.Enums;
 namespace McpChannelTelegram.Services;
 
 public sealed class TelegramBotService(
-    ITelegramBotClient botClient,
+    BotRegistry botRegistry,
     ChannelSettings settings,
     ChannelNotificationEmitter notificationEmitter,
     ApprovalCallbackRouter approvalCallbackRouter,
@@ -16,31 +16,44 @@ public sealed class TelegramBotService(
 {
     private const int PollTimeoutSeconds = 30;
 
-    private int? _offset;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("Telegram bot polling started. Allowed usernames: {Usernames}",
             string.Join(", ", settings.AllowedUsernames));
+
+        var pollers = botRegistry.GetAllBots()
+            .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
+            .ToArray();
+
+        await Task.WhenAll(pollers);
+
+        logger.LogInformation("Telegram bot polling stopped");
+    }
+
+    private async Task PollBotAsync(string agentId, ITelegramBotClient botClient, CancellationToken stoppingToken)
+    {
+        int? offset = null;
+
+        logger.LogInformation("Started polling for agent {AgentId}", agentId);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var updates = await botClient.GetUpdates(
-                    offset: _offset,
+                    offset: offset,
                     timeout: PollTimeoutSeconds,
                     cancellationToken: stoppingToken);
 
-                _offset = updates
+                offset = updates
                     .Select(u => u.Id + 1)
                     .Cast<int?>()
                     .DefaultIfEmpty(null)
-                    .Max() ?? _offset;
+                    .Max() ?? offset;
 
                 foreach (var update in updates)
                 {
-                    await ProcessUpdateAsync(update, stoppingToken);
+                    await ProcessUpdateAsync(agentId, botClient, update, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -49,15 +62,15 @@ public sealed class TelegramBotService(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Telegram polling error: {Message}", ex.Message);
+                logger.LogError(ex, "Telegram polling error for agent {AgentId}: {Message}", agentId, ex.Message);
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
         }
 
-        logger.LogInformation("Telegram bot polling stopped");
+        logger.LogInformation("Stopped polling for agent {AgentId}", agentId);
     }
 
-    private async Task ProcessUpdateAsync(Update update, CancellationToken cancellationToken)
+    private async Task ProcessUpdateAsync(string agentId, ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
     {
         if (update.CallbackQuery is not null)
         {
@@ -94,6 +107,8 @@ public sealed class TelegramBotService(
         var threadId = message.MessageThreadId ?? chatId;
         var conversationId = $"{chatId}:{threadId}";
 
+        botRegistry.RegisterChatAgent(chatId, agentId);
+
         if (!notificationEmitter.HasActiveSessions)
         {
             logger.LogWarning("No active MCP sessions, dropping message from {Sender}", sender);
@@ -104,11 +119,11 @@ public sealed class TelegramBotService(
             conversationId,
             sender,
             message.Text,
-            agentId: "default",
+            agentId: agentId,
             cancellationToken);
 
-        logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender}",
-            conversationId, sender);
+        logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
+            conversationId, sender, agentId);
     }
 
     private static bool IsBotMessage(Message message)
