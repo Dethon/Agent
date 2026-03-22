@@ -9,7 +9,7 @@ namespace McpChannelSignalR.Services;
 
 public sealed class RedisStateService(IConnectionMultiplexer redis)
 {
-    private static readonly TimeSpan Expiration = TimeSpan.FromDays(30);
+    private static readonly TimeSpan _expiration = TimeSpan.FromDays(30);
 
     private readonly IDatabase _db = redis.GetDatabase();
     private readonly IServer _server = redis.GetServer(redis.GetEndPoints()[0]);
@@ -43,7 +43,7 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
     public async Task SaveTopicAsync(TopicMetadata topic)
     {
         var json = JsonSerializer.Serialize(topic);
-        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, Expiration);
+        await _db.StringSetAsync(TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json, _expiration);
     }
 
     public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)

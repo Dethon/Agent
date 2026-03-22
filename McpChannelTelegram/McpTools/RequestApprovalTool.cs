@@ -12,7 +12,7 @@ namespace McpChannelTelegram.McpTools;
 [McpServerToolType]
 public sealed class RequestApprovalTool
 {
-    private static readonly TimeSpan ApprovalTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan _approvalTimeout = TimeSpan.FromMinutes(2);
 
     [McpServerTool(Name = "request_approval")]
     [Description("Request tool approval from user or notify about auto-approved tools")]
@@ -53,7 +53,7 @@ public sealed class RequestApprovalTool
         }
 
         // Interactive approval mode
-        var (approvalId, resultTask) = router.RegisterApproval(ApprovalTimeout, CancellationToken.None);
+        var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, CancellationToken.None);
         var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
 
         var approvalMessage = FormatApprovalMessage(toolRequests);

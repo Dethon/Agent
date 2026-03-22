@@ -32,7 +32,7 @@ public class ChatMonitor(
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
-            await foreach (var _ in groups.WithCancellation(cancellationToken)) { }
+            await foreach (var _ in groups) { }
         }
         catch (Exception ex)
         {
@@ -64,21 +64,29 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response, IChannelConnection Channel, string ConversationId)>();
+                        return AsyncEnumerable.Empty<(
+                            AgentResponseUpdate Update, 
+                            AiResponse? Response, 
+                            IChannelConnection Channel, 
+                            string ConversationId)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response, IChannelConnection Channel, string ConversationId)>();
+                        return AsyncEnumerable.Empty<(
+                            AgentResponseUpdate Update, 
+                            AiResponse? Response, 
+                            IChannelConnection Channel, 
+                            string ConversationId)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
+                        // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((
-                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] },
-                                (AiResponse?)null))
+                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
                             .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
                 }
             })
@@ -110,7 +118,7 @@ public class ChatMonitor(
                 // FunctionCallContent is intentionally skipped — tool calls are displayed
                 // by the approval flow (request_approval tool with mode=request or mode=notify)
                 ErrorContent error
-                    => (error.Message ?? string.Empty, ReplyContentType.Error, false),
+                    => (error.Message, ReplyContentType.Error, false),
                 StreamCompleteContent
                     => (string.Empty, ReplyContentType.StreamComplete, true),
                 _ => default

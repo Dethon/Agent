@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Internal;
-using Microsoft.Extensions.Logging;
 
 namespace McpChannelSignalR.Services;
 

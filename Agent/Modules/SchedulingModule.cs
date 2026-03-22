@@ -7,7 +7,6 @@ using Domain.Tools.Scheduling;
 using Infrastructure.Agents;
 using Infrastructure.StateManagers;
 using Infrastructure.Validation;
-using Microsoft.Extensions.Logging;
 
 namespace Agent.Modules;
 

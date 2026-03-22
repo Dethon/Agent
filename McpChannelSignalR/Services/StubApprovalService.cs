@@ -1,5 +1,4 @@
 using Domain.DTOs.Channel;
-using Microsoft.Extensions.Logging;
 
 namespace McpChannelSignalR.Services;
 

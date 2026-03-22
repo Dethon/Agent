@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -137,13 +136,17 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         CancellationToken ct)
     {
         if (_client is null)
+        {
             return null;
+        }
 
         try
         {
             var tools = await _client.ListToolsAsync(cancellationToken: ct);
             if (tools.All(t => t.Name != "create_conversation"))
+            {
                 return null;
+            }
 
             var result = await _client.CallToolAsync(
                 "create_conversation",
@@ -175,6 +178,8 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
     private void EnsureConnected()
     {
         if (_client is null)
+        {
             throw new InvalidOperationException("Not connected. Call ConnectAsync first.");
+        }
     }
 }

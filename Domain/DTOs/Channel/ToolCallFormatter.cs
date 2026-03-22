@@ -17,16 +17,22 @@ public static class ToolCallFormatter
             var sb = new StringBuilder();
             sb.AppendLine($"\ud83d\udd27 {toolName}");
 
-            if (root.TryGetProperty("Arguments", out var args) && args.ValueKind == JsonValueKind.Object)
+            if (!root.TryGetProperty("Arguments", out var args) || args.ValueKind != JsonValueKind.Object)
             {
-                foreach (var prop in args.EnumerateObject())
+                return sb.ToString().TrimEnd();
+            }
+
+            foreach (var prop in args.EnumerateObject())
+            {
+                var val = prop.Value.ValueKind == JsonValueKind.String
+                    ? prop.Value.GetString() ?? ""
+                    : prop.Value.GetRawText();
+                if (val.Length > 100)
                 {
-                    var val = prop.Value.ValueKind == JsonValueKind.String
-                        ? prop.Value.GetString() ?? ""
-                        : prop.Value.GetRawText();
-                    if (val.Length > 100) val = val[..100] + "...";
-                    sb.AppendLine($"  {prop.Name}: {val}");
+                    val = val[..100] + "...";
                 }
+
+                sb.AppendLine($"  {prop.Name}: {val}");
             }
 
             return sb.ToString().TrimEnd();

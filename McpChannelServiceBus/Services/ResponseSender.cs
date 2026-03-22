@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Azure.Messaging.ServiceBus;
 using Domain.DTOs;
-using Microsoft.Extensions.Logging;
 
 namespace McpChannelServiceBus.Services;
 

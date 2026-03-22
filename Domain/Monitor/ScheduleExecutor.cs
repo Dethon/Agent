@@ -147,13 +147,13 @@ public class ScheduleExecutor(
         var aiContent = update.Contents.FirstOrDefault();
         return aiContent switch
         {
-            TextContent text => (text.Text ?? string.Empty, ReplyContentType.Text, false),
-            TextReasoningContent reasoning => (reasoning.Text ?? string.Empty, ReplyContentType.Reasoning, false),
+            TextContent text => (text.Text, ReplyContentType.Text, false),
+            TextReasoningContent reasoning => (reasoning.Text, ReplyContentType.Reasoning, false),
             FunctionCallContent functionCall => (
                 JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
                 ReplyContentType.ToolCall,
                 false),
-            ErrorContent error => (error.Message ?? string.Empty, ReplyContentType.Error, false),
+            ErrorContent error => (error.Message, ReplyContentType.Error, false),
             StreamCompleteContent => (string.Empty, ReplyContentType.StreamComplete, true),
             _ => (string.Empty, ReplyContentType.Text, false)
         };

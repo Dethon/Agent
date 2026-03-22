@@ -1,9 +1,6 @@
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 
 namespace McpChannelTelegram.Modules;

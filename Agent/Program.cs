@@ -1,5 +1,4 @@
 using Agent.Modules;
-using Agent.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
 var cmdParams = ConfigModule.GetCommandLineParams(args);

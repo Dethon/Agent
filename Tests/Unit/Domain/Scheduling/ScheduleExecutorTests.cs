@@ -6,7 +6,6 @@ using Domain.Monitor;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
-using Tests.Unit.Domain;
 
 namespace Tests.Unit.Domain.Scheduling;
 
