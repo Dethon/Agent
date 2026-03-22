@@ -14,6 +14,7 @@ public sealed class SendReplyTool
         [Description("Response content")] string content,
         [Description("Content type: text, reasoning, tool_call, error, stream_complete")] string contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
+        [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
     {
         var accumulator = services.GetRequiredService<MessageAccumulator>();
