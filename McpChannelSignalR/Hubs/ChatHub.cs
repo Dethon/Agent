@@ -56,8 +56,7 @@ public sealed class ChatHub(
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        return ValidateAgent(agentId)
-            && sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
+        return sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
     }
 
     public async Task JoinSpace(string spaceSlug)
