@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using StackExchange.Redis;
 
@@ -77,8 +78,8 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
                 m.MessageId,
                 m.Role.Value,
                 string.Join("", m.Contents.OfType<TextContent>().Select(c => c.Text)),
-                m.AdditionalProperties?.GetValueOrDefault("SenderId") as string,
-                ParseTimestamp(m.AdditionalProperties?.GetValueOrDefault("Timestamp"))))
+                m.GetSenderId(),
+                m.GetTimestamp()))
             .Where(m => !string.IsNullOrWhiteSpace(m.Content))
             .ToList();
     }
@@ -86,18 +87,6 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
     private static string TopicKey(string agentId, long chatId, string topicId)
     {
         return $"topic:{agentId}:{chatId}:{topicId}";
-    }
-
-    private static DateTimeOffset? ParseTimestamp(object? value)
-    {
-        return value switch
-        {
-            DateTimeOffset dto => dto,
-            string s when DateTimeOffset.TryParse(s, out var parsed) => parsed,
-            System.Text.Json.JsonElement { ValueKind: JsonValueKind.String } je
-                when DateTimeOffset.TryParse(je.GetString(), out var parsed) => parsed,
-            _ => null
-        };
     }
 
     private sealed class StoreState
