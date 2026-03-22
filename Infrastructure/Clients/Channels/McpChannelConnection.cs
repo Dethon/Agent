@@ -8,7 +8,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId) : IChannelConnection, IAsyncDisposable
+public sealed class McpChannelConnection(string channelId) : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private const string ChannelMessageNotification = "notifications/channel/message";
 
@@ -173,6 +173,35 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         {
             await _client.DisposeAsync();
         }
+    }
+
+    public async Task<bool> IsHealthyAsync(CancellationToken ct)
+    {
+        if (_client is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            await _client.ListToolsAsync(cancellationToken: ct);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task ReconnectAsync(string endpoint, CancellationToken ct)
+    {
+        if (_client is not null)
+        {
+            await _client.DisposeAsync();
+            _client = null;
+        }
+
+        await ConnectAsync(endpoint, ct);
     }
 
     private void EnsureConnected()

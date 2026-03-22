@@ -60,7 +60,7 @@ public static class InjectorModule
                 .AddHostedService(sp =>
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
-                        sp.GetServices<IChannelConnection>().OfType<McpChannelConnection>().ToList(),
+                        sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 
