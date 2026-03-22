@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
+using McpChannelSignalR.Services.Push;
 using McpChannelSignalR.Settings;
 using ModelContextProtocol.Protocol;
 using StackExchange.Redis;
@@ -39,7 +40,27 @@ public static class ConfigModule
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
-            .AddSignalR();
+            .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>();
+
+        if (settings.WebPush?.IsConfigured == true)
+        {
+            var webPush = settings.WebPush;
+            services
+                .AddHttpClient()
+                .AddSingleton<IPushMessageSender>(sp =>
+                    new ModernWebPushSender(
+                        sp.GetRequiredService<IHttpClientFactory>().CreateClient("WebPush"),
+                        webPush.PublicKey!,
+                        webPush.PrivateKey!,
+                        webPush.Subject!))
+                .AddSingleton<IPushNotificationService, WebPushNotificationService>();
+        }
+        else
+        {
+            services.AddSingleton<IPushNotificationService, NullPushNotificationService>();
+        }
+
+        services.AddSignalR();
 
         services
             .AddMcpServer()

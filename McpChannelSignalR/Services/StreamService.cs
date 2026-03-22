@@ -1,11 +1,15 @@
 using System.Collections.Concurrent;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Internal;
 
 namespace McpChannelSignalR.Services;
 
-public sealed class StreamService(SessionService sessionService, ILogger<StreamService> logger) : IStreamService, IDisposable
+public sealed class StreamService(
+    SessionService sessionService,
+    IPushNotificationService pushNotificationService,
+    ILogger<StreamService> logger) : IStreamService, IDisposable
 {
     private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
@@ -133,14 +137,44 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
 
     private void CompleteStream(string topicId)
     {
+        string? spaceSlug = null;
+
         lock (_streamLock)
         {
+            // Resolve space slug before cleanup
+            if (sessionService.TryGetSession(topicId, out var session))
+            {
+                spaceSlug = session?.SpaceSlug;
+            }
+
             if (_responseChannels.TryRemove(topicId, out var channel))
             {
                 channel.Complete();
             }
 
             CleanupStreamState(topicId);
+        }
+
+        if (spaceSlug is not null)
+        {
+            _ = SendPushNotificationAsync(spaceSlug);
+        }
+    }
+
+    private async Task SendPushNotificationAsync(string spaceSlug)
+    {
+        try
+        {
+            var url = $"/{spaceSlug}";
+            await pushNotificationService.SendToSpaceAsync(
+                spaceSlug,
+                "New response",
+                "The agent has finished responding",
+                url);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Failed to send push notification for space {SpaceSlug}", spaceSlug);
         }
     }
 
