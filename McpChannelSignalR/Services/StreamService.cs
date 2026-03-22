@@ -13,35 +13,32 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
-    private readonly ConcurrentDictionary<string, int> _responseCounters = new();
     private readonly Lock _streamLock = new();
     private bool _disposed;
 
-    public async Task WriteReplyAsync(string conversationId, string content, string contentType, bool isComplete)
+    public async Task WriteReplyAsync(string conversationId, string content, string contentType, bool isComplete, string? messageId = null)
     {
         // Resolve conversationId ("chatId:threadId") to topicId (client-generated UUID)
         var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
 
-        // Generate a stable messageId per response cycle (increments on stream_complete)
-        var counter = _responseCounters.GetOrAdd(topicId, 0);
-        var messageId = $"{topicId}:{counter}";
+        // Use agent-provided messageId (from AgentResponseUpdate.MessageId) for proper bubble grouping
+        var effectiveMessageId = messageId ?? topicId;
 
         var message = contentType switch
         {
-            "text" => new ChatStreamMessage { Content = content, MessageId = messageId },
-            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = messageId },
-            "tool_call" => new ChatStreamMessage { ToolCalls = FormatToolCall(content), MessageId = messageId },
+            "text" => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId },
+            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
+            "tool_call" => new ChatStreamMessage { ToolCalls = FormatToolCall(content), MessageId = effectiveMessageId },
             "error" => new ChatStreamMessage { Error = content, IsComplete = true },
-            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = messageId },
-            _ => new ChatStreamMessage { Content = content, MessageId = messageId }
+            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
+            _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
         };
 
         if (isComplete && contentType != "error" && contentType != "stream_complete")
         {
             await WriteMessageAsync(topicId, message);
-            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = messageId };
+            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId };
             await WriteMessageAsync(topicId, completeMessage);
-            _responseCounters.AddOrUpdate(topicId, 1, (_, c) => c + 1);
             CompleteStream(topicId);
             return;
         }
@@ -49,7 +46,6 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         if (contentType is "error" or "stream_complete")
         {
             await WriteMessageAsync(topicId, message);
-            _responseCounters.AddOrUpdate(topicId, 1, (_, c) => c + 1);
             CompleteStream(topicId);
             return;
         }
@@ -226,7 +222,6 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
-        _responseCounters.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {

@@ -15,6 +15,7 @@ public interface IChannelConnection
         string content,
         string contentType,
         bool isComplete,
+        string? messageId,
         CancellationToken ct);
 
     Task<ToolApprovalResult> RequestApprovalAsync(

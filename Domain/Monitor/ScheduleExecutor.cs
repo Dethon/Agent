@@ -87,7 +87,7 @@ public class ScheduleExecutor(
         await foreach (var (update, _) in ExecuteScheduleCore(schedule, agentKey, approvalHandler, ct))
         {
             var (content, contentType, isComplete) = MapResponseUpdate(update);
-            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, ct);
+            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, update.MessageId, ct);
         }
     }
 

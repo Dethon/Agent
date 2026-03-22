@@ -74,6 +74,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         string content,
         string contentType,
         bool isComplete,
+        string? messageId,
         CancellationToken ct)
     {
         EnsureConnected();
@@ -84,7 +85,8 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
                 ["conversationId"] = conversationId,
                 ["content"] = content,
                 ["contentType"] = contentType,
-                ["isComplete"] = isComplete
+                ["isComplete"] = isComplete,
+                ["messageId"] = messageId
             },
             cancellationToken: ct);
     }

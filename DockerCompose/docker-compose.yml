@@ -316,11 +316,6 @@ services:
         - mcp-channel-signalr:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
-    environment:
-      - REDISCONNECTIONSTRING=redis:6379
-      - AGENTS__0__ID=jack
-      - AGENTS__0__NAME=Jack
-      - AGENTS__0__DESCRIPTION=General assistant
     restart: unless-stopped
     networks:
       - jackbot
@@ -345,9 +340,8 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     environment:
-      - REDIS__CONNECTIONSTRING=redis:6379
-      - BOTTOKEN=${CHANNEL_TELEGRAM_BOTTOKEN}
-      - ALLOWEDUSERNAMES=${CHANNEL_TELEGRAM_ALLOWEDUSERNAMES}
+      - BOTTOKEN=${BOTTOKEN}
+      - ALLOWEDUSERNAMES=${ALLOWEDUSERNAMES}
     restart: unless-stopped
     networks:
       - jackbot
@@ -372,9 +366,7 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     environment:
-      - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
-      - PROMPTQUEUENAME=${PROMPTQUEUENAME:-prompt-queue}
-      - RESPONSEQUEUENAME=${RESPONSEQUEUENAME:-response-queue}
+      - SERVICEBUSCONNECTIONSTRING=${SERVICEBUSCONNECTIONSTRING}
     restart: unless-stopped
     networks:
       - jackbot
@@ -401,18 +393,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
-      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
-      - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
-      - WEBPUSH__SUBJECT=${WEBPUSH__SUBJECT}
-      - DefaultScheduleChannelId=${DEFAULT_SCHEDULE_CHANNEL_ID:-}
-      - CHANNELENDPOINTS__0__CHANNELID=signalr
-      - CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/sse
-#      - CHANNELENDPOINTS__1__CHANNELID=telegram
-#      - CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/sse
-#      - CHANNELENDPOINTS__2__CHANNELID=servicebus
-#      - CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/sse
     networks:
       - jackbot
     depends_on:

@@ -87,7 +87,7 @@ public class ChatMonitor(
         await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
         {
             var (content, contentType, isComplete) = MapResponseUpdate(update);
-            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, ct);
+            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, update.MessageId, ct);
             yield return true;
         }
     }

@@ -102,7 +102,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<(string AgentId, string TopicName, string Sender)> CreatedConversations { get; } = [];
 
-    public Task SendReplyAsync(string conversationId, string content, string contentType, bool isComplete, CancellationToken ct)
+    public Task SendReplyAsync(string conversationId, string content, string contentType, bool isComplete, string? messageId, CancellationToken ct)
     {
         SentReplies.Add((conversationId, content, contentType, isComplete));
         return Task.CompletedTask;
