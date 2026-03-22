@@ -107,9 +107,8 @@ public class ChatMonitor(
                     => (text.Text, ReplyContentType.Text, false),
                 TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text)
                     => (reasoning.Text, ReplyContentType.Reasoning, false),
-                FunctionCallContent functionCall
-                    => (JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
-                        ReplyContentType.ToolCall, false),
+                // FunctionCallContent is intentionally skipped — tool calls are displayed
+                // by the approval flow (request_approval tool with mode=request or mode=notify)
                 ErrorContent error
                     => (error.Message ?? string.Empty, ReplyContentType.Error, false),
                 StreamCompleteContent
