@@ -1,4 +1,4 @@
-FROM ghcr.io/caddyserver/caddy:2-builder AS builder
+FROM public.ecr.aws/docker/library/caddy:2-builder AS builder
 RUN xcaddy build --with github.com/caddy-dns/cloudflare
 
 FROM caddy:2
