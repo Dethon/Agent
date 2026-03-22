@@ -315,6 +315,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - AGENTURL=http://agent:8080
     networks:
       - jackbot
     depends_on:

@@ -29,6 +29,9 @@ public static class ConfigModule
 
         var redisMultiplexer = ConnectionMultiplexer.Connect(settings.RedisConnectionString);
 
+        services.AddHttpClient<AgentApiClient>(client =>
+            client.BaseAddress = new Uri(settings.AgentUrl));
+
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
             .AddSingleton(settings)
