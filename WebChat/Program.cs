@@ -3,6 +3,7 @@ using JetBrains.Annotations;
 using WebChat;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 var app = builder.Build();
 app.UseBlazorFrameworkFiles();
