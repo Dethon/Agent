@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs.Channel;
 using McpChannelServiceBus.Services;
 using ModelContextProtocol.Server;
 
@@ -17,10 +18,19 @@ public sealed class SendReplyTool
         [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
     {
+        var p = new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete,
+            MessageId = messageId
+        };
+
         var accumulator = services.GetRequiredService<MessageAccumulator>();
         var responseSender = services.GetRequiredService<ResponseSender>();
 
-        switch (contentType)
+        switch (p.ContentType)
         {
             case "reasoning":
             case "tool_call":
@@ -28,31 +38,31 @@ public sealed class SendReplyTool
                 return "ok";
 
             case "error":
-                var errorContent = accumulator.Flush(conversationId);
+                var errorContent = accumulator.Flush(p.ConversationId);
                 var errorMessage = string.IsNullOrEmpty(errorContent)
-                    ? content
-                    : $"{errorContent}\n\nError: {content}";
-                await responseSender.SendResponseAsync(conversationId, errorMessage);
+                    ? p.Content
+                    : $"{errorContent}\n\nError: {p.Content}";
+                await responseSender.SendResponseAsync(p.ConversationId, errorMessage);
                 return "ok";
 
             case "stream_complete":
-                var accumulated = accumulator.Flush(conversationId);
+                var accumulated = accumulator.Flush(p.ConversationId);
                 if (!string.IsNullOrEmpty(accumulated))
                 {
-                    await responseSender.SendResponseAsync(conversationId, accumulated);
+                    await responseSender.SendResponseAsync(p.ConversationId, accumulated);
                 }
                 return "ok";
 
             default:
                 // "text" or unknown — accumulate
-                accumulator.Append(conversationId, content);
+                accumulator.Append(p.ConversationId, p.Content);
 
-                if (isComplete)
+                if (p.IsComplete)
                 {
-                    var flushed = accumulator.Flush(conversationId);
+                    var flushed = accumulator.Flush(p.ConversationId);
                     if (!string.IsNullOrEmpty(flushed))
                     {
-                        await responseSender.SendResponseAsync(conversationId, flushed);
+                        await responseSender.SendResponseAsync(p.ConversationId, flushed);
                     }
                 }
 

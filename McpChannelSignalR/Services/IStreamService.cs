@@ -1,6 +1,8 @@
+using Domain.DTOs.Channel;
+
 namespace McpChannelSignalR.Services;
 
 public interface IStreamService
 {
-    Task WriteReplyAsync(string conversationId, string content, string contentType, bool isComplete, string? messageId = null);
+    Task WriteReplyAsync(SendReplyParams p);
 }

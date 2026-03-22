@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
@@ -19,11 +20,20 @@ public sealed class SendReplyTool
         [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
     {
+        var p = new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete,
+            MessageId = messageId
+        };
+
         var botClient = services.GetRequiredService<ITelegramBotClient>();
         var accumulator = services.GetRequiredService<MessageAccumulator>();
-        var (chatId, threadId) = ParseConversationId(conversationId);
+        var (chatId, threadId) = ParseConversationId(p.ConversationId);
 
-        switch (contentType)
+        switch (p.ContentType)
         {
             case "reasoning":
                 // Telegram doesn't show reasoning — ignore
@@ -32,31 +42,31 @@ public sealed class SendReplyTool
             case "tool_call":
                 await botClient.SendMessage(
                     chatId,
-                    $"\ud83d\udd27 {content}",
+                    $"\ud83d\udd27 {p.Content}",
                     messageThreadId: threadId,
                     cancellationToken: CancellationToken.None);
                 return "ok";
 
             case "error":
-                await SendAccumulatedAsync(botClient, accumulator, conversationId, chatId, threadId);
+                await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 await botClient.SendMessage(
                     chatId,
-                    $"\u26a0\ufe0f {content}",
+                    $"\u26a0\ufe0f {p.Content}",
                     messageThreadId: threadId,
                     cancellationToken: CancellationToken.None);
                 return "ok";
 
             case "stream_complete":
-                await SendAccumulatedAsync(botClient, accumulator, conversationId, chatId, threadId);
+                await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 return "ok";
 
             default:
                 // "text" or unknown — accumulate
-                accumulator.Append(conversationId, content);
+                accumulator.Append(p.ConversationId, p.Content);
 
-                if (isComplete)
+                if (p.IsComplete)
                 {
-                    await SendAccumulatedAsync(botClient, accumulator, conversationId, chatId, threadId);
+                    await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 }
 
                 return "ok";

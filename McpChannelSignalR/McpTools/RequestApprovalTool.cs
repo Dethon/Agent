@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using ModelContextProtocol.Server;
 
@@ -15,15 +16,22 @@ public sealed class RequestApprovalTool
         [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
         IServiceProvider services)
     {
+        var p = new RequestApprovalParams
+        {
+            ConversationId = conversationId,
+            Mode = mode,
+            Requests = requests
+        };
+
         var approvalService = services.GetRequiredService<IApprovalService>();
 
-        if (mode == "notify")
+        if (p.Mode == "notify")
         {
-            await approvalService.NotifyAutoApprovedAsync(conversationId, requests);
+            await approvalService.NotifyAutoApprovedAsync(p);
             return "notified";
         }
 
-        var result = await approvalService.RequestApprovalAsync(conversationId, requests);
+        var result = await approvalService.RequestApprovalAsync(p);
         return result;
     }
 }

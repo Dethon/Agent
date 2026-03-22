@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
@@ -21,14 +22,21 @@ public sealed class RequestApprovalTool
         [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
         IServiceProvider services)
     {
+        var p = new RequestApprovalParams
+        {
+            ConversationId = conversationId,
+            Mode = mode,
+            Requests = requests
+        };
+
         var botClient = services.GetRequiredService<ITelegramBotClient>();
         var router = services.GetRequiredService<ApprovalCallbackRouter>();
-        var (chatId, threadId) = ParseConversationId(conversationId);
+        var (chatId, threadId) = ParseConversationId(p.ConversationId);
 
-        var toolRequests = JsonSerializer.Deserialize<List<ToolRequest>>(requests,
+        var toolRequests = JsonSerializer.Deserialize<List<ToolRequest>>(p.Requests,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
 
-        if (mode == "notify")
+        if (p.Mode == "notify")
         {
             var toolNames = toolRequests.Select(r => r.ToolName.Split(':').Last());
             var message = $"\u2705 Auto-approved: {string.Join(", ", toolNames)}";

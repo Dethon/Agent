@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Internal;
 using Microsoft.Extensions.Logging;
@@ -16,8 +17,14 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
     private readonly Lock _streamLock = new();
     private bool _disposed;
 
-    public async Task WriteReplyAsync(string conversationId, string content, string contentType, bool isComplete, string? messageId = null)
+    public async Task WriteReplyAsync(SendReplyParams p)
     {
+        var conversationId = p.ConversationId;
+        var content = p.Content;
+        var contentType = p.ContentType;
+        var isComplete = p.IsComplete;
+        var messageId = p.MessageId;
+
         // Resolve conversationId ("chatId:threadId") to topicId (client-generated UUID)
         var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
 

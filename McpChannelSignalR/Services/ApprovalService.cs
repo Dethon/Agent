@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Internal;
 using Microsoft.Extensions.Logging;
@@ -17,10 +18,10 @@ public sealed class ApprovalService(
 {
     private readonly ConcurrentDictionary<string, ApprovalContext> _pendingApprovals = new();
 
-    public async Task<string> RequestApprovalAsync(string conversationId, string requestsJson)
+    public async Task<string> RequestApprovalAsync(RequestApprovalParams p)
     {
-        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
-        var requests = DeserializeRequests(requestsJson);
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
+        var requests = DeserializeRequests(p.Requests);
         var approvalId = Guid.NewGuid().ToString("N")[..8];
 
         var context = new ApprovalContext
@@ -63,10 +64,10 @@ public sealed class ApprovalService(
         }
     }
 
-    public async Task NotifyAutoApprovedAsync(string conversationId, string requestsJson)
+    public async Task NotifyAutoApprovedAsync(RequestApprovalParams p)
     {
-        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
-        var requests = DeserializeRequests(requestsJson);
+        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
+        var requests = DeserializeRequests(p.Requests);
 
         var messages = requests
             .GroupBy(x => x.MessageId)
@@ -85,12 +86,12 @@ public sealed class ApprovalService(
             try
             {
                 var notification = new ToolCallsNotification(
-                    conversationId, message.ToolCalls!, message.MessageId, SpaceSlug: session?.SpaceSlug);
+                    p.ConversationId, message.ToolCalls!, message.MessageId, SpaceSlug: session?.SpaceSlug);
                 await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnToolCalls", notification);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to notify tool calls for topic {TopicId}", conversationId);
+                logger.LogWarning(ex, "Failed to notify tool calls for topic {TopicId}", p.ConversationId);
             }
         }
     }

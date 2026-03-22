@@ -1,22 +1,23 @@
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging;
 
 namespace McpChannelSignalR.Services;
 
 public sealed class StubApprovalService(ILogger<StubApprovalService> logger) : IApprovalService
 {
-    public Task<string> RequestApprovalAsync(string conversationId, string requestsJson)
+    public Task<string> RequestApprovalAsync(RequestApprovalParams p)
     {
         logger.LogDebug(
             "RequestApproval: conversation={ConversationId}, requests={Requests}",
-            conversationId, requestsJson);
+            p.ConversationId, p.Requests);
         return Task.FromResult("approved");
     }
 
-    public Task NotifyAutoApprovedAsync(string conversationId, string requestsJson)
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p)
     {
         logger.LogDebug(
             "NotifyAutoApproved: conversation={ConversationId}, requests={Requests}",
-            conversationId, requestsJson);
+            p.ConversationId, p.Requests);
         return Task.CompletedTask;
     }
 

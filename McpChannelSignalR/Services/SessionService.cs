@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using McpChannelSignalR.Internal;
 
 namespace McpChannelSignalR.Services;
@@ -9,8 +10,9 @@ public sealed class SessionService : ISessionService
     private readonly ConcurrentDictionary<long, string> _chatToTopic = new();
     private readonly ConcurrentDictionary<string, string> _conversationToTopic = new();
 
-    public Task<string> CreateConversationAsync(string agentId, string topicName, string sender)
+    public Task<string> CreateConversationAsync(CreateConversationParams p)
     {
+        var agentId = p.AgentId;
         var topicId = Guid.NewGuid().ToString("N");
         var chatId = GetDeterministicHash(topicId, seed: 0x1234);
         var threadId = GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF;

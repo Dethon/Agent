@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using ModelContextProtocol.Server;
 
@@ -17,8 +18,17 @@ public sealed class SendReplyTool
         [Description("Message ID for grouping related chunks into bubbles")] string? messageId,
         IServiceProvider services)
     {
+        var p = new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete,
+            MessageId = messageId
+        };
+
         var streamService = services.GetRequiredService<IStreamService>();
-        await streamService.WriteReplyAsync(conversationId, content, contentType, isComplete, messageId);
+        await streamService.WriteReplyAsync(p);
         return "ok";
     }
 }
