@@ -1,4 +1,4 @@
-namespace McpChannelSignalR.Services.Push;
+namespace Infrastructure.Clients.Push;
 
 public interface IPushMessageSender
 {

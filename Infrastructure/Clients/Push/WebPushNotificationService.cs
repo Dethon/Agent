@@ -3,7 +3,7 @@ using System.Text.Json;
 using Domain.Contracts;
 using Microsoft.Extensions.Logging;
 
-namespace McpChannelSignalR.Services.Push;
+namespace Infrastructure.Clients.Push;
 
 public sealed class WebPushNotificationService(
     IPushSubscriptionStore store,

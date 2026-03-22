@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace McpChannelSignalR.Services.Push;
+namespace Infrastructure.Clients.Push;
 
 public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey, string privateKey, string subject)
     : IPushMessageSender

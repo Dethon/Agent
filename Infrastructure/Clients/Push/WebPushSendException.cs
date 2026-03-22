@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace McpChannelSignalR.Services.Push;
+namespace Infrastructure.Clients.Push;
 
 public sealed class WebPushSendException(string message, HttpStatusCode statusCode, Exception? inner = null)
     : Exception(message, inner)

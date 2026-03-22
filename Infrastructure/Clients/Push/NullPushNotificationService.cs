@@ -1,6 +1,6 @@
 using Domain.Contracts;
 
-namespace McpChannelSignalR.Services.Push;
+namespace Infrastructure.Clients.Push;
 
 public sealed class NullPushNotificationService : IPushNotificationService
 {
