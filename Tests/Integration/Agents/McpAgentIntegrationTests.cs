@@ -206,7 +206,7 @@ public class McpAgentIntegrationTests(McpLibraryServerFixture mcpFixture, RedisF
         // Arrange
         var llmClient = CreateLlmClient();
         var agent = CreateAgent(llmClient);
-        var agentKey = new AgentKey(12345, 67890);
+        var agentKey = new AgentKey("12345:67890");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 

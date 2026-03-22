@@ -10,7 +10,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
 
         // Act
         var context = resolver.Resolve(key);
@@ -24,7 +24,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         var firstContext = resolver.Resolve(key);
 
         // Act
@@ -39,8 +39,8 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key1 = new AgentKey(1, 1);
-        var key2 = new AgentKey(2, 2);
+        var key1 = new AgentKey("1:1");
+        var key2 = new AgentKey("2:2");
 
         // Act
         var context1 = resolver.Resolve(key1);
@@ -55,8 +55,8 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key1 = new AgentKey(1, 1);
-        var key2 = new AgentKey(2, 2);
+        var key1 = new AgentKey("1:1");
+        var key2 = new AgentKey("2:2");
         resolver.Resolve(key1);
         resolver.Resolve(key2);
 
@@ -74,7 +74,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         var context = resolver.Resolve(key);
 
         // Act
@@ -90,7 +90,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(999, 999);
+        var key = new AgentKey("999:999");
 
         // Act & Assert
         await Should.NotThrowAsync(() => resolver.ClearAsync(key));
@@ -101,7 +101,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         var firstContext = resolver.Resolve(key);
         await resolver.ClearAsync(key);
 
@@ -120,7 +120,7 @@ public class ChatThreadResolverTests
         resolver.Dispose();
 
         // Act & Assert
-        Should.Throw<ObjectDisposedException>(() => resolver.Resolve(new AgentKey(1, 1)));
+        Should.Throw<ObjectDisposedException>(() => resolver.Resolve(new AgentKey("1:1")));
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class ChatThreadResolverTests
     {
         // Arrange
         var resolver = new ChatThreadResolver();
-        var key = new AgentKey(1, 1);
+        var key = new AgentKey("1:1");
         var results = new List<ChatThreadContext>();
         var lockObj = new object();
 

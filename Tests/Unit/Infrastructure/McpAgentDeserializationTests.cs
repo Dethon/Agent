@@ -34,7 +34,7 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     [Fact]
     public async Task DeserializeSession_WithAgentKeyString_PutsKeyInStateBag()
     {
-        var agentKey = new AgentKey(123, 456, "test-agent");
+        var agentKey = new AgentKey("123:456", "test-agent");
         var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
 
         var session = await _agent.DeserializeSessionAsync(serialized);
@@ -47,7 +47,7 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     public async Task DeserializeSession_WithProperlySerializedSession_PreservesStateBag()
     {
         // First, create and serialize a session to get the proper format
-        var agentKey = new AgentKey(789, 101, "test-agent");
+        var agentKey = new AgentKey("789:101", "test-agent");
         var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
         var session = await _agent.DeserializeSessionAsync(serialized);
 
@@ -66,7 +66,7 @@ public class McpAgentDeserializationTests : IAsyncDisposable
     {
         // ChatHub.GetHistory uses agentKey.ToString() to look up messages in Redis.
         // The agent must use the same key when reading/writing messages.
-        var agentKey = new AgentKey(123, 456, "test-agent");
+        var agentKey = new AgentKey("123:456", "test-agent");
         var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
 
         var session = await _agent.DeserializeSessionAsync(serialized);

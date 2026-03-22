@@ -134,28 +134,6 @@ check_inverse "Does not copy Domain/ source" "$rc"
 grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
 check_inverse "Does not copy Infrastructure/ source" "$rc"
 
-# --- McpServerCommandRunner ---
-echo ""
-echo "Checking McpServerCommandRunner/Dockerfile..."
-df="McpServerCommandRunner/Dockerfile"
-
-grep -q 'FROM base-sdk:latest AS dependencies' "$df" && rc=0 || rc=$?
-check "Uses base-sdk:latest as dependencies base" "$rc"
-
-# Must NOT use COPY . . (old pattern)
-grep -q 'COPY \. \.' "$df" && rc=0 || rc=$?
-check_inverse "Does not use COPY . ." "$rc"
-
-grep -q 'COPY.*"Domain/"' "$df" && rc=0 || rc=$?
-check_inverse "Does not copy Domain/ source" "$rc"
-
-grep -q 'COPY.*"Infrastructure/"' "$df" && rc=0 || rc=$?
-check_inverse "Does not copy Infrastructure/ source" "$rc"
-
-# Should use cache mount for restore
-grep -q 'mount=type=cache' "$df" && rc=0 || rc=$?
-check "Uses NuGet cache mount" "$rc"
-
 # --- WebChat ---
 echo ""
 echo "Checking WebChat/Dockerfile..."
@@ -202,29 +180,6 @@ check "Final stage uses playwright-base (not base)" "$rc"
 first_line=$(head -1 "$df")
 [ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
 check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
-
-# --- McpServerCommandRunner: adversarial checks ---
-echo ""
-echo "Adversarial checks for McpServerCommandRunner/Dockerfile..."
-df="McpServerCommandRunner/Dockerfile"
-
-# syntax header must be present (was missing before migration)
-first_line=$(head -1 "$df")
-[ "$first_line" = "# syntax=docker/dockerfile:1" ] && rc=0 || rc=1
-check "Has # syntax=docker/dockerfile:1 on first line" "$rc"
-
-# Must NOT have a separate 'build' stage (was build+publish, now just publish)
-grep -q 'AS build' "$df" && rc=0 || rc=$?
-check_inverse "Does not have a separate build stage" "$rc"
-
-# ENTRYPOINT must reference correct DLL
-grep -q 'ENTRYPOINT \["dotnet", "McpServerCommandRunner.dll"\]' "$df" && rc=0 || rc=$?
-check "ENTRYPOINT references McpServerCommandRunner.dll" "$rc"
-
-# NuGet cache mount (sharing=locked) must appear on BOTH restore and publish RUN commands
-cache_mount_count=$(grep -c 'mount=type=cache,target=/root/.nuget/packages,sharing=locked' "$df" || true)
-[ "$cache_mount_count" -eq 2 ] && rc=0 || rc=1
-check "NuGet cache mount (sharing=locked) on both RUN commands (found ${cache_mount_count})" "$rc"
 
 # --- WebChat: adversarial checks ---
 echo ""
@@ -278,7 +233,6 @@ ALL_SERVICE_DOCKERFILES=(
     "McpServerMemory/Dockerfile"
     "McpServerIdealista/Dockerfile"
     "McpServerWebSearch/Dockerfile"
-    "McpServerCommandRunner/Dockerfile"
     "WebChat/Dockerfile"
 )
 for df in "${ALL_SERVICE_DOCKERFILES[@]}"; do
@@ -286,7 +240,7 @@ for df in "${ALL_SERVICE_DOCKERFILES[@]}"; do
     check_inverse "$df does not reference dotnet/sdk directly" "$rc"
 done
 
-# --- Check: All 8 service Dockerfiles have both dependencies and publish stages ---
+# --- Check: All 7 service Dockerfiles have both dependencies and publish stages ---
 echo ""
 echo "Checking all service Dockerfiles have consistent stage naming..."
 for df in "${ALL_SERVICE_DOCKERFILES[@]}"; do

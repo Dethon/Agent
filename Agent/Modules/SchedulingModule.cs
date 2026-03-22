@@ -30,7 +30,14 @@ public static class SchedulingModule
             services.AddTransient<IDomainToolFeature, SchedulingToolFeature>();
 
             services.AddSingleton<ScheduleDispatcher>();
-            services.AddSingleton<ScheduleExecutor>();
+            services.AddSingleton(sp => new ScheduleExecutor(
+                sp.GetRequiredService<IScheduleStore>(),
+                sp.GetRequiredService<IScheduleAgentFactory>(),
+                sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
+                sp.GetService<IConfiguration>()?["DefaultScheduleChannelId"] is { Length: > 0 } id ? id : "signalr",
+                sp.GetRequiredService<Func<IChannelConnection, string, IToolApprovalHandler>>(),
+                sp.GetRequiredService<Channel<Schedule>>(),
+                sp.GetRequiredService<ILogger<ScheduleExecutor>>()));
 
             services.AddHostedService<ScheduleMonitoring>();
 

@@ -18,7 +18,7 @@ public class RedisChatMessageStoreTests
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
-        var agentKey = new AgentKey(123, 456);
+        var agentKey = new AgentKey("123:456");
         var session = CreateSessionWithKey(agentKey.ToString());
         var store = new RedisChatMessageStore(mockStore.Object);
 
@@ -59,7 +59,7 @@ public class RedisChatMessageStoreTests
     public void AgentKey_ToString_ReturnsCorrectFormat()
     {
         // Arrange
-        var agentKey = new AgentKey(999, 888, "test-agent");
+        var agentKey = new AgentKey("999:888", "test-agent");
 
         // Act
         var key = agentKey.ToString();

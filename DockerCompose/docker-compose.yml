@@ -239,8 +239,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - CAMOUFOX__WSENDPOINT=ws://camoufox:9377/browser
     networks:
       - jackbot
     depends_on:
@@ -268,8 +266,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - REDISCONNECTIONSTRING=redis:6379
     networks:
       - jackbot
     depends_on:
@@ -300,6 +296,80 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-channel-signalr:
+    image: mcp-channel-signalr:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-signalr
+    ports:
+      - "6010:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelSignalR/Dockerfile
+      cache_from:
+        - mcp-channel-signalr:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+      - redis
+
+  mcp-channel-telegram:
+    image: mcp-channel-telegram:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-telegram
+    ports:
+      - "6011:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelTelegram/Dockerfile
+      cache_from:
+        - mcp-channel-telegram:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+      - redis
+
+  mcp-channel-servicebus:
+    image: mcp-channel-servicebus:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-servicebus
+    ports:
+      - "6012:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelServiceBus/Dockerfile
+      cache_from:
+        - mcp-channel-servicebus:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+
   agent:
     image: agent:latest
     logging:
@@ -320,11 +390,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - SERVICEBUS__CONNECTIONSTRING=${SERVICEBUS__CONNECTIONSTRING}
-      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
-      - WEBPUSH__PRIVATEKEY=${WEBPUSH__PRIVATEKEY}
-      - WEBPUSH__SUBJECT=${WEBPUSH__SUBJECT}
     networks:
       - jackbot
     depends_on:
@@ -333,6 +398,9 @@ services:
       - mcp-websearch
       - mcp-memory
       - mcp-idealista
+      - mcp-channel-signalr
+      - mcp-channel-telegram
+      - mcp-channel-servicebus
       - redis
       - base-sdk
 
@@ -354,13 +422,6 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     env_file:
       - .env
-    environment:
-      - AGENTURL=${AGENTURL:-http://localhost:5000}
-      - USERS__0__ID=${USERS__0__ID:-Alice}
-      - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
-      - USERS__1__ID=${USERS__1__ID:-Bob}
-      - USERS__1__AVATARURL=${USERS__1__AVATARURL:-avatars/green.png}
-      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
     restart: unless-stopped
     networks:
       - jackbot

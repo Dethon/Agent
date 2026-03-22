@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -21,7 +22,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     }
 
     protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
-        AgentSession session, 
+        AgentSession session,
         JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
@@ -70,7 +71,7 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId)
+    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
         return agent;
     }
@@ -87,43 +88,71 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
         => throw new NotImplementedException();
 }
 
+internal sealed class FakeChannelConnection : IChannelConnection
+{
+    private readonly Channel<ChannelMessage> _channel = Channel.CreateUnbounded<ChannelMessage>();
+
+    public string ChannelId { get; init; } = "test-channel";
+
+    public string? ConversationIdToReturn { get; init; }
+
+    public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
+
+    public List<(string ConversationId, string Content, string ContentType, bool IsComplete)> SentReplies { get; } = [];
+
+    public List<(string AgentId, string TopicName, string Sender)> CreatedConversations { get; } = [];
+
+    public Task SendReplyAsync(string conversationId, string content, string contentType, bool isComplete, string? messageId, CancellationToken ct)
+    {
+        SentReplies.Add((conversationId, content, contentType, isComplete));
+        return Task.CompletedTask;
+    }
+
+    public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => Task.FromResult(new ToolApprovalResult());
+
+    public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, CancellationToken ct)
+    {
+        CreatedConversations.Add((agentId, topicName, sender));
+        return Task.FromResult(ConversationIdToReturn);
+    }
+
+    public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(message);
+
+    public void Complete() => _channel.Writer.TryComplete();
+}
+
 internal static class MonitorTestMocks
 {
-    public static ChatPrompt CreatePrompt(long chatId = 1, int? threadId = 1, string prompt = "Hello",
-        int messageId = 1, string sender = "test")
+    public static ChannelMessage CreateChannelMessage(
+        string conversationId = "conv-1",
+        string content = "Hello",
+        string sender = "test",
+        string channelId = "test-channel",
+        string? agentId = null)
     {
-        return new ChatPrompt
+        return new ChannelMessage
         {
-            ChatId = chatId,
-            ThreadId = threadId,
-            Prompt = prompt,
-            MessageId = messageId,
+            ConversationId = conversationId,
+            Content = content,
             Sender = sender,
-            Source = MessageSource.WebUi
+            ChannelId = channelId,
+            AgentId = agentId
         };
     }
 
-    public static Mock<IChatMessengerClient> CreateChatMessengerClient(IEnumerable<ChatPrompt>? prompts = null)
+    public static FakeChannelConnection CreateChannel(string channelId = "test-channel", params ChannelMessage[] messages)
     {
-        var mock = new Mock<IChatMessengerClient>();
-        if (prompts != null)
+        var channel = new FakeChannelConnection { ChannelId = channelId };
+        foreach (var msg in messages)
         {
-            mock.Setup(c => c.ReadPrompts(It.IsAny<int>(), It.IsAny<CancellationToken>()))
-                .Returns(prompts.ToAsyncEnumerable());
+            channel.WriteMessage(msg);
         }
-
-        mock.Setup(c =>
-                c.ProcessResponseStreamAsync(
-                    It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>>(),
-                    It.IsAny<CancellationToken>()
-                ))
-            .Returns(async (IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)> updates,
-                CancellationToken ct) =>
-            {
-                // Must consume the enumerable to drive the lazy streaming pipeline
-                await foreach (var _ in updates.WithCancellation(ct)) { }
-            });
-        return mock;
+        channel.Complete();
+        return channel;
     }
 
     public static FakeAiAgent CreateAgent()
@@ -140,63 +169,67 @@ internal static class MonitorTestMocks
     {
         return new ChatThreadResolver();
     }
+
+    public static Func<IChannelConnection, string, IToolApprovalHandler> CreateApprovalHandlerFactory()
+    {
+        return (_, _) => new Mock<IToolApprovalHandler>().Object;
+    }
 }
 
 public class ChatMonitorTests
 {
     [Fact]
-    public async Task Monitor_WhenAgentCompletes_CallsProcessResponseStreamAsync()
+    public async Task Monitor_SingleMessage_SendsStreamCompleteReply()
     {
         // Arrange
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var prompts = new[] { MonitorTestMocks.CreatePrompt() };
-        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        chatMessengerClient.Setup(c =>
-                c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentKey(1, 1));
-
-        var mockAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - ProcessResponseStreamAsync should be called
-        chatMessengerClient.Verify(c =>
-            c.ProcessResponseStreamAsync(
-                It.IsAny<IAsyncEnumerable<(AgentKey, AgentResponseUpdate, AiResponse?, MessageSource)>>(),
-                It.IsAny<CancellationToken>()), Times.Once);
+        // Assert - at minimum a StreamComplete reply should be sent
+        channel.SentReplies.ShouldContain(r =>
+            r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
 
     [Fact]
-    public async Task Monitor_WithNullThreadId_CallsCreateTopicIfNeededAsync()
+    public async Task Monitor_MultipleChannels_RoutesRepliesToOriginatingChannel()
     {
         // Arrange
         var threadResolver = MonitorTestMocks.CreateThreadResolver();
-        var prompts = new[] { MonitorTestMocks.CreatePrompt(threadId: null) };
-        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        chatMessengerClient.Setup(c =>
-                c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentKey(1, 100));
-        var mockAgent = MonitorTestMocks.CreateAgent();
-        var agentFactory = MonitorTestMocks.CreateAgentFactory(mockAgent);
+        var msg1 = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", channelId: "ch-1");
+        var msg2 = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", channelId: "ch-2");
+        var channel1 = MonitorTestMocks.CreateChannel("ch-1", msg1);
+        var channel2 = MonitorTestMocks.CreateChannel("ch-2", msg2);
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(
+            [channel1, channel2],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
 
-        // Assert - CreateTopicIfNeededAsync is called with prompt parameters
-        chatMessengerClient.Verify(
-            c => c.CreateTopicIfNeededAsync(MessageSource.WebUi, 1, null, null, "Hello", It.IsAny<string?>(),
-                It.IsAny<CancellationToken>()),
-            Times.Once);
+        // Assert - each channel should receive replies for its own conversation
+        channel1.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-1");
+        channel2.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-2");
     }
 
     [Fact]
@@ -205,21 +238,22 @@ public class ChatMonitorTests
         // Arrange
         var mockStateStore = new Mock<IThreadStateStore>();
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
-        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/cancel") };
-        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var agentKey = new AgentKey(1, 1);
-        chatMessengerClient.Setup(c =>
-                c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agentKey);
+        var agentKey = new AgentKey("conv-1");
+        var message = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/cancel");
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        // First resolve a context for the agent key so we can verify it gets canceled but not cleaned
+        // Pre-resolve a context so we can verify cancellation
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -236,21 +270,22 @@ public class ChatMonitorTests
         var mockStateStore = new Mock<IThreadStateStore>();
         mockStateStore.Setup(s => s.DeleteAsync(It.IsAny<AgentKey>())).Returns(Task.CompletedTask);
         var threadResolver = new ChatThreadResolver(mockStateStore.Object);
-        var prompts = new[] { MonitorTestMocks.CreatePrompt(prompt: "/clear") };
-        var chatMessengerClient = MonitorTestMocks.CreateChatMessengerClient(prompts);
-        var agentKey = new AgentKey(1, 1);
-        chatMessengerClient.Setup(c =>
-                c.CreateTopicIfNeededAsync(It.IsAny<MessageSource>(), It.IsAny<long?>(), It.IsAny<long?>(),
-                    It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(agentKey);
+        var agentKey = new AgentKey("conv-1");
+        var message = MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "/clear");
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
         var fakeAgent = MonitorTestMocks.CreateAgent();
         var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
         var logger = new Mock<ILogger<ChatMonitor>>();
 
-        // First resolve a context for the agent key so we can verify it gets cleaned
+        // Pre-resolve a context so we can verify cleanup
         var context = threadResolver.Resolve(agentKey);
 
-        var monitor = new ChatMonitor(chatMessengerClient.Object, agentFactory, threadResolver, logger.Object);
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            logger.Object);
 
         // Act
         await monitor.Monitor(CancellationToken.None);

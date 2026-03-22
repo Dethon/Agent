@@ -22,8 +22,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-
     <PackageReference Include="Microsoft.Agents.AI" Version="1.0.0-rc4" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.4.1" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
@@ -36,7 +34,6 @@
     <PackageReference Include="SmartReader" Version="0.11.0" />
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
     <PackageReference Include="StackExchange.Redis" Version="2.12.4" />
-    <PackageReference Include="Telegram.Bot" Version="22.9.5.3" />
     <PackageReference Include="Terminal.Gui" Version="1.19.0" />
     </ItemGroup>
 

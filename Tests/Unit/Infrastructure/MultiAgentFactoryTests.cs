@@ -26,6 +26,7 @@ public sealed class MultiAgentFactoryTests
     };
 
     private readonly MultiAgentFactory _sut;
+    private readonly Mock<IToolApprovalHandler> _approvalHandler = new();
 
     public MultiAgentFactoryTests()
     {
@@ -41,18 +42,9 @@ public sealed class MultiAgentFactoryTests
             .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>()))
             .Returns(Enumerable.Empty<AIFunction>());
 
-        var approvalHandler = new Mock<IToolApprovalHandler>();
-        var approvalFactory = new Mock<IToolApprovalHandlerFactory>();
-        approvalFactory
-            .Setup(f => f.Create(It.IsAny<AgentKey>()))
-            .Returns(approvalHandler.Object);
-
         var stateStore = new Mock<IThreadStateStore>();
 
         var serviceProvider = new Mock<IServiceProvider>();
-        serviceProvider
-            .Setup(sp => sp.GetService(typeof(IToolApprovalHandlerFactory)))
-            .Returns(approvalFactory.Object);
         serviceProvider
             .Setup(sp => sp.GetService(typeof(IThreadStateStore)))
             .Returns(stateStore.Object);
@@ -201,9 +193,9 @@ public sealed class MultiAgentFactoryTests
     public void Create_WithCustomAgentId_CreatesAgent()
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, "user1", info.Id);
+        var agent = _sut.Create(agentKey, "user1", info.Id, _approvalHandler.Object);
 
         agent.ShouldNotBeNull();
     }
@@ -211,10 +203,10 @@ public sealed class MultiAgentFactoryTests
     [Fact]
     public void Create_WithUnknownAgentId_Throws()
     {
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user1", "unknown-id"));
+            () => _sut.Create(agentKey, "user1", "unknown-id", _approvalHandler.Object));
 
         ex.Message.ShouldContain("unknown-id");
     }
@@ -222,9 +214,9 @@ public sealed class MultiAgentFactoryTests
     [Fact]
     public void Create_WithBuiltInAgentId_StillWorks()
     {
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, "user1", "built-in-id");
+        var agent = _sut.Create(agentKey, "user1", "built-in-id", _approvalHandler.Object);
 
         agent.ShouldNotBeNull();
     }
@@ -236,10 +228,10 @@ public sealed class MultiAgentFactoryTests
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
         _sut.UnregisterCustomAgent("user1", info.Id);
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user1", info.Id));
+            () => _sut.Create(agentKey, "user1", info.Id, _approvalHandler.Object));
 
         ex.Message.ShouldContain(info.Id);
     }
@@ -248,10 +240,10 @@ public sealed class MultiAgentFactoryTests
     public void Create_WithCustomAgentIdOfDifferentUser_Throws()
     {
         var info = _sut.RegisterCustomAgent("user1", MakeRegistration());
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user2", info.Id));
+            () => _sut.Create(agentKey, "user2", info.Id, _approvalHandler.Object));
 
         ex.Message.ShouldContain(info.Id);
     }
@@ -278,9 +270,9 @@ public sealed class MultiAgentFactoryTests
             EnabledFeatures = ["feature1"]
         };
         var info = _sut.RegisterCustomAgent("user1", registration);
-        var agentKey = new AgentKey(ChatId: 1L, ThreadId: 1L, AgentId: "test");
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, "user1", info.Id);
+        var agent = _sut.Create(agentKey, "user1", info.Id, _approvalHandler.Object);
 
         agent.ShouldNotBeNull();
     }

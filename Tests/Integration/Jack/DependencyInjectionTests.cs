@@ -5,8 +5,6 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
-using Infrastructure.Clients.Messaging.Cli;
-using Infrastructure.Clients.ToolApproval;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
@@ -26,10 +24,6 @@ public class DependencyInjectionTests
                 ApiUrl = "https://openrouter.ai/api/v1/",
                 ApiKey = "test-api-key"
             },
-            Telegram = new TelegramConfiguration
-            {
-                AllowedUserNames = ["testuser"]
-            },
             Redis = new RedisConfiguration
             {
                 ConnectionString = "localhost:6379,abortConnect=false"
@@ -41,8 +35,7 @@ public class DependencyInjectionTests
                     Id = "test-agent",
                     Name = "TestAgent",
                     Model = "test-model",
-                    McpServerEndpoints = ["http://localhost:5000"],
-                    TelegramBotToken = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                    McpServerEndpoints = ["http://localhost:5000"]
                 }
             ]
         };
@@ -50,7 +43,6 @@ public class DependencyInjectionTests
 
     private static void AddMockInfrastructure(IServiceCollection services)
     {
-        // Pre-register mocks before ConfigureJack so they take precedence
         var mockMultiplexer = new Mock<IConnectionMultiplexer>();
         var mockDatabase = new Mock<IDatabase>();
         var mockServer = new Mock<IServer>();
@@ -63,7 +55,6 @@ public class DependencyInjectionTests
         mockMultiplexer.Setup(m => m.GetServer(endpoint, It.IsAny<object>()))
             .Returns(mockServer.Object);
 
-        // Remove existing registrations and add mocks
         var descriptorsToRemove = services
             .Where(d => d.ServiceType == typeof(IConnectionMultiplexer))
             .ToList();
@@ -77,68 +68,14 @@ public class DependencyInjectionTests
     }
 
     [Fact]
-    public void ConfigureJack_WithCliInterface_RegistersAllServices()
+    public void ConfigureAgents_RegistersCoreServices()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
         var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            ChatInterface = ChatInterface.Cli
-        };
-
-        // Act
-        services.ConfigureAgents(settings, cmdParams);
-        AddMockInfrastructure(services);
-        var provider = services.BuildServiceProvider();
-
-        // Assert - core services
-        provider.GetService<IAgentFactory>().ShouldNotBeNull();
-        provider.GetService<ChatMonitor>().ShouldNotBeNull();
-        provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
-        provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void ConfigureJack_WithTelegramInterface_RegistersAllServices()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            ChatInterface = ChatInterface.Telegram
-        };
-
-        // Act
-        services.ConfigureAgents(settings, cmdParams);
-        AddMockInfrastructure(services);
-        var provider = services.BuildServiceProvider();
-
-        // Assert
-        provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
-        provider.GetService<IChatMessengerClient>().ShouldNotBeNull();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        hostedServices.Length.ShouldBe(2);
-    }
-
-    [Fact]
-    public void ConfigureJack_WithOneShotInterface_RegistersOneShotClient()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
-        var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            ChatInterface = ChatInterface.OneShot,
-            Prompt = "Test prompt",
-            ShowReasoning = true
-        };
+        var cmdParams = new CommandLineParams();
 
         // Act
         services.ConfigureAgents(settings, cmdParams);
@@ -148,37 +85,7 @@ public class DependencyInjectionTests
         // Assert
         provider.GetService<IAgentFactory>().ShouldNotBeNull();
         provider.GetService<ChatMonitor>().ShouldNotBeNull();
-
-        var chatClient = provider.GetService<IChatMessengerClient>();
-        chatClient.ShouldNotBeNull();
-        chatClient.ShouldBeOfType<OneShotChatMessengerClient>();
-
-        var approvalFactory = provider.GetService<IToolApprovalHandlerFactory>();
-        approvalFactory.ShouldNotBeNull();
-        approvalFactory.ShouldBeOfType<AutoApproveToolHandlerFactory>();
-    }
-
-    [Fact]
-    public void ConfigureJack_WithOneShotInterfaceNoPrompt_ThrowsOnResolve()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(new Mock<IHostApplicationLifetime>().Object);
-        var settings = CreateTestSettings();
-        var cmdParams = new CommandLineParams
-        {
-            ChatInterface = ChatInterface.OneShot,
-            Prompt = null // Missing prompt
-        };
-
-        // Act
-        services.ConfigureAgents(settings, cmdParams);
-        AddMockInfrastructure(services);
-        var provider = services.BuildServiceProvider();
-
-        // Assert - Should throw when trying to resolve the client
-        Should.Throw<InvalidOperationException>(() => provider.GetService<IChatMessengerClient>());
+        provider.GetService<ChatThreadResolver>().ShouldNotBeNull();
     }
 
     [Fact]
