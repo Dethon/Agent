@@ -34,7 +34,7 @@ public static class SchedulingModule
                 sp.GetRequiredService<IScheduleStore>(),
                 sp.GetRequiredService<IScheduleAgentFactory>(),
                 sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
-                sp.GetService<IConfiguration>()?["DefaultScheduleChannelId"],
+                sp.GetService<IConfiguration>()?["DefaultScheduleChannelId"] is { Length: > 0 } id ? id : "signalr",
                 sp.GetRequiredService<Func<IChannelConnection, string, IToolApprovalHandler>>(),
                 sp.GetRequiredService<Channel<Schedule>>(),
                 sp.GetRequiredService<ILogger<ScheduleExecutor>>()));
