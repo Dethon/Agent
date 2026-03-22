@@ -38,7 +38,6 @@ SERVICES=(
     "McpServerMemory/Dockerfile:mcp-memory:McpServerMemory.dll"
     "McpServerIdealista/Dockerfile:mcp-idealista:McpServerIdealista.dll"
     "McpServerWebSearch/Dockerfile:mcp-websearch:McpServerWebSearch.dll"
-    "McpServerCommandRunner/Dockerfile:mcp-commandrunner:McpServerCommandRunner.dll"
     "WebChat/Dockerfile:webui:WebChat.dll"
 )
 
