@@ -17,9 +17,12 @@ public sealed class SessionService : ISessionService
         var chatId = GetDeterministicHash(topicId, seed: 0x1234);
         var threadId = GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF;
 
-        StartSession(topicId, agentId, chatId, threadId);
+        StartSession(topicId, agentId, chatId, threadId, spaceSlug: "default");
 
-        return Task.FromResult(topicId);
+        // Return conversationId in "{chatId}:{threadId}" format — this is what the agent
+        // uses as AgentKey and passes back to send_reply/request_approval
+        var conversationId = $"{chatId}:{threadId}";
+        return Task.FromResult(conversationId);
     }
 
     public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null)
@@ -55,6 +58,12 @@ public sealed class SessionService : ISessionService
     public string? GetTopicIdByConversationId(string conversationId)
     {
         return _conversationToTopic.GetValueOrDefault(conversationId);
+    }
+
+    public ChannelSession? GetSessionByConversationId(string conversationId)
+    {
+        var topicId = GetTopicIdByConversationId(conversationId);
+        return topicId is not null && _sessions.TryGetValue(topicId, out var session) ? session : null;
     }
 
     private static long GetDeterministicHash(string input, long seed)
