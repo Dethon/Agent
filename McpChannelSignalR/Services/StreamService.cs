@@ -59,51 +59,57 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         await WriteMessageAsync(topicId, message);
     }
 
-    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool IsNew) GetOrCreateStream(
+    // Lock protects the compound check-then-act: without it, a concurrent CompleteStream
+    // can remove a channel between TryGetValue and return, handing back a completed channel.
+    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token) GetOrCreateStream(
         string topicId,
         string currentPrompt,
         string? currentSenderId,
         CancellationToken parentToken)
     {
-        if (_responseChannels.TryGetValue(topicId, out var existingChannel))
+        lock (_streamLock)
         {
+            if (_responseChannels.TryGetValue(topicId, out var existingChannel))
+            {
+                _currentPrompts[topicId] = currentPrompt;
+                if (currentSenderId is not null)
+                {
+                    _currentSenderIds[topicId] = currentSenderId;
+                }
+
+                if (_cancellationTokens.TryGetValue(topicId, out var existingCts))
+                {
+                    return (existingChannel, existingCts.Token);
+                }
+
+                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+                _cancellationTokens[topicId] = linkedCts;
+                return (existingChannel, linkedCts.Token);
+            }
+
+            var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
+            _responseChannels[topicId] = broadcastChannel;
+
+            _streamBuffers.TryRemove(topicId, out _);
+
             _currentPrompts[topicId] = currentPrompt;
             if (currentSenderId is not null)
             {
                 _currentSenderIds[topicId] = currentSenderId;
             }
 
-            if (_cancellationTokens.TryGetValue(topicId, out var existingCts))
-            {
-                return (existingChannel, existingCts.Token, IsNew: false);
-            }
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+            _cancellationTokens[topicId] = cts;
 
-            var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
-            _cancellationTokens[topicId] = linkedCts;
-            return (existingChannel, linkedCts.Token, IsNew: false);
+            return (broadcastChannel, cts.Token);
         }
-
-        var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
-        _responseChannels[topicId] = broadcastChannel;
-
-        _streamBuffers.TryRemove(topicId, out _);
-
-        _currentPrompts[topicId] = currentPrompt;
-        if (currentSenderId is not null)
-        {
-            _currentSenderIds[topicId] = currentSenderId;
-        }
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
-        _cancellationTokens[topicId] = cts;
-
-        return (broadcastChannel, cts.Token, IsNew: true);
     }
 
     public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(
         string topicId,
         CancellationToken cancellationToken)
     {
+        // ReSharper disable once InconsistentlySynchronizedField
         return !_responseChannels.TryGetValue(topicId, out var channel)
             ? null
             : channel.Subscribe().ReadAllAsync(cancellationToken);
@@ -113,6 +119,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         string topicId,
         ChatStreamMessage message)
     {
+        // ReSharper disable once InconsistentlySynchronizedField
         if (!_responseChannels.TryGetValue(topicId, out var channel))
         {
             logger.LogWarning("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
@@ -124,7 +131,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         await channel.WriteAsync(message, CancellationToken.None);
     }
 
-    public void CompleteStream(string topicId)
+    private void CompleteStream(string topicId)
     {
         lock (_streamLock)
         {
@@ -158,7 +165,10 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
 
     public bool IsStreaming(string topicId)
     {
-        return _responseChannels.ContainsKey(topicId);
+        lock (_streamLock)
+        {
+            return _responseChannels.ContainsKey(topicId);
+        }
     }
 
     public bool TryIncrementPending(string topicId)
@@ -177,6 +187,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
 
     public StreamState? GetStreamState(string topicId)
     {
+        // ReSharper disable once InconsistentlySynchronizedField
         var isProcessing = _responseChannels.ContainsKey(topicId);
         _currentPrompts.TryGetValue(topicId, out var currentPrompt);
         _currentSenderIds.TryGetValue(topicId, out var currentSenderId);

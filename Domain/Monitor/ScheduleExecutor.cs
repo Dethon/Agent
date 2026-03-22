@@ -86,8 +86,10 @@ public class ScheduleExecutor(
 
         await foreach (var (update, _) in ExecuteScheduleCore(schedule, agentKey, approvalHandler, ct))
         {
-            var (content, contentType, isComplete) = MapResponseUpdate(update);
-            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, update.MessageId, ct);
+            foreach (var (content, contentType, isComplete) in MapResponseUpdate(update))
+            {
+                await channel.SendReplyAsync(conversationId, content, contentType, isComplete, update.MessageId, ct);
+            }
         }
     }
 
@@ -142,20 +144,30 @@ public class ScheduleExecutor(
         yield return (new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null);
     }
 
-    private static (string Content, string ContentType, bool IsComplete) MapResponseUpdate(AgentResponseUpdate update)
+    private static IEnumerable<(string Content, string ContentType, bool IsComplete)> MapResponseUpdate(
+        AgentResponseUpdate update)
     {
-        var aiContent = update.Contents.FirstOrDefault();
-        return aiContent switch
+        foreach (var aiContent in update.Contents)
         {
-            TextContent text => (text.Text, ReplyContentType.Text, false),
-            TextReasoningContent reasoning => (reasoning.Text, ReplyContentType.Reasoning, false),
-            FunctionCallContent functionCall => (
-                JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
-                ReplyContentType.ToolCall,
-                false),
-            ErrorContent error => (error.Message, ReplyContentType.Error, false),
-            StreamCompleteContent => (string.Empty, ReplyContentType.StreamComplete, true),
-            _ => (string.Empty, ReplyContentType.Text, false)
-        };
+            var mapped = aiContent switch
+            {
+                TextContent text when !string.IsNullOrEmpty(text.Text)
+                    => (text.Text, ReplyContentType.Text, false),
+                TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text)
+                    => (reasoning.Text, ReplyContentType.Reasoning, false),
+                // FunctionCallContent is intentionally skipped — tool calls are displayed
+                // by the approval flow (request_approval tool with mode=request or mode=notify)
+                ErrorContent error
+                    => (error.Message, ReplyContentType.Error, false),
+                StreamCompleteContent
+                    => (string.Empty, ReplyContentType.StreamComplete, true),
+                _ => default
+            };
+
+            if (mapped != default)
+            {
+                yield return mapped;
+            }
+        }
     }
 }

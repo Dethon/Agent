@@ -155,7 +155,7 @@ public sealed class ChatHub(
         var userId = GetRegisteredUserId() ?? "Anonymous";
 
         // Create or join stream for this topic
-        var (broadcastChannel, linkedToken, _) =
+        var (broadcastChannel, linkedToken) = 
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
         streamService.TryIncrementPending(topicId);
 

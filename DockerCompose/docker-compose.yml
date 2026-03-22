@@ -313,6 +313,8 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    env_file:
+      - .env
     networks:
       - jackbot
     depends_on:
@@ -336,6 +338,8 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    env_file:
+      - .env
     networks:
       - jackbot
     depends_on:
@@ -359,6 +363,8 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
+    env_file:
+      - .env
     networks:
       - jackbot
     depends_on:
