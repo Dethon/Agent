@@ -55,7 +55,7 @@ app.MapGet("/api/config", (IConfiguration config) =>
     var users = config.GetSection("Users").Get<UserConfig[]>() ?? [];
     var vapidPublicKey = config["WebPush:PublicKey"];
     return new AppConfig(
-        config["AgentUrl"] ?? "http://localhost:5000",
+        config["AgentUrl"] ?? throw new InvalidOperationException("AgentUrl is not configured"),
         users,
         vapidPublicKey);
 });

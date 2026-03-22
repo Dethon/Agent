@@ -95,15 +95,23 @@ public class ScheduleExecutor(
 
     private async Task ExecuteSilently(Schedule schedule, CancellationToken ct)
     {
+        var fallbackChannel = channels.FirstOrDefault();
+        if (fallbackChannel is null)
+        {
+            logger.LogWarning(
+                "Skipping schedule {ScheduleId} for agent {AgentName}: no channel connections available",
+                schedule.Id,
+                schedule.Agent.Name);
+            return;
+        }
+
         logger.LogInformation(
-            "Executing schedule {ScheduleId} for agent {AgentName} silently (no channel available)",
+            "Executing schedule {ScheduleId} for agent {AgentName} silently (no target channel)",
             schedule.Id,
             schedule.Agent.Name);
 
         var agentKey = new AgentKey("scheduled", schedule.Agent.Id);
-        var approvalHandler = approvalHandlerFactory(
-            channels.FirstOrDefault()!,
-            "scheduled");
+        var approvalHandler = approvalHandlerFactory(fallbackChannel, "scheduled");
 
         await foreach (var _ in ExecuteScheduleCore(schedule, agentKey, approvalHandler, ct))
         {

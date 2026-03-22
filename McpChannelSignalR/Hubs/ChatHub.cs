@@ -156,9 +156,12 @@ public sealed class ChatHub(
         var userId = GetRegisteredUserId() ?? "Anonymous";
 
         // Create or join stream for this topic
-        var (broadcastChannel, linkedToken) = 
+        var (broadcastChannel, linkedToken) =
             streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
         streamService.TryIncrementPending(topicId);
+
+        // Subscribe before emitting so no early reply chunks are lost
+        var subscription = broadcastChannel.Subscribe();
 
         // Write user message to buffer for other browsers
         var timestamp = DateTimeOffset.UtcNow;
@@ -177,8 +180,8 @@ public sealed class ChatHub(
             session.AgentId,
             cancellationToken);
 
-        // Subscribe and stream responses back to the browser
-        await foreach (var msg in broadcastChannel.Subscribe().ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+        // Stream responses back to the browser
+        await foreach (var msg in subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
         {
             yield return msg;
             if (msg.IsComplete || msg.Error is not null)

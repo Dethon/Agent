@@ -155,6 +155,31 @@ public class ScheduleExecutorTests
     }
 
     [Fact]
+    public async Task ProcessSchedule_EmptyChannelsList_SkipsExecutionAndDeletesOneShot()
+    {
+        // Arrange — no channels at all
+        var executor = CreateExecutor([], defaultScheduleChannelId: null);
+        var schedule = CreateSchedule(cronExpression: null);
+
+        _scheduleChannel.Writer.TryWrite(schedule);
+        _scheduleChannel.Writer.Complete();
+
+        // Act
+        await executor.ProcessSchedulesAsync(CancellationToken.None);
+
+        // Assert — agent should NOT have been created (no channel to run against)
+        _agentFactory.Verify(
+            f => f.CreateFromDefinition(
+                It.IsAny<AgentKey>(),
+                It.IsAny<string>(),
+                It.IsAny<AgentDefinition>(),
+                It.IsAny<IToolApprovalHandler>()),
+            Times.Never);
+        // One-shot schedule still deleted
+        _store.Verify(s => s.DeleteAsync("sched_test", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ProcessSchedule_RecurringSchedule_NotDeleted()
     {
         // Arrange
