@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using McpChannelSignalR.Services;
+using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -14,7 +15,7 @@ public sealed class ChatHub(
     StreamService streamService,
     ApprovalService approvalService,
     ChannelNotificationEmitter notificationEmitter,
-    AgentApiClient agentApiClient,
+    ChannelSettings settings,
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore) : Hub
 {
@@ -41,32 +42,21 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<AgentInfo>> GetAgents()
+    public IReadOnlyList<AgentInfo> GetAgents()
     {
-        return agentApiClient.GetAgentsAsync(GetRegisteredUserId());
+        return settings.Agents
+            .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
+            .ToList();
     }
 
-    public Task<AgentInfo> RegisterCustomAgent(CustomAgentRegistration registration)
+    public bool ValidateAgent(string agentId)
     {
-        var userId = GetRegisteredUserId() ?? throw new HubException("User not registered");
-        return agentApiClient.RegisterCustomAgentAsync(userId, registration);
+        return settings.Agents.Any(a => a.Id == agentId);
     }
 
-    public Task<bool> UnregisterCustomAgent(string agentId)
+    public bool StartSession(string agentId, string topicId, long chatId, long threadId)
     {
-        var userId = GetRegisteredUserId() ?? throw new HubException("User not registered");
-        return agentApiClient.UnregisterCustomAgentAsync(userId, agentId);
-    }
-
-    public async Task<bool> ValidateAgent(string agentId)
-    {
-        var agents = await agentApiClient.GetAgentsAsync(GetRegisteredUserId());
-        return agents.Any(a => a.Id == agentId);
-    }
-
-    public async Task<bool> StartSession(string agentId, string topicId, long chatId, long threadId)
-    {
-        return await ValidateAgent(agentId)
+        return ValidateAgent(agentId)
             && sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug);
     }
 

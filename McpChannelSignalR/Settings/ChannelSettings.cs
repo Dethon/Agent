@@ -3,7 +3,6 @@ namespace McpChannelSignalR.Settings;
 public record ChannelSettings
 {
     public required string RedisConnectionString { get; init; }
-    public string AgentUrl { get; init; } = "http://agent:8080";
     public AgentConfig[] Agents { get; init; } = [];
     public WebPushConfig? WebPush { get; init; }
 }

@@ -7,8 +7,19 @@ var cmdParams = ConfigModule.GetCommandLineParams(args);
 var settings = builder.Configuration.GetSettings();
 
 builder.Services.ConfigureAgents(settings, cmdParams);
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.SetIsOriginAllowed(_ => true)
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
+    });
+});
 
 var app = builder.Build();
+app.UseCors();
 
 app.MapGet("/api/agents", (IAgentFactory agentFactory, string? userId) =>
     agentFactory.GetAvailableAgents(userId));
