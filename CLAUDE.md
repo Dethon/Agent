@@ -1,6 +1,6 @@
 # Agent
 
-AI agent via Telegram/WebChat/MessageBus/CLI using .NET 10 LTS, MCP, and OpenRouter LLMs.
+AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter LLMs.
 
 ## Verify Before Assuming
 
@@ -24,10 +24,14 @@ Detailed documentation in `docs/codebase/`:
 
 | Project | Purpose |
 |---------|---------|
-| `Agent` | Composition root, Telegram bot, DI |
+| `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
-| `Infrastructure` | External clients, agent implementations |
-| `McpServer*` | MCP servers (Library, Text, WebSearch, Memory, Idealista, CommandRunner) |
+| `Infrastructure` | External clients, agent implementations, push notifications |
+| `McpServer*` | MCP tool servers (Library, Text, WebSearch, Memory, Idealista, Calendar) |
+| `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
+| `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
+| `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
+| `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Tests` | Unit and integration tests |
 
@@ -39,7 +43,10 @@ Detailed documentation in `docs/codebase/`:
 | DTOs | `Domain/DTOs/*.cs` |
 | Agent implementations | `Infrastructure/Agents/*.cs` |
 | External clients | `Infrastructure/Clients/**/*.cs` |
-| MCP tools | `McpServer*/McpTools/*.cs` |
+| MCP tool server tools | `McpServer*/McpTools/*.cs` |
+| Channel MCP tools | `McpChannel*/McpTools/*.cs` |
+| Channel services | `McpChannel*/Services/*.cs` |
+| Channel protocol DTOs | `Domain/DTOs/Channel/*.cs` |
 | WebChat state | `WebChat.Client/State/**/*.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
@@ -89,10 +96,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library qbittorrent jackett redis caddy
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library qbittorrent jackett redis caddy
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy
 ```
 
 ### Secrets
@@ -101,7 +108,15 @@ Services read secrets from .NET User Secrets mounted into containers at `/home/a
 
 ### Accessing the WebChat
 
-Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to the agent's SignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the agent backend.
+Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to the McpChannelSignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.
+
+### Channel Architecture
+
+Transports (WebChat, Telegram, ServiceBus) run as independent MCP channel servers. The agent connects to them as an MCP client via `ChannelEndpoints` config. Each channel exposes a standard protocol:
+- **Inbound**: `channel/message` notification (user message → agent)
+- **Outbound**: `send_reply` tool (agent response → user), `request_approval` tool (tool approval flow)
+
+New transports can be added by deploying a new channel MCP server — zero agent changes needed. See `docs/superpowers/specs/2026-03-21-mcp-channel-protocol-design.md` for the full design.
 
 ### Debugging with Playwright
 
