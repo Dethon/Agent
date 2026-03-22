@@ -103,7 +103,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             {
                 ["conversationId"] = conversationId,
                 ["mode"] = "request",
-                ["requests"] = requests
+                ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);
 
@@ -125,7 +125,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             {
                 ["conversationId"] = conversationId,
                 ["mode"] = "notify",
-                ["requests"] = requests
+                ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);
     }
