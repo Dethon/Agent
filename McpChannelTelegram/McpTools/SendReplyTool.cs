@@ -44,7 +44,7 @@ public sealed class SendReplyTool
             case "tool_call":
                 await botClient.SendMessage(
                     chatId,
-                    $"\ud83d\udd27 {p.Content}",
+                    ToolCallFormatter.Format(p.Content),
                     messageThreadId: threadId,
                     cancellationToken: CancellationToken.None);
                 return "ok";

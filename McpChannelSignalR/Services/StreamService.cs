@@ -35,7 +35,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         {
             "text" => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId },
             "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
-            "tool_call" => new ChatStreamMessage { ToolCalls = FormatToolCall(content), MessageId = effectiveMessageId },
+            "tool_call" => new ChatStreamMessage { ToolCalls = ToolCallFormatter.Format(content), MessageId = effectiveMessageId },
             "error" => new ChatStreamMessage { Error = content, IsComplete = true },
             "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
@@ -58,36 +58,6 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         }
 
         await WriteMessageAsync(topicId, message);
-    }
-
-    private static string FormatToolCall(string jsonContent)
-    {
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(jsonContent);
-            var root = doc.RootElement;
-            var toolName = root.GetProperty("Name").GetString()?.Split(':').LastOrDefault() ?? "unknown";
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"🔧 {toolName}");
-
-            if (root.TryGetProperty("Arguments", out var args) && args.ValueKind == System.Text.Json.JsonValueKind.Object)
-            {
-                foreach (var prop in args.EnumerateObject())
-                {
-                    var val = prop.Value.ValueKind == System.Text.Json.JsonValueKind.String
-                        ? prop.Value.GetString() ?? ""
-                        : prop.Value.GetRawText();
-                    if (val.Length > 100) val = val[..100] + "...";
-                    sb.AppendLine($"  {prop.Name}: {val}");
-                }
-            }
-
-            return sb.ToString().TrimEnd();
-        }
-        catch
-        {
-            return jsonContent;
-        }
     }
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool IsNew) GetOrCreateStream(
