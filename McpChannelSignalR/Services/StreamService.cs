@@ -13,6 +13,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
+    private readonly ConcurrentDictionary<string, int> _responseCounters = new();
     private readonly Lock _streamLock = new();
     private bool _disposed;
 
@@ -21,21 +22,26 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         // Resolve conversationId ("chatId:threadId") to topicId (client-generated UUID)
         var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
 
+        // Generate a stable messageId per response cycle (increments on stream_complete)
+        var counter = _responseCounters.GetOrAdd(topicId, 0);
+        var messageId = $"{topicId}:{counter}";
+
         var message = contentType switch
         {
-            "text" => new ChatStreamMessage { Content = content, MessageId = topicId },
-            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = topicId },
-            "tool_call" => new ChatStreamMessage { ToolCalls = content, MessageId = topicId },
+            "text" => new ChatStreamMessage { Content = content, MessageId = messageId },
+            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = messageId },
+            "tool_call" => new ChatStreamMessage { ToolCalls = FormatToolCall(content), MessageId = messageId },
             "error" => new ChatStreamMessage { Error = content, IsComplete = true },
-            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = topicId },
-            _ => new ChatStreamMessage { Content = content, MessageId = topicId }
+            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = messageId },
+            _ => new ChatStreamMessage { Content = content, MessageId = messageId }
         };
 
         if (isComplete && contentType != "error" && contentType != "stream_complete")
         {
             await WriteMessageAsync(topicId, message);
-            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = topicId };
+            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = messageId };
             await WriteMessageAsync(topicId, completeMessage);
+            _responseCounters.AddOrUpdate(topicId, 1, (_, c) => c + 1);
             CompleteStream(topicId);
             return;
         }
@@ -43,11 +49,42 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         if (contentType is "error" or "stream_complete")
         {
             await WriteMessageAsync(topicId, message);
+            _responseCounters.AddOrUpdate(topicId, 1, (_, c) => c + 1);
             CompleteStream(topicId);
             return;
         }
 
         await WriteMessageAsync(topicId, message);
+    }
+
+    private static string FormatToolCall(string jsonContent)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(jsonContent);
+            var root = doc.RootElement;
+            var toolName = root.GetProperty("Name").GetString()?.Split(':').LastOrDefault() ?? "unknown";
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"🔧 {toolName}");
+
+            if (root.TryGetProperty("Arguments", out var args) && args.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                foreach (var prop in args.EnumerateObject())
+                {
+                    var val = prop.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? prop.Value.GetString() ?? ""
+                        : prop.Value.GetRawText();
+                    if (val.Length > 100) val = val[..100] + "...";
+                    sb.AppendLine($"  {prop.Name}: {val}");
+                }
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        catch
+        {
+            return jsonContent;
+        }
     }
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool IsNew) GetOrCreateStream(
@@ -189,6 +226,7 @@ public sealed class StreamService(SessionService sessionService, ILogger<StreamS
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
+        _responseCounters.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {
