@@ -25,7 +25,7 @@ public class StreamServiceTests : IDisposable
     [Fact]
     public void GetOrCreateStream_CreatesNewStream()
     {
-        var (channel, token) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        var (channel, _) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
         channel.ShouldNotBeNull();
         _sut.IsStreaming("topic1").ShouldBeTrue();
     }

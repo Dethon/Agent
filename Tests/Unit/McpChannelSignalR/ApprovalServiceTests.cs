@@ -2,7 +2,6 @@ using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.DTOs.WebChat;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
