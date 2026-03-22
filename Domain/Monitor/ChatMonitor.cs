@@ -86,27 +86,42 @@ public class ChatMonitor(
 
         await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
         {
-            var (content, contentType, isComplete) = MapResponseUpdate(update);
-            await channel.SendReplyAsync(conversationId, content, contentType, isComplete, update.MessageId, ct);
+            foreach (var mapped in MapResponseUpdate(update))
+            {
+                await channel.SendReplyAsync(
+                    conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+            }
+
             yield return true;
         }
     }
 
-    private static (string Content, string ContentType, bool IsComplete) MapResponseUpdate(AgentResponseUpdate update)
+    private static IEnumerable<(string Content, string ContentType, bool IsComplete)> MapResponseUpdate(
+        AgentResponseUpdate update)
     {
-        var aiContent = update.Contents.FirstOrDefault();
-        return aiContent switch
+        foreach (var aiContent in update.Contents)
         {
-            TextContent text => (text.Text ?? string.Empty, ReplyContentType.Text, false),
-            TextReasoningContent reasoning => (reasoning.Text ?? string.Empty, ReplyContentType.Reasoning, false),
-            FunctionCallContent functionCall => (
-                JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
-                ReplyContentType.ToolCall,
-                false),
-            ErrorContent error => (error.Message ?? string.Empty, ReplyContentType.Error, false),
-            StreamCompleteContent => (string.Empty, ReplyContentType.StreamComplete, true),
-            _ => (string.Empty, ReplyContentType.Text, false)
-        };
+            var mapped = aiContent switch
+            {
+                TextContent text when !string.IsNullOrEmpty(text.Text)
+                    => (text.Text, ReplyContentType.Text, false),
+                TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text)
+                    => (reasoning.Text, ReplyContentType.Reasoning, false),
+                FunctionCallContent functionCall
+                    => (JsonSerializer.Serialize(new { functionCall.Name, functionCall.Arguments }),
+                        ReplyContentType.ToolCall, false),
+                ErrorContent error
+                    => (error.Message ?? string.Empty, ReplyContentType.Error, false),
+                StreamCompleteContent
+                    => (string.Empty, ReplyContentType.StreamComplete, true),
+                _ => default
+            };
+
+            if (mapped != default)
+            {
+                yield return mapped;
+            }
+        }
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(
