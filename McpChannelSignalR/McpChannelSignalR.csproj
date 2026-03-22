@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <LangVersion>14</LangVersion>
+    <UserSecretsId>815bef94-3e37-472c-b151-24e5bc9821fd</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

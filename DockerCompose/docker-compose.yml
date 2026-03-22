@@ -239,8 +239,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - CAMOUFOX__WSENDPOINT=ws://camoufox:9377/browser
     networks:
       - jackbot
     depends_on:
@@ -268,8 +266,6 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    environment:
-      - REDISCONNECTIONSTRING=redis:6379
     networks:
       - jackbot
     depends_on:
@@ -339,11 +335,6 @@ services:
         - mcp-channel-telegram:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
-    environment:
-      - BOTS__0__AGENTID=${BOTS__0__AGENTID:-jack}
-      - BOTS__0__BOTTOKEN=${BOTS__0__BOTTOKEN}
-      - ALLOWEDUSERNAMES__0=${ALLOWEDUSERNAMES__0}
-      - ALLOWEDUSERNAMES__1=${ALLOWEDUSERNAMES__1}
     restart: unless-stopped
     networks:
       - jackbot
@@ -367,8 +358,6 @@ services:
         - mcp-channel-servicebus:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
-    environment:
-      - SERVICEBUSCONNECTIONSTRING=${SERVICEBUSCONNECTIONSTRING}
     restart: unless-stopped
     networks:
       - jackbot
@@ -404,8 +393,8 @@ services:
       - mcp-memory
       - mcp-idealista
       - mcp-channel-signalr
-#      - mcp-channel-telegram
-#      - mcp-channel-servicebus
+      - mcp-channel-telegram
+      - mcp-channel-servicebus
       - redis
       - base-sdk
 
@@ -427,13 +416,6 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     env_file:
       - .env
-    environment:
-      - AGENTURL=${AGENTURL:-http://localhost:6010}
-      - USERS__0__ID=${USERS__0__ID:-Alice}
-      - USERS__0__AVATARURL=${USERS__0__AVATARURL:-avatars/kakera.png}
-      - USERS__1__ID=${USERS__1__ID:-Bob}
-      - USERS__1__AVATARURL=${USERS__1__AVATARURL:-avatars/green.png}
-      - WEBPUSH__PUBLICKEY=${WEBPUSH__PUBLICKEY}
     restart: unless-stopped
     networks:
       - jackbot
