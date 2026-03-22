@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace McpChannelSignalR.Services;
 
-public sealed class StreamService(ILogger<StreamService> logger) : IStreamService, IDisposable
+public sealed class StreamService(SessionService sessionService, ILogger<StreamService> logger) : IStreamService, IDisposable
 {
     private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _cancellationTokens = new();
@@ -18,34 +18,36 @@ public sealed class StreamService(ILogger<StreamService> logger) : IStreamServic
 
     public async Task WriteReplyAsync(string conversationId, string content, string contentType, bool isComplete)
     {
+        // Resolve conversationId ("chatId:threadId") to topicId (client-generated UUID)
+        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
+
         var message = contentType switch
         {
-            "text" => new ChatStreamMessage { Content = content, MessageId = conversationId },
-            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = conversationId },
-            "tool_call" => new ChatStreamMessage { ToolCalls = content, MessageId = conversationId },
+            "text" => new ChatStreamMessage { Content = content, MessageId = topicId },
+            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = topicId },
+            "tool_call" => new ChatStreamMessage { ToolCalls = content, MessageId = topicId },
             "error" => new ChatStreamMessage { Error = content, IsComplete = true },
-            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = conversationId },
-            _ => new ChatStreamMessage { Content = content, MessageId = conversationId }
+            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = topicId },
+            _ => new ChatStreamMessage { Content = content, MessageId = topicId }
         };
 
         if (isComplete && contentType != "error" && contentType != "stream_complete")
         {
-            // Write the content message first, then a completion message
-            await WriteMessageAsync(conversationId, message);
-            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = conversationId };
-            await WriteMessageAsync(conversationId, completeMessage);
-            CompleteStream(conversationId);
+            await WriteMessageAsync(topicId, message);
+            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = topicId };
+            await WriteMessageAsync(topicId, completeMessage);
+            CompleteStream(topicId);
             return;
         }
 
         if (contentType is "error" or "stream_complete")
         {
-            await WriteMessageAsync(conversationId, message);
-            CompleteStream(conversationId);
+            await WriteMessageAsync(topicId, message);
+            CompleteStream(topicId);
             return;
         }
 
-        await WriteMessageAsync(conversationId, message);
+        await WriteMessageAsync(topicId, message);
     }
 
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool IsNew) GetOrCreateStream(

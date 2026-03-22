@@ -19,12 +19,13 @@ public sealed class ApprovalService(
 
     public async Task<string> RequestApprovalAsync(string conversationId, string requestsJson)
     {
+        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
         var requests = DeserializeRequests(requestsJson);
         var approvalId = Guid.NewGuid().ToString("N")[..8];
 
         var context = new ApprovalContext
         {
-            TopicId = conversationId,
+            TopicId = topicId,
             Requests = requests
         };
 
@@ -37,7 +38,7 @@ public sealed class ApprovalService(
                 ApprovalRequest = new ToolApprovalRequestMessage(approvalId, requests)
             };
 
-            await streamService.WriteMessageAsync(conversationId, approvalMessage);
+            await streamService.WriteMessageAsync(topicId, approvalMessage);
 
             var result = await context.WaitForApprovalAsync(CancellationToken.None);
 
@@ -51,7 +52,7 @@ public sealed class ApprovalService(
                 ToolCalls = FormatToolCalls(requests)
             };
 
-            await streamService.WriteMessageAsync(conversationId, toolCallsMessage);
+            await streamService.WriteMessageAsync(topicId, toolCallsMessage);
 
             return result.ToString().ToLowerInvariant();
         }
@@ -64,6 +65,7 @@ public sealed class ApprovalService(
 
     public async Task NotifyAutoApprovedAsync(string conversationId, string requestsJson)
     {
+        var topicId = sessionService.GetTopicIdByConversationId(conversationId) ?? conversationId;
         var requests = DeserializeRequests(requestsJson);
 
         var messages = requests
@@ -74,11 +76,11 @@ public sealed class ApprovalService(
                 ToolCalls = FormatToolCalls(g.ToArray())
             });
 
-        sessionService.TryGetSession(conversationId, out var session);
+        sessionService.TryGetSession(topicId, out var session);
 
         foreach (var message in messages)
         {
-            await streamService.WriteMessageAsync(conversationId, message);
+            await streamService.WriteMessageAsync(topicId, message);
 
             try
             {
