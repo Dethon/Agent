@@ -25,19 +25,19 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    WebChat       │     │    Telegram      │     │  Azure Service  │
-│ (Blazor WASM)    │     │    (Bots)        │     │       Bus       │
+│    WebChat      │     │    Telegram     │     │  Azure Service  │
+│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │
 └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                        │
-         ▼                       ▼                        ▼
+         │                       │                       │
+         ▼                       ▼                       ▼
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │ McpChannel      │     │ McpChannel      │     │ McpChannel      │
 │ SignalR         │     │ Telegram        │     │ ServiceBus      │
 │ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │
 └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │    channel/message     │                       │
-         │    send_reply          │                       │
-         │    request_approval    │                       │
+         │    channel/message    │                       │
+         │    send_reply         │                       │
+         │    request_approval   │                       │
          └────────────┬──────────┘───────────────────────┘
                       │
                       ▼
@@ -46,8 +46,8 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │ (MCP Client)  │
               └───────┬───────┘
                       │
-      ┌───────────────┼───────────────┬───────────────┬───────────────┐
-      ▼               ▼               ▼               ▼               ▼
+      ┌───────────────┼──────────────┬──────────────┬───────────────┐
+      ▼               ▼              ▼              ▼               ▼
 ┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────┐ ┌─────────────┐
 │MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │MCP Idealista│
 └─────┬──────┘ └────────────┘ └─────────────┘ └─────┬──────┘ └──────┬──────┘

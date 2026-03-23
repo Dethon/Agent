@@ -6,20 +6,6 @@ AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter 
 
 Before proposing any architectural change or debugging hypothesis, first verify your assumptions by checking the actual current state (read the file, run the command, check the config). Never assume something is missing or broken without evidence.
 
-## Codebase Documentation
-
-Detailed documentation in `docs/codebase/`:
-
-| File | Content |
-|------|---------|
-| `ARCHITECTURE.md` | Agent system, message pipeline, tool approval, MCP integration |
-| `STRUCTURE.md` | Directory layout, module boundaries |
-| `STACK.md` | Tech stack, packages, dependencies |
-| `INTEGRATIONS.md` | External services (OpenRouter, Telegram, Redis, etc.) |
-| `CONVENTIONS.md` | Coding style, patterns, rules |
-| `TESTING.md` | Test framework, TDD workflow, organization |
-| `CONCERNS.md` | Technical debt, risks, security considerations |
-
 ## Projects
 
 | Project | Purpose |
@@ -27,7 +13,7 @@ Detailed documentation in `docs/codebase/`:
 | `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations, push notifications |
-| `McpServer*` | MCP tool servers (Library, Text, WebSearch, Memory, Idealista, Calendar) |
+| `McpServer*` | MCP tool servers (Library, Text, WebSearch, Memory, Idealista) |
 | `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
@@ -96,10 +82,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
 ```
 
 ### Secrets
@@ -116,7 +102,7 @@ Transports (WebChat, Telegram, ServiceBus) run as independent MCP channel server
 - **Inbound**: `channel/message` notification (user message → agent)
 - **Outbound**: `send_reply` tool (agent response → user), `request_approval` tool (tool approval flow)
 
-New transports can be added by deploying a new channel MCP server — zero agent changes needed. See `docs/superpowers/specs/2026-03-21-mcp-channel-protocol-design.md` for the full design.
+New transports can be added by deploying a new channel MCP server — zero agent changes needed.
 
 ### Debugging with Playwright
 
