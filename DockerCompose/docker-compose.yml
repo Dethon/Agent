@@ -430,6 +430,12 @@ services:
       - base-sdk
 
   observability:
+    image: observability:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: observability
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
@@ -439,6 +445,9 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     ports:
       - "5003:8080"
+    env_file:
+      - .env
+    restart: unless-stopped
     depends_on:
       - redis
     networks:
