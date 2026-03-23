@@ -1,17 +1,30 @@
 @page "/errors"
 @using Dashboard.Client.State.Errors
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
 @inject ErrorsStore Store
 @inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
 
 <div class="errors-page">
     <header class="page-header">
         <h2>Errors</h2>
+        <div class="controls">
+            <PillSelector Label="Group by" Options="_dimensionOptions" Value="@_state.GroupBy.ToString()"
+                          OnChanged="OnDimensionChanged" />
+            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+                          OnChanged="OnTimeChanged" />
+        </div>
     </header>
 
     <section class="kpi-row">
         <KpiCard Label="Total Errors" Value="@_state.Events.Count.ToString("N0")" Color="var(--accent-red)" />
         <KpiCard Label="Services Affected" Value="@_servicesAffected.ToString()" Color="var(--accent-yellow)" />
+    </section>
+
+    <section class="section">
+        <DynamicChart Data="_breakdownDecimal" ChartType="DynamicChart.ChartMode.HorizontalBar" />
     </section>
 
     <section class="section">
@@ -42,8 +55,26 @@
 
 @code {
     private ErrorsState _state = new();
+    private int _selectedDays = 1;
     private int _servicesAffected;
+    private DateOnly _from;
+    private DateOnly _to;
     private IDisposable? _sub;
+
+    private Dictionary<string, decimal> _breakdownDecimal = [];
+
+    private static readonly IReadOnlyList<PillOption> _dimensionOptions =
+    [
+        new("Service", nameof(ErrorDimension.Service)),
+        new("Error Type", nameof(ErrorDimension.ErrorType)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -51,11 +82,28 @@
         {
             _state = s;
             _servicesAffected = s.Events.Select(e => e.Service).Distinct().Count();
+            _breakdownDecimal = s.Breakdown.ToDictionary(kv => kv.Key, kv => (decimal)kv.Value);
             InvokeAsync(StateHasChanged);
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        await DataLoad.LoadAsync(today, today);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to;
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private async Task OnDimensionChanged(string value)
+    {
+        Store.SetGroupBy(Enum.Parse<ErrorDimension>(value));
+        var breakdown = await Api.GetErrorGroupedAsync(Store.State.GroupBy, _from, _to);
+        Store.SetBreakdown(breakdown ?? []);
+    }
+
+    private async Task OnTimeChanged(string value)
+    {
+        _selectedDays = int.Parse(value);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        await DataLoad.LoadAsync(_from, _to);
     }
 
     private static string Truncate(string s, int max) =>
@@ -66,8 +114,9 @@
 
 <style>
     .errors-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
@@ -81,6 +130,7 @@
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
 
     @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 65px 90px 110px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 400px; }

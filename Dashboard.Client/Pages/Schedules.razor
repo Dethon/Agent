@@ -1,19 +1,31 @@
 @page "/schedules"
 @using Dashboard.Client.State.Schedules
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
 @inject SchedulesStore Store
 @inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
 
 <div class="schedules-page">
     <header class="page-header">
         <h2>Schedule Executions</h2>
-        <TimeRangeSelector SelectedDays="_selectedDays" OnRangeChanged="OnRangeChanged" />
+        <div class="controls">
+            <PillSelector Label="Group by" Options="_dimensionOptions" Value="@_state.GroupBy.ToString()"
+                          OnChanged="OnDimensionChanged" />
+            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+                          OnChanged="OnTimeChanged" />
+        </div>
     </header>
 
     <section class="kpi-row">
         <KpiCard Label="Total Runs" Value="@_totalRuns.ToString("N0")" Color="var(--accent-purple)" />
         <KpiCard Label="Success Rate" Value="@($"{_successRate:F1}%")" Color="var(--accent-green)" />
         <KpiCard Label="Avg Duration" Value="@($"{_avgDuration:F0}ms")" Color="var(--accent-blue)" />
+    </section>
+
+    <section class="section">
+        <DynamicChart Data="_breakdownDecimal" ChartType="DynamicChart.ChartMode.HorizontalBar" />
     </section>
 
     <section class="section">
@@ -47,10 +59,27 @@
 @code {
     private SchedulesState _state = new();
     private int _selectedDays = 1;
+    private DateOnly _from;
+    private DateOnly _to;
     private long _totalRuns;
     private double _successRate;
     private double _avgDuration;
     private IDisposable? _sub;
+
+    private Dictionary<string, decimal> _breakdownDecimal = [];
+
+    private static readonly IReadOnlyList<PillOption> _dimensionOptions =
+    [
+        new("Schedule", nameof(ScheduleDimension.Schedule)),
+        new("Status", nameof(ScheduleDimension.Status)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -60,17 +89,28 @@
             _totalRuns = s.Events.Count;
             _successRate = s.Events.Count > 0 ? s.Events.Count(e => e.Success) * 100.0 / s.Events.Count : 0;
             _avgDuration = s.Events.Count > 0 ? s.Events.Average(e => e.DurationMs) : 0;
+            _breakdownDecimal = s.Breakdown.ToDictionary(kv => kv.Key, kv => (decimal)kv.Value);
             InvokeAsync(StateHasChanged);
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        await DataLoad.LoadAsync(today, today);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to;
+        await DataLoad.LoadAsync(_from, _to);
     }
 
-    private async Task OnRangeChanged((DateOnly From, DateOnly To) range)
+    private async Task OnDimensionChanged(string value)
     {
-        _selectedDays = range.To.DayNumber - range.From.DayNumber + 1;
-        await DataLoad.LoadAsync(range.From, range.To);
+        Store.SetGroupBy(Enum.Parse<ScheduleDimension>(value));
+        var breakdown = await Api.GetScheduleGroupedAsync(Store.State.GroupBy, _from, _to);
+        Store.SetBreakdown(breakdown ?? []);
+    }
+
+    private async Task OnTimeChanged(string value)
+    {
+        _selectedDays = int.Parse(value);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        await DataLoad.LoadAsync(_from, _to);
     }
 
     private static string Truncate(string s, int max) =>
@@ -81,8 +121,9 @@
 
 <style>
     .schedules-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
@@ -96,6 +137,7 @@
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
 
     @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 65px 110px 80px 55px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 440px; }
