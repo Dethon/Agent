@@ -209,7 +209,9 @@ public class ToolApprovalChatClientMetricsTests
             CancellationToken cancellationToken = default)
         {
             if (_responses.TryDequeue(out var response))
+            {
                 return Task.FromResult(response);
+            }
 
             return Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")])
             {

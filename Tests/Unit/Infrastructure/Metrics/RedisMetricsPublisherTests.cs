@@ -1,7 +1,6 @@
 using Domain.DTOs.Metrics;
 using Infrastructure.Metrics;
 using Moq;
-using Shouldly;
 using StackExchange.Redis;
 
 namespace Tests.Unit.Infrastructure.Metrics;

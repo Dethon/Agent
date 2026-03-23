@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Domain.DTOs.Metrics;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -12,11 +11,6 @@ namespace Tests.Unit.Observability.Services;
 
 public class MetricsCollectorServiceTests
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     private readonly Mock<IDatabase> _db = new();
     private readonly Mock<IConnectionMultiplexer> _redis = new();
     private readonly Mock<IHubContext<MetricsHub>> _hubContext = new();
@@ -103,7 +97,7 @@ public class MetricsCollectorServiceTests
 
         _clientProxy.Verify(c => c.SendCoreAsync(
             "OnTokenUsage",
-            It.Is<object[]>(args => args.Length == 1 && args[0] == evt),
+            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

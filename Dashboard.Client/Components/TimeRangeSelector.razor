@@ -1,6 +1,6 @@
 
 <div class="time-range-selector">
-    @foreach (var option in _options)
+    @foreach (var option in Options)
     {
         <button class="range-btn @(option.Days == SelectedDays ? "active" : "")"
                 @onclick="() => SelectRange(option.Days)">
@@ -13,7 +13,7 @@
     [Parameter] public int SelectedDays { get; set; } = 1;
     [Parameter] public EventCallback<(DateOnly From, DateOnly To)> OnRangeChanged { get; set; }
 
-    private static readonly (string Label, int Days)[] _options =
+    private static readonly (string Label, int Days)[] Options =
     [
         ("Today", 1),
         ("7d", 7),

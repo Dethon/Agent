@@ -2,7 +2,6 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Infrastructure.Metrics;
 using Moq;
-using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Metrics;
 

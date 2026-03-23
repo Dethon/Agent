@@ -1,6 +1,4 @@
 @page "/"
-@using Dashboard.Client.Components
-@using Dashboard.Client.Effects
 @using Dashboard.Client.State.Connection
 @using Dashboard.Client.State.Errors
 @using Dashboard.Client.State.Health
@@ -8,7 +6,6 @@
 @using Dashboard.Client.State.Schedules
 @using Dashboard.Client.State.Tokens
 @using Dashboard.Client.State.Tools
-@using Domain.DTOs.Metrics
 @implements IDisposable
 @inject MetricsStore Metrics
 @inject HealthStore Health

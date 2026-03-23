@@ -6,7 +6,7 @@ namespace Infrastructure.Metrics;
 
 public sealed class HeartbeatService(IMetricsPublisher publisher, string serviceName) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _interval = TimeSpan.FromSeconds(30);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -16,7 +16,7 @@ public sealed class HeartbeatService(IMetricsPublisher publisher, string service
                 new HeartbeatEvent { Service = serviceName },
                 stoppingToken);
 
-            await Task.Delay(Interval, stoppingToken);
+            await Task.Delay(_interval, stoppingToken);
         }
     }
 }

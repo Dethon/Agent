@@ -13,13 +13,13 @@ public sealed class MetricsCollectorService(
     IHubContext<MetricsHub> hubContext,
     ILogger<MetricsCollectorService> logger) : BackgroundService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly TimeSpan DailyKeyTtl = TimeSpan.FromDays(30);
-    private static readonly TimeSpan HealthCheckInterval = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _dailyKeyTtl = TimeSpan.FromDays(30);
+    private static readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -27,12 +27,15 @@ public sealed class MetricsCollectorService(
 
         await subscriber.SubscribeAsync(
             RedisChannel.Literal("metrics:events"),
-            async (_, message) =>
+            async void (_, message) =>
             {
                 try
                 {
-                    var evt = JsonSerializer.Deserialize<MetricEvent>((string)message!, JsonOptions);
-                    if (evt is null) return;
+                    var evt = JsonSerializer.Deserialize<MetricEvent>((string)message!, _jsonOptions);
+                    if (evt is null)
+                    {
+                        return;
+                    }
 
                     var db = redis.GetDatabase();
                     await ProcessEventAsync(evt, db);
@@ -48,7 +51,7 @@ public sealed class MetricsCollectorService(
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                await Task.Delay(HealthCheckInterval, stoppingToken);
+                await Task.Delay(_healthCheckInterval, stoppingToken);
                 await CheckHealthAsync();
             }
         }
@@ -112,7 +115,7 @@ public sealed class MetricsCollectorService(
         var sortedSetKey = $"metrics:tokens:{dateKey}";
         var totalsKey = $"metrics:totals:{dateKey}";
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
-        var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
             db.SortedSetAddAsync(sortedSetKey, json, score),
@@ -121,8 +124,8 @@ public sealed class MetricsCollectorService(
             db.HashIncrementAsync(totalsKey, "tokens:cost", (long)(evt.Cost * 10000m)),
             db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.Sender}", evt.InputTokens + evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, $"tokens:byModel:{evt.Model}", evt.InputTokens + evt.OutputTokens),
-            db.KeyExpireAsync(sortedSetKey, DailyKeyTtl, ExpireWhen.HasNoExpiry),
-            db.KeyExpireAsync(totalsKey, DailyKeyTtl, ExpireWhen.HasNoExpiry));
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnTokenUsage", evt);
     }
@@ -133,19 +136,21 @@ public sealed class MetricsCollectorService(
         var sortedSetKey = $"metrics:tools:{dateKey}";
         var totalsKey = $"metrics:totals:{dateKey}";
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
-        var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         var tasks = new List<Task>
         {
             db.SortedSetAddAsync(sortedSetKey, json, score),
-            db.HashIncrementAsync(totalsKey, "tools:count", 1),
-            db.HashIncrementAsync(totalsKey, $"tools:byName:{evt.ToolName}", 1),
-            db.KeyExpireAsync(sortedSetKey, DailyKeyTtl, ExpireWhen.HasNoExpiry),
-            db.KeyExpireAsync(totalsKey, DailyKeyTtl, ExpireWhen.HasNoExpiry)
+            db.HashIncrementAsync(totalsKey, "tools:count"),
+            db.HashIncrementAsync(totalsKey, $"tools:byName:{evt.ToolName}"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
         };
 
         if (!evt.Success)
-            tasks.Add(db.HashIncrementAsync(totalsKey, "tools:errors", 1));
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "tools:errors"));
+        }
 
         await Task.WhenAll(tasks);
 
@@ -158,12 +163,12 @@ public sealed class MetricsCollectorService(
         var sortedSetKey = $"metrics:errors:{dateKey}";
         var recentKey = "metrics:errors:recent";
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
-        var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
             db.SortedSetAddAsync(sortedSetKey, json, score),
             db.ListLeftPushAsync(recentKey, json),
-            db.KeyExpireAsync(sortedSetKey, DailyKeyTtl, ExpireWhen.HasNoExpiry));
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await db.ListTrimAsync(recentKey, 0, 99);
 
@@ -175,11 +180,11 @@ public sealed class MetricsCollectorService(
         var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
         var sortedSetKey = $"metrics:schedules:{dateKey}";
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
-        var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
             db.SortedSetAddAsync(sortedSetKey, json, score),
-            db.KeyExpireAsync(sortedSetKey, DailyKeyTtl, ExpireWhen.HasNoExpiry));
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnScheduleExecution", evt);
     }
@@ -187,7 +192,7 @@ public sealed class MetricsCollectorService(
     private async Task ProcessHeartbeatAsync(HeartbeatEvent evt, IDatabase db)
     {
         var key = $"metrics:health:{evt.Service}";
-        var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
             db.StringSetAsync(key, json, TimeSpan.FromSeconds(60)),

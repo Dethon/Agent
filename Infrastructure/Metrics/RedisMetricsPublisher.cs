@@ -7,17 +7,17 @@ namespace Infrastructure.Metrics;
 
 public sealed class RedisMetricsPublisher(IConnectionMultiplexer redis) : IMetricsPublisher
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly RedisChannel Channel = RedisChannel.Literal("metrics:events");
+    private static readonly RedisChannel _channel = RedisChannel.Literal("metrics:events");
     private readonly ISubscriber _subscriber = redis.GetSubscriber();
 
     public async Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
     {
-        var json = JsonSerializer.Serialize(metricEvent, JsonOptions);
-        await _subscriber.PublishAsync(Channel, json);
+        var json = JsonSerializer.Serialize(metricEvent, _jsonOptions);
+        await _subscriber.PublishAsync(_channel, json);
     }
 }

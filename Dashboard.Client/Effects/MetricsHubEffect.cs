@@ -52,9 +52,13 @@ public sealed class MetricsHubEffect(
             var entry = new ServiceHealth(evt.Service, evt.IsHealthy, evt.Timestamp.ToString("o"));
 
             if (idx >= 0)
+            {
                 current[idx] = entry;
+            }
             else
+            {
                 current.Add(entry);
+            }
 
             healthStore.UpdateHealth(current);
         }));

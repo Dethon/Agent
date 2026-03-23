@@ -16,7 +16,7 @@ public record MetricsSummary(
 
 public sealed class MetricsQueryService(IConnectionMultiplexer redis)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
@@ -65,7 +65,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             var key = $"{keyPrefix}{date:yyyy-MM-dd}";
             var entries = await db.SortedSetRangeByScoreAsync(key);
             results.AddRange(entries
-                .Select(e => JsonSerializer.Deserialize<MetricEvent>(e.ToString(), JsonOptions))
+                .Select(e => JsonSerializer.Deserialize<MetricEvent>(e.ToString(), _jsonOptions))
                 .OfType<T>());
         }
 
@@ -78,7 +78,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
         var entries = await db.ListRangeAsync("metrics:errors:recent", 0, limit - 1);
 
         return entries
-            .Select(e => JsonSerializer.Deserialize<MetricEvent>(e.ToString(), JsonOptions))
+            .Select(e => JsonSerializer.Deserialize<MetricEvent>(e.ToString(), _jsonOptions))
             .OfType<ErrorEvent>()
             .ToList();
     }
@@ -93,7 +93,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             var service = member.ToString();
             var value = await db.StringGetAsync($"metrics:health:{service}");
             var isHealthy = value.HasValue;
-            return new ServiceHealthResult(service, isHealthy, isHealthy ? value.ToString()! : "N/A");
+            return new ServiceHealthResult(service, isHealthy, isHealthy ? value.ToString() : "N/A");
         });
 
         return (await Task.WhenAll(tasks)).ToList();
@@ -114,7 +114,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 var name = entry.Name.ToString()[prefix.Length..];
                 var value = (long)entry.Value;
                 if (!breakdown.TryAdd(name, value))
+                {
                     breakdown[name] += value;
+                }
             }
         }
 
@@ -124,6 +126,8 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     private static IEnumerable<DateOnly> EnumerateDates(DateOnly from, DateOnly to)
     {
         for (var date = from; date <= to; date = date.AddDays(1))
+        {
             yield return date;
+        }
     }
 }
