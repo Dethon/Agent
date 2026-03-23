@@ -4,6 +4,8 @@ using StackExchange.Redis;
 
 namespace Observability.Services;
 
+public record ServiceHealthResult(string Service, bool IsHealthy, string LastSeen);
+
 public record MetricsSummary(
     long InputTokens,
     long OutputTokens,
@@ -81,7 +83,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             .ToList();
     }
 
-    public async Task<IReadOnlyList<object>> GetHealthAsync()
+    public async Task<IReadOnlyList<ServiceHealthResult>> GetHealthAsync()
     {
         var db = redis.GetDatabase();
         var server = redis.GetServers().First();
@@ -90,9 +92,10 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
         var tasks = keys.Select(async key =>
         {
             var value = await db.StringGetAsync(key);
-            return value.HasValue
-                ? JsonSerializer.Deserialize<HeartbeatEvent>(value.ToString(), JsonOptions) as object
-                : null;
+            if (!value.HasValue) return null;
+
+            var service = key.ToString().Replace("metrics:health:", "");
+            return new ServiceHealthResult(service, true, value.ToString());
         });
 
         var results = await Task.WhenAll(tasks);
