@@ -431,8 +431,12 @@ services:
 
   observability:
     build:
-      context: ..
+      context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
+      cache_from:
+        - observability:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
     ports:
       - "5002:8080"
     depends_on:
