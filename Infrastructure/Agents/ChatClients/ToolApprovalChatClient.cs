@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
@@ -10,17 +12,20 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IToolApprovalHandler _approvalHandler;
     private readonly ToolPatternMatcher _patternMatcher;
     private readonly HashSet<string> _dynamicallyApproved;
+    private readonly IMetricsPublisher? _metricsPublisher;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
-        IEnumerable<string>? whitelistPatterns = null)
+        IEnumerable<string>? whitelistPatterns = null,
+        IMetricsPublisher? metricsPublisher = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
         _approvalHandler = approvalHandler;
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
         _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        _metricsPublisher = metricsPublisher;
 
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
@@ -41,7 +46,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         if (_patternMatcher.IsMatch(toolName) || _dynamicallyApproved.Contains(toolName))
         {
             await _approvalHandler.NotifyAutoApprovedAsync([request], cancellationToken);
-            return await base.InvokeFunctionAsync(context, cancellationToken);
+            return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
         }
 
         var result = await _approvalHandler.RequestApprovalAsync([request], cancellationToken);
@@ -50,16 +55,54 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         {
             case ToolApprovalResult.ApprovedAndRemember:
                 _dynamicallyApproved.Add(toolName);
-                return await base.InvokeFunctionAsync(context, cancellationToken);
+                return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
 
             case ToolApprovalResult.Approved:
             case ToolApprovalResult.AutoApproved:
-                return await base.InvokeFunctionAsync(context, cancellationToken);
+                return await InvokeWithMetricsAsync(context, toolName, cancellationToken);
 
             case ToolApprovalResult.Rejected:
             default:
                 context.Terminate = true;
                 return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+        }
+    }
+
+    private async ValueTask<object?> InvokeWithMetricsAsync(
+        FunctionInvocationContext context,
+        string toolName,
+        CancellationToken cancellationToken)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            var result = await base.InvokeFunctionAsync(context, cancellationToken);
+            sw.Stop();
+            if (_metricsPublisher is not null)
+            {
+                await _metricsPublisher.PublishAsync(new ToolCallEvent
+                {
+                    ToolName = toolName,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    Success = true
+                }, cancellationToken);
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            if (_metricsPublisher is not null)
+            {
+                await _metricsPublisher.PublishAsync(new ToolCallEvent
+                {
+                    ToolName = toolName,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    Success = false,
+                    Error = ex.Message
+                }, cancellationToken);
+            }
+            throw;
         }
     }
 
