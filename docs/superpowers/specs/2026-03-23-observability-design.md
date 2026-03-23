@@ -79,7 +79,7 @@ public abstract record MetricEvent
 }
 ```
 
-**Token usage** — emitted from `OpenRouterChatClient` after streaming completes:
+**Token usage** — emitted from the agent layer (not directly from `OpenRouterChatClient`, since sender context is only available higher in the call chain). The sender identity must be threaded down via `ChatOptions.AdditionalProperties` or by emitting from a wrapping layer that has sender context (e.g., `ChatMonitor` or `McpAgent`):
 
 ```csharp
 public record TokenUsageEvent : MetricEvent
@@ -149,7 +149,7 @@ public record HeartbeatEvent : MetricEvent
 
 | Event | Where | What to capture |
 |-------|-------|----------------|
-| Token usage | `OpenRouterChatClient` — after `allUpdates.ToChatResponse()` | Extract `usage.cost` from the raw OpenRouter JSON in the final SSE chunk. The Microsoft.Extensions.AI `UsageContent` only exposes `InputTokenCount`/`OutputTokenCount`, so `cost` must be extracted from the raw response. Use the existing `TeeHttpContent`/`ReasoningHandler` layer to capture this. |
+| Token usage | `OpenRouterChatClient` — after `allUpdates.ToChatResponse()` | Extract `usage.cost` from the raw OpenRouter JSON in the final SSE chunk. The Microsoft.Extensions.AI `UsageContent` only exposes `InputTokenCount`/`OutputTokenCount`, so `cost` must be extracted from the raw response via a separate extraction path (e.g., a parallel `ConcurrentQueue<decimal?>` or callback alongside the existing reasoning queue in `ReasoningTeeStream`). Sender context must be threaded in from the caller (see TokenUsageEvent note above). |
 | Tool calls | `ToolApprovalChatClient.InvokeFunctionAsync()` | Wrap `base.InvokeFunctionAsync()` with a `Stopwatch`. Capture `context.Function.Name`, duration, success/failure. |
 | Errors | `ChatMonitor.ProcessChatThread()`, `ScheduleExecutor.ProcessScheduleAsync()` | Existing catch blocks — add `IMetricsPublisher.PublishAsync(new ErrorEvent(...))`. |
 | Schedule execution | `ScheduleExecutor.ProcessScheduleAsync()` | Wrap execution with `Stopwatch`. Emit on completion with duration and success/failure. |
@@ -289,10 +289,12 @@ observability:
 New route in `DockerCompose/caddy/Caddyfile`:
 
 ```
-handle /dashboard/* {
+handle_path /dashboard/* {
     reverse_proxy observability:8080
 }
 ```
+
+Uses `handle_path` (not `handle`) to strip the `/dashboard` prefix before proxying. The Blazor WASM app must be configured with `<base href="/dashboard/">` so client-side routing and static asset paths work correctly.
 
 Dashboard accessible at `https://assistants.herfluffness.com/dashboard/`.
 
