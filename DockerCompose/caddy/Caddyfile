@@ -11,6 +11,8 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
+    redir /dashboard /dashboard/ 308
+
     handle_path /dashboard/* {
         reverse_proxy observability:8080
     }
@@ -32,6 +34,8 @@ sexy.herfluffness.com {
     handle /api/agents* {
         reverse_proxy agent:8080
     }
+
+    redir /dashboard /dashboard/ 308
 
     handle_path /dashboard/* {
         reverse_proxy observability:8080
