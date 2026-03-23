@@ -27,8 +27,7 @@
     </section>
 
     <section class="section">
-        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
-                      ValueFormat="@(_state.Metric == TokenMetric.Cost ? "F4" : "N0")" />
+        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut" />
     </section>
 
     <section class="section">
@@ -60,8 +59,8 @@
 @code {
     private TokensState _state = new();
     private int _selectedDays = 1;
-    private DateOnly _from;
-    private DateOnly _to;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private long _inputTokens;
     private long _outputTokens;
     private decimal _cost;

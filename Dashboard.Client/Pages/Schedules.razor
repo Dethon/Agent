@@ -59,8 +59,8 @@
 @code {
     private SchedulesState _state = new();
     private int _selectedDays = 1;
-    private DateOnly _from;
-    private DateOnly _to;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private long _totalRuns;
     private double _successRate;
     private double _avgDuration;
@@ -100,8 +100,9 @@
 
     private async Task OnDimensionChanged(string value)
     {
-        Store.SetGroupBy(Enum.Parse<ScheduleDimension>(value));
-        var breakdown = await Api.GetScheduleGroupedAsync(Store.State.GroupBy, _from, _to);
+        var dim = Enum.Parse<ScheduleDimension>(value);
+        Store.SetGroupBy(dim);
+        var breakdown = await Api.GetScheduleGroupedAsync(dim, _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
 

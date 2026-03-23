@@ -58,8 +58,8 @@
 @code {
     private ToolsState _state = new();
     private int _selectedDays = 1;
-    private DateOnly _from;
-    private DateOnly _to;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private long _totalCalls;
     private double _successRate;
     private double _avgDuration;

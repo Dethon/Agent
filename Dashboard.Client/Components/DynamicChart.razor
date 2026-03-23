@@ -32,7 +32,6 @@ else
 @code {
     [Parameter] public Dictionary<string, decimal>? Data { get; set; }
     [Parameter] public ChartMode ChartType { get; set; } = ChartMode.HorizontalBar;
-    [Parameter] public string ValueFormat { get; set; } = "N0";
 
     private List<ChartEntry> _entries = [];
 

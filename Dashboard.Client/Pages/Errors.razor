@@ -57,8 +57,8 @@
     private ErrorsState _state = new();
     private int _selectedDays = 1;
     private int _servicesAffected;
-    private DateOnly _from;
-    private DateOnly _to;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private IDisposable? _sub;
 
     private Dictionary<string, decimal> _breakdownDecimal = [];
@@ -93,8 +93,9 @@
 
     private async Task OnDimensionChanged(string value)
     {
-        Store.SetGroupBy(Enum.Parse<ErrorDimension>(value));
-        var breakdown = await Api.GetErrorGroupedAsync(Store.State.GroupBy, _from, _to);
+        var dim = Enum.Parse<ErrorDimension>(value);
+        Store.SetGroupBy(dim);
+        var breakdown = await Api.GetErrorGroupedAsync(dim, _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
 
