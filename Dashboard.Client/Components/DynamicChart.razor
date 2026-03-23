@@ -1,0 +1,88 @@
+@using ApexCharts
+
+@if (Data is null || Data.Count == 0)
+{
+    <p class="no-data">No data available</p>
+}
+else if (ChartType == ChartMode.Donut)
+{
+    <ApexChart TItem="ChartEntry"
+               Options="_donutOptions">
+        <ApexPointSeries TItem="ChartEntry"
+                         Items="_entries"
+                         SeriesType="SeriesType.Donut"
+                         XValue="e => e.Label"
+                         YValue="e => e.Value"
+                         OrderByDescending="e => e.Y" />
+    </ApexChart>
+}
+else
+{
+    <ApexChart TItem="ChartEntry"
+               Options="_barOptions">
+        <ApexPointSeries TItem="ChartEntry"
+                         Items="_entries"
+                         SeriesType="SeriesType.Bar"
+                         XValue="e => e.Label"
+                         YValue="e => e.Value"
+                         OrderByDescending="e => e.Y" />
+    </ApexChart>
+}
+
+@code {
+    [Parameter] public Dictionary<string, decimal>? Data { get; set; }
+    [Parameter] public ChartMode ChartType { get; set; } = ChartMode.HorizontalBar;
+    [Parameter] public string ValueFormat { get; set; } = "N0";
+
+    private List<ChartEntry> _entries = [];
+
+    private static readonly List<string> Palette =
+        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
+
+    private readonly ApexChartOptions<ChartEntry> _donutOptions = new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0b0"
+        },
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
+        Colors = Palette,
+        Theme = new Theme { Mode = Mode.Dark }
+    };
+
+    private readonly ApexChartOptions<ChartEntry> _barOptions = new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0b0"
+        },
+        PlotOptions = new PlotOptions
+        {
+            Bar = new PlotOptionsBar { Horizontal = true, BarHeight = "60%" }
+        },
+        Colors = Palette,
+        Theme = new Theme { Mode = Mode.Dark },
+        Grid = new Grid
+        {
+            BorderColor = "#2a2a3e"
+        }
+    };
+
+    protected override void OnParametersSet()
+    {
+        _entries = Data?
+            .OrderByDescending(kv => kv.Value)
+            .Select(kv => new ChartEntry(kv.Key, kv.Value))
+            .ToList() ?? [];
+    }
+
+    public record ChartEntry(string Label, decimal Value);
+
+    public enum ChartMode { Donut, HorizontalBar }
+}
+
+<style>
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
+</style>
