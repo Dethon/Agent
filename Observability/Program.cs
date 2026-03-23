@@ -19,6 +19,7 @@ builder.Services.AddHostedService<MetricsCollectorService>();
 
 var app = builder.Build();
 
+app.UsePathBase("/dashboard");
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 
