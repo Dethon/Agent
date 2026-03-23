@@ -13,7 +13,7 @@ assistants.herfluffness.com {
 
     redir /dashboard /dashboard/ 308
 
-    handle_path /dashboard/* {
+    handle /dashboard/* {
         reverse_proxy observability:8080
     }
 
@@ -37,7 +37,7 @@ sexy.herfluffness.com {
 
     redir /dashboard /dashboard/ 308
 
-    handle_path /dashboard/* {
+    handle /dashboard/* {
         reverse_proxy observability:8080
     }
 
