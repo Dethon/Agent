@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 
 namespace Dashboard.Client.Services;
 
@@ -24,8 +25,8 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<ToolCallEvent>?> GetToolsAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<ToolCallEvent>>($"api/metrics/tools?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    public Task<List<ErrorEvent>?> GetErrorsAsync() =>
-        http.GetFromJsonAsync<List<ErrorEvent>>("api/metrics/errors");
+    public Task<List<ErrorEvent>?> GetErrorsAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<ErrorEvent>>($"api/metrics/errors/range?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
     public Task<List<ScheduleExecutionEvent>?> GetSchedulesAsync(DateOnly from, DateOnly to) =>
         http.GetFromJsonAsync<List<ScheduleExecutionEvent>>($"api/metrics/schedules?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
@@ -33,9 +34,23 @@ public sealed class MetricsApiService(HttpClient http)
     public Task<List<ServiceHealthResponse>?> GetHealthAsync() =>
         http.GetFromJsonAsync<List<ServiceHealthResponse>>("api/metrics/health");
 
-    public Task<Dictionary<string, long>?> GetTokensByUserAsync(DateOnly from, DateOnly to) =>
-        http.GetFromJsonAsync<Dictionary<string, long>>($"api/metrics/tokens/by-user?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+    public Task<Dictionary<string, decimal>?> GetTokenGroupedAsync(
+        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<Dictionary<string, decimal>>(
+            $"api/metrics/tokens/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 
-    public Task<Dictionary<string, long>?> GetTokensByModelAsync(DateOnly from, DateOnly to) =>
-        http.GetFromJsonAsync<Dictionary<string, long>>($"api/metrics/tokens/by-model?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+    public Task<Dictionary<string, decimal>?> GetToolGroupedAsync(
+        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<Dictionary<string, decimal>>(
+            $"api/metrics/tools/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<Dictionary<string, int>?> GetErrorGroupedAsync(
+        ErrorDimension dimension, DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<Dictionary<string, int>>(
+            $"api/metrics/errors/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<Dictionary<string, int>?> GetScheduleGroupedAsync(
+        ScheduleDimension dimension, DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<Dictionary<string, int>>(
+            $"api/metrics/schedules/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
 }
