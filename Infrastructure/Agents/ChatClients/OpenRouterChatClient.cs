@@ -16,10 +16,11 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly HttpClient _httpClient;
     private readonly HttpClientPipelineTransport _transport;
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
+    private readonly ConcurrentQueue<decimal> _costQueue = new();
 
     public OpenRouterChatClient(string endpoint, string apiKey, string model)
     {
-        _httpClient = CreateHttpClient(_reasoningQueue);
+        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -124,9 +125,21 @@ public sealed class OpenRouterChatClient : IChatClient
             .AsIChatClient();
     }
 
-    private static HttpClient CreateHttpClient(ConcurrentQueue<string> reasoningQueue)
+    internal decimal? DrainCostQueue()
     {
-        var handler = new ReasoningHandler(reasoningQueue)
+        decimal? last = null;
+        while (_costQueue.TryDequeue(out var cost))
+        {
+            last = cost;
+        }
+
+        return last;
+    }
+
+    private static HttpClient CreateHttpClient(
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
+    {
+        var handler = new ReasoningHandler(reasoningQueue, costQueue)
         {
             InnerHandler = new SocketsHttpHandler
             {
@@ -137,7 +150,8 @@ public sealed class OpenRouterChatClient : IChatClient
         return new HttpClient(handler);
     }
 
-    private sealed class ReasoningHandler(ConcurrentQueue<string> queue) : DelegatingHandler
+    private sealed class ReasoningHandler(
+        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : DelegatingHandler
     {
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -149,7 +163,8 @@ public sealed class OpenRouterChatClient : IChatClient
             if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream",
                     StringComparison.OrdinalIgnoreCase) == true)
             {
-                response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(response.Content, queue);
+                response.Content = OpenRouterHttpHelpers.WrapWithReasoningTee(
+                    response.Content, reasoningQueue, costQueue);
             }
 
             return response;

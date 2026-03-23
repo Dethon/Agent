@@ -56,9 +56,32 @@ internal static class OpenRouterHttpHelpers
         request.Content = new StringContent(obj.ToJsonString(), Encoding.UTF8, "application/json");
     }
 
-    public static HttpContent WrapWithReasoningTee(HttpContent inner, ConcurrentQueue<string> queue)
+    public static HttpContent WrapWithReasoningTee(
+        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
     {
-        return new TeeHttpContent(inner, queue);
+        return new TeeHttpContent(inner, reasoningQueue, costQueue);
+    }
+
+    internal static decimal? ExtractCostFromSseData(string data)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            if (!doc.RootElement.TryGetProperty("usage", out var usage) ||
+                usage.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (!usage.TryGetProperty("cost", out var cost) ||
+                cost.ValueKind != JsonValueKind.Number)
+            {
+                return null;
+            }
+
+            return cost.GetDecimal();
+        }
+        catch { return null; }
     }
 
     private static string? ExtractReasoningFromSseData(string data)
@@ -92,7 +115,8 @@ internal static class OpenRouterHttpHelpers
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
     }
 
-    private sealed class TeeHttpContent(HttpContent inner, ConcurrentQueue<string> queue) : HttpContent
+    private sealed class TeeHttpContent(
+        HttpContent inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : HttpContent
     {
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
@@ -102,7 +126,7 @@ internal static class OpenRouterHttpHelpers
 
         protected override async Task<Stream> CreateContentReadStreamAsync()
         {
-            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), queue);
+            return new ReasoningTeeStream(await inner.ReadAsStreamAsync(), reasoningQueue, costQueue);
         }
 
         protected override bool TryComputeLength(out long length)
@@ -122,7 +146,8 @@ internal static class OpenRouterHttpHelpers
         }
     }
 
-    private sealed class ReasoningTeeStream(Stream inner, ConcurrentQueue<string> queue) : Stream
+    private sealed class ReasoningTeeStream(
+        Stream inner, ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue) : Stream
     {
         private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
         private readonly StringBuilder _buffer = new();
@@ -177,18 +202,26 @@ internal static class OpenRouterHttpHelpers
 
                 var lines = text.Split('\n');
                 _buffer.Clear().Append(lines[^1]);
-                var reasoningLines = lines
+                var dataPayloads = lines
                     .Take(lines.Length - 1)
                     .Select(l => l.TrimEnd('\r'))
                     .Where(l => l.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
                     .Select(l => l[5..].Trim())
                     .Where(d => d.Length > 0 && d != "[DONE]")
-                    .Select(ExtractReasoningFromSseData)
-                    .Where(r => r is not null);
+                    .ToArray();
 
-                foreach (var reasoning in reasoningLines)
+                foreach (var reasoning in dataPayloads
+                    .Select(ExtractReasoningFromSseData)
+                    .Where(r => r is not null))
                 {
-                    queue.Enqueue(reasoning!);
+                    reasoningQueue.Enqueue(reasoning!);
+                }
+
+                foreach (var cost in dataPayloads
+                    .Select(ExtractCostFromSseData)
+                    .Where(c => c is not null))
+                {
+                    costQueue.Enqueue(cost!.Value);
                 }
             }
             catch
