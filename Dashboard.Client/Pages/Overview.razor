@@ -31,7 +31,7 @@
     <section class="kpi-row">
         <KpiCard Label="Input Tokens" Value="@_metrics.InputTokens.ToString("N0")" Color="var(--accent-blue)" />
         <KpiCard Label="Output Tokens" Value="@_metrics.OutputTokens.ToString("N0")" Color="var(--accent-purple)" />
-        <KpiCard Label="Cost" Value="@_metrics.Cost.ToString("C2")" Color="var(--accent-green)" />
+        <KpiCard Label="Cost" Value="@($"${_metrics.Cost:F2}")" Color="var(--accent-green)" />
         <KpiCard Label="Tool Calls" Value="@_metrics.ToolCalls.ToString("N0")" Color="var(--accent-yellow)" />
         <KpiCard Label="Errors" Value="@_metrics.ToolErrors.ToString("N0")" Color="var(--accent-red)" />
     </section>

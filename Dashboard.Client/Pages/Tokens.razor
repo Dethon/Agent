@@ -41,7 +41,7 @@
                     <span>@evt.Model</span>
                     <span>@evt.InputTokens.ToString("N0")</span>
                     <span>@evt.OutputTokens.ToString("N0")</span>
-                    <span>@evt.Cost.ToString("C4")</span>
+                    <span>@($"${evt.Cost:F4}")</span>
                 </div>
             }
         </div>
