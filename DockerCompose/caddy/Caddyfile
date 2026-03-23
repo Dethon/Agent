@@ -21,7 +21,9 @@ assistants-dashboard.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
-    reverse_proxy observability:8080
+    handle {
+        reverse_proxy observability:8080
+    }
 }
 
 sexy.herfluffness.com {
