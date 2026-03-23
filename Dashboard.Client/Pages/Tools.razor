@@ -34,7 +34,10 @@
             {
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
-                    <span class="tool-name" title="@evt.ToolName">@evt.ToolName</span>
+                    <span class="tool-name" title="@evt.ToolName">
+                        <span class="tool-name-full">@evt.ToolName</span>
+                        <span class="tool-name-short">@ShortToolName(evt.ToolName)</span>
+                    </span>
                     <span>@evt.DurationMs ms</span>
                     <span class="@(evt.Success ? "status-ok" : "status-err")">@(evt.Success ? "OK" : evt.Error ?? "FAIL")</span>
                 </div>
@@ -77,6 +80,12 @@
         await DataLoad.LoadAsync(range.From, range.To);
     }
 
+    private static string ShortToolName(string name)
+    {
+        var idx = name.LastIndexOf(':');
+        return idx >= 0 ? name[(idx + 1)..] : name;
+    }
+
     public void Dispose() => _sub?.Dispose();
 }
 
@@ -92,6 +101,7 @@
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .table-row:hover { background: rgba(255,255,255,0.03); }
     .tool-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-name-short { display: none; }
     .status-ok { color: var(--accent-green); }
     .status-err { color: var(--accent-red); }
 
@@ -99,5 +109,7 @@
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 65px minmax(0, 1fr) 80px minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 360px; }
+        .tool-name-full { display: none; }
+        .tool-name-short { display: inline; }
     }
 </style>
