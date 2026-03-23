@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using StackExchange.Redis;
 
 namespace Observability.Services;
@@ -121,6 +122,80 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
         }
 
         return breakdown;
+    }
+
+    public async Task<Dictionary<string, decimal>> GetTokenGroupedAsync(
+        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<TokenUsageEvent>("metrics:tokens:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                TokenDimension.User => e.Sender,
+                TokenDimension.Model => e.Model,
+                TokenDimension.Agent => e.AgentId ?? "unknown",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    TokenMetric.Tokens => g.Sum(e => (decimal)(e.InputTokens + e.OutputTokens)),
+                    TokenMetric.Cost => g.Sum(e => e.Cost),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    public async Task<Dictionary<string, decimal>> GetToolGroupedAsync(
+        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<ToolCallEvent>("metrics:tools:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                ToolDimension.ToolName => e.ToolName,
+                ToolDimension.Status => e.Success ? "Success" : "Failure",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    ToolMetric.CallCount => (decimal)g.Count(),
+                    ToolMetric.AvgDuration => (decimal)g.Average(e => e.DurationMs),
+                    ToolMetric.ErrorRate => g.Count() > 0
+                        ? (decimal)g.Count(e => !e.Success) / g.Count() * 100m
+                        : 0m,
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    public async Task<Dictionary<string, int>> GetErrorGroupedAsync(
+        ErrorDimension dimension, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<ErrorEvent>("metrics:errors:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                ErrorDimension.Service => e.Service,
+                ErrorDimension.ErrorType => e.ErrorType,
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
+        ScheduleDimension dimension, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<ScheduleExecutionEvent>("metrics:schedules:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                ScheduleDimension.Schedule => e.ScheduleId,
+                ScheduleDimension.Status => e.Success ? "Success" : "Failure",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(g => g.Key, g => g.Count());
     }
 
     private static IEnumerable<DateOnly> EnumerateDates(DateOnly from, DateOnly to)
