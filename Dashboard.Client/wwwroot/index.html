@@ -15,7 +15,67 @@
     <link href="Dashboard.Client.styles.css" rel="stylesheet" />
 </head>
 <body>
-    <div id="app">Loading...</div>
+    <div id="app">
+        <style>
+            .boot-loader {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                gap: 1.5rem;
+                background: #1a1a2e;
+            }
+            .spinner {
+                width: 48px;
+                height: 48px;
+                position: relative;
+            }
+            .spinner-ring {
+                position: absolute;
+                inset: 0;
+                border-radius: 50%;
+                border: 3px solid transparent;
+            }
+            .spinner-ring:nth-child(1) {
+                border-top-color: #00d2ff;
+                animation: spin 1s cubic-bezier(0.6, 0.15, 0.35, 0.85) infinite;
+            }
+            .spinner-ring:nth-child(2) {
+                inset: 5px;
+                border-right-color: rgba(0, 210, 255, 0.4);
+                animation: spin 1.5s cubic-bezier(0.6, 0.15, 0.35, 0.85) infinite reverse;
+            }
+            .spinner-ring:nth-child(3) {
+                inset: 10px;
+                border-bottom-color: rgba(0, 210, 255, 0.15);
+                animation: spin 2s cubic-bezier(0.6, 0.15, 0.35, 0.85) infinite;
+            }
+            .boot-title {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+                font-size: 0.85rem;
+                color: rgba(224, 224, 224, 0.6);
+                letter-spacing: 0.15em;
+                text-transform: uppercase;
+                animation: pulse 2s ease-in-out infinite;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 0.6; }
+                50% { opacity: 1; }
+            }
+        </style>
+        <div class="boot-loader">
+            <div class="spinner">
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+                <div class="spinner-ring"></div>
+            </div>
+            <span class="boot-title">Agent Dashboard</span>
+        </div>
+    </div>
     <script src="_framework/blazor.webassembly.js"></script>
     <script>navigator.serviceWorker.register('service-worker.js');</script>
 </body>
