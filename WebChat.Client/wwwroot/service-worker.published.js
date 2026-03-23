@@ -41,6 +41,12 @@ async function onActivate(event) {
 }
 
 async function onFetch(event) {
+    // Don't intercept requests for other apps (e.g. /dashboard/)
+    const url = new URL(event.request.url);
+    if (url.pathname.startsWith('/dashboard')) {
+        return fetch(event.request);
+    }
+
     let cachedResponse = null;
     if (event.request.method === 'GET') {
         // For all navigation requests, try to serve index.html from cache
