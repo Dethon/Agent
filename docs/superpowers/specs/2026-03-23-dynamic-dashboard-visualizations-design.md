@@ -42,6 +42,7 @@ Each page gets a toolbar of pill-toggle selectors above the chart, consistent wi
 - **Chart type**: Horizontal bar
 - Single metric (error count) — no metric selector needed
 - KPI cards remain (Total Errors, Services Affected)
+- **Migration note**: The current Errors page loads events via the list-based `/api/metrics/errors` endpoint (backed by `metrics:errors:recent` Redis list with `limit`). Switch the table and chart to use sorted-set-based date-range queries (`metrics:errors:{date}`) consistent with other pages. The existing `limit`-based endpoint remains for backward compatibility but the Errors page no longer uses it.
 
 ### Schedules Page
 
@@ -95,7 +96,7 @@ Add grouped aggregation endpoints to `MetricsApiEndpoints.cs`:
 
 **Errors dimensions:** `service`, `errortype` → Count per group.
 
-**Schedules dimensions:** `schedule`, `status` → Count per group.
+**Schedules dimensions:** `schedule` (maps to `ScheduleId` field), `status` → Count per group.
 
 ### MetricsQueryService Changes
 
@@ -109,6 +110,10 @@ Add generic grouping methods that:
 
 Keep `/api/metrics/tokens/by-user` and `/api/metrics/tokens/by-model` for backward compatibility with the Overview page. The new `/by/{dimension}` endpoints serve the dynamic charts.
 
+### State Migration
+
+The existing `TokensState.ByUser` and `TokensState.ByModel` fields (`Dictionary<string, long>`) are replaced by the single `Breakdown` field (`Dictionary<string, decimal>`). The Overview page, which currently consumes `ByUser`/`ByModel`, will be updated to use the new `/by/{dimension}` endpoints as well. Remove the old `ByUser`/`ByModel` state fields and the `SetBreakdowns` dispatch method — the new `Breakdown` field and the generic data flow replace them.
+
 ## Frontend Architecture
 
 ### New NuGet Package
@@ -121,12 +126,14 @@ Add `Blazor-ApexCharts` to `Dashboard.Client.csproj`. Register in `Program.cs`.
 - Parameters: `Label` (string), `Options` (list of name/value), `Value` (bound), `OnChanged` (EventCallback)
 - Renders uppercase label + horizontal pill buttons
 - Active pill highlighted with accent color
-- Replaces the existing `TimeRangeSelector` (which becomes a specific instance of `PillSelector`)
+- Replaces the existing `TimeRangeSelector` (which becomes a specific instance of `PillSelector`). The date-range calculation logic (converting "Today/7d/30d" to `DateOnly` from/to) moves to the page or effect layer — `PillSelector` is a pure UI component that emits the selected value.
 
 **`DynamicChart.razor`** — Wrapper around ApexCharts:
 - Parameters: `ChartType` (donut/bar), `Data` (Dictionary<string, decimal>), `Horizontal` (bool), `Stacked` (bool), `Title` (string)
 - Handles ApexChart configuration and theming (dark mode, colors, tooltips)
 - Responsive sizing
+- Shows "No data available" message when `Data` is empty (carries over existing `BarChart` behavior)
+- Loading state: shows skeleton/spinner while data is being fetched
 
 ### State Changes
 
