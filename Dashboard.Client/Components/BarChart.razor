@@ -1,0 +1,42 @@
+@using System.Globalization
+
+<div class="bar-chart">
+    @foreach (var item in Items)
+    {
+        var pct = _max > 0 ? (double)item.Value / _max * 100 : 0;
+        <div class="bar-row">
+            <span class="bar-label" title="@item.Label">@Truncate(item.Label, 20)</span>
+            <div class="bar-track">
+                <div class="bar-fill" style="width: @pct.ToString("F1", CultureInfo.InvariantCulture)%; background: @Color;"></div>
+            </div>
+            <span class="bar-value">@item.Value.ToString("N0")</span>
+        </div>
+    }
+    @if (!Items.Any())
+    {
+        <p class="no-data">No data</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<BarItem> Items { get; set; } = [];
+    [Parameter] public string Color { get; set; } = "var(--accent-blue)";
+
+    private long _max;
+
+    protected override void OnParametersSet() =>
+        _max = Items.Any() ? Items.Max(i => i.Value) : 0;
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
+}
+
+<style>
+    .bar-chart { display: flex; flex-direction: column; gap: 0.4rem; }
+    .bar-row { display: flex; align-items: center; gap: 0.6rem; }
+    .bar-label { width: 140px; font-size: 0.8rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 18px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .bar-value { width: 70px; text-align: right; font-size: 0.85rem; font-weight: 600; }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
+</style>

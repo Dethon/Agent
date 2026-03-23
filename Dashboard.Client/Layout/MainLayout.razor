@@ -1,6 +1,23 @@
 @inherits LayoutComponentBase
 
 <div class="layout">
+    <nav class="sidebar">
+        <NavLink href="/dashboard/" Match="NavLinkMatch.All" class="sidebar-icon" title="Overview">
+            <span>&#9673;</span>
+        </NavLink>
+        <NavLink href="/dashboard/tokens" class="sidebar-icon" title="Tokens">
+            <span>$</span>
+        </NavLink>
+        <NavLink href="/dashboard/tools" class="sidebar-icon" title="Tools">
+            <span>&#9889;</span>
+        </NavLink>
+        <NavLink href="/dashboard/errors" class="sidebar-icon" title="Errors">
+            <span>&#9888;</span>
+        </NavLink>
+        <NavLink href="/dashboard/schedules" class="sidebar-icon" title="Schedules">
+            <span>&#9200;</span>
+        </NavLink>
+    </nav>
     <main class="content">
         @Body
     </main>

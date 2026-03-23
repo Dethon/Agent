@@ -1,0 +1,46 @@
+
+<div class="time-range-selector">
+    @foreach (var option in _options)
+    {
+        <button class="range-btn @(option.Days == SelectedDays ? "active" : "")"
+                @onclick="() => SelectRange(option.Days)">
+            @option.Label
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public int SelectedDays { get; set; } = 1;
+    [Parameter] public EventCallback<(DateOnly From, DateOnly To)> OnRangeChanged { get; set; }
+
+    private static readonly (string Label, int Days)[] _options =
+    [
+        ("Today", 1),
+        ("7d", 7),
+        ("30d", 30),
+    ];
+
+    private async Task SelectRange(int days)
+    {
+        SelectedDays = days;
+        var to = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = to.AddDays(-(days - 1));
+        await OnRangeChanged.InvokeAsync((from, to));
+    }
+}
+
+<style>
+    .time-range-selector { display: flex; gap: 0.4rem; }
+    .range-btn {
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 0.3rem 0.8rem;
+        cursor: pointer;
+        font-size: 0.8rem;
+        transition: all 0.2s;
+    }
+    .range-btn:hover { color: var(--text-primary); border-color: var(--accent-blue); }
+    .range-btn.active { background: rgba(0,210,255,0.15); color: var(--accent-blue); border-color: var(--accent-blue); }
+</style>
