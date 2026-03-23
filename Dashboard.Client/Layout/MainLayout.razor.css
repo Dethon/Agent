@@ -48,3 +48,27 @@
     padding: 1.5rem 2rem;
     overflow-y: auto;
 }
+
+@media (max-width: 768px) {
+    .layout { flex-direction: column; padding-bottom: var(--sidebar-width); }
+
+    .sidebar {
+        position: fixed;
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 0.4rem 0;
+        gap: 0;
+        border-right: none;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .content {
+        margin-left: 0;
+        padding: 1rem;
+    }
+}

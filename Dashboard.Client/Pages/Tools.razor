@@ -93,4 +93,10 @@
     .table-row:hover { background: rgba(255,255,255,0.03); }
     .status-ok { color: var(--accent-green); }
     .status-err { color: var(--accent-red); }
+
+    @@media (max-width: 768px) {
+        .page-header h2 { font-size: 1.1rem; }
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { grid-template-columns: 65px 1fr 80px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 360px; }
+    }
 </style>

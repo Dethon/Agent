@@ -86,4 +86,10 @@
     .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .table-row:hover { background: rgba(255,255,255,0.03); }
+
+    @@media (max-width: 768px) {
+        .page-header h2 { font-size: 1.1rem; }
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { grid-template-columns: 65px 1fr 1fr 70px 70px 70px; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 480px; }
+    }
 </style>

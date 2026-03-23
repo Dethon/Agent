@@ -94,4 +94,10 @@
     .status-err { color: var(--accent-red); font-weight: 600; }
     .detail-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+
+    @@media (max-width: 768px) {
+        .page-header h2 { font-size: 1.1rem; }
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { grid-template-columns: 65px 110px 80px 55px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 440px; }
+    }
 </style>

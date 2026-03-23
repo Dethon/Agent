@@ -17,6 +17,7 @@
         padding: 1.2rem 1.5rem;
         border-left: 3px solid;
         min-width: 160px;
+        flex: 1;
     }
     .kpi-label {
         font-size: 0.8rem;
@@ -28,5 +29,10 @@
     .kpi-value {
         font-size: 1.6rem;
         font-weight: 700;
+    }
+
+    @@media (max-width: 768px) {
+        .kpi-card { min-width: calc(50% - 0.5rem); padding: 0.8rem 1rem; }
+        .kpi-value { font-size: 1.3rem; }
     }
 </style>
