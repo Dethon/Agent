@@ -86,20 +86,17 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     public async Task<IReadOnlyList<ServiceHealthResult>> GetHealthAsync()
     {
         var db = redis.GetDatabase();
-        var server = redis.GetServers().First();
-        var keys = server.Keys(pattern: "metrics:health:*").ToList();
+        var knownServices = await db.SetMembersAsync("metrics:health:known");
 
-        var tasks = keys.Select(async key =>
+        var tasks = knownServices.Select(async member =>
         {
-            var value = await db.StringGetAsync(key);
-            if (!value.HasValue) return null;
-
-            var service = key.ToString().Replace("metrics:health:", "");
-            return new ServiceHealthResult(service, true, value.ToString());
+            var service = member.ToString();
+            var value = await db.StringGetAsync($"metrics:health:{service}");
+            var isHealthy = value.HasValue;
+            return new ServiceHealthResult(service, isHealthy, isHealthy ? value.ToString()! : "N/A");
         });
 
-        var results = await Task.WhenAll(tasks);
-        return results.Where(r => r is not null).ToList()!;
+        return (await Task.WhenAll(tasks)).ToList();
     }
 
     public async Task<Dictionary<string, long>> GetTokenBreakdownAsync(

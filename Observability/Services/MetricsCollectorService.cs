@@ -6,6 +6,8 @@ using StackExchange.Redis;
 
 namespace Observability.Services;
 
+public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp);
+
 public sealed class MetricsCollectorService(
     IConnectionMultiplexer redis,
     IHubContext<MetricsHub> hubContext,
@@ -17,6 +19,7 @@ public sealed class MetricsCollectorService(
     };
 
     private static readonly TimeSpan DailyKeyTtl = TimeSpan.FromDays(30);
+    private static readonly TimeSpan HealthCheckInterval = TimeSpan.FromSeconds(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -40,9 +43,14 @@ public sealed class MetricsCollectorService(
                 }
             });
 
+        // Periodically check for services that stopped sending heartbeats
         try
         {
-            await Task.Delay(Timeout.Infinite, stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(HealthCheckInterval, stoppingToken);
+                await CheckHealthAsync();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -50,6 +58,30 @@ public sealed class MetricsCollectorService(
         }
 
         await subscriber.UnsubscribeAsync(RedisChannel.Literal("metrics:events"));
+    }
+
+    private async Task CheckHealthAsync()
+    {
+        try
+        {
+            var db = redis.GetDatabase();
+            var knownServices = await db.SetMembersAsync("metrics:health:known");
+
+            foreach (var member in knownServices)
+            {
+                var service = member.ToString();
+                var isHealthy = await db.KeyExistsAsync($"metrics:health:{service}");
+                if (!isHealthy)
+                {
+                    await hubContext.Clients.All.SendAsync("OnHealthUpdate",
+                        new ServiceHealthUpdate(service, false, DateTimeOffset.UtcNow));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to check service health");
+        }
     }
 
     internal async Task ProcessEventAsync(MetricEvent evt, IDatabase db)
@@ -157,8 +189,11 @@ public sealed class MetricsCollectorService(
         var key = $"metrics:health:{evt.Service}";
         var json = JsonSerializer.Serialize<MetricEvent>(evt, JsonOptions);
 
-        await db.StringSetAsync(key, json, TimeSpan.FromSeconds(60));
+        await Task.WhenAll(
+            db.StringSetAsync(key, json, TimeSpan.FromSeconds(60)),
+            db.SetAddAsync("metrics:health:known", evt.Service));
 
-        await hubContext.Clients.All.SendAsync("OnHealthUpdate", evt);
+        await hubContext.Clients.All.SendAsync("OnHealthUpdate",
+            new ServiceHealthUpdate(evt.Service, true, evt.Timestamp));
     }
 }

@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Dashboard.Client.Services;
 
+public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp);
+
 public sealed class MetricsHubService : IAsyncDisposable
 {
     private readonly HubConnection _connection;
@@ -29,7 +31,7 @@ public sealed class MetricsHubService : IAsyncDisposable
     public IDisposable OnScheduleExecution(Action<ScheduleExecutionEvent> handler) =>
         _connection.On("OnScheduleExecution", handler);
 
-    public IDisposable OnHealthUpdate(Action<HeartbeatEvent> handler) =>
+    public IDisposable OnHealthUpdate(Action<ServiceHealthUpdate> handler) =>
         _connection.On("OnHealthUpdate", handler);
 
     public event Func<string?, Task>? Reconnected

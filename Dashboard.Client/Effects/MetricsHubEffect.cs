@@ -49,7 +49,7 @@ public sealed class MetricsHubEffect(
         {
             var current = healthStore.State.Services.ToList();
             var idx = current.FindIndex(s => s.Service == evt.Service);
-            var entry = new ServiceHealth(evt.Service, true, evt.Timestamp.ToString("o"));
+            var entry = new ServiceHealth(evt.Service, evt.IsHealthy, evt.Timestamp.ToString("o"));
 
             if (idx >= 0)
                 current[idx] = entry;

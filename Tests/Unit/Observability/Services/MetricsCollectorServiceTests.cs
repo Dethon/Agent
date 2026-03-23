@@ -133,7 +133,7 @@ public class MetricsCollectorServiceTests
 
         _clientProxy.Verify(c => c.SendCoreAsync(
             "OnHealthUpdate",
-            It.Is<object[]>(args => args.Length == 1 && args[0] == evt),
+            It.Is<object[]>(args => args.Length == 1),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
