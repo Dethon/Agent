@@ -19,6 +19,8 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
+| `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
+| `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, health) |
 | `Tests` | Unit and integration tests |
 
 ## Key File Locations
@@ -34,6 +36,12 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Channel services | `McpChannel*/Services/*.cs` |
 | Channel protocol DTOs | `Domain/DTOs/Channel/*.cs` |
 | WebChat state | `WebChat.Client/State/**/*.cs` |
+| Dashboard state | `Dashboard.Client/State/**/*.cs` |
+| Dashboard pages | `Dashboard.Client/Pages/*.razor` |
+| Metric event DTOs | `Domain/DTOs/Metrics/*.cs` |
+| Metrics publisher | `Infrastructure/Metrics/*.cs` |
+| Observability services | `Observability/Services/*.cs` |
+| Observability API endpoints | `Observability/MetricsApiEndpoints.cs` |
 | Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 
 ## Environment Variables
@@ -94,7 +102,15 @@ Services read secrets from .NET User Secrets mounted into containers at `/home/a
 
 ### Accessing the WebChat
 
-Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to the McpChannelSignalR hub and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.
+Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to the McpChannelSignalR hub, `/dashboard/*` to the Observability service, and everything else to the WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.
+
+### Accessing the Dashboard
+
+The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5002/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, schedule history, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
+
+### Observability Architecture
+
+Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates.
 
 ### Channel Architecture
 

@@ -19,6 +19,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
+- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, and live service health
 - **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, and FileBrowser
 
 ## Architecture
@@ -57,6 +58,13 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 │  Jackett   │                                │   Store    │  │    API     │
 │ FileBrowser│                                └────────────┘  └────────────┘
 └────────────┘
+
+                    ┌─────────────────────────────────┐
+  metrics:events    │       Observability              │
+  (Redis Pub/Sub)──▶│  Collector → Redis Aggregation   │
+                    │  REST API + SignalR Hub           │──▶ Dashboard (PWA)
+                    │  Serves Dashboard.Client          │
+                    └─────────────────────────────────┘
 ```
 
 ### Channel Protocol
@@ -124,6 +132,8 @@ Agent routing:
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
 | `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
 | `WebChat.Client`         | Blazor WebAssembly client with chat UI and SignalR integration  |
+| `Observability`          | Metrics collector, REST API, SignalR hub — serves the Dashboard |
+| `Dashboard.Client`       | Blazor WebAssembly observability dashboard (PWA)                |
 | `DockerCompose`          | Docker Compose configuration for the full stack                 |
 | `Tests`                  | Unit and integration tests                                      |
 
@@ -218,6 +228,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | Service                  | Port  | Description                    |
 |--------------------------|-------|--------------------------------|
 | WebChat                  | 5001  | Browser-based chat interface   |
+| Dashboard                | 5002  | Observability dashboard (PWA)  |
 | Redis                    | 6379  | Conversation state persistence |
 | qBittorrent              | 8001  | Torrent client WebUI           |
 | FileBrowser              | 8002  | File management WebUI          |
@@ -268,6 +279,20 @@ USERS__1__AVATARURL=avatars/bob.png
 ```
 
 Place avatar images in `WebChat.Client/wwwroot/avatars/`. Selected identity persists in browser local storage.
+
+### Observability Dashboard
+
+Access at `http://localhost:5002/dashboard/` (direct) or `https://yourdomain/dashboard/` (via Caddy). Installable as a PWA.
+
+The dashboard provides operational visibility into agent behavior:
+
+- **Overview** — KPI cards (tokens, cost, tool calls, errors), service health grid, recent activity feed
+- **Tokens** — Token usage time-series, cost breakdown, per-user and per-model tables
+- **Tools** — Tool call frequency, success/failure rates, average duration
+- **Errors** — Error list with type, service, and message details
+- **Schedules** — Schedule execution history with duration and success/failure status
+
+Data flows via Redis Pub/Sub: all services emit metric events through `IMetricsPublisher`, the Observability collector aggregates them into Redis, and the dashboard reads via REST API with live updates via SignalR.
 
 ### Telegram Interface
 
@@ -339,6 +364,8 @@ The agent uses Redis to persist conversation history and memory across restarts:
 - **Download Tracking** - Use `ResubscribeDownloads` tool to resume tracking downloads after restart
 - **Memory Storage** - Vector-based memories stored in Redis using RediSearch for semantic recall
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
+- **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL
+- **Service Health** - Heartbeat-based health tracking with 60-second TTL keys in Redis
 
 ## License
 
