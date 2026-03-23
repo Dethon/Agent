@@ -13,7 +13,8 @@ public sealed class MultiAgentFactory(
     IServiceProvider serviceProvider,
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     OpenRouterConfig openRouterConfig,
-    IDomainToolRegistry domainToolRegistry) : IAgentFactory, IScheduleAgentFactory
+    IDomainToolRegistry domainToolRegistry,
+    IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
 
@@ -93,7 +94,7 @@ public sealed class MultiAgentFactory(
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns);
+        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, metricsPublisher);
 
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures)
@@ -115,7 +116,8 @@ public sealed class MultiAgentFactory(
         return new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             openRouterConfig.ApiKey,
-            model);
+            model,
+            metricsPublisher);
     }
 }
 

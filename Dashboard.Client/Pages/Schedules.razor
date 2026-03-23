@@ -1,0 +1,99 @@
+@page "/schedules"
+@using Dashboard.Client.Components
+@using Dashboard.Client.Effects
+@using Dashboard.Client.State.Schedules
+@implements IDisposable
+@inject SchedulesStore Store
+@inject DataLoadEffect DataLoad
+
+<div class="schedules-page">
+    <header class="page-header">
+        <h2>Schedule Executions</h2>
+        <TimeRangeSelector SelectedDays="_selectedDays" OnRangeChanged="OnRangeChanged" />
+    </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="Total Runs" Value="@_totalRuns.ToString("N0")" Color="var(--accent-purple)" />
+        <KpiCard Label="Success Rate" Value="@($"{_successRate:F1}%")" Color="var(--accent-green)" />
+        <KpiCard Label="Avg Duration" Value="@($"{_avgDuration:F0}ms")" Color="var(--accent-blue)" />
+    </section>
+
+    <section class="section">
+        <h3>Execution History</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span>Time</span>
+                <span>Schedule</span>
+                <span>Duration</span>
+                <span>Status</span>
+                <span>Details</span>
+            </div>
+            @foreach (var evt in _state.Events.TakeLast(50).Reverse())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
+                    <span>@evt.ScheduleId</span>
+                    <span>@evt.DurationMs ms</span>
+                    <span class="@(evt.Success ? "status-ok" : "status-err")">@(evt.Success ? "OK" : "FAIL")</span>
+                    <span class="detail-text" title="@(evt.Error ?? evt.Prompt)">@Truncate(evt.Error ?? evt.Prompt, 60)</span>
+                </div>
+            }
+            @if (!_state.Events.Any())
+            {
+                <p class="no-data">No schedule executions recorded</p>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private SchedulesState _state = new();
+    private int _selectedDays = 1;
+    private long _totalRuns;
+    private double _successRate;
+    private double _avgDuration;
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            _totalRuns = s.Events.Count;
+            _successRate = s.Events.Count > 0 ? s.Events.Count(e => e.Success) * 100.0 / s.Events.Count : 0;
+            _avgDuration = s.Events.Count > 0 ? s.Events.Average(e => e.DurationMs) : 0;
+            InvokeAsync(StateHasChanged);
+        });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await DataLoad.LoadAsync(today, today);
+    }
+
+    private async Task OnRangeChanged((DateOnly From, DateOnly To) range)
+    {
+        _selectedDays = range.To.DayNumber - range.From.DayNumber + 1;
+        await DataLoad.LoadAsync(range.From, range.To);
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .schedules-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: 80px 140px 100px 70px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+    .status-ok { color: var(--accent-green); font-weight: 600; }
+    .status-err { color: var(--accent-red); font-weight: 600; }
+    .detail-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+</style>

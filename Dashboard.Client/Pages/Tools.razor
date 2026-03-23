@@ -1,0 +1,98 @@
+@page "/tools"
+@using Dashboard.Client.Components
+@using Dashboard.Client.Effects
+@using Dashboard.Client.State.Tools
+@implements IDisposable
+@inject ToolsStore Store
+@inject DataLoadEffect DataLoad
+
+<div class="tools-page">
+    <header class="page-header">
+        <h2>Tool Calls</h2>
+        <TimeRangeSelector SelectedDays="_selectedDays" OnRangeChanged="OnRangeChanged" />
+    </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="Total Calls" Value="@_totalCalls.ToString("N0")" Color="var(--accent-yellow)" />
+        <KpiCard Label="Success Rate" Value="@($"{_successRate:F1}%")" Color="var(--accent-green)" />
+        <KpiCard Label="Avg Duration" Value="@($"{_avgDuration:F0}ms")" Color="var(--accent-blue)" />
+    </section>
+
+    <section class="section">
+        <h3>Call Frequency by Tool</h3>
+        <BarChart Items="_frequencyItems" Color="var(--accent-yellow)" />
+    </section>
+
+    <section class="section">
+        <h3>Recent Tool Calls</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span>Time</span>
+                <span>Tool</span>
+                <span>Duration</span>
+                <span>Status</span>
+            </div>
+            @foreach (var evt in _state.Events.TakeLast(50).Reverse())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
+                    <span>@evt.ToolName</span>
+                    <span>@evt.DurationMs ms</span>
+                    <span class="@(evt.Success ? "status-ok" : "status-err")">@(evt.Success ? "OK" : evt.Error ?? "FAIL")</span>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private ToolsState _state = new();
+    private int _selectedDays = 1;
+    private long _totalCalls;
+    private double _successRate;
+    private double _avgDuration;
+    private IEnumerable<BarItem> _frequencyItems = [];
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            _totalCalls = s.Events.Count;
+            _successRate = s.Events.Count > 0 ? s.Events.Count(e => e.Success) * 100.0 / s.Events.Count : 0;
+            _avgDuration = s.Events.Count > 0 ? s.Events.Average(e => e.DurationMs) : 0;
+            _frequencyItems = s.Events
+                .GroupBy(e => e.ToolName)
+                .OrderByDescending(g => g.Count())
+                .Select(g => new BarItem(g.Key, g.Count()));
+            InvokeAsync(StateHasChanged);
+        });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await DataLoad.LoadAsync(today, today);
+    }
+
+    private async Task OnRangeChanged((DateOnly From, DateOnly To) range)
+    {
+        _selectedDays = range.To.DayNumber - range.From.DayNumber + 1;
+        await DataLoad.LoadAsync(range.From, range.To);
+    }
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .tools-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: 80px 1fr 100px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+    .status-ok { color: var(--accent-green); }
+    .status-err { color: var(--accent-red); }
+</style>

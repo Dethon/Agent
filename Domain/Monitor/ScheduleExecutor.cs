@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -18,6 +20,7 @@ public class ScheduleExecutor(
     string? defaultScheduleChannelId,
     Func<IChannelConnection, string, IToolApprovalHandler> approvalHandlerFactory,
     Channel<Schedule> scheduleChannel,
+    IMetricsPublisher metricsPublisher,
     ILogger<ScheduleExecutor> logger)
 {
     public async Task ProcessSchedulesAsync(CancellationToken ct)
@@ -30,21 +33,59 @@ public class ScheduleExecutor(
 
     private async Task ProcessScheduleAsync(Schedule schedule, CancellationToken ct)
     {
-        var targetChannel = defaultScheduleChannelId is not null
-            ? channels.FirstOrDefault(c => c.ChannelId == defaultScheduleChannelId)
-            : null;
-
-        var conversationId = targetChannel is not null
-            ? await TryCreateConversation(targetChannel, schedule, ct)
-            : null;
-
-        if (targetChannel is not null && conversationId is not null)
+        var sw = Stopwatch.StartNew();
+        try
         {
-            await ExecuteWithNotifications(schedule, targetChannel, conversationId, ct);
+            var targetChannel = defaultScheduleChannelId is not null
+                ? channels.FirstOrDefault(c => c.ChannelId == defaultScheduleChannelId)
+                : null;
+
+            var conversationId = targetChannel is not null
+                ? await TryCreateConversation(targetChannel, schedule, ct)
+                : null;
+
+            if (targetChannel is not null && conversationId is not null)
+            {
+                await ExecuteWithNotifications(schedule, targetChannel, conversationId, ct);
+            }
+            else
+            {
+                await ExecuteSilently(schedule, ct);
+            }
+
+            sw.Stop();
+
+            await metricsPublisher.PublishAsync(new ScheduleExecutionEvent
+            {
+                ScheduleId = schedule.Id,
+                AgentId = schedule.Agent.Id,
+                Prompt = schedule.Prompt,
+                DurationMs = sw.ElapsedMilliseconds,
+                Success = true
+            }, ct);
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await ExecuteSilently(schedule, ct);
+            sw.Stop();
+            logger.LogError(ex, "Error executing schedule {ScheduleId}", schedule.Id);
+
+            await metricsPublisher.PublishAsync(new ScheduleExecutionEvent
+            {
+                ScheduleId = schedule.Id,
+                AgentId = schedule.Agent.Id,
+                Prompt = schedule.Prompt,
+                DurationMs = sw.ElapsedMilliseconds,
+                Success = false,
+                Error = ex.Message
+            }, ct);
+
+            await metricsPublisher.PublishAsync(new ErrorEvent
+            {
+                Service = "scheduler",
+                AgentId = schedule.Agent.Id,
+                ErrorType = ex.GetType().Name,
+                Message = ex.Message
+            }, ct);
         }
 
         if (schedule.CronExpression is null)

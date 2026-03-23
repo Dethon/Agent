@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -27,6 +28,9 @@ public static class InjectorModule
 
             return services
                 .AddRedis(settings.Redis)
+                .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
+                .AddHostedService(sp =>
+                    new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "agent"))
                 .AddSingleton<ChatThreadResolver>()
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
                 .AddSingleton<IAgentFactory>(sp =>
@@ -34,7 +38,8 @@ public static class InjectorModule
                         sp,
                         sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
                         llmConfig,
-                        sp.GetRequiredService<IDomainToolRegistry>()))
+                        sp.GetRequiredService<IDomainToolRegistry>(),
+                        sp.GetRequiredService<IMetricsPublisher>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }

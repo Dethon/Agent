@@ -1,0 +1,29 @@
+@using Dashboard.Client.State.Health
+
+<div class="health-grid">
+    @foreach (var svc in Services)
+    {
+        <div class="health-item" title="@(svc.IsHealthy ? "Healthy" : "Unhealthy") — Last seen: @(svc.LastSeen ?? "never")">
+            <span class="health-dot @(svc.IsHealthy ? "healthy" : "unhealthy")"></span>
+            <span class="health-name">@svc.Service</span>
+        </div>
+    }
+    @if (!Services.Any())
+    {
+        <p class="no-data">No health data</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<ServiceHealth> Services { get; set; } = [];
+}
+
+<style>
+    .health-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
+    .health-item { display: flex; align-items: center; gap: 0.4rem; background: var(--bg-card); padding: 0.5rem 0.8rem; border-radius: 6px; }
+    .health-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .health-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+    .health-dot.unhealthy { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+    .health-name { font-size: 0.85rem; color: var(--text-primary); }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
+</style>

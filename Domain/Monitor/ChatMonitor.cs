@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -15,6 +16,7 @@ public class ChatMonitor(
     IAgentFactory agentFactory,
     Func<IChannelConnection, string, IToolApprovalHandler> approvalHandlerFactory,
     ChatThreadResolver threadResolver,
+    IMetricsPublisher metricsPublisher,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -37,6 +39,12 @@ public class ChatMonitor(
         catch (Exception ex)
         {
             logger.LogError(ex, "ChatMonitor exception: {exceptionMessage}", ex.Message);
+            await metricsPublisher.PublishAsync(new ErrorEvent
+            {
+                Service = "agent",
+                ErrorType = ex.GetType().Name,
+                Message = ex.Message
+            });
         }
     }
 

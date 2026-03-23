@@ -37,6 +37,7 @@ public static class SchedulingModule
                 sp.GetService<IConfiguration>()?["DefaultScheduleChannelId"] is { Length: > 0 } id ? id : "signalr",
                 sp.GetRequiredService<Func<IChannelConnection, string, IToolApprovalHandler>>(),
                 sp.GetRequiredService<Channel<Schedule>>(),
+                sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<ILogger<ScheduleExecutor>>()));
 
             services.AddHostedService<ScheduleMonitoring>();

@@ -1,0 +1,91 @@
+@page "/tokens"
+@using Dashboard.Client.Components
+@using Dashboard.Client.Effects
+@using Dashboard.Client.State.Tokens
+@implements IDisposable
+@inject TokensStore Store
+@inject DataLoadEffect DataLoad
+
+<div class="tokens-page">
+    <header class="page-header">
+        <h2>Token Usage</h2>
+        <TimeRangeSelector SelectedDays="_selectedDays" OnRangeChanged="OnRangeChanged" />
+    </header>
+
+    <section class="section">
+        <h3>By User</h3>
+        <BarChart Items="_byUserItems" Color="var(--accent-blue)" />
+    </section>
+
+    <section class="section">
+        <h3>By Model</h3>
+        <BarChart Items="_byModelItems" Color="var(--accent-purple)" />
+    </section>
+
+    <section class="section">
+        <h3>Recent Token Events</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span>Time</span>
+                <span>Sender</span>
+                <span>Model</span>
+                <span>Input</span>
+                <span>Output</span>
+                <span>Cost</span>
+            </div>
+            @foreach (var evt in _state.Events.TakeLast(50).Reverse())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
+                    <span>@evt.Sender</span>
+                    <span>@evt.Model</span>
+                    <span>@evt.InputTokens.ToString("N0")</span>
+                    <span>@evt.OutputTokens.ToString("N0")</span>
+                    <span>@($"${evt.Cost:F4}")</span>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private TokensState _state = new();
+    private int _selectedDays = 1;
+    private IEnumerable<BarItem> _byUserItems = [];
+    private IEnumerable<BarItem> _byModelItems = [];
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            _byUserItems = s.ByUser.OrderByDescending(kv => kv.Value).Select(kv => new BarItem(kv.Key, kv.Value));
+            _byModelItems = s.ByModel.OrderByDescending(kv => kv.Value).Select(kv => new BarItem(kv.Key, kv.Value));
+            InvokeAsync(StateHasChanged);
+        });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await DataLoad.LoadAsync(today, today);
+    }
+
+    private async Task OnRangeChanged((DateOnly From, DateOnly To) range)
+    {
+        _selectedDays = range.To.DayNumber - range.From.DayNumber + 1;
+        await DataLoad.LoadAsync(range.From, range.To);
+    }
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: 80px 1fr 1fr 90px 90px 90px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+</style>

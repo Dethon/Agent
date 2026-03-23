@@ -1,0 +1,84 @@
+@page "/errors"
+@using Dashboard.Client.Components
+@using Dashboard.Client.Effects
+@using Dashboard.Client.State.Errors
+@implements IDisposable
+@inject ErrorsStore Store
+@inject DataLoadEffect DataLoad
+
+<div class="errors-page">
+    <header class="page-header">
+        <h2>Errors</h2>
+    </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="Total Errors" Value="@_state.Events.Count.ToString("N0")" Color="var(--accent-red)" />
+        <KpiCard Label="Services Affected" Value="@_servicesAffected.ToString()" Color="var(--accent-yellow)" />
+    </section>
+
+    <section class="section">
+        <h3>Error List</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span>Time</span>
+                <span>Service</span>
+                <span>Type</span>
+                <span>Message</span>
+            </div>
+            @foreach (var evt in _state.Events.TakeLast(100).Reverse())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
+                    <span class="svc-badge">@evt.Service</span>
+                    <span class="err-type">@evt.ErrorType</span>
+                    <span class="err-msg" title="@evt.Message">@Truncate(evt.Message, 80)</span>
+                </div>
+            }
+            @if (!_state.Events.Any())
+            {
+                <p class="no-data">No errors recorded</p>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private ErrorsState _state = new();
+    private int _servicesAffected;
+    private IDisposable? _sub;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            _servicesAffected = s.Events.Select(e => e.Service).Distinct().Count();
+            InvokeAsync(StateHasChanged);
+        });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await DataLoad.LoadAsync(today, today);
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .errors-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: 80px 120px 150px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+    .svc-badge { color: var(--accent-yellow); }
+    .err-type { color: var(--accent-red); font-weight: 600; }
+    .err-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+</style>
