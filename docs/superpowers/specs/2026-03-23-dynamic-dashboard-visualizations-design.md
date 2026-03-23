@@ -92,7 +92,7 @@ Add grouped aggregation endpoints to `MetricsApiEndpoints.cs`:
 | Dimension | Metric = `count` | Metric = `duration` | Metric = `errorrate` |
 |-----------|------------------|---------------------|----------------------|
 | `tool`    | Count per ToolName | Avg(DurationMs) per ToolName | (Failures/Total)*100 per ToolName |
-| `status`  | Count per Success (true/false) | Avg(DurationMs) per Success | N/A (redundant) |
+| `status`  | Count per Success (true/false) | Avg(DurationMs) per Success | N/A — UI disables Error Rate pill when Status grouping is selected |
 
 **Errors dimensions:** `service`, `errortype` → Count per group.
 
@@ -113,6 +113,8 @@ Keep `/api/metrics/tokens/by-user` and `/api/metrics/tokens/by-model` for backwa
 ### State Migration
 
 The existing `TokensState.ByUser` and `TokensState.ByModel` fields (`Dictionary<string, long>`) are replaced by the single `Breakdown` field (`Dictionary<string, decimal>`). The Overview page, which currently consumes `ByUser`/`ByModel`, will be updated to use the new `/by/{dimension}` endpoints as well. Remove the old `ByUser`/`ByModel` state fields and the `SetBreakdowns` dispatch method — the new `Breakdown` field and the generic data flow replace them.
+
+**Note**: The Overview page is not listed in "Pages & Controls" because it keeps its existing layout (KPI cards, health grid, recent activity). However, its token breakdown charts must be updated to consume the new endpoints/state during implementation.
 
 ## Frontend Architecture
 
