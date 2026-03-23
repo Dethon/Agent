@@ -438,7 +438,7 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     ports:
-      - "5002:8080"
+      - "5003:8080"
     depends_on:
       - redis
     networks:

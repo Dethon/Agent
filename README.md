@@ -225,22 +225,22 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 
 ## Services & Ports
 
-| Service                  | Port  | Description                    |
-|--------------------------|-------|--------------------------------|
-| WebChat                  | 5001  | Browser-based chat interface   |
-| Dashboard                | 5002  | Observability dashboard (PWA)  |
-| Redis                    | 6379  | Conversation state persistence |
-| qBittorrent              | 8001  | Torrent client WebUI           |
-| FileBrowser              | 8002  | File management WebUI          |
-| Jackett                  | 8003  | Torrent indexer proxy          |
-| MCP Library              | 6001  | Library MCP server             |
-| MCP Text Tools           | 6002  | Text/Markdown MCP server       |
-| MCP WebSearch            | 6003  | Web search MCP server          |
-| MCP Memory               | 6004  | Memory storage MCP server      |
-| MCP Idealista            | 6005  | Idealista property MCP server  |
-| MCP Channel SignalR      | 6010  | WebChat channel server         |
-| MCP Channel Telegram     | 6011  | Telegram channel server        |
-| MCP Channel ServiceBus   | 6012  | ServiceBus channel server      |
+| Service                  | Port | Description                    |
+|--------------------------|------|--------------------------------|
+| WebChat                  | 5001 | Browser-based chat interface   |
+| Dashboard                | 5003 | Observability dashboard (PWA)  |
+| Redis                    | 6379 | Conversation state persistence |
+| qBittorrent              | 8001 | Torrent client WebUI           |
+| FileBrowser              | 8002 | File management WebUI          |
+| Jackett                  | 8003 | Torrent indexer proxy          |
+| MCP Library              | 6001 | Library MCP server             |
+| MCP Text Tools           | 6002 | Text/Markdown MCP server       |
+| MCP WebSearch            | 6003 | Web search MCP server          |
+| MCP Memory               | 6004 | Memory storage MCP server      |
+| MCP Idealista            | 6005 | Idealista property MCP server  |
+| MCP Channel SignalR      | 6010 | WebChat channel server         |
+| MCP Channel Telegram     | 6011 | Telegram channel server        |
+| MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
 
 ## Usage
 
@@ -282,7 +282,7 @@ Place avatar images in `WebChat.Client/wwwroot/avatars/`. Selected identity pers
 
 ### Observability Dashboard
 
-Access at `http://localhost:5002/dashboard/` (direct) or `https://yourdomain/dashboard/` (via Caddy). Installable as a PWA.
+Access at `http://localhost:5003/dashboard/` (direct) or `https://yourdomain/dashboard/` (via Caddy). Installable as a PWA.
 
 The dashboard provides operational visibility into agent behavior:
 
