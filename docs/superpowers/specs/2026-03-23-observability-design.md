@@ -79,7 +79,7 @@ public abstract record MetricEvent
 }
 ```
 
-**Token usage** — emitted from the agent layer (not directly from `OpenRouterChatClient`, since sender context is only available higher in the call chain). The sender identity must be threaded down via `ChatOptions.AdditionalProperties` or by emitting from a wrapping layer that has sender context (e.g., `ChatMonitor` or `McpAgent`):
+**Token usage** — emitted directly from `OpenRouterChatClient`. The client already reads `GetSenderId()` from user messages (to build the text prefix). Before streaming, it captures the sender from the last user message. After streaming completes, it publishes the event with sender, model, tokens, and cost:
 
 ```csharp
 public record TokenUsageEvent : MetricEvent
@@ -149,7 +149,7 @@ public record HeartbeatEvent : MetricEvent
 
 | Event | Where | What to capture |
 |-------|-------|----------------|
-| Token usage | `OpenRouterChatClient` — after `allUpdates.ToChatResponse()` | Extract `usage.cost` from the raw OpenRouter JSON in the final SSE chunk. The Microsoft.Extensions.AI `UsageContent` only exposes `InputTokenCount`/`OutputTokenCount`, so `cost` must be extracted from the raw response via a separate extraction path (e.g., a parallel `ConcurrentQueue<decimal?>` or callback alongside the existing reasoning queue in `ReasoningTeeStream`). Sender context must be threaded in from the caller (see TokenUsageEvent note above). |
+| Token usage | `OpenRouterChatClient.GetStreamingResponseAsync()` | Before streaming, capture sender from the last user message via `GetSenderId()` (already called for prefix building). Extract `usage.cost` from the raw OpenRouter JSON in the final SSE chunk via a separate extraction path (e.g., a parallel `ConcurrentQueue<decimal?>` or callback alongside the existing reasoning queue in `ReasoningTeeStream`). The Microsoft.Extensions.AI `UsageContent` provides `InputTokenCount`/`OutputTokenCount`; cost comes from the raw response. Model is known at construction time. All data needed for `TokenUsageEvent` is available directly in the client. |
 | Tool calls | `ToolApprovalChatClient.InvokeFunctionAsync()` | Wrap `base.InvokeFunctionAsync()` with a `Stopwatch`. Capture `context.Function.Name`, duration, success/failure. |
 | Errors | `ChatMonitor.ProcessChatThread()`, `ScheduleExecutor.ProcessScheduleAsync()` | Existing catch blocks — add `IMetricsPublisher.PublishAsync(new ErrorEvent(...))`. |
 | Schedule execution | `ScheduleExecutor.ProcessScheduleAsync()` | Wrap execution with `Stopwatch`. Emit on completion with duration and success/failure. |
@@ -318,7 +318,7 @@ services.AddHostedService(sp => new HeartbeatService(sp.GetRequiredService<IMetr
 
 ### Cost Extraction from OpenRouter
 
-OpenRouter includes `usage.cost` (USD) in every chat completion response, including the final SSE chunk during streaming. The `OpenRouterChatClient` must be modified to extract this value from the raw JSON response — the Microsoft.Extensions.AI `UsageContent` abstraction does not expose it. The existing `TeeHttpContent`/`ReasoningHandler` pipeline that intercepts SSE chunks for reasoning content extraction is the natural place to also capture the `cost` field.
+OpenRouter includes `usage.cost` (USD) in every chat completion response, including the final SSE chunk during streaming. The `OpenRouterChatClient` must be modified to extract this value from the raw JSON response — the Microsoft.Extensions.AI `UsageContent` abstraction does not expose it. The existing `TeeHttpContent`/`ReasoningHandler` pipeline that intercepts SSE chunks for reasoning content extraction is the natural place to also capture the `cost` field via a parallel extraction path (e.g., a `ConcurrentQueue<decimal?>` alongside the existing reasoning queue). The client already has all context needed to emit `TokenUsageEvent` directly: sender (from `GetSenderId()` on user messages), model (from construction), tokens (from `UsageContent`), and cost (from raw response).
 
 ### Data Retention
 
