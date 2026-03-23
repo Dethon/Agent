@@ -99,12 +99,12 @@ public sealed class OpenRouterChatClient : IChatClient
             yield return update;
         }
 
-        if (_metricsPublisher is not null && usage?.Details is not null && sender is not null)
+        if (_metricsPublisher is not null && usage?.Details is not null)
         {
             var cost = DrainCostQueue() ?? 0m;
             await _metricsPublisher.PublishAsync(new TokenUsageEvent
             {
-                Sender = sender,
+                Sender = sender ?? "unknown",
                 Model = _model,
                 InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),

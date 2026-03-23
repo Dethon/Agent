@@ -59,7 +59,7 @@ public class OpenRouterChatClientMetricsTests : IDisposable
     }
 
     [Fact]
-    public async Task GetStreamingResponseAsync_WithoutSender_DoesNotPublish()
+    public async Task GetStreamingResponseAsync_WithoutSender_PublishesWithUnknownSender()
     {
         var userMessage = new ChatMessage(ChatRole.User, "hello");
 
@@ -79,8 +79,10 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         await _sut.GetStreamingResponseAsync([userMessage]).ToListAsync();
 
         _publisher.Verify(
-            p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+            p => p.PublishAsync(
+                It.Is<TokenUsageEvent>(e => e.Sender == "unknown"),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]
