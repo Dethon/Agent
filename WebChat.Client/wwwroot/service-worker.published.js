@@ -30,7 +30,7 @@ async function onInstall(event) {
 async function onActivate(event) {
     console.info('Service worker: Activate');
 
-    // Delete unused caches
+    // Delete unused WebChat caches (keep dashboard-offline)
     const cacheKeys = await caches.keys();
     await Promise.all(cacheKeys
         .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
@@ -41,9 +41,23 @@ async function onActivate(event) {
 }
 
 async function onFetch(event) {
-    // Don't intercept requests for other apps (e.g. /dashboard/)
     const url = new URL(event.request.url);
+
+    // Dashboard routes are served by Observability, not from WebChat cache.
+    // Use network-first for navigations (caches the page for offline/PWA installability),
+    // plain passthrough for sub-resources (CSS, JS, WASM, etc.).
     if (url.pathname.startsWith('/dashboard')) {
+        if (event.request.mode === 'navigate') {
+            try {
+                const response = await fetch(event.request);
+                const cache = await caches.open('dashboard-offline');
+                cache.put('/dashboard/', response.clone());
+                return response;
+            } catch {
+                const cache = await caches.open('dashboard-offline');
+                return await cache.match('/dashboard/') || new Response('Offline', { status: 503 });
+            }
+        }
         return fetch(event.request);
     }
 
