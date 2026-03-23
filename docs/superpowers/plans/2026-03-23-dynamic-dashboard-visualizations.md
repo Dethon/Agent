@@ -805,7 +805,7 @@ else if (ChartType == ChartMode.Donut)
                          SeriesType="SeriesType.Donut"
                          XValue="e => e.Label"
                          YValue="e => e.Value"
-                         OrderByDescending="e => e.x" />
+                         OrderByDescending="e => e.y" />
     </ApexChart>
 }
 else
@@ -817,7 +817,7 @@ else
                          SeriesType="SeriesType.Bar"
                          XValue="e => e.Label"
                          YValue="e => e.Value"
-                         OrderByDescending="e => e.x" />
+                         OrderByDescending="e => e.y" />
     </ApexChart>
 }
 
@@ -1139,7 +1139,7 @@ public sealed class SchedulesStore : Store<SchedulesState>
 cd /home/dethon/repos/agent && dotnet build Dashboard.Client/Dashboard.Client.csproj
 ```
 
-Expected: Build will fail because `DataLoadEffect.cs` references `SetBreakdowns` which no longer exists. That's expected — we fix it in the next task.
+Expected: Build will fail because `DataLoadEffect.cs` references `SetBreakdowns` (removed) and `GetErrorsAsync()` (signature changed). That's expected — skip the build verification here and proceed directly to Task 10 which fixes both. Tasks 9 and 10 must be applied together before the project compiles.
 
 - [ ] **Step 10: Commit**
 
@@ -1308,32 +1308,6 @@ public sealed class DataLoadEffect(
         }
     }
 
-    public async Task LoadBreakdownAsync(DateOnly from, DateOnly to)
-    {
-        try
-        {
-            var tokenBreakdownTask = api.GetTokenGroupedAsync(
-                tokensStore.State.GroupBy, tokensStore.State.Metric, from, to);
-            var toolBreakdownTask = api.GetToolGroupedAsync(
-                toolsStore.State.GroupBy, toolsStore.State.Metric, from, to);
-            var errorBreakdownTask = api.GetErrorGroupedAsync(
-                errorsStore.State.GroupBy, from, to);
-            var scheduleBreakdownTask = api.GetScheduleGroupedAsync(
-                schedulesStore.State.GroupBy, from, to);
-
-            await Task.WhenAll(tokenBreakdownTask, toolBreakdownTask,
-                errorBreakdownTask, scheduleBreakdownTask);
-
-            tokensStore.SetBreakdown(await tokenBreakdownTask ?? []);
-            toolsStore.SetBreakdown(await toolBreakdownTask ?? []);
-            errorsStore.SetBreakdown(await errorBreakdownTask ?? []);
-            schedulesStore.SetBreakdown(await scheduleBreakdownTask ?? []);
-        }
-        catch
-        {
-            // Breakdown load failure is non-fatal
-        }
-    }
 }
 ```
 
@@ -1371,6 +1345,7 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
 @implements IDisposable
 @inject TokensStore Store
 @inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
 
 <div class="tokens-page">
     <header class="page-header">
@@ -1384,6 +1359,12 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
                           OnChanged="OnTimeChanged" />
         </div>
     </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="Input Tokens" Value="@_inputTokens.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Output Tokens" Value="@_outputTokens.ToString("N0")" Color="var(--accent-purple)" />
+        <KpiCard Label="Cost" Value="@($"${_cost:F2}")" Color="var(--accent-green)" />
+    </section>
 
     <section class="section">
         <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
@@ -1421,6 +1402,9 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
     private int _selectedDays = 1;
     private DateOnly _from;
     private DateOnly _to;
+    private long _inputTokens;
+    private long _outputTokens;
+    private decimal _cost;
     private IDisposable? _sub;
 
     private static readonly IReadOnlyList<PillOption> _dimensionOptions =
@@ -1448,6 +1432,9 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
+            _inputTokens = s.Events.Sum(e => (long)e.InputTokens);
+            _outputTokens = s.Events.Sum(e => (long)e.OutputTokens);
+            _cost = s.Events.Sum(e => e.Cost);
             InvokeAsync(StateHasChanged);
         });
 
@@ -1478,8 +1465,7 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
 
     private async Task ReloadBreakdown()
     {
-        var breakdown = await new MetricsApiService(
-            ((MetricsApiService)null!).GetType() == typeof(object) ? null! : null!).GetTokenGroupedAsync(
+        var breakdown = await Api.GetTokenGroupedAsync(
             Store.State.GroupBy, Store.State.Metric, _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
@@ -1492,6 +1478,7 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
     .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
     .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
     .table-header, .table-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr) 90px 90px 90px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
@@ -1507,27 +1494,6 @@ Replace `Dashboard.Client/Pages/Tokens.razor` entirely:
         .table-row span { word-break: break-word; }
     }
 </style>
-```
-
-Wait — the `ReloadBreakdown` method above has a bug. Let me fix that. The page should inject `MetricsApiService` directly. Let me correct the approach.
-
-Actually, the proper pattern is for pages to call `DataLoad.LoadBreakdownAsync` or inject the API service directly. Let me fix the page to inject `MetricsApiService`:
-
-Replace the `ReloadBreakdown` method and the inject section:
-
-After `@inject DataLoadEffect DataLoad`, add:
-```razor
-@inject MetricsApiService Api
-```
-
-Replace the `ReloadBreakdown` method:
-```csharp
-private async Task ReloadBreakdown()
-{
-    var breakdown = await Api.GetTokenGroupedAsync(
-        Store.State.GroupBy, Store.State.Metric, _from, _to);
-    Store.SetBreakdown(breakdown ?? []);
-}
 ```
 
 - [ ] **Step 2: Verify it builds**
