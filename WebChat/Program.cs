@@ -10,6 +10,26 @@ app.UseBlazorFrameworkFiles();
 
 app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
 {
+    // Dashboard PWA — separate app served by Observability, but manifest
+    // goes through the same endpoint as WebChat spaces so Chrome treats
+    // them identically (same code path, same id format).
+    if (slug == "dashboard")
+    {
+        return Results.Json(new
+        {
+            name = "Agent Dashboard",
+            short_name = "Dashboard",
+            start_url = "/dashboard",
+            id = "/dashboard",
+            scope = "/dashboard",
+            display = "standalone",
+            background_color = "#1a1a2e",
+            theme_color = "#1a1a2e",
+            prefer_related_applications = false,
+            icons = new[] { new { src = "/dashboard/favicon.svg", sizes = "any", type = "image/svg+xml" } }
+        }, contentType: "application/manifest+json");
+    }
+
     const string baseName = "Herfluffness' Assistants";
     var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
     var space = spaces.FirstOrDefault(s => s.Slug == slug);
