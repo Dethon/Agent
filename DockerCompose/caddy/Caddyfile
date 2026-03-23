@@ -11,15 +11,17 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
-    redir /dashboard /dashboard/ 308
-
-    handle /dashboard/* {
-        reverse_proxy observability:8080
-    }
-
     handle {
         reverse_proxy webui:8080
     }
+}
+
+assistants-dashboard.herfluffness.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+
+    reverse_proxy observability:8080
 }
 
 sexy.herfluffness.com {
@@ -33,12 +35,6 @@ sexy.herfluffness.com {
 
     handle /api/agents* {
         reverse_proxy agent:8080
-    }
-
-    redir /dashboard /dashboard/ 308
-
-    handle /dashboard/* {
-        reverse_proxy observability:8080
     }
 
     handle {
