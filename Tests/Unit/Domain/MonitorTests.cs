@@ -194,6 +194,7 @@ public class ChatMonitorTests
             agentFactory,
             MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
+            new Mock<IMetricsPublisher>().Object,
             logger.Object);
 
         // Act
@@ -222,6 +223,7 @@ public class ChatMonitorTests
             agentFactory,
             MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
+            new Mock<IMetricsPublisher>().Object,
             logger.Object);
 
         // Act
@@ -253,6 +255,7 @@ public class ChatMonitorTests
             agentFactory,
             MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
+            new Mock<IMetricsPublisher>().Object,
             logger.Object);
 
         // Act
@@ -285,6 +288,7 @@ public class ChatMonitorTests
             agentFactory,
             MonitorTestMocks.CreateApprovalHandlerFactory(),
             threadResolver,
+            new Mock<IMetricsPublisher>().Object,
             logger.Object);
 
         // Act

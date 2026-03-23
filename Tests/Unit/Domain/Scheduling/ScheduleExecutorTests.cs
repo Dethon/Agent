@@ -53,6 +53,7 @@ public class ScheduleExecutorTests
             defaultScheduleChannelId,
             (_, _) => new Mock<IToolApprovalHandler>().Object,
             _scheduleChannel,
+            new Mock<IMetricsPublisher>().Object,
             _logger.Object);
     }
 
