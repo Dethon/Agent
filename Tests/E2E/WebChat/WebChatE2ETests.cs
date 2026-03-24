@@ -156,4 +156,35 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await connectedDot.WaitForAsync(new() { Timeout = 30_000 });
         (await connectedDot.IsVisibleAsync()).ShouldBeTrue();
     }
+
+    [SkippableFact]
+    public async Task CancelStreaming_StopsResponse()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+
+        await SelectUserAndAgentAsync(page);
+
+        // Send a message that will trigger a long response
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync("Write a very long and detailed story about a space adventure");
+        await chatInput.PressAsync("Enter");
+
+        // Wait for Cancel button to appear (signals streaming has started)
+        // The Cancel button has classes "btn btn-secondary" and text "Cancel"
+        var cancelButton = page.Locator("button.btn-secondary", new() { HasText = "Cancel" });
+        await cancelButton.WaitForAsync(new() { Timeout = 30_000 });
+
+        // Click Cancel
+        await cancelButton.ClickAsync();
+
+        // Cancel button should disappear (streaming stopped)
+        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new() { Timeout = 10_000 });
+
+        // Send button should reappear
+        var sendButton = page.Locator("button.btn-primary", new() { HasText = "Send" });
+        await Assertions.Expect(sendButton).ToBeVisibleAsync(new() { Timeout = 5_000 });
+    }
 }
