@@ -96,6 +96,7 @@
 
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
         await DataLoad.LoadAsync(_from, _to);
     }
 
@@ -113,6 +114,7 @@
         _selectedDays = int.Parse(value);
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
         await Storage.SetAsync("errors.days", value);
         await DataLoad.LoadAsync(_from, _to);
     }

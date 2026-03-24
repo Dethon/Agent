@@ -9,4 +9,6 @@ public record ToolsState
     public ToolDimension GroupBy { get; init; } = ToolDimension.ToolName;
     public ToolMetric Metric { get; init; } = ToolMetric.CallCount;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
+    public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
 }

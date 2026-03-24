@@ -7,6 +7,7 @@ public record SetScheduleEvents(IReadOnlyList<ScheduleExecutionEvent> Events) : 
 public record SetScheduleBreakdown(Dictionary<string, int> Breakdown) : IAction;
 public record SetScheduleGroupBy(ScheduleDimension GroupBy) : IAction;
 public record AppendScheduleEvent(ScheduleExecutionEvent Event) : IAction;
+public record SetScheduleDateRange(DateOnly From, DateOnly To) : IAction;
 
 public sealed class SchedulesStore : Store<SchedulesState>
 {
@@ -26,4 +27,7 @@ public sealed class SchedulesStore : Store<SchedulesState>
         {
             Events = [..s.Events, a.Event],
         });
+
+    public void SetDateRange(DateOnly from, DateOnly to) =>
+        Dispatch(new SetScheduleDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
 }

@@ -30,7 +30,8 @@
     <section class="section">
         <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
                       MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
-                      Unit="@(_state.Metric == TokenMetric.Cost ? "$" : "")" />
+                      Unit="@(_state.Metric == TokenMetric.Cost ? "$" : "")"
+                      UseFullLabels="@(_state.GroupBy == TokenDimension.Model)" />
     </section>
 
     <section class="section">
@@ -110,6 +111,7 @@
 
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
         await DataLoad.LoadAsync(_from, _to);
     }
 
@@ -132,6 +134,7 @@
         _selectedDays = int.Parse(value);
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
         await Storage.SetAsync("tokens.days", value);
         await DataLoad.LoadAsync(_from, _to);
     }

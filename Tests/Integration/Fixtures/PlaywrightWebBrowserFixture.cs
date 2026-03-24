@@ -70,21 +70,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
         }
     }
 
-    private static string FindSolutionRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
-        {
-            if (dir.GetFiles("*.sln").Length > 0)
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find solution root directory.");
-    }
+    private static string FindSolutionRoot() => E2E.Fixtures.TestHelpers.FindSolutionRoot();
 
     private async Task<bool> TryInitializeContainerAsync()
     {

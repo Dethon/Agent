@@ -8,6 +8,7 @@ public record SetTokenBreakdown(Dictionary<string, decimal> Breakdown) : IAction
 public record SetTokenGroupBy(TokenDimension GroupBy) : IAction;
 public record SetTokenMetric(TokenMetric Metric) : IAction;
 public record AppendTokenEvent(TokenUsageEvent Event) : IAction;
+public record SetTokenDateRange(DateOnly From, DateOnly To) : IAction;
 
 public sealed class TokensStore : Store<TokensState>
 {
@@ -30,4 +31,7 @@ public sealed class TokensStore : Store<TokensState>
         {
             Events = [..s.Events, a.Event],
         });
+
+    public void SetDateRange(DateOnly from, DateOnly to) =>
+        Dispatch(new SetTokenDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
 }

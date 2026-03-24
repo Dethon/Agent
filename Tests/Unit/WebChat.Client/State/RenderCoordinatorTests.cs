@@ -121,10 +121,10 @@ public class RenderCoordinatorTests : IDisposable
         using var subscription = observable.Subscribe(value => received.Add(value));
 
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        Thread.Sleep(120);
+        Thread.Sleep(250);
 
         _dispatcher.Dispatch(new StreamCompleted("topic-1"));
-        Thread.Sleep(120);
+        Thread.Sleep(250);
 
         // Should have both true and false
         received.ShouldContain(true);

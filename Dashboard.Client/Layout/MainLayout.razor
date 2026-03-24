@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject MetricsHubEffect HubEffect
 
 <div class="layout">
     <nav class="sidebar">
@@ -22,3 +23,14 @@
         @Body
     </main>
 </div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        try { await HubEffect.StartAsync(); }
+        catch
+        {
+            // ignored
+        }
+    }
+}
