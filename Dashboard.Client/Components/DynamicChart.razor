@@ -5,7 +5,7 @@
 }
 else if (ChartType == ChartMode.Donut)
 {
-    <ApexChart @key="_chartKey" TItem="ChartEntry"
+    <ApexChart TItem="ChartEntry"
                Options="_donutOptions">
         <ApexPointSeries TItem="ChartEntry"
                          Items="_entries"
@@ -17,7 +17,7 @@ else if (ChartType == ChartMode.Donut)
 }
 else
 {
-    <ApexChart @key="_chartKey" TItem="ChartEntry"
+    <ApexChart TItem="ChartEntry"
                Options="_barOptions">
         <ApexPointSeries TItem="ChartEntry"
                          Items="_entries"
@@ -38,7 +38,6 @@ else
     [Parameter] public bool UseFullLabels { get; set; }
 
     private List<ChartEntry> _entries = [];
-    private int _chartKey;
     private string _containerStyle = "";
 
     private static readonly List<string> Palette =
@@ -152,7 +151,6 @@ else
             ? $"min-height: {barHeight}px"
             : "";
 
-        _chartKey++;
     }
 
     private static string Truncate(string s, bool full)
