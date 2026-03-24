@@ -1,15 +1,23 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
-COPY Domain/Domain.csproj Domain/
-COPY Dashboard.Client/Dashboard.Client.csproj Dashboard.Client/
-COPY Observability/Observability.csproj Observability/
-RUN dotnet restore Observability/Observability.csproj
-COPY Domain/ Domain/
-COPY Dashboard.Client/ Dashboard.Client/
-COPY Observability/ Observability/
-RUN dotnet publish Observability/Observability.csproj -c Release -o /app
-
-FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# syntax=docker/dockerfile:1
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+USER $APP_UID
 WORKDIR /app
-COPY --from=build /app .
+
+FROM base-sdk:latest AS dependencies
+COPY ["Dashboard.Client/Dashboard.Client.csproj", "Dashboard.Client/"]
+COPY ["Observability/Observability.csproj", "Observability/"]
+RUN dotnet restore "Observability/Observability.csproj"
+
+FROM dependencies AS publish
+ARG BUILD_CONFIGURATION=Release
+COPY ["Dashboard.Client/", "Dashboard.Client/"]
+COPY ["Observability/", "Observability/"]
+WORKDIR "/src/Observability"
+RUN dotnet build "../Dashboard.Client/Dashboard.Client.csproj" -c $BUILD_CONFIGURATION --no-restore
+RUN dotnet publish "./Observability.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
+
+FROM base AS final
+WORKDIR /app
+ENV ASPNETCORE_ENVIRONMENT=Production
+COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "Observability.dll"]
