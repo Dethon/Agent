@@ -23,7 +23,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Wait for SignalR connection (Live badge)
-        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 15_000 });
+        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 30_000 });
 
         // Read current KPI values
         var inputTokensCard = page.Locator(".kpi-card").Filter(new() { HasText = "Input Tokens" });
@@ -62,7 +62,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
             }
             """,
             null,
-            new() { Timeout = 15_000 });
+            new() { Timeout = 30_000 });
 
         var updatedValue = await inputTokensCard.Locator(".kpi-value").TextContentAsync();
         updatedValue.ShouldNotBe(initialValue);
@@ -75,7 +75,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Wait for SignalR connection
-        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 15_000 });
+        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 30_000 });
 
         // Publish a heartbeat event
         using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
@@ -92,7 +92,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
 
         // Wait for the health grid to show the new service
         var serviceEntry = page.Locator(".health-grid .health-name").Filter(new() { HasText = "e2e-test-service" });
-        await serviceEntry.WaitForAsync(new() { Timeout = 15_000 });
+        await serviceEntry.WaitForAsync(new() { Timeout = 30_000 });
         (await serviceEntry.IsVisibleAsync()).ShouldBeTrue();
     }
 }

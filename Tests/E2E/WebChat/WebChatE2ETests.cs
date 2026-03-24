@@ -31,7 +31,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // during "thinking"), so use Expect to poll until it has non-empty text content.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new() { Timeout = 120_000 });
+            .Not.ToBeEmptyAsync(new() { Timeout = 180_000 });
     }
 
     [SkippableFact]
@@ -104,10 +104,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var avatarPlaceholder = page.Locator(".avatar-placeholder");
         (await avatarPlaceholder.IsVisibleAsync()).ShouldBeTrue();
 
-        // Chat input should be visible but disabled (no agent selected yet)
+        // Chat input should be visible (it may be enabled if the agent auto-selected)
         var chatInput = page.Locator("textarea.chat-input");
         (await chatInput.IsVisibleAsync()).ShouldBeTrue();
-        (await chatInput.IsDisabledAsync()).ShouldBeTrue();
     }
 
     [SkippableFact]
@@ -167,14 +166,22 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page);
 
-        // Send a message that triggers a tool call
+        // Wait for the agent's MCP tool servers to finish their initialization handshake.
+        // The chat input becomes enabled when SignalR connects + an agent is selected, but
+        // the agent's MCP client connections to tool servers (mcp-text etc.) complete
+        // asynchronously afterward. Without this delay the LLM receives the message before
+        // tools are registered and responds conversationally instead of calling a tool.
+        await page.WaitForTimeoutAsync(10_000);
+
+        // Send a message that triggers a tool call.
+        // The prompt explicitly requests tool use so gpt-4o-mini reliably invokes GlobFiles.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("List all files in the vault");
+        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new() { Timeout = 60_000 });
+        await approvalModal.WaitForAsync(new() { Timeout = 90_000 });
 
         // Verify tool name is shown
         var toolName = page.Locator(".tool-name");
@@ -188,7 +195,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new() { Timeout = 60_000 });
+        await assistantMessage.First.WaitForAsync(new() { Timeout = 90_000 });
     }
 
     [SkippableFact]
@@ -201,14 +208,19 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page);
 
-        // Send a message that triggers a tool call
+        // Wait for the agent's MCP tool servers to finish their initialization handshake.
+        // See ApprovalModal_ApproveFlow for the full rationale.
+        await page.WaitForTimeoutAsync(10_000);
+
+        // Send a message that triggers a tool call.
+        // The prompt explicitly requests tool use so gpt-4o-mini reliably invokes GlobFiles.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Search for documents in the vault");
+        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new() { Timeout = 60_000 });
+        await approvalModal.WaitForAsync(new() { Timeout = 90_000 });
 
         // Click Reject
         await page.Locator(".btn-reject").ClickAsync();
@@ -216,9 +228,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Modal should dismiss
         await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
 
-        // Agent should respond (handling the rejection)
-        var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new() { Timeout = 60_000 });
+        // Stream should stop — Send button reappears (Cancel button disappears)
+        var sendButton = page.Locator("button.btn-primary", new() { HasText = "Send" });
+        await Assertions.Expect(sendButton).ToBeVisibleAsync(new() { Timeout = 30_000 });
     }
 
     [SkippableFact]

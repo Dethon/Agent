@@ -32,15 +32,8 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
-        // 1. Build base-sdk image (shared, cached across runs)
-        var baseSdkImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("Dockerfile.base-sdk")
-            .WithName("base-sdk:latest")
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await baseSdkImage.CreateAsync(ct);
+        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions)
+        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
         // 2. Start Redis
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
@@ -67,6 +60,8 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-text")
             .WithEnvironment("VAULTPATH", "/vault")
+            .WithPortBinding(8080, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
         await _mcpText.StartAsync(ct);
 
@@ -84,9 +79,11 @@ public class WebChatE2EFixture : E2EFixtureBase
         _mcpChannelSignalR = new ContainerBuilder(signalRImage)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-channel-signalr")
+            .WithPortBinding(8080, true)
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
         await _mcpChannelSignalR.StartAsync(ct);
 
@@ -101,20 +98,34 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await agentImage.CreateAsync(ct);
 
+        // Inject a minimal appsettings.json so the agent only connects to E2E services.
+        // Without this, the default appsettings.json baked into the image also registers
+        // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
+        var e2eAppSettings = System.Text.Encoding.UTF8.GetBytes($$"""
+            {
+              "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
+              "redis": { "connectionString": "redis:6379" },
+              "agents": [
+                {
+                  "id": "test-agent",
+                  "name": "Test Agent",
+                  "model": "google/gemini-2.0-flash-001",
+                  "mcpServerEndpoints": [ "http://mcp-text:8080/sse" ],
+                  "whitelistPatterns": ["__none__"]
+                }
+              ],
+              "channelEndpoints": [
+                { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/sse" }
+              ],
+              "Logging": { "LogLevel": { "Default": "Information" } }
+            }
+            """);
+
         _agent = new ContainerBuilder(agentImage)
             .WithNetwork(_network)
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
-            .WithEnvironment("OPENROUTER__APIURL", "https://openrouter.ai/api/v1")
-            .WithEnvironment("OPENROUTER__APIKEY", apiKey)
-            .WithEnvironment("REDIS__CONNECTIONSTRING", "redis:6379")
-            .WithEnvironment("AGENTS__0__ID", "test-agent")
-            .WithEnvironment("AGENTS__0__NAME", "Test Agent")
-            .WithEnvironment("AGENTS__0__MODEL", "openai/gpt-4o-mini")
-            .WithEnvironment("AGENTS__0__MCPSERVERENDPOINTS__0", "http://mcp-text:8080/sse")
-            .WithEnvironment("AGENTS__0__WHITELISTPATTERNS__0", "__none__")
-            .WithEnvironment("CHANNELENDPOINTS__0__CHANNELID", "Web")
-            .WithEnvironment("CHANNELENDPOINTS__0__ENDPOINT", "http://mcp-channel-signalr:8080/sse")
+            .WithResourceMapping(e2eAppSettings, "/app/appsettings.json")
             .Build();
         await _agent.StartAsync(ct);
 
@@ -170,7 +181,29 @@ public class WebChatE2EFixture : E2EFixtureBase
 
         var host = _caddy.Hostname;
         var port = _caddy.GetMappedPublicPort(80);
-        WebChatUrl = $"http://{host}:{port}/";
+        var baseUrl = $"http://{host}:{port}";
+
+        // Wait for the full stack to be reachable through Caddy:
+        // 1. WebUI serves the Blazor app
+        // 2. SignalR negotiate endpoint is reachable (proves Caddy → mcp-channel-signalr routing works)
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                var response = await httpClient.PostAsync($"{baseUrl}/hubs/chat/negotiate?negotiateVersion=1", null, ct);
+                if ((int)response.StatusCode < 500)
+                    break;
+            }
+            catch
+            {
+                // ignore connection errors during startup
+            }
+            await Task.Delay(1_000, ct);
+        }
+
+        WebChatUrl = $"{baseUrl}/";
     }
 
     private static string? GetOpenRouterApiKey()

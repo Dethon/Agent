@@ -22,15 +22,8 @@ public class DashboardE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
-        // 1. Build base-sdk image
-        var baseSdkImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("Dockerfile.base-sdk")
-            .WithName("base-sdk:latest")
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await baseSdkImage.CreateAsync(ct);
+        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions)
+        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
         // 2. Start Redis
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
