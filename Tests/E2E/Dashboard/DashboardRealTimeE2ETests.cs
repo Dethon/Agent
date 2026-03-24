@@ -81,6 +81,10 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         // Wait for SignalR connection
         await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
+        // Brief pause after connection — the SignalR hub subscription is async and
+        // may not be fully active when connection-status shows "connected".
+        await page.WaitForTimeoutAsync(2_000);
+
         // Publish a heartbeat event
         await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
         var subscriber = redis.GetSubscriber();
