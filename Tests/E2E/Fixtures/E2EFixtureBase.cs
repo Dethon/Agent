@@ -7,6 +7,8 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
+    protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
+
     public async Task InitializeAsync()
     {
         var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
@@ -17,7 +19,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             Headless = headless
         });
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        using var cts = new CancellationTokenSource(ContainerStartupTimeout);
         await StartContainersAsync(cts.Token);
     }
 
