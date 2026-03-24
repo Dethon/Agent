@@ -22,47 +22,68 @@ public sealed class MetricsHubEffect(
 {
     private readonly List<IDisposable> _subscriptions = [];
 
-    private async Task RefreshTokenBreakdownAsync()
+    private CancellationTokenSource _tokenBreakdownCts = new();
+    private CancellationTokenSource _toolBreakdownCts = new();
+    private CancellationTokenSource _errorBreakdownCts = new();
+    private CancellationTokenSource _scheduleBreakdownCts = new();
+
+    private CancellationToken ResetCts(ref CancellationTokenSource cts)
+    {
+        cts.Cancel();
+        cts.Dispose();
+        cts = new CancellationTokenSource();
+        return cts.Token;
+    }
+
+    private async Task RefreshTokenBreakdownAsync(CancellationToken ct)
     {
         try
         {
             var s = tokensStore.State;
-            var result = await api.GetTokenGroupedAsync(s.GroupBy, s.Metric, s.From, s.To);
+            var result = await api.GetTokenGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
             tokensStore.SetBreakdown(result ?? []);
         }
+        catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
     }
 
-    private async Task RefreshToolBreakdownAsync()
+    private async Task RefreshToolBreakdownAsync(CancellationToken ct)
     {
         try
         {
             var s = toolsStore.State;
-            var result = await api.GetToolGroupedAsync(s.GroupBy, s.Metric, s.From, s.To);
+            var result = await api.GetToolGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
             toolsStore.SetBreakdown(result ?? []);
         }
+        catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
     }
 
-    private async Task RefreshErrorBreakdownAsync()
+    private async Task RefreshErrorBreakdownAsync(CancellationToken ct)
     {
         try
         {
             var s = errorsStore.State;
-            var result = await api.GetErrorGroupedAsync(s.GroupBy, s.From, s.To);
+            var result = await api.GetErrorGroupedAsync(s.GroupBy, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
             errorsStore.SetBreakdown(result ?? []);
         }
+        catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
     }
 
-    private async Task RefreshScheduleBreakdownAsync()
+    private async Task RefreshScheduleBreakdownAsync(CancellationToken ct)
     {
         try
         {
             var s = schedulesStore.State;
-            var result = await api.GetScheduleGroupedAsync(s.GroupBy, s.From, s.To);
+            var result = await api.GetScheduleGroupedAsync(s.GroupBy, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
             schedulesStore.SetBreakdown(result ?? []);
         }
+        catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
     }
 
@@ -81,26 +102,30 @@ public sealed class MetricsHubEffect(
         {
             metricsStore.IncrementFromTokenUsage(evt);
             tokensStore.AppendEvent(evt);
-            await RefreshTokenBreakdownAsync();
+            var ct = ResetCts(ref _tokenBreakdownCts);
+            await RefreshTokenBreakdownAsync(ct);
         }));
 
         _subscriptions.Add(hub.OnToolCall(async evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
             toolsStore.AppendEvent(evt);
-            await RefreshToolBreakdownAsync();
+            var ct = ResetCts(ref _toolBreakdownCts);
+            await RefreshToolBreakdownAsync(ct);
         }));
 
         _subscriptions.Add(hub.OnError(async evt =>
         {
             errorsStore.AppendEvent(evt);
-            await RefreshErrorBreakdownAsync();
+            var ct = ResetCts(ref _errorBreakdownCts);
+            await RefreshErrorBreakdownAsync(ct);
         }));
 
         _subscriptions.Add(hub.OnScheduleExecution(async evt =>
         {
             schedulesStore.AppendEvent(evt);
-            await RefreshScheduleBreakdownAsync();
+            var ct = ResetCts(ref _scheduleBreakdownCts);
+            await RefreshScheduleBreakdownAsync(ct);
         }));
 
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
@@ -122,23 +147,23 @@ public sealed class MetricsHubEffect(
             return Task.CompletedTask;
         }));
 
-        hub.Reconnected += _ =>
+        hub.OnReconnected(_ =>
         {
             connectionStore.SetConnected(true);
             return Task.CompletedTask;
-        };
+        });
 
-        hub.Closed += _ =>
+        hub.OnClosed(_ =>
         {
             connectionStore.SetConnected(false);
             return Task.CompletedTask;
-        };
+        });
 
-        hub.Reconnecting += _ =>
+        hub.OnReconnecting(_ =>
         {
             connectionStore.SetConnected(false);
             return Task.CompletedTask;
-        };
+        });
 
         await hub.StartAsync();
         connectionStore.SetConnected(true);
@@ -148,6 +173,10 @@ public sealed class MetricsHubEffect(
     {
         _subscriptions.ForEach(s => s.Dispose());
         _subscriptions.Clear();
+        _tokenBreakdownCts.Dispose();
+        _toolBreakdownCts.Dispose();
+        _errorBreakdownCts.Dispose();
+        _scheduleBreakdownCts.Dispose();
         await hub.DisposeAsync();
     }
 }

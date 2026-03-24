@@ -60,22 +60,27 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Dismiss any approval-modal-overlay left by the StreamResumeService.
         // When a new page connects, the server may push pending approval state from
         // a previous test's session, showing the overlay and blocking all clicks.
-        var overlay = page.Locator(".approval-modal-overlay");
-        if (await overlay.IsVisibleAsync())
-        {
-            var rejectBtn = page.Locator(".btn-reject");
-            if (await rejectBtn.IsVisibleAsync())
-            {
-                await rejectBtn.ClickAsync();
-            }
-
-            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
-        }
+        await DismissApprovalOverlayAsync(page);
 
         // Select a unique user identity per test to avoid server-side state pollution.
         await page.Locator(".avatar-button").ClickAsync();
         await page.Locator(".user-dropdown-item").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-        await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
+
+        // The overlay can arrive asynchronously after the initial dismiss check
+        // (StreamResumeService pushes state over SignalR), so retry the click if
+        // an overlay intercepts it.
+        try
+        {
+            await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync(
+                new LocatorClickOptions { Timeout = 5_000 });
+        }
+        catch (TimeoutException)
+        {
+            await DismissApprovalOverlayAsync(page);
+            await page.Locator(".avatar-button").ClickAsync();
+            await page.Locator(".user-dropdown-item").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
+            await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
+        }
 
         var chatInput = page.Locator("textarea.chat-input");
 
@@ -106,6 +111,21 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         if (await newTopicBtn.IsVisibleAsync())
         {
             await newTopicBtn.ClickAsync();
+        }
+    }
+
+    private static async Task DismissApprovalOverlayAsync(IPage page)
+    {
+        var overlay = page.Locator(".approval-modal-overlay");
+        if (await overlay.IsVisibleAsync())
+        {
+            var rejectBtn = page.Locator(".btn-reject");
+            if (await rejectBtn.IsVisibleAsync())
+            {
+                await rejectBtn.ClickAsync();
+            }
+
+            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
         }
     }
 

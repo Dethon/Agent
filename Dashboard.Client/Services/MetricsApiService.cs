@@ -35,22 +35,26 @@ public sealed class MetricsApiService(HttpClient http)
         http.GetFromJsonAsync<List<ServiceHealthResponse>>("api/metrics/health");
 
     public Task<Dictionary<string, decimal>?> GetTokenGroupedAsync(
-        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to) =>
+        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/tokens/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            $"api/metrics/tokens/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 
     public Task<Dictionary<string, decimal>?> GetToolGroupedAsync(
-        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to) =>
+        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
-            $"api/metrics/tools/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            $"api/metrics/tools/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 
     public Task<Dictionary<string, int>?> GetErrorGroupedAsync(
-        ErrorDimension dimension, DateOnly from, DateOnly to) =>
+        ErrorDimension dimension, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, int>>(
-            $"api/metrics/errors/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            $"api/metrics/errors/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 
     public Task<Dictionary<string, int>?> GetScheduleGroupedAsync(
-        ScheduleDimension dimension, DateOnly from, DateOnly to) =>
+        ScheduleDimension dimension, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, int>>(
-            $"api/metrics/schedules/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            $"api/metrics/schedules/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }
