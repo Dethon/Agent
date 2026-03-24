@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -90,11 +91,14 @@ public sealed class MultiAgentFactory(
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
-        var chatClient = CreateChatClient(definition.Model);
+        var agentPublisher = metricsPublisher is not null
+            ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
+            : metricsPublisher;
+        var chatClient = CreateChatClient(definition.Model, agentPublisher);
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, metricsPublisher);
+        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures)
@@ -111,13 +115,13 @@ public sealed class MultiAgentFactory(
             domainTools);
     }
 
-    private OpenRouterChatClient CreateChatClient(string model)
+    private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)
     {
         return new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             openRouterConfig.ApiKey,
             model,
-            metricsPublisher);
+            publisher ?? metricsPublisher);
     }
 }
 

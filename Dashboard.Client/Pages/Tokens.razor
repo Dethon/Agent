@@ -1,23 +1,36 @@
 @page "/tokens"
 @using Dashboard.Client.State.Tokens
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
 @inject TokensStore Store
 @inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
+@inject LocalStorageService Storage
 
 <div class="tokens-page">
     <header class="page-header">
         <h2>Token Usage</h2>
-        <TimeRangeSelector SelectedDays="_selectedDays" OnRangeChanged="OnRangeChanged" />
+        <div class="controls">
+            <PillSelector Label="Group by" Options="_dimensionOptions" Value="@_state.GroupBy.ToString()"
+                          OnChanged="OnDimensionChanged" />
+            <PillSelector Label="Metric" Options="_metricOptions" Value="@_state.Metric.ToString()"
+                          OnChanged="OnMetricChanged" />
+            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+                          OnChanged="OnTimeChanged" />
+        </div>
     </header>
 
-    <section class="section">
-        <h3>By User</h3>
-        <BarChart Items="_byUserItems" Color="var(--accent-blue)" />
+    <section class="kpi-row">
+        <KpiCard Label="Input Tokens" Value="@_inputTokens.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Output Tokens" Value="@_outputTokens.ToString("N0")" Color="var(--accent-purple)" />
+        <KpiCard Label="Cost" Value="@($"${_cost:F2}")" Color="var(--accent-green)" />
     </section>
 
     <section class="section">
-        <h3>By Model</h3>
-        <BarChart Items="_byModelItems" Color="var(--accent-purple)" />
+        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
+                      MetricLabel="@(_metricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
+                      Unit="@(_state.Metric == TokenMetric.Cost ? "$" : "")" />
     </section>
 
     <section class="section">
@@ -49,28 +62,85 @@
 @code {
     private TokensState _state = new();
     private int _selectedDays = 1;
-    private IEnumerable<BarItem> _byUserItems = [];
-    private IEnumerable<BarItem> _byModelItems = [];
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
+    private long _inputTokens;
+    private long _outputTokens;
+    private decimal _cost;
     private IDisposable? _sub;
+
+    private static readonly IReadOnlyList<PillOption> _dimensionOptions =
+    [
+        new("User", nameof(TokenDimension.User)),
+        new("Model", nameof(TokenDimension.Model)),
+        new("Agent", nameof(TokenDimension.Agent)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> _metricOptions =
+    [
+        new("Tokens", nameof(TokenMetric.Tokens)),
+        new("Cost ($)", nameof(TokenMetric.Cost)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
 
     protected override async Task OnInitializedAsync()
     {
+        var savedGroupBy = await Storage.GetAsync<TokenDimension>("tokens.groupBy");
+        var savedMetric = await Storage.GetAsync<TokenMetric>("tokens.metric");
+        var savedDays = await Storage.GetIntAsync("tokens.days");
+
+        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
+        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
+        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
-            _byUserItems = s.ByUser.OrderByDescending(kv => kv.Value).Select(kv => new BarItem(kv.Key, kv.Value));
-            _byModelItems = s.ByModel.OrderByDescending(kv => kv.Value).Select(kv => new BarItem(kv.Key, kv.Value));
+            _inputTokens = s.Events.Sum(e => (long)e.InputTokens);
+            _outputTokens = s.Events.Sum(e => (long)e.OutputTokens);
+            _cost = s.Events.Sum(e => e.Cost);
             InvokeAsync(StateHasChanged);
         });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        await DataLoad.LoadAsync(today, today);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        await DataLoad.LoadAsync(_from, _to);
     }
 
-    private async Task OnRangeChanged((DateOnly From, DateOnly To) range)
+    private async Task OnDimensionChanged(string value)
     {
-        _selectedDays = range.To.DayNumber - range.From.DayNumber + 1;
-        await DataLoad.LoadAsync(range.From, range.To);
+        Store.SetGroupBy(Enum.Parse<TokenDimension>(value));
+        await Storage.SetAsync("tokens.groupBy", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnMetricChanged(string value)
+    {
+        Store.SetMetric(Enum.Parse<TokenMetric>(value));
+        await Storage.SetAsync("tokens.metric", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnTimeChanged(string value)
+    {
+        _selectedDays = int.Parse(value);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        await Storage.SetAsync("tokens.days", value);
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private async Task ReloadBreakdown()
+    {
+        var breakdown = await Api.GetTokenGroupedAsync(
+            Store.State.GroupBy, Store.State.Metric, _from, _to);
+        Store.SetBreakdown(breakdown ?? []);
     }
 
     public void Dispose() => _sub?.Dispose();
@@ -78,8 +148,10 @@
 
 <style>
     .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: center; justify-content: space-between; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
     .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
     .table-header, .table-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr) 90px 90px 90px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
@@ -88,6 +160,7 @@
     .table-row:hover { background: rgba(255,255,255,0.03); }
 
     @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .table-header, .table-row { grid-template-columns: 65px minmax(0, 1fr) minmax(0, 1fr) 70px 70px 70px; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 480px; }

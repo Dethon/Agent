@@ -1,0 +1,55 @@
+<div class="pill-selector">
+    <span class="pill-label">@Label</span>
+    <div class="pill-group">
+        @foreach (var option in Options)
+        {
+            var isActive = option.Value == Value;
+            var isDisabled = DisabledValues.Contains(option.Value);
+            <button class="pill @(isActive ? "active" : "") @(isDisabled ? "disabled" : "")"
+                    disabled="@isDisabled"
+                    @onclick="() => SelectValue(option.Value)">
+                @option.Label
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<PillOption> Options { get; set; } = [];
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> OnChanged { get; set; }
+    [Parameter] public IReadOnlySet<string> DisabledValues { get; set; } = new HashSet<string>();
+
+    private async Task SelectValue(string value)
+    {
+        if (value != Value)
+            await OnChanged.InvokeAsync(value);
+    }
+
+    public record PillOption(string Label, string Value);
+}
+
+<style>
+    .pill-selector { display: flex; flex-direction: column; gap: 0.25rem; }
+    .pill-label { font-size: 0.65rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
+    .pill-group { display: flex; gap: 0.3rem; }
+    .pill {
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 0.25rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.75rem;
+        transition: all 0.2s;
+        white-space: nowrap;
+    }
+    .pill:hover:not(.disabled) { color: var(--text-primary); border-color: var(--accent-blue); }
+    .pill.active { background: rgba(0,210,255,0.15); color: var(--accent-blue); border-color: var(--accent-blue); }
+    .pill.disabled { opacity: 0.4; cursor: not-allowed; }
+
+    @@media (max-width: 768px) {
+        .pill { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
+    }
+</style>

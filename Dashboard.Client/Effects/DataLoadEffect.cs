@@ -26,14 +26,22 @@ public sealed class DataLoadEffect(
             var summaryTask = api.GetSummaryAsync(from, to);
             var tokensTask = api.GetTokensAsync(from, to);
             var toolsTask = api.GetToolsAsync(from, to);
-            var errorsTask = api.GetErrorsAsync();
+            var errorsTask = api.GetErrorsAsync(from, to);
             var schedulesTask = api.GetSchedulesAsync(from, to);
             var healthTask = api.GetHealthAsync();
-            var byUserTask = api.GetTokensByUserAsync(from, to);
-            var byModelTask = api.GetTokensByModelAsync(from, to);
+
+            var tokenBreakdownTask = api.GetTokenGroupedAsync(
+                tokensStore.State.GroupBy, tokensStore.State.Metric, from, to);
+            var toolBreakdownTask = api.GetToolGroupedAsync(
+                toolsStore.State.GroupBy, toolsStore.State.Metric, from, to);
+            var errorBreakdownTask = api.GetErrorGroupedAsync(
+                errorsStore.State.GroupBy, from, to);
+            var scheduleBreakdownTask = api.GetScheduleGroupedAsync(
+                schedulesStore.State.GroupBy, from, to);
 
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
-                schedulesTask, healthTask, byUserTask, byModelTask);
+                schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
+                errorBreakdownTask, scheduleBreakdownTask);
 
             var summary = await summaryTask;
             if (summary is not null)
@@ -53,9 +61,10 @@ public sealed class DataLoadEffect(
             errorsStore.SetEvents(await errorsTask ?? []);
             schedulesStore.SetEvents(await schedulesTask ?? []);
 
-            tokensStore.SetBreakdowns(
-                await byUserTask ?? [],
-                await byModelTask ?? []);
+            tokensStore.SetBreakdown(await tokenBreakdownTask ?? []);
+            toolsStore.SetBreakdown(await toolBreakdownTask ?? []);
+            errorsStore.SetBreakdown(await errorBreakdownTask ?? []);
+            schedulesStore.SetBreakdown(await scheduleBreakdownTask ?? []);
 
             var health = await healthTask;
             if (health is not null)
@@ -72,4 +81,5 @@ public sealed class DataLoadEffect(
             connectionStore.SetConnected(false);
         }
     }
+
 }

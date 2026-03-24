@@ -1,0 +1,167 @@
+@using ApexCharts
+
+<div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")">
+@if (Data is null || Data.Count == 0)
+{
+    <p class="no-data">No data available</p>
+}
+else if (ChartType == ChartMode.Donut)
+{
+    <ApexChart @key="_chartKey" TItem="ChartEntry"
+               Options="_donutOptions">
+        <ApexPointSeries TItem="ChartEntry"
+                         Items="_entries"
+                         SeriesType="SeriesType.Donut"
+                         XValue="e => e.Label"
+                         YValue="e => e.Value"
+                         OrderByDescending="e => e.Y" />
+    </ApexChart>
+}
+else
+{
+    <ApexChart @key="_chartKey" TItem="ChartEntry"
+               Options="_barOptions">
+        <ApexPointSeries TItem="ChartEntry"
+                         Items="_entries"
+                         SeriesType="SeriesType.Bar"
+                         XValue="e => e.Label"
+                         YValue="e => e.Value"
+                         OrderByDescending="e => e.Y"
+                         ShowDataLabels />
+    </ApexChart>
+}
+</div>
+
+@code {
+    [Parameter] public Dictionary<string, decimal>? Data { get; set; }
+    [Parameter] public ChartMode ChartType { get; set; } = ChartMode.HorizontalBar;
+    [Parameter] public string MetricLabel { get; set; } = "";
+    [Parameter] public string Unit { get; set; } = "";
+
+    private List<ChartEntry> _entries = [];
+    private int _chartKey;
+
+    private static readonly List<string> Palette =
+        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
+
+    private readonly ApexChartOptions<ChartEntry> _donutOptions = new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0b0",
+            Height = "250"
+        },
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
+        Colors = Palette,
+        Theme = new Theme { Mode = Mode.Dark },
+        Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } }
+    };
+
+    private readonly ApexChartOptions<ChartEntry> _barOptions = new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0b0",
+            Height = "250"
+        },
+        PlotOptions = new PlotOptions
+        {
+            Bar = new PlotOptionsBar
+                {
+                    Horizontal = true,
+                    BarHeight = "50%",
+                    DataLabels = new PlotOptionsBarDataLabels
+                    {
+                        Position = BarDataLabelPosition.Bottom,
+                        HideOverflowingLabels = false
+                    }
+                }
+        },
+        DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Style = new DataLabelsStyle { FontSize = "11px", Colors = ["#e0e0e0"] },
+            TextAnchor = TextAnchor.Start,
+            Formatter = "function(val, opts) { return '- ' + opts.w.globals.labels[opts.dataPointIndex]; }"
+        },
+        Yaxis =
+        [
+            new YAxis
+            {
+                Show = false
+            }
+        ],
+        Colors = Palette,
+        Theme = new Theme { Mode = Mode.Dark },
+        Tooltip = new Tooltip
+        {
+            Y = new TooltipY
+            {
+                Title = new TooltipYTitle { Formatter = "function() { return ''; }" }
+            }
+        },
+        Grid = new Grid
+        {
+            BorderColor = "#2a2a3e",
+            Padding = new Padding { Left = 0 }
+        }
+    };
+
+    protected override void OnParametersSet()
+    {
+        _entries = Data?
+            .OrderByDescending(kv => kv.Value)
+            .Select(kv => new ChartEntry(Truncate(kv.Key, 18), kv.Value))
+            .ToList() ?? [];
+
+        var escapedLabel = MetricLabel.Replace("'", "\\'");
+        var titleFormatter = string.IsNullOrWhiteSpace(MetricLabel)
+            ? "function() { return ''; }"
+            : $"function() {{ return '{escapedLabel}: '; }}";
+        _barOptions.Tooltip!.Y.Title.Formatter = titleFormatter;
+        _donutOptions.Tooltip!.Y.Title.Formatter = titleFormatter;
+
+        var escapedUnit = Unit.Replace("'", "\\'");
+        var hasUnit = !string.IsNullOrWhiteSpace(Unit);
+        var valueFormatter = hasUnit
+            ? Unit.StartsWith('$')
+                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
+                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
+            : "function(val) { return parseFloat(val.toFixed(2)); }";
+
+        _barOptions.Tooltip.Y.Formatter = valueFormatter;
+        _donutOptions.Tooltip.Y.Formatter = valueFormatter;
+
+        var maxValue = _entries.Count > 0 ? _entries.Max(e => e.Value) : 0;
+        var xaxisFormatter = hasUnit
+            ? Unit.StartsWith('$')
+                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
+                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
+            : "function(val) { return parseFloat(val.toFixed(2)); }";
+        _barOptions.Xaxis = new XAxis
+        {
+            Labels = new XAxisLabels { Formatter = xaxisFormatter },
+            TickAmount = maxValue <= 5 ? maxValue : null
+        };
+
+        _chartKey++;
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        var idx = s.LastIndexOf(':');
+        var short_ = idx >= 0 ? s[(idx + 1)..] : s;
+        return short_.Length <= max ? short_ : string.Concat(short_.AsSpan(0, max), "…");
+    }
+
+    public record ChartEntry(string Label, decimal Value);
+
+    public enum ChartMode { Donut, HorizontalBar }
+}
+
+<style>
+    .chart-container { min-height: 250px; }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
+</style>

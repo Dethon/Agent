@@ -10,3 +10,4 @@ DockerCompose/volumes
 .playwright-mcp
 temp
 .worktrees
+.superpowers

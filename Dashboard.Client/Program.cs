@@ -29,6 +29,7 @@ builder.Services.AddSingleton<ConnectionStore>();
 
 // Services
 builder.Services.AddScoped<MetricsApiService>();
+builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddSingleton(sp =>
 {
     var nav = sp.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
