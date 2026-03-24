@@ -1,6 +1,6 @@
 @using ApexCharts
 
-<div class="chart-container">
+<div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")">
 @if (Data is null || Data.Count == 0)
 {
     <p class="no-data">No data available</p>
@@ -26,7 +26,8 @@ else
                          SeriesType="SeriesType.Bar"
                          XValue="e => e.Label"
                          YValue="e => e.Value"
-                         OrderByDescending="e => e.Y" />
+                         OrderByDescending="e => e.Y"
+                         ShowDataLabels />
     </ApexChart>
 }
 </div>
@@ -34,6 +35,8 @@ else
 @code {
     [Parameter] public Dictionary<string, decimal>? Data { get; set; }
     [Parameter] public ChartMode ChartType { get; set; } = ChartMode.HorizontalBar;
+    [Parameter] public string MetricLabel { get; set; } = "";
+    [Parameter] public string Unit { get; set; } = "";
 
     private List<ChartEntry> _entries = [];
     private int _chartKey;
@@ -51,7 +54,8 @@ else
         },
         Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
         Colors = Palette,
-        Theme = new Theme { Mode = Mode.Dark }
+        Theme = new Theme { Mode = Mode.Dark },
+        Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } }
     };
 
     private readonly ApexChartOptions<ChartEntry> _barOptions = new()
@@ -64,10 +68,41 @@ else
         },
         PlotOptions = new PlotOptions
         {
-            Bar = new PlotOptionsBar { Horizontal = true, BarHeight = "50%" }
+            Bar = new PlotOptionsBar
+                {
+                    Horizontal = true,
+                    BarHeight = "50%",
+                    DataLabels = new PlotOptionsBarDataLabels
+                    {
+                        Position = BarDataLabelPosition.Bottom,
+                        HideOverflowingLabels = false
+                    }
+                }
         },
+        DataLabels = new DataLabels
+        {
+            Enabled = true,
+            Style = new DataLabelsStyle { FontSize = "11px", Colors = ["#e0e0e0"] },
+            TextAnchor = TextAnchor.Start,
+            OffsetX = 65,
+            Formatter = "function(val, opts) { return opts.w.globals.labels[opts.dataPointIndex]; }"
+        },
+        Yaxis =
+        [
+            new YAxis
+            {
+                Show = false
+            }
+        ],
         Colors = Palette,
         Theme = new Theme { Mode = Mode.Dark },
+        Tooltip = new Tooltip
+        {
+            Y = new TooltipY
+            {
+                Title = new TooltipYTitle { Formatter = "function() { return ''; }" }
+            }
+        },
         Grid = new Grid
         {
             BorderColor = "#2a2a3e"
@@ -78,9 +113,47 @@ else
     {
         _entries = Data?
             .OrderByDescending(kv => kv.Value)
-            .Select(kv => new ChartEntry(kv.Key, kv.Value))
+            .Select(kv => new ChartEntry(Truncate(kv.Key, 18), kv.Value))
             .ToList() ?? [];
+
+        var escapedLabel = MetricLabel.Replace("'", "\\'");
+        var titleFormatter = string.IsNullOrWhiteSpace(MetricLabel)
+            ? "function() { return ''; }"
+            : $"function() {{ return '{escapedLabel}: '; }}";
+        _barOptions.Tooltip!.Y.Title.Formatter = titleFormatter;
+        _donutOptions.Tooltip!.Y.Title.Formatter = titleFormatter;
+
+        var escapedUnit = Unit.Replace("'", "\\'");
+        var hasUnit = !string.IsNullOrWhiteSpace(Unit);
+        var valueFormatter = hasUnit
+            ? Unit.StartsWith('$')
+                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
+                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
+            : "function(val) { return parseFloat(val.toFixed(2)); }";
+
+        _barOptions.Tooltip.Y.Formatter = valueFormatter;
+        _donutOptions.Tooltip.Y.Formatter = valueFormatter;
+
+        var maxValue = _entries.Count > 0 ? _entries.Max(e => e.Value) : 0;
+        var xaxisFormatter = hasUnit
+            ? Unit.StartsWith('$')
+                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
+                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
+            : "function(val) { return parseFloat(val.toFixed(2)); }";
+        _barOptions.Xaxis = new XAxis
+        {
+            Labels = new XAxisLabels { Formatter = xaxisFormatter },
+            TickAmount = maxValue <= 5 ? maxValue : null
+        };
+
         _chartKey++;
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        var idx = s.LastIndexOf(':');
+        var short_ = idx >= 0 ? s[(idx + 1)..] : s;
+        return short_.Length <= max ? short_ : string.Concat(short_.AsSpan(0, max), "…");
     }
 
     public record ChartEntry(string Label, decimal Value);

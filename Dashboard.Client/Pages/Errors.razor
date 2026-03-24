@@ -6,6 +6,7 @@
 @inject ErrorsStore Store
 @inject DataLoadEffect DataLoad
 @inject MetricsApiService Api
+@inject LocalStorageService Storage
 
 <div class="errors-page">
     <header class="page-header">
@@ -24,7 +25,8 @@
     </section>
 
     <section class="section">
-        <DynamicChart Data="_breakdownDecimal" ChartType="DynamicChart.ChartMode.HorizontalBar" />
+        <DynamicChart Data="_breakdownDecimal" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                      MetricLabel="Error Count" />
     </section>
 
     <section class="section">
@@ -78,6 +80,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var savedGroupBy = await Storage.GetAsync<ErrorDimension>("errors.groupBy");
+        var savedDays = await Storage.GetIntAsync("errors.days");
+
+        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
+        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
@@ -87,7 +95,7 @@
         });
 
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to;
+        _from = _to.AddDays(-(_selectedDays - 1));
         await DataLoad.LoadAsync(_from, _to);
     }
 
@@ -95,6 +103,7 @@
     {
         var dim = Enum.Parse<ErrorDimension>(value);
         Store.SetGroupBy(dim);
+        await Storage.SetAsync("errors.groupBy", value);
         var breakdown = await Api.GetErrorGroupedAsync(dim, _from, _to);
         Store.SetBreakdown(breakdown ?? []);
     }
@@ -104,6 +113,7 @@
         _selectedDays = int.Parse(value);
         _to = DateOnly.FromDateTime(DateTime.UtcNow);
         _from = _to.AddDays(-(_selectedDays - 1));
+        await Storage.SetAsync("errors.days", value);
         await DataLoad.LoadAsync(_from, _to);
     }
 
