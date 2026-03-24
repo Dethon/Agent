@@ -29,8 +29,12 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         var inputTokensCard = page.Locator(".kpi-card").Filter(new LocatorFilterOptions { HasText = "Input Tokens" });
         var initialValue = await inputTokensCard.Locator(".kpi-value").TextContentAsync();
 
+        // Brief pause after connection — the SignalR hub subscription is async and
+        // may not be fully active when connection-status shows "connected".
+        await page.WaitForTimeoutAsync(2_000);
+
         // Publish a token usage event to Redis
-        using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
         var subscriber = redis.GetSubscriber();
         var channel = RedisChannel.Literal("metrics:events");
 
@@ -78,7 +82,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
         await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Publish a heartbeat event
-        using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
+        await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
         var subscriber = redis.GetSubscriber();
         var channel = RedisChannel.Literal("metrics:events");
 
