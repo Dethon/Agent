@@ -5,7 +5,7 @@
 }
 else if (ChartType == ChartMode.Donut)
 {
-    <ApexChart TItem="ChartEntry"
+    <ApexChart @ref="_chart" @key="_structureKey" TItem="ChartEntry"
                Options="_donutOptions">
         <ApexPointSeries TItem="ChartEntry"
                          Items="_entries"
@@ -17,7 +17,7 @@ else if (ChartType == ChartMode.Donut)
 }
 else
 {
-    <ApexChart TItem="ChartEntry"
+    <ApexChart @ref="_chart" @key="_structureKey" TItem="ChartEntry"
                Options="_barOptions">
         <ApexPointSeries TItem="ChartEntry"
                          Items="_entries"
@@ -37,8 +37,13 @@ else
     [Parameter] public string Unit { get; set; } = "";
     [Parameter] public bool UseFullLabels { get; set; }
 
+    private ApexChart<ChartEntry>? _chart;
     private List<ChartEntry> _entries = [];
     private string _containerStyle = "";
+    private int _structureKey;
+    private int _prevEntryCount;
+    private ChartMode _prevChartType;
+    private bool _needsUpdate;
 
     private static readonly List<string> Palette =
         ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
@@ -49,7 +54,12 @@ else
         {
             Background = "transparent",
             ForeColor = "#a0a0b0",
-            Height = "250"
+            Height = "250",
+            Animations = new Animations
+            {
+                Enabled = true,
+                AnimateGradually = new AnimateGradually { Enabled = false }
+            }
         },
         Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
         Colors = Palette,
@@ -63,7 +73,12 @@ else
         {
             Background = "transparent",
             ForeColor = "#a0a0b0",
-            Height = "250"
+            Height = "250",
+            Animations = new Animations
+            {
+                Enabled = true,
+                AnimateGradually = new AnimateGradually { Enabled = false }
+            }
         },
         PlotOptions = new PlotOptions
         {
@@ -151,6 +166,24 @@ else
             ? $"min-height: {barHeight}px"
             : "";
 
+        // Structural changes (category count, chart type) require full recreation
+        var structureChanged = _entries.Count != _prevEntryCount || ChartType != _prevChartType;
+        _prevEntryCount = _entries.Count;
+        _prevChartType = ChartType;
+
+        if (structureChanged)
+            _structureKey++;
+        else
+            _needsUpdate = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsUpdate && _chart is not null)
+        {
+            _needsUpdate = false;
+            try { await _chart.UpdateSeriesAsync(true); } catch { }
+        }
     }
 
     private static string Truncate(string s, bool full)
