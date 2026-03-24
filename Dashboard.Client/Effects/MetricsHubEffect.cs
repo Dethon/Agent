@@ -27,22 +27,26 @@ public sealed class MetricsHubEffect(
         {
             metricsStore.IncrementFromTokenUsage(evt);
             tokensStore.AppendEvent(evt);
+            return Task.CompletedTask;
         }));
 
         _subscriptions.Add(hub.OnToolCall(evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
             toolsStore.AppendEvent(evt);
+            return Task.CompletedTask;
         }));
 
         _subscriptions.Add(hub.OnError(evt =>
         {
             errorsStore.AppendEvent(evt);
+            return Task.CompletedTask;
         }));
 
         _subscriptions.Add(hub.OnScheduleExecution(evt =>
         {
             schedulesStore.AppendEvent(evt);
+            return Task.CompletedTask;
         }));
 
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
@@ -61,6 +65,7 @@ public sealed class MetricsHubEffect(
             }
 
             healthStore.UpdateHealth(current);
+            return Task.CompletedTask;
         }));
 
         hub.Reconnected += _ =>

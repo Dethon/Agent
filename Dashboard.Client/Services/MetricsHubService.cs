@@ -19,19 +19,19 @@ public sealed class MetricsHubService : IAsyncDisposable
 
     public HubConnectionState ConnectionState => _connection.State;
 
-    public IDisposable OnTokenUsage(Action<TokenUsageEvent> handler) =>
+    public IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler) =>
         _connection.On("OnTokenUsage", handler);
 
-    public IDisposable OnToolCall(Action<ToolCallEvent> handler) =>
+    public IDisposable OnToolCall(Func<ToolCallEvent, Task> handler) =>
         _connection.On("OnToolCall", handler);
 
-    public IDisposable OnError(Action<ErrorEvent> handler) =>
+    public IDisposable OnError(Func<ErrorEvent, Task> handler) =>
         _connection.On("OnError", handler);
 
-    public IDisposable OnScheduleExecution(Action<ScheduleExecutionEvent> handler) =>
+    public IDisposable OnScheduleExecution(Func<ScheduleExecutionEvent, Task> handler) =>
         _connection.On("OnScheduleExecution", handler);
 
-    public IDisposable OnHealthUpdate(Action<ServiceHealthUpdate> handler) =>
+    public IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler) =>
         _connection.On("OnHealthUpdate", handler);
 
     public event Func<string?, Task>? Reconnected
