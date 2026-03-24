@@ -135,7 +135,8 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithPortBinding(8080, true)
             .WithEnvironment("USERS__0__ID", "TestUser")
             .WithEnvironment("USERS__0__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test")
-            .WithEnvironment("AGENTURL", "http://agent:8080")
+            // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
+            .WithEnvironment("AGENTURL", "")
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/manifest.webmanifest")))
             .Build();
