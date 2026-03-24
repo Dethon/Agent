@@ -228,9 +228,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Modal should dismiss
         await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
 
-        // Stream should stop — Send button reappears (Cancel button disappears)
-        var sendButton = page.Locator("button.btn-primary", new() { HasText = "Send" });
-        await Assertions.Expect(sendButton).ToBeVisibleAsync(new() { Timeout = 30_000 });
+        // Stream should stop — Cancel button disappears (only visible while streaming)
+        var cancelButton = page.Locator("button.btn-secondary", new() { HasText = "Cancel" });
+        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new() { Timeout = 30_000 });
     }
 
     [SkippableFact]
