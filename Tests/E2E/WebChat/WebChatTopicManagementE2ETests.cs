@@ -37,13 +37,11 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         // Wait for response in topic 2
         await page.Locator(".message-content").First.WaitForAsync(new() { Timeout = 60_000 });
 
-        // Click topic 1 in sidebar
-        var topics = page.Locator(".topic-item");
-        (await topics.CountAsync()).ShouldBeGreaterThanOrEqualTo(2);
-
-        // Topics are ordered by LastMessageAt descending (newest first),
-        // so the last item in the list is the oldest topic (topic 1)
-        await topics.Last.ClickAsync();
+        // Find topic 1 in the sidebar by its content and click it.
+        // Can't rely on position — other tests' topics may also be visible.
+        var topic1 = page.Locator(".topic-item", new() { HasText = "Topic one" });
+        await topic1.WaitForAsync(new() { Timeout = 10_000 });
+        await topic1.ClickAsync();
 
         // Verify topic 1's messages are shown
         var messageContent = page.Locator(".message-content", new() { HasText = "Topic one message for E2E" });
@@ -65,22 +63,17 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         await chatInput.FillAsync("Topic to delete in E2E test");
         await chatInput.PressAsync("Enter");
 
-        // Wait for the topic to appear in sidebar
-        var topicItem = page.Locator(".topic-item");
-        await topicItem.First.WaitForAsync(new() { Timeout = 30_000 });
+        // Wait for our topic to appear in sidebar (match by text content)
+        var ourTopic = page.Locator(".topic-item", new() { HasText = "Topic to delete" });
+        await ourTopic.WaitForAsync(new() { Timeout = 30_000 });
 
-        var initialCount = await topicItem.CountAsync();
-
-        // Click delete button on the topic (shows confirm)
-        await topicItem.First.Locator(".delete-btn").ClickAsync();
+        // Click delete button on our topic (shows confirm)
+        await ourTopic.Locator(".delete-btn").ClickAsync();
 
         // Confirm deletion
         await page.Locator(".confirm-delete-btn").ClickAsync();
 
-        // Topic count should decrease
-        await page.WaitForFunctionAsync(
-            $"() => document.querySelectorAll('.topic-item').length < {initialCount}",
-            null,
-            new() { Timeout = 10_000 });
+        // Our specific topic should disappear
+        await Assertions.Expect(ourTopic).ToBeHiddenAsync(new() { Timeout = 10_000 });
     }
 }
