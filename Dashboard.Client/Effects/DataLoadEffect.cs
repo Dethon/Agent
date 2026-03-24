@@ -23,6 +23,11 @@ public sealed class DataLoadEffect(
     {
         try
         {
+            tokensStore.SetDateRange(from, to);
+            toolsStore.SetDateRange(from, to);
+            errorsStore.SetDateRange(from, to);
+            schedulesStore.SetDateRange(from, to);
+
             var summaryTask = api.GetSummaryAsync(from, to);
             var tokensTask = api.GetTokensAsync(from, to);
             var toolsTask = api.GetToolsAsync(from, to);
