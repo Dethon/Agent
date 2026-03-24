@@ -11,6 +11,7 @@ namespace Dashboard.Client.Effects;
 
 public sealed class MetricsHubEffect(
     MetricsHubService hub,
+    MetricsApiService api,
     MetricsStore metricsStore,
     HealthStore healthStore,
     TokensStore tokensStore,
@@ -21,32 +22,76 @@ public sealed class MetricsHubEffect(
 {
     private readonly List<IDisposable> _subscriptions = [];
 
+    private async Task RefreshTokenBreakdownAsync()
+    {
+        try
+        {
+            var s = tokensStore.State;
+            var result = await api.GetTokenGroupedAsync(s.GroupBy, s.Metric, s.From, s.To);
+            tokensStore.SetBreakdown(result ?? []);
+        }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
+    private async Task RefreshToolBreakdownAsync()
+    {
+        try
+        {
+            var s = toolsStore.State;
+            var result = await api.GetToolGroupedAsync(s.GroupBy, s.Metric, s.From, s.To);
+            toolsStore.SetBreakdown(result ?? []);
+        }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
+    private async Task RefreshErrorBreakdownAsync()
+    {
+        try
+        {
+            var s = errorsStore.State;
+            var result = await api.GetErrorGroupedAsync(s.GroupBy, s.From, s.To);
+            errorsStore.SetBreakdown(result ?? []);
+        }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
+    private async Task RefreshScheduleBreakdownAsync()
+    {
+        try
+        {
+            var s = schedulesStore.State;
+            var result = await api.GetScheduleGroupedAsync(s.GroupBy, s.From, s.To);
+            schedulesStore.SetBreakdown(result ?? []);
+        }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
     public async Task StartAsync()
     {
-        _subscriptions.Add(hub.OnTokenUsage(evt =>
+        _subscriptions.Add(hub.OnTokenUsage(async evt =>
         {
             metricsStore.IncrementFromTokenUsage(evt);
             tokensStore.AppendEvent(evt);
-            return Task.CompletedTask;
+            await RefreshTokenBreakdownAsync();
         }));
 
-        _subscriptions.Add(hub.OnToolCall(evt =>
+        _subscriptions.Add(hub.OnToolCall(async evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
             toolsStore.AppendEvent(evt);
-            return Task.CompletedTask;
+            await RefreshToolBreakdownAsync();
         }));
 
-        _subscriptions.Add(hub.OnError(evt =>
+        _subscriptions.Add(hub.OnError(async evt =>
         {
             errorsStore.AppendEvent(evt);
-            return Task.CompletedTask;
+            await RefreshErrorBreakdownAsync();
         }));
 
-        _subscriptions.Add(hub.OnScheduleExecution(evt =>
+        _subscriptions.Add(hub.OnScheduleExecution(async evt =>
         {
             schedulesStore.AppendEvent(evt);
-            return Task.CompletedTask;
+            await RefreshScheduleBreakdownAsync();
         }));
 
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
