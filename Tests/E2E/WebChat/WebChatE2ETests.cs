@@ -16,7 +16,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await SelectUserAndAgentAsync(page);
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Type and send message
         var chatInput = page.Locator("textarea.chat-input");
@@ -42,7 +42,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await SelectUserAndAgentAsync(page);
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Send a message to create a topic
         var chatInput = page.Locator("textarea.chat-input");
@@ -55,12 +55,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         (await topicItem.CountAsync()).ShouldBeGreaterThan(0);
     }
 
-    internal static async Task SelectUserAndAgentAsync(IPage page)
+    internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)
     {
-        // Select user identity
+        // Select a unique user identity per test to avoid server-side state pollution
+        // (stream resume, pending approvals) between tests sharing the same fixture.
         await page.Locator(".avatar-button").ClickAsync();
         await page.Locator(".user-dropdown-item").First.WaitForAsync(new() { Timeout = 5_000 });
-        await page.Locator(".user-dropdown-item").First.ClickAsync();
+        await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
 
         var chatInput = page.Locator("textarea.chat-input");
 
@@ -69,26 +70,27 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         try
         {
             await Assertions.Expect(chatInput).ToBeEnabledAsync(new() { Timeout = 30_000 });
-            return;
         }
         catch (TimeoutException)
         {
             // Input still disabled — initialization may not have auto-selected an agent;
             // fall through to manually open the dropdown and select the first agent.
+            var agentDropdown = page.Locator(".dropdown-trigger");
+            if (await agentDropdown.IsVisibleAsync())
+            {
+                await agentDropdown.ClickAsync();
+                var agentItem = page.Locator(".dropdown-item").First;
+                await agentItem.WaitForAsync(new() { Timeout = 10_000 });
+                await agentItem.ClickAsync();
+            }
+
+            await Assertions.Expect(chatInput).ToBeEnabledAsync(new() { Timeout = 10_000 });
         }
 
-        // Manually select an agent via the sidebar dropdown
-        var agentDropdown = page.Locator(".dropdown-trigger");
-        if (await agentDropdown.IsVisibleAsync())
-        {
-            await agentDropdown.ClickAsync();
-            var agentItem = page.Locator(".dropdown-item").First;
-            await agentItem.WaitForAsync(new() { Timeout = 10_000 });
-            await agentItem.ClickAsync();
-        }
-
-        // Final wait for chat input to become enabled
-        await Assertions.Expect(chatInput).ToBeEnabledAsync(new() { Timeout = 10_000 });
+        // Start a fresh topic so previous test messages don't pollute context.
+        var newTopicBtn = page.Locator(".new-topic-btn");
+        if (await newTopicBtn.IsVisibleAsync())
+            await newTopicBtn.ClickAsync();
     }
 
 
@@ -117,6 +119,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
+        // Ensure the Blazor WASM app has fully rendered before interacting
+        await page.Locator(".avatar-button").WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 10_000 });
+
         // Click avatar button to open dropdown
         await page.Locator(".avatar-button").ClickAsync();
 
@@ -124,8 +129,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var dropdown = page.Locator(".user-dropdown-menu");
         await dropdown.WaitForAsync(new() { Timeout = 5_000 });
 
-        // Select the first available user
-        await page.Locator(".user-dropdown-item").First.ClickAsync();
+        // Select a unique user to avoid server-side state pollution from other tests
+        var userIndex = fixture.NextUserIndex();
+        await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
 
         // Avatar image should replace placeholder
         var avatarImage = page.Locator("img.avatar-image");
@@ -164,7 +170,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await SelectUserAndAgentAsync(page);
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Wait for the agent's MCP tool servers to finish their initialization handshake.
         // The chat input becomes enabled when SignalR connects + an agent is selected, but
@@ -206,7 +212,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await SelectUserAndAgentAsync(page);
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Wait for the agent's MCP tool servers to finish their initialization handshake.
         // See ApprovalModal_ApproveFlow for the full rationale.
@@ -241,7 +247,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await SelectUserAndAgentAsync(page);
+        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Send a message that will trigger a long response
         var chatInput = page.Locator("textarea.chat-input");

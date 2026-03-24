@@ -16,7 +16,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page);
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Send first message (creates topic 1)
         var chatInput = page.Locator("textarea.chat-input");
@@ -58,7 +58,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page);
+        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
         // Send a message to create a topic
         var chatInput = page.Locator("textarea.chat-input");

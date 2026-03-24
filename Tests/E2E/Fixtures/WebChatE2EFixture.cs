@@ -16,6 +16,11 @@ public class WebChatE2EFixture : E2EFixtureBase
     private IContainer? _caddy;
 
     public string WebChatUrl { get; private set; } = "";
+    private int _userIndex;
+
+    /// <summary>Returns the next user dropdown index (0-9) so each test uses a unique user identity,
+    /// avoiding server-side state pollution (stream resume, pending approvals) between tests.</summary>
+    public int NextUserIndex() => _userIndex++ % 10;
 
     protected override TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(15);
 
@@ -144,8 +149,26 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
             .WithPortBinding(8080, true)
-            .WithEnvironment("USERS__0__ID", "TestUser")
-            .WithEnvironment("USERS__0__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test")
+            .WithEnvironment("USERS__0__ID", "TestUser-0")
+            .WithEnvironment("USERS__0__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test0")
+            .WithEnvironment("USERS__1__ID", "TestUser-1")
+            .WithEnvironment("USERS__1__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test1")
+            .WithEnvironment("USERS__2__ID", "TestUser-2")
+            .WithEnvironment("USERS__2__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test2")
+            .WithEnvironment("USERS__3__ID", "TestUser-3")
+            .WithEnvironment("USERS__3__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test3")
+            .WithEnvironment("USERS__4__ID", "TestUser-4")
+            .WithEnvironment("USERS__4__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test4")
+            .WithEnvironment("USERS__5__ID", "TestUser-5")
+            .WithEnvironment("USERS__5__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test5")
+            .WithEnvironment("USERS__6__ID", "TestUser-6")
+            .WithEnvironment("USERS__6__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test6")
+            .WithEnvironment("USERS__7__ID", "TestUser-7")
+            .WithEnvironment("USERS__7__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test7")
+            .WithEnvironment("USERS__8__ID", "TestUser-8")
+            .WithEnvironment("USERS__8__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test8")
+            .WithEnvironment("USERS__9__ID", "TestUser-9")
+            .WithEnvironment("USERS__9__AVATARURL", "https://api.dicebear.com/7.x/bottts/svg?seed=test9")
             // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
             .WithEnvironment("AGENTURL", "")
             .WithWaitStrategy(Wait.ForUnixContainer()

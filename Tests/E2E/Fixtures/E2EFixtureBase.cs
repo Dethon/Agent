@@ -6,7 +6,6 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
 
     public async Task InitializeAsync()
@@ -28,7 +27,11 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         if (_browser is null)
             throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first.");
 
-        var context = await _browser.NewContextAsync();
+        // Close all existing contexts to free resources.
+        foreach (var ctx in _browser.Contexts.ToList())
+            await ctx.CloseAsync();
+
+        var context = await _browser.NewContextAsync(new() { IgnoreHTTPSErrors = true });
         return await context.NewPageAsync();
     }
 
