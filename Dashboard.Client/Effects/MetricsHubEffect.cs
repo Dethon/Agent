@@ -66,8 +66,13 @@ public sealed class MetricsHubEffect(
         catch { /* Breakdown stays at last known value */ }
     }
 
+    private bool _started;
+
     public async Task StartAsync()
     {
+        if (_started) return;
+        _started = true;
+
         _subscriptions.Add(hub.OnTokenUsage(async evt =>
         {
             metricsStore.IncrementFromTokenUsage(evt);

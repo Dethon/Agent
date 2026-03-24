@@ -16,7 +16,6 @@
 @inject SchedulesStore Schedules
 @inject ConnectionStore Connection
 @inject DataLoadEffect DataLoad
-@inject MetricsHubEffect HubEffect
 @inject LocalStorageService Storage
 
 <div class="overview-page">
@@ -98,7 +97,6 @@
         _from = _to.AddDays(-(_selectedDays - 1));
         await DataLoad.LoadAsync(_from, _to);
 
-        try { await HubEffect.StartAsync(); } catch { /* hub connection failure is non-fatal */ }
     }
 
     private async Task OnTimeChanged(string value)
