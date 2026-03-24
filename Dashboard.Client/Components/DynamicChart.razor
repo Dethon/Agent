@@ -1,4 +1,4 @@
-<div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")">
+<div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")" style="@_containerStyle">
 @if (Data is null || Data.Count == 0)
 {
     <p class="no-data">No data available</p>
@@ -35,9 +35,11 @@ else
     [Parameter] public ChartMode ChartType { get; set; } = ChartMode.HorizontalBar;
     [Parameter] public string MetricLabel { get; set; } = "";
     [Parameter] public string Unit { get; set; } = "";
+    [Parameter] public bool UseFullLabels { get; set; }
 
     private List<ChartEntry> _entries = [];
     private int _chartKey;
+    private string _containerStyle = "";
 
     private static readonly List<string> Palette =
         ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
@@ -111,7 +113,7 @@ else
     {
         _entries = Data?
             .OrderByDescending(kv => kv.Value)
-            .Select(kv => new ChartEntry(Truncate(kv.Key, 18), kv.Value))
+            .Select(kv => new ChartEntry(Truncate(kv.Key, UseFullLabels), kv.Value))
             .ToList() ?? [];
 
         var escapedLabel = MetricLabel.Replace("'", "\\'");
@@ -144,14 +146,19 @@ else
             TickAmount = maxValue <= 5 ? maxValue : null
         };
 
+        var barHeight = Math.Max(250, _entries.Count * 50);
+        _barOptions.Chart!.Height = barHeight.ToString();
+        _containerStyle = ChartType == ChartMode.HorizontalBar && _entries.Count > 0
+            ? $"min-height: {barHeight}px"
+            : "";
+
         _chartKey++;
     }
 
-    private static string Truncate(string s, int max)
+    private static string Truncate(string s, bool full)
     {
-        var idx = s.LastIndexOf(':');
-        var @short = idx >= 0 ? s[(idx + 1)..] : s;
-        return @short.Length <= max ? @short : string.Concat(@short.AsSpan(0, max), "…");
+        var label = full ? s : s[(s.LastIndexOf(':') + 1)..];
+        return label.Length <= 40 ? label : string.Concat(label.AsSpan(0, 40), "…");
     }
 
     public record ChartEntry(string Label, decimal Value);
@@ -160,6 +167,6 @@ else
 }
 
 <style>
-    .chart-container { min-height: 250px; }
+    .chart-container { min-height: 250px; transition: min-height 0.2s ease; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
 </style>
