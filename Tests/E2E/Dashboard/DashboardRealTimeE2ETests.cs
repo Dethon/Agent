@@ -11,7 +11,7 @@ namespace Tests.E2E.Dashboard;
 [Trait("Category", "E2E")]
 public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
@@ -20,13 +20,13 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
     public async Task LiveMetrics_UpdateWithoutRefresh()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Wait for SignalR connection (Live badge)
-        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 30_000 });
+        await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Read current KPI values
-        var inputTokensCard = page.Locator(".kpi-card").Filter(new() { HasText = "Input Tokens" });
+        var inputTokensCard = page.Locator(".kpi-card").Filter(new LocatorFilterOptions { HasText = "Input Tokens" });
         var initialValue = await inputTokensCard.Locator(".kpi-value").TextContentAsync();
 
         // Publish a token usage event to Redis
@@ -43,7 +43,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
             Cost = 0.01m,
             AgentId = "test-agent"
         };
-        var json = JsonSerializer.Serialize<MetricEvent>(tokenEvent, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(tokenEvent, _jsonOptions);
         await subscriber.PublishAsync(channel, json);
 
         // Wait for the KPI value to change (SignalR push, no page refresh)
@@ -62,7 +62,7 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
             }
             """,
             null,
-            new() { Timeout = 30_000 });
+            new PageWaitForFunctionOptions { Timeout = 30_000 });
 
         var updatedValue = await inputTokensCard.Locator(".kpi-value").TextContentAsync();
         updatedValue.ShouldNotBe(initialValue);
@@ -72,10 +72,10 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
     public async Task HealthGrid_ReflectsServiceStatus()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Wait for SignalR connection
-        await page.Locator(".connection-status.connected").WaitForAsync(new() { Timeout = 30_000 });
+        await page.Locator(".connection-status.connected").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Publish a heartbeat event
         using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.RedisConnectionString);
@@ -87,12 +87,12 @@ public class DashboardRealTimeE2ETests(DashboardE2EFixture fixture)
             Service = "e2e-test-service",
             AgentId = "test-agent"
         };
-        var json = JsonSerializer.Serialize<MetricEvent>(heartbeat, JsonOptions);
+        var json = JsonSerializer.Serialize<MetricEvent>(heartbeat, _jsonOptions);
         await subscriber.PublishAsync(channel, json);
 
         // Wait for the health grid to show the new service
-        var serviceEntry = page.Locator(".health-grid .health-name").Filter(new() { HasText = "e2e-test-service" });
-        await serviceEntry.WaitForAsync(new() { Timeout = 30_000 });
+        var serviceEntry = page.Locator(".health-grid .health-name").Filter(new LocatorFilterOptions { HasText = "e2e-test-service" });
+        await serviceEntry.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await serviceEntry.IsVisibleAsync()).ShouldBeTrue();
     }
 }

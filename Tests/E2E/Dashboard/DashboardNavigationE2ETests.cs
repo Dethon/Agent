@@ -1,5 +1,4 @@
 using Microsoft.Playwright;
-using Shouldly;
 using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.Dashboard;
@@ -16,7 +15,7 @@ public class DashboardNavigationE2ETests(DashboardE2EFixture fixture)
     public async Task NavigateToPage_ShowsCorrectPage(string href, string expectedTitle)
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Click the sidebar nav link
         var navLink = page.Locator($"nav.sidebar a[href='{href}']");

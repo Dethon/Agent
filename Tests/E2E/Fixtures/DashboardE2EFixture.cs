@@ -67,9 +67,20 @@ public class DashboardE2EFixture : E2EFixtureBase
 
     protected override async Task StopContainersAsync()
     {
-        if (_observability is not null) await _observability.DisposeAsync();
-        if (_redis is not null) await _redis.DisposeAsync();
-        if (_network is not null) await _network.DeleteAsync();
+        if (_observability is not null)
+        {
+            await _observability.DisposeAsync();
+        }
+
+        if (_redis is not null)
+        {
+            await _redis.DisposeAsync();
+        }
+
+        if (_network is not null)
+        {
+            await _network.DeleteAsync();
+        }
     }
 }
 

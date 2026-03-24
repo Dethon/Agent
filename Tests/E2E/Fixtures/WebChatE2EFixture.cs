@@ -28,7 +28,9 @@ public class WebChatE2EFixture : E2EFixtureBase
     {
         var apiKey = GetOpenRouterApiKey();
         if (string.IsNullOrEmpty(apiKey))
+        {
             return;
+        }
 
         var solutionRoot = TestHelpers.FindSolutionRoot();
 
@@ -106,7 +108,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Without this, the default appsettings.json baked into the image also registers
         // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
-        var e2eAppSettings = System.Text.Encoding.UTF8.GetBytes($$"""
+        var e2EAppSettings = System.Text.Encoding.UTF8.GetBytes($$"""
             {
               "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
               "redis": { "connectionString": "redis:6379" },
@@ -130,7 +132,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithNetwork(_network)
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
-            .WithResourceMapping(e2eAppSettings, "/app/appsettings.json")
+            .WithResourceMapping(e2EAppSettings, "/app/appsettings.json")
             .Build();
         await _agent.StartAsync(ct);
 
@@ -209,7 +211,8 @@ public class WebChatE2EFixture : E2EFixtureBase
         // Wait for the full stack to be reachable through Caddy:
         // 1. WebUI serves the Blazor app
         // 2. SignalR negotiate endpoint is reachable (proves Caddy → mcp-channel-signalr routing works)
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var httpClient = new HttpClient();
+        httpClient.Timeout = TimeSpan.FromSeconds(5);
         var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
         while (DateTime.UtcNow < deadline)
         {
@@ -217,7 +220,9 @@ public class WebChatE2EFixture : E2EFixtureBase
             {
                 var response = await httpClient.PostAsync($"{baseUrl}/hubs/chat/negotiate?negotiateVersion=1", null, ct);
                 if ((int)response.StatusCode < 500)
+                {
                     break;
+                }
             }
             catch
             {
@@ -234,7 +239,9 @@ public class WebChatE2EFixture : E2EFixtureBase
         // 1. Environment variable (CI)
         var envKey = Environment.GetEnvironmentVariable("OPENROUTER__APIKEY");
         if (!string.IsNullOrEmpty(envKey))
+        {
             return envKey;
+        }
 
         // 2. .NET User Secrets
         try
@@ -252,13 +259,40 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     protected override async Task StopContainersAsync()
     {
-        if (_caddy is not null) await _caddy.DisposeAsync();
-        if (_webui is not null) await _webui.DisposeAsync();
-        if (_agent is not null) await _agent.DisposeAsync();
-        if (_mcpChannelSignalR is not null) await _mcpChannelSignalR.DisposeAsync();
-        if (_mcpText is not null) await _mcpText.DisposeAsync();
-        if (_redis is not null) await _redis.DisposeAsync();
-        if (_network is not null) await _network.DeleteAsync();
+        if (_caddy is not null)
+        {
+            await _caddy.DisposeAsync();
+        }
+
+        if (_webui is not null)
+        {
+            await _webui.DisposeAsync();
+        }
+
+        if (_agent is not null)
+        {
+            await _agent.DisposeAsync();
+        }
+
+        if (_mcpChannelSignalR is not null)
+        {
+            await _mcpChannelSignalR.DisposeAsync();
+        }
+
+        if (_mcpText is not null)
+        {
+            await _mcpText.DisposeAsync();
+        }
+
+        if (_redis is not null)
+        {
+            await _redis.DisposeAsync();
+        }
+
+        if (_network is not null)
+        {
+            await _network.DeleteAsync();
+        }
     }
 }
 

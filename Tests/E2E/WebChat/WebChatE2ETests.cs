@@ -14,7 +14,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -24,14 +24,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await chatInput.PressAsync("Enter");
 
         // User message should appear in the message list
-        var userMessage = page.Locator(".message-content", new() { HasText = "Hello, this is an E2E test message" });
-        await userMessage.WaitForAsync(new() { Timeout = 10_000 });
+        var userMessage = page.Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" });
+        await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
         // Wait for agent response — the assistant message element may appear early (with empty content
         // during "thinking"), so use Expect to poll until it has non-empty text content.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new() { Timeout = 180_000 });
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
     }
 
     [SkippableFact]
@@ -40,7 +40,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -51,7 +51,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // A new topic should appear in the sidebar
         var topicItem = page.Locator(".topic-item");
-        await topicItem.First.WaitForAsync(new() { Timeout = 30_000 });
+        await topicItem.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await topicItem.CountAsync()).ShouldBeGreaterThan(0);
     }
 
@@ -65,13 +65,16 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         {
             var rejectBtn = page.Locator(".btn-reject");
             if (await rejectBtn.IsVisibleAsync())
+            {
                 await rejectBtn.ClickAsync();
-            await Assertions.Expect(overlay).ToBeHiddenAsync(new() { Timeout = 5_000 });
+            }
+
+            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
         }
 
         // Select a unique user identity per test to avoid server-side state pollution.
         await page.Locator(".avatar-button").ClickAsync();
-        await page.Locator(".user-dropdown-item").First.WaitForAsync(new() { Timeout = 5_000 });
+        await page.Locator(".user-dropdown-item").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
         await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
 
         var chatInput = page.Locator("textarea.chat-input");
@@ -80,7 +83,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // The chat input becomes enabled once SignalR is connected and an agent is selected.
         try
         {
-            await Assertions.Expect(chatInput).ToBeEnabledAsync(new() { Timeout = 30_000 });
+            await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 30_000 });
         }
         catch (TimeoutException)
         {
@@ -91,17 +94,19 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             {
                 await agentDropdown.ClickAsync();
                 var agentItem = page.Locator(".dropdown-item").First;
-                await agentItem.WaitForAsync(new() { Timeout = 10_000 });
+                await agentItem.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
                 await agentItem.ClickAsync();
             }
 
-            await Assertions.Expect(chatInput).ToBeEnabledAsync(new() { Timeout = 10_000 });
+            await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 10_000 });
         }
 
         // Start a fresh topic so previous test messages don't pollute context.
         var newTopicBtn = page.Locator(".new-topic-btn");
         if (await newTopicBtn.IsVisibleAsync())
+        {
             await newTopicBtn.ClickAsync();
+        }
     }
 
 
@@ -111,7 +116,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Avatar placeholder (?) should be visible when no user selected
         var avatarPlaceholder = page.Locator(".avatar-placeholder");
@@ -128,7 +133,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Dismiss any approval-modal-overlay left by the StreamResumeService
         var overlay = page.Locator(".approval-modal-overlay");
@@ -136,8 +141,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         {
             var rejectBtn = page.Locator(".btn-reject");
             if (await rejectBtn.IsVisibleAsync())
+            {
                 await rejectBtn.ClickAsync();
-            await Assertions.Expect(overlay).ToBeHiddenAsync(new() { Timeout = 5_000 });
+            }
+
+            await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
         }
 
         // Click avatar button to open dropdown
@@ -145,7 +153,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Dropdown should appear
         var dropdown = page.Locator(".user-dropdown-menu");
-        await dropdown.WaitForAsync(new() { Timeout = 5_000 });
+        await dropdown.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
 
         // Select a unique user to avoid server-side state pollution from other tests
         var userIndex = fixture.NextUserIndex();
@@ -153,7 +161,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Avatar image should replace placeholder
         var avatarImage = page.Locator("img.avatar-image");
-        await avatarImage.WaitForAsync(new() { Timeout = 5_000 });
+        await avatarImage.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
         (await avatarImage.IsVisibleAsync()).ShouldBeTrue();
 
         // Placeholder should no longer be visible
@@ -170,13 +178,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // The status dot gains the "connected" class when SignalR connects.
         // Allow up to 30 seconds for the hub to become reachable and the Blazor
         // client to complete the handshake.
         var connectedDot = page.Locator(".status-dot.connected");
-        await connectedDot.WaitForAsync(new() { Timeout = 30_000 });
+        await connectedDot.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await connectedDot.IsVisibleAsync()).ShouldBeTrue();
     }
 
@@ -186,7 +194,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -205,7 +213,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Wait for approval modal to appear
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new() { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
 
         // Verify tool name is shown
         var toolName = page.Locator(".tool-name");
@@ -215,11 +223,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await page.Locator(".btn-approve").ClickAsync();
 
         // Modal should dismiss
-        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
+        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new() { Timeout = 90_000 });
+        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
     }
 
     [SkippableFact]
@@ -228,7 +236,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -237,24 +245,23 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await page.WaitForTimeoutAsync(10_000);
 
         // Send a message that triggers a tool call.
-        // The prompt explicitly requests tool use so gpt-4o-mini reliably invokes GlobFiles.
         var chatInput = page.Locator("textarea.chat-input");
         await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new() { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
 
         // Click Reject
         await page.Locator(".btn-reject").ClickAsync();
 
         // Modal should dismiss
-        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
+        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
         // Stream should stop — Cancel button disappears (only visible while streaming)
-        var cancelButton = page.Locator("button.btn-secondary", new() { HasText = "Cancel" });
-        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new() { Timeout = 30_000 });
+        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 30_000 });
     }
 
     [SkippableFact]
@@ -263,7 +270,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
@@ -274,13 +281,13 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Wait for Cancel button to appear (signals streaming has started)
         // The Cancel button has classes "btn btn-secondary" and text "Cancel"
-        var cancelButton = page.Locator("button.btn-secondary", new() { HasText = "Cancel" });
-        await cancelButton.WaitForAsync(new() { Timeout = 30_000 });
+        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+        await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Click Cancel
         await cancelButton.ClickAsync();
 
         // Cancel button should disappear (streaming stopped)
-        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new() { Timeout = 10_000 });
+        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
     }
 }

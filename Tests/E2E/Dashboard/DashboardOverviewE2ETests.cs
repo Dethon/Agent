@@ -12,7 +12,7 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
     public async Task LoadOverview_ShowsKpiCards()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         var kpiCards = page.Locator(".kpi-card");
         var count = await kpiCards.CountAsync();
@@ -30,7 +30,7 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
     public async Task LoadOverview_ShowsHealthGrid()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         var healthGrid = page.Locator(".health-grid");
         (await healthGrid.CountAsync()).ShouldBeGreaterThan(0);
@@ -40,10 +40,10 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
     public async Task LoadOverview_ShowsConnectionStatus()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         var status = page.Locator(".connection-status");
-        await status.WaitForAsync(new() { Timeout = 10_000 });
+        await status.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
         (await status.IsVisibleAsync()).ShouldBeTrue();
     }
 
@@ -51,10 +51,10 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
     public async Task TimeFilter_ChangesData()
     {
         var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Click the "7d" pill button inside .pill-selector
-        var pill7d = page.Locator(".pill-selector .pill", new() { HasText = "7d" });
+        var pill7d = page.Locator(".pill-selector .pill", new PageLocatorOptions { HasText = "7d" });
         await pill7d.ClickAsync();
 
         // Verify the pill now has the "active" class

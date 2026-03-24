@@ -25,13 +25,17 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     public async Task<IPage> CreatePageAsync()
     {
         if (_browser is null)
+        {
             throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first.");
+        }
 
         // Close all existing contexts to free resources.
         foreach (var ctx in _browser.Contexts.ToList())
+        {
             await ctx.CloseAsync();
+        }
 
-        var context = await _browser.NewContextAsync(new() { IgnoreHTTPSErrors = true });
+        var context = await _browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
         return await context.NewPageAsync();
     }
 
@@ -43,7 +47,9 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         await StopContainersAsync();
 
         if (_browser is not null)
+        {
             await _browser.DisposeAsync();
+        }
 
         _playwright?.Dispose();
     }

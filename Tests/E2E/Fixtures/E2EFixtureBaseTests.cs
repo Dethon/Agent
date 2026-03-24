@@ -24,7 +24,6 @@ public class E2EFixtureBaseTests
 // Minimal concrete subclass for testing the base
 file class StandalonePlaywrightFixture : E2EFixtureBase
 {
-    public string BaseUrl => "about:blank";
     protected override Task StartContainersAsync(CancellationToken ct) => Task.CompletedTask;
     protected override Task StopContainersAsync() => Task.CompletedTask;
 }

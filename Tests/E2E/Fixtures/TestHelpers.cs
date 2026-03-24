@@ -5,7 +5,7 @@ namespace Tests.E2E.Fixtures;
 internal static class TestHelpers
 {
     // Serialises concurrent base-sdk builds across all test-collection fixtures.
-    private static readonly SemaphoreSlim BaseSdkBuildLock = new(1, 1);
+    private static readonly SemaphoreSlim _baseSdkBuildLock = new(1, 1);
 
     internal static string FindSolutionRoot()
     {
@@ -30,12 +30,14 @@ internal static class TestHelpers
     /// </summary>
     internal static async Task EnsureBaseSdkImageAsync(string solutionRoot, CancellationToken ct)
     {
-        await BaseSdkBuildLock.WaitAsync(ct);
+        await _baseSdkBuildLock.WaitAsync(ct);
         try
         {
             // Skip the build if the image is already present.
             if (await DockerImageExistsAsync("base-sdk:latest", ct))
+            {
                 return;
+            }
 
             var baseSdkImage = new ImageFromDockerfileBuilder()
                 .WithDockerfileDirectory(solutionRoot)
@@ -48,7 +50,7 @@ internal static class TestHelpers
         }
         finally
         {
-            BaseSdkBuildLock.Release();
+            _baseSdkBuildLock.Release();
         }
     }
 
