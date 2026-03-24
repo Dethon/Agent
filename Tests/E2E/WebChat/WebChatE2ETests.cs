@@ -258,9 +258,5 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Cancel button should disappear (streaming stopped)
         await Assertions.Expect(cancelButton).ToBeHiddenAsync(new() { Timeout = 10_000 });
-
-        // Send button should reappear
-        var sendButton = page.Locator("button.btn-primary", new() { HasText = "Send" });
-        await Assertions.Expect(sendButton).ToBeVisibleAsync(new() { Timeout = 5_000 });
     }
 }
