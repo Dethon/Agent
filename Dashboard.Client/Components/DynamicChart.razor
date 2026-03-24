@@ -84,8 +84,7 @@ else
             Enabled = true,
             Style = new DataLabelsStyle { FontSize = "11px", Colors = ["#e0e0e0"] },
             TextAnchor = TextAnchor.Start,
-            OffsetX = 65,
-            Formatter = "function(val, opts) { return opts.w.globals.labels[opts.dataPointIndex]; }"
+            Formatter = "function(val, opts) { return '- ' + opts.w.globals.labels[opts.dataPointIndex]; }"
         },
         Yaxis =
         [
@@ -105,7 +104,8 @@ else
         },
         Grid = new Grid
         {
-            BorderColor = "#2a2a3e"
+            BorderColor = "#2a2a3e",
+            Padding = new Padding { Left = 0 }
         }
     };
 
