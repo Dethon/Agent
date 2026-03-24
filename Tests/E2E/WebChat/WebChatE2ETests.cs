@@ -158,6 +158,70 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     }
 
     [SkippableFact]
+    public async Task ApprovalModal_ApproveFlow()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+
+        await SelectUserAndAgentAsync(page);
+
+        // Send a message that triggers a tool call
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync("List all files in the vault");
+        await chatInput.PressAsync("Enter");
+
+        // Wait for approval modal to appear
+        var approvalModal = page.Locator(".approval-modal");
+        await approvalModal.WaitForAsync(new() { Timeout = 60_000 });
+
+        // Verify tool name is shown
+        var toolName = page.Locator(".tool-name");
+        (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
+
+        // Click Approve
+        await page.Locator(".btn-approve").ClickAsync();
+
+        // Modal should dismiss
+        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
+
+        // Agent should eventually respond
+        var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
+        await assistantMessage.First.WaitForAsync(new() { Timeout = 60_000 });
+    }
+
+    [SkippableFact]
+    public async Task ApprovalModal_DenyFlow()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.GotoAsync(fixture.WebChatUrl, new() { WaitUntil = WaitUntilState.NetworkIdle });
+
+        await SelectUserAndAgentAsync(page);
+
+        // Send a message that triggers a tool call
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync("Search for documents in the vault");
+        await chatInput.PressAsync("Enter");
+
+        // Wait for approval modal
+        var approvalModal = page.Locator(".approval-modal");
+        await approvalModal.WaitForAsync(new() { Timeout = 60_000 });
+
+        // Click Reject
+        await page.Locator(".btn-reject").ClickAsync();
+
+        // Modal should dismiss
+        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new() { Timeout = 10_000 });
+
+        // Agent should respond (handling the rejection)
+        var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
+        await assistantMessage.First.WaitForAsync(new() { Timeout = 60_000 });
+    }
+
+    [SkippableFact]
     public async Task CancelStreaming_StopsResponse()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
