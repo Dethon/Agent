@@ -12,9 +12,9 @@
     <header class="page-header">
         <h2>Errors</h2>
         <div class="controls">
-            <PillSelector Label="Group by" Options="_dimensionOptions" Value="@_state.GroupBy.ToString()"
+            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
                           OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
         </div>
     </header>
@@ -65,13 +65,13 @@
 
     private Dictionary<string, decimal> _breakdownDecimal = [];
 
-    private static readonly IReadOnlyList<PillOption> _dimensionOptions =
+    private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
         new("Service", nameof(ErrorDimension.Service)),
         new("Error Type", nameof(ErrorDimension.ErrorType)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
     [
         new("Today", "1"),
         new("7d", "7"),

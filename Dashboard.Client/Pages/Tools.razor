@@ -12,11 +12,11 @@
     <header class="page-header">
         <h2>Tool Calls</h2>
         <div class="controls">
-            <PillSelector Label="Group by" Options="_dimensionOptions" Value="@_state.GroupBy.ToString()"
+            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
                           OnChanged="OnDimensionChanged" />
-            <PillSelector Label="Metric" Options="_metricOptions" Value="@_state.Metric.ToString()"
+            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
                           OnChanged="OnMetricChanged" DisabledValues="_disabledMetrics" />
-            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
         </div>
     </header>
@@ -29,7 +29,7 @@
 
     <section class="section">
         <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
-                      MetricLabel="@(_metricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
+                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
                       Unit="@GetMetricUnit()" />
     </section>
 
@@ -70,20 +70,20 @@
 
     private IReadOnlySet<string> _disabledMetrics = new HashSet<string>();
 
-    private static readonly IReadOnlyList<PillOption> _dimensionOptions =
+    private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
         new("Tool Name", nameof(ToolDimension.ToolName)),
         new("Status", nameof(ToolDimension.Status)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> _metricOptions =
+    private static readonly IReadOnlyList<PillOption> MetricOptions =
     [
         new("Call Count", nameof(ToolMetric.CallCount)),
         new("Avg Duration", nameof(ToolMetric.AvgDuration)),
         new("Error Rate", nameof(ToolMetric.ErrorRate)),
     ];
 
-    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
     [
         new("Today", "1"),
         new("7d", "7"),

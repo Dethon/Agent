@@ -1,5 +1,3 @@
-@using ApexCharts
-
 <div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")">
 @if (Data is null || Data.Count == 0)
 {
@@ -152,8 +150,8 @@ else
     private static string Truncate(string s, int max)
     {
         var idx = s.LastIndexOf(':');
-        var short_ = idx >= 0 ? s[(idx + 1)..] : s;
-        return short_.Length <= max ? short_ : string.Concat(short_.AsSpan(0, max), "…");
+        var @short = idx >= 0 ? s[(idx + 1)..] : s;
+        return @short.Length <= max ? @short : string.Concat(@short.AsSpan(0, max), "…");
     }
 
     public record ChartEntry(string Label, decimal Value);

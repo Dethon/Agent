@@ -23,7 +23,7 @@
     <header class="page-header">
         <h2>Overview</h2>
         <div class="controls">
-            <PillSelector Label="Time" Options="_timeOptions" Value="@_selectedDays.ToString()"
+            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
             <span class="connection-status @(_connected ? "connected" : "disconnected")">
                 @(_connected ? "Live" : "Disconnected")
@@ -73,7 +73,7 @@
     private List<ActivityItem> _recentActivity = [];
     private readonly List<IDisposable> _subscriptions = [];
 
-    private static readonly IReadOnlyList<PillOption> _timeOptions =
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
     [
         new("Today", "1"),
         new("7d", "7"),

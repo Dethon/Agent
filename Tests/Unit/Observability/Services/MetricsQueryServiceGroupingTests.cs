@@ -14,7 +14,7 @@ public class MetricsQueryServiceGroupingTests
     private readonly Mock<IConnectionMultiplexer> _redis = new();
     private readonly MetricsQueryService _sut;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
@@ -29,7 +29,7 @@ public class MetricsQueryServiceGroupingTests
     private void SetupSortedSet(string key, IEnumerable<MetricEvent> events)
     {
         var entries = events
-            .Select(e => new RedisValue(JsonSerializer.Serialize<MetricEvent>(e, JsonOptions)))
+            .Select(e => new RedisValue(JsonSerializer.Serialize(e, _jsonOptions)))
             .ToArray();
         _db.Setup(d => d.SortedSetRangeByScoreAsync(key, It.IsAny<double>(), It.IsAny<double>(),
                 It.IsAny<Exclude>(), It.IsAny<Order>(), It.IsAny<long>(), It.IsAny<long>(),

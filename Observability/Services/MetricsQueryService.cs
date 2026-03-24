@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
+using JetBrains.Annotations;
 using StackExchange.Redis;
 
 namespace Observability.Services;
 
+[UsedImplicitly] 
 public record ServiceHealthResult(string Service, bool IsHealthy, string LastSeen);
 
 public record MetricsSummary(
@@ -161,9 +163,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 g => g.Key,
                 g => metric switch
                 {
-                    ToolMetric.CallCount => (decimal)g.Count(),
+                    ToolMetric.CallCount => g.Count(),
                     ToolMetric.AvgDuration => (decimal)g.Average(e => e.DurationMs),
-                    ToolMetric.ErrorRate => g.Count() > 0
+                    ToolMetric.ErrorRate => g.Any()
                         ? (decimal)g.Count(e => !e.Success) / g.Count() * 100m
                         : 0m,
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
