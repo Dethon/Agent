@@ -150,6 +150,7 @@ public sealed class FakeMetricsHub : MetricsHubService
     private readonly List<Func<ToolCallEvent, Task>> _toolHandlers = [];
     private readonly List<Func<ErrorEvent, Task>> _errorHandlers = [];
     private readonly List<Func<ScheduleExecutionEvent, Task>> _scheduleHandlers = [];
+    // ReSharper disable once CollectionNeverQueried.Local
     private readonly List<Func<ServiceHealthUpdate, Task>> _healthHandlers = [];
 
     public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
