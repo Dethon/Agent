@@ -27,6 +27,10 @@
 @code {
     protected override async Task OnInitializedAsync()
     {
-        try { await HubEffect.StartAsync(); } catch { }
+        try { await HubEffect.StartAsync(); }
+        catch
+        {
+            // ignored
+        }
     }
 }

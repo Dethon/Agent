@@ -182,7 +182,11 @@ else
         if (_needsUpdate && _chart is not null)
         {
             _needsUpdate = false;
-            try { await _chart.UpdateSeriesAsync(true); } catch { }
+            try { await _chart.UpdateSeriesAsync(); }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

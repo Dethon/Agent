@@ -70,7 +70,11 @@ public sealed class MetricsHubEffect(
 
     public async Task StartAsync()
     {
-        if (_started) return;
+        if (_started)
+        {
+            return;
+        }
+
         _started = true;
 
         _subscriptions.Add(hub.OnTokenUsage(async evt =>
