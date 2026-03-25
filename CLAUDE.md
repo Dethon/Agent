@@ -42,7 +42,13 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Metrics publisher | `Infrastructure/Metrics/*.cs` |
 | Observability services | `Observability/Services/*.cs` |
 | Observability API endpoints | `Observability/MetricsApiEndpoints.cs` |
-| Tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
+| Metric dimension/metric enums | `Domain/DTOs/Metrics/Enums/*.cs` |
+| Metrics query service | `Observability/Services/MetricsQueryService.cs` |
+| Dashboard components | `Dashboard.Client/Components/*.razor` |
+| Dashboard services | `Dashboard.Client/Services/*.cs` |
+| Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
+| E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
+| E2E fixtures | `Tests/E2E/Fixtures/*.cs` |
 
 ## Environment Variables
 
@@ -110,7 +116,7 @@ The observability dashboard is available at `https://assistants.herfluffness.com
 
 ### Observability Architecture
 
-Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates.
+Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). `MetricsQueryService` provides grouped aggregation queries over the stored metrics (breakdowns by dimension/metric enums). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates. Dashboard components (`DynamicChart`, `PillSelector`) use `LocalStorageService` to persist UI state across sessions.
 
 ### Channel Architecture
 
@@ -119,6 +125,10 @@ Transports (WebChat, Telegram, ServiceBus) run as independent MCP channel server
 - **Outbound**: `send_reply` tool (agent response → user), `request_approval` tool (tool approval flow)
 
 New transports can be added by deploying a new channel MCP server — zero agent changes needed.
+
+### Camoufox
+
+The `camoufox` Docker service provides an anti-detect browser (Firefox-based) for web scraping. McpServerWebSearch connects to it via WebSocket (`ws://camoufox:9377/browser`). Configuration is in `McpServerWebSearch/Settings/McpSettings.cs` (`CamoufoxConfiguration`).
 
 ### Debugging with Playwright
 
