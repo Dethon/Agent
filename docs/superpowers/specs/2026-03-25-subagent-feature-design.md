@@ -267,9 +267,29 @@ No new environment variables needed — subagent config lives in `appsettings.js
 
 ## Testing
 
-Unit tests for:
-- `SubAgentRunTool`: mock `ISubAgentRunner` + `ISubAgentContextAccessor` + options, verify correct profile lookup, context passing, and error handling
-- `SubAgentRunner`: mock agent factory dependencies, verify agent creation with correct params, timeout enforcement, and disposal
-- `NullThreadStateStore`: verify no-op behavior for all methods
+### Unit Tests
+
+Lightweight tests for pure logic that doesn't need infrastructure:
+
+- `SubAgentRunTool`: mock `ISubAgentRunner` + `ISubAgentContextAccessor` + options — verify profile lookup, unknown profile error, missing context error
 - `SubAgentToolFeature`: verify tool registration under `"subagents"` feature name
 - Startup validation: verify `InvalidOperationException` when subagent has `"subagents"` in features
+
+### Integration Tests
+
+Follow the existing `McpAgentIntegrationTests` pattern: real Redis (via `RedisFixture`/Testcontainers), real MCP server (via fixture), real OpenRouter LLM calls, `SkippableFact` for API key gating.
+
+**`SubAgentIntegrationTests`** — tests the full subagent invocation end-to-end:
+
+- **Fixture**: `RedisFixture` (for parent agent state) + a lightweight MCP server fixture (if subagent profiles need tools)
+- **Real LLM**: Uses `OpenRouterChatClient` with user secrets API key, `SkippableFact` if key is absent
+- **Tests**:
+  - Parent agent calls `run_subagent` tool and receives the subagent's response as a tool result
+  - Subagent with MCP tools can use them and return results
+  - Subagent conversation is ephemeral (no Redis keys created for the subagent)
+  - Timeout enforcement — subagent with a very short `MaxExecutionSeconds` returns a timeout error
+  - Parent agent continues normally after subagent completes (context isolation verified)
+
+**`NullThreadStateStoreTests`** — simple integration-style test verifying all methods return expected no-op values (no infrastructure needed, but tests the full interface contract)
+
+**`ThreadSessionBuilder` resource subscription flag** — test that `enableResourceSubscriptions: false` produces a `ThreadSessionData` with null `ResourceManager` (uses a real MCP server fixture to verify the builder actually skips subscription setup)
