@@ -9,6 +9,7 @@ public record AgentSettings
     public required RedisConfiguration Redis { get; init; }
     public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
+    public SubAgentDefinition[] SubAgents { get; init; } = [];
 }
 
 public record OpenRouterConfiguration
