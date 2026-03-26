@@ -7,6 +7,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -19,20 +20,24 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         .AddUserSecrets<SubAgentIntegrationTests>()
         .Build();
 
-    private static OpenRouterChatClient CreateLlmClient()
-    {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
-    }
-
     private static OpenRouterConfig CreateOpenRouterConfig()
     {
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
         return new OpenRouterConfig { ApiUrl = apiUrl, ApiKey = apiKey };
+    }
+
+    private static MultiAgentFactory CreateFactory(OpenRouterConfig config)
+    {
+        var registryOptions = Options.Create(new AgentRegistryOptions { Agents = [] });
+        var monitor = new OptionsMonitorStub<AgentRegistryOptions>(registryOptions.Value);
+        var domainToolRegistry = new DomainToolRegistry([]);
+        return new MultiAgentFactory(
+            null!,
+            monitor,
+            config,
+            domainToolRegistry);
     }
 
     [SkippableFact]
@@ -49,16 +54,16 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         };
 
         var openRouterConfig = CreateOpenRouterConfig();
-        var domainToolRegistry = new DomainToolRegistry([]);
-        var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(domainToolRegistry));
+        var factory = CreateFactory(openRouterConfig);
         var registryOptions = new SubAgentRegistryOptions { SubAgents = [subAgentDef] };
 
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(approvalHandler, ["domain:subagents:*"], "test-user");
 
-        var toolFeature = new SubAgentToolFeature(runner, registryOptions);
+        var toolFeature = new SubAgentToolFeature(new Lazy<IAgentFactory>(factory), registryOptions);
 
-        var llmClient = CreateLlmClient();
+        var llmClient = new OpenRouterChatClient(
+            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "google/gemini-2.5-flash");
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
         using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, ["domain:subagents:*"]);
 
@@ -100,7 +105,7 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         };
 
         var openRouterConfig = CreateOpenRouterConfig();
-        var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(new DomainToolRegistry([])));
+        var factory = CreateFactory(openRouterConfig);
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(approvalHandler, [], "test-user");
 
@@ -109,11 +114,20 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        var result = await runner.RunAsync(subAgentDef, "Say done", featureConfig, cts.Token);
+        await using var agent = factory.CreateSubAgent(subAgentDef, featureConfig);
+        var userMessage = new ChatMessage(ChatRole.User, "Say done");
+        var response = await agent.RunStreamingAsync(
+                [userMessage], cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+
+        var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
 
         var keysAfter = server.Keys(pattern: "*").ToList();
         keysAfter.Count.ShouldBe(keysBefore.Count,
-            "SubAgent runner should use NullThreadStateStore and write no Redis keys");
+            "SubAgent should use NullThreadStateStore and write no Redis keys");
         result.ShouldNotBeNullOrEmpty();
     }
 }
@@ -127,4 +141,11 @@ file sealed class AutoApproveHandler : IToolApprovalHandler
     public Task NotifyAutoApprovedAsync(
         IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.CompletedTask;
+}
+
+file sealed class OptionsMonitorStub<T>(T value) : IOptionsMonitor<T>
+{
+    public T CurrentValue => value;
+    public T Get(string? name) => value;
+    public IDisposable? OnChange(Action<T, string?> listener) => null;
 }

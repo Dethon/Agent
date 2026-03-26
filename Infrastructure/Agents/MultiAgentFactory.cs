@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -87,6 +88,39 @@ public sealed class MultiAgentFactory(
         }
 
         return userAgents.TryRemove(agentId, out _);
+    }
+
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, FeatureConfig parentContext)
+    {
+        var agentPublisher = metricsPublisher is not null
+            ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
+            : null;
+
+        var chatClient = CreateChatClient(definition.Model, agentPublisher);
+
+        var effectiveClient = new ToolApprovalChatClient(
+            chatClient,
+            parentContext.ApprovalHandler,
+            parentContext.WhitelistPatterns,
+            agentPublisher);
+
+        var enabledFeatures = definition.EnabledFeatures
+            .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
+
+        var domainTools = domainToolRegistry
+            .GetToolsForFeatures(enabledFeatures, parentContext)
+            .ToList();
+
+        return new McpAgent(
+            definition.McpServerEndpoints,
+            effectiveClient,
+            $"subagent-{definition.Id}",
+            definition.Description ?? "",
+            new NullThreadStateStore(),
+            parentContext.UserId,
+            definition.CustomInstructions,
+            domainTools,
+            enableResourceSubscriptions: false);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)

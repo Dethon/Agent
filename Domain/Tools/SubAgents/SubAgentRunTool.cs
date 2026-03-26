@@ -2,11 +2,13 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.SubAgents;
 
 public class SubAgentRunTool(
-    ISubAgentRunner runner,
+    IAgentFactory factory,
     SubAgentRegistryOptions registryOptions,
     FeatureConfig featureConfig)
 {
@@ -49,7 +51,20 @@ public class SubAgentRunTool(
 
         try
         {
-            var result = await runner.RunAsync(profile, prompt, featureConfig, ct);
+            await using var agent = factory.CreateSubAgent(profile, featureConfig);
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(profile.MaxExecutionSeconds));
+
+            var userMessage = new ChatMessage(ChatRole.User, prompt);
+            var response = await agent.RunStreamingAsync(
+                    [userMessage], cancellationToken: timeoutCts.Token)
+                .ToUpdateAiResponsePairs()
+                .Where(x => x.Item2 is not null)
+                .Select(x => x.Item2!)
+                .ToListAsync(timeoutCts.Token);
+
+            var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
             return new JsonObject
             {
                 ["status"] = "completed",

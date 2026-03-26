@@ -86,6 +86,9 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 
     public bool UnregisterCustomAgent(string userId, string agentId)
         => throw new NotImplementedException();
+
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, FeatureConfig parentContext)
+        => throw new NotImplementedException();
 }
 
 internal sealed class FakeChannelConnection : IChannelConnection

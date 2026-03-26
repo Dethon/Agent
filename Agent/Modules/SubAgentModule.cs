@@ -1,7 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.SubAgents;
-using Infrastructure.Agents;
 
 namespace Agent.Modules;
 
@@ -24,8 +23,7 @@ public static class SubAgentModule
             services.AddSingleton(registryOptions);
 
             services.AddSingleton(sp =>
-                new Lazy<IDomainToolRegistry>(sp.GetRequiredService<IDomainToolRegistry>));
-            services.AddTransient<ISubAgentRunner, SubAgentRunner>();
+                new Lazy<IAgentFactory>(sp.GetRequiredService<IAgentFactory>));
             services.AddTransient<IDomainToolFeature, SubAgentToolFeature>();
 
             return services;
