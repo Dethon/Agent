@@ -191,6 +191,55 @@ public class MetricsCollectorServiceTests
     }
 
     [Fact]
+    public async Task ProcessEventAsync_ToolCall_Failure_CreatesErrorEvent()
+    {
+        var evt = new ToolCallEvent
+        {
+            ToolName = "search",
+            DurationMs = 150,
+            Success = false,
+            Error = "timeout",
+            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+        };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _db.Verify(d => d.SortedSetAddAsync(
+            "metrics:errors:2026-03-15",
+            It.Is<RedisValue>(v => v.ToString().Contains("\"errorType\":\"search\"")
+                && v.ToString().Contains("\"message\":\"timeout\"")),
+            evt.Timestamp.ToUnixTimeMilliseconds(),
+            It.IsAny<SortedSetWhen>(),
+            It.IsAny<CommandFlags>()), Times.Once);
+
+        _clientProxy.Verify(c => c.SendCoreAsync(
+            "OnError",
+            It.Is<object[]>(args => args.Length == 1 && args[0] is ErrorEvent),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_ToolCall_Success_DoesNotCreateErrorEvent()
+    {
+        var evt = new ToolCallEvent
+        {
+            ToolName = "search",
+            DurationMs = 150,
+            Success = true,
+            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+        };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _db.Verify(d => d.SortedSetAddAsync(
+            It.Is<RedisKey>(k => k.ToString().StartsWith("metrics:errors:")),
+            It.IsAny<RedisValue>(),
+            It.IsAny<double>(),
+            It.IsAny<SortedSetWhen>(),
+            It.IsAny<CommandFlags>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ProcessEventAsync_ToolCall_Success_DoesNotIncrementErrors()
     {
         var evt = new ToolCallEvent

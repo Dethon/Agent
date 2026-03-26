@@ -155,6 +155,20 @@ public sealed class MetricsCollectorService(
         await Task.WhenAll(tasks);
 
         await hubContext.Clients.All.SendAsync("OnToolCall", evt);
+
+        if (!evt.Success)
+        {
+            var errorEvent = new ErrorEvent
+            {
+                Service = "ToolCall",
+                ErrorType = evt.ToolName,
+                Message = evt.Error ?? "Tool call failed",
+                Timestamp = evt.Timestamp,
+                AgentId = evt.AgentId,
+                ConversationId = evt.ConversationId
+            };
+            await ProcessErrorAsync(errorEvent, db);
+        }
     }
 
     private async Task ProcessErrorAsync(ErrorEvent evt, IDatabase db)
