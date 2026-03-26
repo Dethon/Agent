@@ -456,6 +456,48 @@ public class HtmlProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_WithControlCharacters_StripsInvalidCharsInMarkdown()
+    {
+        // Arrange - Content with control characters that break LLM APIs (422)
+        var html = "<!DOCTYPE html><html><head><title>Test</title></head><body>" +
+                   "<p>Normal text</p>" +
+                   "<p>Has\x00null\x01and\x02control\x1Fchars</p>" +
+                   "<p>Tabs\tand\nnewlines are fine</p>" +
+                   "</body></html>";
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
+
+        // Act
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        // Assert
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("Normal text");
+        result.Content.ShouldContain("newlines are fine");
+        var invalidChars = result.Content!.Where(c => c < ' ' && c != '\t' && c != '\n' && c != '\r').ToList();
+        invalidChars.ShouldBeEmpty($"Content contains invalid control characters: {string.Join(", ", invalidChars.Select(c => $"U+{(int)c:X4}"))}");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WithControlCharacters_StripsInvalidCharsInHtmlFormat()
+    {
+        // Arrange - HTML format should also be sanitized
+        var html = "<!DOCTYPE html><html><head><title>Test</title></head><body>" +
+                   "<p>Clean</p><p>Has\x00null\x01and\x02control\x1Fchars</p>" +
+                   "</body></html>";
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
+            Format: WebFetchOutputFormat.Html);
+
+        // Act
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        // Assert
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("Clean");
+        var invalidChars = result.Content!.Where(c => c < ' ' && c != '\t' && c != '\n' && c != '\r').ToList();
+        invalidChars.ShouldBeEmpty($"Content contains invalid control characters: {string.Join(", ", invalidChars.Select(c => $"U+{(int)c:X4}"))}");
+    }
+
+    [Fact]
     public async Task ProcessAsync_WithHtmlFormat_TruncatesWithValidHtml()
     {
         // Arrange

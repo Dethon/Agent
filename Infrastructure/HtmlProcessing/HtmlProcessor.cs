@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using AngleSharp;
 using AngleSharp.Dom;
 using Domain.Contracts;
@@ -16,7 +17,7 @@ public record HtmlProcessingResult(
     bool IsPartial,
     string? ErrorMessage);
 
-public static class HtmlProcessor
+public static partial class HtmlProcessor
 {
     public static async Task<HtmlProcessingResult> ProcessAsync(BrowseRequest request, string html,
         CancellationToken ct)
@@ -202,6 +203,9 @@ public static class HtmlProcessor
                 : HtmlConverter.Truncate(content, maxLength);
         }
 
+        // Strip control characters that cause LLM API 422 errors (keep \t, \n, \r)
+        content = ControlCharsRegex().Replace(content, "");
+
         var hasMore = offset + content.Length < totalLength;
 
         return new HtmlProcessingResult(
@@ -230,4 +234,8 @@ public static class HtmlProcessor
             ErrorMessage: errorMessage
         );
     }
+
+    // Matches control chars U+0000-U+001F except \t (0x09), \n (0x0A), \r (0x0D)
+    [GeneratedRegex(@"[\x00-\x08\x0B\x0C\x0E-\x1F]")]
+    private static partial Regex ControlCharsRegex();
 }
