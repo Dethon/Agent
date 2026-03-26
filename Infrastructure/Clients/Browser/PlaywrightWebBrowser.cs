@@ -594,10 +594,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     {
         return strategy switch
         {
-            WaitStrategy.DomContentLoaded => WaitUntilState.DOMContentLoaded,
+            WaitStrategy.NetworkIdle => WaitUntilState.NetworkIdle,
             WaitStrategy.Load => WaitUntilState.Load,
             WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
-            _ => WaitUntilState.NetworkIdle
+            _ => WaitUntilState.DOMContentLoaded
         };
     }
 
