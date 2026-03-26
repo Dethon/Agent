@@ -164,7 +164,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             cts.Token);
 
         // Subscribe to resources
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Act - Complete the download (triggers notification via SubscriptionMonitor)
         fixture.DownloadClient.SetDownload(201, DownloadState.Completed, 1.0);

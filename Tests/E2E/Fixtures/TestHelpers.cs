@@ -25,25 +25,29 @@ internal static class TestHelpers
 
     /// <summary>
     /// Builds the shared base-sdk:latest image exactly once, even when multiple test
-    /// collections start concurrently.  If the image already exists in the local Docker
-    /// daemon it is reused as-is (no rebuild).
+    /// collections start concurrently.  If the image already exists but is older than
+    /// the newest source file in Domain/ or Infrastructure/, it is rebuilt automatically.
     /// </summary>
     internal static async Task EnsureBaseSdkImageAsync(string solutionRoot, CancellationToken ct)
     {
         await _baseSdkBuildLock.WaitAsync(ct);
         try
         {
-            // Skip the build if the image is already present.
-            if (await DockerImageExistsAsync("base-sdk:latest", ct))
+            var imageCreatedAt = await GetDockerImageCreatedAtAsync("base-sdk:latest", ct);
+            if (imageCreatedAt.HasValue)
             {
-                return;
+                var newestSource = GetNewestSourceTimestamp(solutionRoot);
+                if (newestSource <= imageCreatedAt.Value)
+                {
+                    return;
+                }
             }
 
             var baseSdkImage = new ImageFromDockerfileBuilder()
                 .WithDockerfileDirectory(solutionRoot)
                 .WithDockerfile("Dockerfile.base-sdk")
                 .WithName("base-sdk:latest")
-                .WithDeleteIfExists(false)
+                .WithDeleteIfExists(true)
                 .WithCleanUp(false)
                 .Build();
             await baseSdkImage.CreateAsync(ct);
@@ -54,23 +58,43 @@ internal static class TestHelpers
         }
     }
 
-    private static async Task<bool> DockerImageExistsAsync(string imageName, CancellationToken ct)
+    private static DateTimeOffset GetNewestSourceTimestamp(string solutionRoot)
+    {
+        var dirs = new[] { "Domain", "Infrastructure" };
+        return dirs
+            .Select(d => Path.Combine(solutionRoot, d))
+            .Where(Directory.Exists)
+            .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories))
+            .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero))
+            .DefaultIfEmpty(DateTimeOffset.MaxValue)
+            .Max();
+    }
+
+    private static async Task<DateTimeOffset?> GetDockerImageCreatedAtAsync(string imageName, CancellationToken ct)
     {
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo("docker", $"image inspect {imageName} --format={{{{.Id}}}}")
+            var psi = new System.Diagnostics.ProcessStartInfo("docker",
+                $"image inspect {imageName} --format={{{{.Created}}}}")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
             using var process = System.Diagnostics.Process.Start(psi)!;
+            var output = await process.StandardOutput.ReadToEndAsync(ct);
             await process.WaitForExitAsync(ct);
-            return process.ExitCode == 0;
+
+            if (process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            return DateTimeOffset.TryParse(output.Trim(), out var created) ? created : null;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 }
