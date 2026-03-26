@@ -6,7 +6,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-agent",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "agent"],
@@ -22,7 +21,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-webui",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "webui"],
@@ -38,7 +36,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-observability",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "observability"],
@@ -54,7 +51,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-library",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-library"],
@@ -70,7 +66,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-text",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-text"],
@@ -86,7 +81,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-websearch",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-websearch"],
@@ -102,7 +96,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-memory",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-memory"],
@@ -118,7 +111,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-idealista",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-idealista"],
@@ -134,7 +126,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-channel-signalr",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-channel-signalr"],
@@ -150,7 +141,6 @@
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-channel-telegram",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-channel-telegram"],
@@ -162,11 +152,136 @@
       }
     },
     {
+      "name": "Local: Agent",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Agent/bin/Debug/net10.0/Agent.dll",
+      "args": ["--chat", "Web", "--reasoning"],
+      "cwd": "${workspaceFolder}/Agent",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:5000"
+      }
+    },
+    {
+      "name": "Local: WebUI",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/WebChat/bin/Debug/net10.0/WebChat.dll",
+      "cwd": "${workspaceFolder}/WebChat",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:5001"
+      }
+    },
+    {
+      "name": "Local: Observability",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Observability/bin/Debug/net10.0/Observability.dll",
+      "cwd": "${workspaceFolder}/Observability",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:5003"
+      }
+    },
+    {
+      "name": "Local: MCP Library",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerLibrary/bin/Debug/net10.0/McpServerLibrary.dll",
+      "cwd": "${workspaceFolder}/McpServerLibrary",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6001"
+      }
+    },
+    {
+      "name": "Local: MCP Text",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerText/bin/Debug/net10.0/McpServerText.dll",
+      "cwd": "${workspaceFolder}/McpServerText",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6002"
+      }
+    },
+    {
+      "name": "Local: MCP WebSearch",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerWebSearch/bin/Debug/net10.0/McpServerWebSearch.dll",
+      "cwd": "${workspaceFolder}/McpServerWebSearch",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6003"
+      }
+    },
+    {
+      "name": "Local: MCP Memory",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerMemory/bin/Debug/net10.0/McpServerMemory.dll",
+      "cwd": "${workspaceFolder}/McpServerMemory",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6004"
+      }
+    },
+    {
+      "name": "Local: MCP Idealista",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerIdealista/bin/Debug/net10.0/McpServerIdealista.dll",
+      "cwd": "${workspaceFolder}/McpServerIdealista",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6005"
+      }
+    },
+    {
+      "name": "Local: MCP Channel SignalR",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpChannelSignalR/bin/Debug/net10.0/McpChannelSignalR.dll",
+      "cwd": "${workspaceFolder}/McpChannelSignalR",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6010"
+      }
+    },
+    {
+      "name": "Local: MCP Channel Telegram",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpChannelTelegram/bin/Debug/net10.0/McpChannelTelegram.dll",
+      "cwd": "${workspaceFolder}/McpChannelTelegram",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6011"
+      }
+    },
+    {
+      "name": "Local: MCP Channel ServiceBus",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
+      "cwd": "${workspaceFolder}/McpChannelServiceBus",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6012"
+      }
+    },
+    {
       "name": "Debug: MCP Channel ServiceBus",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
-      "preLaunchTask": "debug-mcp-channel-servicebus",
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-channel-servicebus"],
@@ -176,6 +291,44 @@
       "sourceFileMap": {
         "/src": "${workspaceFolder}"
       }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Docker: All Services",
+      "configurations": [
+        "Debug: Agent",
+        "Debug: WebUI",
+        "Debug: Observability",
+        "Debug: MCP Library",
+        "Debug: MCP Text",
+        "Debug: MCP WebSearch",
+        "Debug: MCP Memory",
+        "Debug: MCP Idealista",
+        "Debug: MCP Channel SignalR",
+        "Debug: MCP Channel Telegram",
+        "Debug: MCP Channel ServiceBus"
+      ],
+      "preLaunchTask": "docker-debug-up",
+      "stopAll": true
+    },
+    {
+      "name": "Local: All Services",
+      "configurations": [
+        "Local: Agent",
+        "Local: WebUI",
+        "Local: Observability",
+        "Local: MCP Library",
+        "Local: MCP Text",
+        "Local: MCP WebSearch",
+        "Local: MCP Memory",
+        "Local: MCP Idealista",
+        "Local: MCP Channel SignalR",
+        "Local: MCP Channel Telegram",
+        "Local: MCP Channel ServiceBus"
+      ],
+      "preLaunchTask": "build-all-local",
+      "stopAll": true
     }
   ]
 }
