@@ -226,9 +226,8 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await page.WaitForTimeoutAsync(10_000);
 
         // Send a message that triggers a tool call.
-        // The prompt explicitly requests tool use so gpt-4o-mini reliably invokes GlobFiles.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. Do not write any text response.");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
@@ -266,7 +265,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. Do not write any text response.");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal
