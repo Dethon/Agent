@@ -3,7 +3,7 @@ using Shouldly;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 
-namespace Tests.Unit.WebChat.Client;
+namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class BufferRebuildUtilityTests
 {

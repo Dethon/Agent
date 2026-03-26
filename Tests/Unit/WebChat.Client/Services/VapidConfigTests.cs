@@ -3,7 +3,7 @@ using System.Text.Json;
 using Shouldly;
 using WebChat.Client.Services;
 
-namespace Tests.Unit.WebChat;
+namespace Tests.Unit.WebChat.Client.Services;
 
 public sealed class VapidConfigTests
 {

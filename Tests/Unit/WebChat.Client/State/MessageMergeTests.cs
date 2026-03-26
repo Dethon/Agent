@@ -2,7 +2,7 @@ using Shouldly;
 using WebChat.Client.Components.Chat;
 using WebChat.Client.Models;
 
-namespace Tests.Unit.WebChat.Client;
+namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class MessageMergeTests
 {

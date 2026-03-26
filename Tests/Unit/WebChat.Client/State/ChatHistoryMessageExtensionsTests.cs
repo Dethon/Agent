@@ -2,7 +2,7 @@ using Domain.DTOs.WebChat;
 using Shouldly;
 using WebChat.Client.Extensions;
 
-namespace Tests.Unit.WebChat.Client;
+namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class ChatHistoryMessageExtensionsTests
 {

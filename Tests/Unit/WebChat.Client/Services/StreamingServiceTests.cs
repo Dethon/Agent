@@ -11,7 +11,7 @@ using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
-namespace Tests.Unit.WebChat.Client;
+namespace Tests.Unit.WebChat.Client.Services;
 
 public sealed class StreamingServiceTests : IDisposable
 {
