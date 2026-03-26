@@ -18,7 +18,7 @@ public class OpenRouterToolCallingWithReasoningTests
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["openRouter:reasoningModel"] ?? "z-ai/glm-4.7";
+        var model = _configuration["openRouter:reasoningModel"] ?? "z-ai/glm-4.7-flash";
         return (apiUrl, apiKey, model);
     }
 
