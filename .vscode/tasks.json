@@ -12,7 +12,7 @@
         {
             "label": "docker-debug-up",
             "type": "shell",
-            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "command": "docker volume inspect jackbot_vsdbg > /dev/null 2>&1 || $DC run --rm vsdbg-install && $DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
             "problemMatcher": []
         },
         {

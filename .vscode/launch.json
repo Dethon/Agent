@@ -1,8 +1,46 @@
 {
   "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Docker: All Services",
+      "configurations": [
+        "Docker: Agent",
+        "Docker: WebUI",
+        "Docker: Observability",
+        "Docker: MCP Library",
+        "Docker: MCP Text",
+        "Docker: MCP WebSearch",
+        "Docker: MCP Memory",
+        "Docker: MCP Idealista",
+        "Docker: MCP Channel SignalR",
+        "Docker: MCP Channel Telegram",
+        "Docker: MCP Channel ServiceBus"
+      ],
+      "preLaunchTask": "docker-debug-up",
+      "stopAll": true
+    },
+    {
+      "name": "Local: All Services",
+      "configurations": [
+        "Local: Agent",
+        "Local: WebUI",
+        "Local: Observability",
+        "Local: MCP Library",
+        "Local: MCP Text",
+        "Local: MCP WebSearch",
+        "Local: MCP Memory",
+        "Local: MCP Idealista",
+        "Local: MCP Channel SignalR",
+        "Local: MCP Channel Telegram",
+        "Local: MCP Channel ServiceBus"
+      ],
+      "preLaunchTask": "build-all-local",
+      "stopAll": true
+    }
+  ],
   "configurations": [
     {
-      "name": "Debug: Agent",
+      "name": "Docker: Agent",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -17,7 +55,7 @@
       }
     },
     {
-      "name": "Debug: WebUI",
+      "name": "Docker: WebUI",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -32,7 +70,7 @@
       }
     },
     {
-      "name": "Debug: Observability",
+      "name": "Docker: Observability",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -47,7 +85,7 @@
       }
     },
     {
-      "name": "Debug: MCP Library",
+      "name": "Docker: MCP Library",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -62,7 +100,7 @@
       }
     },
     {
-      "name": "Debug: MCP Text",
+      "name": "Docker: MCP Text",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -77,7 +115,7 @@
       }
     },
     {
-      "name": "Debug: MCP WebSearch",
+      "name": "Docker: MCP WebSearch",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -92,7 +130,7 @@
       }
     },
     {
-      "name": "Debug: MCP Memory",
+      "name": "Docker: MCP Memory",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -107,7 +145,7 @@
       }
     },
     {
-      "name": "Debug: MCP Idealista",
+      "name": "Docker: MCP Idealista",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -122,7 +160,7 @@
       }
     },
     {
-      "name": "Debug: MCP Channel SignalR",
+      "name": "Docker: MCP Channel SignalR",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -137,7 +175,7 @@
       }
     },
     {
-      "name": "Debug: MCP Channel Telegram",
+      "name": "Docker: MCP Channel Telegram",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -278,7 +316,7 @@
       }
     },
     {
-      "name": "Debug: MCP Channel ServiceBus",
+      "name": "Docker: MCP Channel ServiceBus",
       "type": "coreclr",
       "request": "attach",
       "processId": 1,
@@ -291,44 +329,6 @@
       "sourceFileMap": {
         "/src": "${workspaceFolder}"
       }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Docker: All Services",
-      "configurations": [
-        "Debug: Agent",
-        "Debug: WebUI",
-        "Debug: Observability",
-        "Debug: MCP Library",
-        "Debug: MCP Text",
-        "Debug: MCP WebSearch",
-        "Debug: MCP Memory",
-        "Debug: MCP Idealista",
-        "Debug: MCP Channel SignalR",
-        "Debug: MCP Channel Telegram",
-        "Debug: MCP Channel ServiceBus"
-      ],
-      "preLaunchTask": "docker-debug-up",
-      "stopAll": true
-    },
-    {
-      "name": "Local: All Services",
-      "configurations": [
-        "Local: Agent",
-        "Local: WebUI",
-        "Local: Observability",
-        "Local: MCP Library",
-        "Local: MCP Text",
-        "Local: MCP WebSearch",
-        "Local: MCP Memory",
-        "Local: MCP Idealista",
-        "Local: MCP Channel SignalR",
-        "Local: MCP Channel Telegram",
-        "Local: MCP Channel ServiceBus"
-      ],
-      "preLaunchTask": "build-all-local",
-      "stopAll": true
     }
   ]
 }
