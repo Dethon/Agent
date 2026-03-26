@@ -108,6 +108,16 @@ public class ChatMonitor(
                     conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
             }
 
+            foreach (var error in update.Contents.OfType<ErrorContent>())
+            {
+                await metricsPublisher.PublishAsync(new ErrorEvent
+                {
+                    Service = "agent",
+                    ErrorType = error.ErrorCode ?? "Unknown",
+                    Message = error.Message
+                }, ct);
+            }
+
             yield return true;
         }
     }

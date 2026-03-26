@@ -219,7 +219,7 @@ public static class IAsyncEnumerableExtensions
                 {
                     errorResponse = new AgentResponseUpdate
                     {
-                        Contents = [new ErrorContent($"An error occurred: {ex.Message}")]
+                        Contents = [new ErrorContent($"An error occurred: {ex.Message}") { ErrorCode = ex.GetType().Name }]
                     };
                     break;
                 }

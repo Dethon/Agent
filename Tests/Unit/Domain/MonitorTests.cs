@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.WebChat;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
@@ -16,6 +17,8 @@ namespace Tests.Unit.Domain;
 
 internal sealed class FakeAiAgent : DisposableAgent
 {
+    public Exception? ExceptionToThrow { get; init; }
+
     protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)
     {
         return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
@@ -53,6 +56,8 @@ internal sealed class FakeAiAgent : DisposableAgent
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await Task.CompletedTask;
+        if (ExceptionToThrow is not null)
+            throw ExceptionToThrow;
         yield break;
     }
 
@@ -267,6 +272,38 @@ public class ChatMonitorTests
         // Assert - CTS should be canceled but thread state should NOT be deleted
         context.Cts.IsCancellationRequested.ShouldBeTrue();
         mockStateStore.Verify(s => s.DeleteAsync(It.IsAny<AgentKey>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Monitor_AgentStreamThrows_PublishesErrorEvent()
+    {
+        // Arrange
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = new FakeAiAgent { ExceptionToThrow = new HttpRequestException("422 Unprocessable Entity") };
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        var logger = new Mock<ILogger<ChatMonitor>>();
+        var metricsPublisher = new Mock<IMetricsPublisher>();
+
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            metricsPublisher.Object,
+            logger.Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert
+        metricsPublisher.Verify(p => p.PublishAsync(
+            It.Is<ErrorEvent>(e =>
+                e.Service == "agent" &&
+                e.ErrorType == nameof(HttpRequestException) &&
+                e.Message.Contains("422 Unprocessable Entity")),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
