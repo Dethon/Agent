@@ -17,6 +17,11 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<MetricsQueryService>();
 builder.Services.AddHostedService<MetricsCollectorService>();
 
+if (!builder.Environment.IsProduction())
+{
+    builder.WebHost.UseStaticWebAssets();
+}
+
 var app = builder.Build();
 
 app.UseRouting();

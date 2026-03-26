@@ -5,6 +5,11 @@ using WebChat;
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
+if (!builder.Environment.IsProduction())
+{
+    builder.WebHost.UseStaticWebAssets();
+}
+
 var app = builder.Build();
 app.UseBlazorFrameworkFiles();
 
