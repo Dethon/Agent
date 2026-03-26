@@ -1,0 +1,144 @@
+services:
+  base-sdk:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+
+  agent:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  webui:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  observability:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-library:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-text:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-websearch:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-memory:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-idealista:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-channel-signalr:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-channel-telegram:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  mcp-channel-servicebus:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
+  vsdbg-install:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    volumes:
+      - vsdbg:/vsdbg
+    command: >
+      bash -c "curl -sSL https://aka.ms/getvsdbgsh | bash /dev/stdin -v latest -l /vsdbg"
+    profiles:
+      - setup
+
+volumes:
+  vsdbg:

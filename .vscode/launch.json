@@ -1,0 +1,181 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug: Agent",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-agent",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "agent"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: WebUI",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-webui",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "webui"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: Observability",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-observability",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "observability"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Library",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-library",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-library"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Text",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-text",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-text"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP WebSearch",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-websearch",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-websearch"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Memory",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-memory",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-memory"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Idealista",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-idealista",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-idealista"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Channel SignalR",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-channel-signalr",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-channel-signalr"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Channel Telegram",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-channel-telegram",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-channel-telegram"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Debug: MCP Channel ServiceBus",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "preLaunchTask": "debug-mcp-channel-servicebus",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-channel-servicebus"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    }
+  ]
+}

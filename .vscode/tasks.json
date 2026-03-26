@@ -1,0 +1,77 @@
+{
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -p jackbot",
+            "SERVICES": "agent webui observability mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox"
+        }
+    },
+    "tasks": [
+        {
+            "label": "debug-agent",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-webui",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec webui ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-observability",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec observability ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-library",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-library ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-text",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-text ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-websearch",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-websearch ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-memory",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-memory ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-idealista",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-idealista ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-channel-signalr",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-channel-signalr ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-channel-telegram",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-channel-telegram ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "debug-mcp-channel-servicebus",
+            "type": "shell",
+            "command": "$DC build base-sdk && $DC up -d --build $SERVICES && until docker exec mcp-channel-servicebus ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        }
+    ]
+}
