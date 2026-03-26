@@ -43,7 +43,7 @@
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
                     <span class="svc-badge">@evt.Service</span>
-                    <span class="err-type">@evt.ErrorType</span>
+                    <span class="err-type" title="@evt.ErrorType">@ShortName(evt.ErrorType)</span>
                     <span class="err-msg" title="@evt.Message">@Truncate(evt.Message, 80)</span>
                 </div>
             }
@@ -121,6 +121,12 @@
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
+
+    private static string ShortName(string name)
+    {
+        var idx = name.LastIndexOf(':');
+        return idx >= 0 ? name[(idx + 1)..] : name;
+    }
 
     public void Dispose() => _sub?.Dispose();
 }
