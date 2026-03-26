@@ -218,16 +218,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        // Wait for the agent's MCP tool servers to finish their initialization handshake.
-        // The chat input becomes enabled when SignalR connects + an agent is selected, but
-        // the agent's MCP client connections to tool servers (mcp-text etc.) complete
-        // asynchronously afterward. Without this delay the LLM receives the message before
-        // tools are registered and responds conversationally instead of calling a tool.
-        await page.WaitForTimeoutAsync(10_000);
-
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'.");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. after the tool is called say 'Done'. the result of the tool doesn't matter");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
@@ -258,10 +251,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-
-        // Wait for the agent's MCP tool servers to finish their initialization handshake.
-        // See ApprovalModal_ApproveFlow for the full rationale.
-        await page.WaitForTimeoutAsync(10_000);
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
