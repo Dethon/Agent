@@ -116,7 +116,7 @@ public class WebChatE2EFixture : E2EFixtureBase
                 {
                   "id": "test-agent",
                   "name": "Test Agent",
-                  "model": "z-ai/glm-4.7-flash",
+                  "model": "z-ai/glm-4.7",
                   "mcpServerEndpoints": [ "http://mcp-text:8080/sse" ],
                   "whitelistPatterns": ["__none__"]
                 }

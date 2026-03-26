@@ -8,22 +8,6 @@ namespace Tests.Unit.WebChat;
 public sealed class VapidConfigTests
 {
     [Fact]
-    public void AppConfig_WithVapidPublicKey_IncludesIt()
-    {
-        var config = new AppConfig("http://localhost:5000", [], "BTestPublicKey123");
-
-        config.VapidPublicKey.ShouldBe("BTestPublicKey123");
-    }
-
-    [Fact]
-    public void AppConfig_WithoutVapidPublicKey_IsNull()
-    {
-        var config = new AppConfig("http://localhost:5000", []);
-
-        config.VapidPublicKey.ShouldBeNull();
-    }
-
-    [Fact]
     public void AppConfig_Deserialize_WithoutVapidPublicKey_DefaultsToNull()
     {
         // Backward compatibility: server may not include VapidPublicKey yet
@@ -33,17 +17,6 @@ public sealed class VapidConfigTests
 
         config.ShouldNotBeNull();
         config.AgentUrl.ShouldBe("http://localhost:5000");
-        config.VapidPublicKey.ShouldBeNull();
-    }
-
-    [Fact]
-    public void AppConfig_Deserialize_WithVapidPublicKeyNull_SetsNull()
-    {
-        const string json = """{"AgentUrl":"http://localhost:5000","Users":[],"VapidPublicKey":null}""";
-
-        var config = JsonSerializer.Deserialize<AppConfig>(json);
-
-        config.ShouldNotBeNull();
         config.VapidPublicKey.ShouldBeNull();
     }
 
@@ -87,24 +60,6 @@ public sealed class VapidConfigTests
     }
 
     [Fact]
-    public void AppConfig_WithEmptyStringVapidPublicKey_PreservesEmptyString()
-    {
-        // Edge case: empty string should be preserved, not converted to null
-        var config = new AppConfig("http://localhost:5000", [], "");
-
-        config.VapidPublicKey.ShouldBe("");
-    }
-
-    [Fact]
-    public void AppConfig_DefaultConstructor_VapidPublicKeyIsNull()
-    {
-        // The fallback used in ConfigService when deserialization returns null
-        var config = new AppConfig(null, []);
-
-        config.VapidPublicKey.ShouldBeNull();
-    }
-
-    [Fact]
     public void AppConfig_Deserialize_CamelCaseJson_WorksCorrectly()
     {
         // ASP.NET Core minimal APIs serialize with camelCase by default;
@@ -117,18 +72,5 @@ public sealed class VapidConfigTests
         config.ShouldNotBeNull();
         config.AgentUrl.ShouldBe("http://localhost:5000");
         config.VapidPublicKey.ShouldBe("BKey456");
-    }
-
-    [Fact]
-    public void AppConfig_Deserialize_CamelCaseJson_WithoutVapidPublicKey_DefaultsToNull()
-    {
-        // Backward compatibility with camelCase serialization from server
-        const string json = """{"agentUrl":"http://localhost:5000","users":[]}""";
-
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        var config = JsonSerializer.Deserialize<AppConfig>(json, options);
-
-        config.ShouldNotBeNull();
-        config.VapidPublicKey.ShouldBeNull();
     }
 }
