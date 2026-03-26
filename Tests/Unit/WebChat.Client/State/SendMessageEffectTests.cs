@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
-using Tests.Unit.WebChat.Fixtures;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;

@@ -2,7 +2,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
-namespace Tests.Unit.WebChat.Fixtures;
+namespace Tests.Unit.WebChat.Client.Fixtures;
 
 public sealed class FakeApprovalService : IApprovalService
 {

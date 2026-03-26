@@ -1,6 +1,6 @@
 using Domain.DTOs.WebChat;
 using Shouldly;
-using Tests.Unit.WebChat.Fixtures;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;

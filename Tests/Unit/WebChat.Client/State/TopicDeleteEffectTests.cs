@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
-using Tests.Unit.WebChat.Fixtures;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Effects;
