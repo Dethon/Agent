@@ -223,7 +223,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // the agent's MCP client connections to tool servers (mcp-text etc.) complete
         // asynchronously afterward. Without this delay the LLM receives the message before
         // tools are registered and responds conversationally instead of calling a tool.
-        await page.WaitForTimeoutAsync(10_000);
+        await page.WaitForTimeoutAsync(3_000);
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
@@ -261,7 +261,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Wait for the agent's MCP tool servers to finish their initialization handshake.
         // See ApprovalModal_ApproveFlow for the full rationale.
-        await page.WaitForTimeoutAsync(10_000);
+        await page.WaitForTimeoutAsync(3_000);
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
