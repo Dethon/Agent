@@ -6,5 +6,6 @@ namespace Domain.Contracts;
 public interface IDomainToolFeature
 {
     string FeatureName { get; }
+    string? Prompt => null;
     IEnumerable<AIFunction> GetTools(FeatureConfig config);
 }
