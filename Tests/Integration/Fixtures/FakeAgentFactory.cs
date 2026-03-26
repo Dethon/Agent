@@ -128,7 +128,7 @@ public sealed class FakeAgentFactory : IAgentFactory
         }
 
         protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
-            AgentSession session, 
+            AgentSession session,
             JsonSerializerOptions? jsonSerializerOptions = null,
             CancellationToken cancellationToken = default)
         {

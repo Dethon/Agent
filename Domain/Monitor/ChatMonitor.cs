@@ -34,7 +34,8 @@ public class ChatMonitor(
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
-            await foreach (var _ in groups) { }
+            await foreach (var _ in groups)
+            { }
         }
         catch (Exception ex)
         {
@@ -73,16 +74,16 @@ public class ChatMonitor(
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
                         return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update, 
-                            AiResponse? Response, 
-                            IChannelConnection Channel, 
+                            AgentResponseUpdate Update,
+                            AiResponse? Response,
+                            IChannelConnection Channel,
                             string ConversationId)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update, 
-                            AiResponse? Response, 
-                            IChannelConnection Channel, 
+                            AgentResponseUpdate Update,
+                            AiResponse? Response,
+                            IChannelConnection Channel,
                             string ConversationId)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);

@@ -1,4 +1,4 @@
-﻿namespace Domain.DTOs;
+namespace Domain.DTOs;
 
 public record ChatResponseMessage
 {

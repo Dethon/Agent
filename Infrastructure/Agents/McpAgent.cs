@@ -102,10 +102,10 @@ public sealed class McpAgent : DisposableAgent
             }
         });
     }
-    
+
     protected override async ValueTask<JsonElement> SerializeSessionCoreAsync(
-        AgentSession session, 
-        JsonSerializerOptions? jsonSerializerOptions = null, 
+        AgentSession session,
+        JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);

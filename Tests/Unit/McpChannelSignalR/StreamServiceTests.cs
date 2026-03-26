@@ -52,7 +52,7 @@ public class StreamServiceTests : IDisposable
         var reader = channel.Subscribe();
 
         await _sut.WriteReplyAsync(new SendReplyParams
-            { ConversationId = "100:200", Content = "hello", ContentType = "text", IsComplete = false, MessageId = "msg-1" });
+        { ConversationId = "100:200", Content = "hello", ContentType = "text", IsComplete = false, MessageId = "msg-1" });
 
         var msg = await reader.ReadAsync();
         msg.Content.ShouldBe("hello");
@@ -66,7 +66,7 @@ public class StreamServiceTests : IDisposable
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
-            { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
 
         _sut.IsStreaming("topic1").ShouldBeFalse();
     }

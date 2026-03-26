@@ -1,4 +1,4 @@
-﻿namespace Domain.Contracts;
+namespace Domain.Contracts;
 
 public interface IFileSystemClient
 {

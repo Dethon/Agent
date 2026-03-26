@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Agent.Settings;
 
 namespace Agent.Modules;

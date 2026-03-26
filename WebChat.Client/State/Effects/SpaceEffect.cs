@@ -69,7 +69,8 @@ public sealed class SpaceEffect : IDisposable
         await _topicService.JoinSpaceAsync(slug);
 
         // Re-register push subscription for the new space (best-effort)
-        try { await _pushNotificationService.ResubscribeAsync(); }
+        try
+        { await _pushNotificationService.ResubscribeAsync(); }
         catch { /* best-effort — don't block space transition */ }
 
         // Clear topics and messages for space transition

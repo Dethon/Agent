@@ -60,12 +60,12 @@ public sealed class MultiAgentFactoryTests
         string name = "TestBot",
         string model = "test-model",
         string? description = null) => new()
-    {
-        Name = name,
-        Description = description,
-        Model = model,
-        McpServerEndpoints = []
-    };
+        {
+            Name = name,
+            Description = description,
+            Model = model,
+            McpServerEndpoints = []
+        };
 
     // --- RegisterCustomAgent ---
 

@@ -29,7 +29,7 @@ public sealed class ToolsStore : Store<ToolsState>
     public void AppendEvent(ToolCallEvent evt) =>
         Dispatch(new AppendToolEvent(evt), static (s, a) => s with
         {
-            Events = [..s.Events, a.Event],
+            Events = [.. s.Events, a.Event],
         });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>

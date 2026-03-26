@@ -107,7 +107,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
                 // Refresh page after setting cookie
                 await page.ReloadAsync(new PageReloadOptions
-                    { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
+                { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
                 html = await page.ContentAsync();
                 captchaRetries++;
             }

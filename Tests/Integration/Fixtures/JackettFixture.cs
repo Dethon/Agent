@@ -94,7 +94,8 @@ public class JackettFixture : IAsyncLifetime
         await _container.DisposeAsync();
         if (_configDir != null && Directory.Exists(_configDir))
         {
-            try { Directory.Delete(_configDir, true); }
+            try
+            { Directory.Delete(_configDir, true); }
             catch
             {
                 /* ignore */

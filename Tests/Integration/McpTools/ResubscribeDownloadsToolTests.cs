@@ -39,7 +39,7 @@ public class ResubscribeDownloadsToolTests(ThreadSessionServerFixture fixture)
         var result = await client.CallToolAsync(
             "ResubscribeDownloads",
             new Dictionary<string, object?>
-                { ["downloadIds"] = new[] { inProgressId, completedId, trackedId, notFoundId } },
+            { ["downloadIds"] = new[] { inProgressId, completedId, trackedId, notFoundId } },
             cancellationToken: cts.Token);
 
         // Assert

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;

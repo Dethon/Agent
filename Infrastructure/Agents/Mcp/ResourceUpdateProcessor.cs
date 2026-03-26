@@ -60,7 +60,7 @@ internal sealed class ResourceUpdateProcessor : IDisposable
         var message = new ChatMessage(ChatRole.User, resource.Contents.ToAIContents());
         var options = new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = [.._config.Tools],
+            Tools = [.. _config.Tools],
             Instructions = _config.Instructions
         });
 

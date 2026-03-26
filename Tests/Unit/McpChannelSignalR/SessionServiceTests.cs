@@ -1,5 +1,5 @@
-using McpChannelSignalR.Services;
 using Domain.DTOs.Channel;
+using McpChannelSignalR.Services;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelSignalR;

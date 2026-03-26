@@ -3,9 +3,9 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
+using ServiceBusChannel = McpChannelServiceBus.Services;
 using SignalRChannel = McpChannelSignalR.Services;
 using TelegramChannel = McpChannelTelegram.Services;
-using ServiceBusChannel = McpChannelServiceBus.Services;
 
 namespace Tests.Unit.Shared;
 

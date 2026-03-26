@@ -109,11 +109,15 @@ public sealed class ModernWebPushSender(HttpClient httpClient, string publicKey,
         var result = new byte[16 + 4 + 1 + 65 + ciphertext.Length + tag.Length];
         var pos = 0;
 
-        salt.CopyTo(result, pos); pos += 16;
-        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(pos), 4096); pos += 4; // rs = 4096
+        salt.CopyTo(result, pos);
+        pos += 16;
+        BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(pos), 4096);
+        pos += 4; // rs = 4096
         result[pos++] = 65;
-        ephemeralPub.CopyTo(result, pos); pos += 65;
-        ciphertext.CopyTo(result, pos); pos += ciphertext.Length;
+        ephemeralPub.CopyTo(result, pos);
+        pos += 65;
+        ciphertext.CopyTo(result, pos);
+        pos += ciphertext.Length;
         tag.CopyTo(result, pos);
 
         return result;
