@@ -5,7 +5,7 @@ using Domain.Tools.Files;
 using Moq;
 using Shouldly;
 
-namespace Tests.Unit.Tools;
+namespace Tests.Unit.Domain.Tools;
 
 public class GlobFilesToolTests
 {

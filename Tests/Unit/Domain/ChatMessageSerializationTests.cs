@@ -3,7 +3,7 @@ using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using Shouldly;
 
-namespace Tests.Unit;
+namespace Tests.Unit.Domain;
 
 public class ChatMessageSerializationTests
 {
