@@ -10,10 +10,10 @@ using Shouldly;
 
 namespace Tests.Integration.Agents;
 
-public class McpSamplingHandlerIntegrationTests
+public class McpSamplingHandlerTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<McpSamplingHandlerIntegrationTests>()
+        .AddUserSecrets<McpSamplingHandlerTests>()
         .Build();
 
     private static OpenRouterChatClient CreateChatClient()

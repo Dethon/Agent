@@ -7,7 +7,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpTools;
 
-public class ResubscribeDownloadsToolIntegrationTests(ThreadSessionServerFixture fixture)
+public class ResubscribeDownloadsToolTests(ThreadSessionServerFixture fixture)
     : IClassFixture<ThreadSessionServerFixture>
 {
     [Fact]

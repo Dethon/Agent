@@ -8,7 +8,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpServerTests;
 
-public class SubscriptionMonitorIntegrationTests(ThreadSessionServerFixture fixture)
+public class SubscriptionMonitorTests(ThreadSessionServerFixture fixture)
     : IClassFixture<ThreadSessionServerFixture>
 {
     [Fact]

@@ -7,10 +7,10 @@ using Shouldly;
 
 namespace Tests.Integration.Agents;
 
-public class OpenRouterToolCallingWithReasoningIntegrationTests
+public class OpenRouterToolCallingWithReasoningTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<OpenRouterToolCallingWithReasoningIntegrationTests>()
+        .AddUserSecrets<OpenRouterToolCallingWithReasoningTests>()
         .Build();
 
     private static (string apiUrl, string apiKey, string model) GetConfig()

@@ -7,7 +7,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Memory;
 
-public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
+public class OpenRouterEmbeddingServiceTests : IAsyncLifetime
 {
     private readonly string? _apiKey;
     private readonly string? _apiUrl;
@@ -22,10 +22,10 @@ public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
         await Task.Delay(TimeSpan.FromMilliseconds(500)); // Rate limiting courtesy
     }
 
-    public OpenRouterEmbeddingServiceIntegrationTests()
+    public OpenRouterEmbeddingServiceTests()
     {
         var config = new ConfigurationBuilder()
-            .AddUserSecrets<OpenRouterEmbeddingServiceIntegrationTests>()
+            .AddUserSecrets<OpenRouterEmbeddingServiceTests>()
             .AddEnvironmentVariables()
             .Build();
 
@@ -150,7 +150,7 @@ public class OpenRouterEmbeddingServiceIntegrationTests : IAsyncLifetime
     }
 }
 
-public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixture>, IAsyncLifetime
+public class MemoryStoreWithEmbeddingsTests : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private readonly RedisFixture _redisFixture;
     private readonly string? _apiKey;
@@ -166,12 +166,12 @@ public class MemoryStoreWithEmbeddingsIntegrationTests : IClassFixture<RedisFixt
         await Task.Delay(TimeSpan.FromMilliseconds(500));
     }
 
-    public MemoryStoreWithEmbeddingsIntegrationTests(RedisFixture redisFixture)
+    public MemoryStoreWithEmbeddingsTests(RedisFixture redisFixture)
     {
         _redisFixture = redisFixture;
 
         var config = new ConfigurationBuilder()
-            .AddUserSecrets<MemoryStoreWithEmbeddingsIntegrationTests>()
+            .AddUserSecrets<MemoryStoreWithEmbeddingsTests>()
             .AddEnvironmentVariables()
             .Build();
 

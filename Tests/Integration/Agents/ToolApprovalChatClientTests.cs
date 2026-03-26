@@ -10,11 +10,11 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class ToolApprovalChatClientIntegrationTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
+public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
     : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<McpAgentIntegrationTests>()
+        .AddUserSecrets<McpAgentTests>()
         .Build();
 
     private static OpenRouterChatClient CreateLlmClient()

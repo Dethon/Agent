@@ -5,7 +5,7 @@ using Shouldly;
 
 namespace Tests.Integration.Clients;
 
-public class BraveSearchClientIntegrationTests : IAsyncLifetime
+public class BraveSearchClientTests : IAsyncLifetime
 {
     private readonly string? _apiKey;
 
@@ -19,10 +19,10 @@ public class BraveSearchClientIntegrationTests : IAsyncLifetime
         await Task.Delay(TimeSpan.FromSeconds(1));
     }
 
-    public BraveSearchClientIntegrationTests()
+    public BraveSearchClientTests()
     {
         var config = new ConfigurationBuilder()
-            .AddUserSecrets<BraveSearchClientIntegrationTests>()
+            .AddUserSecrets<BraveSearchClientTests>()
             .AddEnvironmentVariables()
             .Build();
 

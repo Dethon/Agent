@@ -13,11 +13,11 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class SubAgentIntegrationTests(RedisFixture redisFixture)
+public class SubAgentTests(RedisFixture redisFixture)
     : IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<SubAgentIntegrationTests>()
+        .AddUserSecrets<SubAgentTests>()
         .Build();
 
     private static OpenRouterConfig CreateOpenRouterConfig()
