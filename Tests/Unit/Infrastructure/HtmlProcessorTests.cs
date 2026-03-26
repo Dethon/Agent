@@ -459,6 +459,7 @@ public class HtmlProcessorTests
     public async Task ProcessAsync_WithControlCharacters_StripsInvalidCharsInMarkdown()
     {
         // Arrange - Content with control characters that break LLM APIs (422)
+        // ReSharper disable VariableLengthStringHexEscapeSequence
         var html = "<!DOCTYPE html><html><head><title>Test</title></head><body>" +
                    "<p>Normal text</p>" +
                    "<p>Has\x00null\x01and\x02control\x1Fchars</p>" +
@@ -481,6 +482,7 @@ public class HtmlProcessorTests
     public async Task ProcessAsync_WithControlCharacters_StripsInvalidCharsInHtmlFormat()
     {
         // Arrange - HTML format should also be sanitized
+        // ReSharper disable VariableLengthStringHexEscapeSequence
         var html = "<!DOCTYPE html><html><head><title>Test</title></head><body>" +
                    "<p>Clean</p><p>Has\x00null\x01and\x02control\x1Fchars</p>" +
                    "</body></html>";

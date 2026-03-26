@@ -1,18 +1,15 @@
-using System.Text.Json.Nodes;
 using Domain.Agents;
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.SubAgents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Domain.SubAgents;
 
 public class SubAgentRunToolTests
 {
-    private static readonly SubAgentDefinition TestProfile = new()
+    private static readonly SubAgentDefinition _testProfile = new()
     {
         Id = "summarizer",
         Name = "Summarizer",
@@ -42,7 +39,7 @@ public class SubAgentRunToolTests
     public async Task RunAsync_NullSubAgentFactory_ReturnsError()
     {
         var config = CreateConfig(factory: null);
-        var tool = CreateTool(config, TestProfile);
+        var tool = CreateTool(config, _testProfile);
 
         var result = await tool.RunAsync("summarizer", "do something");
 
@@ -57,12 +54,12 @@ public class SubAgentRunToolTests
         var factoryCalled = false;
         var config = CreateConfig(factory: def =>
         {
-            def.ShouldBe(TestProfile);
+            def.ShouldBe(_testProfile);
             factoryCalled = true;
             return stubAgent;
         });
 
-        var tool = CreateTool(config, TestProfile);
+        var tool = CreateTool(config, _testProfile);
 
         var result = await tool.RunAsync("summarizer", "summarize this");
 
@@ -77,7 +74,7 @@ public class SubAgentRunToolTests
         var config = CreateConfig(factory: _ =>
             throw new InvalidOperationException("factory error"));
 
-        var tool = CreateTool(config, TestProfile);
+        var tool = CreateTool(config, _testProfile);
 
         var result = await tool.RunAsync("summarizer", "do something");
 
@@ -91,7 +88,7 @@ public class SubAgentRunToolTests
         var stubAgent = new StubDisposableAgent("result");
         var config = CreateConfig(factory: _ => stubAgent);
 
-        var tool = CreateTool(config, TestProfile);
+        var tool = CreateTool(config, _testProfile);
 
         var result = await tool.RunAsync("SUMMARIZER", "test");
 

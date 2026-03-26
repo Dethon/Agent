@@ -49,7 +49,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         // Act - Sync should have happened during creation
         // Sync again to verify idempotence
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert - No exception means success
         session.ResourceManager.ShouldNotBeNull();
@@ -82,7 +82,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
 
         // Act - Remove the download and sync
         fixture.TrackedDownloadsManager.Remove(sessionKey, 302);
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert - No exception means unsubscribe succeeded
         await session.DisposeAsync();
@@ -111,7 +111,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             cts.Token);
 
         // Act - Sync with no resources
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert - Channel may be completed since no resources
         // Allow some time for async completion
@@ -143,7 +143,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             cts.Token);
 
         // Sync with no resources to complete channel
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Act - Add a download and ensure channel is active
         fixture.TrackedDownloadsManager.Add(sessionKey, 303);
@@ -208,7 +208,7 @@ public class McpSubscriptionManagerIntegrationTests(ThreadSessionServerFixture f
             cts.Token);
 
         // Act
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
+        await session.ResourceManager!.SyncResourcesAsync(session.ClientManager.Clients, cts.Token);
 
         // Assert
         session.ClientManager.Clients.Count.ShouldBe(2);

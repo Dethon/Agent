@@ -57,7 +57,10 @@ internal sealed class FakeAiAgent : DisposableAgent
     {
         await Task.CompletedTask;
         if (ExceptionToThrow is not null)
+        {
             throw ExceptionToThrow;
+        }
+
         yield break;
     }
 
