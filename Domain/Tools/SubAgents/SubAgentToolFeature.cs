@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 namespace Domain.Tools.SubAgents;
 
 public class SubAgentToolFeature(
-    ISubAgentRunner runner,
+    Lazy<IAgentFactory> factory,
     SubAgentRegistryOptions registryOptions) : IDomainToolFeature
 {
     private const string Feature = "subagents";
@@ -17,7 +17,7 @@ public class SubAgentToolFeature(
 
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
-        var runTool = new SubAgentRunTool(runner, registryOptions, config);
+        var runTool = new SubAgentRunTool(factory.Value, registryOptions, config);
         yield return AIFunctionFactory.Create(
             runTool.RunAsync,
             name: $"domain:{Feature}:{SubAgentRunTool.Name}",

@@ -74,6 +74,17 @@ public sealed class FakeAgentFactory : IAgentFactory
         return new FakeDisposableAgent(responses, ResponseDelayMs);
     }
 
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, FeatureConfig parentContext)
+    {
+        var responses = new List<QueuedResponse>();
+        while (_responseQueue.TryDequeue(out var response))
+        {
+            responses.Add(response);
+        }
+
+        return new FakeDisposableAgent(responses, ResponseDelayMs);
+    }
+
     public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
         => _inner.GetAvailableAgents(userId);
 
