@@ -211,8 +211,6 @@ public sealed class McpAgent : DisposableAgent
 
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
-        var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
-
         var prompts = session.ClientManager.Prompts
             .Prepend(BasePrompt.Instructions);
 
@@ -221,14 +219,13 @@ public sealed class McpAgent : DisposableAgent
             prompts = prompts.Prepend(_customInstructions);
         }
 
-        prompts = prompts.Prepend(timeContext);
-
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.Tools],
             Instructions = string.Join("\n\n", prompts)
         });
     }
+
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
     {
