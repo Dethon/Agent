@@ -1,4 +1,4 @@
-﻿using Domain.Extensions;
+using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;

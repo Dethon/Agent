@@ -70,9 +70,9 @@ public sealed class OpenRouterChatClient : IChatClient
             {
                 var prefix = (msgSender, timestamp) switch
                 {
-                    (not null, not null) => $"[{timestamp:yyyy-MM-dd HH:mm:ss zzz}] Message from {msgSender}:\n",
+                    (not null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}] Message from {msgSender}:\n",
                     (not null, null) => $"Message from {msgSender}:\n",
-                    (null, not null) => $"[{timestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
+                    (null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
                     _ => ""
                 };
                 newMessage.Contents = newMessage.Contents

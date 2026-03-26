@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using ModelContextProtocol.Server;
 
 namespace McpServerLibrary.ResourceSubscriptions;

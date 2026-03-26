@@ -55,7 +55,7 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 When adding code that reads new environment variables or configuration values, you **must** update all relevant infrastructure files in the same change:
 
 - `DockerCompose/docker-compose.yml` — add the variable to the appropriate service's `environment` section (use placeholder values like `${VAR_NAME}` or `changeme`).
-- `DockerCompose/.env` — add a placeholder entry for the new variable.
+- `DockerCompose/.env` — add a placeholder entry for new **secrets only** (API keys, connection strings, credentials). Non-secret configuration belongs in `appsettings.json`, not `.env`.
 - `appsettings.json` / `appsettings.Development.json` — add the corresponding configuration key with a placeholder value.
 
 Do not defer these updates to a later step. The skeleton must exist at the same time the code that maps the variable is created.

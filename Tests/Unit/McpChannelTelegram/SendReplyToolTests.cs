@@ -29,24 +29,13 @@ public class SendReplyToolTests
     }
 
     [Fact]
-    public async Task McpRun_Reasoning_ReturnsOkWithoutSending()
+    public async Task Run_WithNonTextContentType_ReturnsOkWithoutSending()
     {
-        var result = await SendReplyTool.McpRun("100:100", "thinking...", "reasoning", false, null, _services);
+        var reasoningResult = await SendReplyTool.McpRun("100:100", "thinking...", "reasoning", false, null, _services);
+        var toolCallResult = await SendReplyTool.McpRun("100:100", """{"Name":"mcp:server:search","Arguments":{"query":"test"}}""", "tool_call", false, null, _services);
 
-        result.ShouldBe("ok");
-        _botClient.Verify(b => b.SendRequest(
-            It.IsAny<SendMessageRequest>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task McpRun_ToolCall_SendsFormattedMessage()
-    {
-        var toolCallJson = """{"Name":"mcp:server:search","Arguments":{"query":"test"}}""";
-
-        var result = await SendReplyTool.McpRun("100:100", toolCallJson, "tool_call", false, null, _services);
-
-        result.ShouldBe("ok");
+        reasoningResult.ShouldBe("ok");
+        toolCallResult.ShouldBe("ok");
         _botClient.Verify(b => b.SendRequest(
             It.IsAny<SendMessageRequest>(),
             It.IsAny<CancellationToken>()), Times.Once);

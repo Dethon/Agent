@@ -1,0 +1,33 @@
+{
+    "version": "2.0.0",
+    "options": {
+        "env": {
+            "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -p jackbot",
+            "SERVICES": "agent webui observability mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox",
+            "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot",
+            "LOCAL_DEPS": "qbittorrent jackett redis camoufox"
+        }
+    },
+    "tasks": [
+        {
+            "label": "docker-debug-up",
+            "type": "shell",
+            "command": "docker volume inspect jackbot_vsdbg > /dev/null 2>&1 || $DC run --rm vsdbg-install && $DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+            "problemMatcher": []
+        },
+        {
+            "label": "local-deps",
+            "type": "shell",
+            "command": "$DC_LOCAL up -d --build $LOCAL_DEPS",
+            "problemMatcher": []
+        },
+        {
+            "label": "build-all-local",
+            "command": "dotnet",
+            "type": "process",
+            "args": ["build", "${workspaceFolder}/agent.sln", "-c", "Debug"],
+            "dependsOn": "local-deps",
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}

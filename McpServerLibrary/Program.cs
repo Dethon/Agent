@@ -1,4 +1,4 @@
-﻿using McpServerLibrary.Modules;
+using McpServerLibrary.Modules;
 using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);

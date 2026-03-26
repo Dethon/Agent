@@ -150,16 +150,16 @@ public class WebBrowseTool(IWebBrowser browser)
     {
         if (string.IsNullOrEmpty(strategy))
         {
-            return WaitStrategy.NetworkIdle;
+            return WaitStrategy.DomContentLoaded;
         }
 
         return strategy.ToLowerInvariant() switch
         {
-            "domcontentloaded" => WaitStrategy.DomContentLoaded,
+            "networkidle" => WaitStrategy.NetworkIdle,
             "load" => WaitStrategy.Load,
             "selector" => WaitStrategy.Selector,
             "stable" => WaitStrategy.Stable,
-            _ => WaitStrategy.NetworkIdle
+            _ => WaitStrategy.DomContentLoaded
         };
     }
 }

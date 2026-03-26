@@ -31,7 +31,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // during "thinking"), so use Expect to poll until it has non-empty text content.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
     }
 
     [SkippableFact]
@@ -218,22 +218,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        // Wait for the agent's MCP tool servers to finish their initialization handshake.
-        // The chat input becomes enabled when SignalR connects + an agent is selected, but
-        // the agent's MCP client connections to tool servers (mcp-text etc.) complete
-        // asynchronously afterward. Without this delay the LLM receives the message before
-        // tools are registered and responds conversationally instead of calling a tool.
-        await page.WaitForTimeoutAsync(10_000);
-
         // Send a message that triggers a tool call.
-        // The prompt explicitly requests tool use so gpt-4o-mini reliably invokes GlobFiles.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. After the tool is called say 'Done' so I can check. The result of the tool doesn't matter");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Verify tool name is shown
         var toolName = page.Locator(".tool-name");
@@ -247,7 +239,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
     }
 
     [SkippableFact]
@@ -260,18 +252,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        // Wait for the agent's MCP tool servers to finish their initialization handshake.
-        // See ApprovalModal_ApproveFlow for the full rationale.
-        await page.WaitForTimeoutAsync(10_000);
-
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Use the GlobFiles tool to list all files matching '**/*'");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. Do not write any text response.");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Click Reject
         await page.Locator(".btn-reject").ClickAsync();

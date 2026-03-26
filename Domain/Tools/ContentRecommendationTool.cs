@@ -1,4 +1,4 @@
-﻿namespace Domain.Tools;
+namespace Domain.Tools;
 
 public class ContentRecommendationTool
 {

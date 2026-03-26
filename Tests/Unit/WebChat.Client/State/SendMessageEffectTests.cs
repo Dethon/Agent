@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
-using Tests.Unit.WebChat.Fixtures;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -59,7 +59,7 @@ public sealed class SendMessageEffectTests : IDisposable
     {
         // Arrange
         var topic = new StoredTopic
-            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
         _dispatcher.Dispatch(new TopicsLoaded([topic]));
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 
@@ -112,7 +112,7 @@ public sealed class SendMessageEffectTests : IDisposable
     {
         // Arrange
         var topic = new StoredTopic
-            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
         _dispatcher.Dispatch(new TopicsLoaded([topic]));
         _dispatcher.Dispatch(new SelectTopic("topic-1"));
 

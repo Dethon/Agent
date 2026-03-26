@@ -1,4 +1,4 @@
-﻿using Domain.Monitor;
+using Domain.Monitor;
 
 namespace Agent.App;
 

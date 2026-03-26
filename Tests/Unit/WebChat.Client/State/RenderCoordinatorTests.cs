@@ -24,14 +24,6 @@ public class RenderCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public void CreateStreamingObservable_ReturnsObservable_ForTopic()
-    {
-        var observable = _coordinator.CreateStreamingObservable("topic-1");
-
-        observable.ShouldNotBeNull();
-    }
-
-    [Fact]
     public void CreateStreamingObservable_EmitsNull_WhenTopicNotStreaming()
     {
         StreamingContent? received = null;
@@ -83,32 +75,21 @@ public class RenderCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public void CreateIsStreamingObservable_ReturnsCorrectBoolean_WhenNotStreaming()
+    public void CreateIsStreamingObservable_ReturnsCorrectBoolean()
     {
         var received = new List<bool>();
         var observable = _coordinator.CreateIsStreamingObservable("topic-1");
 
         using var subscription = observable.Subscribe(value => received.Add(value));
 
-        // Wait for multiple sample intervals to ensure capture
+        // Wait for sample interval — should emit false since not streaming
         Thread.Sleep(120);
-
         received.ShouldContain(false);
-    }
-
-    [Fact]
-    public void CreateIsStreamingObservable_ReturnsCorrectBoolean_WhenStreaming()
-    {
-        var received = new List<bool>();
-        var observable = _coordinator.CreateIsStreamingObservable("topic-1");
-
-        using var subscription = observable.Subscribe(value => received.Add(value));
 
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
 
-        // Wait for multiple sample intervals to ensure capture
+        // Wait for sample interval — should now emit true
         Thread.Sleep(120);
-
         received.ShouldContain(true);
     }
 
@@ -132,14 +113,9 @@ public class RenderCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public void CreateStreamingObservable_ThrowsOnNullTopicId()
+    public void CreateObservables_ThrowOnNullTopicId()
     {
         Should.Throw<ArgumentNullException>(() => _coordinator.CreateStreamingObservable(null!));
-    }
-
-    [Fact]
-    public void CreateIsStreamingObservable_ThrowsOnNullTopicId()
-    {
         Should.Throw<ArgumentNullException>(() => _coordinator.CreateIsStreamingObservable(null!));
     }
 }

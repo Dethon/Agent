@@ -160,11 +160,11 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     [Fact]
-    public void HandleApprovalResolved_WithToolCalls_DispatchesStreamChunk()
+    public void HandleApprovalResolved_DispatchesStreamChunkOnlyWhenToolCallsPresent()
     {
-        var notification = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1");
-
-        _sut.HandleApprovalResolved(notification);
+        // With tool calls — dispatches StreamChunk
+        var withToolCalls = new ApprovalResolvedNotification("topic-1", "approval-123", "tool output", "msg-1");
+        _sut.HandleApprovalResolved(withToolCalls);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<StreamChunk>(a =>
@@ -172,14 +172,12 @@ public sealed class HubEventDispatcherTests : IDisposable
                 a.ToolCalls == "tool output" &&
                 a.MessageId == "msg-1")),
             Times.Once);
-    }
 
-    [Fact]
-    public void HandleApprovalResolved_WithoutToolCalls_DoesNotDispatchStreamChunk()
-    {
-        var notification = new ApprovalResolvedNotification("topic-1", "approval-123");
+        _mockDispatcher.Invocations.Clear();
 
-        _sut.HandleApprovalResolved(notification);
+        // Without tool calls — does not dispatch StreamChunk
+        var withoutToolCalls = new ApprovalResolvedNotification("topic-1", "approval-456");
+        _sut.HandleApprovalResolved(withoutToolCalls);
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.IsAny<StreamChunk>()),

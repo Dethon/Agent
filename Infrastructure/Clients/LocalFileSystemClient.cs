@@ -1,4 +1,4 @@
-﻿using Domain.Contracts;
+using Domain.Contracts;
 using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Infrastructure.Clients;

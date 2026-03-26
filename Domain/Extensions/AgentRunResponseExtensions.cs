@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;

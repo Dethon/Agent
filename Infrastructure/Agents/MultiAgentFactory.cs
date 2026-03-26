@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -89,6 +90,45 @@ public sealed class MultiAgentFactory(
         return userAgents.TryRemove(agentId, out _);
     }
 
+    public DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition,
+        IToolApprovalHandler approvalHandler,
+        string[] whitelistPatterns,
+        string userId)
+    {
+        var agentPublisher = metricsPublisher is not null
+            ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
+            : null;
+
+        var chatClient = CreateChatClient(definition.Model, agentPublisher);
+
+        var effectiveClient = new ToolApprovalChatClient(
+            chatClient,
+            approvalHandler,
+            whitelistPatterns,
+            agentPublisher);
+
+        var enabledFeatures = definition.EnabledFeatures
+            .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
+
+        var featureConfig = new FeatureConfig(
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId));
+        var domainTools = domainToolRegistry
+            .GetToolsForFeatures(enabledFeatures, featureConfig)
+            .ToList();
+
+        return new McpAgent(
+            definition.McpServerEndpoints,
+            effectiveClient,
+            $"subagent-{definition.Id}",
+            definition.Description ?? "",
+            new NullThreadStateStore(),
+            userId,
+            definition.CustomInstructions,
+            domainTools,
+            enableResourceSubscriptions: false);
+    }
+
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
         var agentPublisher = metricsPublisher is not null
@@ -100,8 +140,10 @@ public sealed class MultiAgentFactory(
         var name = $"{definition.Name}-{agentKey.ConversationId}";
         var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
+        var featureConfig = new FeatureConfig(
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId));
         var domainTools = domainToolRegistry
-            .GetToolsForFeatures(definition.EnabledFeatures)
+            .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();
 
         return new McpAgent(

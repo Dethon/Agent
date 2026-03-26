@@ -107,7 +107,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
                 // Refresh page after setting cookie
                 await page.ReloadAsync(new PageReloadOptions
-                    { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
+                { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
                 html = await page.ContentAsync();
                 captchaRetries++;
             }
@@ -594,10 +594,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     {
         return strategy switch
         {
-            WaitStrategy.DomContentLoaded => WaitUntilState.DOMContentLoaded,
+            WaitStrategy.NetworkIdle => WaitUntilState.NetworkIdle,
             WaitStrategy.Load => WaitUntilState.Load,
             WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
-            _ => WaitUntilState.NetworkIdle
+            _ => WaitUntilState.DOMContentLoaded
         };
     }
 

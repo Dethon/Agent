@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Auto-format staged C# files using dotnet format on commit
+
+# Get staged .cs files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.cs')
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+# Run dotnet format on the solution, scoped to staged files
+dotnet format agent.sln --include $STAGED_FILES --verbosity quiet
+
+# Re-stage the formatted files
+echo "$STAGED_FILES" | xargs git add
+
+exit 0

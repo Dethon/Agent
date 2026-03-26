@@ -96,8 +96,10 @@ public class ResubscribeDownloadsToolTests
         results[0]!["message"]!.ToString().ShouldContain("Check the downloads folder");
     }
 
-    [Fact]
-    public async Task Run_WithInProgressDownload_ResubscribesAndReturnsSuccess()
+    [Theory]
+    [InlineData(DownloadState.InProgress)]
+    [InlineData(DownloadState.Paused)]
+    public async Task Run_WithActiveDownload_ResubscribesAndReturnsSuccess(DownloadState state)
     {
         // Arrange
         var tool = CreateTool();
@@ -106,7 +108,7 @@ public class ResubscribeDownloadsToolTests
             .Returns([]);
         _downloadClientMock
             .Setup(m => m.GetDownloadItem(123, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreateDownloadItem(123, DownloadState.InProgress));
+            .ReturnsAsync(CreateDownloadItem(123, state));
 
         // Act
         var result = await tool.TestRun("session1", [123], CancellationToken.None);
@@ -116,27 +118,6 @@ public class ResubscribeDownloadsToolTests
         var results = result.Response["results"]!.AsArray();
         results[0]!["status"]!.ToString().ShouldBe("Resubscribed");
         _trackedDownloadsManagerMock.Verify(m => m.Add("session1", 123), Times.Once);
-    }
-
-    [Fact]
-    public async Task Run_WithPausedDownload_ResubscribesAndReturnsSuccess()
-    {
-        // Arrange
-        var tool = CreateTool();
-        _trackedDownloadsManagerMock
-            .Setup(m => m.Get("session1"))
-            .Returns([]);
-        _downloadClientMock
-            .Setup(m => m.GetDownloadItem(123, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(CreateDownloadItem(123, DownloadState.Paused));
-
-        // Act
-        var result = await tool.TestRun("session1", [123], CancellationToken.None);
-
-        // Assert
-        result.HasNewSubscriptions.ShouldBeTrue();
-        var results = result.Response["results"]!.AsArray();
-        results[0]!["status"]!.ToString().ShouldBe("Resubscribed");
     }
 
     [Fact]

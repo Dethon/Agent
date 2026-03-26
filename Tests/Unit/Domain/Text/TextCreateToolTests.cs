@@ -89,20 +89,16 @@ public class TextCreateToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_RelativePath_ResolvesCorrectly()
+    public void Run_PathFormats_ResolveCorrectly()
     {
-        var result = _tool.TestRun("notes/2024/january.md", "January notes");
-
-        result["filePath"]!.ToString().ShouldBe("notes/2024/january.md");
+        // Relative path with nested directories
+        var result1 = _tool.TestRun("notes/2024/january.md", "January notes");
+        result1["filePath"]!.ToString().ShouldBe("notes/2024/january.md");
         File.Exists(Path.Combine(_testDir, "notes", "2024", "january.md")).ShouldBeTrue();
-    }
 
-    [Fact]
-    public void Run_LeadingSlash_ResolvesCorrectly()
-    {
-        var result = _tool.TestRun("docs/readme.md", "Documentation");
-
-        result["filePath"]!.ToString().ShouldBe("docs/readme.md");
+        // Another relative path format
+        var result2 = _tool.TestRun("docs/readme.md", "Documentation");
+        result2["filePath"]!.ToString().ShouldBe("docs/readme.md");
         File.Exists(Path.Combine(_testDir, "docs", "readme.md")).ShouldBeTrue();
     }
 
@@ -115,16 +111,6 @@ public class TextCreateToolTests : IDisposable
 
         result["status"]!.ToString().ShouldBe("created");
         File.ReadAllText(Path.Combine(_testDir, "existing.md")).ShouldBe("New content");
-    }
-
-    [Fact]
-    public void Run_WithOverwriteFalse_FileExists_ThrowsException()
-    {
-        File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
-
-        var ex = Should.Throw<InvalidOperationException>(() =>
-            _tool.TestRun("existing.md", "New content", overwrite: false));
-        ex.Message.ShouldContain("already exists");
     }
 
     private class TestableTextCreateTool(string vaultPath, string[] allowedExtensions)

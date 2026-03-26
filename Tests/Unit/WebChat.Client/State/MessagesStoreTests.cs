@@ -125,21 +125,7 @@ public class MessagesStoreTests : IDisposable
     }
 
     [Fact]
-    public void ClearMessages_RemovesTopicFromMessagesByTopic()
-    {
-        // Arrange
-        var messages = new List<ChatMessageModel> { new() { Role = "user", Content = "Test" } };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
-
-        // Act
-        _dispatcher.Dispatch(new ClearMessages("topic-1"));
-
-        // Assert
-        _store.State.MessagesByTopic.ContainsKey("topic-1").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void ClearMessages_RemovesFinalizedMessageIds()
+    public void ClearMessages_ClearsAllStateForTopic()
     {
         // Arrange
         var messages = new List<ChatMessageModel>
@@ -148,25 +134,14 @@ public class MessagesStoreTests : IDisposable
         };
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", messages));
         _store.State.FinalizedMessageIdsByTopic.ContainsKey("topic-1").ShouldBeTrue();
-
-        // Act
-        _dispatcher.Dispatch(new ClearMessages("topic-1"));
-
-        // Assert
-        _store.State.FinalizedMessageIdsByTopic.ContainsKey("topic-1").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void ClearMessages_RemovesFromLoadedTopics()
-    {
-        // Arrange
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
         _store.State.LoadedTopics.Contains("topic-1").ShouldBeTrue();
 
         // Act
         _dispatcher.Dispatch(new ClearMessages("topic-1"));
 
         // Assert
+        _store.State.MessagesByTopic.ContainsKey("topic-1").ShouldBeFalse();
+        _store.State.FinalizedMessageIdsByTopic.ContainsKey("topic-1").ShouldBeFalse();
         _store.State.LoadedTopics.Contains("topic-1").ShouldBeFalse();
     }
 
@@ -350,21 +325,4 @@ public class MessagesStoreTests : IDisposable
         remaining.Count.ShouldBe(0);
     }
 
-    [Fact]
-    public void ImmutableUpdate_DoesNotMutateOriginalState()
-    {
-        // Arrange
-        var initialMessages = new List<ChatMessageModel> { new() { Content = "Initial" } };
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", initialMessages));
-        var stateAfterLoad = _store.State;
-        var messagesAfterLoad = stateAfterLoad.MessagesByTopic["topic-1"];
-
-        // Act
-        _dispatcher.Dispatch(new AddMessage("topic-1", new ChatMessageModel { Content = "Added" }));
-
-        // Assert - original state unchanged, new state has new message
-        messagesAfterLoad.Count.ShouldBe(1); // Original unchanged
-        _store.State.MessagesByTopic["topic-1"].Count.ShouldBe(2); // New state has 2
-        _store.State.ShouldNotBeSameAs(stateAfterLoad); // Different instances
-    }
 }

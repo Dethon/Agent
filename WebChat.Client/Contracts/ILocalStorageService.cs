@@ -1,4 +1,4 @@
-﻿namespace WebChat.Client.Contracts;
+namespace WebChat.Client.Contracts;
 
 public interface ILocalStorageService
 {

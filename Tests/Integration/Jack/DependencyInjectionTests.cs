@@ -98,48 +98,24 @@ public class DependencyInjectionTests
         result.ChatInterface.ShouldBe(ChatInterface.Cli);
     }
 
-    [Fact]
-    public void GetCommandLineParams_WithPromptOption_SetsOneShotMode()
+    [Theory]
+    [InlineData("--prompt", "Hello world")]
+    [InlineData("-p", "Test prompt")]
+    public void GetCommandLineParams_WithPromptFlag_SetsOneShotMode(string flag, string prompt)
     {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["--prompt", "Hello world"]);
+        var result = ConfigModule.GetCommandLineParams([flag, prompt]);
 
-        // Assert
         result.ChatInterface.ShouldBe(ChatInterface.OneShot);
-        result.Prompt.ShouldBe("Hello world");
-        result.ShowReasoning.ShouldBeFalse();
+        result.Prompt.ShouldBe(prompt);
     }
 
-    [Fact]
-    public void GetCommandLineParams_WithPromptShortOption_SetsOneShotMode()
+    [Theory]
+    [InlineData("--prompt", "--reasoning")]
+    [InlineData("-p", "-r")]
+    public void GetCommandLineParams_WithReasoningFlag_SetsShowReasoning(string promptFlag, string reasoningFlag)
     {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["-p", "Test prompt"]);
+        var result = ConfigModule.GetCommandLineParams([promptFlag, "Test", reasoningFlag]);
 
-        // Assert
-        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
-        result.Prompt.ShouldBe("Test prompt");
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithReasoningOption_SetsShowReasoning()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["--prompt", "Test", "--reasoning"]);
-
-        // Assert
-        result.ChatInterface.ShouldBe(ChatInterface.OneShot);
-        result.Prompt.ShouldBe("Test");
-        result.ShowReasoning.ShouldBeTrue();
-    }
-
-    [Fact]
-    public void GetCommandLineParams_WithReasoningShortOption_SetsShowReasoning()
-    {
-        // Act
-        var result = ConfigModule.GetCommandLineParams(["-p", "Test", "-r"]);
-
-        // Assert
         result.ChatInterface.ShouldBe(ChatInterface.OneShot);
         result.ShowReasoning.ShouldBeTrue();
     }

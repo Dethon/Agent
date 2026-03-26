@@ -1,4 +1,4 @@
-﻿namespace Agent.Settings;
+namespace Agent.Settings;
 
 public record CommandLineParams
 {

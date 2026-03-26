@@ -25,7 +25,7 @@ public sealed class ErrorsStore : Store<ErrorsState>
     public void AppendEvent(ErrorEvent evt) =>
         Dispatch(new AppendErrorEvent(evt), static (s, a) => s with
         {
-            Events = [..s.Events, a.Event],
+            Events = [.. s.Events, a.Event],
         });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>

@@ -60,7 +60,7 @@ internal sealed class McpSamplingHandler
 
         return new ChatClientAgentRunOptions(new ChatOptions
         {
-            Tools = [..tools],
+            Tools = [.. tools],
             Instructions = parameters?.SystemPrompt,
             Temperature = parameters?.Temperature,
             MaxOutputTokens = parameters?.MaxTokens,

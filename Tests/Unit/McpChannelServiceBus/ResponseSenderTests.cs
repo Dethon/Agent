@@ -25,39 +25,19 @@ public class ResponseSenderTests
     }
 
     [Fact]
-    public async Task SendResponseAsync_SendsMessageToQueue()
+    public async Task SendResponseAsync_SendsWellFormedMessage()
     {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
+        using var cts = new CancellationTokenSource();
 
-        _sender.Verify(s => s.SendMessageAsync(
-            It.IsAny<ServiceBusMessage>(),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
+        await _sut.SendResponseAsync("corr-123", "Hello response", cts.Token);
 
-    [Fact]
-    public async Task SendResponseAsync_SetsCorrelationId()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
+        // ReSharper disable once AccessToDisposedClosure
+        _sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), cts.Token), Times.Once);
 
         _capturedMessage.ShouldNotBeNull();
         _capturedMessage.CorrelationId.ShouldBe("corr-123");
-    }
-
-    [Fact]
-    public async Task SendResponseAsync_SetsJsonContentType()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
-
-        _capturedMessage.ShouldNotBeNull();
         _capturedMessage.ContentType.ShouldBe("application/json");
-    }
 
-    [Fact]
-    public async Task SendResponseAsync_SerializesResponseMessage()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
-
-        _capturedMessage.ShouldNotBeNull();
         var body = _capturedMessage.Body.ToString();
         var deserialized = JsonSerializer.Deserialize<ServiceBusResponseMessage>(body);
 
@@ -66,15 +46,5 @@ public class ResponseSenderTests
         deserialized.Response.ShouldBe("Hello response");
         deserialized.AgentId.ShouldBe("default");
         deserialized.CompletedAt.ShouldNotBe(default);
-    }
-
-    [Fact]
-    public async Task SendResponseAsync_PassesCancellationToken()
-    {
-        using var cts = new CancellationTokenSource();
-
-        await _sut.SendResponseAsync("corr-123", "content", cts.Token);
-        // ReSharper disable once AccessToDisposedClosure
-        _sender.Verify(s => s.SendMessageAsync(It.IsAny<ServiceBusMessage>(), cts.Token), Times.Once);
     }
 }

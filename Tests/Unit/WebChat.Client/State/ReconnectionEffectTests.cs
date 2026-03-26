@@ -53,7 +53,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     public async Task WhenConnectionReconnected_ReloadsHistoryForSelectedTopic()
     {
         var topic = new StoredTopic
-            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
         _dispatcher.Dispatch(new TopicsLoaded([topic]));
         _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
 
@@ -128,7 +128,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     public async Task WhenConnectionDroppedAndReconnected_ReloadsHistory()
     {
         var topic = new StoredTopic
-            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Test Topic" };
         _dispatcher.Dispatch(new TopicsLoaded([topic]));
         _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
 
@@ -216,7 +216,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     public async Task WhenConnectionReconnected_RefetchesTopicsFromServer()
     {
         var existingTopic = new StoredTopic
-            { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Existing" };
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 123, ThreadId = 456, Name = "Existing" };
         _dispatcher.Dispatch(new TopicsLoaded([existingTopic]));
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
 

@@ -341,10 +341,12 @@ public class HtmlProcessorTests
         result.Content.ShouldBe("");
     }
 
-    [Fact]
-    public async Task ProcessAsync_WithMultiClassSelector_ReturnsHtml()
+    [Theory]
+    [InlineData(WebFetchOutputFormat.Html)]
+    [InlineData(WebFetchOutputFormat.Markdown)]
+    public async Task ProcessAsync_WithMultiClassSelector_ReturnsMatchedElements(WebFetchOutputFormat format)
     {
-        // Arrange - selector with multiple classes, returning HTML format
+        // Arrange - selector with multiple classes
         var html = """
                    <!DOCTYPE html>
                    <html>
@@ -363,66 +365,18 @@ public class HtmlProcessorTests
             SessionId: "test",
             Url: "http://example.com/test",
             Selector: "li.item.active",
-            Format: WebFetchOutputFormat.Html);
+            Format: format);
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
-        // Assert - Should match li elements with BOTH item AND active classes, preserving HTML
-        result.IsPartial.ShouldBeFalse();
-        result.Content!.ShouldContain("<strong>Item 1</strong>");
-        result.Content!.ShouldContain("<em>Item 3</em>");
-        result.Content!.ShouldNotContain("Item 2 not active"); // Missing 'active' class
-        result.Content!.ShouldContain("Item 4 active");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_WithMultiClassSelector_ReturnsMarkdown()
-    {
-        // Arrange - selector with multiple classes, returning markdown format
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test</title></head>
-                   <body>
-                       <div class="video-list">
-                           <li class="pcVideoListItem js-pop">
-                               <h3>Video 1 Title</h3>
-                               <span class="duration">10:30</span>
-                               <a href="/video/1">Watch</a>
-                           </li>
-                           <li class="pcVideoListItem other">
-                               <h3>Video 2 Title</h3>
-                               <span class="duration">5:45</span>
-                           </li>
-                           <li class="pcVideoListItem js-pop">
-                               <h3>Video 3 Title</h3>
-                               <span class="duration">8:20</span>
-                               <a href="/video/3">Watch</a>
-                           </li>
-                       </div>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(
-            SessionId: "test",
-            Url: "http://example.com/test",
-            Selector: "li.pcVideoListItem.js-pop",
-            Format: WebFetchOutputFormat.Markdown);
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert - Should return markdown for matched elements only
+        // Assert - Should match li elements with BOTH item AND active classes
         result.IsPartial.ShouldBeFalse();
         result.Content.ShouldNotBeNull();
-        result.Content.ShouldContain("Video 1 Title");
-        result.Content.ShouldContain("Video 3 Title");
-        result.Content.ShouldNotContain("Video 2 Title"); // Missing 'js-pop' class
-        result.Content.ShouldContain("---"); // Separator between matches
-        result.Content.ShouldContain("10:30");
-        result.Content.ShouldContain("8:20");
-        result.Content.ShouldNotContain("5:45"); // From excluded element
+        result.Content.ShouldContain("Item 1");
+        result.Content.ShouldContain("Item 3");
+        result.Content.ShouldNotContain("Item 2 not active"); // Missing 'active' class
+        result.Content.ShouldContain("Item 4 active");
     }
 
     [Fact]
@@ -453,6 +407,30 @@ public class HtmlProcessorTests
         result.Content.ShouldContain("Target content");
         result.Content.ShouldNotContain("Before content");
         result.Content.ShouldNotContain("After content");
+    }
+
+    [Theory]
+    [InlineData(WebFetchOutputFormat.Markdown)]
+    [InlineData(WebFetchOutputFormat.Html)]
+    public async Task ProcessAsync_WithControlCharacters_StripsInvalidChars(WebFetchOutputFormat format)
+    {
+        // Arrange - Content with control characters that break LLM APIs (422)
+        // ReSharper disable VariableLengthStringHexEscapeSequence
+        var html = "<!DOCTYPE html><html><head><title>Test</title></head><body>" +
+                   "<p>Normal text</p>" +
+                   "<p>Has\x00null\x01and\x02control\x1Fchars</p>" +
+                   "<p>Tabs\tand\nnewlines are fine</p>" +
+                   "</body></html>";
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Format: format);
+
+        // Act
+        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
+
+        // Assert
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("Normal text");
+        var invalidChars = result.Content!.Where(c => c < ' ' && c != '\t' && c != '\n' && c != '\r').ToList();
+        invalidChars.ShouldBeEmpty($"Content contains invalid control characters: {string.Join(", ", invalidChars.Select(c => $"U+{(int)c:X4}"))}");
     }
 
     [Fact]

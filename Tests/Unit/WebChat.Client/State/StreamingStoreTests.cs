@@ -40,40 +40,16 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamChunk_ReplacesContentWithFullAccumulatedValue()
-    {
-        // The service accumulates content and sends full value in each chunk
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello ", null, null, "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", null, null, "msg-1"));
-
-        var content = _store.State.StreamingByTopic["topic-1"];
-        content.Content.ShouldBe("Hello World");
-    }
-
-    [Fact]
-    public void StreamChunk_ReplacesReasoningAndContentSeparately()
+    public void StreamChunk_ReplacesAllContentTypes()
     {
         // The service accumulates and sends full values in each chunk
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", "Thinking ", null, "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", "Thinking about this", null, "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", "Thinking ", "tool1()", "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", "Thinking about this", "tool1()\ntool2()", "msg-1"));
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Hello World");
         content.Reasoning.ShouldBe("Thinking about this");
-    }
-
-    [Fact]
-    public void StreamChunk_ReplacesToolCallsWithFullValue()
-    {
-        // The service accumulates and sends full values in each chunk
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Content", null, "tool1()", "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Content", null, "tool1()\ntool2()", "msg-1"));
-
-        var content = _store.State.StreamingByTopic["topic-1"];
-        content.Content.ShouldBe("Content");
         content.ToolCalls.ShouldBe("tool1()\ntool2()");
     }
 
@@ -91,40 +67,24 @@ public class StreamingStoreTests : IDisposable
     }
 
     [Fact]
-    public void StreamCompleted_RemovesTopicFromStreamingByTopic()
+    public void StreamCompleted_ClearsStreamingState()
     {
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
         _dispatcher.Dispatch(new StreamCompleted("topic-1"));
 
         _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-    }
-
-    [Fact]
-    public void StreamCompleted_RemovesTopicFromStreamingTopics()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamCompleted("topic-1"));
-
         _store.State.StreamingTopics.ShouldNotContain("topic-1");
     }
 
     [Fact]
-    public void StreamCancelled_RemovesTopicFromStreamingByTopic()
+    public void StreamCancelled_ClearsStreamingState()
     {
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
         _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", null, null, "msg-1"));
         _dispatcher.Dispatch(new StreamCancelled("topic-1"));
 
         _store.State.StreamingByTopic.ShouldNotContainKey("topic-1");
-    }
-
-    [Fact]
-    public void StreamCancelled_RemovesTopicFromStreamingTopics()
-    {
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamCancelled("topic-1"));
-
         _store.State.StreamingTopics.ShouldNotContain("topic-1");
     }
 

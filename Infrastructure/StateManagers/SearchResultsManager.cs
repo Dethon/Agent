@@ -1,4 +1,4 @@
-﻿using Domain.Contracts;
+using Domain.Contracts;
 using Domain.DTOs;
 using Microsoft.Extensions.Caching.Memory;
 

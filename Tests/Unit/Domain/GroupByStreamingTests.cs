@@ -27,7 +27,7 @@ public class GroupByStreamingTests
         groups.Count.ShouldBe(1);
         groups[0].Key.ShouldBe("key");
     }
-    
+
     [Fact]
     public async Task GroupByStreaming_WithMultipleKeys_ReturnsMultipleGroups()
     {
@@ -121,7 +121,8 @@ public class GroupByStreamingTests
         // Assert
         await Should.ThrowAsync<OperationCanceledException>(async () =>
         {
-            await foreach (var _ in groups) { }
+            await foreach (var _ in groups)
+            { }
         });
         processedCount.ShouldBeGreaterThanOrEqualTo(5);
         return;

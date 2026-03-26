@@ -9,11 +9,12 @@ namespace Tests.E2E.Dashboard;
 public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
 {
     [Fact]
-    public async Task LoadOverview_ShowsKpiCards()
+    public async Task LoadOverview_ShowsKpiCardsHealthGridAndConnectionStatus()
     {
         var page = await fixture.CreatePageAsync();
         await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
+        // KPI cards
         var kpiCards = page.Locator(".kpi-card");
         var count = await kpiCards.CountAsync();
         count.ShouldBe(5);
@@ -24,24 +25,12 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
         labels.ShouldContain("Cost");
         labels.ShouldContain("Tool Calls");
         labels.ShouldContain("Errors");
-    }
 
-    [Fact]
-    public async Task LoadOverview_ShowsHealthGrid()
-    {
-        var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-
+        // Health grid
         var healthGrid = page.Locator(".health-grid");
         (await healthGrid.CountAsync()).ShouldBeGreaterThan(0);
-    }
 
-    [Fact]
-    public async Task LoadOverview_ShowsConnectionStatus()
-    {
-        var page = await fixture.CreatePageAsync();
-        await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-
+        // Connection status
         var status = page.Locator(".connection-status");
         await status.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
         (await status.IsVisibleAsync()).ShouldBeTrue();

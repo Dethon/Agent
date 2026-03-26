@@ -21,6 +21,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
     private readonly string _userId;
+    private readonly bool _enableResourceSubscriptions;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
@@ -37,7 +38,8 @@ public sealed class McpAgent : DisposableAgent
         IThreadStateStore stateStore,
         string userId,
         string? customInstructions = null,
-        IReadOnlyList<AIFunction>? domainTools = null)
+        IReadOnlyList<AIFunction>? domainTools = null,
+        bool enableResourceSubscriptions = true)
     {
         _endpoints = endpoints;
         _name = name;
@@ -45,6 +47,7 @@ public sealed class McpAgent : DisposableAgent
         _userId = userId;
         _customInstructions = customInstructions;
         _domainTools = domainTools ?? [];
+        _enableResourceSubscriptions = enableResourceSubscriptions;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -99,10 +102,10 @@ public sealed class McpAgent : DisposableAgent
             }
         });
     }
-    
+
     protected override async ValueTask<JsonElement> SerializeSessionCoreAsync(
-        AgentSession session, 
-        JsonSerializerOptions? jsonSerializerOptions = null, 
+        AgentSession session,
+        JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
@@ -154,8 +157,22 @@ public sealed class McpAgent : DisposableAgent
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= await CreateSessionAsync(cancellationToken);
         var session = await GetOrCreateSessionAsync(thread, cancellationToken);
-        await session.ResourceManager.EnsureChannelActive(cancellationToken);
+
+        if (session.ResourceManager is not null)
+        {
+            await session.ResourceManager.EnsureChannelActive(cancellationToken);
+        }
+
         options ??= CreateRunOptions(session);
+
+        if (session.ResourceManager is null)
+        {
+            await foreach (var update in _innerAgent.RunStreamingAsync(messages, thread, options, cancellationToken))
+            {
+                yield return update;
+            }
+            yield break;
+        }
 
         var mainResponses = RunStreamingCoreAsync(messages, thread, session, options, cancellationToken);
         var notificationResponses = session.ResourceManager.SubscriptionChannel.Reader.ReadAllAsync(cancellationToken);
@@ -186,13 +203,14 @@ public sealed class McpAgent : DisposableAgent
             yield return update;
         }
 
-        await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, ct);
+        if (session.ResourceManager is not null)
+        {
+            await session.ResourceManager.SyncResourcesAsync(session.ClientManager.Clients, ct);
+        }
     }
 
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
-        var timeContext = $"Current time: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC";
-
         var prompts = session.ClientManager.Prompts
             .Prepend(BasePrompt.Instructions);
 
@@ -201,14 +219,13 @@ public sealed class McpAgent : DisposableAgent
             prompts = prompts.Prepend(_customInstructions);
         }
 
-        prompts = prompts.Prepend(timeContext);
-
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.Tools],
             Instructions = string.Join("\n\n", prompts)
         });
     }
+
 
     private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
     {
@@ -220,7 +237,8 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await ThreadSession
-                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent, thread, _domainTools, ct);
+                .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
+                             thread, _domainTools, ct, _enableResourceSubscriptions);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

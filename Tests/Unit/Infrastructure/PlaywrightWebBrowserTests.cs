@@ -19,60 +19,22 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await _browser.DisposeAsync();
     }
 
-    [Fact]
-    public async Task NavigateAsync_WithInvalidUrl_ReturnsError()
+    [Theory]
+    [InlineData("not-a-valid-url", "Invalid URL")]
+    [InlineData("", "Invalid URL")]
+    [InlineData("ftp://example.com/file", "http")]
+    [InlineData("file:///etc/passwd", "http")]
+    public async Task NavigateAsync_WithInvalidUrl_ReturnsError(string url, string expectedErrorSubstring)
     {
         // Act
         var request = new BrowseRequest(
             SessionId: "test",
-            Url: "not-a-valid-url");
+            Url: url);
         var result = await _browser.NavigateAsync(request);
 
         // Assert
         result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("Invalid URL");
-    }
-
-    [Fact]
-    public async Task NavigateAsync_WithFtpUrl_ReturnsError()
-    {
-        // Act
-        var request = new BrowseRequest(
-            SessionId: "test",
-            Url: "ftp://example.com/file");
-        var result = await _browser.NavigateAsync(request);
-
-        // Assert
-        result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("http");
-    }
-
-    [Fact]
-    public async Task NavigateAsync_WithEmptyUrl_ReturnsError()
-    {
-        // Act
-        var request = new BrowseRequest(
-            SessionId: "test",
-            Url: "");
-        var result = await _browser.NavigateAsync(request);
-
-        // Assert
-        result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("Invalid URL");
-    }
-
-    [Fact]
-    public async Task NavigateAsync_WithFileUrl_ReturnsError()
-    {
-        // Act
-        var request = new BrowseRequest(
-            SessionId: "test",
-            Url: "file:///etc/passwd");
-        var result = await _browser.NavigateAsync(request);
-
-        // Assert
-        result.Status.ShouldBe(BrowseStatus.Error);
-        result.ErrorMessage!.ShouldContain("http");
+        result.ErrorMessage!.ShouldContain(expectedErrorSubstring);
     }
 
     [Fact]

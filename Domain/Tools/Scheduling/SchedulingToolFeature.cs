@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.Scheduling;
@@ -12,7 +13,7 @@ public class SchedulingToolFeature(
 
     public string FeatureName => Feature;
 
-    public IEnumerable<AIFunction> GetTools()
+    public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
         yield return AIFunctionFactory.Create(
             createTool.RunAsync,

@@ -38,18 +38,18 @@ internal static class OpenRouterHttpHelpers
                     msg.Remove("content");
                     break;
                 case JsonArray arr:
-                {
-                    arr.RemoveAll(x => x is JsonObject itemObj &&
-                                       itemObj["type"]?.GetValue<string>() == "text" &&
-                                       string.IsNullOrEmpty(itemObj["text"]?.GetValue<string>()));
-
-                    if (arr.Count == 0)
                     {
-                        msg.Remove("content");
-                    }
+                        arr.RemoveAll(x => x is JsonObject itemObj &&
+                                           itemObj["type"]?.GetValue<string>() == "text" &&
+                                           string.IsNullOrEmpty(itemObj["text"]?.GetValue<string>()));
 
-                    break;
-                }
+                        if (arr.Count == 0)
+                        {
+                            msg.Remove("content");
+                        }
+
+                        break;
+                    }
             }
         }
 

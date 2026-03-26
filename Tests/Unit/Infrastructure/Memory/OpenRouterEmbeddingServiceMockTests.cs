@@ -24,7 +24,7 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
     }
 
     [Fact]
-    public async Task GenerateEmbeddingAsync_WithValidText_ReturnsEmbedding()
+    public async Task GenerateEmbeddingAsync_WithValidText_ReturnsEmbeddingAndSendsCorrectRequest()
     {
         // Arrange
         var response = new
@@ -52,40 +52,18 @@ public class OpenRouterEmbeddingServiceMockTests : IDisposable
         // Act
         var result = await _service.GenerateEmbeddingAsync("test text");
 
-        // Assert
+        // Assert - response
         result.ShouldNotBeNull();
         result.Length.ShouldBe(3);
         result[0].ShouldBe(0.1f);
         result[1].ShouldBe(0.2f);
         result[2].ShouldBe(0.3f);
-    }
 
-    [Fact]
-    public async Task GenerateEmbeddingAsync_SendsCorrectRequest()
-    {
-        // Arrange
-        var response = new
-        {
-            data = new[] { new { index = 0, embedding = new[] { 0.1f } } },
-            model = "test-model"
-        };
-
-        _server.Given(Request.Create()
-                .WithPath("/embeddings")
-                .UsingPost())
-            .RespondWith(Response.Create()
-                .WithStatusCode(200)
-                .WithHeader("Content-Type", "application/json")
-                .WithBody(JsonSerializer.Serialize(response)));
-
-        // Act
-        await _service.GenerateEmbeddingAsync("test input");
-
-        // Assert
+        // Assert - request
         var request = _server.LogEntries.First();
         var body = request.RequestMessage?.Body!;
         body.ShouldContain("\"model\":\"test-model\"");
-        body.ShouldContain("\"input\":\"test input\"");
+        body.ShouldContain("\"input\":\"test text\"");
     }
 
     [Fact]

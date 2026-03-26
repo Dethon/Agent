@@ -1,3 +1,3 @@
-﻿namespace Domain.Tools.Config;
+namespace Domain.Tools.Config;
 
 public record LibraryPathConfig(string BaseLibraryPath);

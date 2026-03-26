@@ -7,7 +7,7 @@ namespace Infrastructure.Agents;
 
 internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
-    McpResourceManager ResourceManager,
+    McpResourceManager? ResourceManager,
     IReadOnlyList<AITool> Tools);
 
 internal sealed class ThreadSession : IAsyncDisposable
@@ -17,7 +17,7 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
-    public McpResourceManager ResourceManager => _data.ResourceManager;
+    public McpResourceManager? ResourceManager => _data.ResourceManager;
 
     private ThreadSession(ThreadSessionData data)
     {
@@ -32,10 +32,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         ChatClientAgent agent,
         AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool enableResourceSubscriptions = true)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description, agent, thread, userId, domainTools);
-        var data = await builder.BuildAsync(ct);
+        var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
         return new ThreadSession(data);
     }
 
@@ -46,7 +47,11 @@ internal sealed class ThreadSession : IAsyncDisposable
             return;
         }
 
-        await _data.ResourceManager.DisposeAsync();
+        if (_data.ResourceManager is not null)
+        {
+            await _data.ResourceManager.DisposeAsync();
+        }
+
         await _data.ClientManager.DisposeAsync();
     }
 }
@@ -62,7 +67,7 @@ internal sealed class ThreadSessionBuilder(
 {
     private IReadOnlyList<AITool> _tools = [];
 
-    public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
+    public async Task<ThreadSessionData> BuildAsync(CancellationToken ct, bool enableResourceSubscriptions = true)
     {
         // Step 1: Create sampling handler with deferred tool access
         var samplingHandler = new McpSamplingHandler(agent, () => _tools);
@@ -74,8 +79,10 @@ internal sealed class ThreadSessionBuilder(
         // Step 3: Combine MCP tools with domain tools
         _tools = clientManager.Tools.Concat(domainTools).ToList();
 
-        // Step 4: Setup resource management with user context prepended
-        var resourceManager = await CreateResourceManagerAsync(clientManager, ct);
+        // Step 4: Setup resource management with user context prepended (skipped for subagents)
+        McpResourceManager? resourceManager = enableResourceSubscriptions
+            ? await CreateResourceManagerAsync(clientManager, ct)
+            : null;
 
         return new ThreadSessionData(clientManager, resourceManager, _tools);
     }

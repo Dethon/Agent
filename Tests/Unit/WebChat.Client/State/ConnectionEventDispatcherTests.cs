@@ -1,4 +1,5 @@
 using Moq;
+using Shouldly;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Hub;
@@ -16,55 +17,39 @@ public sealed class ConnectionEventDispatcherTests
         _sut = new ConnectionEventDispatcher(_mockDispatcher.Object);
     }
 
-    [Fact]
-    public void HandleConnecting_DispatchesConnectionConnecting()
+    public static TheoryData<string, Type> HandlerDispatchData => new()
     {
-        _sut.HandleConnecting();
+        { nameof(ConnectionEventDispatcher.HandleConnecting), typeof(ConnectionConnecting) },
+        { nameof(ConnectionEventDispatcher.HandleConnected), typeof(ConnectionConnected) },
+        { nameof(ConnectionEventDispatcher.HandleReconnecting), typeof(ConnectionReconnecting) },
+        { nameof(ConnectionEventDispatcher.HandleReconnected), typeof(ConnectionReconnected) },
+    };
 
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionConnecting>()), Times.Once);
+    [Theory]
+    [MemberData(nameof(HandlerDispatchData))]
+    public void Handle_DispatchesCorrectAction(string handlerName, Type expectedActionType)
+    {
+        var handler = typeof(ConnectionEventDispatcher).GetMethod(handlerName)!;
+
+        handler.Invoke(_sut, null);
+
+        _mockDispatcher.Invocations.Count.ShouldBe(1);
+        _mockDispatcher.Invocations[0].Arguments[0].GetType().ShouldBe(expectedActionType);
     }
 
     [Fact]
-    public void HandleConnected_DispatchesConnectionConnected()
-    {
-        _sut.HandleConnected();
-
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionConnected>()), Times.Once);
-    }
-
-    [Fact]
-    public void HandleReconnecting_DispatchesConnectionReconnecting()
-    {
-        _sut.HandleReconnecting();
-
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnecting>()), Times.Once);
-    }
-
-    [Fact]
-    public void HandleReconnected_DispatchesConnectionReconnected()
-    {
-        _sut.HandleReconnected();
-
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnected>()), Times.Once);
-    }
-
-    [Fact]
-    public void HandleClosed_WithException_DispatchesConnectionClosedWithErrorMessage()
+    public void HandleClosed_DispatchesConnectionClosedWithCorrectError()
     {
         var exception = new InvalidOperationException("Server shutdown");
 
         _sut.HandleClosed(exception);
-
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ConnectionClosed>(action => action.Error == "Server shutdown")),
             Times.Once);
-    }
 
-    [Fact]
-    public void HandleClosed_WithoutException_DispatchesConnectionClosedWithNull()
-    {
+        _mockDispatcher.Invocations.Clear();
+
         _sut.HandleClosed(null);
-
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ConnectionClosed>(action => action.Error == null)),
             Times.Once);

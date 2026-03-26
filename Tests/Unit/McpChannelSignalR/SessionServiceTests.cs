@@ -1,5 +1,5 @@
-using McpChannelSignalR.Services;
 using Domain.DTOs.Channel;
+using McpChannelSignalR.Services;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelSignalR;
@@ -20,12 +20,6 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public void TryGetSession_UnknownTopic_ReturnsFalse()
-    {
-        _sut.TryGetSession("nonexistent", out _).ShouldBeFalse();
-    }
-
-    [Fact]
     public void EndSession_RemovesSessionAndMappings()
     {
         _sut.StartSession("topic1", "agent1", 100, 200);
@@ -37,16 +31,11 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public void GetTopicIdByChatId_ReturnsCorrectMapping()
+    public void GetTopicId_ReturnsCorrectMapping()
     {
         _sut.StartSession("topic1", "agent1", 100, 200);
-        _sut.GetTopicIdByChatId(100).ShouldBe("topic1");
-    }
 
-    [Fact]
-    public void GetTopicIdByConversationId_ReturnsCorrectMapping()
-    {
-        _sut.StartSession("topic1", "agent1", 100, 200);
+        _sut.GetTopicIdByChatId(100).ShouldBe("topic1");
         _sut.GetTopicIdByConversationId("100:200").ShouldBe("topic1");
     }
 
@@ -61,8 +50,9 @@ public class SessionServiceTests
     }
 
     [Fact]
-    public void GetSessionByConversationId_UnknownId_ReturnsNull()
+    public void Lookup_WithUnknownIds_ReturnsNullOrFalse()
     {
+        _sut.TryGetSession("nonexistent", out _).ShouldBeFalse();
         _sut.GetSessionByConversationId("999:999").ShouldBeNull();
     }
 

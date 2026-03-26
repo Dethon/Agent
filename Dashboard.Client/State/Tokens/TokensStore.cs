@@ -29,7 +29,7 @@ public sealed class TokensStore : Store<TokensState>
     public void AppendEvent(TokenUsageEvent evt) =>
         Dispatch(new AppendTokenEvent(evt), static (s, a) => s with
         {
-            Events = [..s.Events, a.Event],
+            Events = [.. s.Events, a.Event],
         });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>

@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Agent.Settings;
 
 namespace Agent.Modules;
@@ -22,6 +22,7 @@ public static class ConfigModule
         return services
             .AddAgent(settings)
             .AddScheduling()
+            .AddSubAgents(settings.SubAgents)
             .AddChatMonitoring(settings, cmdParams);
     }
 

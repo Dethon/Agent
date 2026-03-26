@@ -25,7 +25,7 @@ public sealed class SchedulesStore : Store<SchedulesState>
     public void AppendEvent(ScheduleExecutionEvent evt) =>
         Dispatch(new AppendScheduleEvent(evt), static (s, a) => s with
         {
-            Events = [..s.Events, a.Event],
+            Events = [.. s.Events, a.Event],
         });
 
     public void SetDateRange(DateOnly from, DateOnly to) =>

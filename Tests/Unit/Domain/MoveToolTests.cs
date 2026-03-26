@@ -40,63 +40,32 @@ public class MoveToolTests
         _clientMock.Verify(m => m.Move(source, destination, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task Run_WithRelativeSourcePath_ResolvesAgainstLibraryRoot()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Run_WithRelativePaths_ResolvesAgainstLibraryRoot(bool relativeSource, bool relativeDestination)
     {
         // Arrange
         var tool = CreateTool();
-        var relativeSource = Path.Combine("movies", "old.mkv");
-        var expectedAbsoluteSource = Path.Combine(_libraryPath, "movies", "old.mkv");
-        var destination = Path.Combine(_libraryPath, "movies", "new.mkv");
+        var source = relativeSource
+            ? Path.Combine("movies", "old.mkv")
+            : Path.Combine(_libraryPath, "movies", "old.mkv");
+        var destination = relativeDestination
+            ? Path.Combine("movies", "new.mkv")
+            : Path.Combine(_libraryPath, "movies", "new.mkv");
+        var expectedSource = Path.Combine(_libraryPath, "movies", "old.mkv");
+        var expectedDestination = Path.Combine(_libraryPath, "movies", "new.mkv");
 
         // Act
-        var result = await tool.TestRun(relativeSource, destination, CancellationToken.None);
+        var result = await tool.TestRun(source, destination, CancellationToken.None);
 
         // Assert
         result["status"]!.ToString().ShouldBe("success");
-        result["source"]!.ToString().ShouldBe(expectedAbsoluteSource);
-        _clientMock.Verify(m => m.Move(expectedAbsoluteSource, destination, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Run_WithRelativeDestinationPath_ResolvesAgainstLibraryRoot()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var source = Path.Combine(_libraryPath, "movies", "old.mkv");
-        var relativeDestination = Path.Combine("movies", "new.mkv");
-        var expectedAbsoluteDestination = Path.Combine(_libraryPath, "movies", "new.mkv");
-
-        // Act
-        var result = await tool.TestRun(source, relativeDestination, CancellationToken.None);
-
-        // Assert
-        result["status"]!.ToString().ShouldBe("success");
-        result["destination"]!.ToString().ShouldBe(expectedAbsoluteDestination);
+        result["source"]!.ToString().ShouldBe(expectedSource);
+        result["destination"]!.ToString().ShouldBe(expectedDestination);
         _clientMock.Verify(
-            m => m.Move(source, expectedAbsoluteDestination, It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
-    public async Task Run_WithBothRelativePaths_ResolvesAgainstLibraryRoot()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var relativeSource = Path.Combine("movies", "old.mkv");
-        var relativeDestination = Path.Combine("movies", "new.mkv");
-        var expectedAbsoluteSource = Path.Combine(_libraryPath, "movies", "old.mkv");
-        var expectedAbsoluteDestination = Path.Combine(_libraryPath, "movies", "new.mkv");
-
-        // Act
-        var result = await tool.TestRun(relativeSource, relativeDestination, CancellationToken.None);
-
-        // Assert
-        result["status"]!.ToString().ShouldBe("success");
-        result["source"]!.ToString().ShouldBe(expectedAbsoluteSource);
-        result["destination"]!.ToString().ShouldBe(expectedAbsoluteDestination);
-        _clientMock.Verify(
-            m => m.Move(expectedAbsoluteSource, expectedAbsoluteDestination, It.IsAny<CancellationToken>()),
+            m => m.Move(expectedSource, expectedDestination, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -119,34 +88,24 @@ public class MoveToolTests
             () => tool.TestRun(validPath, outsidePath, CancellationToken.None));
     }
 
-    [Fact]
-    public async Task Run_WithDoubleDotInPath_ThrowsInvalidOperationException()
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task Run_WithDoubleDotInPath_ThrowsInvalidOperationException(bool absolute, bool inSource)
     {
         // Arrange
         var tool = CreateTool();
-        var maliciousPath = Path.Combine(_libraryPath, "..", "etc", "passwd");
+        var maliciousPath = absolute
+            ? Path.Combine(_libraryPath, "..", "etc", "passwd")
+            : Path.Combine("..", "etc", "passwd");
         var validPath = Path.Combine(_libraryPath, "movies", "test.mkv");
-
-        // Act & Assert - source with ..
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => tool.TestRun(maliciousPath, validPath, CancellationToken.None));
-
-        // Act & Assert - destination with ..
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => tool.TestRun(validPath, maliciousPath, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Run_WithDoubleDotInRelativePath_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var maliciousRelative = Path.Combine("..", "etc", "passwd");
-        var validPath = Path.Combine(_libraryPath, "movies", "test.mkv");
+        var source = inSource ? maliciousPath : validPath;
+        var destination = inSource ? validPath : maliciousPath;
 
         // Act & Assert
         await Should.ThrowAsync<InvalidOperationException>(
-            () => tool.TestRun(maliciousRelative, validPath, CancellationToken.None));
+            () => tool.TestRun(source, destination, CancellationToken.None));
     }
 
     private class TestableMoveToolWrapper(

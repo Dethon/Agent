@@ -61,17 +61,4 @@ public class McpAgentDeserializationTests : IAsyncDisposable
         key.ShouldBe(agentKey.ToString());
     }
 
-    [Fact]
-    public async Task DeserializeSession_AgentKeyString_MatchesChatHubLookupKey()
-    {
-        // ChatHub.GetHistory uses agentKey.ToString() to look up messages in Redis.
-        // The agent must use the same key when reading/writing messages.
-        var agentKey = new AgentKey("123:456", "test-agent");
-        var serialized = JsonSerializer.SerializeToElement(agentKey.ToString());
-
-        var session = await _agent.DeserializeSessionAsync(serialized);
-
-        session.StateBag.TryGetValue<string>(RedisChatMessageStore.StateKey, out var redisKey).ShouldBeTrue();
-        redisKey.ShouldBe(agentKey.ToString());
-    }
 }

@@ -11,41 +11,19 @@ public class ApprovalCallbackRouterTests
     private readonly ApprovalCallbackRouter _sut = new();
     private readonly Mock<ITelegramBotClient> _botClient = new();
 
-    [Fact]
-    public async Task RegisterApproval_ThenApprove_ReturnsApproved()
+    [Theory]
+    [InlineData("tool_approve", "approved")]
+    [InlineData("tool_always", "approved_and_remember")]
+    [InlineData("tool_reject", "denied")]
+    public async Task RegisterApproval_ThenCallback_ReturnsExpectedResult(string callbackPrefix, string expectedResult)
     {
         var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
 
-        var query = CreateCallbackQuery($"tool_approve:{approvalId}");
-        var handled = await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
-
-        handled.ShouldBeTrue();
-        var result = await resultTask;
-        result.ShouldBe("approved");
-    }
-
-    [Fact]
-    public async Task RegisterApproval_ThenAlways_ReturnsApprovedAndRemember()
-    {
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
-
-        var query = CreateCallbackQuery($"tool_always:{approvalId}");
+        var query = CreateCallbackQuery($"{callbackPrefix}:{approvalId}");
         await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
 
         var result = await resultTask;
-        result.ShouldBe("approved_and_remember");
-    }
-
-    [Fact]
-    public async Task RegisterApproval_ThenReject_ReturnsDenied()
-    {
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
-
-        var query = CreateCallbackQuery($"tool_reject:{approvalId}");
-        await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
-
-        var result = await resultTask;
-        result.ShouldBe("denied");
+        result.ShouldBe(expectedResult);
     }
 
     [Fact]

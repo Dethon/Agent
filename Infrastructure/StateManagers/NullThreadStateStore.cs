@@ -1,0 +1,28 @@
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs.WebChat;
+using Microsoft.Extensions.AI;
+
+namespace Infrastructure.StateManagers;
+
+public sealed class NullThreadStateStore : IThreadStateStore
+{
+    public Task<ChatMessage[]?> GetMessagesAsync(string key) => Task.FromResult<ChatMessage[]?>(null);
+
+    public Task SetMessagesAsync(string key, ChatMessage[] messages) => Task.CompletedTask;
+
+    public Task DeleteAsync(AgentKey key) => Task.CompletedTask;
+
+    public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
+
+    public Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
+        => Task.FromResult<IReadOnlyList<TopicMetadata>>([]);
+
+    public Task SaveTopicAsync(TopicMetadata topic) => Task.CompletedTask;
+
+    public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+
+    public Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
+        string agentId, long chatId, long threadId, CancellationToken ct = default)
+        => Task.FromResult<TopicMetadata?>(null);
+}

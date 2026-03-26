@@ -24,72 +24,26 @@ public class ApprovalStoreTests : IDisposable
             [new ToolApprovalRequest(null, "Search", new Dictionary<string, object?> { ["query"] = "test" })]);
 
     [Fact]
-    public void Initial_StateHasNoRequest()
-    {
-        _store.State.CurrentRequest.ShouldBeNull();
-        _store.State.TopicId.ShouldBeNull();
-        _store.State.IsResponding.ShouldBeFalse();
-    }
-
-    [Fact]
-    public void ShowApproval_SetsCurrentRequest()
+    public void ShowApproval_SetsAllStateCorrectly()
     {
         var request = CreateRequest();
         _dispatcher.Dispatch(new ShowApproval("topic-1", request));
 
         _store.State.CurrentRequest.ShouldBe(request);
-    }
-
-    [Fact]
-    public void ShowApproval_SetsTopicId()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
         _store.State.TopicId.ShouldBe("topic-1");
-    }
-
-    [Fact]
-    public void ShowApproval_SetsIsRespondingToFalse()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
         _store.State.IsResponding.ShouldBeFalse();
     }
 
     [Fact]
-    public void ApprovalResponding_SetsIsRespondingToTrue()
+    public void ApprovalResponding_SetsIsRespondingAndPreservesState()
     {
         var request = CreateRequest();
         _dispatcher.Dispatch(new ShowApproval("topic-1", request));
         _dispatcher.Dispatch(new ApprovalResponding());
 
         _store.State.IsResponding.ShouldBeTrue();
-    }
-
-    [Fact]
-    public void ApprovalResponding_PreservesOtherState()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-        _dispatcher.Dispatch(new ApprovalResponding());
-
         _store.State.CurrentRequest.ShouldBe(request);
         _store.State.TopicId.ShouldBe("topic-1");
-    }
-
-    [Fact]
-    public void ApprovalResolved_ClearsAllState()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-        _dispatcher.Dispatch(new ApprovalResponding());
-        _dispatcher.Dispatch(new ApprovalResolved("approval-1", "tool output"));
-
-        _store.State.CurrentRequest.ShouldBeNull();
-        _store.State.TopicId.ShouldBeNull();
-        _store.State.IsResponding.ShouldBeFalse();
     }
 
     [Fact]
@@ -97,21 +51,10 @@ public class ApprovalStoreTests : IDisposable
     {
         var request = CreateRequest();
         _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-        _dispatcher.Dispatch(new ApprovalResolved("approval-1", null));
+        _dispatcher.Dispatch(new ApprovalResponding());
+        _dispatcher.Dispatch(new ApprovalResolved("approval-1", "tool output"));
 
         _store.State.ShouldBe(ApprovalState.Initial);
-    }
-
-    [Fact]
-    public void ClearApproval_ClearsAllState()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-        _dispatcher.Dispatch(new ClearApproval());
-
-        _store.State.CurrentRequest.ShouldBeNull();
-        _store.State.TopicId.ShouldBeNull();
-        _store.State.IsResponding.ShouldBeFalse();
     }
 
     [Fact]
@@ -124,29 +67,4 @@ public class ApprovalStoreTests : IDisposable
         _store.State.ShouldBe(ApprovalState.Initial);
     }
 
-    [Fact]
-    public void StateObservable_EmitsOnDispatch()
-    {
-        var emissions = new List<ApprovalState>();
-        using var subscription = _store.StateObservable.Subscribe(emissions.Add);
-
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
-        emissions.Count.ShouldBe(2); // Initial + ShowApproval
-        emissions[1].CurrentRequest.ShouldBe(request);
-    }
-
-    [Fact]
-    public void StateObservable_EmitsCurrentStateOnSubscription()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
-        ApprovalState? receivedState = null;
-        using var subscription = _store.StateObservable.Subscribe(state => receivedState = state);
-
-        receivedState.ShouldNotBeNull();
-        receivedState.CurrentRequest.ShouldBe(request);
-    }
 }

@@ -1,0 +1,10 @@
+<Project>
+  <Target Name="SetGitHooksPath" BeforeTargets="Build" Condition="Exists('$(MSBuildThisFileDirectory).git')">
+    <PropertyGroup>
+      <CurrentHooksPath>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory).git/config'))</CurrentHooksPath>
+    </PropertyGroup>
+    <Exec Command="git config core.hooksPath .githooks"
+          WorkingDirectory="$(MSBuildThisFileDirectory)"
+          Condition="!$(CurrentHooksPath.Contains('hooksPath = .githooks'))" />
+  </Target>
+</Project>

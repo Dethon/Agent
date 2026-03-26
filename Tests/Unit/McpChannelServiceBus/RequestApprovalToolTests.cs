@@ -5,43 +5,15 @@ namespace Tests.Unit.McpChannelServiceBus;
 
 public class RequestApprovalToolTests
 {
-    [Fact]
-    public void McpRun_RequestMode_ReturnsApproved()
+    [Theory]
+    [InlineData("request", """[{"toolName":"tool","arguments":{}}]""", "approved")]
+    [InlineData("notify", """[{"toolName":"tool","arguments":{}}]""", "notified")]
+    [InlineData("something_else", """[{"toolName":"tool","arguments":{}}]""", "approved")]
+    [InlineData("request", """[{"toolName":"a","arguments":{}},{"toolName":"b","arguments":{}}]""", "approved")]
+    public void McpRun_AlwaysAutoApproves(string mode, string requests, string expected)
     {
-        const string requests = """[{"toolName":"tool","arguments":{}}]""";
+        var result = RequestApprovalTool.McpRun("corr-1", mode, requests);
 
-        var result = RequestApprovalTool.McpRun("corr-1", "request", requests);
-
-        result.ShouldBe("approved");
-    }
-
-    [Fact]
-    public void McpRun_NotifyMode_ReturnsNotified()
-    {
-        const string requests = """[{"toolName":"tool","arguments":{}}]""";
-
-        var result = RequestApprovalTool.McpRun("corr-1", "notify", requests);
-
-        result.ShouldBe("notified");
-    }
-
-    [Fact]
-    public void McpRun_UnknownMode_ReturnsApproved()
-    {
-        const string requests = """[{"toolName":"tool","arguments":{}}]""";
-
-        var result = RequestApprovalTool.McpRun("corr-1", "something_else", requests);
-
-        result.ShouldBe("approved");
-    }
-
-    [Fact]
-    public void McpRun_MultipleRequests_StillAutoApproves()
-    {
-        const string requests = """[{"toolName":"a","arguments":{}},{"toolName":"b","arguments":{}}]""";
-
-        var result = RequestApprovalTool.McpRun("corr-1", "request", requests);
-
-        result.ShouldBe("approved");
+        result.ShouldBe(expected);
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -5,6 +7,8 @@ using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
+using Tests.Unit.Infrastructure.Helpers;
+using static Tests.Unit.Infrastructure.Helpers.ToolApprovalResponseFactory;
 
 namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 
@@ -104,6 +108,8 @@ public class ToolApprovalChatClientMetricsTests
         // and returns them as error results, so the call succeeds but the tool "failed"
         captured.ShouldNotBeNull();
         captured.ToolName.ShouldBe("mcp:server:FailTool");
+        captured.Success.ShouldBeFalse();
+        captured.Error.ShouldNotBeNullOrEmpty();
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
@@ -149,6 +155,149 @@ public class ToolApprovalChatClientMetricsTests
     }
 
     [Fact]
+    public async Task InvokeFunctionAsync_McpToolReturnsIsError_PublishesFailureEvent()
+    {
+        // Arrange
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+
+        // Simulate an MCP tool returning CallToolResult with isError: true (serialized as JsonElement)
+        var errorResult = JsonSerializer.SerializeToElement(new
+        {
+            content = new[] { new { type = "text", text = "Connection refused" } },
+            isError = true
+        });
+        var function = AIFunctionFactory.Create(() => errorResult, "mcp:server:FailTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:FailTool", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        // Act
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        // Assert
+        captured.ShouldNotBeNull();
+        captured.ToolName.ShouldBe("mcp:server:FailTool");
+        captured.Success.ShouldBeFalse();
+        captured.Error.ShouldNotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task InvokeFunctionAsync_DomainToolReturnsStatusError_PublishesFailureEvent()
+    {
+        // Arrange
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+
+        // Simulate a domain tool (like SubAgentRunTool) returning JsonObject with status: "error"
+        var errorResult = new JsonObject
+        {
+            ["status"] = "error",
+            ["error"] = "Unknown subagent: 'invalid'"
+        };
+        var function = AIFunctionFactory.Create(() => errorResult, "run_subagent");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("run_subagent", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        // Act
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        // Assert
+        captured.ShouldNotBeNull();
+        captured.ToolName.ShouldBe("run_subagent");
+        captured.Success.ShouldBeFalse();
+        captured.Error.ShouldBe("Unknown subagent: 'invalid'");
+    }
+
+    [Fact]
+    public async Task InvokeFunctionAsync_McpToolReturnsIsErrorFalse_PublishesSuccessEvent()
+    {
+        // Arrange
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+
+        // MCP tool returning isError: false should be treated as success
+        var successResult = JsonSerializer.SerializeToElement(new
+        {
+            content = new[] { new { type = "text", text = "All good" } },
+            isError = false
+        });
+        var function = AIFunctionFactory.Create(() => successResult, "mcp:server:OkTool");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:OkTool", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        // Act
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        // Assert
+        captured.ShouldNotBeNull();
+        captured.Success.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task InvokeFunctionAsync_DomainToolReturnsStatusCompleted_PublishesSuccessEvent()
+    {
+        // Arrange
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+
+        var successResult = new JsonObject
+        {
+            ["status"] = "completed",
+            ["result"] = "Task done"
+        };
+        var function = AIFunctionFactory.Create(() => successResult, "run_subagent");
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("run_subagent", "call1"));
+
+        ToolCallEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        // Act
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        // Assert
+        captured.ShouldNotBeNull();
+        captured.Success.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task InvokeFunctionAsync_ApprovedAndRemember_PublishesSuccessEvent()
     {
         // Arrange
@@ -177,56 +326,4 @@ public class ToolApprovalChatClientMetricsTests
         captured.Success.ShouldBeTrue();
     }
 
-    private static ChatResponse CreateToolCallResponse(string toolName, string callId)
-    {
-        var toolCallContent = new FunctionCallContent(callId, toolName, new Dictionary<string, object?>());
-        var message = new ChatMessage(ChatRole.Assistant, [toolCallContent]);
-        return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
-    }
-
-    private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
-    {
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-            => Task.FromResult(result);
-
-        public Task NotifyAutoApprovedAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-            => Task.CompletedTask;
-    }
-
-    private sealed class FakeChatClient : IChatClient
-    {
-        private readonly Queue<ChatResponse> _responses = new();
-
-        public void SetNextResponse(ChatResponse response) => _responses.Enqueue(response);
-
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (_responses.TryDequeue(out var response))
-            {
-                return Task.FromResult(response);
-            }
-
-            return Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")])
-            {
-                FinishReason = ChatFinishReason.Stop
-            });
-        }
-
-        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => AsyncEnumerable.Empty<ChatResponseUpdate>();
-
-        public void Dispose() { }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-    }
 }

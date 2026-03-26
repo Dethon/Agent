@@ -1,4 +1,4 @@
-﻿namespace Domain.Prompts;
+namespace Domain.Prompts;
 
 public static class DownloaderPrompt
 {

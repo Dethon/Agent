@@ -34,7 +34,8 @@ public class ChatMonitor(
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))
                 .Merge(cancellationToken);
 
-            await foreach (var _ in groups) { }
+            await foreach (var _ in groups)
+            { }
         }
         catch (Exception ex)
         {
@@ -73,16 +74,16 @@ public class ChatMonitor(
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
                         return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update, 
-                            AiResponse? Response, 
-                            IChannelConnection Channel, 
+                            AgentResponseUpdate Update,
+                            AiResponse? Response,
+                            IChannelConnection Channel,
                             string ConversationId)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update, 
-                            AiResponse? Response, 
-                            IChannelConnection Channel, 
+                            AgentResponseUpdate Update,
+                            AiResponse? Response,
+                            IChannelConnection Channel,
                             string ConversationId)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
@@ -106,6 +107,16 @@ public class ChatMonitor(
             {
                 await channel.SendReplyAsync(
                     conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+            }
+
+            foreach (var error in update.Contents.OfType<ErrorContent>())
+            {
+                await metricsPublisher.PublishAsync(new ErrorEvent
+                {
+                    Service = "agent",
+                    ErrorType = error.ErrorCode ?? "Unknown",
+                    Message = error.Message
+                }, ct);
             }
 
             yield return true;

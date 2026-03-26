@@ -7,14 +7,6 @@ namespace Tests.Unit.Infrastructure;
 public class McpChannelConnectionTests
 {
     [Fact]
-    public void ChannelId_ReturnsConfiguredId()
-    {
-        var sut = new McpChannelConnection("test-channel");
-
-        sut.ChannelId.ShouldBe("test-channel");
-    }
-
-    [Fact]
     public async Task HandleNotification_WritesChannelMessage()
     {
         var sut = new McpChannelConnection("ch-1");

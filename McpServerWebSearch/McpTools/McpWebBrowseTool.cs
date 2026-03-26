@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using Domain.Contracts;
 using Domain.Tools.Web;
-using Infrastructure.Utils;
 using Infrastructure.Extensions;
+using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -31,7 +31,7 @@ public class McpWebBrowseTool(IWebBrowser browser)
         [Description("Use readability mode to extract article content, stripping navigation/ads (default: false)")]
         bool useReadability = false,
         [Description(
-            "Wait strategy: 'networkidle' (default), 'domcontentloaded', 'load', 'selector', or 'stable'. Use 'stable' for JS-heavy SPAs")]
+            "Wait strategy: 'domcontentloaded' (default), 'networkidle', 'load', 'selector', or 'stable'. Use 'networkidle' for pages needing full resource loading, 'stable' for JS-heavy SPAs")]
         string? waitStrategy = null,
         [Description(
             "CSS selector to wait for before extracting content. Use with waitStrategy='selector' or as additional wait condition")]

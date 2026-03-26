@@ -39,7 +39,7 @@ public sealed class MultiAgentFactoryTests
 
         var domainToolRegistry = new Mock<IDomainToolRegistry>();
         domainToolRegistry
-            .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>()))
+            .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()))
             .Returns(Enumerable.Empty<AIFunction>());
 
         var stateStore = new Mock<IThreadStateStore>();
@@ -60,12 +60,12 @@ public sealed class MultiAgentFactoryTests
         string name = "TestBot",
         string model = "test-model",
         string? description = null) => new()
-    {
-        Name = name,
-        Description = description,
-        Model = model,
-        McpServerEndpoints = []
-    };
+        {
+            Name = name,
+            Description = description,
+            Model = model,
+            McpServerEndpoints = []
+        };
 
     // --- RegisterCustomAgent ---
 

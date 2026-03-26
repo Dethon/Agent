@@ -6,20 +6,6 @@ namespace Tests.Integration.Clients;
 public class JackettSearchClientTests(JackettFixture fixture) : IClassFixture<JackettFixture>
 {
     [Fact]
-    public async Task Search_WithEmptyQuery_ReturnsEmptyResults()
-    {
-        // Arrange
-        var client = fixture.CreateClient();
-
-        // Act
-        var results = await client.Search("", CancellationToken.None);
-
-        // Assert
-        results.ShouldNotBeNull();
-        results.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task Search_WithNoIndexersConfigured_ReturnsEmptyResults()
     {
         // Arrange

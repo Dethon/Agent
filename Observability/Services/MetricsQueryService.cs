@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace Observability.Services;
 
-[UsedImplicitly] 
+[UsedImplicitly]
 public record ServiceHealthResult(string Service, bool IsHealthy, string LastSeen);
 
 public record MetricsSummary(
@@ -39,11 +39,21 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 var value = (long)entry.Value;
                 switch (field)
                 {
-                    case "tokens:input": inputTokens += value; break;
-                    case "tokens:output": outputTokens += value; break;
-                    case "tokens:cost": costFixed += value; break;
-                    case "tools:count": toolCalls += value; break;
-                    case "tools:errors": toolErrors += value; break;
+                    case "tokens:input":
+                        inputTokens += value;
+                        break;
+                    case "tokens:output":
+                        outputTokens += value;
+                        break;
+                    case "tokens:cost":
+                        costFixed += value;
+                        break;
+                    case "tools:count":
+                        toolCalls += value;
+                        break;
+                    case "tools:errors":
+                        toolErrors += value;
+                        break;
                 }
             }
         }
