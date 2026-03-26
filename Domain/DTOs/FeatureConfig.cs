@@ -1,8 +1,6 @@
-using Domain.Contracts;
+using Domain.Agents;
 
 namespace Domain.DTOs;
 
 public record FeatureConfig(
-    IToolApprovalHandler ApprovalHandler,
-    string[] WhitelistPatterns,
-    string UserId);
+    Func<SubAgentDefinition, DisposableAgent>? SubAgentFactory = null);

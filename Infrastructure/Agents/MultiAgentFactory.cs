@@ -90,7 +90,11 @@ public sealed class MultiAgentFactory(
         return userAgents.TryRemove(agentId, out _);
     }
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, FeatureConfig parentContext)
+    public DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition,
+        IToolApprovalHandler approvalHandler,
+        string[] whitelistPatterns,
+        string userId)
     {
         var agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
@@ -100,15 +104,17 @@ public sealed class MultiAgentFactory(
 
         var effectiveClient = new ToolApprovalChatClient(
             chatClient,
-            parentContext.ApprovalHandler,
-            parentContext.WhitelistPatterns,
+            approvalHandler,
+            whitelistPatterns,
             agentPublisher);
 
         var enabledFeatures = definition.EnabledFeatures
             .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
 
+        var featureConfig = new FeatureConfig(
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId));
         var domainTools = domainToolRegistry
-            .GetToolsForFeatures(enabledFeatures, parentContext)
+            .GetToolsForFeatures(enabledFeatures, featureConfig)
             .ToList();
 
         return new McpAgent(
@@ -117,7 +123,7 @@ public sealed class MultiAgentFactory(
             $"subagent-{definition.Id}",
             definition.Description ?? "",
             new NullThreadStateStore(),
-            parentContext.UserId,
+            userId,
             definition.CustomInstructions,
             domainTools,
             enableResourceSubscriptions: false);
@@ -134,7 +140,8 @@ public sealed class MultiAgentFactory(
         var name = $"{definition.Name}-{agentKey.ConversationId}";
         var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
-        var featureConfig = new FeatureConfig(approvalHandler, definition.WhitelistPatterns, userId);
+        var featureConfig = new FeatureConfig(
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId));
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();

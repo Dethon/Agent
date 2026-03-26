@@ -27,7 +27,6 @@ public static class InjectorModule
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             return services
-                .AddSingleton(llmConfig)
                 .AddRedis(settings.Redis)
                 .AddSingleton<IMetricsPublisher, RedisMetricsPublisher>()
                 .AddHostedService(sp =>

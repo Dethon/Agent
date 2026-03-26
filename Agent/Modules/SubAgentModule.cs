@@ -22,8 +22,6 @@ public static class SubAgentModule
             var registryOptions = new SubAgentRegistryOptions { SubAgents = subAgentDefinitions };
             services.AddSingleton(registryOptions);
 
-            services.AddSingleton(sp =>
-                new Lazy<IAgentFactory>(sp.GetRequiredService<IAgentFactory>));
             services.AddTransient<IDomainToolFeature, SubAgentToolFeature>();
 
             return services;
