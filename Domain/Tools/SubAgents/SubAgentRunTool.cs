@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
-using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.SubAgents;
@@ -64,18 +63,13 @@ public class SubAgentRunTool(
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(profile.MaxExecutionSeconds));
 
             var userMessage = new ChatMessage(ChatRole.User, prompt);
-            var response = await agent.RunStreamingAsync(
-                    [userMessage], cancellationToken: timeoutCts.Token)
-                .ToUpdateAiResponsePairs()
-                .Where(x => x.Item2 is not null)
-                .Select(x => x.Item2!)
-                .ToListAsync(timeoutCts.Token);
+            var response = await agent.RunAsync(
+                [userMessage], cancellationToken: timeoutCts.Token);
 
-            var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
             return new JsonObject
             {
                 ["status"] = "completed",
-                ["result"] = result
+                ["result"] = response.Text
             };
         }
         catch (Exception ex)

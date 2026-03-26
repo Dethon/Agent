@@ -107,20 +107,14 @@ file sealed class StubDisposableAgent(string responseText) : DisposableAgent
         IEnumerable<ChatMessage> messages, AgentSession? session = null,
         AgentRunOptions? options = null, CancellationToken cancellationToken = default)
     {
-        throw new NotImplementedException();
+        return Task.FromResult(new AgentResponse(new ChatMessage(ChatRole.Assistant, responseText)));
     }
 
-    protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
+    protected override IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
         IEnumerable<ChatMessage> messages, AgentSession? session = null,
-        AgentRunOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        AgentRunOptions? options = null, CancellationToken cancellationToken = default)
     {
-        var update = new AgentResponseUpdate
-        {
-            MessageId = "msg-1",
-            Contents = [new TextContent(responseText), new UsageContent(new UsageDetails())]
-        };
-        yield return update;
-        await Task.CompletedTask;
+        throw new NotImplementedException();
     }
 
     protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)

@@ -38,6 +38,7 @@ public class DashboardStoreTests
 
     [Theory]
     [MemberData(nameof(StoreFactories))]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "xUnit1026:Theory methods should use all of their parameters")]
     public void InitialState_DefaultsToToday(
         string _,
         Func<IDisposable> factory,
