@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.SubAgents;
@@ -10,6 +11,8 @@ public class SubAgentToolFeature(
     private const string Feature = "subagents";
 
     public string FeatureName => Feature;
+
+    public string? Prompt => SubAgentPrompt.SystemPrompt;
 
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
