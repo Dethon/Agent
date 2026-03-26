@@ -58,7 +58,7 @@ internal static class TestHelpers
         }
     }
 
-    private static readonly string[] BuildOutputDirs = ["bin", "obj"];
+    private static readonly string[] _buildOutputDirs = ["bin", "obj"];
 
     private static DateTimeOffset GetNewestSourceTimestamp(string solutionRoot)
     {
@@ -67,7 +67,7 @@ internal static class TestHelpers
             .Select(d => Path.Combine(solutionRoot, d))
             .Where(Directory.Exists)
             .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)
-                .Where(f => !BuildOutputDirs.Any(b =>
+                .Where(f => !_buildOutputDirs.Any(b =>
                     f.Contains($"{Path.DirectorySeparatorChar}{b}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))))
             .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero))
             .DefaultIfEmpty(DateTimeOffset.MaxValue)
