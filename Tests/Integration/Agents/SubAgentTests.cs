@@ -89,6 +89,10 @@ public class SubAgentTests(RedisFixture redisFixture)
             .ToListAsync(cts.Token);
 
         responses.ShouldNotBeEmpty();
+
+        responses.ShouldContain(r => r.ToolCalls.Contains("run_subagent"),
+            "The parent agent should have invoked the run_subagent tool");
+
         var combined = string.Join(" ", responses.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
         combined.ShouldContain("Hello from subagent", Case.Insensitive);
     }
