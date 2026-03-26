@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
@@ -8,7 +7,6 @@ using Microsoft.Extensions.AI;
 namespace Domain.Tools.SubAgents;
 
 public class SubAgentRunTool(
-    IAgentFactory factory,
     SubAgentRegistryOptions registryOptions,
     FeatureConfig featureConfig)
 {
@@ -49,9 +47,18 @@ public class SubAgentRunTool(
             };
         }
 
+        if (featureConfig.SubAgentFactory is null)
+        {
+            return new JsonObject
+            {
+                ["status"] = "error",
+                ["error"] = "Subagent execution is not available in this context"
+            };
+        }
+
         try
         {
-            await using var agent = factory.CreateSubAgent(profile, featureConfig);
+            await using var agent = featureConfig.SubAgentFactory(profile);
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(profile.MaxExecutionSeconds));

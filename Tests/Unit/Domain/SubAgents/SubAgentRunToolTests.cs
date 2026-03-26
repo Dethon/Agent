@@ -12,11 +12,6 @@ namespace Tests.Unit.Domain.SubAgents;
 
 public class SubAgentRunToolTests
 {
-    private readonly Mock<IAgentFactory> _factory = new();
-
-    private static readonly FeatureConfig TestConfig = new(
-        Mock.Of<IToolApprovalHandler>(), ["pattern:*"], "user-1");
-
     private static readonly SubAgentDefinition TestProfile = new()
     {
         Id = "summarizer",
@@ -26,13 +21,16 @@ public class SubAgentRunToolTests
         McpServerEndpoints = []
     };
 
-    private SubAgentRunTool CreateTool(params SubAgentDefinition[] profiles) =>
-        new(_factory.Object, new SubAgentRegistryOptions { SubAgents = profiles }, TestConfig);
+    private static FeatureConfig CreateConfig(Func<SubAgentDefinition, DisposableAgent>? factory = null) =>
+        new(SubAgentFactory: factory);
+
+    private static SubAgentRunTool CreateTool(FeatureConfig config, params SubAgentDefinition[] profiles) =>
+        new(new SubAgentRegistryOptions { SubAgents = profiles }, config);
 
     [Fact]
     public async Task RunAsync_UnknownProfile_ReturnsError()
     {
-        var tool = CreateTool();
+        var tool = CreateTool(CreateConfig());
 
         var result = await tool.RunAsync("unknown", "do something");
 
@@ -41,28 +39,45 @@ public class SubAgentRunToolTests
     }
 
     [Fact]
+    public async Task RunAsync_NullSubAgentFactory_ReturnsError()
+    {
+        var config = CreateConfig(factory: null);
+        var tool = CreateTool(config, TestProfile);
+
+        var result = await tool.RunAsync("summarizer", "do something");
+
+        result["status"]!.GetValue<string>().ShouldBe("error");
+        result["error"]!.GetValue<string>().ShouldContain("not available");
+    }
+
+    [Fact]
     public async Task RunAsync_ValidProfile_CallsFactoryAndReturnsResult()
     {
         var stubAgent = new StubDisposableAgent("Summary result");
-        _factory.Setup(f => f.CreateSubAgent(TestProfile, TestConfig))
-            .Returns(stubAgent);
+        var factoryCalled = false;
+        var config = CreateConfig(factory: def =>
+        {
+            def.ShouldBe(TestProfile);
+            factoryCalled = true;
+            return stubAgent;
+        });
 
-        var tool = CreateTool(TestProfile);
+        var tool = CreateTool(config, TestProfile);
 
         var result = await tool.RunAsync("summarizer", "summarize this");
 
         result["status"]!.GetValue<string>().ShouldBe("completed");
         result["result"]!.GetValue<string>().ShouldBe("Summary result");
-        _factory.Verify(f => f.CreateSubAgent(TestProfile, TestConfig), Times.Once);
+        factoryCalled.ShouldBeTrue();
     }
 
     [Fact]
     public async Task RunAsync_FactoryThrows_ReturnsError()
     {
-        _factory.Setup(f => f.CreateSubAgent(It.IsAny<SubAgentDefinition>(), It.IsAny<FeatureConfig>()))
-            .Throws(new InvalidOperationException("factory error"));
+        var config = CreateConfig(factory: _ =>
+            throw new InvalidOperationException("factory error"));
 
-        var tool = CreateTool(TestProfile);
+        var tool = CreateTool(config, TestProfile);
 
         var result = await tool.RunAsync("summarizer", "do something");
 
@@ -74,10 +89,9 @@ public class SubAgentRunToolTests
     public async Task RunAsync_ProfileLookup_IsCaseInsensitive()
     {
         var stubAgent = new StubDisposableAgent("result");
-        _factory.Setup(f => f.CreateSubAgent(TestProfile, TestConfig))
-            .Returns(stubAgent);
+        var config = CreateConfig(factory: _ => stubAgent);
 
-        var tool = CreateTool(TestProfile);
+        var tool = CreateTool(config, TestProfile);
 
         var result = await tool.RunAsync("SUMMARIZER", "test");
 

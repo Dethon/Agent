@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -58,9 +59,10 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         var registryOptions = new SubAgentRegistryOptions { SubAgents = [subAgentDef] };
 
         var approvalHandler = new AutoApproveHandler();
-        var featureConfig = new FeatureConfig(approvalHandler, ["domain:subagents:*"], "test-user");
+        var featureConfig = new FeatureConfig(
+            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, ["domain:subagents:*"], "test-user"));
 
-        var toolFeature = new SubAgentToolFeature(new Lazy<IAgentFactory>(factory), registryOptions);
+        var toolFeature = new SubAgentToolFeature(registryOptions);
 
         var llmClient = new OpenRouterChatClient(
             openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "google/gemini-2.5-flash");
@@ -107,14 +109,12 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         var openRouterConfig = CreateOpenRouterConfig();
         var factory = CreateFactory(openRouterConfig);
         var approvalHandler = new AutoApproveHandler();
-        var featureConfig = new FeatureConfig(approvalHandler, [], "test-user");
-
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        await using var agent = factory.CreateSubAgent(subAgentDef, featureConfig);
+        await using var agent = factory.CreateSubAgent(subAgentDef, approvalHandler, [], "test-user");
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
         var response = await agent.RunStreamingAsync(
                 [userMessage], cancellationToken: cts.Token)

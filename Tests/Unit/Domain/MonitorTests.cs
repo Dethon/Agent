@@ -87,7 +87,7 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
     public bool UnregisterCustomAgent(string userId, string agentId)
         => throw new NotImplementedException();
 
-    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, FeatureConfig parentContext)
+    public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string[] whitelistPatterns, string userId)
         => throw new NotImplementedException();
 }
 
