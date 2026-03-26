@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -80,11 +81,13 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             sw.Stop();
             if (_metricsPublisher is not null)
             {
+                var (isError, errorMessage) = DetectError(result);
                 await _metricsPublisher.PublishAsync(new ToolCallEvent
                 {
                     ToolName = toolName,
                     DurationMs = sw.ElapsedMilliseconds,
-                    Success = true
+                    Success = !isError,
+                    Error = errorMessage
                 }, cancellationToken);
             }
             return result;
@@ -104,6 +107,30 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             }
             throw;
         }
+    }
+
+    private static (bool IsError, string? Message) DetectError(object? result)
+    {
+        if (result is not JsonElement { ValueKind: JsonValueKind.Object } json)
+        {
+            return (false, null);
+        }
+
+        // MCP tools: CallToolResult with isError: true
+        if (json.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True)
+        {
+            return (true, json.TryGetProperty("content", out var content) ? content.ToString() : null);
+        }
+
+        // Domain tools (e.g. SubAgentRunTool): { "status": "error", "error": "..." }
+        if (json.TryGetProperty("status", out var status) &&
+            status.ValueKind == JsonValueKind.String &&
+            status.GetString() == "error")
+        {
+            return (true, json.TryGetProperty("error", out var error) ? error.GetString() : null);
+        }
+
+        return (false, null);
     }
 
     private static IReadOnlyDictionary<string, object?> ToReadOnlyDictionary(IDictionary<string, object?>? source)
