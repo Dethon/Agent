@@ -15,41 +15,13 @@ public class OpenRouterHttpHelpersCostTests
         result.ShouldBe(0.00123m);
     }
 
-    [Fact]
-    public void ExtractCostFromSseData_WithNoUsage_ReturnsNull()
+    [Theory]
+    [InlineData("""{"choices":[{"delta":{"content":"hello"}}]}""")]
+    [InlineData("""{"usage":{"prompt_tokens":10,"completion_tokens":20}}""")]
+    [InlineData("not valid json")]
+    [InlineData("""{"usage":{"prompt_tokens":10,"cost":null}}""")]
+    public void ExtractCostFromSseData_WithNoCost_ReturnsNull(string data)
     {
-        var data = """{"choices":[{"delta":{"content":"hello"}}]}""";
-
-        var result = OpenRouterHttpHelpers.ExtractCostFromSseData(data);
-
-        result.ShouldBeNull();
-    }
-
-    [Fact]
-    public void ExtractCostFromSseData_WithUsageButNoCost_ReturnsNull()
-    {
-        var data = """{"usage":{"prompt_tokens":10,"completion_tokens":20}}""";
-
-        var result = OpenRouterHttpHelpers.ExtractCostFromSseData(data);
-
-        result.ShouldBeNull();
-    }
-
-    [Fact]
-    public void ExtractCostFromSseData_WithInvalidJson_ReturnsNull()
-    {
-        var data = "not valid json";
-
-        var result = OpenRouterHttpHelpers.ExtractCostFromSseData(data);
-
-        result.ShouldBeNull();
-    }
-
-    [Fact]
-    public void ExtractCostFromSseData_WithNullCostValue_ReturnsNull()
-    {
-        var data = """{"usage":{"prompt_tokens":10,"cost":null}}""";
-
         var result = OpenRouterHttpHelpers.ExtractCostFromSseData(data);
 
         result.ShouldBeNull();

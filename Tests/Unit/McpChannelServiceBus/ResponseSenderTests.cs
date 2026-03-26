@@ -25,39 +25,18 @@ public class ResponseSenderTests
     }
 
     [Fact]
-    public async Task SendResponseAsync_SendsMessageToQueue()
+    public async Task SendResponseAsync_SendsWellFormedMessage()
     {
         await _sut.SendResponseAsync("corr-123", "Hello response");
 
         _sender.Verify(s => s.SendMessageAsync(
             It.IsAny<ServiceBusMessage>(),
             It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task SendResponseAsync_SetsCorrelationId()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
 
         _capturedMessage.ShouldNotBeNull();
         _capturedMessage.CorrelationId.ShouldBe("corr-123");
-    }
-
-    [Fact]
-    public async Task SendResponseAsync_SetsJsonContentType()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
-
-        _capturedMessage.ShouldNotBeNull();
         _capturedMessage.ContentType.ShouldBe("application/json");
-    }
 
-    [Fact]
-    public async Task SendResponseAsync_SerializesResponseMessage()
-    {
-        await _sut.SendResponseAsync("corr-123", "Hello response");
-
-        _capturedMessage.ShouldNotBeNull();
         var body = _capturedMessage.Body.ToString();
         var deserialized = JsonSerializer.Deserialize<ServiceBusResponseMessage>(body);
 

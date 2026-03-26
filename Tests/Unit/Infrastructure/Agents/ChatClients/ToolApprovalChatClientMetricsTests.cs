@@ -5,6 +5,8 @@ using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
+using Tests.Unit.Infrastructure.Helpers;
+using static Tests.Unit.Infrastructure.Helpers.ToolApprovalResponseFactory;
 
 namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 
@@ -177,56 +179,4 @@ public class ToolApprovalChatClientMetricsTests
         captured.Success.ShouldBeTrue();
     }
 
-    private static ChatResponse CreateToolCallResponse(string toolName, string callId)
-    {
-        var toolCallContent = new FunctionCallContent(callId, toolName, new Dictionary<string, object?>());
-        var message = new ChatMessage(ChatRole.Assistant, [toolCallContent]);
-        return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
-    }
-
-    private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
-    {
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-            => Task.FromResult(result);
-
-        public Task NotifyAutoApprovedAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-            => Task.CompletedTask;
-    }
-
-    private sealed class FakeChatClient : IChatClient
-    {
-        private readonly Queue<ChatResponse> _responses = new();
-
-        public void SetNextResponse(ChatResponse response) => _responses.Enqueue(response);
-
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (_responses.TryDequeue(out var response))
-            {
-                return Task.FromResult(response);
-            }
-
-            return Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")])
-            {
-                FinishReason = ChatFinishReason.Stop
-            });
-        }
-
-        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-            => AsyncEnumerable.Empty<ChatResponseUpdate>();
-
-        public void Dispose() { }
-
-        public object? GetService(Type serviceType, object? serviceKey = null) => null;
-    }
 }

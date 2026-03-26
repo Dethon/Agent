@@ -1,4 +1,5 @@
 using Moq;
+using Shouldly;
 using WebChat.Client.State;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Hub;
@@ -16,36 +17,24 @@ public sealed class ConnectionEventDispatcherTests
         _sut = new ConnectionEventDispatcher(_mockDispatcher.Object);
     }
 
-    [Fact]
-    public void HandleConnecting_DispatchesConnectionConnecting()
+    public static TheoryData<string, Type> HandlerDispatchData => new()
     {
-        _sut.HandleConnecting();
+        { nameof(ConnectionEventDispatcher.HandleConnecting), typeof(ConnectionConnecting) },
+        { nameof(ConnectionEventDispatcher.HandleConnected), typeof(ConnectionConnected) },
+        { nameof(ConnectionEventDispatcher.HandleReconnecting), typeof(ConnectionReconnecting) },
+        { nameof(ConnectionEventDispatcher.HandleReconnected), typeof(ConnectionReconnected) },
+    };
 
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionConnecting>()), Times.Once);
-    }
-
-    [Fact]
-    public void HandleConnected_DispatchesConnectionConnected()
+    [Theory]
+    [MemberData(nameof(HandlerDispatchData))]
+    public void Handle_DispatchesCorrectAction(string handlerName, Type expectedActionType)
     {
-        _sut.HandleConnected();
+        var handler = typeof(ConnectionEventDispatcher).GetMethod(handlerName)!;
 
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionConnected>()), Times.Once);
-    }
+        handler.Invoke(_sut, null);
 
-    [Fact]
-    public void HandleReconnecting_DispatchesConnectionReconnecting()
-    {
-        _sut.HandleReconnecting();
-
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnecting>()), Times.Once);
-    }
-
-    [Fact]
-    public void HandleReconnected_DispatchesConnectionReconnected()
-    {
-        _sut.HandleReconnected();
-
-        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<ConnectionReconnected>()), Times.Once);
+        _mockDispatcher.Invocations.Count.ShouldBe(1);
+        _mockDispatcher.Invocations[0].Arguments[0].GetType().ShouldBe(expectedActionType);
     }
 
     [Fact]

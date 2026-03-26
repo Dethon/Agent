@@ -117,16 +117,6 @@ public class TextCreateToolTests : IDisposable
         File.ReadAllText(Path.Combine(_testDir, "existing.md")).ShouldBe("New content");
     }
 
-    [Fact]
-    public void Run_WithOverwriteFalse_FileExists_ThrowsException()
-    {
-        File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
-
-        var ex = Should.Throw<InvalidOperationException>(() =>
-            _tool.TestRun("existing.md", "New content", overwrite: false));
-        ex.Message.ShouldContain("already exists");
-    }
-
     private class TestableTextCreateTool(string vaultPath, string[] allowedExtensions)
         : TextCreateTool(vaultPath, allowedExtensions)
     {

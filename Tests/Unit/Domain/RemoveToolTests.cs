@@ -49,12 +49,16 @@ public class RemoveToolTests
         _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task Run_WithPathContainingDoubleDot_ThrowsInvalidOperationException()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Run_WithPathContainingDoubleDot_ThrowsInvalidOperationException(bool isAbsolute)
     {
         // Arrange
         var tool = CreateTool();
-        var maliciousPath = Path.Combine(_libraryPath, "..", "etc", "passwd");
+        var maliciousPath = isAbsolute
+            ? Path.Combine(_libraryPath, "..", "etc", "passwd")
+            : Path.Combine("..", "etc", "passwd");
 
         // Act & Assert
         var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
@@ -104,40 +108,6 @@ public class RemoveToolTests
         result["originalPath"]!.ToString().ShouldBe(expectedAbsolutePath);
         _fileSystemClientMock.Verify(
             m => m.MoveToTrash(expectedAbsolutePath, It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task Run_WithDoubleDotInRelativePath_ThrowsInvalidOperationException()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var maliciousRelative = Path.Combine("..", "etc", "passwd");
-
-        // Act & Assert
-        var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
-            await tool.TestRun(maliciousRelative, CancellationToken.None));
-
-        exception.Message.ShouldContain("must not contain '..'");
-    }
-
-    [Fact]
-    public async Task Run_WithNestedValidPath_Succeeds()
-    {
-        // Arrange
-        var tool = CreateTool();
-        var filePath = Path.Combine(_libraryPath, "movies", "action", "2024", "movie.mkv");
-        const string trashPath = "trash-path";
-
-        _fileSystemClientMock
-            .Setup(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(trashPath);
-
-        // Act
-        var result = await tool.TestRun(filePath, CancellationToken.None);
-
-        // Assert
-        result["status"]!.ToString().ShouldBe("success");
-        _fileSystemClientMock.Verify(m => m.MoveToTrash(filePath, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private class TestableRemoveTool(

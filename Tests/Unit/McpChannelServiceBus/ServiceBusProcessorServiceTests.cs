@@ -75,8 +75,10 @@ public class ServiceBusProcessorServiceTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task ProcessMessage_MissingPrompt_DeadLettersMessage()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task ProcessMessage_MissingOrEmptyPrompt_DeadLettersMessage(string? prompt)
     {
         _emitter.RegisterSession("sess-1", null!);
 
@@ -92,37 +94,7 @@ public class ServiceBusProcessorServiceTests : IDisposable
         var message = CreateReceivedMessage(new ServiceBusPromptMessage
         {
             CorrelationId = "corr-1",
-            Prompt = null
-        });
-
-        var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);
-        await _sut.ProcessMessageAsync(args);
-
-        receiver.Verify(r => r.DeadLetterMessageAsync(
-            It.IsAny<ServiceBusReceivedMessage>(),
-            "InvalidMessage",
-            "Missing required fields",
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessMessage_EmptyPrompt_DeadLettersMessage()
-    {
-        _emitter.RegisterSession("sess-1", null!);
-
-        var receiver = new Mock<ServiceBusReceiver>();
-        receiver
-            .Setup(r => r.DeadLetterMessageAsync(
-                It.IsAny<ServiceBusReceivedMessage>(),
-                It.IsAny<string>(),
-                It.IsAny<string>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        var message = CreateReceivedMessage(new ServiceBusPromptMessage
-        {
-            CorrelationId = "corr-1",
-            Prompt = ""
+            Prompt = prompt
         });
 
         var args = new ProcessMessageEventArgs(message, receiver.Object, CancellationToken.None);

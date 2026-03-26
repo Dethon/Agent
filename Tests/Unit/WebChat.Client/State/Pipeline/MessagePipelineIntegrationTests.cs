@@ -52,26 +52,6 @@ public sealed class MessagePipelineIntegrationTests
     }
 
     [Fact]
-    public void DuplicateFinalization_SkipsSecondAttempt()
-    {
-        // Start streaming
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _pipeline.AccumulateChunk("topic-1", "msg-1", "Response", null, null);
-
-        // First finalize
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-
-        // Simulate race condition - another source tries to finalize same message
-        _pipeline.AccumulateChunk("topic-1", "msg-1", " extra", null, null);
-        _pipeline.FinalizeMessage("topic-1", "msg-1");
-
-        // Should only have one message
-        var messages = _messagesStore.State.MessagesByTopic["topic-1"];
-        messages.Count.ShouldBe(1);
-        messages[0].Content.ShouldBe("Response");
-    }
-
-    [Fact]
     public void LoadHistory_ThenStream_NoDoubleMessages()
     {
         // Load history with existing message

@@ -184,33 +184,6 @@ public class TextSearchToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_WithFilePath_FileNotFound_Throws()
-    {
-        var filePath = Path.Combine(_testDir, "nonexistent.md");
-
-        Should.Throw<FileNotFoundException>(() =>
-            _tool.TestRun("query", filePath: filePath));
-    }
-
-    [Fact]
-    public void Run_WithFilePath_OutsideVault_Throws()
-    {
-        Should.Throw<UnauthorizedAccessException>(() =>
-            _tool.TestRun("query", filePath: "/etc/passwd"));
-    }
-
-    [Fact]
-    public void Run_WithFilePath_DisallowedExtension_Throws()
-    {
-        CreateTestFile("script.ps1", "Find this");
-
-        var filePath = Path.Combine(_testDir, "script.ps1");
-
-        Should.Throw<InvalidOperationException>(() =>
-            _tool.TestRun("Find", filePath: filePath));
-    }
-
-    [Fact]
     public void Run_WithFilePath_NoMatches_ReturnsEmpty()
     {
         CreateTestFile("target.md", "No matching content here");

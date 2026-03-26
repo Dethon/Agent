@@ -1,8 +1,9 @@
-using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Shouldly;
+using Tests.Unit.Infrastructure.Helpers;
+using static Tests.Unit.Infrastructure.Helpers.ToolApprovalResponseFactory;
 
 namespace Tests.Unit.Infrastructure;
 
@@ -35,8 +36,11 @@ public class ToolApprovalChatClientTests
         invoked.ShouldBeTrue("Tool should have been invoked after approval");
     }
 
-    [Fact]
-    public async Task InvokeFunctionAsync_WhenExactMatchWhitelisted_SkipsApproval()
+    [Theory]
+    [InlineData("mcp:server:TestTool", "mcp:server:TestTool", "mcp:server:TestTool")]
+    [InlineData("mcp:mcp-library:*", "mcp:mcp-library:FileSearch", "mcp:mcp-library:FileSearch")]
+    [InlineData("mcp:*", "mcp:any-server:AnyTool", "mcp:any-server:AnyTool")]
+    public async Task SendAsync_WhitelistedTool_SkipsApproval(string whitelistPattern, string toolName, string callToolName)
     {
         // Arrange
         var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
@@ -45,69 +49,12 @@ public class ToolApprovalChatClientTests
         {
             invoked = true;
             return "result";
-        }, "mcp:server:TestTool");
+        }, toolName);
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse(callToolName, "call1"));
 
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp:server:TestTool"]);
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        // Assert - whitelisted tool should not request approval but should notify
-        handler.RequestedApprovals.ShouldBeEmpty();
-        handler.AutoApprovedNotifications.ShouldHaveSingleItem();
-        handler.AutoApprovedNotifications[0][0].ToolName.ShouldBe("mcp:server:TestTool");
-        invoked.ShouldBeTrue("Whitelisted tool should be invoked without approval");
-    }
-
-    [Fact]
-    public async Task InvokeFunctionAsync_WhenServerWildcardWhitelisted_SkipsApproval()
-    {
-        // Arrange
-        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var invoked = false;
-        var function = AIFunctionFactory.Create(() =>
-        {
-            invoked = true;
-            return "result";
-        }, "mcp:mcp-library:FileSearch");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:mcp-library:FileSearch", "call1"));
-
-        // Whitelist all tools from mcp-library server
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp:mcp-library:*"]);
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        // Assert
-        handler.RequestedApprovals.ShouldBeEmpty();
-        handler.AutoApprovedNotifications.ShouldHaveSingleItem();
-        invoked.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task InvokeFunctionAsync_WhenAllMcpWildcardWhitelisted_SkipsApproval()
-    {
-        // Arrange
-        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
-        var invoked = false;
-        var function = AIFunctionFactory.Create(() =>
-        {
-            invoked = true;
-            return "result";
-        }, "mcp:any-server:AnyTool");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:any-server:AnyTool", "call1"));
-
-        // Whitelist all MCP tools
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp:*"]);
+        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: [whitelistPattern]);
         var options = new ChatOptions { Tools = [function] };
 
         // Act
@@ -192,82 +139,4 @@ public class ToolApprovalChatClientTests
         nonWhitelistedInvoked.ShouldBeTrue();
     }
 
-    private static ChatResponse CreateToolCallResponse(string toolName, string callId)
-    {
-        var toolCallContent = new FunctionCallContent(callId, toolName, new Dictionary<string, object?>());
-        var message = new ChatMessage(ChatRole.Assistant, [toolCallContent]);
-        return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
-    }
-
-    private static ChatResponse CreateMultiToolCallResponse(params (string toolName, string callId)[] tools)
-    {
-        var contents = tools
-            .Select(t => new FunctionCallContent(t.callId, t.toolName, new Dictionary<string, object?>()))
-            .ToList<AIContent>();
-        var message = new ChatMessage(ChatRole.Assistant, contents);
-        return new ChatResponse([message]) { FinishReason = ChatFinishReason.ToolCalls };
-    }
-
-    private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler
-    {
-        public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
-        public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
-
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-        {
-            RequestedApprovals.Add(requests);
-            return Task.FromResult(result);
-        }
-
-        public Task NotifyAutoApprovedAsync(
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
-        {
-            AutoApprovedNotifications.Add(requests);
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeChatClient : IChatClient
-    {
-        private readonly Queue<ChatResponse> _responses = new();
-
-        public void SetNextResponse(ChatResponse response)
-        {
-            _responses.Enqueue(response);
-        }
-
-        public Task<ChatResponse> GetResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            if (_responses.TryDequeue(out var response))
-            {
-                return Task.FromResult(response);
-            }
-
-            return Task.FromResult(new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")])
-            {
-                FinishReason = ChatFinishReason.Stop
-            });
-        }
-
-        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-            IEnumerable<ChatMessage> messages,
-            ChatOptions? options = null,
-            CancellationToken cancellationToken = default)
-        {
-            return AsyncEnumerable.Empty<ChatResponseUpdate>();
-        }
-
-        public void Dispose() { }
-
-        public object? GetService(Type serviceType, object? serviceKey = null)
-        {
-            return null;
-        }
-    }
 }

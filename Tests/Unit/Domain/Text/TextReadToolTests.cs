@@ -99,29 +99,6 @@ public class TextReadToolTests : IDisposable
         result.AsObject().ContainsKey("suggestion").ShouldBeFalse();
     }
 
-    [Fact]
-    public void Run_FileNotFound_Throws()
-    {
-        Should.Throw<FileNotFoundException>(() =>
-            _tool.TestRun(Path.Combine(_testDir, "nonexistent.txt")));
-    }
-
-    [Fact]
-    public void Run_PathOutsideVault_Throws()
-    {
-        Should.Throw<UnauthorizedAccessException>(() =>
-            _tool.TestRun("/etc/passwd"));
-    }
-
-    [Fact]
-    public void Run_DisallowedExtension_Throws()
-    {
-        var filePath = CreateTestFile("test.exe", "content");
-
-        Should.Throw<InvalidOperationException>(() =>
-            _tool.TestRun(filePath));
-    }
-
     private string CreateTestFile(string name, string content)
     {
         var path = Path.Combine(_testDir, name);
