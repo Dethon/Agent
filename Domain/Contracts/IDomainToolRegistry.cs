@@ -5,6 +5,5 @@ namespace Domain.Contracts;
 
 public interface IDomainToolRegistry
 {
-    IEnumerable<AIFunction> GetToolsForFeatures(IEnumerable<string> enabledFeatures);
     IEnumerable<AIFunction> GetToolsForFeatures(IEnumerable<string> enabledFeatures, FeatureConfig config);
 }

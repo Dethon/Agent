@@ -11,9 +11,6 @@ public class SubAgentToolFeature(
 
     public string FeatureName => Feature;
 
-    public IEnumerable<AIFunction> GetTools() =>
-        throw new InvalidOperationException("SubAgentToolFeature requires FeatureConfig. Use GetTools(FeatureConfig) instead.");
-
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
         var runTool = new SubAgentRunTool(registryOptions, config);

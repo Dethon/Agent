@@ -39,9 +39,6 @@ public sealed class MultiAgentFactoryTests
 
         var domainToolRegistry = new Mock<IDomainToolRegistry>();
         domainToolRegistry
-            .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>()))
-            .Returns(Enumerable.Empty<AIFunction>());
-        domainToolRegistry
             .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()))
             .Returns(Enumerable.Empty<AIFunction>());
 
