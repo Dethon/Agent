@@ -116,6 +116,9 @@ public sealed class MultiAgentFactory(
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(enabledFeatures, featureConfig)
             .ToList();
+        var domainPrompts = domainToolRegistry
+            .GetPromptsForFeatures(enabledFeatures)
+            .ToList();
 
         return new McpAgent(
             definition.McpServerEndpoints,
@@ -126,6 +129,7 @@ public sealed class MultiAgentFactory(
             userId,
             definition.CustomInstructions,
             domainTools,
+            domainPrompts,
             enableResourceSubscriptions: false);
     }
 
@@ -145,6 +149,9 @@ public sealed class MultiAgentFactory(
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();
+        var domainPrompts = domainToolRegistry
+            .GetPromptsForFeatures(definition.EnabledFeatures)
+            .ToList();
 
         return new McpAgent(
             definition.McpServerEndpoints,
@@ -154,7 +161,8 @@ public sealed class MultiAgentFactory(
             stateStore,
             userId,
             definition.CustomInstructions,
-            domainTools);
+            domainTools,
+            domainPrompts);
     }
 
     private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)
