@@ -10,7 +10,7 @@ namespace Infrastructure.Agents;
 
 public sealed class SubAgentRunner(
     OpenRouterConfig openRouterConfig,
-    IDomainToolRegistry domainToolRegistry,
+    Lazy<IDomainToolRegistry> domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null) : ISubAgentRunner
 {
     public async Task<string> RunAsync(
@@ -38,7 +38,7 @@ public sealed class SubAgentRunner(
         var enabledFeatures = definition.EnabledFeatures
             .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
 
-        var domainTools = domainToolRegistry
+        var domainTools = domainToolRegistry.Value
             .GetToolsForFeatures(enabledFeatures)
             .ToList();
 

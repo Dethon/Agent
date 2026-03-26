@@ -24,6 +24,8 @@ public static class SubAgentModule
             services.AddSingleton(registryOptions);
 
             services.AddSingleton<ISubAgentContextAccessor, SubAgentContextAccessor>();
+            services.AddSingleton(sp =>
+                new Lazy<IDomainToolRegistry>(sp.GetRequiredService<IDomainToolRegistry>));
             services.AddTransient<ISubAgentRunner, SubAgentRunner>();
             services.AddTransient<SubAgentRunTool>();
             services.AddTransient<IDomainToolFeature, SubAgentToolFeature>();

@@ -50,7 +50,7 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
 
         var openRouterConfig = CreateOpenRouterConfig();
         var domainToolRegistry = new DomainToolRegistry([]);
-        var runner = new SubAgentRunner(openRouterConfig, domainToolRegistry);
+        var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(domainToolRegistry));
         var contextAccessor = new SubAgentContextAccessor();
         var runTool = new SubAgentRunTool(
             runner, contextAccessor,
@@ -103,7 +103,7 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         };
 
         var openRouterConfig = CreateOpenRouterConfig();
-        var runner = new SubAgentRunner(openRouterConfig, new DomainToolRegistry([]));
+        var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(new DomainToolRegistry([])));
         var approvalHandler = new AutoApproveHandler();
         var context = new SubAgentContext(approvalHandler, [], "test-user");
 
