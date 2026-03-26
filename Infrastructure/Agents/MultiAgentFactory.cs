@@ -15,8 +15,7 @@ public sealed class MultiAgentFactory(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
-    IMetricsPublisher? metricsPublisher = null,
-    ISubAgentContextAccessor? subAgentContextAccessor = null) : IAgentFactory, IScheduleAgentFactory
+    IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
 
@@ -101,16 +100,10 @@ public sealed class MultiAgentFactory(
         var name = $"{definition.Name}-{agentKey.ConversationId}";
         var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
+        var featureConfig = new FeatureConfig(approvalHandler, definition.WhitelistPatterns, userId);
         var domainTools = domainToolRegistry
-            .GetToolsForFeatures(definition.EnabledFeatures)
+            .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();
-
-        if (subAgentContextAccessor is not null &&
-            definition.EnabledFeatures.Any(f => f.Equals("subagents", StringComparison.OrdinalIgnoreCase)))
-        {
-            subAgentContextAccessor.SetContext(name, new SubAgentContext(
-                approvalHandler, definition.WhitelistPatterns, userId));
-        }
 
         return new McpAgent(
             definition.McpServerEndpoints,

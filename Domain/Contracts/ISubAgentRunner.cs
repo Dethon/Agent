@@ -7,6 +7,6 @@ public interface ISubAgentRunner
     Task<string> RunAsync(
         SubAgentDefinition definition,
         string prompt,
-        SubAgentContext parentContext,
+        FeatureConfig parentContext,
         CancellationToken ct = default);
 }

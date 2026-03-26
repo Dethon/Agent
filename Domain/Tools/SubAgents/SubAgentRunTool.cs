@@ -7,8 +7,8 @@ namespace Domain.Tools.SubAgents;
 
 public class SubAgentRunTool(
     ISubAgentRunner runner,
-    ISubAgentContextAccessor contextAccessor,
-    SubAgentRegistryOptions registryOptions)
+    SubAgentRegistryOptions registryOptions,
+    FeatureConfig featureConfig)
 {
     public const string Name = "run_subagent";
 
@@ -33,8 +33,6 @@ public class SubAgentRunTool(
         string subAgentId,
         [Description("The task/prompt to send to the subagent")]
         string prompt,
-        [Description("Your own agent name (from your system prompt)")]
-        string agentName,
         CancellationToken ct = default)
     {
         var profile = _profiles.FirstOrDefault(p =>
@@ -49,19 +47,9 @@ public class SubAgentRunTool(
             };
         }
 
-        var context = contextAccessor.GetContext(agentName);
-        if (context is null)
-        {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["error"] = "Subagent context not available for this agent"
-            };
-        }
-
         try
         {
-            var result = await runner.RunAsync(profile, prompt, context, ct);
+            var result = await runner.RunAsync(profile, prompt, featureConfig, ct);
             return new JsonObject
             {
                 ["status"] = "completed",

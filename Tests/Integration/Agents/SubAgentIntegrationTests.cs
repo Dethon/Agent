@@ -51,15 +51,12 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         var openRouterConfig = CreateOpenRouterConfig();
         var domainToolRegistry = new DomainToolRegistry([]);
         var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(domainToolRegistry));
-        var contextAccessor = new SubAgentContextAccessor();
-        var runTool = new SubAgentRunTool(
-            runner, contextAccessor,
-            new SubAgentRegistryOptions { SubAgents = [subAgentDef] });
-        var toolFeature = new SubAgentToolFeature(runTool);
+        var registryOptions = new SubAgentRegistryOptions { SubAgents = [subAgentDef] };
 
         var approvalHandler = new AutoApproveHandler();
-        var agentName = "parent-agent-test";
-        contextAccessor.SetContext(agentName, new SubAgentContext(approvalHandler, ["domain:subagents:*"], "test-user"));
+        var featureConfig = new FeatureConfig(approvalHandler, ["domain:subagents:*"], "test-user");
+
+        var toolFeature = new SubAgentToolFeature(runner, registryOptions);
 
         var llmClient = CreateLlmClient();
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
@@ -68,17 +65,17 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         await using var agent = new McpAgent(
             [],
             effectiveClient,
-            agentName,
+            "parent-agent-test",
             "",
             stateStore,
             "test-user",
-            $"Your agent name is '{agentName}'. You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'",
-            toolFeature.GetTools().ToList());
+            "You have access to a subagent tool. Use the echo-agent subagent to echo back: 'Hello from subagent'",
+            toolFeature.GetTools(featureConfig).ToList());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var responses = await agent.RunStreamingAsync(
-                "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'. Pass your agent name as the agentName parameter.",
+                "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -105,14 +102,14 @@ public class SubAgentIntegrationTests(RedisFixture redisFixture)
         var openRouterConfig = CreateOpenRouterConfig();
         var runner = new SubAgentRunner(openRouterConfig, new Lazy<IDomainToolRegistry>(new DomainToolRegistry([])));
         var approvalHandler = new AutoApproveHandler();
-        var context = new SubAgentContext(approvalHandler, [], "test-user");
+        var featureConfig = new FeatureConfig(approvalHandler, [], "test-user");
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();
 
-        var result = await runner.RunAsync(subAgentDef, "Say done", context, cts.Token);
+        var result = await runner.RunAsync(subAgentDef, "Say done", featureConfig, cts.Token);
 
         var keysAfter = server.Keys(pattern: "*").ToList();
         keysAfter.Count.ShouldBe(keysBefore.Count,

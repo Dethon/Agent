@@ -16,7 +16,7 @@ public sealed class SubAgentRunner(
     public async Task<string> RunAsync(
         SubAgentDefinition definition,
         string prompt,
-        SubAgentContext parentContext,
+        FeatureConfig parentContext,
         CancellationToken ct = default)
     {
         var agentPublisher = metricsPublisher is not null
@@ -39,7 +39,7 @@ public sealed class SubAgentRunner(
             .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
 
         var domainTools = domainToolRegistry.Value
-            .GetToolsForFeatures(enabledFeatures)
+            .GetToolsForFeatures(enabledFeatures, parentContext)
             .ToList();
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
