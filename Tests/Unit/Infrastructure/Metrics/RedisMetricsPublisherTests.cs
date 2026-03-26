@@ -17,36 +17,34 @@ public class RedisMetricsPublisherTests
         _sut = new RedisMetricsPublisher(_redis.Object);
     }
 
-    [Fact]
-    public async Task PublishAsync_publishes_serialized_event_to_metrics_channel()
+    public static TheoryData<MetricEvent, string> EventCases => new()
     {
-        var evt = new HeartbeatEvent { Service = "agent" };
-
-        await _sut.PublishAsync(evt);
-
-        _subscriber.Verify(s => s.PublishAsync(
-            RedisChannel.Literal("metrics:events"),
-            It.Is<RedisValue>(v => v.ToString().Contains("\"service\":\"agent\"")),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task PublishAsync_includes_type_discriminator()
-    {
-        var evt = new TokenUsageEvent
         {
-            Sender = "user1",
-            Model = "gpt-4",
-            InputTokens = 100,
-            OutputTokens = 50,
-            Cost = 0.01m
-        };
+            new HeartbeatEvent { Service = "agent" },
+            "\"service\":\"agent\""
+        },
+        {
+            new TokenUsageEvent
+            {
+                Sender = "user1",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.01m
+            },
+            "\"type\":\"token_usage\""
+        }
+    };
 
+    [Theory]
+    [MemberData(nameof(EventCases))]
+    public async Task PublishAsync_publishes_serialized_event_to_metrics_channel(MetricEvent evt, string expectedFragment)
+    {
         await _sut.PublishAsync(evt);
 
         _subscriber.Verify(s => s.PublishAsync(
             RedisChannel.Literal("metrics:events"),
-            It.Is<RedisValue>(v => v.ToString().Contains("\"type\":\"token_usage\"")),
+            It.Is<RedisValue>(v => v.ToString().Contains(expectedFragment)),
             It.IsAny<CommandFlags>()), Times.Once);
     }
 }

@@ -23,17 +23,12 @@ public class StreamServiceTests : IDisposable
     }
 
     [Fact]
-    public void GetOrCreateStream_CreatesNewStream()
+    public void GetOrCreateStream_CreatesAndReusesStream()
     {
-        var (channel, _) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
-        channel.ShouldNotBeNull();
+        var (channel1, _) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        channel1.ShouldNotBeNull();
         _sut.IsStreaming("topic1").ShouldBeTrue();
-    }
 
-    [Fact]
-    public void GetOrCreateStream_ReturnsSameChannelForSameTopic()
-    {
-        var (channel1, _) = _sut.GetOrCreateStream("topic1", "p1", "u1", CancellationToken.None);
         var (channel2, _) = _sut.GetOrCreateStream("topic1", "p2", "u1", CancellationToken.None);
         channel1.ShouldBeSameAs(channel2);
     }
@@ -88,16 +83,12 @@ public class StreamServiceTests : IDisposable
     }
 
     [Fact]
-    public void TryIncrementPending_ActiveStream_ReturnsTrue()
-    {
-        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
-        _sut.TryIncrementPending("topic1").ShouldBeTrue();
-    }
-
-    [Fact]
-    public void TryIncrementPending_NoStream_ReturnsFalse()
+    public void TryIncrementPending_ReturnsBasedOnStreamExistence()
     {
         _sut.TryIncrementPending("nonexistent").ShouldBeFalse();
+
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        _sut.TryIncrementPending("topic1").ShouldBeTrue();
     }
 
     [Fact]

@@ -8,36 +8,15 @@ namespace Tests.Unit;
 public class ChatMessageSerializationTests
 {
     [Fact]
-    public void SetSenderId_StoresValueInAdditionalProperties()
+    public void SetAndGetSenderId_StoresAndRetrievesValue()
     {
-        // Arrange
         var msg = new ChatMessage(ChatRole.User, "Hello");
 
-        // Act
         msg.SetSenderId("Alice");
 
-        // Assert
         msg.AdditionalProperties.ShouldNotBeNull();
         msg.AdditionalProperties["SenderId"].ShouldBe("Alice");
-    }
-
-    [Fact]
-    public void GetSenderId_ReturnsStringValue()
-    {
-        // Arrange
-        var msg = new ChatMessage(ChatRole.User, "Hello")
-        {
-            AdditionalProperties = new AdditionalPropertiesDictionary
-            {
-                ["SenderId"] = "Alice"
-            }
-        };
-
-        // Act
-        var senderId = msg.GetSenderId();
-
-        // Assert
-        senderId.ShouldBe("Alice");
+        msg.GetSenderId().ShouldBe("Alice");
     }
 
     [Fact]
@@ -58,64 +37,16 @@ public class ChatMessageSerializationTests
     }
 
     [Fact]
-    public void GetSenderId_ReturnsNullWhenNotSet()
+    public void SetAndGetTimestamp_StoresAndRetrievesValue()
     {
-        // Arrange
-        var msg = new ChatMessage(ChatRole.User, "Hello");
-
-        // Act
-        var senderId = msg.GetSenderId();
-
-        // Assert
-        senderId.ShouldBeNull();
-    }
-
-    [Fact]
-    public void SetSenderId_DoesNothingWhenNull()
-    {
-        // Arrange
-        var msg = new ChatMessage(ChatRole.User, "Hello");
-
-        // Act
-        msg.SetSenderId(null);
-
-        // Assert
-        msg.AdditionalProperties.ShouldBeNull();
-    }
-
-    [Fact]
-    public void SetTimestamp_StoresValueInAdditionalProperties()
-    {
-        // Arrange
         var msg = new ChatMessage(ChatRole.User, "Hello");
         var timestamp = new DateTimeOffset(2024, 1, 15, 10, 30, 0, TimeSpan.FromHours(2));
 
-        // Act
         msg.SetTimestamp(timestamp);
 
-        // Assert
         msg.AdditionalProperties.ShouldNotBeNull();
         msg.AdditionalProperties["Timestamp"].ShouldBe(timestamp);
-    }
-
-    [Fact]
-    public void GetTimestamp_ReturnsDateTimeOffsetValue()
-    {
-        // Arrange
-        var timestamp = new DateTimeOffset(2024, 1, 15, 10, 30, 0, TimeSpan.FromHours(2));
-        var msg = new ChatMessage(ChatRole.User, "Hello")
-        {
-            AdditionalProperties = new AdditionalPropertiesDictionary
-            {
-                ["Timestamp"] = timestamp
-            }
-        };
-
-        // Act
-        var result = msg.GetTimestamp();
-
-        // Assert
-        result.ShouldBe(timestamp);
+        msg.GetTimestamp().ShouldBe(timestamp);
     }
 
     [Fact]
@@ -137,28 +68,13 @@ public class ChatMessageSerializationTests
     }
 
     [Fact]
-    public void GetTimestamp_ReturnsNullWhenNotSet()
+    public void SetSenderIdOrTimestamp_DoesNothingWhenNull()
     {
-        // Arrange
         var msg = new ChatMessage(ChatRole.User, "Hello");
 
-        // Act
-        var result = msg.GetTimestamp();
-
-        // Assert
-        result.ShouldBeNull();
-    }
-
-    [Fact]
-    public void SetTimestamp_DoesNothingWhenNull()
-    {
-        // Arrange
-        var msg = new ChatMessage(ChatRole.User, "Hello");
-
-        // Act
+        msg.SetSenderId(null);
         msg.SetTimestamp(null);
 
-        // Assert
         msg.AdditionalProperties.ShouldBeNull();
     }
 }

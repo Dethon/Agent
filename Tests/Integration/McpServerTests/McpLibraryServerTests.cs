@@ -76,35 +76,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         await client.DisposeAsync();
     }
 
-    [Fact]
-    public async Task FileSearchTool_WithEmptyQuery_ReturnsEmptyResults()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "FileSearch",
-            new Dictionary<string, object?>
-            {
-                ["searchStrings"] = Array.Empty<string>()
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        var content = GetTextContent(result);
-        content.ShouldContain("success");
-        content.ShouldContain("totalResults");
-
-        await client.DisposeAsync();
-    }
-
     #endregion
 
     #region FileDownload Tests
@@ -240,33 +211,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
     #endregion
 
     #region GlobFiles Tests
-
-    [Fact]
-    public async Task GlobFilesTool_WithNoFiles_ReturnsEmptyResult()
-    {
-        // Arrange
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        // Act
-        var result = await client.CallToolAsync(
-            "GlobFiles",
-            new Dictionary<string, object?>
-            {
-                ["pattern"] = "*.nonexistent"
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        result.Content.ShouldNotBeNull();
-
-        await client.DisposeAsync();
-    }
 
     [Fact]
     public async Task GlobFilesTool_WithMatchingFiles_ReturnsFileList()

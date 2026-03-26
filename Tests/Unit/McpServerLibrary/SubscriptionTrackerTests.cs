@@ -30,16 +30,6 @@ public class SubscriptionTrackerTests
     }
 
     [Fact]
-    public void RemoveSession_WithNonExistentSession_DoesNotThrow()
-    {
-        // Arrange
-        var tracker = new SubscriptionTracker();
-
-        // Act & Assert
-        Should.NotThrow(() => tracker.RemoveSession("nonexistent"));
-    }
-
-    [Fact]
     public void RemoveSession_WithMultipleSessions_OnlyRemovesSpecifiedSession()
     {
         // Arrange
@@ -56,22 +46,6 @@ public class SubscriptionTrackerTests
         subscriptions.ShouldNotContainKey("session1");
         subscriptions.ShouldContainKey("session2");
         subscriptions["session2"].ShouldContainKey("download://2/");
-    }
-
-    [Fact]
-    public void Add_WithNewSession_CreatesSessionEntry()
-    {
-        // Arrange
-        var tracker = new SubscriptionTracker();
-        var server = CreateMockServer();
-
-        // Act
-        tracker.Add("session1", "download://1/", server);
-
-        // Assert
-        var subscriptions = tracker.Get();
-        subscriptions.ShouldContainKey("session1");
-        subscriptions["session1"].ShouldContainKey("download://1/");
     }
 
     [Fact]

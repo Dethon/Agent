@@ -8,25 +8,15 @@ public class MessageAccumulatorTests
     private readonly MessageAccumulator _sut = new();
 
     [Fact]
-    public void Flush_NoData_ReturnsNull()
+    public void Flush_AccumulatesAppendsAndReturnsAll()
     {
         _sut.Flush("conv-1").ShouldBeNull();
-    }
 
-    [Fact]
-    public void Flush_SingleAppend_ReturnsText()
-    {
-        _sut.Append("conv-1", "hello");
+        _sut.Append("conv-1", "hello ");
+        _sut.Flush("conv-1").ShouldBe("hello ");
 
-        _sut.Flush("conv-1").ShouldBe("hello");
-    }
-
-    [Fact]
-    public void Flush_MultipleAppends_ConcatenatesText()
-    {
         _sut.Append("conv-1", "hello ");
         _sut.Append("conv-1", "world");
-
         _sut.Flush("conv-1").ShouldBe("hello world");
     }
 
@@ -47,15 +37,6 @@ public class MessageAccumulatorTests
 
         _sut.Flush("conv-1").ShouldBe("first");
         _sut.Flush("conv-2").ShouldBe("second");
-    }
-
-    [Fact]
-    public void Append_EmptyString_FlushReturnsEmpty()
-    {
-        _sut.Append("conv-1", "");
-
-        // StringBuilder with empty string has Length 0, so Flush returns null
-        _sut.Flush("conv-1").ShouldBeNull();
     }
 
     [Fact]

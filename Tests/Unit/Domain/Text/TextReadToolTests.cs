@@ -45,33 +45,21 @@ public class TextReadToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_WithOffset_StartsFromSpecifiedLine()
+    public void Run_WithPagination_ReturnsCorrectContent()
     {
         var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
 
-        var result = _tool.TestRun(filePath, offset: 3);
+        // Offset only — starts from specified line
+        var offsetResult = _tool.TestRun(filePath, offset: 3);
+        offsetResult["content"]!.ToString().ShouldBe("3: Line 3\n4: Line 4\n5: Line 5");
 
-        result["content"]!.ToString().ShouldBe("3: Line 3\n4: Line 4\n5: Line 5");
-    }
+        // Limit only — returns limited lines from start
+        var limitResult = _tool.TestRun(filePath, limit: 2);
+        limitResult["content"]!.ToString().ShouldBe("1: Line 1\n2: Line 2");
 
-    [Fact]
-    public void Run_WithLimit_ReturnsLimitedLines()
-    {
-        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
-
-        var result = _tool.TestRun(filePath, limit: 2);
-
-        result["content"]!.ToString().ShouldBe("1: Line 1\n2: Line 2");
-    }
-
-    [Fact]
-    public void Run_WithOffsetAndLimit_ReturnsPaginatedContent()
-    {
-        var filePath = CreateTestFile("test.txt", "Line 1\nLine 2\nLine 3\nLine 4\nLine 5");
-
-        var result = _tool.TestRun(filePath, offset: 2, limit: 3);
-
-        result["content"]!.ToString().ShouldBe("2: Line 2\n3: Line 3\n4: Line 4");
+        // Both offset and limit — returns paginated window
+        var paginatedResult = _tool.TestRun(filePath, offset: 2, limit: 3);
+        paginatedResult["content"]!.ToString().ShouldBe("2: Line 2\n3: Line 3\n4: Line 4");
     }
 
     [Fact]

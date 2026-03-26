@@ -89,20 +89,16 @@ public class TextCreateToolTests : IDisposable
     }
 
     [Fact]
-    public void Run_RelativePath_ResolvesCorrectly()
+    public void Run_PathFormats_ResolveCorrectly()
     {
-        var result = _tool.TestRun("notes/2024/january.md", "January notes");
-
-        result["filePath"]!.ToString().ShouldBe("notes/2024/january.md");
+        // Relative path with nested directories
+        var result1 = _tool.TestRun("notes/2024/january.md", "January notes");
+        result1["filePath"]!.ToString().ShouldBe("notes/2024/january.md");
         File.Exists(Path.Combine(_testDir, "notes", "2024", "january.md")).ShouldBeTrue();
-    }
 
-    [Fact]
-    public void Run_LeadingSlash_ResolvesCorrectly()
-    {
-        var result = _tool.TestRun("docs/readme.md", "Documentation");
-
-        result["filePath"]!.ToString().ShouldBe("docs/readme.md");
+        // Another relative path format
+        var result2 = _tool.TestRun("docs/readme.md", "Documentation");
+        result2["filePath"]!.ToString().ShouldBe("docs/readme.md");
         File.Exists(Path.Combine(_testDir, "docs", "readme.md")).ShouldBeTrue();
     }
 

@@ -47,100 +47,63 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _connectionStore.Dispose();
     }
 
-    [Fact]
-    public async Task RefreshTokenBreakdown_RapidEvents_CancelsStaleApiCall()
+    public static TheoryData<string, object, object, Func<FakeMetricsHub, Task>, Func<MetricsHubEffectTests, object?>> RapidEventCases =>
+        new()
+        {
+            {
+                "TokenUsage",
+                new Dictionary<string, decimal> { ["stale-model"] = 100m },
+                new Dictionary<string, decimal> { ["fresh-model"] = 200m },
+                hub => hub.FireTokenUsage(new TokenUsageEvent
+                    { Sender = "test", Model = "m", InputTokens = 1, OutputTokens = 1, Cost = 0.01m }),
+                self => self._tokensStore.State.Breakdown
+            },
+            {
+                "ToolCall",
+                new Dictionary<string, decimal> { ["stale-tool"] = 10m },
+                new Dictionary<string, decimal> { ["fresh-tool"] = 20m },
+                hub => hub.FireToolCall(new ToolCallEvent
+                    { ToolName = "t", Success = true, DurationMs = 100 }),
+                self => self._toolsStore.State.Breakdown
+            },
+            {
+                "Error",
+                new Dictionary<string, int> { ["stale-err"] = 5 },
+                new Dictionary<string, int> { ["fresh-err"] = 10 },
+                hub => hub.FireError(new ErrorEvent
+                    { Message = "err", Service = "s", ErrorType = "e" }),
+                self => self._errorsStore.State.Breakdown
+            },
+            {
+                "ScheduleExecution",
+                new Dictionary<string, int> { ["stale-sched"] = 3 },
+                new Dictionary<string, int> { ["fresh-sched"] = 7 },
+                hub => hub.FireScheduleExecution(new ScheduleExecutionEvent
+                    { ScheduleId = "s", Prompt = "p", Success = true, DurationMs = 50 }),
+                self => self._schedulesStore.State.Breakdown
+            },
+        };
+
+    [Theory]
+    [MemberData(nameof(RapidEventCases))]
+    public async Task RapidEvents_CancelsStaleApiCallAndUsesFreshData(
+        string _,
+        object staleData,
+        object freshData,
+        Func<FakeMetricsHub, Task> fireEvent,
+        Func<MetricsHubEffectTests, object?> getBreakdown)
     {
         await _effect.StartAsync();
-
-        var staleData = new Dictionary<string, decimal> { ["stale-model"] = 100m };
-        var freshData = new Dictionary<string, decimal> { ["fresh-model"] = 200m };
 
         _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
         _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
 
-        var evt = new TokenUsageEvent
-        {
-            Sender = "test", Model = "m", InputTokens = 1, OutputTokens = 1, Cost = 0.01m,
-        };
-
-        var task1 = _hub.FireTokenUsage(evt);
-        var task2 = _hub.FireTokenUsage(evt);
+        var task1 = fireEvent(_hub);
+        var task2 = fireEvent(_hub);
         await Task.WhenAll(task1, task2);
         await Task.Delay(100);
 
-        _tokensStore.State.Breakdown.ShouldBe(freshData);
-    }
-
-    [Fact]
-    public async Task RefreshToolBreakdown_RapidEvents_CancelsStaleApiCall()
-    {
-        await _effect.StartAsync();
-
-        var staleData = new Dictionary<string, decimal> { ["stale-tool"] = 10m };
-        var freshData = new Dictionary<string, decimal> { ["fresh-tool"] = 20m };
-
-        _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
-        _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
-
-        var evt = new ToolCallEvent
-        {
-            ToolName = "t", Success = true, DurationMs = 100,
-        };
-
-        var task1 = _hub.FireToolCall(evt);
-        var task2 = _hub.FireToolCall(evt);
-        await Task.WhenAll(task1, task2);
-        await Task.Delay(100);
-
-        _toolsStore.State.Breakdown.ShouldBe(freshData);
-    }
-
-    [Fact]
-    public async Task RefreshErrorBreakdown_RapidEvents_CancelsStaleApiCall()
-    {
-        await _effect.StartAsync();
-
-        var staleData = new Dictionary<string, int> { ["stale-err"] = 5 };
-        var freshData = new Dictionary<string, int> { ["fresh-err"] = 10 };
-
-        _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
-        _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
-
-        var evt = new ErrorEvent
-        {
-            Message = "err", Service = "s", ErrorType = "e",
-        };
-
-        var task1 = _hub.FireError(evt);
-        var task2 = _hub.FireError(evt);
-        await Task.WhenAll(task1, task2);
-        await Task.Delay(100);
-
-        _errorsStore.State.Breakdown.ShouldBe(freshData);
-    }
-
-    [Fact]
-    public async Task RefreshScheduleBreakdown_RapidEvents_CancelsStaleApiCall()
-    {
-        await _effect.StartAsync();
-
-        var staleData = new Dictionary<string, int> { ["stale-sched"] = 3 };
-        var freshData = new Dictionary<string, int> { ["fresh-sched"] = 7 };
-
-        _handler.EnqueueResponse(staleData, delay: TimeSpan.FromMilliseconds(500));
-        _handler.EnqueueResponse(freshData, delay: TimeSpan.FromMilliseconds(10));
-
-        var evt = new ScheduleExecutionEvent
-        {
-            ScheduleId = "s", Prompt = "p", Success = true, DurationMs = 50,
-        };
-
-        var task1 = _hub.FireScheduleExecution(evt);
-        var task2 = _hub.FireScheduleExecution(evt);
-        await Task.WhenAll(task1, task2);
-        await Task.Delay(100);
-
-        _schedulesStore.State.Breakdown.ShouldBe(freshData);
+        getBreakdown(this).ShouldBe(freshData);
     }
 }
 

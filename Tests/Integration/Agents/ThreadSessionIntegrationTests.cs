@@ -25,7 +25,7 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
     }
 
     [SkippableFact]
-    public async Task CreateAsync_CreatesSessionWithToolsPromptsAndResourceManager()
+    public async Task CreateSession_InitializesWithToolsAndPrompts()
     {
         // Arrange
         using var chatClient = CreateChatClient();
@@ -44,65 +44,18 @@ public class ThreadSessionIntegrationTests(ThreadSessionServerFixture fixture)
             [],
             cts.Token);
 
-        // Assert
+        // Assert - session and managers initialized
         session.ShouldNotBeNull();
         session.ClientManager.ShouldNotBeNull();
         session.ClientManager.Clients.ShouldNotBeEmpty();
-        session.ClientManager.Tools.ShouldNotBeEmpty();
-        session.ClientManager.Prompts.ShouldNotBeEmpty();
         session.ResourceManager.ShouldNotBeNull();
 
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task ClientManager_LoadsToolsFromServer()
-    {
-        // Arrange
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            "ToolTestClient",
-            "test-user",
-            "Tool Test",
-            agent,
-            thread,
-            [],
-            cts.Token);
-
-        // Assert
+        // Assert - tools loaded from server
+        session.ClientManager.Tools.ShouldNotBeEmpty();
         var toolNames = session.ClientManager.Tools.Select(t => t.Name).ToList();
         toolNames.ShouldContain(n => n.EndsWith(":Echo"));
 
-        await session.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task ClientManager_LoadsPromptsFromServer()
-    {
-        // Arrange
-        using var chatClient = CreateChatClient();
-        var agent = chatClient.AsAIAgent(new ChatClientAgentOptions { Name = "TestAgent" });
-        var thread = await agent.CreateSessionAsync();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
-        // Act
-        var session = await ThreadSession.CreateAsync(
-            [fixture.McpEndpoint],
-            "PromptTestClient",
-            "test-user",
-            "Prompt Test",
-            agent,
-            thread,
-            [],
-            cts.Token);
-
-        // Assert
+        // Assert - prompts loaded from server
         session.ClientManager.Prompts.ShouldNotBeEmpty();
         session.ClientManager.Prompts.Any(p => p.Contains("test assistant", StringComparison.OrdinalIgnoreCase))
             .ShouldBeTrue("Should contain the test system prompt");

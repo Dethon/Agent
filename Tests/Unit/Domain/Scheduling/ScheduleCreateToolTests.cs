@@ -20,45 +20,28 @@ public class ScheduleCreateToolTests
     }
 
     [Fact]
-    public async Task Run_MissingAgentId_ReturnsError()
+    public async Task Run_InputValidationErrors_ReturnExpectedMessages()
     {
-        var result = await _tool.TestRun("", "prompt", "0 9 * * *", null, null);
+        // Missing agent id
+        var missing = await _tool.TestRun("", "prompt", "0 9 * * *", null, null);
+        missing["error"]?.GetValue<string>().ShouldBe("agentId is required");
 
-        result["error"]?.GetValue<string>().ShouldBe("agentId is required");
-    }
+        // Neither cron nor runAt
+        var neither = await _tool.TestRun("jack", "prompt", null, null, null);
+        neither["error"]?.GetValue<string>().ShouldBe("Either cronExpression or runAt must be provided");
 
-    [Fact]
-    public async Task Run_NeitherCronNorRunAt_ReturnsError()
-    {
-        var result = await _tool.TestRun("jack", "prompt", null, null, null);
+        // Both cron and runAt
+        var both = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), null);
+        both["error"]?.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
 
-        result["error"]?.GetValue<string>().ShouldBe("Either cronExpression or runAt must be provided");
-    }
-
-    [Fact]
-    public async Task Run_BothCronAndRunAt_ReturnsError()
-    {
-        var result = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), null);
-
-        result["error"]?.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
-    }
-
-    [Fact]
-    public async Task Run_InvalidCron_ReturnsError()
-    {
+        // Invalid cron expression
         _cronValidator.Setup(v => v.IsValid("invalid")).Returns(false);
+        var invalidCron = await _tool.TestRun("jack", "prompt", "invalid", null, null);
+        invalidCron["error"]?.GetValue<string>().ShouldContain("Invalid cron expression");
 
-        var result = await _tool.TestRun("jack", "prompt", "invalid", null, null);
-
-        result["error"]?.GetValue<string>().ShouldContain("Invalid cron expression");
-    }
-
-    [Fact]
-    public async Task Run_RunAtInPast_ReturnsError()
-    {
-        var result = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), null);
-
-        result["error"]?.GetValue<string>().ShouldBe("runAt must be in the future");
+        // RunAt in the past
+        var past = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), null);
+        past["error"]?.GetValue<string>().ShouldBe("runAt must be in the future");
     }
 
     [Fact]

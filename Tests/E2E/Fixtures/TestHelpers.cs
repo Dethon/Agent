@@ -58,13 +58,17 @@ internal static class TestHelpers
         }
     }
 
+    private static readonly string[] BuildOutputDirs = ["bin", "obj"];
+
     private static DateTimeOffset GetNewestSourceTimestamp(string solutionRoot)
     {
         var dirs = new[] { "Domain", "Infrastructure" };
         return dirs
             .Select(d => Path.Combine(solutionRoot, d))
             .Where(Directory.Exists)
-            .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories))
+            .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)
+                .Where(f => !BuildOutputDirs.Any(b =>
+                    f.Contains($"{Path.DirectorySeparatorChar}{b}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))))
             .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero))
             .DefaultIfEmpty(DateTimeOffset.MaxValue)
             .Max();

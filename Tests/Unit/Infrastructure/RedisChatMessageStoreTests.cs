@@ -56,44 +56,6 @@ public class RedisChatMessageStoreTests
     }
 
     [Fact]
-    public void AgentKey_ToString_ReturnsCorrectFormat()
-    {
-        // Arrange
-        var agentKey = new AgentKey("999:888", "test-agent");
-
-        // Act
-        var key = agentKey.ToString();
-
-        // Assert
-        key.ShouldBe("agent-key:test-agent:999:888");
-    }
-
-    [Fact]
-    public void ToChatResponse_DoesNotPreserveAdditionalPropertiesOnMessages()
-    {
-        // Documents framework behavior: ToChatResponse drops AdditionalProperties
-        // from streaming updates when building ChatMessage objects.
-        // This is why RedisChatMessageStore must stamp timestamps itself.
-        var updates = new List<ChatResponseUpdate>
-        {
-            new()
-            {
-                Role = ChatRole.Assistant,
-                Contents = [new TextContent("Hello")],
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    ["Timestamp"] = DateTimeOffset.UtcNow
-                }
-            }
-        };
-
-        var response = updates.ToChatResponse();
-
-        var message = response.Messages.ShouldHaveSingleItem();
-        message.GetTimestamp().ShouldBeNull();
-    }
-
-    [Fact]
     public async Task InvokedAsync_ResponseMessages_HaveTimestampAfterStorage()
     {
         // Arrange

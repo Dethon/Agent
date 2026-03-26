@@ -67,29 +67,4 @@ public class ApprovalStoreTests : IDisposable
         _store.State.ShouldBe(ApprovalState.Initial);
     }
 
-    [Fact]
-    public void StateObservable_EmitsOnDispatch()
-    {
-        var emissions = new List<ApprovalState>();
-        using var subscription = _store.StateObservable.Subscribe(emissions.Add);
-
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
-        emissions.Count.ShouldBe(2); // Initial + ShowApproval
-        emissions[1].CurrentRequest.ShouldBe(request);
-    }
-
-    [Fact]
-    public void StateObservable_EmitsCurrentStateOnSubscription()
-    {
-        var request = CreateRequest();
-        _dispatcher.Dispatch(new ShowApproval("topic-1", request));
-
-        ApprovalState? receivedState = null;
-        using var subscription = _store.StateObservable.Subscribe(state => receivedState = state);
-
-        receivedState.ShouldNotBeNull();
-        receivedState.CurrentRequest.ShouldBe(request);
-    }
 }

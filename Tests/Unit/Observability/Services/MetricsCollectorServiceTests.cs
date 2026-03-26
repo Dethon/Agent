@@ -102,7 +102,7 @@ public class MetricsCollectorServiceTests
     }
 
     [Fact]
-    public async Task ProcessEventAsync_Heartbeat_SetsKeyWithTtl()
+    public async Task ProcessEvent_Heartbeat_UpdatesRedisAndForwardsToSignalR()
     {
         var evt = new HeartbeatEvent
         {
@@ -116,14 +116,6 @@ public class MetricsCollectorServiceTests
             .Count(i => i.Method.Name == "StringSetAsync"
                 && i.Arguments[0].ToString() == "metrics:health:agent-1")
             .ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Heartbeat_ForwardsToSignalR()
-    {
-        var evt = new HeartbeatEvent { Service = "agent-1" };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
 
         _clientProxy.Verify(c => c.SendCoreAsync(
             "OnHealthUpdate",
@@ -132,7 +124,7 @@ public class MetricsCollectorServiceTests
     }
 
     [Fact]
-    public async Task ProcessEventAsync_Error_PushesToRecentList()
+    public async Task ProcessEvent_Error_StoresAndForwardsCorrectly()
     {
         var evt = new ErrorEvent
         {
@@ -149,37 +141,9 @@ public class MetricsCollectorServiceTests
                 && i.Arguments[0].ToString() == "metrics:errors:recent"
                 && i.Arguments[1].ToString()!.Contains("\"errorType\":\"NullRef\""))
             .ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Error_TrimsRecentListTo100()
-    {
-        var evt = new ErrorEvent
-        {
-            Service = "agent",
-            ErrorType = "NullRef",
-            Message = "Object reference not set",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.ListTrimAsync(
             "metrics:errors:recent", 0, 99, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Error_AddsSortedSetEntry()
-    {
-        var evt = new ErrorEvent
-        {
-            Service = "agent",
-            ErrorType = "NullRef",
-            Message = "Object reference not set",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.SortedSetAddAsync(
             "metrics:errors:2026-03-15",

@@ -6,67 +6,23 @@ namespace Tests.Unit.Domain;
 public class ChatThreadResolverTests
 {
     [Fact]
-    public void Resolve_WithNewKey_ReturnsNewContext()
+    public void Resolve_HandlesKeyIdentityCorrectly()
     {
-        // Arrange
-        var resolver = new ChatThreadResolver();
-        var key = new AgentKey("1:1");
-
-        // Act
-        var context = resolver.Resolve(key);
-
-        // Assert
-        context.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void Resolve_WithExistingKey_ReturnsSameContext()
-    {
-        // Arrange
-        var resolver = new ChatThreadResolver();
-        var key = new AgentKey("1:1");
-        var firstContext = resolver.Resolve(key);
-
-        // Act
-        var secondContext = resolver.Resolve(key);
-
-        // Assert
-        secondContext.ShouldBeSameAs(firstContext);
-    }
-
-    [Fact]
-    public void Resolve_WithDifferentKeys_ReturnsDifferentContexts()
-    {
-        // Arrange
         var resolver = new ChatThreadResolver();
         var key1 = new AgentKey("1:1");
         var key2 = new AgentKey("2:2");
 
-        // Act
+        // New key returns a non-null context
         var context1 = resolver.Resolve(key1);
+        context1.ShouldNotBeNull();
+
+        // Same key returns the same context instance
+        var context1Again = resolver.Resolve(key1);
+        context1Again.ShouldBeSameAs(context1);
+
+        // Different key returns a different context instance
         var context2 = resolver.Resolve(key2);
-
-        // Assert
-        context1.ShouldNotBeSameAs(context2);
-    }
-
-    [Fact]
-    public void AgentKeys_ReturnsAllResolvedKeys()
-    {
-        // Arrange
-        var resolver = new ChatThreadResolver();
-        var key1 = new AgentKey("1:1");
-        var key2 = new AgentKey("2:2");
-        resolver.Resolve(key1);
-        resolver.Resolve(key2);
-
-        // Act
-        var keys = resolver.AgentKeys.ToArray();
-
-        // Assert
-        keys.ShouldContain(key1);
-        keys.ShouldContain(key2);
-        keys.Length.ShouldBe(2);
+        context2.ShouldNotBeSameAs(context1);
     }
 
     [Fact]

@@ -38,22 +38,18 @@ public sealed class ConnectionEventDispatcherTests
     }
 
     [Fact]
-    public void HandleClosed_WithException_DispatchesConnectionClosedWithErrorMessage()
+    public void HandleClosed_DispatchesConnectionClosedWithCorrectError()
     {
         var exception = new InvalidOperationException("Server shutdown");
 
         _sut.HandleClosed(exception);
-
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ConnectionClosed>(action => action.Error == "Server shutdown")),
             Times.Once);
-    }
 
-    [Fact]
-    public void HandleClosed_WithoutException_DispatchesConnectionClosedWithNull()
-    {
+        _mockDispatcher.Invocations.Clear();
+
         _sut.HandleClosed(null);
-
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ConnectionClosed>(action => action.Error == null)),
             Times.Once);

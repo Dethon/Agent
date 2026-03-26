@@ -93,16 +93,11 @@ public sealed class MessagePipelineTests
     }
 
     [Fact]
-    public void WasSentByThisClient_ReturnsTrueForTrackedCorrelationId()
+    public void WasSentByThisClient_DistinguishesTrackedFromUnknownCorrelationIds()
     {
         var correlationId = _pipeline.SubmitUserMessage("topic-1", "Hello", "user-1");
 
         _pipeline.WasSentByThisClient(correlationId).ShouldBeTrue();
-    }
-
-    [Fact]
-    public void WasSentByThisClient_ReturnsFalseForUnknownCorrelationId()
-    {
         _pipeline.WasSentByThisClient("unknown-id").ShouldBeFalse();
     }
 

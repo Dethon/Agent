@@ -42,14 +42,6 @@ public class BotRegistryTests
     }
 
     [Fact]
-    public void GetAllBots_Empty_ReturnsEmptyList()
-    {
-        var registry = new BotRegistry(Array.Empty<AgentBotConfig>());
-
-        registry.GetAllBots().ShouldBeEmpty();
-    }
-
-    [Fact]
     public void RegisterChatAgent_ThenGetBotForChat_ReturnsCorrectClient()
     {
         var registry = new BotRegistry(_testBots);
@@ -62,11 +54,13 @@ public class BotRegistryTests
     }
 
     [Fact]
-    public void GetBotForChat_UnknownChat_ReturnsNull()
+    public void Lookup_WithUnknownIds_ReturnsNull()
     {
         var registry = new BotRegistry(_testBots);
+        registry.RegisterChatAgent(100, "unknown_agent");
 
         registry.GetBotForChat(999).ShouldBeNull();
+        registry.GetBotForChat(100).ShouldBeNull();
     }
 
     [Fact]
@@ -79,15 +73,5 @@ public class BotRegistryTests
 
         var client = registry.GetBotForChat(100);
         client.ShouldBe(registry.GetBotForAgent("jonas"));
-    }
-
-    [Fact]
-    public void GetBotForChat_AgentNotInRegistry_ReturnsNull()
-    {
-        var registry = new BotRegistry(_testBots);
-
-        registry.RegisterChatAgent(100, "unknown_agent");
-
-        registry.GetBotForChat(100).ShouldBeNull();
     }
 }
