@@ -51,7 +51,19 @@
                         <span class="tool-name-short">@ShortToolName(evt.ToolName)</span>
                     </span>
                     <span>@evt.DurationMs ms</span>
-                    <span class="@(evt.Success ? "status-ok" : "status-err")">@(evt.Success ? "OK" : evt.Error ?? "FAIL")</span>
+                    @if (evt.Success)
+                    {
+                        <span class="status-ok">OK</span>
+                    }
+                    else
+                    {
+                        <span class="status-err tooltip-anchor">FAIL
+                            @if (!string.IsNullOrEmpty(evt.Error))
+                            {
+                                <span class="tooltip-popup">@evt.Error</span>
+                            }
+                        </span>
+                    }
                 </div>
             }
         </div>
@@ -189,6 +201,10 @@
     .tool-name-short { display: none; }
     .status-ok { color: var(--accent-green); }
     .status-err { color: var(--accent-red); }
+    .tooltip-anchor { position: relative; cursor: default; }
+    .tooltip-popup { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 6px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
+    .tooltip-anchor:hover .tooltip-popup,
+    .tooltip-anchor:active .tooltip-popup { display: block; }
 
     @@media (max-width: 768px) {
         .page-header { flex-direction: column; }
