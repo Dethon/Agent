@@ -31,7 +31,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // during "thinking"), so use Expect to poll until it has non-empty text content.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         await Assertions.Expect(assistantMessage.First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 30_000 });
     }
 
     [SkippableFact]
@@ -227,12 +227,12 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. Do not write any text response.");
+        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'.");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Verify tool name is shown
         var toolName = page.Locator(".tool-name");
@@ -246,7 +246,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
     }
 
     [SkippableFact]
@@ -270,7 +270,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Wait for approval modal
         var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
+        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Click Reject
         await page.Locator(".btn-reject").ClickAsync();
