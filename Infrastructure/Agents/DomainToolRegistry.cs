@@ -21,6 +21,6 @@ public class DomainToolRegistry(IEnumerable<IDomainToolFeature> features) : IDom
         return enabledFeatures
             .Where(name => _features.ContainsKey(name))
             .Select(name => _features[name].Prompt)
-            .Where(prompt => prompt is not null)!;
+            .OfType<string>();
     }
 }
