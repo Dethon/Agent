@@ -17,6 +17,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string? _customInstructions;
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
+    private readonly IReadOnlyList<string> _domainPrompts;
     private readonly string[] _endpoints;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
@@ -39,6 +40,7 @@ public sealed class McpAgent : DisposableAgent
         string userId,
         string? customInstructions = null,
         IReadOnlyList<AIFunction>? domainTools = null,
+        IReadOnlyList<string>? domainPrompts = null,
         bool enableResourceSubscriptions = true)
     {
         _endpoints = endpoints;
@@ -47,6 +49,7 @@ public sealed class McpAgent : DisposableAgent
         _userId = userId;
         _customInstructions = customInstructions;
         _domainTools = domainTools ?? [];
+        _domainPrompts = domainPrompts ?? [];
         _enableResourceSubscriptions = enableResourceSubscriptions;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
@@ -211,7 +214,8 @@ public sealed class McpAgent : DisposableAgent
 
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
-        var prompts = session.ClientManager.Prompts
+        var prompts = _domainPrompts
+            .Concat(session.ClientManager.Prompts)
             .Prepend(BasePrompt.Instructions);
 
         if (!string.IsNullOrEmpty(_customInstructions))

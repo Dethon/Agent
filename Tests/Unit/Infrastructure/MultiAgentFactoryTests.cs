@@ -41,6 +41,9 @@ public sealed class MultiAgentFactoryTests
         domainToolRegistry
             .Setup(r => r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()))
             .Returns(Enumerable.Empty<AIFunction>());
+        domainToolRegistry
+            .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
+            .Returns(Enumerable.Empty<string>());
 
         var stateStore = new Mock<IThreadStateStore>();
 

@@ -15,4 +15,12 @@ public class DomainToolRegistry(IEnumerable<IDomainToolFeature> features) : IDom
             .Where(name => _features.ContainsKey(name))
             .SelectMany(name => _features[name].GetTools(config));
     }
+
+    public IEnumerable<string> GetPromptsForFeatures(IEnumerable<string> enabledFeatures)
+    {
+        return enabledFeatures
+            .Where(name => _features.ContainsKey(name))
+            .Select(name => _features[name].Prompt)
+            .OfType<string>();
+    }
 }
