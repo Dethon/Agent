@@ -20,6 +20,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
 - **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, and live service health
+- **Subagent Delegation** - Parent agents can spawn ephemeral subagents for parallel or heavy tasks
 - **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, and FileBrowser
 
 ## Architecture
@@ -100,15 +101,20 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | Agent     | MCP Servers                                         | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-text, mcp-websearch, mcp-memory, mcp-idealista  | Knowledge base management ("Scribe" persona for managing markdown vaults) |
+| **Jonas** | mcp-text, mcp-websearch, mcp-memory, mcp-idealista  | Knowledge base management ("Scribe" persona) with subagent delegation |
 
 ### Multi-Agent Configuration
 
 Agents are defined as configuration data, each with:
 - Custom LLM model selection
 - Specific MCP server endpoints
-- Tool whitelist patterns
+- Tool whitelist patterns (e.g., `mcp:mcp-library:*`, `domain:subagents:*`)
 - Custom system instructions
+- Enabled features (e.g., `scheduling`, `subagents`)
+
+#### Subagents
+
+Agents with the `subagents` feature enabled can delegate work to ephemeral subagents via the `run_subagent` tool. Subagents are configured per-agent in `appsettings.json` under the `subAgents` array, each with its own model, MCP server endpoints, and execution timeout. Subagents use ephemeral state (no Redis persistence) and cannot spawn further subagents.
 
 Agent routing:
 - **Telegram**: Each bot token maps to one agent (configured per channel)
@@ -187,7 +193,16 @@ AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/sse
 AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/sse
 AGENTS__0__WHITELISTPATTERNS__0=mcp:mcp-library:*
 AGENTS__0__WHITELISTPATTERNS__1=mcp:mcp-websearch:*
+AGENTS__0__ENABLEDFEATURES__0=scheduling
 AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
+
+# Subagent definitions (per-agent, optional)
+SUBAGENTS__0__ID=jonas-worker
+SUBAGENTS__0__NAME=Jonas Worker
+SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
+SUBAGENTS__0__MODEL=z-ai/glm-5:nitro
+SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-text:8080/sse
+SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 
 # Channel endpoints (agent connects to these)
 CHANNELENDPOINTS__0__CHANNELID=signalr

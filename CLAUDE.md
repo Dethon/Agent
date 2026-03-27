@@ -46,6 +46,10 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Metrics query service | `Observability/Services/MetricsQueryService.cs` |
 | Dashboard components | `Dashboard.Client/Components/*.razor` |
 | Dashboard services | `Dashboard.Client/Services/*.cs` |
+| Subagent tools & feature | `Domain/Tools/SubAgents/*.cs` |
+| Subagent prompt | `Domain/Prompts/SubAgentPrompt.cs` |
+| Subagent DTOs | `Domain/DTOs/SubAgent*.cs` |
+| Subagent DI module | `Agent/Modules/SubAgentModule.cs` |
 | Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 | E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
 | E2E fixtures | `Tests/E2E/Fixtures/*.cs` |
