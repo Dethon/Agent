@@ -41,10 +41,16 @@
             @foreach (var evt in _state.Events.TakeLast(100).Reverse())
             {
                 <div class="table-row">
-                    <span>@evt.Timestamp.ToString("HH:mm:ss")</span>
+                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
                     <span class="svc-badge">@evt.Service</span>
-                    <span class="err-type" title="@evt.ErrorType">@ShortName(evt.ErrorType)</span>
-                    <span class="err-msg" title="@evt.Message">@Truncate(evt.Message, 80)</span>
+                    <span class="err-type tooltip-anchor">
+                        @ShortName(evt.ErrorType)
+                        <span class="tooltip-popup">@evt.ErrorType</span>
+                    </span>
+                    <span class="err-msg tooltip-anchor">
+                        @Truncate(evt.Message, 80)
+                        <span class="tooltip-popup">@evt.Message</span>
+                    </span>
                 </div>
             }
             @if (!_state.Events.Any())
@@ -139,20 +145,24 @@
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 80px 120px 150px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header, .table-row { display: grid; grid-template-columns: 135px 120px 150px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
     .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .table-row:hover { background: rgba(255,255,255,0.03); }
     .svc-badge { color: var(--accent-yellow); }
-    .err-type { color: var(--accent-red); font-weight: 600; }
+    .err-type { color: var(--accent-red); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .err-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tooltip-anchor { position: relative; cursor: default; }
+    .tooltip-popup { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 6px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
+    .tooltip-anchor:hover .tooltip-popup,
+    .tooltip-anchor:active .tooltip-popup { display: block; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
 
     @@media (max-width: 768px) {
         .page-header { flex-direction: column; }
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 65px 90px 110px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 400px; }
+        .table-header, .table-row { grid-template-columns: 110px 90px 110px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 450px; }
         .err-msg { white-space: normal; word-break: break-word; }
     }
 </style>
