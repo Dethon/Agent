@@ -59,12 +59,12 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 │ FileBrowser│                                └────────────┘  └────────────┘
 └────────────┘
 
-                    ┌─────────────────────────────────┐
-  metrics:events    │       Observability             │
-  (Redis Pub/Sub)──▶│  Collector → Redis Aggregation  │
-                    │  REST API + SignalR Hub         │──▶ Dashboard (PWA)
-                    │  Serves Dashboard.Client        │
-                    └─────────────────────────────────┘
+                     ┌─────────────────────────────────┐
+  metrics:events     │       Observability             │
+  (Redis Pub/Sub)───▶│  Collector → Redis Aggregation  │──▶ Dashboard (PWA)
+                     │  REST API + SignalR Hub         │
+                     │  Serves Dashboard.Client        │
+                     └─────────────────────────────────┘
 ```
 
 ### Channel Protocol
