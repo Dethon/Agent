@@ -1,5 +1,6 @@
 @page "/errors"
 @using Dashboard.Client.State.Errors
+@using Domain.DTOs.Metrics
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
@@ -33,12 +34,12 @@
         <h3>Error List</h3>
         <div class="events-table">
             <div class="table-header">
-                <span>Time</span>
-                <span>Service</span>
-                <span>Type</span>
-                <span>Message</span>
+                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                <span class='sortable @SortClass("Service")' @onclick='() => SortBy("Service")'>Service @SortIndicator("Service")</span>
+                <span class='sortable @SortClass("Type")' @onclick='() => SortBy("Type")'>Type @SortIndicator("Type")</span>
+                <span class='sortable @SortClass("Message")' @onclick='() => SortBy("Message")'>Message @SortIndicator("Message")</span>
             </div>
-            @foreach (var evt in _state.Events.TakeLast(100).Reverse())
+            @foreach (var evt in GetSortedEvents())
             {
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
@@ -134,6 +135,31 @@
         return idx >= 0 ? name[(idx + 1)..] : name;
     }
 
+    private string _sortColumn = "Time";
+    private bool _sortAsc;
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = false; }
+    }
+
+    private IEnumerable<ErrorEvent> GetSortedEvents()
+    {
+        var events = _state.Events.TakeLast(100).AsEnumerable();
+        Func<ErrorEvent, object> keySelector = _sortColumn switch
+        {
+            "Service" => e => e.Service,
+            "Type" => e => e.ErrorType,
+            "Message" => e => e.Message,
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
+
     public void Dispose() => _sub?.Dispose();
 }
 
@@ -147,6 +173,9 @@
     .events-table { display: flex; flex-direction: column; gap: 2px; }
     .table-header, .table-row { display: grid; grid-template-columns: 135px 120px 150px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
     .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--text-primary); }
+    .sortable.sorted { color: var(--text-primary); }
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .table-row:hover { background: rgba(255,255,255,0.03); }
     .svc-badge { color: var(--accent-yellow); }
