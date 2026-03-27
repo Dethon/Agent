@@ -25,7 +25,7 @@ User Message
      |          |                |
      |          |           Embed query -> search Redis -> attach memories as AdditionalProperties
      |          |                |
-     |          |           Enqueue message to Channel<MemoryExtractionRequest>
+     |          |           Enqueue message to MemoryExtractionQueue
      |          |
      |          v
      |     [Agent runs with memory context injected in user message]
@@ -63,7 +63,7 @@ Synchronous component that runs in `ChatMonitor` before the agent processes each
 2. Extracts the user's text content, generates an embedding via `IEmbeddingService`
 3. Searches `IMemoryStore.SearchAsync()` with the embedding — returns top N relevant memories + personality profile
 4. Attaches results as `AdditionalProperties` on the `ChatMessage` using a new extension method (`SetMemoryContext` / `GetMemoryContext`)
-5. Enqueues a `MemoryExtractionRequest` (userId, message content, conversationId) to `Channel<MemoryExtractionRequest>` (channel injected into the Infrastructure implementation, not part of the domain contract)
+5. Enqueues a `MemoryExtractionRequest` via `MemoryExtractionQueue.EnqueueAsync()` (queue injected into the Infrastructure implementation, not part of the domain contract)
 6. Returns — agent runs immediately
 
 **Injection in OpenRouterChatClient**: Same transform block that handles userId/timestamp. Reads `GetMemoryContext()` from `AdditionalProperties` and prepends a formatted block to the user message content:
@@ -80,9 +80,13 @@ Synchronous component that runs in `ChatMonitor` before the agent processes each
 - `MemoryContext` — record holding `IReadOnlyList<MemorySearchResult>` and `PersonalityProfile?`
 - `MemoryExtractionRequest` — record holding `string UserId`, `string MessageContent`, `string? ConversationId`
 
+**New types**:
+
+- `MemoryExtractionQueue` (Domain) — wraps `Channel<MemoryExtractionRequest>` with a focused API: `EnqueueAsync(request, ct)` for producers and `ReadAllAsync(ct)` for the consumer. Registered as a singleton. Keeps the channel an implementation detail rather than a DI dependency.
+
 ### 2. Memory Extraction Worker
 
-Background `IHostedService` that consumes `Channel<MemoryExtractionRequest>` and stores extracted memories.
+Background `IHostedService` that consumes from `MemoryExtractionQueue` and stores extracted memories.
 
 **Contract**: `IMemoryExtractor` (Domain)
 **Implementation**: `OpenRouterMemoryExtractor` (Infrastructure)
@@ -111,7 +115,7 @@ public record ExtractionCandidate(
 
 **Worker flow**:
 
-1. Reads `MemoryExtractionRequest` from channel
+1. Reads `MemoryExtractionRequest` from `MemoryExtractionQueue.ReadAllAsync()`
 2. Fetches existing personality profile for the user (for dedup context)
 3. Calls `IMemoryExtractor.ExtractAsync()` — LLM analyzes the message
 4. For each candidate:
@@ -184,9 +188,8 @@ New module `MemoryModule` in `Agent/Modules/`:
 ```csharp
 public static IServiceCollection AddMemory(this IServiceCollection services)
 {
-    // Channel for async extraction
-    services.AddSingleton(Channel.CreateUnbounded<MemoryExtractionRequest>(
-        new UnboundedChannelOptions { SingleReader = true }));
+    // Extraction queue
+    services.AddSingleton<MemoryExtractionQueue>();
 
     // Infrastructure
     services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
