@@ -43,6 +43,7 @@ else
     private int _structureKey;
     private int _prevEntryCount;
     private ChartMode _prevChartType;
+    private string _prevLabelKey = "";
     private bool _needsUpdate;
 
     private static readonly List<string> Palette =
@@ -166,10 +167,12 @@ else
             ? $"min-height: {barHeight}px"
             : "";
 
-        // Structural changes (category count, chart type) require full recreation
-        var structureChanged = _entries.Count != _prevEntryCount || ChartType != _prevChartType;
+        // Structural changes (categories, chart type) require full recreation
+        var labelKey = string.Join('|', _entries.Select(e => e.Label));
+        var structureChanged = _entries.Count != _prevEntryCount || ChartType != _prevChartType || labelKey != _prevLabelKey;
         _prevEntryCount = _entries.Count;
         _prevChartType = ChartType;
+        _prevLabelKey = labelKey;
 
         if (structureChanged)
             _structureKey++;
