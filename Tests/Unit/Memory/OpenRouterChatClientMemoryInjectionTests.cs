@@ -18,13 +18,6 @@ public class OpenRouterChatClientMemoryInjectionTests
         {
             new() { Role = ChatRole.Assistant, Contents = [new TextContent("Hello!")] }
         };
-        innerClient.Setup(c => c.GetStreamingResponseAsync(
-            It.IsAny<IEnumerable<ChatMessage>>(),
-            It.IsAny<ChatOptions>(),
-            It.IsAny<CancellationToken>()))
-            .Returns(responseUpdates.ToAsyncEnumerable());
-
-        var client = new OpenRouterChatClient(innerClient.Object, "test-model");
 
         var message = new ChatMessage(ChatRole.User, "Help me");
         message.SetSenderId("user1");
@@ -47,6 +40,8 @@ public class OpenRouterChatClientMemoryInjectionTests
             .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
             .Returns(responseUpdates.ToAsyncEnumerable());
 
+        var client = new OpenRouterChatClient(innerClient.Object, "test-model");
+
         await foreach (var _ in client.GetStreamingResponseAsync([message]))
         { }
 
@@ -67,13 +62,6 @@ public class OpenRouterChatClientMemoryInjectionTests
         {
             new() { Role = ChatRole.Assistant, Contents = [new TextContent("Hello!")] }
         };
-        innerClient.Setup(c => c.GetStreamingResponseAsync(
-            It.IsAny<IEnumerable<ChatMessage>>(),
-            It.IsAny<ChatOptions>(),
-            It.IsAny<CancellationToken>()))
-            .Returns(responseUpdates.ToAsyncEnumerable());
-
-        var client = new OpenRouterChatClient(innerClient.Object, "test-model");
 
         var message = new ChatMessage(ChatRole.User, "Help me");
         message.SetSenderId("user1");
@@ -85,6 +73,8 @@ public class OpenRouterChatClientMemoryInjectionTests
             It.IsAny<CancellationToken>()))
             .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
             .Returns(responseUpdates.ToAsyncEnumerable());
+
+        var client = new OpenRouterChatClient(innerClient.Object, "test-model");
 
         await foreach (var _ in client.GetStreamingResponseAsync([message]))
         { }
