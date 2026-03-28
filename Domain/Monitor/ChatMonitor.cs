@@ -17,6 +17,7 @@ public class ChatMonitor(
     Func<IChannelConnection, string, IToolApprovalHandler> approvalHandlerFactory,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
+    IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
     public async Task Monitor(CancellationToken cancellationToken)
@@ -89,6 +90,10 @@ public class ChatMonitor(
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
+                        if (memoryRecallHook is not null)
+                        {
+                            await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, linkedCt);
+                        }
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
