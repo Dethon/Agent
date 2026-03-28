@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -8,6 +9,7 @@ public static class ChatMessageExtensions
 {
     private const string SenderIdKey = "SenderId";
     private const string TimestampKey = "Timestamp";
+    private const string MemoryContextKey = "MemoryContext";
 
     extension(ChatMessage message)
     {
@@ -47,6 +49,22 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[TimestampKey] = timestamp.Value;
+        }
+
+        public MemoryContext? GetMemoryContext()
+        {
+            return message.AdditionalProperties?.GetValueOrDefault(MemoryContextKey) as MemoryContext;
+        }
+
+        public void SetMemoryContext(MemoryContext? context)
+        {
+            if (context is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[MemoryContextKey] = context;
         }
     }
 
