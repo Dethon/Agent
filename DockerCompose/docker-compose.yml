@@ -247,31 +247,6 @@ services:
       base-sdk:
         condition: service_started
 
-  mcp-memory:
-    image: mcp-memory:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-memory
-    ports:
-      - "6004:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerMemory/Dockerfile
-      cache_from:
-        - mcp-memory:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
-    restart: unless-stopped
-    env_file:
-      - .env
-    networks:
-      - jackbot
-    depends_on:
-      - redis
-      - base-sdk
-
   mcp-idealista:
     image: mcp-idealista:latest
     logging:
@@ -396,7 +371,6 @@ services:
       - mcp-library
       - mcp-text
       - mcp-websearch
-      - mcp-memory
       - mcp-idealista
       - mcp-channel-signalr
       - mcp-channel-telegram
