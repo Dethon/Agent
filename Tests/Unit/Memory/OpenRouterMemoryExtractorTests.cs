@@ -26,16 +26,18 @@ public class OpenRouterMemoryExtractorTests
     public async Task ExtractAsync_WithStorableFacts_ReturnsCandidates()
     {
         var extractionJson = """
-            [
-              {
-                "content": "Works at Contoso",
-                "category": "fact",
-                "importance": 0.8,
-                "confidence": 0.9,
-                "tags": ["work", "company"],
-                "context": "User mentioned during introduction"
-              }
-            ]
+            {
+              "candidates": [
+                {
+                  "content": "Works at Contoso",
+                  "category": "fact",
+                  "importance": 0.8,
+                  "confidence": 0.9,
+                  "tags": ["work", "company"],
+                  "context": "User mentioned during introduction"
+                }
+              ]
+            }
             """;
 
         _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
@@ -65,7 +67,7 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<IEnumerable<ChatMessage>>(),
             It.IsAny<ChatOptions>(),
             It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, "[]")));
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
         var result = await _extractor.ExtractAsync("Just saying hi", "user1", CancellationToken.None);
         result.ShouldBeEmpty();
@@ -106,7 +108,7 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<ChatOptions>(),
             It.IsAny<CancellationToken>()))
             .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
-            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, "[]")));
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
         await _extractor.ExtractAsync("Hello", "user1", CancellationToken.None);
 

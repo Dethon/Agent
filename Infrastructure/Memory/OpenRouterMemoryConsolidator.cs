@@ -20,13 +20,15 @@ public class OpenRouterMemoryConsolidator(
     private static readonly ChatOptions ConsolidationChatOptions = new()
     {
         Instructions = MemoryPrompts.ConsolidationSystemPrompt,
-        ResponseFormat = ChatResponseFormat.Json
+        ResponseFormat = ChatResponseFormat.ForJsonSchema<ConsolidationResponseDto>(
+            serializerOptions: JsonOptions)
     };
 
     private static readonly ChatOptions ProfileSynthesisChatOptions = new()
     {
         Instructions = MemoryPrompts.ProfileSynthesisSystemPrompt,
-        ResponseFormat = ChatResponseFormat.Json
+        ResponseFormat = ChatResponseFormat.ForJsonSchema<ProfileDto>(
+            serializerOptions: JsonOptions)
     };
 
     public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
@@ -64,10 +66,9 @@ public class OpenRouterMemoryConsolidator(
         try
         {
             var json = StripCodeFences(responseText);
-            var dtos = JsonSerializer.Deserialize<List<MergeDecisionDto>>(json, JsonOptions);
-            if (dtos is null) return [];
+            var wrapper = JsonSerializer.Deserialize<ConsolidationResponseDto>(json, JsonOptions);
 
-            return dtos
+            return wrapper?.Decisions?
                 .Select(d => new MergeDecision(
                     d.SourceIds ?? [],
                     d.Action,
@@ -75,7 +76,7 @@ public class OpenRouterMemoryConsolidator(
                     d.Category,
                     d.Importance,
                     d.Tags))
-                .ToList();
+                .ToList() ?? [];
         }
         catch (JsonException ex)
         {
@@ -140,10 +141,14 @@ public class OpenRouterMemoryConsolidator(
 
         var firstNewline = json.IndexOf('\n');
         var lastFence = json.LastIndexOf("```");
-        if (firstNewline >= 0 && lastFence > firstNewline)
-            return json[(firstNewline + 1)..lastFence].Trim();
+        return firstNewline >= 0 && lastFence > firstNewline
+            ? json[(firstNewline + 1)..lastFence].Trim()
+            : json;
+    }
 
-        return json;
+    private sealed record ConsolidationResponseDto
+    {
+        public List<MergeDecisionDto>? Decisions { get; init; }
     }
 
     private sealed record MergeDecisionDto

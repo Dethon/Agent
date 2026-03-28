@@ -24,7 +24,7 @@ public class OpenRouterMemoryConsolidatorTests
     public async Task ConsolidateAsync_WithMergeDecision_ReturnsMergeAction()
     {
         var mergeJson = """
-            [{"sourceIds": ["mem_1", "mem_2"], "action": "merge", "mergedContent": "Works at Contoso on .NET projects", "category": "fact", "importance": 0.85, "tags": ["work"]}]
+            {"decisions": [{"sourceIds": ["mem_1", "mem_2"], "action": "merge", "mergedContent": "Works at Contoso on .NET projects", "category": "fact", "importance": 0.85, "tags": ["work"]}]}
             """;
 
         _chatClient.Setup(c => c.GetResponseAsync(
@@ -57,7 +57,7 @@ public class OpenRouterMemoryConsolidatorTests
             It.IsAny<IEnumerable<ChatMessage>>(),
             It.IsAny<ChatOptions>(),
             It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, "[]")));
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
 
         var memories = new[] { CreateMemory("mem_1", "Some memory") };
 

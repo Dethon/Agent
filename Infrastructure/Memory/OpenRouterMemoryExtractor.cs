@@ -21,7 +21,8 @@ public class OpenRouterMemoryExtractor(
     private static readonly ChatOptions ExtractionChatOptions = new()
     {
         Instructions = MemoryPrompts.ExtractionSystemPrompt,
-        ResponseFormat = ChatResponseFormat.Json
+        ResponseFormat = ChatResponseFormat.ForJsonSchema<ExtractionResponseDto>(
+            serializerOptions: JsonOptions)
     };
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
@@ -39,33 +40,17 @@ public class OpenRouterMemoryExtractor(
         };
 
         var response = await chatClient.GetResponseAsync(messages, ExtractionChatOptions, ct);
-        var responseText = response.Text;
-
-        return ParseCandidates(responseText);
+        return ParseCandidates(response.Text);
     }
 
     private IReadOnlyList<ExtractionCandidate> ParseCandidates(string responseText)
     {
         try
         {
-            var json = responseText.Trim();
-            if (json.StartsWith("```"))
-            {
-                var firstNewline = json.IndexOf('\n');
-                var lastFence = json.LastIndexOf("```");
-                if (firstNewline >= 0 && lastFence > firstNewline)
-                {
-                    json = json[(firstNewline + 1)..lastFence].Trim();
-                }
-            }
+            var json = StripCodeFences(responseText);
+            var wrapper = JsonSerializer.Deserialize<ExtractionResponseDto>(json, JsonOptions);
 
-            var candidates = JsonSerializer.Deserialize<List<ExtractionCandidateDto>>(json, JsonOptions);
-            if (candidates is null)
-            {
-                return [];
-            }
-
-            return candidates
+            return wrapper?.Candidates?
                 .Select(c => new ExtractionCandidate(
                     c.Content,
                     c.Category,
@@ -73,7 +58,7 @@ public class OpenRouterMemoryExtractor(
                     Math.Clamp(c.Confidence, 0, 1),
                     c.Tags ?? [],
                     c.Context))
-                .ToList();
+                .ToList() ?? [];
         }
         catch (JsonException ex)
         {
@@ -81,6 +66,23 @@ public class OpenRouterMemoryExtractor(
                 responseText.Length > 200 ? responseText[..200] : responseText);
             return [];
         }
+    }
+
+    private static string StripCodeFences(string text)
+    {
+        var json = text.Trim();
+        if (!json.StartsWith("```")) return json;
+
+        var firstNewline = json.IndexOf('\n');
+        var lastFence = json.LastIndexOf("```");
+        return firstNewline >= 0 && lastFence > firstNewline
+            ? json[(firstNewline + 1)..lastFence].Trim()
+            : json;
+    }
+
+    private sealed record ExtractionResponseDto
+    {
+        public List<ExtractionCandidateDto>? Candidates { get; init; }
     }
 
     private sealed record ExtractionCandidateDto
