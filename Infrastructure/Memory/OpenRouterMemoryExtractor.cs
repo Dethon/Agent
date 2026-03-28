@@ -18,6 +18,11 @@ public class OpenRouterMemoryExtractor(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
+    private static readonly ChatOptions ExtractionChatOptions = new()
+    {
+        ResponseFormat = ChatResponseFormat.Json
+    };
+
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
         string messageContent, string userId, CancellationToken ct)
     {
@@ -33,7 +38,7 @@ public class OpenRouterMemoryExtractor(
             new(ChatRole.User, userPrompt)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var response = await chatClient.GetResponseAsync(messages, ExtractionChatOptions, ct);
         var responseText = response.Text;
 
         return ParseCandidates(responseText);

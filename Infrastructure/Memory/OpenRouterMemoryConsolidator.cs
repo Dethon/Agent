@@ -17,6 +17,11 @@ public class OpenRouterMemoryConsolidator(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) }
     };
 
+    private static readonly ChatOptions JsonChatOptions = new()
+    {
+        ResponseFormat = ChatResponseFormat.Json
+    };
+
     public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
         IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
     {
@@ -29,7 +34,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var response = await chatClient.GetResponseAsync(messages, JsonChatOptions, ct);
         return ParseMergeDecisions(response.Text);
     }
 
@@ -45,7 +50,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var response = await chatClient.GetResponseAsync(messages, JsonChatOptions, ct);
         return ParseProfile(userId, memories.Count, response.Text);
     }
 
