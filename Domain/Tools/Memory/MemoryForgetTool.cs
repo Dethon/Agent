@@ -8,9 +8,9 @@ public class MemoryForgetTool(IMemoryStore store)
 {
     private const int ContentPreviewLength = 100;
 
-    protected const string Name = "memory_forget";
+    public const string Name = "memory_forget";
 
-    protected const string Description = """
+    public const string Description = """
                                          Removes or archives memories. Use when information is outdated, wrong, or user
                                          explicitly asks you to forget something.
 
@@ -27,7 +27,7 @@ public class MemoryForgetTool(IMemoryStore store)
                                          parameter instead—this preserves history while updating the active memory.
                                          """;
 
-    protected async Task<JsonNode> Run(
+    public async Task<JsonNode> Run(
         string userId,
         string? memoryId = null,
         string? query = null,

@@ -89,4 +89,33 @@ public static class MemoryPrompt
 
         All memories are scoped by userId. Never access or reference memories from other users.
         """;
+
+    public const string SimplifiedSystemPrompt =
+        """
+        ## Memory System
+
+        You have a memory tool available to manage outdated or incorrect information.
+
+        ### Available Tool
+
+        | Tool | Purpose |
+        |------|---------|
+        | `memory_forget` | Delete or archive outdated or incorrect memories |
+
+        ### When to Forget Memories
+
+        - User corrects previous information — use `memory_forget` to remove the outdated version
+        - User explicitly asks you to forget something
+        - Information is clearly no longer true
+
+        ### Memory Hygiene
+
+        - **Forget outdated info**: Use `memory_forget` when you learn something is no longer true
+        - **Permanent removal**: Use `delete` mode for incorrect information
+        - **Soft removal**: Use `archive` mode to keep history while excluding from active recall
+
+        ### Privacy Note
+
+        All memories are scoped by userId. Never access or reference memories from other users.
+        """;
 }
