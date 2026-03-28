@@ -52,7 +52,23 @@ public class MemoryRecallHook(
             }
 
             // Update access timestamps fire-and-forget
-            _ = Task.WhenAll(memories.Select(m => store.UpdateAccessAsync(userId, m.Memory.Id, CancellationToken.None)));
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.WhenAll(memories.Select(m => store.UpdateAccessAsync(userId, m.Memory.Id, CancellationToken.None)));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to update access timestamps for user {UserId}", userId);
+                    await metricsPublisher.PublishAsync(new ErrorEvent
+                    {
+                        Service = "memory",
+                        ErrorType = ex.GetType().Name,
+                        Message = $"Access timestamp update failed: {ex.Message}"
+                    });
+                }
+            });
 
             // Enqueue extraction request (non-blocking)
             await extractionQueue.EnqueueAsync(
