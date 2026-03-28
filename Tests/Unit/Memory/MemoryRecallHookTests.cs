@@ -98,6 +98,9 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", null, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
+        _metricsPublisher.Verify(p => p.PublishAsync(
+            It.IsAny<MetricsDTOs.ErrorEvent>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     [Fact]

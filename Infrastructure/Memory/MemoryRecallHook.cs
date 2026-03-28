@@ -52,7 +52,7 @@ public class MemoryRecallHook(
             }
 
             // Update access timestamps fire-and-forget
-            _ = Task.WhenAll(memories.Select(m => store.UpdateAccessAsync(userId, m.Memory.Id, ct)));
+            _ = Task.WhenAll(memories.Select(m => store.UpdateAccessAsync(userId, m.Memory.Id, CancellationToken.None)));
 
             // Enqueue extraction request (non-blocking)
             await extractionQueue.EnqueueAsync(
@@ -63,7 +63,8 @@ public class MemoryRecallHook(
             {
                 DurationMs = sw.ElapsedMilliseconds,
                 MemoryCount = memories.Count,
-                UserId = userId
+                UserId = userId,
+                ConversationId = conversationId
             }, ct);
         }
         catch (Exception ex)
