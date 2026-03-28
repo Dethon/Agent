@@ -20,6 +20,7 @@ public class OpenRouterMemoryExtractor(
 
     private static readonly ChatOptions ExtractionChatOptions = new()
     {
+        Instructions = MemoryPrompts.ExtractionSystemPrompt,
         ResponseFormat = ChatResponseFormat.Json
     };
 
@@ -34,7 +35,6 @@ public class OpenRouterMemoryExtractor(
 
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, MemoryPrompts.ExtractionSystemPrompt),
             new(ChatRole.User, userPrompt)
         };
 

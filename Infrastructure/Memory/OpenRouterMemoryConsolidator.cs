@@ -17,8 +17,15 @@ public class OpenRouterMemoryConsolidator(
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) }
     };
 
-    private static readonly ChatOptions JsonChatOptions = new()
+    private static readonly ChatOptions ConsolidationChatOptions = new()
     {
+        Instructions = MemoryPrompts.ConsolidationSystemPrompt,
+        ResponseFormat = ChatResponseFormat.Json
+    };
+
+    private static readonly ChatOptions ProfileSynthesisChatOptions = new()
+    {
+        Instructions = MemoryPrompts.ProfileSynthesisSystemPrompt,
         ResponseFormat = ChatResponseFormat.Json
     };
 
@@ -30,11 +37,10 @@ public class OpenRouterMemoryConsolidator(
 
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, MemoryPrompts.ConsolidationSystemPrompt),
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, JsonChatOptions, ct);
+        var response = await chatClient.GetResponseAsync(messages, ConsolidationChatOptions, ct);
         return ParseMergeDecisions(response.Text);
     }
 
@@ -46,11 +52,10 @@ public class OpenRouterMemoryConsolidator(
 
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, MemoryPrompts.ProfileSynthesisSystemPrompt),
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, JsonChatOptions, ct);
+        var response = await chatClient.GetResponseAsync(messages, ProfileSynthesisChatOptions, ct);
         return ParseProfile(userId, memories.Count, response.Text);
     }
 
