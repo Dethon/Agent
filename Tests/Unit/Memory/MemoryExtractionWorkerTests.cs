@@ -1,0 +1,177 @@
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Metrics;
+using Domain.Memory;
+using Infrastructure.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Shouldly;
+
+namespace Tests.Unit.Memory;
+
+public class MemoryExtractionWorkerTests
+{
+    private readonly Mock<IMemoryExtractor> _extractor = new();
+    private readonly Mock<IEmbeddingService> _embeddingService = new();
+    private readonly Mock<IMemoryStore> _store = new();
+    private readonly Mock<IMetricsPublisher> _metricsPublisher = new();
+    private readonly MemoryExtractionQueue _queue = new();
+    private readonly MemoryExtractionOptions _options = new();
+    private readonly MemoryExtractionWorker _worker;
+
+    public MemoryExtractionWorkerTests()
+    {
+        _worker = new MemoryExtractionWorker(
+            _queue,
+            _extractor.Object,
+            _embeddingService.Object,
+            _store.Object,
+            _metricsPublisher.Object,
+            NullLogger<MemoryExtractionWorker>.Instance,
+            _options);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WithNovelCandidate_StoresMemory()
+    {
+        var candidate = new ExtractionCandidate(
+            Content: "User works at Contoso",
+            Category: MemoryCategory.Fact,
+            Importance: 0.8,
+            Confidence: 0.9,
+            Tags: ["work", "company"],
+            Context: "Mentioned during introduction");
+
+        _extractor
+            .Setup(e => e.ExtractAsync("Hello, I work at Contoso", "user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([candidate]);
+
+        var embedding = new float[] { 0.1f, 0.2f, 0.3f };
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync(candidate.Content, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(embedding);
+
+        _store
+            .Setup(s => s.SearchAsync("user1", null, embedding,
+                It.Is<IEnumerable<MemoryCategory>>(c => c.Contains(MemoryCategory.Fact)),
+                null, null, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        _store
+            .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
+
+        var request = new MemoryExtractionRequest("user1", "Hello, I work at Contoso", "conv_1");
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(
+            It.Is<MemoryEntry>(m =>
+                m.UserId == "user1" &&
+                m.Content == "User works at Contoso" &&
+                m.Category == MemoryCategory.Fact &&
+                m.Importance == 0.8 &&
+                m.Confidence == 0.9 &&
+                m.Source != null &&
+                m.Source.ConversationId == "conv_1" &&
+                m.Id.StartsWith("mem_")),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WithDuplicateCandidate_SkipsStore()
+    {
+        var candidate = new ExtractionCandidate(
+            Content: "User works at Contoso",
+            Category: MemoryCategory.Fact,
+            Importance: 0.8,
+            Confidence: 0.9,
+            Tags: [],
+            Context: null);
+
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([candidate]);
+
+        var embedding = new float[] { 0.1f, 0.2f, 0.3f };
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(embedding);
+
+        var existingMemory = new MemoryEntry
+        {
+            Id = "mem_existing",
+            UserId = "user1",
+            Category = MemoryCategory.Fact,
+            Content = "Works at Contoso",
+            Importance = 0.8,
+            Confidence = 0.9,
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastAccessedAt = DateTimeOffset.UtcNow
+        };
+
+        _store
+            .Setup(s => s.SearchAsync("user1", null, embedding,
+                It.IsAny<IEnumerable<MemoryCategory>>(),
+                null, null, 3, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MemorySearchResult(existingMemory, 0.92)]);
+
+        var request = new MemoryExtractionRequest("user1", "I work at Contoso", null);
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_PublishesExtractionMetric()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
+            .Returns(Task.CompletedTask);
+
+        var request = new MemoryExtractionRequest("user2", "Some message", null);
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        published.ShouldNotBeNull();
+        published.ShouldBeOfType<MemoryExtractionEvent>();
+        var extractionEvent = (MemoryExtractionEvent)published;
+        extractionEvent.UserId.ShouldBe("user2");
+        extractionEvent.CandidateCount.ShouldBe(0);
+        extractionEvent.StoredCount.ShouldBe(0);
+        extractionEvent.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WhenExtractorFails_PublishesErrorEvent()
+    {
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Connection refused"));
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
+            .Returns(Task.CompletedTask);
+
+        var request = new MemoryExtractionRequest("user3", "Some message", null);
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        published.ShouldNotBeNull();
+        published.ShouldBeOfType<ErrorEvent>();
+        var errorEvent = (ErrorEvent)published;
+        errorEvent.Service.ShouldBe("memory");
+        errorEvent.ErrorType.ShouldBe(nameof(HttpRequestException));
+        errorEvent.Message.ShouldContain("Connection refused");
+    }
+}
