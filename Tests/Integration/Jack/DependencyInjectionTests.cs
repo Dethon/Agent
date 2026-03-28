@@ -1,5 +1,6 @@
 using System.Net;
 using Agent.Modules;
+using Microsoft.Extensions.Configuration;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
@@ -78,7 +79,8 @@ public class DependencyInjectionTests
         var cmdParams = new CommandLineParams();
 
         // Act
-        services.ConfigureAgents(settings, cmdParams);
+        var config = new ConfigurationBuilder().Build();
+        services.ConfigureAgents(settings, cmdParams, config);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 
