@@ -28,6 +28,8 @@ public interface IMemoryStore
     Task<PersonalityProfile> SaveProfileAsync(PersonalityProfile profile, CancellationToken ct = default);
 
     Task<MemoryStats> GetStatsAsync(string userId, CancellationToken ct = default);
+
+    Task<IReadOnlyList<string>> GetAllUserIdsAsync(CancellationToken ct = default);
 }
 
 public record MemorySearchResult(MemoryEntry Memory, double Relevance);

@@ -152,6 +152,18 @@ public class RedisStackMemoryStore : IMemoryStore
             memories.GroupBy(m => m.Category).ToDictionary(g => g.Key, g => g.Count()));
     }
 
+    public async Task<IReadOnlyList<string>> GetAllUserIdsAsync(CancellationToken ct = default)
+    {
+        var userIds = new HashSet<string>();
+        await foreach (var key in _server.KeysAsync(pattern: "memory:*:*").WithCancellation(ct))
+        {
+            var parts = key.ToString().Split(':');
+            if (parts.Length >= 3) userIds.Add(parts[1]);
+        }
+
+        return userIds.ToList();
+    }
+
     private async Task<bool> UpdateMemory(MemoryEntry memory, CancellationToken ct)
     {
         await StoreAsync(memory, ct);
