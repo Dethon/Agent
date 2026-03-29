@@ -57,7 +57,7 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(profile);
 
-        await _hook.EnrichAsync(message, "user1", "conv_1", CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();
@@ -75,7 +75,7 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemorySearchResult>());
 
-        await _hook.EnrichAsync(message, "user1", "conv_1", CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await foreach (var item in _queue.ReadAllAsync(cts.Token))
@@ -95,7 +95,7 @@ public class MemoryRecallHookTests
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("API down"));
 
-        await _hook.EnrichAsync(message, "user1", null, CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", null, null, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
         _metricsPublisher.Verify(p => p.PublishAsync(
@@ -113,7 +113,7 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemorySearchResult>());
 
-        await _hook.EnrichAsync(message, "user1", null, CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", null, null, CancellationToken.None);
 
         _metricsPublisher.Verify(p => p.PublishAsync(
             It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
@@ -139,7 +139,7 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(memories);
 
-        await _hook.EnrichAsync(message, "user1", null, CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", null, null, CancellationToken.None);
 
         // Fire-and-forget, give it a moment
         await Task.Delay(50);

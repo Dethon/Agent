@@ -50,7 +50,7 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
 
         var message = new ChatMessage(ChatRole.User, "What language should I use?");
 
-        await hook.EnrichAsync(message, userId, "conv_1", CancellationToken.None);
+        await hook.EnrichAsync(message, userId, "conv_1", null, CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();

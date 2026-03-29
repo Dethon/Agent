@@ -10,7 +10,7 @@ public class MemoryExtractionQueueTests
     public async Task EnqueueAsync_AndReadAllAsync_ReturnsEnqueuedItem()
     {
         var queue = new MemoryExtractionQueue();
-        var request = new MemoryExtractionRequest("user1", "Hello", "conv_1");
+        var request = new MemoryExtractionRequest("user1", "Hello", "conv_1", null);
 
         await queue.EnqueueAsync(request, CancellationToken.None);
 
@@ -32,8 +32,8 @@ public class MemoryExtractionQueueTests
     {
         var queue = new MemoryExtractionQueue();
 
-        await queue.EnqueueAsync(new MemoryExtractionRequest("user1", "First", null), CancellationToken.None);
-        await queue.EnqueueAsync(new MemoryExtractionRequest("user2", "Second", null), CancellationToken.None);
+        await queue.EnqueueAsync(new MemoryExtractionRequest("user1", "First", null, null), CancellationToken.None);
+        await queue.EnqueueAsync(new MemoryExtractionRequest("user2", "Second", null, null), CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var items = new List<MemoryExtractionRequest>();

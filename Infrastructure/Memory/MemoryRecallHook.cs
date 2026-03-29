@@ -23,7 +23,7 @@ public class MemoryRecallHook(
     ILogger<MemoryRecallHook> logger,
     MemoryRecallOptions options) : IMemoryRecallHook
 {
-    public async Task EnrichAsync(ChatMessage message, string userId, string? conversationId, CancellationToken ct)
+    public async Task EnrichAsync(ChatMessage message, string userId, string? conversationId, string? agentId, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         try
@@ -72,7 +72,7 @@ public class MemoryRecallHook(
 
             // Enqueue extraction request (non-blocking)
             await extractionQueue.EnqueueAsync(
-                new MemoryExtractionRequest(userId, messageText, conversationId), ct);
+                new MemoryExtractionRequest(userId, messageText, conversationId, agentId), ct);
 
             sw.Stop();
             await metricsPublisher.PublishAsync(new MemoryRecallEvent
@@ -80,7 +80,8 @@ public class MemoryRecallHook(
                 DurationMs = sw.ElapsedMilliseconds,
                 MemoryCount = memories.Count,
                 UserId = userId,
-                ConversationId = conversationId
+                ConversationId = conversationId,
+                AgentId = agentId
             }, ct);
         }
         catch (Exception ex)

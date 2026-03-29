@@ -18,7 +18,7 @@
             <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
                           OnChanged="OnDimensionChanged" />
             <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
-                          OnChanged="OnMetricChanged" />
+                          OnChanged="OnMetricChanged" DisabledValues="_disabledMetrics" />
             <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
                           OnChanged="OnTimeChanged" />
         </div>
@@ -131,6 +131,13 @@
     private string _activeTab = "Recall";
     private IDisposable? _sub;
     private IDisposable? _metricsSub;
+    private IReadOnlySet<string> _disabledMetrics = new HashSet<string>();
+
+    private static readonly HashSet<string> UserOnlyMetrics = [
+        nameof(MemoryMetric.StoredCount),
+        nameof(MemoryMetric.MergedCount),
+        nameof(MemoryMetric.DecayedCount),
+    ];
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
@@ -167,6 +174,8 @@
         if (savedDays.HasValue) _selectedDays = savedDays.Value;
         if (!string.IsNullOrEmpty(savedTab)) _activeTab = savedTab;
 
+        UpdateDisabledMetrics(Store.State.GroupBy);
+
         _sub = Store.StateObservable.Subscribe(s =>
         {
             _state = s;
@@ -193,9 +202,20 @@
         _avgLatency = totalOps > 0 ? (double)totalDuration / totalOps : 0;
     }
 
+    private void UpdateDisabledMetrics(MemoryDimension groupBy)
+    {
+        _disabledMetrics = groupBy != MemoryDimension.User
+            ? UserOnlyMetrics
+            : new HashSet<string>();
+    }
+
     private async Task OnDimensionChanged(string value)
     {
-        Store.SetGroupBy(Enum.Parse<MemoryDimension>(value));
+        var dim = Enum.Parse<MemoryDimension>(value);
+        Store.SetGroupBy(dim);
+        UpdateDisabledMetrics(dim);
+        if (dim != MemoryDimension.User && UserOnlyMetrics.Contains(_state.Metric.ToString()))
+            Store.SetMetric(MemoryMetric.Count);
         await Storage.SetAsync("memory.groupBy", value);
         await ReloadBreakdown();
     }

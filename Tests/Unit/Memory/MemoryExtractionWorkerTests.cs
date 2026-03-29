@@ -61,7 +61,7 @@ public class MemoryExtractionWorkerTests
             .Setup(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
 
-        var request = new MemoryExtractionRequest("user1", "Hello, I work at Contoso", "conv_1");
+        var request = new MemoryExtractionRequest("user1", "Hello, I work at Contoso", "conv_1", null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -117,7 +117,7 @@ public class MemoryExtractionWorkerTests
                 null, null, 3, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MemorySearchResult(existingMemory, 0.92)]);
 
-        var request = new MemoryExtractionRequest("user1", "I work at Contoso", null);
+        var request = new MemoryExtractionRequest("user1", "I work at Contoso", null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -137,7 +137,7 @@ public class MemoryExtractionWorkerTests
             .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
             .Returns(Task.CompletedTask);
 
-        var request = new MemoryExtractionRequest("user2", "Some message", null);
+        var request = new MemoryExtractionRequest("user2", "Some message", null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
@@ -163,7 +163,7 @@ public class MemoryExtractionWorkerTests
             .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
             .Returns(Task.CompletedTask);
 
-        var request = new MemoryExtractionRequest("user3", "Some message", null);
+        var request = new MemoryExtractionRequest("user3", "Some message", null, null);
 
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 

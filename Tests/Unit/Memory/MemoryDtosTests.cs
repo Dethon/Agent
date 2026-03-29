@@ -40,10 +40,11 @@ public class MemoryDtosTests
     [Fact]
     public void MemoryExtractionRequest_ConstructsWithRequiredFields()
     {
-        var request = new MemoryExtractionRequest("user1", "Hello, I work at Contoso", "conv_123");
+        var request = new MemoryExtractionRequest("user1", "Hello, I work at Contoso", "conv_123", "agent_1");
         request.UserId.ShouldBe("user1");
         request.MessageContent.ShouldBe("Hello, I work at Contoso");
         request.ConversationId.ShouldBe("conv_123");
+        request.AgentId.ShouldBe("agent_1");
     }
 
     [Fact]
