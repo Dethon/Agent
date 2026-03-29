@@ -14,9 +14,26 @@ public static class MemoryPrompts
 
         | Tool | Purpose |
         |------|---------|
-        | `memory_forget` | Delete or archive memories when user explicitly requests forgetting |
+        | `memory_forget` | Delete or archive memories — by ID, semantic query, categories, tags, importance, or age |
 
-        Only call `memory_forget` when a user explicitly asks you to forget something. Memory storage and recall are handled automatically.
+        **Parameters:**
+        - `memoryId` — target a specific memory by ID
+        - `query` — semantic search (e.g. "my job" matches employment memories even without exact text match)
+        - `categories` — comma-separated: Preference, Fact, Relationship, Skill, Project, Personality, Instruction, Event
+        - `tags` — comma-separated tag filter
+        - `maxImportance` — only affect memories with importance ≤ this value (useful for bulk cleanup)
+        - `olderThan` — only affect memories created before this date (ISO 8601)
+        - `mode` — `delete` (permanent) or `archive` (exclude from recall but preserve history)
+        - `reason` — optional explanation
+
+        ### When to Use
+
+        - **User corrects information:** Proactively archive the outdated memory (archive mode), even without an explicit "forget" request. If a user says "actually I work at NewCo now", archive the old employer memory.
+        - **User explicitly asks to forget:** Delete or archive as requested.
+        - **Information is clearly outdated:** Archive stale memories.
+        - **Bulk cleanup:** Use `maxImportance` to clear low-value automatically-extracted memories.
+
+        Memory storage and recall are handled automatically — only use `memory_forget` for removal/archival.
 
         ### Privacy Note
 

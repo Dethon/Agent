@@ -35,4 +35,14 @@ public class MemoryToolFeatureTests
         feature.Prompt.ShouldContain("memory_forget");
         feature.Prompt.ShouldNotContain("memory_recall");
     }
+
+    [Fact]
+    public void Prompt_DocumentsNewFilteringCapabilities()
+    {
+        var feature = CreateFeature();
+        feature.Prompt.ShouldNotBeNull();
+        feature.Prompt.ShouldContain("tags");
+        feature.Prompt.ShouldContain("maxImportance");
+        feature.Prompt.ShouldContain("corrects");
+    }
 }
