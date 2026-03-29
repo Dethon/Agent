@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 

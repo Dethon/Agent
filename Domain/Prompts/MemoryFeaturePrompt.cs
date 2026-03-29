@@ -1,6 +1,6 @@
 namespace Domain.Prompts;
 
-public static class MemoryPrompt
+public static class MemoryFeaturePrompt
 {
     public const string Name = "memory_system_prompt";
 
