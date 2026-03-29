@@ -17,7 +17,7 @@ public class MemoryDreamingServiceTests
     private readonly MemoryDreamingOptions _options = new();
     private readonly MemoryDreamingService _service;
 
-    private static readonly DateTimeOffset Now = new(2026, 3, 28, 3, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _now = new(2026, 3, 28, 3, 0, 0, TimeSpan.Zero);
 
     public MemoryDreamingServiceTests()
     {
@@ -35,7 +35,7 @@ public class MemoryDreamingServiceTests
             {
                 UserId = "user1",
                 Summary = "Test profile",
-                LastUpdated = Now
+                LastUpdated = _now
             });
 
         _store
@@ -63,7 +63,7 @@ public class MemoryDreamingServiceTests
 
         var memories = new List<MemoryEntry>
         {
-            MakeMemory("m1", "user1", MemoryCategory.Fact, 0.8, Now.AddDays(-5), Now.AddDays(-5))
+            MakeMemory("m1", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5))
         };
 
         _store
@@ -82,10 +82,10 @@ public class MemoryDreamingServiceTests
             {
                 UserId = "user1",
                 Summary = "Test",
-                LastUpdated = Now
+                LastUpdated = _now
             });
 
-        await _service.RunDreamingForUserAsync("user1", Now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
         callOrder.Count.ShouldBe(2);
         callOrder[0].ShouldBe("consolidate");
@@ -96,17 +96,17 @@ public class MemoryDreamingServiceTests
     public async Task RunDreamingForUserAsync_DecaysOldUnaccesedMemories()
     {
         var oldFact = MakeMemory("old_fact", "user1", MemoryCategory.Fact, 0.8,
-            Now.AddDays(-60), Now.AddDays(-60));
+            _now.AddDays(-60), _now.AddDays(-60));
         var recentFact = MakeMemory("recent_fact", "user1", MemoryCategory.Fact, 0.8,
-            Now.AddDays(-5), Now.AddDays(-5));
+            _now.AddDays(-5), _now.AddDays(-5));
         var oldInstruction = MakeMemory("old_instr", "user1", MemoryCategory.Instruction, 0.8,
-            Now.AddDays(-60), Now.AddDays(-60));
+            _now.AddDays(-60), _now.AddDays(-60));
 
         _store
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemoryEntry> { oldFact, recentFact, oldInstruction });
 
-        await _service.RunDreamingForUserAsync("user1", Now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
         // Old fact should be decayed: 0.8 * 0.9 = 0.72
         _store.Verify(s => s.UpdateImportanceAsync("user1", "old_fact", 0.72, It.IsAny<CancellationToken>()), Times.Once);
@@ -123,13 +123,13 @@ public class MemoryDreamingServiceTests
     {
         // importance 0.05 * 0.9 = 0.045 < floor 0.1 → NOT decayed
         var lowImportance = MakeMemory("low", "user1", MemoryCategory.Fact, 0.05,
-            Now.AddDays(-60), Now.AddDays(-60));
+            _now.AddDays(-60), _now.AddDays(-60));
 
         _store
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemoryEntry> { lowImportance });
 
-        await _service.RunDreamingForUserAsync("user1", Now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
         _store.Verify(s => s.UpdateImportanceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -137,8 +137,8 @@ public class MemoryDreamingServiceTests
     [Fact]
     public async Task RunDreamingForUserAsync_AppliesMergeDecisions()
     {
-        var m1 = MakeMemory("m1", "user1", MemoryCategory.Fact, 0.7, Now.AddDays(-10), Now.AddDays(-10));
-        var m2 = MakeMemory("m2", "user1", MemoryCategory.Fact, 0.8, Now.AddDays(-5), Now.AddDays(-5));
+        var m1 = MakeMemory("m1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var m2 = MakeMemory("m2", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5));
 
         _store
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
@@ -161,7 +161,7 @@ public class MemoryDreamingServiceTests
             .Setup(e => e.GenerateEmbeddingAsync("Combined fact about user", It.IsAny<CancellationToken>()))
             .ReturnsAsync(embedding);
 
-        await _service.RunDreamingForUserAsync("user1", Now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
         // Should store a new merged memory
         _store.Verify(s => s.StoreAsync(
@@ -189,7 +189,7 @@ public class MemoryDreamingServiceTests
             .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
             .Returns(Task.CompletedTask);
 
-        await _service.RunDreamingForUserAsync("user1", Now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
 
         published.ShouldNotBeNull();
         published.ShouldBeOfType<MemoryDreamingEvent>();

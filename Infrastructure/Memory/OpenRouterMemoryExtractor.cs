@@ -12,17 +12,17 @@ public class OpenRouterMemoryExtractor(
     IMemoryStore store,
     ILogger<OpenRouterMemoryExtractor> logger) : IMemoryExtractor
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    private static readonly ChatOptions ExtractionChatOptions = new()
+    private static readonly ChatOptions _extractionChatOptions = new()
     {
         Instructions = MemoryPrompts.ExtractionSystemPrompt,
         ResponseFormat = ChatResponseFormat.ForJsonSchema<ExtractionResponseDto>(
-            serializerOptions: JsonOptions)
+            serializerOptions: _jsonOptions)
     };
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
@@ -39,7 +39,7 @@ public class OpenRouterMemoryExtractor(
             new(ChatRole.User, userPrompt)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, ExtractionChatOptions, ct);
+        var response = await chatClient.GetResponseAsync(messages, _extractionChatOptions, ct);
         return ParseCandidates(response.Text);
     }
 
@@ -48,7 +48,7 @@ public class OpenRouterMemoryExtractor(
         try
         {
             var json = StripCodeFences(responseText);
-            var wrapper = JsonSerializer.Deserialize<ExtractionResponseDto>(json, JsonOptions);
+            var wrapper = JsonSerializer.Deserialize<ExtractionResponseDto>(json, _jsonOptions);
 
             return wrapper?.Candidates?
                 .Select(c => new ExtractionCandidate(
@@ -71,7 +71,11 @@ public class OpenRouterMemoryExtractor(
     private static string StripCodeFences(string text)
     {
         var json = text.Trim();
-        if (!json.StartsWith("```")) return json;
+        if (!json.StartsWith("```"))
+        {
+            return json;
+        }
+
 
         var firstNewline = json.IndexOf('\n');
         var lastFence = json.LastIndexOf("```");

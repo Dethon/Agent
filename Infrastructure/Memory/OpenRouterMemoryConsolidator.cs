@@ -11,24 +11,24 @@ public class OpenRouterMemoryConsolidator(
     IChatClient chatClient,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower) }
     };
 
-    private static readonly ChatOptions ConsolidationChatOptions = new()
+    private static readonly ChatOptions _consolidationChatOptions = new()
     {
         Instructions = MemoryPrompts.ConsolidationSystemPrompt,
         ResponseFormat = ChatResponseFormat.ForJsonSchema<ConsolidationResponseDto>(
-            serializerOptions: JsonOptions)
+            serializerOptions: _jsonOptions)
     };
 
-    private static readonly ChatOptions ProfileSynthesisChatOptions = new()
+    private static readonly ChatOptions _profileSynthesisChatOptions = new()
     {
         Instructions = MemoryPrompts.ProfileSynthesisSystemPrompt,
         ResponseFormat = ChatResponseFormat.ForJsonSchema<ProfileDto>(
-            serializerOptions: JsonOptions)
+            serializerOptions: _jsonOptions)
     };
 
     public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
@@ -42,7 +42,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, ConsolidationChatOptions, ct);
+        var response = await chatClient.GetResponseAsync(messages, _consolidationChatOptions, ct);
         return ParseMergeDecisions(response.Text);
     }
 
@@ -57,7 +57,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, ProfileSynthesisChatOptions, ct);
+        var response = await chatClient.GetResponseAsync(messages, _profileSynthesisChatOptions, ct);
         return ParseProfile(userId, memories.Count, response.Text);
     }
 
@@ -66,7 +66,7 @@ public class OpenRouterMemoryConsolidator(
         try
         {
             var json = StripCodeFences(responseText);
-            var wrapper = JsonSerializer.Deserialize<ConsolidationResponseDto>(json, JsonOptions);
+            var wrapper = JsonSerializer.Deserialize<ConsolidationResponseDto>(json, _jsonOptions);
 
             return wrapper?.Decisions?
                 .Select(d => new MergeDecision(
@@ -91,8 +91,12 @@ public class OpenRouterMemoryConsolidator(
         try
         {
             var json = StripCodeFences(responseText);
-            var dto = JsonSerializer.Deserialize<ProfileDto>(json, JsonOptions);
-            if (dto is null) return EmptyProfile(userId, memoryCount);
+            var dto = JsonSerializer.Deserialize<ProfileDto>(json, _jsonOptions);
+            if (dto is null)
+            {
+                return EmptyProfile(userId, memoryCount);
+            }
+
 
             return new PersonalityProfile
             {
@@ -137,7 +141,11 @@ public class OpenRouterMemoryConsolidator(
     private static string StripCodeFences(string text)
     {
         var json = text.Trim();
-        if (!json.StartsWith("```")) return json;
+        if (!json.StartsWith("```"))
+        {
+            return json;
+        }
+
 
         var firstNewline = json.IndexOf('\n');
         var lastFence = json.LastIndexOf("```");

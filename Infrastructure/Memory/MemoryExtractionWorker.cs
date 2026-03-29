@@ -29,7 +29,10 @@ public class MemoryExtractionWorker(
         try
         {
             await foreach (var request in queue.ReadAllAsync(ct))
+            {
                 await ProcessRequestAsync(request, ct);
+            }
+
         }
         catch (OperationCanceledException) { }
     }

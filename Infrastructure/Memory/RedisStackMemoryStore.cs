@@ -158,7 +158,11 @@ public class RedisStackMemoryStore : IMemoryStore
         await foreach (var key in _server.KeysAsync(pattern: "memory:*:*").WithCancellation(ct))
         {
             var parts = key.ToString().Split(':');
-            if (parts.Length >= 3) userIds.Add(parts[1]);
+            if (parts.Length >= 3)
+            {
+                userIds.Add(parts[1]);
+            }
+
         }
 
         return userIds.ToList();

@@ -19,7 +19,7 @@ public class MemoryRecallHookTests
     private readonly MemoryExtractionQueue _queue = new();
     private readonly MemoryRecallHook _hook;
 
-    private static readonly float[] TestEmbedding = Enumerable.Range(0, 1536).Select(i => (float)i / 1536).ToArray();
+    private static readonly float[] _testEmbedding = Enumerable.Range(0, 1536).Select(i => (float)i / 1536).ToArray();
 
     public MemoryRecallHookTests()
     {
@@ -51,8 +51,8 @@ public class MemoryRecallHookTests
         };
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TestEmbedding);
-        _store.Setup(s => s.SearchAsync("user1", null, TestEmbedding, null, null, null, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync("user1", null, _testEmbedding, null, null, null, 10, It.IsAny<CancellationToken>()))
             .ReturnsAsync(memories);
         _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(profile);
@@ -71,7 +71,7 @@ public class MemoryRecallHookTests
         var message = new ChatMessage(ChatRole.User, "I work at Contoso");
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TestEmbedding);
+            .ReturnsAsync(_testEmbedding);
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemorySearchResult>());
 
@@ -109,7 +109,7 @@ public class MemoryRecallHookTests
         var message = new ChatMessage(ChatRole.User, "Hello");
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TestEmbedding);
+            .ReturnsAsync(_testEmbedding);
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemorySearchResult>());
 
@@ -135,7 +135,7 @@ public class MemoryRecallHookTests
         };
 
         _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(TestEmbedding);
+            .ReturnsAsync(_testEmbedding);
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(memories);
 

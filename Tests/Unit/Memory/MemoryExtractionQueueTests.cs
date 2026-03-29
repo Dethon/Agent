@@ -40,7 +40,11 @@ public class MemoryExtractionQueueTests
         await foreach (var item in queue.ReadAllAsync(cts.Token))
         {
             items.Add(item);
-            if (items.Count == 2) break;
+            if (items.Count == 2)
+            {
+                break;
+            }
+
         }
 
         items[0].MessageContent.ShouldBe("First");
