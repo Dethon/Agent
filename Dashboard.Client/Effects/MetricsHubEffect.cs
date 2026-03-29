@@ -2,6 +2,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
@@ -18,7 +19,8 @@ public sealed class MetricsHubEffect(
     ToolsStore toolsStore,
     ErrorsStore errorsStore,
     SchedulesStore schedulesStore,
-    ConnectionStore connectionStore) : IAsyncDisposable
+    ConnectionStore connectionStore,
+    MemoryStore memoryStore) : IAsyncDisposable
 {
     private readonly List<IDisposable> _subscriptions = [];
 
@@ -26,6 +28,7 @@ public sealed class MetricsHubEffect(
     private CancellationTokenSource _toolBreakdownCts = new();
     private CancellationTokenSource _errorBreakdownCts = new();
     private CancellationTokenSource _scheduleBreakdownCts = new();
+    private CancellationTokenSource _memoryBreakdownCts = new();
 
     private CancellationToken ResetCts(ref CancellationTokenSource cts)
     {
@@ -87,6 +90,19 @@ public sealed class MetricsHubEffect(
         catch { /* Breakdown stays at last known value */ }
     }
 
+    private async Task RefreshMemoryBreakdownAsync(CancellationToken ct)
+    {
+        try
+        {
+            var s = memoryStore.State;
+            var result = await api.GetMemoryGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
+            memoryStore.SetBreakdown(result ?? []);
+        }
+        catch (OperationCanceledException) { }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
     private bool _started;
 
     public async Task StartAsync()
@@ -97,6 +113,30 @@ public sealed class MetricsHubEffect(
         }
 
         _started = true;
+
+        _subscriptions.Add(hub.OnMemoryRecall(async evt =>
+        {
+            metricsStore.IncrementMemoryRecall(evt.MemoryCount);
+            memoryStore.AppendRecallEvent(evt);
+            var ct = ResetCts(ref _memoryBreakdownCts);
+            await RefreshMemoryBreakdownAsync(ct);
+        }));
+
+        _subscriptions.Add(hub.OnMemoryExtraction(async evt =>
+        {
+            metricsStore.IncrementMemoryExtraction(evt.StoredCount);
+            memoryStore.AppendExtractionEvent(evt);
+            var ct = ResetCts(ref _memoryBreakdownCts);
+            await RefreshMemoryBreakdownAsync(ct);
+        }));
+
+        _subscriptions.Add(hub.OnMemoryDreaming(async evt =>
+        {
+            metricsStore.IncrementMemoryDreaming(evt.MergedCount, evt.DecayedCount);
+            memoryStore.AppendDreamingEvent(evt);
+            var ct = ResetCts(ref _memoryBreakdownCts);
+            await RefreshMemoryBreakdownAsync(ct);
+        }));
 
         _subscriptions.Add(hub.OnTokenUsage(async evt =>
         {
@@ -177,6 +217,7 @@ public sealed class MetricsHubEffect(
         _toolBreakdownCts.Dispose();
         _errorBreakdownCts.Dispose();
         _scheduleBreakdownCts.Dispose();
+        _memoryBreakdownCts.Dispose();
         await hub.DisposeAsync();
     }
 }

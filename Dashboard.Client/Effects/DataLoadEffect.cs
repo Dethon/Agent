@@ -2,6 +2,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
@@ -17,7 +18,8 @@ public sealed class DataLoadEffect(
     ToolsStore toolsStore,
     ErrorsStore errorsStore,
     SchedulesStore schedulesStore,
-    ConnectionStore connectionStore)
+    ConnectionStore connectionStore,
+    MemoryStore memoryStore)
 {
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
@@ -27,6 +29,7 @@ public sealed class DataLoadEffect(
             toolsStore.SetDateRange(from, to);
             errorsStore.SetDateRange(from, to);
             schedulesStore.SetDateRange(from, to);
+            memoryStore.SetDateRange(from, to);
 
             var summaryTask = api.GetSummaryAsync(from, to);
             var tokensTask = api.GetTokensAsync(from, to);
@@ -43,10 +46,16 @@ public sealed class DataLoadEffect(
                 errorsStore.State.GroupBy, from, to);
             var scheduleBreakdownTask = api.GetScheduleGroupedAsync(
                 schedulesStore.State.GroupBy, from, to);
+            var memoryRecallTask = api.GetMemoryRecallAsync(from, to);
+            var memoryExtractionTask = api.GetMemoryExtractionAsync(from, to);
+            var memoryDreamingTask = api.GetMemoryDreamingAsync(from, to);
+            var memoryBreakdownTask = api.GetMemoryGroupedAsync(
+                memoryStore.State.GroupBy, memoryStore.State.Metric, from, to);
 
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
                 schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
-                errorBreakdownTask, scheduleBreakdownTask);
+                errorBreakdownTask, scheduleBreakdownTask,
+                memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask);
 
             var summary = await summaryTask;
             if (summary is not null)
@@ -58,6 +67,12 @@ public sealed class DataLoadEffect(
                     Cost = summary.Cost,
                     ToolCalls = summary.ToolCalls,
                     ToolErrors = summary.ToolErrors,
+                    TotalRecalls = summary.TotalRecalls,
+                    TotalExtractions = summary.TotalExtractions,
+                    TotalDreamings = summary.TotalDreamings,
+                    MemoriesStored = summary.MemoriesStored,
+                    MemoriesMerged = summary.MemoriesMerged,
+                    MemoriesDecayed = summary.MemoriesDecayed,
                 });
             }
 
@@ -70,6 +85,11 @@ public sealed class DataLoadEffect(
             toolsStore.SetBreakdown(await toolBreakdownTask ?? []);
             errorsStore.SetBreakdown(await errorBreakdownTask ?? []);
             schedulesStore.SetBreakdown(await scheduleBreakdownTask ?? []);
+
+            memoryStore.SetRecallEvents(await memoryRecallTask ?? []);
+            memoryStore.SetExtractionEvents(await memoryExtractionTask ?? []);
+            memoryStore.SetDreamingEvents(await memoryDreamingTask ?? []);
+            memoryStore.SetBreakdown(await memoryBreakdownTask ?? []);
 
             var health = await healthTask;
             if (health is not null)

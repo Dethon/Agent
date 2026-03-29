@@ -3,6 +3,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
@@ -23,6 +24,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly MetricsStore _metricsStore = new();
     private readonly HealthStore _healthStore = new();
     private readonly ConnectionStore _connectionStore = new();
+    private readonly MemoryStore _memoryStore = new();
     private readonly MetricsHubEffect _effect;
 
     public MetricsHubEffectTests()
@@ -32,7 +34,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _effect = new MetricsHubEffect(
             _hub, api, _metricsStore, _healthStore,
             _tokensStore, _toolsStore, _errorsStore,
-            _schedulesStore, _connectionStore);
+            _schedulesStore, _connectionStore, _memoryStore);
     }
 
     public async ValueTask DisposeAsync()
@@ -45,6 +47,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _metricsStore.Dispose();
         _healthStore.Dispose();
         _connectionStore.Dispose();
+        _memoryStore.Dispose();
     }
 
     private static readonly
@@ -77,6 +80,24 @@ public class MetricsHubEffectTests : IAsyncDisposable
             hub => hub.FireScheduleExecution(new ScheduleExecutionEvent
             { ScheduleId = "s", Prompt = "p", Success = true, DurationMs = 50 }),
             self => self._schedulesStore.State.Breakdown),
+        ["MemoryRecall"] = (
+            new Dictionary<string, decimal> { ["stale-memory"] = 50m },
+            new Dictionary<string, decimal> { ["fresh-memory"] = 100m },
+            hub => hub.FireMemoryRecall(new MemoryRecallEvent
+            { DurationMs = 100, MemoryCount = 5, UserId = "test" }),
+            self => self._memoryStore.State.Breakdown),
+        ["MemoryExtraction"] = (
+            new Dictionary<string, decimal> { ["stale-extract"] = 30m },
+            new Dictionary<string, decimal> { ["fresh-extract"] = 60m },
+            hub => hub.FireMemoryExtraction(new MemoryExtractionEvent
+            { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "test" }),
+            self => self._memoryStore.State.Breakdown),
+        ["MemoryDreaming"] = (
+            new Dictionary<string, decimal> { ["stale-dream"] = 10m },
+            new Dictionary<string, decimal> { ["fresh-dream"] = 20m },
+            hub => hub.FireMemoryDreaming(new MemoryDreamingEvent
+            { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "test" }),
+            self => self._memoryStore.State.Breakdown),
     };
 
     public static TheoryData<string> RapidEventCaseNames => new(_rapidEventCases.Keys);
@@ -109,6 +130,9 @@ public sealed class FakeMetricsHub : MetricsHubService
     private readonly List<Func<ScheduleExecutionEvent, Task>> _scheduleHandlers = [];
     // ReSharper disable once CollectionNeverQueried.Local
     private readonly List<Func<ServiceHealthUpdate, Task>> _healthHandlers = [];
+    private readonly List<Func<MemoryRecallEvent, Task>> _recallHandlers = [];
+    private readonly List<Func<MemoryExtractionEvent, Task>> _extractionHandlers = [];
+    private readonly List<Func<MemoryDreamingEvent, Task>> _dreamingHandlers = [];
 
     public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
     {
@@ -140,6 +164,24 @@ public sealed class FakeMetricsHub : MetricsHubService
         return new ActionDisposable(() => _healthHandlers.Remove(handler));
     }
 
+    public override IDisposable OnMemoryRecall(Func<MemoryRecallEvent, Task> handler)
+    {
+        _recallHandlers.Add(handler);
+        return new ActionDisposable(() => _recallHandlers.Remove(handler));
+    }
+
+    public override IDisposable OnMemoryExtraction(Func<MemoryExtractionEvent, Task> handler)
+    {
+        _extractionHandlers.Add(handler);
+        return new ActionDisposable(() => _extractionHandlers.Remove(handler));
+    }
+
+    public override IDisposable OnMemoryDreaming(Func<MemoryDreamingEvent, Task> handler)
+    {
+        _dreamingHandlers.Add(handler);
+        return new ActionDisposable(() => _dreamingHandlers.Remove(handler));
+    }
+
     public override void OnReconnected(Func<string?, Task> handler) { }
     public override void OnClosed(Func<Exception?, Task> handler) { }
     public override void OnReconnecting(Func<Exception?, Task> handler) { }
@@ -158,6 +200,15 @@ public sealed class FakeMetricsHub : MetricsHubService
 
     public Task FireScheduleExecution(ScheduleExecutionEvent evt) =>
         Task.WhenAll(_scheduleHandlers.Select(h => h(evt)));
+
+    public Task FireMemoryRecall(MemoryRecallEvent evt) =>
+        Task.WhenAll(_recallHandlers.Select(h => h(evt)));
+
+    public Task FireMemoryExtraction(MemoryExtractionEvent evt) =>
+        Task.WhenAll(_extractionHandlers.Select(h => h(evt)));
+
+    public Task FireMemoryDreaming(MemoryDreamingEvent evt) =>
+        Task.WhenAll(_dreamingHandlers.Select(h => h(evt)));
 
     private sealed class ActionDisposable(Action action) : IDisposable
     {
