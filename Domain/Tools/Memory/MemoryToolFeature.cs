@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.Memory;
 
-public class MemoryToolFeature(IMemoryStore store) : IDomainToolFeature
+public class MemoryToolFeature(IMemoryStore store, IEmbeddingService embeddingService) : IDomainToolFeature
 {
     private const string Feature = "memory";
 
@@ -15,7 +15,7 @@ public class MemoryToolFeature(IMemoryStore store) : IDomainToolFeature
 
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
-        var forgetTool = new MemoryForgetTool(store);
+        var forgetTool = new MemoryForgetTool(store, embeddingService);
         yield return AIFunctionFactory.Create(
             forgetTool.Run,
             name: $"domain:{Feature}:{MemoryForgetTool.Name}",

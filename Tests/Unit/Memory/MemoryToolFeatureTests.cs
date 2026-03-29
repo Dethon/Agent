@@ -8,20 +8,21 @@ namespace Tests.Unit.Memory;
 
 public class MemoryToolFeatureTests
 {
+    private readonly Mock<IMemoryStore> _store = new();
+    private readonly Mock<IEmbeddingService> _embedding = new();
+
+    private MemoryToolFeature CreateFeature() => new(_store.Object, _embedding.Object);
+
     [Fact]
     public void FeatureName_ReturnsMemory()
     {
-        var store = new Mock<IMemoryStore>();
-        var feature = new MemoryToolFeature(store.Object);
-        feature.FeatureName.ShouldBe("memory");
+        CreateFeature().FeatureName.ShouldBe("memory");
     }
 
     [Fact]
     public void GetTools_ReturnsMemoryForgetTool()
     {
-        var store = new Mock<IMemoryStore>();
-        var feature = new MemoryToolFeature(store.Object);
-        var tools = feature.GetTools(new FeatureConfig()).ToList();
+        var tools = CreateFeature().GetTools(new FeatureConfig()).ToList();
         tools.Count.ShouldBe(1);
         tools[0].Name.ShouldBe("domain:memory:memory_forget");
     }
@@ -29,8 +30,7 @@ public class MemoryToolFeatureTests
     [Fact]
     public void Prompt_ReturnsSimplifiedMemoryPrompt()
     {
-        var store = new Mock<IMemoryStore>();
-        var feature = new MemoryToolFeature(store.Object);
+        var feature = CreateFeature();
         feature.Prompt.ShouldNotBeNull();
         feature.Prompt.ShouldContain("memory_forget");
         feature.Prompt.ShouldNotContain("memory_recall");
