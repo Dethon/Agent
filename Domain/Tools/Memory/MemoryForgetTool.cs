@@ -23,8 +23,8 @@ public class MemoryForgetTool(IMemoryStore store)
                                          - User explicitly requests forgetting
                                          - Information is clearly outdated
 
-                                         TIP: When user provides corrected info, prefer using memory_store with supersedes
-                                         parameter instead—this preserves history while updating the active memory.
+                                         TIP: When user provides corrected info, prefer using archive mode instead of
+                                         delete—this preserves history while excluding the outdated memory from recall.
                                          """;
 
     public async Task<JsonNode> Run(

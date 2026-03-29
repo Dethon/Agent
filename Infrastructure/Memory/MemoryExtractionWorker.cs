@@ -61,7 +61,8 @@ public class MemoryExtractionWorker(
                 CandidateCount = candidateCount,
                 StoredCount = storedCount,
                 UserId = request.UserId,
-                AgentId = request.AgentId
+                AgentId = request.AgentId,
+                ConversationId = request.ConversationId
             }, ct);
         }
         catch (Exception ex)
