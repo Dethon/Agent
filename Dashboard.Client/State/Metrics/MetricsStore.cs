@@ -5,6 +5,9 @@ namespace Dashboard.Client.State.Metrics;
 public record UpdateSummary(MetricsState Summary) : IAction;
 public record IncrementFromTokenUsage(TokenUsageEvent Event) : IAction;
 public record IncrementToolCall(bool IsError) : IAction;
+public record IncrementMemoryRecall(int MemoryCount) : IAction;
+public record IncrementMemoryExtraction(int StoredCount) : IAction;
+public record IncrementMemoryDreaming(int MergedCount, int DecayedCount) : IAction;
 
 public sealed class MetricsStore : Store<MetricsState>
 {
@@ -26,5 +29,26 @@ public sealed class MetricsStore : Store<MetricsState>
         {
             ToolCalls = s.ToolCalls + 1,
             ToolErrors = a.IsError ? s.ToolErrors + 1 : s.ToolErrors,
+        });
+
+    public void IncrementMemoryRecall(int memoryCount) =>
+        Dispatch(new IncrementMemoryRecall(memoryCount), static (s, a) => s with
+        {
+            TotalRecalls = s.TotalRecalls + 1,
+        });
+
+    public void IncrementMemoryExtraction(int storedCount) =>
+        Dispatch(new IncrementMemoryExtraction(storedCount), static (s, a) => s with
+        {
+            TotalExtractions = s.TotalExtractions + 1,
+            MemoriesStored = s.MemoriesStored + a.StoredCount,
+        });
+
+    public void IncrementMemoryDreaming(int mergedCount, int decayedCount) =>
+        Dispatch(new IncrementMemoryDreaming(mergedCount, decayedCount), static (s, a) => s with
+        {
+            TotalDreamings = s.TotalDreamings + 1,
+            MemoriesMerged = s.MemoriesMerged + a.MergedCount,
+            MemoriesDecayed = s.MemoriesDecayed + a.DecayedCount,
         });
 }
