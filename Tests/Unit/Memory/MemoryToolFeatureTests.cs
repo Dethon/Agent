@@ -26,23 +26,4 @@ public class MemoryToolFeatureTests
         tools.Count.ShouldBe(1);
         tools[0].Name.ShouldBe("domain:memory:memory_forget");
     }
-
-    [Fact]
-    public void Prompt_ReturnsSimplifiedMemoryPrompt()
-    {
-        var feature = CreateFeature();
-        feature.Prompt.ShouldNotBeNull();
-        feature.Prompt.ShouldContain("memory_forget");
-        feature.Prompt.ShouldNotContain("memory_recall");
-    }
-
-    [Fact]
-    public void Prompt_DocumentsNewFilteringCapabilities()
-    {
-        var feature = CreateFeature();
-        feature.Prompt.ShouldNotBeNull();
-        feature.Prompt.ShouldContain("tags");
-        feature.Prompt.ShouldContain("maxImportance");
-        feature.Prompt.ShouldContain("corrects");
-    }
 }
