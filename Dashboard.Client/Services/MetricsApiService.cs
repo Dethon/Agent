@@ -10,7 +10,13 @@ public record MetricsSummary(
     long TotalTokens,
     decimal Cost,
     long ToolCalls,
-    long ToolErrors);
+    long ToolErrors,
+    long TotalRecalls = 0,
+    long TotalExtractions = 0,
+    long TotalDreamings = 0,
+    long MemoriesStored = 0,
+    long MemoriesMerged = 0,
+    long MemoriesDecayed = 0);
 
 public record ServiceHealthResponse(string Service, bool IsHealthy, string LastSeen);
 

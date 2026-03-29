@@ -15,7 +15,13 @@ public record MetricsSummary(
     long TotalTokens,
     decimal Cost,
     long ToolCalls,
-    long ToolErrors);
+    long ToolErrors,
+    long TotalRecalls = 0,
+    long TotalExtractions = 0,
+    long TotalDreamings = 0,
+    long MemoriesStored = 0,
+    long MemoriesMerged = 0,
+    long MemoriesDecayed = 0);
 
 public sealed class MetricsQueryService(IConnectionMultiplexer redis)
 {
@@ -28,6 +34,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     {
         var db = redis.GetDatabase();
         long inputTokens = 0, outputTokens = 0, costFixed = 0, toolCalls = 0, toolErrors = 0;
+        long recalls = 0, extractions = 0, dreamings = 0, memoriesStored = 0, memoriesMerged = 0, memoriesDecayed = 0;
 
         foreach (var date in EnumerateDates(from, to))
         {
@@ -54,6 +61,24 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                     case "tools:errors":
                         toolErrors += value;
                         break;
+                    case "memory:recalls":
+                        recalls += value;
+                        break;
+                    case "memory:extractions":
+                        extractions += value;
+                        break;
+                    case "memory:dreamings":
+                        dreamings += value;
+                        break;
+                    case "memory:stored":
+                        memoriesStored += value;
+                        break;
+                    case "memory:merged":
+                        memoriesMerged += value;
+                        break;
+                    case "memory:decayed":
+                        memoriesDecayed += value;
+                        break;
                 }
             }
         }
@@ -64,7 +89,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             inputTokens + outputTokens,
             costFixed / 10000m,
             toolCalls,
-            toolErrors);
+            toolErrors,
+            recalls,
+            extractions,
+            dreamings,
+            memoriesStored,
+            memoriesMerged,
+            memoriesDecayed);
     }
 
     public async Task<IReadOnlyList<T>> GetEventsAsync<T>(string keyPrefix, DateOnly from, DateOnly to)

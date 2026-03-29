@@ -115,4 +115,34 @@ public class MetricsQueryServiceTests
         result.OutputTokens.ShouldBe(0);
         result.ToolCalls.ShouldBe(0);
     }
+
+    [Fact]
+    public async Task GetSummaryAsync_WithMemoryFields_ReturnsMemoryTotals()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-15", It.IsAny<CommandFlags>()))
+            .ReturnsAsync(
+            [
+                new HashEntry("tokens:input", 100),
+                new HashEntry("tokens:output", 50),
+                new HashEntry("tokens:cost", 10000),
+                new HashEntry("tools:count", 10),
+                new HashEntry("tools:errors", 2),
+                new HashEntry("memory:recalls", 25),
+                new HashEntry("memory:extractions", 15),
+                new HashEntry("memory:dreamings", 3),
+                new HashEntry("memory:stored", 42),
+                new HashEntry("memory:merged", 7),
+                new HashEntry("memory:decayed", 4),
+            ]);
+
+        var result = await _sut.GetSummaryAsync(date, date);
+
+        result.TotalRecalls.ShouldBe(25);
+        result.TotalExtractions.ShouldBe(15);
+        result.TotalDreamings.ShouldBe(3);
+        result.MemoriesStored.ShouldBe(42);
+        result.MemoriesMerged.ShouldBe(7);
+        result.MemoriesDecayed.ShouldBe(4);
+    }
 }
