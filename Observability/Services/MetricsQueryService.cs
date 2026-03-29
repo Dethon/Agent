@@ -227,6 +227,59 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             .ToDictionary(g => g.Key, g => g.Count());
     }
 
+    public async Task<Dictionary<string, decimal>> GetMemoryGroupedAsync(
+        MemoryDimension dimension, MemoryMetric metric, DateOnly from, DateOnly to)
+    {
+        var recalls = await GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", from, to);
+        var extractions = await GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", from, to);
+        var dreamings = await GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", from, to);
+
+        var allEvents = recalls.Cast<MetricEvent>()
+            .Concat(extractions)
+            .Concat(dreamings)
+            .ToList();
+
+        return allEvents
+            .GroupBy(e => dimension switch
+            {
+                MemoryDimension.User => e switch
+                {
+                    MemoryRecallEvent r => r.UserId,
+                    MemoryExtractionEvent x => x.UserId,
+                    MemoryDreamingEvent d => d.UserId,
+                    _ => "unknown"
+                },
+                MemoryDimension.EventType => e switch
+                {
+                    MemoryRecallEvent => "Recall",
+                    MemoryExtractionEvent => "Extraction",
+                    MemoryDreamingEvent => "Dreaming",
+                    _ => "unknown"
+                },
+                MemoryDimension.Agent => e.AgentId ?? "unknown",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    MemoryMetric.Count => (decimal)g.Count(),
+                    MemoryMetric.AvgDuration => g.Any(e => e is MemoryRecallEvent or MemoryExtractionEvent)
+                        ? (decimal)g.Where(e => e is MemoryRecallEvent or MemoryExtractionEvent)
+                            .Average(e => e switch
+                            {
+                                MemoryRecallEvent r => r.DurationMs,
+                                MemoryExtractionEvent x => x.DurationMs,
+                                _ => 0
+                            })
+                        : 0m,
+                    MemoryMetric.StoredCount => g.OfType<MemoryExtractionEvent>().Sum(e => (decimal)e.StoredCount),
+                    MemoryMetric.MergedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.MergedCount),
+                    MemoryMetric.DecayedCount => g.OfType<MemoryDreamingEvent>().Sum(e => (decimal)e.DecayedCount),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
         ScheduleDimension dimension, DateOnly from, DateOnly to)
     {
