@@ -11,10 +11,6 @@ services:
     volumes:
       - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
 
-  mcp-memory:
-    volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
-
   mcp-idealista:
     volumes:
       - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
