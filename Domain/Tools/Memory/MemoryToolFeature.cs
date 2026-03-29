@@ -11,7 +11,7 @@ public class MemoryToolFeature(IMemoryStore store) : IDomainToolFeature
 
     public string FeatureName => Feature;
 
-    public string? Prompt => MemoryFeaturePrompt.SystemPrompt;
+    public string? Prompt => MemoryPrompts.FeatureSystemPrompt;
 
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
     {
