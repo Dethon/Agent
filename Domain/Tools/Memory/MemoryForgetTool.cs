@@ -131,7 +131,9 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
     private static DateTimeOffset? ParseDate(string? date)
     {
         if (string.IsNullOrWhiteSpace(date))
+        {
             return null;
+        }
 
         return DateTimeOffset.TryParse(date, out var result) ? result : null;
     }
