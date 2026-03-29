@@ -13,14 +13,14 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations, push notifications |
-| `McpServer*` | MCP tool servers (Library, Text, WebSearch, Memory, Idealista) |
+| `McpServer*` | MCP tool servers (Library, Text, WebSearch, Idealista) |
 | `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
-| `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, health) |
+| `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, memory, health) |
 | `Tests` | Unit and integration tests |
 
 ## Key File Locations
@@ -49,6 +49,12 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Subagent tools & feature | `Domain/Tools/SubAgents/*.cs` |
 | Subagent prompt | `Domain/Prompts/SubAgentPrompt.cs` |
 | Subagent DTOs | `Domain/DTOs/SubAgent*.cs` |
+| Memory services | `Infrastructure/Memory/*.cs` |
+| Memory contracts | `Domain/Contracts/IMemory*.cs` |
+| Memory tools & feature | `Domain/Tools/Memory/*.cs` |
+| Memory prompts | `Domain/Prompts/MemoryPrompts.cs` |
+| Memory DI module | `Agent/Modules/MemoryModule.cs` |
+| Memory extraction queue | `Domain/Memory/*.cs` |
 | Subagent DI module | `Agent/Modules/SubAgentModule.cs` |
 | Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 | E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
@@ -100,10 +106,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-text mcp-websearch mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-text mcp-websearch mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
 ```
 
 ### Secrets
@@ -116,11 +122,19 @@ Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to t
 
 ### Accessing the Dashboard
 
-The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5003/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, schedule history, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
+The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5003/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, schedule history, memory analytics, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
 
 ### Observability Architecture
 
 Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub channel `metrics:events`. The `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`). `MetricsQueryService` provides grouped aggregation queries over the stored metrics (breakdowns by dimension/metric enums). The dashboard uses a hybrid approach: REST API for historical data on page load, SignalR for real-time updates. Dashboard components (`DynamicChart`, `PillSelector`) use `LocalStorageService` to persist UI state across sessions.
+
+### Memory Architecture
+
+Memory is a built-in agent feature (not a separate MCP server). It runs as services inside the Agent process:
+- **Extraction**: `ChatMonitor` queues conversation turns → `MemoryExtractionWorker` processes the queue → `IMemoryExtractor` (LLM-based) identifies memories to store → `IMemoryStore` (Redis Stack with vector search) persists them.
+- **Recall**: `MemoryRecallHook` runs before each agent turn, retrieves relevant memories via semantic search, and injects them into the system prompt.
+- **Dreaming**: `MemoryDreamingService` periodically consolidates and prunes memories using `IMemoryConsolidator` (LLM-based).
+- **Metrics**: Extraction, recall, and dreaming events are published as `MetricEvent` DTOs for the Observability dashboard.
 
 ### Channel Architecture
 
