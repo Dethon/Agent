@@ -130,7 +130,10 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
 
     private static DateTimeOffset? ParseDate(string? date)
     {
-        return string.IsNullOrWhiteSpace(date) ? null : DateTimeOffset.Parse(date);
+        if (string.IsNullOrWhiteSpace(date))
+            return null;
+
+        return DateTimeOffset.TryParse(date, out var result) ? result : null;
     }
 
     private static string TruncateContent(string content)
