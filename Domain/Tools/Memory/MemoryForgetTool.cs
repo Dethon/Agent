@@ -104,7 +104,9 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
     private static List<MemoryCategory>? ParseCategories(string? categories)
     {
         if (string.IsNullOrWhiteSpace(categories))
+        {
             return null;
+        }
 
         return categories
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -117,7 +119,9 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
     private static List<string>? ParseTags(string? tags)
     {
         if (string.IsNullOrWhiteSpace(tags))
+        {
             return null;
+        }
 
         return tags
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
