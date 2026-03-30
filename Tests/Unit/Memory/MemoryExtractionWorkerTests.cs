@@ -15,6 +15,7 @@ public class MemoryExtractionWorkerTests
     private readonly Mock<IEmbeddingService> _embeddingService = new();
     private readonly Mock<IMemoryStore> _store = new();
     private readonly Mock<IMetricsPublisher> _metricsPublisher = new();
+    private readonly Mock<IAgentDefinitionProvider> _agentDefinitionProvider = new();
     private readonly MemoryExtractionQueue _queue = new();
     private readonly MemoryExtractionOptions _options = new();
     private readonly MemoryExtractionWorker _worker;
@@ -27,6 +28,7 @@ public class MemoryExtractionWorkerTests
             _embeddingService.Object,
             _store.Object,
             _metricsPublisher.Object,
+            _agentDefinitionProvider.Object,
             NullLogger<MemoryExtractionWorker>.Instance,
             _options);
     }
@@ -148,6 +150,28 @@ public class MemoryExtractionWorkerTests
         extractionEvent.CandidateCount.ShouldBe(0);
         extractionEvent.StoredCount.ShouldBe(0);
         extractionEvent.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task ProcessRequestAsync_SkipsExtraction_WhenAgentDoesNotHaveMemoryFeature()
+    {
+        _agentDefinitionProvider.Setup(p => p.GetById("agent-no-memory"))
+            .Returns(new AgentDefinition
+            {
+                Id = "agent-no-memory", Name = "NoMem", Model = "test",
+                McpServerEndpoints = [], EnabledFeatures = ["scheduling"]
+            });
+
+        var request = new MemoryExtractionRequest("user1", "Hello", "conv_1", "agent-no-memory");
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        _extractor.Verify(
+            e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _metricsPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<MemoryExtractionEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

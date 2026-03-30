@@ -21,6 +21,7 @@ public class MemoryExtractionWorker(
     IEmbeddingService embeddingService,
     IMemoryStore store,
     IMetricsPublisher metricsPublisher,
+    IAgentDefinitionProvider agentDefinitionProvider,
     ILogger<MemoryExtractionWorker> logger,
     MemoryExtractionOptions options) : BackgroundService
 {
@@ -39,6 +40,15 @@ public class MemoryExtractionWorker(
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)
     {
+        if (request.AgentId is not null)
+        {
+            var agentDef = agentDefinitionProvider.GetById(request.AgentId);
+            if (agentDef is not null && !agentDef.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
         var sw = Stopwatch.StartNew();
         var storedCount = 0;
         var candidateCount = 0;
