@@ -37,7 +37,8 @@ public class SubAgentTests(RedisFixture redisFixture)
             null!,
             monitor,
             config,
-            domainToolRegistry);
+            domainToolRegistry,
+            new CustomAgentRegistry());
     }
 
     [SkippableFact]

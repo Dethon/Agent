@@ -29,7 +29,8 @@ public sealed class FakeAgentFactory : IAgentFactory
             new Mock<IServiceProvider>().Object,
             optionsMonitor.Object,
             new OpenRouterConfig { ApiUrl = "http://fake", ApiKey = "fake" },
-            new Mock<IDomainToolRegistry>().Object);
+            new Mock<IDomainToolRegistry>().Object,
+            new CustomAgentRegistry());
     }
 
     public void ConfigureAgents(params AgentDefinition[] agents)

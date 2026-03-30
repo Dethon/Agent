@@ -58,7 +58,7 @@ public class ScheduleExecutor(
             await metricsPublisher.PublishAsync(new ScheduleExecutionEvent
             {
                 ScheduleId = schedule.Id,
-                AgentId = schedule.Agent.Id,
+                AgentId = schedule.Agent.Name,
                 Prompt = schedule.Prompt,
                 DurationMs = sw.ElapsedMilliseconds,
                 Success = true
@@ -72,7 +72,7 @@ public class ScheduleExecutor(
             await metricsPublisher.PublishAsync(new ScheduleExecutionEvent
             {
                 ScheduleId = schedule.Id,
-                AgentId = schedule.Agent.Id,
+                AgentId = schedule.Agent.Name,
                 Prompt = schedule.Prompt,
                 DurationMs = sw.ElapsedMilliseconds,
                 Success = false,
@@ -82,7 +82,7 @@ public class ScheduleExecutor(
             await metricsPublisher.PublishAsync(new ErrorEvent
             {
                 Service = "scheduler",
-                AgentId = schedule.Agent.Id,
+                AgentId = schedule.Agent.Name,
                 ErrorType = ex.GetType().Name,
                 Message = ex.Message
             }, ct);

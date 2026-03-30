@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -16,9 +15,9 @@ public sealed class MultiAgentFactory(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
+    CustomAgentRegistry customAgentRegistry,
     IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
 {
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _customAgents = new();
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
     {
@@ -32,11 +31,10 @@ public sealed class MultiAgentFactory(
             ? agents[0]
             : agents.FirstOrDefault(a => a.Id == agentId);
 
-        if (agent is null && agentId is not null &&
-            _customAgents.TryGetValue(userId, out var userAgents) &&
-            userAgents.TryGetValue(agentId, out var customAgent))
+        if (agent is null && agentId is not null)
         {
-            agent = customAgent;
+            agent = customAgentRegistry.GetByUser(userId)
+                .FirstOrDefault(a => a.Id == agentId);
         }
 
         _ = agent ?? throw new InvalidOperationException($"No agent found for identifier '{agentId}'.");
@@ -50,10 +48,10 @@ public sealed class MultiAgentFactory(
             .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
             .ToList();
 
-        if (userId is not null &&
-            _customAgents.TryGetValue(userId, out var userAgents))
+        if (userId is not null)
         {
-            builtIn.AddRange(userAgents.Values.Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
+            builtIn.AddRange(customAgentRegistry.GetByUser(userId)
+                .Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
         }
 
         return builtIn;
@@ -74,20 +72,14 @@ public sealed class MultiAgentFactory(
             EnabledFeatures = registration.EnabledFeatures
         };
 
-        var userAgents = _customAgents.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
-        userAgents[id] = definition;
+        customAgentRegistry.Add(userId, definition);
 
         return new AgentInfo(id, registration.Name, registration.Description);
     }
 
     public bool UnregisterCustomAgent(string userId, string agentId)
     {
-        if (!_customAgents.TryGetValue(userId, out var userAgents))
-        {
-            return false;
-        }
-
-        return userAgents.TryRemove(agentId, out _);
+        return customAgentRegistry.Remove(userId, agentId);
     }
 
     public DisposableAgent CreateSubAgent(
@@ -97,7 +89,7 @@ public sealed class MultiAgentFactory(
         string userId)
     {
         var agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
+            ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : null;
 
         var chatClient = CreateChatClient(definition.Model, agentPublisher);
@@ -136,7 +128,7 @@ public sealed class MultiAgentFactory(
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
         var agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, definition.Id)
+            ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : metricsPublisher;
         var chatClient = CreateChatClient(definition.Model, agentPublisher);
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();

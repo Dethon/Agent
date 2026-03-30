@@ -33,12 +33,14 @@ public static class InjectorModule
                     new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "agent"))
                 .AddSingleton<ChatThreadResolver>()
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
+                .AddSingleton<CustomAgentRegistry>()
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
                         sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
+                        sp.GetRequiredService<CustomAgentRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());

@@ -56,7 +56,8 @@ public sealed class MultiAgentFactoryTests
             serviceProvider.Object,
             optionsMonitor.Object,
             openRouterConfig,
-            domainToolRegistry.Object);
+            domainToolRegistry.Object,
+            new CustomAgentRegistry());
     }
 
     private static CustomAgentRegistration MakeRegistration(

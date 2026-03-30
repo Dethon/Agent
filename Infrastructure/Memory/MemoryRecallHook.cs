@@ -91,7 +91,7 @@ public class MemoryRecallHook(
                 MemoryCount = memories.Count,
                 UserId = userId,
                 ConversationId = conversationId,
-                AgentId = agentId
+                AgentId = agentId is not null ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId : null
             }, ct);
         }
         catch (Exception ex)

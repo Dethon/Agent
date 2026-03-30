@@ -71,7 +71,7 @@ public class MemoryExtractionWorker(
                 CandidateCount = candidateCount,
                 StoredCount = storedCount,
                 UserId = request.UserId,
-                AgentId = request.AgentId,
+                AgentId = request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null,
                 ConversationId = request.ConversationId
             }, ct);
         }
