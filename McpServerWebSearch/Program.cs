@@ -6,6 +6,6 @@ var settings = builder.Configuration.GetSettings();
 builder.Services.ConfigureMcp(settings);
 
 var app = builder.Build();
-app.MapMcp();
+app.MapMcp("/mcp");
 
 await app.RunAsync();

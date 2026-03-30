@@ -4,13 +4,14 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Memory;
 
-public class MemoryForgetTool(IMemoryStore store)
+public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingService)
 {
     private const int ContentPreviewLength = 100;
+    private const int SearchLimit = 100;
 
-    protected const string Name = "memory_forget";
+    public const string Name = "memory_forget";
 
-    protected const string Description = """
+    public const string Description = """
                                          Removes or archives memories. Use when information is outdated, wrong, or user
                                          explicitly asks you to forget something.
 
@@ -18,21 +19,26 @@ public class MemoryForgetTool(IMemoryStore store)
                                          - delete: Permanent removal
                                          - archive: Keep for history but exclude from normal recall (marks as superseded)
 
-                                         When to forget:
-                                         - User corrects previous information
+                                         When to use:
+                                         - User corrects previous information → archive the outdated memory
                                          - User explicitly requests forgetting
                                          - Information is clearly outdated
+                                         - Bulk cleanup of low-importance memories
 
-                                         TIP: When user provides corrected info, prefer using memory_store with supersedes
-                                         parameter instead—this preserves history while updating the active memory.
+                                         TIP: When user provides corrected info, prefer using archive mode instead of
+                                         delete—this preserves history while excluding the outdated memory from recall.
+                                         Use semantic query (not exact text) to find memories — e.g. "my job" will match
+                                         memories about employment.
                                          """;
 
-    protected async Task<JsonNode> Run(
+    public async Task<JsonNode> Run(
         string userId,
         string? memoryId = null,
         string? query = null,
         string? categories = null,
+        string? tags = null,
         string? olderThan = null,
+        double? maxImportance = null,
         ForgetMode mode = ForgetMode.Delete,
         string? reason = null,
         CancellationToken ct = default)
@@ -42,23 +48,16 @@ public class MemoryForgetTool(IMemoryStore store)
             return CreateErrorResponse("Either memoryId or query must be provided");
         }
 
-        var filter = new MemoryFilter(
-            Query: query,
-            Categories: ParseCategories(categories),
-            OlderThan: ParseDate(olderThan));
-
         var affectedMemories = !string.IsNullOrWhiteSpace(memoryId)
             ? await ForgetById(userId, memoryId, mode, ct)
-            : await ForgetByFilter(userId, filter, mode, ct);
+            : await ForgetBySearch(userId, query!, ParseCategories(categories), ParseTags(tags),
+                ParseDate(olderThan), maxImportance, mode, ct);
 
         return CreateSuccessResponse(mode, affectedMemories, reason);
     }
 
     private async Task<List<AffectedMemory>> ForgetById(
-        string userId,
-        string memoryId,
-        ForgetMode mode,
-        CancellationToken ct)
+        string userId, string memoryId, ForgetMode mode, CancellationToken ct)
     {
         var memory = await store.GetByIdAsync(userId, memoryId, ct);
         if (memory is null)
@@ -67,29 +66,29 @@ public class MemoryForgetTool(IMemoryStore store)
         }
 
         var success = await ApplyForgetMode(userId, memory, mode, ct);
-        return success
-            ? [new AffectedMemory(memory.Id, memory.Content)]
-            : [];
+        return success ? [new AffectedMemory(memory.Id, TruncateContent(memory.Content))] : [];
     }
 
-    private async Task<List<AffectedMemory>> ForgetByFilter(
-        string userId,
-        MemoryFilter filter,
-        ForgetMode mode,
-        CancellationToken ct)
+    private async Task<List<AffectedMemory>> ForgetBySearch(
+        string userId, string query, List<MemoryCategory>? parsedCategories, List<string>? parsedTags,
+        DateTimeOffset? olderThan, double? maxImportance, ForgetMode mode, CancellationToken ct)
     {
-        var allMemories = await store.GetByUserIdAsync(userId, ct);
-        var affected = new List<AffectedMemory>();
+        var queryEmbedding = await embeddingService.GenerateEmbeddingAsync(query, ct);
 
-        foreach (var memory in allMemories.Where(filter.Matches))
-        {
-            if (await ApplyForgetMode(userId, memory, mode, ct))
+        var results = await store.SearchAsync(
+            userId, query, queryEmbedding, parsedCategories, parsedTags,
+            minImportance: null, limit: SearchLimit, ct);
+
+        var affected = await Task.WhenAll(results
+            .Where(r => (!olderThan.HasValue || r.Memory.CreatedAt < olderThan.Value)
+                     && (!maxImportance.HasValue || r.Memory.Importance <= maxImportance.Value))
+            .Select(async r =>
             {
-                affected.Add(new AffectedMemory(memory.Id, TruncateContent(memory.Content)));
-            }
-        }
+                var success = await ApplyForgetMode(userId, r.Memory, mode, ct);
+                return success ? new AffectedMemory(r.Memory.Id, TruncateContent(r.Memory.Content)) : null;
+            }));
 
-        return affected;
+        return affected.OfType<AffectedMemory>().ToList();
     }
 
     private async Task<bool> ApplyForgetMode(string userId, MemoryEntry memory, ForgetMode mode, CancellationToken ct)
@@ -117,9 +116,26 @@ public class MemoryForgetTool(IMemoryStore store)
             .ToList();
     }
 
+    private static List<string>? ParseTags(string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(tags))
+        {
+            return null;
+        }
+
+        return tags
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+    }
+
     private static DateTimeOffset? ParseDate(string? date)
     {
-        return string.IsNullOrWhiteSpace(date) ? null : DateTimeOffset.Parse(date);
+        if (string.IsNullOrWhiteSpace(date))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(date, out var result) ? result : null;
     }
 
     private static string TruncateContent(string content)
@@ -150,28 +166,6 @@ public class MemoryForgetTool(IMemoryStore store)
         }
 
         return response;
-    }
-
-    private sealed record MemoryFilter(
-        string? Query,
-        List<MemoryCategory>? Categories,
-        DateTimeOffset? OlderThan)
-    {
-        public bool Matches(MemoryEntry memory)
-        {
-            if (!string.IsNullOrWhiteSpace(Query) &&
-                !memory.Content.Contains(Query, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            if (Categories is not null && !Categories.Contains(memory.Category))
-            {
-                return false;
-            }
-
-            return !OlderThan.HasValue || memory.CreatedAt < OlderThan.Value;
-        }
     }
 
     private sealed record AffectedMemory(string Id, string Content)

@@ -17,12 +17,13 @@ public static class ConfigModule
     }
 
     public static IServiceCollection ConfigureAgents(
-        this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams)
+        this IServiceCollection services, AgentSettings settings, CommandLineParams cmdParams, IConfiguration config)
     {
         return services
             .AddAgent(settings)
             .AddScheduling()
             .AddSubAgents(settings.SubAgents)
+            .AddMemory(config)
             .AddChatMonitoring(settings, cmdParams);
     }
 

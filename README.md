@@ -15,11 +15,11 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
 - **Download Resubscription** - Resume tracking in-progress downloads after restart
 - **Web Search** - Search the web and fetch content via Brave Search API
-- **Memory System** - Vector-based semantic memory storage and recall using Redis
+- **Memory System** - Built-in proactive memory with LLM-based extraction, vector recall, and periodic consolidation (dreaming)
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
-- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, and live service health
+- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, memory analytics, and live service health
 - **Subagent Delegation** - Parent agents can spawn ephemeral subagents for parallel or heavy tasks
 - **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, and FileBrowser
 
@@ -48,17 +48,23 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │ (MCP Client)  │
               └───────┬───────┘
                       │
-      ┌───────────────┼──────────────┬──────────────┬───────────────┐
-      ▼               ▼              ▼              ▼               ▼
-┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────┐ ┌─────────────┐
-│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │ MCP Memory │ │MCP Idealista│
-└─────┬──────┘ └────────────┘ └─────────────┘ └─────┬──────┘ └──────┬──────┘
-      │                                             │               │
-┌─────┴──────┐                                ┌─────┴──────┐  ┌─────┴──────┐
-│ qBittorrent│                                │Redis Vector│  │ Idealista  │
-│  Jackett   │                                │   Store    │  │    API     │
-│ FileBrowser│                                └────────────┘  └────────────┘
+      ┌───────────────┼──────────────┬──────────────┐
+      ▼               ▼              ▼              ▼
+┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌─────────────┐
+│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │MCP Idealista│
+└─────┬──────┘ └────────────┘ └─────────────┘ └──────┬──────┘
+      │                                              │
+┌─────┴──────┐                                 ┌─────┴──────┐
+│ qBittorrent│                                 │ Idealista  │
+│  Jackett   │                                 │    API     │
+│ FileBrowser│                                 └────────────┘
 └────────────┘
+
+              ┌───────────────────────────────────┐
+              │       Memory (built-in)           │
+              │  Extract → Store → Recall → Dream │
+              │         Redis Vector Store        │
+              └───────────────────────────────────┘
 
                      ┌─────────────────────────────────┐
   metrics:events     │       Observability             │
@@ -85,7 +91,6 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | **mcp-library**   | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files                |
 | **mcp-text**      | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate, Move, RemoveFile                                  | Manage a knowledge vault of markdown notes and text files                                |
 | **mcp-websearch** | WebSearch, WebBrowse, WebClick, WebInspect                                                                                                      | Search the web and browse pages with persistent browser sessions                         |
-| **mcp-memory**    | MemoryStore, MemoryRecall, MemoryForget, MemoryList, MemoryReflect                                                                              | Vector-based memory storage and retrieval using Redis                                    |
 | **mcp-idealista** | IdealistaPropertySearch                                                                                                                         | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 
 ### MCP Channel Servers
@@ -101,7 +106,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | Agent     | MCP Servers                                         | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-text, mcp-websearch, mcp-memory, mcp-idealista  | Knowledge base management ("Scribe" persona) with subagent delegation |
+| **Jonas** | mcp-text, mcp-websearch, mcp-idealista               | Knowledge base management ("Scribe" persona) with subagent delegation |
 
 ### Multi-Agent Configuration
 
@@ -131,7 +136,6 @@ Agent routing:
 | `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
 | `McpServerText`          | MCP server for text/markdown file inspection and editing        |
 | `McpServerWebSearch`     | MCP server for web search and content fetching                  |
-| `McpServerMemory`        | MCP server for vector-based memory storage and recall           |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
@@ -251,7 +255,6 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Library              | 6001 | Library MCP server             |
 | MCP Text Tools           | 6002 | Text/Markdown MCP server       |
 | MCP WebSearch            | 6003 | Web search MCP server          |
-| MCP Memory               | 6004 | Memory storage MCP server      |
 | MCP Idealista            | 6005 | Idealista property MCP server  |
 | MCP Channel SignalR      | 6010 | WebChat channel server         |
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
@@ -306,6 +309,7 @@ The dashboard provides operational visibility into agent behavior:
 - **Tools** — Tool call frequency, success/failure rates, average duration
 - **Errors** — Error list with type, service, and message details
 - **Schedules** — Schedule execution history with duration and success/failure status
+- **Memory** — Memory extraction, recall, and dreaming analytics
 
 Data flows via Redis Pub/Sub: all services emit metric events through `IMetricsPublisher`, the Observability collector aggregates them into Redis, and the dashboard reads via REST API with live updates via SignalR.
 
@@ -377,7 +381,7 @@ The agent uses Redis to persist conversation history and memory across restarts:
 - **Chat History** - All messages are stored with a 30-day expiry
 - **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
 - **Download Tracking** - Use `ResubscribeDownloads` tool to resume tracking downloads after restart
-- **Memory Storage** - Vector-based memories stored in Redis using RediSearch for semantic recall
+- **Memory Storage** - Proactively extracted memories stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
 - **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL
 - **Service Health** - Heartbeat-based health tracking with 60-second TTL keys in Redis

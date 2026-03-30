@@ -18,6 +18,6 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors();
 app.MapHub<ChatHub>("/hubs/chat");
-app.MapMcp();
+app.MapMcp("/mcp");
 
 await app.RunAsync();

@@ -28,5 +28,6 @@ public enum MemoryCategory
     Skill,
     Project,
     Personality,
-    Instruction
+    Instruction,
+    Event
 }

@@ -5,6 +5,7 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
@@ -77,6 +78,15 @@ public sealed class OpenRouterChatClient : IChatClient
                 };
                 newMessage.Contents = newMessage.Contents
                     .Prepend(new TextContent(prefix))
+                    .ToList();
+            }
+
+            var memoryContext = newMessage.GetMemoryContext();
+            if (memoryContext is not null && newMessage.Role == ChatRole.User)
+            {
+                var memoryBlock = FormatMemoryContext(memoryContext);
+                newMessage.Contents = newMessage.Contents
+                    .Prepend(new TextContent(memoryBlock))
                     .ToList();
             }
 
@@ -175,6 +185,23 @@ public sealed class OpenRouterChatClient : IChatClient
         }
 
         return last;
+    }
+
+    private static string FormatMemoryContext(MemoryContext context)
+    {
+        var memoryLines = context.Memories
+            .Select(r => $"- {r.Memory.Content} ({r.Memory.Category.ToString().ToLowerInvariant()}, importance: {r.Memory.Importance:F1})");
+
+        var profileLine = context.Profile is not null
+            ? [$"[User profile: {context.Profile.Summary}]"]
+            : Enumerable.Empty<string>();
+
+        var lines = new[] { "[Memory context]" }
+            .Concat(memoryLines)
+            .Concat(profileLine)
+            .Append("[End memory context]");
+
+        return string.Join(Environment.NewLine, lines) + Environment.NewLine;
     }
 
     private static HttpClient CreateHttpClient(

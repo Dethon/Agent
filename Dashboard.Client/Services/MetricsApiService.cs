@@ -10,7 +10,13 @@ public record MetricsSummary(
     long TotalTokens,
     decimal Cost,
     long ToolCalls,
-    long ToolErrors);
+    long ToolErrors,
+    long TotalRecalls = 0,
+    long TotalExtractions = 0,
+    long TotalDreamings = 0,
+    long MemoriesStored = 0,
+    long MemoriesMerged = 0,
+    long MemoriesDecayed = 0);
 
 public record ServiceHealthResponse(string Service, bool IsHealthy, string LastSeen);
 
@@ -57,4 +63,19 @@ public sealed class MetricsApiService(HttpClient http)
         CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, int>>(
             $"api/metrics/schedules/by/{dimension}?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+
+    public Task<List<MemoryRecallEvent>?> GetMemoryRecallAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<MemoryRecallEvent>>($"api/metrics/memory/recall?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<MemoryExtractionEvent>?> GetMemoryExtractionAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<MemoryExtractionEvent>>($"api/metrics/memory/extraction?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<List<MemoryDreamingEvent>?> GetMemoryDreamingAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<MemoryDreamingEvent>>($"api/metrics/memory/dreaming?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<Dictionary<string, decimal>?> GetMemoryGroupedAsync(
+        MemoryDimension dimension, MemoryMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
+        http.GetFromJsonAsync<Dictionary<string, decimal>>(
+            $"api/metrics/memory/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

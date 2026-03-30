@@ -5,6 +5,6 @@ var settings = builder.Configuration.GetSettings();
 builder.Services.ConfigureChannel(settings);
 
 var app = builder.Build();
-app.MapMcp();
+app.MapMcp("/mcp");
 
 await app.RunAsync();

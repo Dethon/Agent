@@ -248,4 +248,130 @@ public class MetricsQueryServiceGroupingTests
         result["Success"].ShouldBe(2);
         result["Failure"].ShouldBe(1);
     }
+
+    // =====================================================================
+    // Memory Grouped Aggregation
+    // =====================================================================
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByUser_Count_CountsPerUser()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15",
+        [
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
+            new MemoryRecallEvent { DurationMs = 200, MemoryCount = 3, UserId = "alice" },
+        ]);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15",
+        [
+            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "bob" },
+        ]);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
+        [
+            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice" },
+        ]);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
+
+        result["alice"].ShouldBe(3m); // 2 recalls + 1 dreaming
+        result["bob"].ShouldBe(1m);   // 1 extraction
+    }
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByEventType_Count_CountsPerType()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15",
+        [
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
+            new MemoryRecallEvent { DurationMs = 200, MemoryCount = 3, UserId = "bob" },
+        ]);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15",
+        [
+            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
+        ]);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.EventType, MemoryMetric.Count, date, date);
+
+        result["Recall"].ShouldBe(2m);
+        result["Extraction"].ShouldBe(1m);
+    }
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByUser_AvgDuration_AveragesRecallAndExtractionOnly()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15",
+        [
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
+            new MemoryRecallEvent { DurationMs = 300, MemoryCount = 3, UserId = "alice" },
+        ]);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15",
+        [
+            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
+        ]);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
+        [
+            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice" },
+        ]);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.AvgDuration, date, date);
+
+        // Only recall + extraction have duration: (100 + 300 + 1000) / 3 = 466.666...
+        result["alice"].ShouldBeInRange(466.66m, 466.67m);
+    }
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByEventType_StoredCount_SumsFromExtractions()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15",
+        [
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
+        ]);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15",
+        [
+            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
+            new MemoryExtractionEvent { DurationMs = 2000, CandidateCount = 12, StoredCount = 5, UserId = "bob" },
+        ]);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.EventType, MemoryMetric.StoredCount, date, date);
+
+        result["Extraction"].ShouldBe(8m); // 3 + 5
+        result["Recall"].ShouldBe(0m);     // recalls have no StoredCount
+    }
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByAgent_MergedCount_SumsFromDreaming()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
+        [
+            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1" },
+            new MemoryDreamingEvent { MergedCount = 3, DecayedCount = 1, ProfileRegenerated = false, UserId = "bob", AgentId = "agent-1" },
+            new MemoryDreamingEvent { MergedCount = 7, DecayedCount = 4, ProfileRegenerated = true, UserId = "alice", AgentId = null },
+        ]);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.Agent, MemoryMetric.MergedCount, date, date);
+
+        result["agent-1"].ShouldBe(8m); // 5 + 3
+        result["unknown"].ShouldBe(7m);
+    }
+
+    [Fact]
+    public async Task GetMemoryGroupedAsync_EmptyData_ReturnsEmptyDictionary()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
+
+        result.ShouldBeEmpty();
+    }
 }

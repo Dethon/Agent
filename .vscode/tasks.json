@@ -3,7 +3,7 @@
     "options": {
         "env": {
             "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -p jackbot",
-            "SERVICES": "agent webui observability mcp-text mcp-websearch mcp-memory mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox",
+            "SERVICES": "agent webui observability mcp-text mcp-websearch mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox",
             "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot",
             "LOCAL_DEPS": "qbittorrent jackett redis camoufox"
         }
@@ -25,7 +25,12 @@
             "label": "build-all-local",
             "command": "dotnet",
             "type": "process",
-            "args": ["build", "${workspaceFolder}/agent.sln", "-c", "Debug"],
+            "args": [
+                "build",
+                "${workspaceFolder}/agent.sln",
+                "-c",
+                "Debug"
+            ],
             "dependsOn": "local-deps",
             "problemMatcher": "$msCompile"
         }

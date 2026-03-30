@@ -1,0 +1,355 @@
+@page "/memory"
+@using Dashboard.Client.State.Memory
+@using Dashboard.Client.State.Metrics
+@using Domain.DTOs.Metrics
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
+@implements IDisposable
+@inject MemoryStore Store
+@inject MetricsStore Metrics
+@inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
+@inject LocalStorageService Storage
+
+<div class="memory-page">
+    <header class="page-header">
+        <h2>Memory</h2>
+        <div class="controls">
+            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
+                          OnChanged="OnDimensionChanged" />
+            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
+                          OnChanged="OnMetricChanged" DisabledValues="_disabledMetrics" />
+            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
+                          OnChanged="OnTimeChanged" />
+        </div>
+    </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="Total Recalls" Value="@_metrics.TotalRecalls.ToString("N0")" Color="var(--accent-blue)" />
+        <KpiCard Label="Total Extractions" Value="@_metrics.TotalExtractions.ToString("N0")" Color="var(--accent-green)" />
+        <KpiCard Label="Avg Latency" Value="@($"{_avgLatency:F0}ms")" Color="var(--accent-yellow)" />
+        <KpiCard Label="Memories Stored" Value="@_metrics.MemoriesStored.ToString("N0")" Color="var(--accent-purple)" />
+        <KpiCard Label="Merged" Value="@_metrics.MemoriesMerged.ToString("N0")" Color="var(--accent-pink)" />
+        <KpiCard Label="Decayed" Value="@_metrics.MemoriesDecayed.ToString("N0")" Color="var(--accent-red)" />
+    </section>
+
+    <section class="section">
+        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
+                      Unit="@GetMetricUnit()" />
+    </section>
+
+    <section class="section">
+        <div class="tab-card">
+            <div class="tab-bar">
+                <div class="tab @(_activeTab == "Recall" ? "tab-active" : "")" @onclick='() => SetTab("Recall")'>
+                    Recall
+                </div>
+                <div class="tab @(_activeTab == "Extraction" ? "tab-active" : "")" @onclick='() => SetTab("Extraction")'>
+                    Extraction
+                </div>
+                <div class="tab @(_activeTab == "Dreaming" ? "tab-active" : "")" @onclick='() => SetTab("Dreaming")'>
+                    Dreaming
+                </div>
+            </div>
+
+            @if (_activeTab == "Recall")
+            {
+                <div class="events-table">
+                    <div class="table-header recall-grid">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                        <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found @SortIndicator("Memories")</span>
+                    </div>
+                    @foreach (var evt in GetSortedRecalls())
+                    {
+                        <div class="table-row recall-grid">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.UserId</span>
+                            <span>@evt.DurationMs ms</span>
+                            <span>@evt.MemoryCount</span>
+                        </div>
+                    }
+                </div>
+            }
+            else if (_activeTab == "Extraction")
+            {
+                <div class="events-table">
+                    <div class="table-header extraction-grid">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                        <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates @SortIndicator("Candidates")</span>
+                        <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored @SortIndicator("Stored")</span>
+                    </div>
+                    @foreach (var evt in GetSortedExtractions())
+                    {
+                        <div class="table-row extraction-grid">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.UserId</span>
+                            <span>@evt.DurationMs ms</span>
+                            <span>@evt.CandidateCount</span>
+                            <span class="stored-count">@evt.StoredCount</span>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="events-table">
+                    <div class="table-header dreaming-grid">
+                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                        <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User @SortIndicator("User")</span>
+                        <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged @SortIndicator("Merged")</span>
+                        <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed @SortIndicator("Decayed")</span>
+                        <span>Profile Regen</span>
+                    </div>
+                    @foreach (var evt in GetSortedDreamings())
+                    {
+                        <div class="table-row dreaming-grid">
+                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@evt.UserId</span>
+                            <span class="merged-count">@evt.MergedCount</span>
+                            <span class="decayed-count">@evt.DecayedCount</span>
+                            <span>@(evt.ProfileRegenerated ? "\u2713" : "\u2014")</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private MemoryState _state = new();
+    private MetricsState _metrics = new();
+    private int _selectedDays = 1;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
+    private double _avgLatency;
+    private string _activeTab = "Recall";
+    private IDisposable? _sub;
+    private IDisposable? _metricsSub;
+    private IReadOnlySet<string> _disabledMetrics = new HashSet<string>();
+
+    private static readonly HashSet<string> UserOnlyMetrics = [
+        nameof(MemoryMetric.StoredCount),
+        nameof(MemoryMetric.MergedCount),
+        nameof(MemoryMetric.DecayedCount),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> DimensionOptions =
+    [
+        new("User", nameof(MemoryDimension.User)),
+        new("Event Type", nameof(MemoryDimension.EventType)),
+        new("Agent", nameof(MemoryDimension.Agent)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> MetricOptions =
+    [
+        new("Count", nameof(MemoryMetric.Count)),
+        new("Avg Duration", nameof(MemoryMetric.AvgDuration)),
+        new("Stored", nameof(MemoryMetric.StoredCount)),
+        new("Merged", nameof(MemoryMetric.MergedCount)),
+        new("Decayed", nameof(MemoryMetric.DecayedCount)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var savedGroupBy = await Storage.GetAsync<MemoryDimension>("memory.groupBy");
+        var savedMetric = await Storage.GetAsync<MemoryMetric>("memory.metric");
+        var savedDays = await Storage.GetIntAsync("memory.days");
+        var savedTab = await Storage.GetStringAsync("memory.activeTab");
+
+        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
+        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
+        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+        if (!string.IsNullOrEmpty(savedTab)) _activeTab = savedTab;
+
+        UpdateDisabledMetrics(Store.State.GroupBy);
+
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            ComputeAvgLatency(s);
+            InvokeAsync(StateHasChanged);
+        });
+
+        _metricsSub = Metrics.StateObservable.Subscribe(m =>
+        {
+            _metrics = m;
+            InvokeAsync(StateHasChanged);
+        });
+
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private void ComputeAvgLatency(MemoryState s)
+    {
+        var totalDuration = s.RecallEvents.Sum(e => e.DurationMs) + s.ExtractionEvents.Sum(e => e.DurationMs);
+        var totalOps = s.RecallEvents.Count + s.ExtractionEvents.Count;
+        _avgLatency = totalOps > 0 ? (double)totalDuration / totalOps : 0;
+    }
+
+    private void UpdateDisabledMetrics(MemoryDimension groupBy)
+    {
+        _disabledMetrics = groupBy != MemoryDimension.User
+            ? UserOnlyMetrics
+            : new HashSet<string>();
+    }
+
+    private async Task OnDimensionChanged(string value)
+    {
+        var dim = Enum.Parse<MemoryDimension>(value);
+        Store.SetGroupBy(dim);
+        UpdateDisabledMetrics(dim);
+        if (dim != MemoryDimension.User && UserOnlyMetrics.Contains(_state.Metric.ToString()))
+            Store.SetMetric(MemoryMetric.Count);
+        await Storage.SetAsync("memory.groupBy", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnMetricChanged(string value)
+    {
+        Store.SetMetric(Enum.Parse<MemoryMetric>(value));
+        await Storage.SetAsync("memory.metric", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnTimeChanged(string value)
+    {
+        _selectedDays = int.Parse(value);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
+        await Storage.SetAsync("memory.days", value);
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        await Storage.SetAsync("memory.activeTab", tab);
+    }
+
+    private async Task ReloadBreakdown()
+    {
+        var breakdown = await Api.GetMemoryGroupedAsync(
+            Store.State.GroupBy, Store.State.Metric, _from, _to);
+        Store.SetBreakdown(breakdown ?? []);
+    }
+
+    private string GetMetricUnit() => _state.Metric switch
+    {
+        MemoryMetric.AvgDuration => "ms",
+        _ => ""
+    };
+
+    private string _sortColumn = "Time";
+    private bool _sortAsc;
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = false; }
+    }
+
+    private IEnumerable<MemoryRecallEvent> GetSortedRecalls()
+    {
+        var events = _state.RecallEvents.TakeLast(50).AsEnumerable();
+        Func<MemoryRecallEvent, object> keySelector = _sortColumn switch
+        {
+            "User" => e => e.UserId,
+            "Duration" => e => e.DurationMs,
+            "Memories" => e => e.MemoryCount,
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private IEnumerable<MemoryExtractionEvent> GetSortedExtractions()
+    {
+        var events = _state.ExtractionEvents.TakeLast(50).AsEnumerable();
+        Func<MemoryExtractionEvent, object> keySelector = _sortColumn switch
+        {
+            "User" => e => e.UserId,
+            "Duration" => e => e.DurationMs,
+            "Candidates" => e => e.CandidateCount,
+            "Stored" => e => e.StoredCount,
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private IEnumerable<MemoryDreamingEvent> GetSortedDreamings()
+    {
+        var events = _state.DreamingEvents.TakeLast(50).AsEnumerable();
+        Func<MemoryDreamingEvent, object> keySelector = _sortColumn switch
+        {
+            "User" => e => e.UserId,
+            "Merged" => e => e.MergedCount,
+            "Decayed" => e => e.DecayedCount,
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
+
+    public void Dispose()
+    {
+        _sub?.Dispose();
+        _metricsSub?.Dispose();
+    }
+}
+
+<style>
+    .memory-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+
+    .tab-card { background: var(--bg-card); border-radius: 8px; overflow: hidden; }
+    .tab-bar { display: flex; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .tab { padding: 0.75rem 1.25rem; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+    .tab:hover { color: var(--text-primary); }
+    .tab-active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+
+    .events-table { display: flex; flex-direction: column; gap: 2px; padding: 0.5rem; }
+    .table-header, .table-row { display: grid; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+    .sortable { cursor: pointer; user-select: none; }
+    .sortable:hover { color: var(--text-primary); }
+    .sortable.sorted { color: var(--text-primary); }
+
+    .recall-grid { grid-template-columns: 135px minmax(0, 1fr) 100px 120px; }
+    .extraction-grid { grid-template-columns: 135px minmax(0, 1fr) 100px 100px 80px; }
+    .dreaming-grid { grid-template-columns: 135px minmax(0, 1fr) 80px 80px 100px; }
+
+    .stored-count { color: var(--accent-green); }
+    .merged-count { color: var(--accent-pink); }
+    .decayed-count { color: var(--accent-red); }
+
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .page-header h2 { font-size: 1.1rem; }
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 420px; }
+    }
+</style>

@@ -106,6 +106,15 @@ public sealed class MetricsCollectorService(
             case HeartbeatEvent heartbeat:
                 await ProcessHeartbeatAsync(heartbeat, db);
                 break;
+            case MemoryRecallEvent recall:
+                await ProcessMemoryRecallAsync(recall, db);
+                break;
+            case MemoryExtractionEvent extraction:
+                await ProcessMemoryExtractionAsync(extraction, db);
+                break;
+            case MemoryDreamingEvent dreaming:
+                await ProcessMemoryDreamingAsync(dreaming, db);
+                break;
         }
     }
 
@@ -214,5 +223,74 @@ public sealed class MetricsCollectorService(
 
         await hubContext.Clients.All.SendAsync("OnHealthUpdate",
             new ServiceHealthUpdate(evt.Service, true, evt.Timestamp));
+    }
+
+    private async Task ProcessMemoryRecallAsync(MemoryRecallEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:memory-recall:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, "memory:recalls"),
+            db.HashIncrementAsync(totalsKey, "memory:recallDuration", evt.DurationMs),
+            db.HashIncrementAsync(totalsKey, "memory:recallMemories", evt.MemoryCount),
+            db.HashIncrementAsync(totalsKey, $"memory:byUser:{evt.UserId}"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+
+        await hubContext.Clients.All.SendAsync("OnMemoryRecall", evt);
+    }
+
+    private async Task ProcessMemoryExtractionAsync(MemoryExtractionEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:memory-extraction:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, "memory:extractions"),
+            db.HashIncrementAsync(totalsKey, "memory:extractionDuration", evt.DurationMs),
+            db.HashIncrementAsync(totalsKey, "memory:candidates", evt.CandidateCount),
+            db.HashIncrementAsync(totalsKey, "memory:stored", evt.StoredCount),
+            db.HashIncrementAsync(totalsKey, $"memory:byUser:{evt.UserId}"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+
+        await hubContext.Clients.All.SendAsync("OnMemoryExtraction", evt);
+    }
+
+    private async Task ProcessMemoryDreamingAsync(MemoryDreamingEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:memory-dreaming:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        var tasks = new List<Task>
+        {
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, "memory:dreamings"),
+            db.HashIncrementAsync(totalsKey, "memory:merged", evt.MergedCount),
+            db.HashIncrementAsync(totalsKey, "memory:decayed", evt.DecayedCount),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        if (evt.ProfileRegenerated)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, "memory:profileRegens"));
+        }
+
+        await Task.WhenAll(tasks);
+
+        await hubContext.Clients.All.SendAsync("OnMemoryDreaming", evt);
     }
 }

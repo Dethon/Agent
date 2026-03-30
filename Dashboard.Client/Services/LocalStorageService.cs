@@ -21,4 +21,7 @@ public sealed class LocalStorageService(IJSRuntime js)
         var raw = await GetAsync(key);
         return int.TryParse(raw, out var val) ? val : null;
     }
+
+    public async Task<string?> GetStringAsync(string key) =>
+        await js.InvokeAsync<string?>("localStorage.getItem", key);
 }

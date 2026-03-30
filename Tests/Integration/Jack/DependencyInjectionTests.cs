@@ -1,5 +1,6 @@
 using System.Net;
 using Agent.Modules;
+using Microsoft.Extensions.Configuration;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
@@ -78,7 +79,17 @@ public class DependencyInjectionTests
         var cmdParams = new CommandLineParams();
 
         // Act
-        services.ConfigureAgents(settings, cmdParams);
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["openRouter:apiUrl"] = "https://openrouter.ai/api/v1/",
+                ["openRouter:apiKey"] = "test-api-key",
+                ["Memory:Embedding:Model"] = "openai/text-embedding-3-small",
+                ["Memory:Extraction:Model"] = "google/gemini-2.0-flash-001",
+                ["Memory:Dreaming:Model"] = "google/gemini-2.0-flash-001"
+            })
+            .Build();
+        services.ConfigureAgents(settings, cmdParams, config);
         AddMockInfrastructure(services);
         var provider = services.BuildServiceProvider();
 

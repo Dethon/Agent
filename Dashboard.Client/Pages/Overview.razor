@@ -127,7 +127,7 @@
         _recentActivity = items.OrderByDescending(i => i.Time).Take(10).ToList();
     }
 
-    private static string FormatTime(DateTimeOffset ts) => ts.ToString("HH:mm:ss");
+    private static string FormatTime(DateTimeOffset ts) => ts.ToString("dd/MM HH:mm:ss");
 
     public void Dispose() => _subscriptions.ForEach(s => s.Dispose());
 

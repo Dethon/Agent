@@ -136,5 +136,47 @@ public static class MetricsApiEndpoints
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
             return await query.GetScheduleGroupedAsync(dimension, fromDate, toDate);
         });
+
+        api.MapGet("/memory/recall", async (
+            MetricsQueryService query,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetEventsAsync<MemoryRecallEvent>("metrics:memory-recall:", fromDate, toDate);
+        });
+
+        api.MapGet("/memory/extraction", async (
+            MetricsQueryService query,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetEventsAsync<MemoryExtractionEvent>("metrics:memory-extraction:", fromDate, toDate);
+        });
+
+        api.MapGet("/memory/dreaming", async (
+            MetricsQueryService query,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetEventsAsync<MemoryDreamingEvent>("metrics:memory-dreaming:", fromDate, toDate);
+        });
+
+        api.MapGet("/memory/by/{dimension}", async (
+            MetricsQueryService query,
+            MemoryDimension dimension,
+            MemoryMetric metric,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetMemoryGroupedAsync(dimension, metric, fromDate, toDate);
+        });
     }
 }

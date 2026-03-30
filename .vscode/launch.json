@@ -10,7 +10,6 @@
         "Docker: MCP Library",
         "Docker: MCP Text",
         "Docker: MCP WebSearch",
-        "Docker: MCP Memory",
         "Docker: MCP Idealista",
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
@@ -28,7 +27,6 @@
         "Local: MCP Library",
         "Local: MCP Text",
         "Local: MCP WebSearch",
-        "Local: MCP Memory",
         "Local: MCP Idealista",
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
@@ -122,21 +120,6 @@
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-websearch"],
-        "debuggerPath": "/remote_debugger/vsdbg",
-        "quoteArgs": false
-      },
-      "sourceFileMap": {
-        "/src": "${workspaceFolder}"
-      }
-    },
-    {
-      "name": "Docker: MCP Memory",
-      "type": "coreclr",
-      "request": "attach",
-      "processId": 1,
-      "pipeTransport": {
-        "pipeProgram": "docker",
-        "pipeArgs": ["exec", "-i", "mcp-memory"],
         "debuggerPath": "/remote_debugger/vsdbg",
         "quoteArgs": false
       },
@@ -257,17 +240,6 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6003"
-      }
-    },
-    {
-      "name": "Local: MCP Memory",
-      "type": "coreclr",
-      "request": "launch",
-      "program": "${workspaceFolder}/McpServerMemory/bin/Debug/net10.0/McpServerMemory.dll",
-      "cwd": "${workspaceFolder}/McpServerMemory",
-      "env": {
-        "DOTNET_ENVIRONMENT": "Local",
-        "ASPNETCORE_URLS": "http://localhost:6004"
       }
     },
     {

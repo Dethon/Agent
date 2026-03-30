@@ -33,6 +33,15 @@ public class MetricsHubService : IAsyncDisposable
     public virtual IDisposable OnScheduleExecution(Func<ScheduleExecutionEvent, Task> handler) =>
         _connection!.On("OnScheduleExecution", handler);
 
+    public virtual IDisposable OnMemoryRecall(Func<MemoryRecallEvent, Task> handler) =>
+        _connection!.On("OnMemoryRecall", handler);
+
+    public virtual IDisposable OnMemoryExtraction(Func<MemoryExtractionEvent, Task> handler) =>
+        _connection!.On("OnMemoryExtraction", handler);
+
+    public virtual IDisposable OnMemoryDreaming(Func<MemoryDreamingEvent, Task> handler) =>
+        _connection!.On("OnMemoryDreaming", handler);
+
     public virtual IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler) =>
         _connection!.On("OnHealthUpdate", handler);
 
