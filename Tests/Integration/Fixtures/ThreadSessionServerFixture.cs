@@ -75,12 +75,12 @@ public class ThreadSessionServerFixture : IAsyncLifetime
             .WithListResourcesHandler(TestResourceListHandler);
 
         var app = builder.Build();
-        app.MapMcp();
+        app.MapMcp("/mcp");
 
         _host = app;
         await _host.StartAsync();
 
-        McpEndpoint = $"http://localhost:{_port}/sse";
+        McpEndpoint = $"http://localhost:{_port}/mcp";
     }
 
     private static ValueTask<ListResourcesResult> TestResourceListHandler(

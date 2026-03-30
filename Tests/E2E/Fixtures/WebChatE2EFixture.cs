@@ -117,12 +117,12 @@ public class WebChatE2EFixture : E2EFixtureBase
                   "id": "test-agent",
                   "name": "Test Agent",
                   "model": "z-ai/glm-4.7-flash",
-                  "mcpServerEndpoints": [ "http://mcp-text:8080/sse" ],
+                  "mcpServerEndpoints": [ "http://mcp-text:8080/mcp" ],
                   "whitelistPatterns": ["__none__"]
                 }
               ],
               "channelEndpoints": [
-                { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/sse" }
+                { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/mcp" }
               ],
               "Logging": { "LogLevel": { "Default": "Information" } }
             }
