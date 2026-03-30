@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -35,10 +36,10 @@ public class OpenRouterMemoryExtractor(
             ? $"Existing user profile:\n{profile.Summary}\n\nMessage to analyze:\n{messageContent}"
             : $"Message to analyze:\n{messageContent}";
 
-        var messages = new List<ChatMessage>
-        {
-            new(ChatRole.User, userPrompt)
-        };
+        var userMessage = new ChatMessage(ChatRole.User, userPrompt);
+        userMessage.SetSenderId(userId);
+
+        var messages = new List<ChatMessage> { userMessage };
 
         var response = await chatClient.GetResponseAsync(messages, _extractionChatOptions, ct);
         return ParseCandidates(response.Text);

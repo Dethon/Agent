@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using Domain.Contracts;
 using Domain.Memory;
 using Domain.Tools.Memory;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Memory;
 using OpenAI;
 using System.ClientModel;
@@ -39,11 +40,10 @@ public static class MemoryModule
             {
                 var openRouterConfig = config.GetSection("openRouter");
                 var extractionModel = memoryConfig["Extraction:Model"] ?? "google/gemini-2.0-flash-001";
-                var chatClient = new OpenAIClient(
-                    new ApiKeyCredential(openRouterConfig["apiKey"]!),
-                    new OpenAIClientOptions { Endpoint = new Uri(openRouterConfig["apiUrl"]!) })
-                    .GetChatClient(extractionModel)
-                    .AsIChatClient();
+                var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
+                var chatClient = new OpenRouterChatClient(
+                    openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
+                    extractionModel, metricsPublisher);
                 return new OpenRouterMemoryExtractor(
                     chatClient,
                     sp.GetRequiredService<IMemoryStore>(),
@@ -54,11 +54,10 @@ public static class MemoryModule
             {
                 var openRouterConfig = config.GetSection("openRouter");
                 var dreamingModel = memoryConfig["Dreaming:Model"] ?? "google/gemini-2.0-flash-001";
-                var chatClient = new OpenAIClient(
-                    new ApiKeyCredential(openRouterConfig["apiKey"]!),
-                    new OpenAIClientOptions { Endpoint = new Uri(openRouterConfig["apiUrl"]!) })
-                    .GetChatClient(dreamingModel)
-                    .AsIChatClient();
+                var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
+                var chatClient = new OpenRouterChatClient(
+                    openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
+                    dreamingModel, metricsPublisher);
                 return new OpenRouterMemoryConsolidator(
                     chatClient,
                     sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());
