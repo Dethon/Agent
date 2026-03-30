@@ -44,11 +44,11 @@
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
                     <span class="svc-badge">@evt.Service</span>
-                    <span class="err-type tooltip-anchor">
+                    <span class="err-type tooltip-anchor" tabindex="0">
                         @ShortName(evt.ErrorType)
                         <span class="tooltip-popup">@evt.ErrorType</span>
                     </span>
-                    <span class="err-msg tooltip-anchor">
+                    <span class="err-msg tooltip-anchor" tabindex="0">
                         @Truncate(evt.Message, 80)
                         <span class="tooltip-popup">@evt.Message</span>
                     </span>
@@ -184,7 +184,10 @@
     .tooltip-anchor { position: relative; cursor: default; }
     .tooltip-popup { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 6px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
     .tooltip-anchor:hover .tooltip-popup,
-    .tooltip-anchor:active .tooltip-popup { display: block; }
+    .tooltip-anchor:active .tooltip-popup,
+    .tooltip-anchor:focus .tooltip-popup,
+    .tooltip-anchor:focus-within .tooltip-popup { display: block; }
+    .tooltip-anchor:focus { outline: none; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
 
     @@media (max-width: 768px) {
