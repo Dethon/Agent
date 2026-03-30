@@ -43,8 +43,10 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
         embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(embedding);
 
+        var agentDefinitionProvider = new Mock<IAgentDefinitionProvider>();
         var hook = new MemoryRecallHook(
             store, embeddingService.Object, queue, metricsPublisher.Object,
+            agentDefinitionProvider.Object,
             Mock.Of<ILogger<MemoryRecallHook>>(),
             new MemoryRecallOptions());
 

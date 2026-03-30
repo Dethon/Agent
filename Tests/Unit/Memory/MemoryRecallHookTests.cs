@@ -16,6 +16,7 @@ public class MemoryRecallHookTests
     private readonly Mock<IMemoryStore> _store = new();
     private readonly Mock<IEmbeddingService> _embeddingService = new();
     private readonly Mock<IMetricsPublisher> _metricsPublisher = new();
+    private readonly Mock<IAgentDefinitionProvider> _agentDefinitionProvider = new();
     private readonly MemoryExtractionQueue _queue = new();
     private readonly MemoryRecallHook _hook;
 
@@ -28,6 +29,7 @@ public class MemoryRecallHookTests
             _embeddingService.Object,
             _queue,
             _metricsPublisher.Object,
+            _agentDefinitionProvider.Object,
             Mock.Of<ILogger<MemoryRecallHook>>(),
             new MemoryRecallOptions());
     }
@@ -118,6 +120,47 @@ public class MemoryRecallHookTests
         _metricsPublisher.Verify(p => p.PublishAsync(
             It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_SkipsRecall_WhenAgentDoesNotHaveMemoryFeature()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        _agentDefinitionProvider.Setup(p => p.GetById("agent-no-memory"))
+            .Returns(new AgentDefinition
+            {
+                Id = "agent-no-memory", Name = "NoMem", Model = "test",
+                McpServerEndpoints = [], EnabledFeatures = ["scheduling"]
+            });
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", "agent-no-memory", CancellationToken.None);
+
+        message.GetMemoryContext().ShouldBeNull();
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _metricsPublisher.Verify(
+            p => p.PublishAsync(It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task EnrichAsync_SkipsRecall_WhenAgentHasNoEnabledFeatures()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        _agentDefinitionProvider.Setup(p => p.GetById("agent-empty"))
+            .Returns(new AgentDefinition
+            {
+                Id = "agent-empty", Name = "Empty", Model = "test",
+                McpServerEndpoints = [], EnabledFeatures = []
+            });
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", "agent-empty", CancellationToken.None);
+
+        message.GetMemoryContext().ShouldBeNull();
+        _embeddingService.Verify(
+            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

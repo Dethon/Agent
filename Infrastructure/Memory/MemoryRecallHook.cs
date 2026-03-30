@@ -20,11 +20,21 @@ public class MemoryRecallHook(
     IEmbeddingService embeddingService,
     MemoryExtractionQueue extractionQueue,
     IMetricsPublisher metricsPublisher,
+    IAgentDefinitionProvider agentDefinitionProvider,
     ILogger<MemoryRecallHook> logger,
     MemoryRecallOptions options) : IMemoryRecallHook
 {
     public async Task EnrichAsync(ChatMessage message, string userId, string? conversationId, string? agentId, CancellationToken ct)
     {
+        if (agentId is not null)
+        {
+            var agentDef = agentDefinitionProvider.GetById(agentId);
+            if (agentDef is not null && !agentDef.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
         var sw = Stopwatch.StartNew();
         try
         {
