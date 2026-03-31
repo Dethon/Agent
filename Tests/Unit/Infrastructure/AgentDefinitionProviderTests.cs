@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -103,7 +104,7 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void GetAll_ReturnsOnlyBuiltInAgents()
+    public void GetAll_NoUserId_ReturnsOnlyBuiltInAgents()
     {
         _customAgentRegistry.Add("user1", new AgentDefinition
         {
@@ -117,5 +118,164 @@ public class AgentDefinitionProviderTests
 
         result.Count.ShouldBe(1);
         result[0].Id.ShouldBe("built-in");
+    }
+
+    // --- RegisterCustomAgent ---
+
+    [Fact]
+    public void RegisterCustomAgent_ReturnsDefinitionWithCustomPrefixedId()
+    {
+        var registration = new CustomAgentRegistration
+        {
+            Name = "MyBot",
+            Description = "A custom bot",
+            Model = "gpt-4",
+            McpServerEndpoints = []
+        };
+
+        var result = _sut.RegisterCustomAgent("user1", registration);
+
+        result.ShouldNotBeNull();
+        result.Id.ShouldStartWith("custom-");
+        result.Name.ShouldBe("MyBot");
+        result.Description.ShouldBe("A custom bot");
+        result.Model.ShouldBe("gpt-4");
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_TwoAgentsSameUser_BothStoredWithDifferentIds()
+    {
+        var reg1 = new CustomAgentRegistration { Name = "Bot1", Model = "m1", McpServerEndpoints = [] };
+        var reg2 = new CustomAgentRegistration { Name = "Bot2", Model = "m2", McpServerEndpoints = [] };
+
+        var def1 = _sut.RegisterCustomAgent("user1", reg1);
+        var def2 = _sut.RegisterCustomAgent("user1", reg2);
+
+        def1.Id.ShouldNotBe(def2.Id);
+        var all = _sut.GetAll("user1");
+        all.Count.ShouldBe(3); // 1 built-in + 2 custom
+        all.Select(a => a.Name).ShouldContain("Bot1");
+        all.Select(a => a.Name).ShouldContain("Bot2");
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_DifferentUsers_AgentsIsolated()
+    {
+        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "UserOneBot", Model = "m1", McpServerEndpoints = [] });
+        _sut.RegisterCustomAgent("user2", new CustomAgentRegistration { Name = "UserTwoBot", Model = "m1", McpServerEndpoints = [] });
+
+        var user1All = _sut.GetAll("user1");
+        var user2All = _sut.GetAll("user2");
+
+        user1All.Select(a => a.Name).ShouldContain("UserOneBot");
+        user1All.Select(a => a.Name).ShouldNotContain("UserTwoBot");
+        user2All.Select(a => a.Name).ShouldContain("UserTwoBot");
+        user2All.Select(a => a.Name).ShouldNotContain("UserOneBot");
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_AllFieldsMapped()
+    {
+        var registration = new CustomAgentRegistration
+        {
+            Name = "FullBot",
+            Description = "Full description",
+            Model = "test-model",
+            McpServerEndpoints = [],
+            WhitelistPatterns = ["pattern1"],
+            CustomInstructions = "Be helpful",
+            EnabledFeatures = ["feature1"]
+        };
+
+        var result = _sut.RegisterCustomAgent("user1", registration);
+
+        result.WhitelistPatterns.ShouldBe(["pattern1"]);
+        result.CustomInstructions.ShouldBe("Be helpful");
+        result.EnabledFeatures.ShouldBe(["feature1"]);
+    }
+
+    [Fact]
+    public void RegisterCustomAgent_NullDescription_ReturnsNullDescription()
+    {
+        var result = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+
+        result.Description.ShouldBeNull();
+    }
+
+    // --- UnregisterCustomAgent ---
+
+    [Fact]
+    public void UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
+    {
+        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+
+        var result = _sut.UnregisterCustomAgent("user1", def.Id);
+
+        result.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void UnregisterCustomAgent_NonExistentAgent_ReturnsFalse()
+    {
+        var result = _sut.UnregisterCustomAgent("user1", "custom-nonexistent");
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void UnregisterCustomAgent_WrongUser_ReturnsFalse()
+    {
+        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+
+        var result = _sut.UnregisterCustomAgent("user2", def.Id);
+
+        result.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void UnregisterCustomAgent_AgentRemovedFromList()
+    {
+        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+        _sut.UnregisterCustomAgent("user1", def.Id);
+
+        var all = _sut.GetAll("user1");
+
+        all.Count.ShouldBe(1); // only built-in
+        all.Select(a => a.Id).ShouldNotContain(def.Id);
+    }
+
+    // --- GetAll (updated) ---
+
+    [Fact]
+    public void GetAll_NullUserId_ReturnsOnlyBuiltInAgents()
+    {
+        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
+
+        var result = _sut.GetAll();
+
+        result.Count.ShouldBe(1);
+        result.ShouldAllBe(a => !a.Id.StartsWith("custom-"));
+    }
+
+    [Fact]
+    public void GetAll_WithUserId_MergesBuiltInAndCustom()
+    {
+        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
+
+        var result = _sut.GetAll("user1");
+
+        result.Count.ShouldBe(2); // 1 built-in + 1 custom
+        result.Select(a => a.Name).ShouldContain("Custom1");
+        result.Select(a => a.Name).ShouldContain("Built-In");
+    }
+
+    [Fact]
+    public void GetAll_BuiltInAgentsAlwaysFirst()
+    {
+        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
+
+        var result = _sut.GetAll("user1");
+
+        result.First().Id.ShouldBe("built-in");
     }
 }
