@@ -138,13 +138,15 @@ public sealed class StreamService(
     private void CompleteStream(string topicId)
     {
         string? spaceSlug = null;
+        string? topicName = null;
 
         lock (_streamLock)
         {
-            // Resolve space slug before cleanup
+            // Resolve space slug and topic name before cleanup
             if (sessionService.TryGetSession(topicId, out var session))
             {
                 spaceSlug = session?.SpaceSlug;
+                topicName = session?.TopicName;
             }
 
             if (_responseChannels.TryRemove(topicId, out var channel))
@@ -157,18 +159,18 @@ public sealed class StreamService(
 
         if (spaceSlug is not null)
         {
-            _ = SendPushNotificationAsync(spaceSlug);
+            _ = SendPushNotificationAsync(spaceSlug, topicName);
         }
     }
 
-    private async Task SendPushNotificationAsync(string spaceSlug)
+    private async Task SendPushNotificationAsync(string spaceSlug, string? topicName)
     {
         try
         {
             var url = $"/{spaceSlug}";
             await pushNotificationService.SendToSpaceAsync(
                 spaceSlug,
-                "New response",
+                topicName ?? "New response",
                 "The agent has finished responding",
                 url);
         }

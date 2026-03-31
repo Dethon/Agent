@@ -108,5 +108,45 @@ public class StreamServiceTests : IDisposable
         _sut.GetStreamState("nonexistent").ShouldBeNull();
     }
 
+    [Fact]
+    public async Task WriteReplyAsync_StreamComplete_SendsPushNotificationWithTopicName()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+
+        // Allow fire-and-forget to complete
+        await Task.Delay(100);
+
+        _pushNotification.Verify(p => p.SendToSpaceAsync(
+            "myspace",
+            "Apartment search",
+            "The agent has finished responding",
+            "/myspace",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task WriteReplyAsync_StreamComplete_FallsBackToDefaultTitleWhenNoTopicName()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace");
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+
+        // Allow fire-and-forget to complete
+        await Task.Delay(100);
+
+        _pushNotification.Verify(p => p.SendToSpaceAsync(
+            "myspace",
+            "New response",
+            "The agent has finished responding",
+            "/myspace",
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     public void Dispose() => _sut.Dispose();
 }
