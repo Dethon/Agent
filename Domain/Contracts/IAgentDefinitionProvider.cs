@@ -1,5 +1,4 @@
 using Domain.DTOs;
-using Domain.DTOs.WebChat;
 
 namespace Domain.Contracts;
 

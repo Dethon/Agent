@@ -35,8 +35,4 @@ public class CustomAgentRegistry
             : [];
     }
 
-    public ConcurrentDictionary<string, AgentDefinition> GetOrAddUser(string userId)
-    {
-        return _agentsByUser.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
-    }
 }

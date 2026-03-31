@@ -1,4 +1,4 @@
-namespace Domain.DTOs.WebChat;
+namespace Domain.DTOs;
 
 public record CustomAgentRegistration
 {

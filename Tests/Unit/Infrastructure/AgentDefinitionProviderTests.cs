@@ -1,5 +1,4 @@
 using Domain.DTOs;
-using Domain.DTOs.WebChat;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Options;
 using Moq;

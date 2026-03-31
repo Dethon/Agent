@@ -1,6 +1,5 @@
 using Domain.Contracts;
 using Domain.DTOs;
-using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Agents;
