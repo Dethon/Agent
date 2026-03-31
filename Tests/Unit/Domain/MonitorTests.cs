@@ -5,7 +5,6 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
-using Domain.DTOs.WebChat;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -83,17 +82,6 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
     {
         return agent;
     }
-
-    public IReadOnlyList<AgentInfo> GetAvailableAgents(string? userId = null)
-    {
-        return [];
-    }
-
-    public AgentInfo RegisterCustomAgent(string userId, CustomAgentRegistration registration)
-        => throw new NotImplementedException();
-
-    public bool UnregisterCustomAgent(string userId, string agentId)
-        => throw new NotImplementedException();
 
     public DisposableAgent CreateSubAgent(SubAgentDefinition definition, IToolApprovalHandler approvalHandler, string[] whitelistPatterns, string userId)
         => throw new NotImplementedException();
