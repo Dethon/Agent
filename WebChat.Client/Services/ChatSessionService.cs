@@ -19,7 +19,7 @@ public sealed class ChatSessionService(ChatConnectionService connectionService) 
         }
 
         var success = await hubConnection.InvokeAsync<bool>(
-            "StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId);
+            "StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId, topic.Name);
 
         if (!success)
         {
