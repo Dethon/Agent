@@ -17,7 +17,7 @@ public sealed class SessionService : ISessionService
         var chatId = GetDeterministicHash(topicId, seed: 0x1234);
         var threadId = GetDeterministicHash(topicId, seed: 0x5678) & 0x7FFFFFFF;
 
-        StartSession(topicId, agentId, chatId, threadId, spaceSlug: "default");
+        StartSession(topicId, agentId, chatId, threadId, spaceSlug: "default", topicName: p.TopicName);
 
         // Return conversationId in "{chatId}:{threadId}" format — this is what the agent
         // uses as AgentKey and passes back to send_reply/request_approval
@@ -25,9 +25,9 @@ public sealed class SessionService : ISessionService
         return Task.FromResult(conversationId);
     }
 
-    public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null)
+    public bool StartSession(string topicId, string agentId, long chatId, long threadId, string? spaceSlug = null, string? topicName = null)
     {
-        var session = new ChannelSession(agentId, chatId, threadId, spaceSlug);
+        var session = new ChannelSession(agentId, chatId, threadId, spaceSlug, topicName);
         _sessions[topicId] = session;
         _chatToTopic[chatId] = topicId;
         _conversationToTopic[$"{chatId}:{threadId}"] = topicId;
