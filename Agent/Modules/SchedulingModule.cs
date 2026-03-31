@@ -4,7 +4,6 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
 using Domain.Tools.Scheduling;
-using Infrastructure.Agents;
 using Infrastructure.StateManagers;
 using Infrastructure.Validation;
 
@@ -21,7 +20,6 @@ public static class SchedulingModule
 
             services.AddSingleton<IScheduleStore, RedisScheduleStore>();
             services.AddSingleton<ICronValidator, CronValidator>();
-            services.AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>();
 
             services.AddTransient<ScheduleCreateTool>();
             services.AddTransient<ScheduleListTool>();

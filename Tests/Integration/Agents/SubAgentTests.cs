@@ -32,13 +32,15 @@ public class SubAgentTests(RedisFixture redisFixture)
     {
         var registryOptions = Options.Create(new AgentRegistryOptions { Agents = [] });
         var monitor = new OptionsMonitorStub<AgentRegistryOptions>(registryOptions.Value);
+        var customAgentRegistry = new CustomAgentRegistry();
+        var definitionProvider = new AgentDefinitionProvider(monitor, customAgentRegistry);
         var domainToolRegistry = new DomainToolRegistry([]);
         return new MultiAgentFactory(
             null!,
-            monitor,
+            definitionProvider,
             config,
             domainToolRegistry,
-            new CustomAgentRegistry());
+            null);
     }
 
     [SkippableFact]

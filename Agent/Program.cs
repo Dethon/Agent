@@ -1,5 +1,6 @@
 using Agent.Modules;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.WebChat;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,13 +22,16 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors();
 
-app.MapGet("/api/agents", (IAgentFactory agentFactory, string? userId) =>
-    agentFactory.GetAvailableAgents(userId));
+app.MapGet("/api/agents", (IAgentDefinitionProvider provider, string? userId) =>
+    provider.GetAll(userId).Select(a => new AgentInfo(a.Id, a.Name, a.Description)));
 
-app.MapPost("/api/agents", (IAgentFactory agentFactory, string userId, CustomAgentRegistration registration) =>
-    agentFactory.RegisterCustomAgent(userId, registration));
+app.MapPost("/api/agents", (IAgentDefinitionProvider provider, string userId, CustomAgentRegistration registration) =>
+{
+    var definition = provider.RegisterCustomAgent(userId, registration);
+    return new AgentInfo(definition.Id, definition.Name, definition.Description);
+});
 
-app.MapDelete("/api/agents/{agentId}", (IAgentFactory agentFactory, string userId, string agentId) =>
-    agentFactory.UnregisterCustomAgent(userId, agentId));
+app.MapDelete("/api/agents/{agentId}", (IAgentDefinitionProvider provider, string userId, string agentId) =>
+    provider.UnregisterCustomAgent(userId, agentId));
 
 await app.RunAsync();
