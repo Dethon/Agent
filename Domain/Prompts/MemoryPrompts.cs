@@ -52,10 +52,11 @@ public static class MemoryPrompts
         - Mentioned in passing: 0.3-0.5
 
         Rules:
-        - Only extract information worth remembering in future conversations
-        - Do not extract trivial details or ephemeral information that is unlikely to be useful later
+        - Only extract information with long-term or mid-term value — facts, preferences, instructions, or context that will remain relevant across multiple future conversations
+        - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, or anything that will lose relevance once the current conversation ends
+        - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight
         - Do not extract information already covered by the existing profile
-        - Return an empty candidates array if nothing is worth storing
+        - Return an empty candidates array if nothing is worth storing — when in doubt, do not extract
         - Keep content concise — one clear statement per memory
         """;
 
