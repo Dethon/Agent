@@ -34,13 +34,13 @@ public static class InjectorModule
                 .AddSingleton<ChatThreadResolver>()
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
                 .AddSingleton<CustomAgentRegistry>()
+                .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
-                        sp.GetRequiredService<IOptionsMonitor<AgentRegistryOptions>>(),
+                        sp.GetRequiredService<IAgentDefinitionProvider>(),
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
-                        sp.GetRequiredService<CustomAgentRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
