@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Agents;
@@ -15,8 +16,39 @@ public class AgentDefinitionProvider(
             ?? customAgentRegistry.FindById(agentId);
     }
 
-    public IReadOnlyList<AgentDefinition> GetAll()
+    public IReadOnlyList<AgentDefinition> GetAll(string? userId = null)
     {
-        return registryOptions.CurrentValue.Agents;
+        var builtIn = registryOptions.CurrentValue.Agents.ToList();
+
+        if (userId is not null)
+        {
+            builtIn.AddRange(customAgentRegistry.GetByUser(userId));
+        }
+
+        return builtIn;
+    }
+
+    public AgentDefinition RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+    {
+        var definition = new AgentDefinition
+        {
+            Id = $"custom-{Guid.NewGuid()}",
+            Name = registration.Name,
+            Description = registration.Description,
+            Model = registration.Model,
+            McpServerEndpoints = registration.McpServerEndpoints,
+            WhitelistPatterns = registration.WhitelistPatterns,
+            CustomInstructions = registration.CustomInstructions,
+            EnabledFeatures = registration.EnabledFeatures
+        };
+
+        customAgentRegistry.Add(userId, definition);
+
+        return definition;
+    }
+
+    public bool UnregisterCustomAgent(string userId, string agentId)
+    {
+        return customAgentRegistry.Remove(userId, agentId);
     }
 }
