@@ -54,7 +54,7 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
-  mcp-text:
+  mcp-vault:
     build:
       args:
         - BUILD_CONFIGURATION=Debug

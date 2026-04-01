@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Text.Json;
-using McpServerText.Settings;
+using McpServerVault.Settings;
 using ModelContextProtocol.Server;
 
-namespace McpServerText.McpResources;
+namespace McpServerVault.McpResources;
 
 [McpServerResourceType]
 public class FileSystemResource(McpSettings settings)

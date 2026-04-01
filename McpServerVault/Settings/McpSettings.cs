@@ -1,4 +1,4 @@
-namespace McpServerText.Settings;
+namespace McpServerVault.Settings;
 
 public record McpSettings
 {

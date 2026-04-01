@@ -40,7 +40,7 @@ grep -A3 'base-sdk:' "$COMPOSE_FILE" | grep -q 'image: base-sdk:latest' && rc=0 
 check "base-sdk has image: base-sdk:latest" "$rc"
 
 # Each built service depends on base-sdk
-BUILT_SERVICES=("mcp-library" "mcp-text" "mcp-websearch" "mcp-memory" "mcp-idealista" "agent" "webui")
+BUILT_SERVICES=("mcp-library" "mcp-vault" "mcp-websearch" "mcp-memory" "mcp-idealista" "agent" "webui")
 for svc in "${BUILT_SERVICES[@]}"; do
     # Find the service block's depends_on and check for base-sdk
     awk "found && /^  [a-z]/{exit} /^  ${svc}:/{found=1} found{print}" "$COMPOSE_FILE" | grep -q 'base-sdk' && rc=0 || rc=$?
@@ -59,8 +59,8 @@ check "docker compose config succeeds (valid YAML)" "$rc"
 # Use docker compose config (canonical YAML) to verify deps via python/grep on resolved output
 RESOLVED=$(env $DUMMY_ENV docker compose -f "$COMPOSE_FILE" config 2>/dev/null)
 
-# agent must still depend on: mcp-library, mcp-text, mcp-websearch, mcp-memory, mcp-idealista, redis
-for dep in mcp-library mcp-text mcp-websearch mcp-memory mcp-idealista redis; do
+# agent must still depend on: mcp-library, mcp-vault, mcp-websearch, mcp-memory, mcp-idealista, redis
+for dep in mcp-library mcp-vault mcp-websearch mcp-memory mcp-idealista redis; do
     echo "$RESOLVED" | python3 -c "
 import sys, yaml
 config = yaml.safe_load(sys.stdin)

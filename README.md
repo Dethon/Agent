@@ -51,7 +51,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
       ┌───────────────┼──────────────┬──────────────┐
       ▼               ▼              ▼              ▼
 ┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌─────────────┐
-│MCP Library │ │ MCP Text   │ │MCP WebSearch│ │MCP Idealista│
+│MCP Library │ │ MCP Vault  │ │MCP WebSearch│ │MCP Idealista│
 └─────┬──────┘ └────────────┘ └─────────────┘ └──────┬──────┘
       │                                              │
 ┌─────┴──────┐                                 ┌─────┴──────┐
@@ -89,7 +89,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | Server            | Tools                                                                                                                                           | Purpose                                                                                 |
 |-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
 | **mcp-library**   | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files                |
-| **mcp-text**      | TextListDirectories, TextListFiles, TextSearch, TextInspect, TextRead, TextPatch, TextCreate, Move, RemoveFile                                  | Manage a knowledge vault of markdown notes and text files                                |
+| **mcp-vault**      | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                                                   | Manage a knowledge vault of markdown notes and text files                                |
 | **mcp-websearch** | WebSearch, WebBrowse, WebClick, WebInspect                                                                                                      | Search the web and browse pages with persistent browser sessions                         |
 | **mcp-idealista** | IdealistaPropertySearch                                                                                                                         | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 
@@ -106,7 +106,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | Agent     | MCP Servers                                         | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-text, mcp-websearch, mcp-idealista               | Knowledge base management ("Scribe" persona) with subagent delegation |
+| **Jonas** | mcp-vault, mcp-websearch, mcp-idealista               | Knowledge base management ("Scribe" persona) with subagent delegation |
 
 ### Multi-Agent Configuration
 
@@ -134,7 +134,7 @@ Agent routing:
 | `Domain`                 | Core domain logic, agent contracts, channel protocol DTOs       |
 | `Infrastructure`         | External service clients (MCP, OpenRouter, push notifications)  |
 | `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
-| `McpServerText`          | MCP server for text/markdown file inspection and editing        |
+| `McpServerVault`          | MCP server for text/markdown file inspection and editing        |
 | `McpServerWebSearch`     | MCP server for web search and content fetching                  |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
@@ -205,7 +205,7 @@ SUBAGENTS__0__ID=jonas-worker
 SUBAGENTS__0__NAME=Jonas Worker
 SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
 SUBAGENTS__0__MODEL=z-ai/glm-5:nitro
-SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-text:8080/sse
+SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/sse
 SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 
 # Channel endpoints (agent connects to these)
@@ -253,7 +253,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | FileBrowser              | 8002 | File management WebUI          |
 | Jackett                  | 8003 | Torrent indexer proxy          |
 | MCP Library              | 6001 | Library MCP server             |
-| MCP Text Tools           | 6002 | Text/Markdown MCP server       |
+| MCP Vault                | 6002 | Document vault MCP server      |
 | MCP WebSearch            | 6003 | Web search MCP server          |
 | MCP Idealista            | 6005 | Idealista property MCP server  |
 | MCP Channel SignalR      | 6010 | WebChat channel server         |

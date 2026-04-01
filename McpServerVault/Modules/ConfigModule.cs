@@ -2,15 +2,15 @@ using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerText.McpPrompts;
-using McpServerText.McpResources;
-using McpServerText.McpTools;
-using McpServerText.Settings;
+using McpServerVault.McpPrompts;
+using McpServerVault.McpResources;
+using McpServerVault.McpTools;
+using McpServerVault.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace McpServerText.Modules;
+namespace McpServerVault.Modules;
 
 public static class ConfigModule
 {

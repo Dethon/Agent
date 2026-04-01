@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
-using McpServerText.Settings;
+using McpServerVault.Settings;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerText.McpTools;
+namespace McpServerVault.McpTools;
 
 [McpServerToolType]
 public class FsSearchTool(McpSettings settings)

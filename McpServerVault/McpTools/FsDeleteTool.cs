@@ -6,7 +6,7 @@ using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace McpServerText.McpTools;
+namespace McpServerVault.McpTools;
 
 [McpServerToolType]
 public class FsDeleteTool(
