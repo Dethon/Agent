@@ -54,7 +54,6 @@ public static class ConfigModule
             .WithTools<FsSearchTool>()
             .WithTools<FsMoveTool>()
             .WithTools<FsDeleteTool>()
-            .WithTools<FsListTool>()
             // Filesystem resource
             .WithResources<FileSystemResource>()
             // Prompts

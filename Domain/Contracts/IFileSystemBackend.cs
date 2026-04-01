@@ -14,5 +14,4 @@ public interface IFileSystemBackend
         int maxResults, int contextLines, string outputMode, CancellationToken ct);
     Task<JsonNode> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct);
     Task<JsonNode> DeleteAsync(string path, CancellationToken ct);
-    Task<JsonNode> ListAsync(string path, CancellationToken ct);
 }

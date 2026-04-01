@@ -23,7 +23,6 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             (TextSearchTool.Key, () => AIFunctionFactory.Create(new TextSearchTool(registry).RunAsync, name: $"domain:{Feature}:{TextSearchTool.Name}")),
             (MoveTool.Key, () => AIFunctionFactory.Create(new MoveTool(registry).RunAsync, name: $"domain:{Feature}:{MoveTool.Name}")),
             (RemoveTool.Key, () => AIFunctionFactory.Create(new RemoveTool(registry).RunAsync, name: $"domain:{Feature}:{RemoveTool.Name}")),
-            (ListTool.Key, () => AIFunctionFactory.Create(new ListTool(registry).RunAsync, name: $"domain:{Feature}:{ListTool.Name}")),
         };
 
         return tools
