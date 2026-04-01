@@ -31,7 +31,6 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
         return new McpAgent(
             [mcpFixture.McpEndpoint],
-            [],
             llmClient,
             "test-agent",
             "",

@@ -39,7 +39,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Sync Resources Test",
@@ -75,7 +74,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Unsubscribe Test",
@@ -108,7 +106,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "No Resources Test",
@@ -143,7 +140,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Reactivate Test",
@@ -183,7 +179,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Dispose Unsub Test",
@@ -214,7 +209,6 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
         // Use two endpoints
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Multi Client Sync Test",

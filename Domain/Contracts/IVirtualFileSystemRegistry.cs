@@ -4,7 +4,7 @@ namespace Domain.Contracts;
 
 public interface IVirtualFileSystemRegistry
 {
-    Task DiscoverAsync(string[] endpoints, IFileSystemBackendFactory backendFactory, CancellationToken ct);
+    void Mount(FileSystemMount mount, IFileSystemBackend backend);
     FileSystemResolution Resolve(string virtualPath);
     IReadOnlyList<FileSystemMount> GetMounts();
 }

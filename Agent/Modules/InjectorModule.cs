@@ -7,6 +7,7 @@ using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -41,8 +42,8 @@ public static class InjectorModule
                         sp.GetRequiredService<IAgentDefinitionProvider>(),
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
-                        sp.GetService<IFileSystemBackendFactory>(),
-                        sp.GetRequiredService<IMetricsPublisher>()))
+                        sp.GetRequiredService<IMetricsPublisher>(),
+                        sp.GetService<ILoggerFactory>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }

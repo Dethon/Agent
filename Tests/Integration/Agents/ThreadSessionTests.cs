@@ -36,7 +36,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             "TestClient",
             "test-user",
             "Test Description",
@@ -82,7 +81,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Subscription Test",
@@ -114,7 +112,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             sessionKey,
             "test-user",
             "Notification Test",
@@ -152,7 +149,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             "DisposeTestClient",
             "test-user",
             "Dispose Test",
@@ -183,7 +179,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act - Connect to valid endpoint should succeed
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
-            [],
             "RetryTestClient",
             "test-user",
             "Retry Test",
@@ -212,7 +207,6 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
-            [],
             "MultiEndpointClient",
             "test-user",
             "Multi Endpoint Test",

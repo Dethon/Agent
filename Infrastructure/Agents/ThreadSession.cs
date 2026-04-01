@@ -4,6 +4,7 @@ using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 
 namespace Infrastructure.Agents;
@@ -32,20 +33,19 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public static async Task<ThreadSession> CreateAsync(
         string[] endpoints,
-        string[] fileSystemEndpoints,
         string name,
         string userId,
         string description,
         ChatClientAgent agent,
         AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
-        IFileSystemBackendFactory? fileSystemBackendFactory,
         IReadOnlySet<string>? filesystemEnabledTools,
+        ILoggerFactory? loggerFactory,
         CancellationToken ct,
         bool enableResourceSubscriptions = true)
     {
-        var builder = new ThreadSessionBuilder(endpoints, fileSystemEndpoints, name, description,
-            agent, thread, userId, domainTools, fileSystemBackendFactory, filesystemEnabledTools);
+        var builder = new ThreadSessionBuilder(endpoints, name, description,
+            agent, thread, userId, domainTools, filesystemEnabledTools, loggerFactory);
         var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
         return new ThreadSession(data);
     }
@@ -68,15 +68,14 @@ internal sealed class ThreadSession : IAsyncDisposable
 
 internal sealed class ThreadSessionBuilder(
     string[] endpoints,
-    string[] fileSystemEndpoints,
     string name,
     string description,
     ChatClientAgent agent,
     AgentSession thread,
     string userId,
     IReadOnlyList<AIFunction> domainTools,
-    IFileSystemBackendFactory? fileSystemBackendFactory,
-    IReadOnlySet<string>? filesystemEnabledTools)
+    IReadOnlySet<string>? filesystemEnabledTools,
+    ILoggerFactory? loggerFactory)
 {
     private IReadOnlyList<AITool> _tools = [];
 
@@ -89,19 +88,25 @@ internal sealed class ThreadSessionBuilder(
         // Step 2: Create MCP clients and load tools/prompts
         var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, ct);
 
-        // Step 3: Discover filesystem backends (if any endpoints configured)
+        // Step 3: Discover filesystem backends from connected MCP clients
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
         IReadOnlyList<string> fileSystemPrompts = [];
-        if (fileSystemEndpoints.Length > 0 && fileSystemBackendFactory is not null)
+        if (filesystemEnabledTools is not { Count: 0 })
         {
-            registry = new VirtualFileSystemRegistry();
-            await registry.DiscoverAsync(fileSystemEndpoints, fileSystemBackendFactory, ct);
+            var fsRegistry = new VirtualFileSystemRegistry();
+            var logger = loggerFactory?.CreateLogger(typeof(McpFileSystemDiscovery).FullName!)
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+            await McpFileSystemDiscovery.DiscoverAndMountAsync(clientManager.Clients, fsRegistry, logger, ct);
 
-            var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
-            var feature = new FileSystemToolFeature(registry);
-            fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
-            fileSystemPrompts = feature.Prompt is not null ? [feature.Prompt] : [];
+            if (fsRegistry.GetMounts().Count > 0)
+            {
+                registry = fsRegistry;
+                var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
+                var feature = new FileSystemToolFeature(registry);
+                fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
+                fileSystemPrompts = feature.Prompt is not null ? [feature.Prompt] : [];
+            }
         }
 
         // Step 4: Combine MCP tools with domain tools and filesystem tools

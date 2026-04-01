@@ -5,6 +5,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
@@ -13,8 +14,8 @@ public sealed class MultiAgentFactory(
     IAgentDefinitionProvider definitionProvider,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
-    IFileSystemBackendFactory? fileSystemBackendFactory = null,
-    IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
+    IMetricsPublisher? metricsPublisher = null,
+    ILoggerFactory? loggerFactory = null) : IAgentFactory, IScheduleAgentFactory
 {
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
@@ -67,7 +68,6 @@ public sealed class MultiAgentFactory(
 
         return new McpAgent(
             definition.McpServerEndpoints,
-            definition.FileSystemEndpoints,
             effectiveClient,
             $"subagent-{definition.Id}",
             definition.Description ?? "",
@@ -77,8 +77,8 @@ public sealed class MultiAgentFactory(
             domainTools,
             domainPrompts,
             enableResourceSubscriptions: false,
-            fileSystemBackendFactory: fileSystemBackendFactory,
-            filesystemEnabledTools: filesystemEnabledTools);
+            filesystemEnabledTools: filesystemEnabledTools,
+            loggerFactory: loggerFactory);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -105,7 +105,6 @@ public sealed class MultiAgentFactory(
 
         return new McpAgent(
             definition.McpServerEndpoints,
-            definition.FileSystemEndpoints,
             effectiveClient,
             name,
             definition.Description ?? "",
@@ -114,8 +113,8 @@ public sealed class MultiAgentFactory(
             definition.CustomInstructions,
             domainTools,
             domainPrompts,
-            fileSystemBackendFactory: fileSystemBackendFactory,
-            filesystemEnabledTools: filesystemEnabledTools);
+            filesystemEnabledTools: filesystemEnabledTools,
+            loggerFactory: loggerFactory);
     }
 
     private static IReadOnlySet<string>? ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)

@@ -73,7 +73,6 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         await using var agent = new McpAgent(
             [],
-            [],
             effectiveClient,
             "parent-agent-test",
             "",

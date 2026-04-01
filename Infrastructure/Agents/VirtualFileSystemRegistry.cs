@@ -8,14 +8,9 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     private readonly Dictionary<string, (FileSystemMount Mount, IFileSystemBackend Backend)> _mounts =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task DiscoverAsync(string[] endpoints, IFileSystemBackendFactory backendFactory, CancellationToken ct)
+    public void Mount(FileSystemMount mount, IFileSystemBackend backend)
     {
-        foreach (var endpoint in endpoints)
-        {
-            var discovered = await backendFactory.DiscoverAsync(endpoint, ct);
-            foreach (var (mount, backend) in discovered)
-                _mounts[mount.MountPoint] = (mount, backend);
-        }
+        _mounts[mount.MountPoint] = (mount, backend);
     }
 
     public FileSystemResolution Resolve(string virtualPath)
