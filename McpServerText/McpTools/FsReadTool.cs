@@ -8,19 +8,17 @@ using ModelContextProtocol.Server;
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpTextReadTool(McpSettings settings)
+public class FsReadTool(McpSettings settings)
     : TextReadTool(settings.VaultPath, settings.AllowedExtensions)
 {
-    [McpServerTool(Name = Name)]
-    [Description(Description)]
+    [McpServerTool(Name = "fs_read")]
+    [Description("Read file content with optional pagination")]
     public CallToolResult McpRun(
-        [Description("Path to the text file (absolute or relative to vault)")]
-        string filePath,
-        [Description("Start from this line number (1-based)")]
+        string filesystem,
+        string path,
         int? offset = null,
-        [Description("Max lines to return")]
         int? limit = null)
     {
-        return ToolResponse.Create(Run(filePath, offset, limit));
+        return ToolResponse.Create(Run(path, offset, limit));
     }
 }

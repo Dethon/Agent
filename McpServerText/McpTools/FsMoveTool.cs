@@ -9,18 +9,17 @@ using ModelContextProtocol.Server;
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpMoveTool(
+public class FsMoveTool(
     IFileSystemClient client,
     LibraryPathConfig libraryPath) : MoveTool(client, libraryPath)
 {
-    [McpServerTool(Name = Name)]
-    [Description(Description)]
+    [McpServerTool(Name = "fs_move")]
+    [Description("Move or rename a file or directory")]
     public async Task<CallToolResult> McpRun(
-        [Description("Source path (absolute or relative to library root)")]
+        string filesystem,
         string sourcePath,
-        [Description("Destination path (absolute or relative to library root, must not exist)")]
         string destinationPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         return ToolResponse.Create(await Run(sourcePath, destinationPath, cancellationToken));
     }

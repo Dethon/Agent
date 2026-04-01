@@ -9,16 +9,16 @@ using ModelContextProtocol.Server;
 namespace McpServerText.McpTools;
 
 [McpServerToolType]
-public class McpRemoveTool(
+public class FsDeleteTool(
     IFileSystemClient client,
     LibraryPathConfig libraryPath) : RemoveTool(client, libraryPath)
 {
-    [McpServerTool(Name = Name)]
-    [Description(Description)]
+    [McpServerTool(Name = "fs_delete")]
+    [Description("Delete a file or directory (move to trash)")]
     public async Task<CallToolResult> McpRun(
-        [Description("Path to the file or directory (absolute or relative to library root)")]
+        string filesystem,
         string path,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         return ToolResponse.Create(await Run(path, cancellationToken));
     }

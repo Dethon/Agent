@@ -3,6 +3,7 @@ using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
 using McpServerText.McpPrompts;
+using McpServerText.McpResources;
 using McpServerText.McpTools;
 using McpServerText.Settings;
 using Microsoft.Extensions.Configuration;
@@ -45,16 +46,17 @@ public static class ConfigModule
                     return ToolResponse.Create(ex);
                 }
             }))
-            // Discovery tools
-            .WithTools<McpTextGlobFilesTool>()
-            // File operations
-            .WithTools<McpMoveTool>()
-            .WithTools<McpRemoveTool>()
-            // Text tools
-            .WithTools<McpTextSearchTool>()
-            .WithTools<McpTextReadTool>()
-            .WithTools<McpTextEditTool>()
-            .WithTools<McpTextCreateTool>()
+            // Filesystem backend tools
+            .WithTools<FsReadTool>()
+            .WithTools<FsCreateTool>()
+            .WithTools<FsEditTool>()
+            .WithTools<FsGlobTool>()
+            .WithTools<FsSearchTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsListTool>()
+            // Filesystem resource
+            .WithResources<FileSystemResource>()
             // Prompts
             .WithPrompts<McpSystemPrompt>();
 
