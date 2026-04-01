@@ -13,6 +13,7 @@ public sealed class MultiAgentFactory(
     IAgentDefinitionProvider definitionProvider,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
+    IFileSystemBackendFactory? fileSystemBackendFactory = null,
     IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
 {
 
@@ -64,6 +65,7 @@ public sealed class MultiAgentFactory(
 
         return new McpAgent(
             definition.McpServerEndpoints,
+            definition.FileSystemEndpoints,
             effectiveClient,
             $"subagent-{definition.Id}",
             definition.Description ?? "",
@@ -72,7 +74,8 @@ public sealed class MultiAgentFactory(
             definition.CustomInstructions,
             domainTools,
             domainPrompts,
-            enableResourceSubscriptions: false);
+            enableResourceSubscriptions: false,
+            fileSystemBackendFactory: fileSystemBackendFactory);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -97,6 +100,7 @@ public sealed class MultiAgentFactory(
 
         return new McpAgent(
             definition.McpServerEndpoints,
+            definition.FileSystemEndpoints,
             effectiveClient,
             name,
             definition.Description ?? "",
@@ -104,7 +108,8 @@ public sealed class MultiAgentFactory(
             userId,
             definition.CustomInstructions,
             domainTools,
-            domainPrompts);
+            domainPrompts,
+            fileSystemBackendFactory: fileSystemBackendFactory);
     }
 
     private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)

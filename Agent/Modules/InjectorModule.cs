@@ -41,6 +41,7 @@ public static class InjectorModule
                         sp.GetRequiredService<IAgentDefinitionProvider>(),
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
+                        sp.GetService<IFileSystemBackendFactory>(),
                         sp.GetRequiredService<IMetricsPublisher>()))
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());

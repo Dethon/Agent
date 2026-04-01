@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -8,7 +9,8 @@ namespace Infrastructure.Agents;
 internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
     McpResourceManager? ResourceManager,
-    IReadOnlyList<AITool> Tools);
+    IReadOnlyList<AITool> Tools,
+    IVirtualFileSystemRegistry? FileSystemRegistry);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
@@ -26,16 +28,19 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     public static async Task<ThreadSession> CreateAsync(
         string[] endpoints,
+        string[] fileSystemEndpoints,
         string name,
         string userId,
         string description,
         ChatClientAgent agent,
         AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
+        IFileSystemBackendFactory? fileSystemBackendFactory,
         CancellationToken ct,
         bool enableResourceSubscriptions = true)
     {
-        var builder = new ThreadSessionBuilder(endpoints, name, description, agent, thread, userId, domainTools);
+        var builder = new ThreadSessionBuilder(endpoints, fileSystemEndpoints, name, description,
+            agent, thread, userId, domainTools, fileSystemBackendFactory);
         var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
         return new ThreadSession(data);
     }
@@ -58,12 +63,14 @@ internal sealed class ThreadSession : IAsyncDisposable
 
 internal sealed class ThreadSessionBuilder(
     string[] endpoints,
+    string[] fileSystemEndpoints,
     string name,
     string description,
     ChatClientAgent agent,
     AgentSession thread,
     string userId,
-    IReadOnlyList<AIFunction> domainTools)
+    IReadOnlyList<AIFunction> domainTools,
+    IFileSystemBackendFactory? fileSystemBackendFactory)
 {
     private IReadOnlyList<AITool> _tools = [];
 
@@ -76,15 +83,23 @@ internal sealed class ThreadSessionBuilder(
         // Step 2: Create MCP clients and load tools/prompts
         var clientManager = await McpClientManager.CreateAsync(name, userId, description, endpoints, handlers, ct);
 
-        // Step 3: Combine MCP tools with domain tools
+        // Step 3: Discover filesystem backends (if any endpoints configured)
+        IVirtualFileSystemRegistry? registry = null;
+        if (fileSystemEndpoints.Length > 0 && fileSystemBackendFactory is not null)
+        {
+            registry = new VirtualFileSystemRegistry();
+            await registry.DiscoverAsync(fileSystemEndpoints, fileSystemBackendFactory, ct);
+        }
+
+        // Step 4: Combine MCP tools with domain tools
         _tools = clientManager.Tools.Concat(domainTools).ToList();
 
-        // Step 4: Setup resource management with user context prepended (skipped for subagents)
+        // Step 5: Setup resource management with user context prepended (skipped for subagents)
         McpResourceManager? resourceManager = enableResourceSubscriptions
             ? await CreateResourceManagerAsync(clientManager, ct)
             : null;
 
-        return new ThreadSessionData(clientManager, resourceManager, _tools);
+        return new ThreadSessionData(clientManager, resourceManager, _tools, registry);
     }
 
     private async Task<McpResourceManager> CreateResourceManagerAsync(
