@@ -52,7 +52,9 @@ public static class MemoryPrompts
         - Mentioned in passing: 0.3-0.5
 
         Rules:
-        - Only extract information with long-term or mid-term value — facts, preferences, instructions, or context that will remain relevant across multiple future conversations
+        - Only extract information the user reveals about themselves — preferences, facts, instructions, skills, relationships, or context that will remain relevant across multiple future conversations
+        - Do not extract information about the bot, system, or assistant itself — its capabilities, features, architecture, or behavior are not user memories
+        - Do not extract observations derived from generic or exploratory questions (e.g. "what can you do?", "how does this work?") — these reveal nothing about the user
         - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, or anything that will lose relevance once the current conversation ends
         - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight
         - Do not extract information already covered by the existing profile
