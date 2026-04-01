@@ -11,16 +11,40 @@ public class DomainToolRegistry(IEnumerable<IDomainToolFeature> features) : IDom
 
     public IEnumerable<AIFunction> GetToolsForFeatures(IEnumerable<string> enabledFeatures, FeatureConfig config)
     {
-        return enabledFeatures
-            .Where(name => _features.ContainsKey(name))
-            .SelectMany(name => _features[name].GetTools(config));
+        return GroupByFeature(enabledFeatures)
+            .Where(g => _features.ContainsKey(g.FeatureName))
+            .SelectMany(g =>
+            {
+                var featureConfig = config with { EnabledTools = g.EnabledTools };
+                return _features[g.FeatureName].GetTools(featureConfig);
+            });
     }
 
     public IEnumerable<string> GetPromptsForFeatures(IEnumerable<string> enabledFeatures)
     {
-        return enabledFeatures
-            .Where(name => _features.ContainsKey(name))
-            .Select(name => _features[name].Prompt)
+        return GroupByFeature(enabledFeatures)
+            .Where(g => _features.ContainsKey(g.FeatureName))
+            .Select(g => _features[g.FeatureName].Prompt)
             .OfType<string>();
     }
+
+    private static IEnumerable<FeatureGroup> GroupByFeature(IEnumerable<string> enabledFeatures)
+    {
+        return enabledFeatures
+            .Select(f => f.Split('.', 2))
+            .GroupBy(parts => parts[0], StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var hasBare = group.Any(parts => parts.Length == 1);
+                var enabledTools = hasBare
+                    ? null
+                    : group
+                        .Where(p => p.Length == 2)
+                        .Select(p => p[1])
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return new FeatureGroup(group.Key, enabledTools);
+            });
+    }
+
+    private record FeatureGroup(string FeatureName, IReadOnlySet<string>? EnabledTools);
 }
