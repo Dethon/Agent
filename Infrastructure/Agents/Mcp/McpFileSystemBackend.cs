@@ -93,14 +93,25 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
 
     private async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
     {
-        var result = await client.CallToolAsync(toolName, args, cancellationToken: ct);
+        CallToolResult result;
+        try
+        {
+            result = await client.CallToolAsync(toolName, args, cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
+                $"This tool is not available on this filesystem backend.", ex);
+        }
 
         if (result.IsError == true)
         {
             var errorText = string.Join("\n", result.Content
                 .OfType<TextContentBlock>()
                 .Select(c => c.Text));
-            throw new InvalidOperationException(errorText);
+            throw new InvalidOperationException(
+                $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}");
         }
 
         var text = string.Join("\n", result.Content
