@@ -10,6 +10,7 @@ public record AgentDefinition
     public string? Description { get; init; }
     public required string Model { get; init; }
     public required string[] McpServerEndpoints { get; init; }
+    public string[] FileSystemEndpoints { get; init; } = [];
     public string[] WhitelistPatterns { get; init; } = [];
     public string? CustomInstructions { get; init; }
     public string? TelegramBotToken { get; init; }
