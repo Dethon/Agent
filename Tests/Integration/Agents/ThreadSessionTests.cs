@@ -36,12 +36,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             "TestClient",
             "test-user",
             "Test Description",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Assert - session and managers initialized
@@ -79,12 +82,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Subscription Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Assert - The session should have synced resources
@@ -108,12 +114,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Notification Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Subscribe to resources
@@ -143,12 +152,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             "DisposeTestClient",
             "test-user",
             "Dispose Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         var clientCount = session.ClientManager.Clients.Count;
@@ -171,12 +183,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act - Connect to valid endpoint should succeed
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             "RetryTestClient",
             "test-user",
             "Retry Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Assert
@@ -197,12 +212,15 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Act
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
+            [],
             "MultiEndpointClient",
             "test-user",
             "Multi Endpoint Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Assert

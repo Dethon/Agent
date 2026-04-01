@@ -1,4 +1,6 @@
 using Domain.Contracts;
+using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -36,11 +38,12 @@ internal sealed class ThreadSession : IAsyncDisposable
         AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
         IFileSystemBackendFactory? fileSystemBackendFactory,
+        IReadOnlySet<string>? filesystemEnabledTools,
         CancellationToken ct,
         bool enableResourceSubscriptions = true)
     {
         var builder = new ThreadSessionBuilder(endpoints, fileSystemEndpoints, name, description,
-            agent, thread, userId, domainTools, fileSystemBackendFactory);
+            agent, thread, userId, domainTools, fileSystemBackendFactory, filesystemEnabledTools);
         var data = await builder.BuildAsync(ct, enableResourceSubscriptions);
         return new ThreadSession(data);
     }
@@ -70,7 +73,8 @@ internal sealed class ThreadSessionBuilder(
     AgentSession thread,
     string userId,
     IReadOnlyList<AIFunction> domainTools,
-    IFileSystemBackendFactory? fileSystemBackendFactory)
+    IFileSystemBackendFactory? fileSystemBackendFactory,
+    IReadOnlySet<string>? filesystemEnabledTools)
 {
     private IReadOnlyList<AITool> _tools = [];
 
@@ -85,14 +89,19 @@ internal sealed class ThreadSessionBuilder(
 
         // Step 3: Discover filesystem backends (if any endpoints configured)
         IVirtualFileSystemRegistry? registry = null;
+        IReadOnlyList<AIFunction> fileSystemTools = [];
         if (fileSystemEndpoints.Length > 0 && fileSystemBackendFactory is not null)
         {
             registry = new VirtualFileSystemRegistry();
             await registry.DiscoverAsync(fileSystemEndpoints, fileSystemBackendFactory, ct);
+
+            var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
+            var feature = new FileSystemToolFeature(registry);
+            fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
         }
 
-        // Step 4: Combine MCP tools with domain tools
-        _tools = clientManager.Tools.Concat(domainTools).ToList();
+        // Step 4: Combine MCP tools with domain tools and filesystem tools
+        _tools = clientManager.Tools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
         // Step 5: Setup resource management with user context prepended (skipped for subagents)
         McpResourceManager? resourceManager = enableResourceSubscriptions

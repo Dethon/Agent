@@ -39,12 +39,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Sync Resources Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Act - Sync should have happened during creation
@@ -72,12 +75,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Unsubscribe Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Act - Remove the download and sync
@@ -102,12 +108,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "No Resources Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Act - Sync with no resources
@@ -134,12 +143,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Reactivate Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Sync with no resources to complete channel
@@ -171,12 +183,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
 
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Dispose Unsub Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Act & Assert - Should not throw
@@ -199,12 +214,15 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
         // Use two endpoints
         var session = await ThreadSession.CreateAsync(
             [fixture.McpEndpoint, fixture.McpEndpoint],
+            [],
             sessionKey,
             "test-user",
             "Multi Client Sync Test",
             agent,
             thread,
             [],
+            null,
+            null,
             cts.Token);
 
         // Act

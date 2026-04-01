@@ -63,6 +63,8 @@ public sealed class MultiAgentFactory(
             .GetPromptsForFeatures(enabledFeatures)
             .ToList();
 
+        var filesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures);
+
         return new McpAgent(
             definition.McpServerEndpoints,
             definition.FileSystemEndpoints,
@@ -75,7 +77,8 @@ public sealed class MultiAgentFactory(
             domainTools,
             domainPrompts,
             enableResourceSubscriptions: false,
-            fileSystemBackendFactory: fileSystemBackendFactory);
+            fileSystemBackendFactory: fileSystemBackendFactory,
+            filesystemEnabledTools: filesystemEnabledTools);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -98,6 +101,8 @@ public sealed class MultiAgentFactory(
             .GetPromptsForFeatures(definition.EnabledFeatures)
             .ToList();
 
+        var filesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures);
+
         return new McpAgent(
             definition.McpServerEndpoints,
             definition.FileSystemEndpoints,
@@ -109,7 +114,24 @@ public sealed class MultiAgentFactory(
             definition.CustomInstructions,
             domainTools,
             domainPrompts,
-            fileSystemBackendFactory: fileSystemBackendFactory);
+            fileSystemBackendFactory: fileSystemBackendFactory,
+            filesystemEnabledTools: filesystemEnabledTools);
+    }
+
+    private static IReadOnlySet<string>? ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
+    {
+        var fsParts = enabledFeatures
+            .Select(f => f.Split('.', 2))
+            .Where(p => p[0].Equals("filesystem", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (fsParts.Count == 0) return new HashSet<string>();
+        if (fsParts.Any(p => p.Length == 1)) return null;
+
+        return fsParts
+            .Where(p => p.Length == 2)
+            .Select(p => p[1])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)

@@ -21,6 +21,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string[] _endpoints;
     private readonly string[] _fileSystemEndpoints;
     private readonly IFileSystemBackendFactory? _fileSystemBackendFactory;
+    private readonly IReadOnlySet<string>? _filesystemEnabledTools;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
     private readonly string _userId;
@@ -45,11 +46,13 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
         bool enableResourceSubscriptions = true,
-        IFileSystemBackendFactory? fileSystemBackendFactory = null)
+        IFileSystemBackendFactory? fileSystemBackendFactory = null,
+        IReadOnlySet<string>? filesystemEnabledTools = null)
     {
         _endpoints = endpoints;
         _fileSystemEndpoints = fileSystemEndpoints;
         _fileSystemBackendFactory = fileSystemBackendFactory;
+        _filesystemEnabledTools = filesystemEnabledTools;
         _name = name;
         _description = description;
         _userId = userId;
@@ -248,7 +251,8 @@ public sealed class McpAgent : DisposableAgent
 
             var newSession = await ThreadSession
                 .CreateAsync(_endpoints, _fileSystemEndpoints, _name, _userId, _description, _innerAgent,
-                             thread, _domainTools, _fileSystemBackendFactory, ct, _enableResourceSubscriptions);
+                             thread, _domainTools, _fileSystemBackendFactory, _filesystemEnabledTools,
+                             ct, _enableResourceSubscriptions);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

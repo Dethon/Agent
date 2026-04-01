@@ -9,7 +9,7 @@ using Polly;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal sealed class McpFileSystemBackendFactory(ILogger<McpFileSystemBackendFactory> logger) : IFileSystemBackendFactory
+public sealed class McpFileSystemBackendFactory(ILogger<McpFileSystemBackendFactory> logger) : IFileSystemBackendFactory
 {
     private const string ResourcePrefix = "filesystem://";
 
