@@ -12,7 +12,8 @@ internal sealed record ThreadSessionData(
     McpClientManager ClientManager,
     McpResourceManager? ResourceManager,
     IReadOnlyList<AITool> Tools,
-    IVirtualFileSystemRegistry? FileSystemRegistry);
+    IVirtualFileSystemRegistry? FileSystemRegistry,
+    IReadOnlyList<string> FileSystemPrompts);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
@@ -22,6 +23,7 @@ internal sealed class ThreadSession : IAsyncDisposable
     public IReadOnlyList<AITool> Tools => _data.Tools;
     public McpClientManager ClientManager => _data.ClientManager;
     public McpResourceManager? ResourceManager => _data.ResourceManager;
+    public IReadOnlyList<string> FileSystemPrompts => _data.FileSystemPrompts;
 
     private ThreadSession(ThreadSessionData data)
     {
@@ -90,6 +92,7 @@ internal sealed class ThreadSessionBuilder(
         // Step 3: Discover filesystem backends (if any endpoints configured)
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
+        IReadOnlyList<string> fileSystemPrompts = [];
         if (fileSystemEndpoints.Length > 0 && fileSystemBackendFactory is not null)
         {
             registry = new VirtualFileSystemRegistry();
@@ -98,6 +101,7 @@ internal sealed class ThreadSessionBuilder(
             var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
             var feature = new FileSystemToolFeature(registry);
             fileSystemTools = feature.GetTools(fsFeatureConfig).ToList();
+            fileSystemPrompts = feature.Prompt is not null ? [feature.Prompt] : [];
         }
 
         // Step 4: Combine MCP tools with domain tools and filesystem tools
@@ -108,7 +112,7 @@ internal sealed class ThreadSessionBuilder(
             ? await CreateResourceManagerAsync(clientManager, ct)
             : null;
 
-        return new ThreadSessionData(clientManager, resourceManager, _tools, registry);
+        return new ThreadSessionData(clientManager, resourceManager, _tools, registry, fileSystemPrompts);
     }
 
     private async Task<McpResourceManager> CreateResourceManagerAsync(

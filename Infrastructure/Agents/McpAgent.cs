@@ -224,6 +224,7 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
         var prompts = _domainPrompts
+            .Concat(session.FileSystemPrompts)
             .Concat(session.ClientManager.Prompts)
             .Prepend(BasePrompt.Instructions);
 
