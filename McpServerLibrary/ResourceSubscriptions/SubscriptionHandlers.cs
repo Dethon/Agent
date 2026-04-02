@@ -8,6 +8,8 @@ namespace McpServerLibrary.ResourceSubscriptions;
 
 public static class SubscriptionHandlers
 {
+    private const string DownloadPrefix = "download://";
+
     public static ValueTask<EmptyResult> SubscribeToResource(
         RequestContext<SubscribeRequestParams> context, CancellationToken cancellationToken)
     {
@@ -17,6 +19,9 @@ public static class SubscriptionHandlers
         {
             throw new InvalidOperationException("Service injection fault or URI is not available.");
         }
+
+        if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+            return ValueTask.FromResult(new EmptyResult());
 
         var subscriptionTracker = context.Services.GetRequiredService<SubscriptionTracker>();
         subscriptionTracker.Add(sessionId, uri, context.Server);
@@ -33,6 +38,9 @@ public static class SubscriptionHandlers
         {
             throw new InvalidOperationException("State manager or URI is not available.");
         }
+
+        if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+            return ValueTask.FromResult(new EmptyResult());
 
         subscriptionTracker.Remove(sessionId, uri);
         return ValueTask.FromResult(new EmptyResult());

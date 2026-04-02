@@ -69,12 +69,13 @@ internal sealed class McpSubscriptionManager : IAsyncDisposable
 
         foreach (var client in clients)
         {
-            if (client.ServerCapabilities.Resources is null)
+            if (client.ServerCapabilities.Resources is not { Subscribe: true })
             {
                 continue;
             }
 
             var current = (await client.ListResourcesAsync(cancellationToken: ct))
+                .Where(r => !r.Uri.StartsWith("filesystem://", StringComparison.OrdinalIgnoreCase))
                 .Select(r => r.Uri)
                 .ToHashSet();
             var previous = _subscribedResources.GetValueOrDefault(client) ?? [];
