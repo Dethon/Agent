@@ -28,7 +28,10 @@ public class MoveTool(IVirtualFileSystemRegistry registry)
         if (sourceResolution.Backend != destResolution.Backend)
         {
             throw new InvalidOperationException(
-                "Cannot move between different filesystems. Source and destination must be on the same filesystem.");
+                $"Cannot move between different filesystems. " +
+                $"Source is on '{sourceResolution.Backend.FilesystemName}', " +
+                $"destination is on '{destResolution.Backend.FilesystemName}'. " +
+                $"Both paths must be on the same filesystem.");
         }
 
         return await sourceResolution.Backend.MoveAsync(
