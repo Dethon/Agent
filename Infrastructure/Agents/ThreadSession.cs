@@ -92,14 +92,22 @@ internal sealed class ThreadSessionBuilder(
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
         IReadOnlyList<string> fileSystemPrompts = [];
-        if (filesystemEnabledTools is not { Count: 0 })
-        {
-            var fsRegistry = new VirtualFileSystemRegistry();
-            var logger = loggerFactory?.CreateLogger(typeof(McpFileSystemDiscovery).FullName!)
-                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
-            await McpFileSystemDiscovery.DiscoverAndMountAsync(clientManager.Clients, fsRegistry, logger, ct);
+        var fsLogger = loggerFactory?.CreateLogger(typeof(McpFileSystemDiscovery).FullName!)
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        var fsRegistry = new VirtualFileSystemRegistry();
+        await McpFileSystemDiscovery.DiscoverAndMountAsync(clientManager.Clients, fsRegistry, fsLogger, ct);
 
-            if (fsRegistry.GetMounts().Count > 0)
+        if (fsRegistry.GetMounts().Count > 0)
+        {
+            if (filesystemEnabledTools is { Count: 0 })
+            {
+                var mountNames = string.Join(", ", fsRegistry.GetMounts().Select(m => m.Name));
+                fsLogger.LogWarning(
+                    "MCP servers expose filesystem resources ({Mounts}) but the 'filesystem' feature is not enabled. " +
+                    "Add 'filesystem' to enabledFeatures to use virtual filesystem tools",
+                    mountNames);
+            }
+            else
             {
                 registry = fsRegistry;
                 var fsFeatureConfig = new FeatureConfig(EnabledTools: filesystemEnabledTools);
