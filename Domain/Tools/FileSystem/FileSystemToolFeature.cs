@@ -33,7 +33,10 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     private string? BuildPrompt()
     {
         var mounts = registry.GetMounts();
-        if (mounts.Count == 0) return null;
+        if (mounts.Count == 0)
+        {
+            return null;
+        }
 
         var mountList = string.Join("\n", mounts.Select(m => $"- {m.MountPoint} — {m.Description}"));
         return $"## Available Filesystems\n\nAll file tool paths must start with one of these prefixes:\n{mountList}";

@@ -21,7 +21,9 @@ public static class SubscriptionHandlers
         }
 
         if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+        {
             return ValueTask.FromResult(new EmptyResult());
+        }
 
         var subscriptionTracker = context.Services.GetRequiredService<SubscriptionTracker>();
         subscriptionTracker.Add(sessionId, uri, context.Server);
@@ -40,7 +42,11 @@ public static class SubscriptionHandlers
         }
 
         if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+
             return ValueTask.FromResult(new EmptyResult());
+        }
+
 
         subscriptionTracker.Remove(sessionId, uri);
         return ValueTask.FromResult(new EmptyResult());

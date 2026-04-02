@@ -220,7 +220,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done'.");
+        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear

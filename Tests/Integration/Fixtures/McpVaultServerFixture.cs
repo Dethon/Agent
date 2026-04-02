@@ -77,7 +77,11 @@ public class McpVaultServerFixture : IAsyncLifetime
     {
         var fullPath = Path.Combine(VaultPath, relativePath);
         var directory = Path.GetDirectoryName(fullPath);
-        if (directory != null) Directory.CreateDirectory(directory);
+        if (directory != null)
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         File.WriteAllText(fullPath, content);
     }
 
@@ -97,7 +101,11 @@ public class McpVaultServerFixture : IAsyncLifetime
 
         try
         {
-            if (Directory.Exists(VaultPath)) Directory.Delete(VaultPath, true);
+            if (Directory.Exists(VaultPath))
+            {
+                Directory.Delete(VaultPath, true);
+            }
+
         }
         catch
         {

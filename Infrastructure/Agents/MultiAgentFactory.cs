@@ -124,8 +124,15 @@ public sealed class MultiAgentFactory(
             .Where(p => p[0].Equals("filesystem", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (fsParts.Count == 0) return new HashSet<string>();
-        if (fsParts.Any(p => p.Length == 1)) return null;
+        if (fsParts.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        if (fsParts.Any(p => p.Length == 1))
+        {
+            return null;
+        }
 
         return fsParts
             .Where(p => p.Length == 2)

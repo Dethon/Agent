@@ -26,7 +26,10 @@ internal static class McpFileSystemDiscovery
                     .Where(r => r.Uri.StartsWith(ResourcePrefix, StringComparison.OrdinalIgnoreCase))
                     .ToList();
 
-                if (filesystemResources.Count == 0) continue;
+                if (filesystemResources.Count == 0)
+                {
+                    continue;
+                }
 
                 foreach (var resource in filesystemResources)
                 {
