@@ -230,13 +230,9 @@
     .tool-name-short { display: none; }
     .status-ok { color: var(--accent-green); }
     .status-err { color: var(--accent-red); }
-    .tooltip-anchor { position: relative; cursor: default; }
-    .tooltip-popup { display: none; position: absolute; bottom: 100%; right: 0; margin-bottom: 6px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
-    .tooltip-anchor:hover .tooltip-popup,
-    .tooltip-anchor:active .tooltip-popup,
-    .tooltip-anchor:focus .tooltip-popup,
-    .tooltip-anchor:focus-within .tooltip-popup { display: block; }
+    .tooltip-anchor { cursor: default; }
     .tooltip-anchor:focus { outline: none; }
+    .tooltip-popup { display: none; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
 
     @@media (max-width: 768px) {
         .page-header { flex-direction: column; }
