@@ -72,6 +72,16 @@ public static class SubscriptionHandlers
             MimeType = "text/plain"
         }).ToList();
 
+        // Include static resources registered via [McpServerResource] attributes
+        // — the custom handler overrides the default listing so these must be added manually
+        resources.Add(new Resource
+        {
+            Uri = "filesystem://media",
+            Name = "Media Filesystem",
+            Description = "Media library filesystem",
+            MimeType = "application/json"
+        });
+
         return ValueTask.FromResult(new ListResourcesResult { Resources = resources });
     }
 }

@@ -17,21 +17,21 @@ internal static class McpFileSystemDiscovery
         ILogger logger,
         CancellationToken ct)
     {
-        foreach (var client in clients)
+        foreach (var client in clients.Where(c => c.ServerCapabilities.Resources is not null))
         {
-            try
+            var resources = await client.ListResourcesAsync(cancellationToken: ct);
+            var filesystemResources = resources
+                .Where(r => r.Uri.StartsWith(ResourcePrefix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (filesystemResources.Count == 0)
             {
-                var resources = await client.ListResourcesAsync(cancellationToken: ct);
-                var filesystemResources = resources
-                    .Where(r => r.Uri.StartsWith(ResourcePrefix, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                continue;
+            }
 
-                if (filesystemResources.Count == 0)
-                {
-                    continue;
-                }
-
-                foreach (var resource in filesystemResources)
+            foreach (var resource in filesystemResources)
+            {
+                try
                 {
                     var content = await client.ReadResourceAsync(resource.Uri, cancellationToken: ct);
                     var text = string.Join("", content.Contents
@@ -54,10 +54,10 @@ internal static class McpFileSystemDiscovery
                     logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",
                         metadata.Name, metadata.MountPoint);
                 }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to discover filesystem resources from MCP client");
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to read filesystem resource at {Uri}", resource.Uri);
+                }
             }
         }
     }

@@ -33,6 +33,7 @@ public static class ConfigModule
 
         services
             .AddMemoryCache()
+            .AddSingleton(settings)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton(subscriptionTracker)
