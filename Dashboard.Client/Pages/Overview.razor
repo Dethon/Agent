@@ -127,7 +127,7 @@
         items.AddRange(Schedules.State.Events.Select(e =>
             new ActivityItem(e.Success ? "schedule" : "error", "Schedule", $"{e.ScheduleId}{(e.Success ? "" : " FAILED")}", e.Timestamp)));
 
-        _recentActivity = items.OrderByDescending(i => i.Timestamp).ToList();
+        _recentActivity = items.OrderByDescending(i => i.Timestamp).Take(500).ToList();
     }
 
     private static string FormatTime(DateTimeOffset ts) => ts.ToString("dd/MM HH:mm:ss");

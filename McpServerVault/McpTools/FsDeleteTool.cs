@@ -14,7 +14,7 @@ public class FsDeleteTool(
     LibraryPathConfig libraryPath) : RemoveTool(client, libraryPath)
 {
     [McpServerTool(Name = "fs_delete")]
-    [Description("Delete a file or directory (move to trash)")]
+    [Description(Description)]
     public async Task<CallToolResult> McpRun(
         string filesystem,
         string path,

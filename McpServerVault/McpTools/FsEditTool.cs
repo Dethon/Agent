@@ -12,7 +12,7 @@ public class FsEditTool(McpSettings settings)
     : TextEditTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = "fs_edit")]
-    [Description("Edit file via exact string replacement")]
+    [Description(Description)]
     public CallToolResult McpRun(
         string filesystem,
         string path,

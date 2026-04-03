@@ -14,7 +14,7 @@ public class FsGlobTool(
     LibraryPathConfig libraryPath) : GlobFilesTool(client, libraryPath)
 {
     [McpServerTool(Name = "fs_glob")]
-    [Description("Search for files or directories matching a glob pattern")]
+    [Description(Description)]
     public async Task<CallToolResult> McpRun(
         string filesystem,
         string pattern,

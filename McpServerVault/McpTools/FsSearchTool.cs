@@ -12,7 +12,7 @@ public class FsSearchTool(McpSettings settings)
     : TextSearchTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = "fs_search")]
-    [Description("Search file contents with text or regex")]
+    [Description(Description)]
     public CallToolResult McpRun(
         string filesystem,
         string query,

@@ -12,7 +12,7 @@ public class FsReadTool(McpSettings settings)
     : TextReadTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = "fs_read")]
-    [Description("Read file content with optional pagination")]
+    [Description(Description)]
     public CallToolResult McpRun(
         string filesystem,
         string path,

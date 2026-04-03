@@ -14,7 +14,7 @@ public class FsMoveTool(
     LibraryPathConfig libraryPath) : MoveTool(client, libraryPath)
 {
     [McpServerTool(Name = "fs_move")]
-    [Description("Move or rename a file or directory")]
+    [Description(Description)]
     public async Task<CallToolResult> McpRun(
         string filesystem,
         string sourcePath,

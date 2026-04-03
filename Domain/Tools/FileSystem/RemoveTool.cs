@@ -10,7 +10,7 @@ public class RemoveTool(IVirtualFileSystemRegistry registry)
     public const string Name = "remove";
 
     public const string ToolDescription = """
-        Removes a file or directory by moving it to a trash folder.
+        Removes a file or directory.
         """;
 
     [Description(ToolDescription)]

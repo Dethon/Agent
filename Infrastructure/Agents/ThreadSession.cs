@@ -107,8 +107,8 @@ internal sealed class ThreadSessionBuilder(
             if (filesystemEnabledTools is { Count: 0 })
             {
                 var mountNames = string.Join(", ", fsRegistry.GetMounts().Select(m => m.Name));
-                fsLogger.LogWarning(
-                    "MCP servers expose filesystem resources ({Mounts}) but the 'filesystem' feature is not enabled. " +
+                fsLogger.LogDebug(
+                    "MCP servers expose filesystem resources ({Mounts}) but the 'filesystem' feature is not enabled for this agent. " +
                     "Add 'filesystem' to enabledFeatures to use virtual filesystem tools",
                     mountNames);
             }

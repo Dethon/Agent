@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
-namespace Infrastructure.Agents;
+namespace Infrastructure.Agents.Mcp;
 
 internal static class McpFileSystemDiscovery
 {

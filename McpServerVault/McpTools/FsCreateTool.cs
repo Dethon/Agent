@@ -12,7 +12,7 @@ public class FsCreateTool(McpSettings settings)
     : TextCreateTool(settings.VaultPath, settings.AllowedExtensions)
 {
     [McpServerTool(Name = "fs_create")]
-    [Description("Create a new file")]
+    [Description(Description)]
     public CallToolResult McpRun(
         string filesystem,
         string path,
