@@ -50,7 +50,10 @@
             {
                 <div class="activity-item">
                     <span class="activity-badge @item.Type">@item.TypeLabel</span>
-                    <span class="activity-text">@item.Description</span>
+                    <span class="activity-text tooltip-anchor" tabindex="0">
+                        @item.Description
+                        <span class="tooltip-popup">@item.Description</span>
+                    </span>
                     <span class="activity-time">@FormatTime(item.Timestamp)</span>
                 </div>
             }
@@ -151,7 +154,11 @@
     .activity-badge.tool { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
     .activity-badge.error { background: rgba(248,113,113,0.15); color: var(--accent-red); }
     .activity-badge.schedule { background: rgba(167,139,250,0.15); color: var(--accent-purple); }
-    .activity-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .activity-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+    .tooltip-anchor { position: relative; }
+    .tooltip-popup { display: none; position: absolute; top: 100%; right: 0; margin-top: 6px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
+    .tooltip-anchor:hover .tooltip-popup, .tooltip-anchor:active .tooltip-popup, .tooltip-anchor:focus .tooltip-popup, .tooltip-anchor:focus-within .tooltip-popup { display: block; }
+    .tooltip-anchor:focus { outline: none; }
     .activity-time { color: var(--text-secondary); font-size: 0.75rem; white-space: nowrap; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; }
 
