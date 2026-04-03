@@ -10,8 +10,8 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
-    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
+public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, RedisFixture redisFixture)
+    : IClassFixture<McpVaultServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentTests>()
@@ -48,7 +48,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("ApprovalTestMovies");
+        mcpFixture.CreateFile("ApprovalTestMovies/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
@@ -63,7 +63,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
-        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("fs_glob");
+        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("glob");
 
         await agent.DisposeAsync();
     }
@@ -78,7 +78,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("ApprovalTestApproved");
+        mcpFixture.CreateFile("ApprovalTestApproved/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
@@ -108,11 +108,11 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:fs_glob"]);
+            whitelistPatterns: ["*:glob_files"]);
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("WhitelistTestMovies");
+        mcpFixture.CreateFile("WhitelistTestMovies/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
@@ -142,17 +142,16 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistPatterns: ["*:fs_glob"]);
+            whitelistPatterns: ["*:glob_files"]);
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("MixedTestSource");
-        mcpFixture.CreateLibraryStructure("MixedTestDest");
-        mcpFixture.CreateLibraryFile(Path.Combine("MixedTestSource", "test-file.mkv"), "content");
+        mcpFixture.CreateFile(Path.Combine("MixedTestSource", "test-file.mkv"), "content");
+        mcpFixture.CreateFile("MixedTestDest/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
-        var sourcePath = Path.Combine(mcpFixture.LibraryPath, "MixedTestSource", "test-file.mkv");
-        var destPath = Path.Combine(mcpFixture.LibraryPath, "MixedTestDest", "test-file.mkv");
+        var sourcePath = Path.Combine(mcpFixture.VaultPath, "MixedTestSource", "test-file.mkv");
+        var destPath = Path.Combine(mcpFixture.VaultPath, "MixedTestDest", "test-file.mkv");
 
         // Act
         var responses = await agent.RunStreamingAsync(
@@ -168,7 +167,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvedToolNames = approvingHandler.RequestedApprovals
             .SelectMany(r => r.Select(t => t.ToolName))
             .ToList();
-        approvedToolNames.ShouldNotContain(n => n.Contains("fs_glob"), "Whitelisted tool should not be in approval requests");
+        approvedToolNames.ShouldNotContain(n => n.Contains("glob_files"), "Whitelisted tool should not be in approval requests");
 
         await agent.DisposeAsync();
     }

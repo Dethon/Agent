@@ -15,7 +15,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         .AddUserSecrets<McpAgentFileSystemTests>()
         .Build();
 
-    private static readonly HashSet<string> AllFileSystemTools =
+    private static readonly HashSet<string> _allFileSystemTools =
         ["read", "create", "edit", "glob", "search", "move", "remove"];
 
     private static OpenRouterChatClient CreateLlmClient()
@@ -37,7 +37,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
             "",
             stateStore,
             "test-user",
-            filesystemEnabledTools: enabledTools ?? AllFileSystemTools);
+            filesystemEnabledTools: enabledTools ?? _allFileSystemTools);
     }
 
     [SkippableFact]

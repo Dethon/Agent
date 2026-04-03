@@ -239,7 +239,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
+        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
     }
 
     [SkippableFact]

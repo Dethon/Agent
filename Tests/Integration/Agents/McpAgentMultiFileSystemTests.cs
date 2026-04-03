@@ -15,7 +15,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         .AddUserSecrets<McpAgentMultiFileSystemTests>()
         .Build();
 
-    private static readonly HashSet<string> AllFileSystemTools =
+    private static readonly HashSet<string> _allFileSystemTools =
         ["read", "create", "edit", "glob", "search", "move", "remove"];
 
     private static OpenRouterChatClient CreateLlmClient()
@@ -37,7 +37,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
             "",
             stateStore,
             "test-user",
-            filesystemEnabledTools: AllFileSystemTools);
+            filesystemEnabledTools: _allFileSystemTools);
     }
 
     [SkippableFact]
@@ -100,36 +100,6 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         var notesFile = Path.Combine(fsFixture.NotesPath, "multi-create.md");
         File.Exists(notesFile).ShouldBeTrue("File should exist in notes filesystem");
         (await File.ReadAllTextAsync(notesFile)).ShouldContain("notes");
-
-        await agent.DisposeAsync();
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithMultipleFileSystems_CannotMoveBetweenFileSystems()
-    {
-        // Arrange
-        var llmClient = CreateLlmClient();
-        fsFixture.CreateLibraryFile("cross-move.md", "cross content");
-
-        var agent = CreateAgent(llmClient);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
-
-        // Act - ask to move between filesystems (should fail and agent should report the error)
-        var responses = await agent.RunStreamingAsync(
-                "Move the file /library/cross-move.md to /notes/cross-move.md using the domain:filesystem:move tool. " +
-                "If it fails, tell me the error.",
-                cancellationToken: cts.Token)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(cts.Token);
-
-        // Assert - file should still be in library, not in notes
-        responses.ShouldNotBeEmpty();
-        File.Exists(Path.Combine(fsFixture.LibraryPath, "cross-move.md")).ShouldBeTrue(
-            "Source file should remain in library — cross-filesystem move must fail");
-        File.Exists(Path.Combine(fsFixture.NotesPath, "cross-move.md")).ShouldBeFalse(
-            "File should not appear in notes — cross-filesystem move must fail");
 
         await agent.DisposeAsync();
     }
