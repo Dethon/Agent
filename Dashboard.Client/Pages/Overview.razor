@@ -51,7 +51,7 @@
                 <div class="activity-item">
                     <span class="activity-badge @item.Type">@item.TypeLabel</span>
                     <span class="activity-text">@item.Description</span>
-                    <span class="activity-time">@item.Time</span>
+                    <span class="activity-time">@FormatTime(item.Timestamp)</span>
                 </div>
             }
             @if (!_recentActivity.Any())
@@ -112,26 +112,26 @@
     {
         var items = new List<ActivityItem>();
 
-        items.AddRange(Tokens.State.Events.TakeLast(10).Select(e =>
-            new ActivityItem("token", "Token", $"{e.Sender} used {e.InputTokens + e.OutputTokens:N0} tokens ({e.Model})", FormatTime(e.Timestamp))));
+        items.AddRange(Tokens.State.Events.Select(e =>
+            new ActivityItem("token", "Token", $"{e.Sender} used {e.InputTokens + e.OutputTokens:N0} tokens ({e.Model})", e.Timestamp)));
 
-        items.AddRange(Tools.State.Events.TakeLast(10).Select(e =>
-            new ActivityItem(e.Success ? "tool" : "error", "Tool", $"{e.ToolName} — {e.DurationMs}ms{(e.Success ? "" : " FAILED")}", FormatTime(e.Timestamp))));
+        items.AddRange(Tools.State.Events.Select(e =>
+            new ActivityItem(e.Success ? "tool" : "error", "Tool", $"{e.ToolName} — {e.DurationMs}ms{(e.Success ? "" : " FAILED")}", e.Timestamp)));
 
-        items.AddRange(Errors.State.Events.TakeLast(10).Select(e =>
-            new ActivityItem("error", "Error", $"[{e.Service}] {e.ErrorType}: {e.Message}", FormatTime(e.Timestamp))));
+        items.AddRange(Errors.State.Events.Select(e =>
+            new ActivityItem("error", "Error", $"[{e.Service}] {e.ErrorType}: {e.Message}", e.Timestamp)));
 
-        items.AddRange(Schedules.State.Events.TakeLast(10).Select(e =>
-            new ActivityItem(e.Success ? "schedule" : "error", "Schedule", $"{e.ScheduleId}{(e.Success ? "" : " FAILED")}", FormatTime(e.Timestamp))));
+        items.AddRange(Schedules.State.Events.Select(e =>
+            new ActivityItem(e.Success ? "schedule" : "error", "Schedule", $"{e.ScheduleId}{(e.Success ? "" : " FAILED")}", e.Timestamp)));
 
-        _recentActivity = items.OrderByDescending(i => i.Time).Take(10).ToList();
+        _recentActivity = items.OrderByDescending(i => i.Timestamp).ToList();
     }
 
     private static string FormatTime(DateTimeOffset ts) => ts.ToString("dd/MM HH:mm:ss");
 
     public void Dispose() => _subscriptions.ForEach(s => s.Dispose());
 
-    private record ActivityItem(string Type, string TypeLabel, string Description, string Time);
+    private record ActivityItem(string Type, string TypeLabel, string Description, DateTimeOffset Timestamp);
 }
 
 <style>
