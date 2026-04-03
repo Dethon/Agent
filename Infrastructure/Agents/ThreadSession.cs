@@ -77,6 +77,11 @@ internal sealed class ThreadSessionBuilder(
     IReadOnlySet<string>? filesystemEnabledTools,
     ILoggerFactory? loggerFactory)
 {
+    private static readonly HashSet<string> _fileSystemMcpToolNames =
+    [
+        "fs_read", "fs_create", "fs_edit", "fs_glob", "fs_search", "fs_move", "fs_delete"
+    ];
+
     private IReadOnlyList<AITool> _tools = [];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct, bool enableResourceSubscriptions = true)
@@ -118,7 +123,12 @@ internal sealed class ThreadSessionBuilder(
         }
 
         // Step 4: Combine MCP tools with domain tools and filesystem tools
-        _tools = clientManager.Tools.Concat(domainTools).Concat(fileSystemTools).ToList();
+        // When filesystem domain tools are active, filter out the raw MCP fs_* tools
+        // they wrap to avoid exposing duplicate functionality to the LLM
+        var mcpTools = fileSystemTools.Count > 0
+            ? clientManager.Tools.Where(t => !_fileSystemMcpToolNames.Any(n => t.Name.EndsWith($":{n}")))
+            : clientManager.Tools;
+        _tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
         // Step 5: Setup resource management with user context prepended (skipped for subagents)
         McpResourceManager? resourceManager = enableResourceSubscriptions
