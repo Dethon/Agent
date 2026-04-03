@@ -52,7 +52,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Read the file at /library/read-test.md using the domain:filesystem:text_read tool and tell me its content.",
+                "Read the file at /vault/read-test.md using the domain:filesystem:text_read tool and tell me its content.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -77,7 +77,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Create a file at /library/created-by-agent.md with content '# Created\nHello from agent' using the domain:filesystem:text_create tool.",
+                "Create a file at /vault/created-by-agent.md with content '# Created\nHello from agent' using the domain:filesystem:text_create tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -106,7 +106,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Edit the file at /library/edit-test.md: replace 'World' with 'Agent' using the domain:filesystem:text_edit tool.",
+                "Edit the file at /vault/edit-test.md: replace 'World' with 'Agent' using the domain:filesystem:text_edit tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -136,7 +136,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "List all .md files under /library/glob-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
+                "List all .md files under /vault/glob-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -169,7 +169,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Search for the text 'quick brown fox' in /library/search-test/ using the domain:filesystem:text_search tool.",
+                "Search for the text 'quick brown fox' in /vault/search-test/ using the domain:filesystem:text_search tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -197,7 +197,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Move the file /library/move-src/moveme.md to /library/move-dst/moveme.md using the domain:filesystem:move tool.",
+                "Move the file /vault/move-src/moveme.md to /vault/move-dst/moveme.md using the domain:filesystem:move tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -224,7 +224,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Delete the file at /library/remove-me.md using the domain:filesystem:remove tool.",
+                "Delete the file at /vault/remove-me.md using the domain:filesystem:remove tool.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -260,8 +260,8 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
         // Assert
         responses.ShouldNotBeEmpty();
         var combinedResponse = string.Join(" ", responses.Select(r => r.Content)).ToLowerInvariant();
-        (combinedResponse.Contains("/library") || combinedResponse.Contains("library"))
-            .ShouldBeTrue("Agent should mention the library filesystem in its response");
+        (combinedResponse.Contains("/vault") || combinedResponse.Contains("vault"))
+            .ShouldBeTrue("Agent should mention the vault filesystem in its response");
 
         await agent.DisposeAsync();
     }
@@ -279,7 +279,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act - use glob (an enabled tool) to find files
         var responses = await agent.RunStreamingAsync(
-                "Find all .md files under /library/subset-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
+                "Find all .md files under /vault/subset-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

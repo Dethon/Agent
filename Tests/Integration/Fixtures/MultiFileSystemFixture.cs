@@ -6,7 +6,6 @@ using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
-using McpServerVault.McpResources;
 using McpServerVault.McpTools;
 using McpServerVault.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -38,7 +37,7 @@ public class MultiFileSystemFixture : IAsyncLifetime
         var notesPort = GetAvailablePort();
 
         _libraryHost = BuildVaultHost(libraryPort, LibraryPath, builder => builder
-            .WithResources<FileSystemResource>());
+            .WithResources<LibraryFileSystemResource>());
 
         _notesHost = BuildVaultHost(notesPort, NotesPath, builder => builder
             .WithResources<NotesFileSystemResource>());
@@ -148,6 +147,25 @@ public class MultiFileSystemFixture : IAsyncLifetime
         {
             // Ignore cleanup errors
         }
+    }
+}
+
+[McpServerResourceType]
+public class LibraryFileSystemResource(McpSettings settings)
+{
+    [McpServerResource(
+        UriTemplate = "filesystem://library",
+        Name = "Library Filesystem",
+        MimeType = "application/json")]
+    [Description("Personal document library filesystem")]
+    public string GetLibraryInfo()
+    {
+        return JsonSerializer.Serialize(new
+        {
+            name = "library",
+            mountPoint = "/library",
+            description = $"Personal document library ({settings.VaultPath})"
+        });
     }
 }
 

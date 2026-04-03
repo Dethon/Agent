@@ -38,7 +38,7 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
         resources.ShouldNotBeEmpty();
         var fsResource = resources.FirstOrDefault(r => r.Uri.StartsWith("filesystem://"));
         fsResource.ShouldNotBeNull();
-        fsResource.Uri.ShouldBe("filesystem://library");
+        fsResource.Uri.ShouldBe("filesystem://vault");
 
         await client.DisposeAsync();
     }
@@ -53,13 +53,13 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
             }),
             cancellationToken: CancellationToken.None);
 
-        var content = await client.ReadResourceAsync("filesystem://library");
+        var content = await client.ReadResourceAsync("filesystem://vault");
         var text = string.Join("", content.Contents
             .OfType<TextResourceContents>()
             .Select(c => c.Text));
 
-        text.ShouldContain("\"name\":\"library\"");
-        text.ShouldContain("\"mountPoint\":\"/library\"");
+        text.ShouldContain("\"name\":\"vault\"");
+        text.ShouldContain("\"mountPoint\":\"/vault\"");
 
         await client.DisposeAsync();
     }
@@ -104,7 +104,7 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
             "fs_read",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "library",
+                ["filesystem"] = "vault",
                 ["path"] = "test-read.md"
             },
             cancellationToken: CancellationToken.None);
