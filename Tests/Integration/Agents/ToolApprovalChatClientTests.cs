@@ -108,7 +108,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:glob_files"]);
+            whitelistPatterns: ["*:fs_glob"]);
 
         var agent = CreateAgent(approvalClient);
 
@@ -142,7 +142,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistPatterns: ["*:glob_files"]);
+            whitelistPatterns: ["*:fs_glob"]);
 
         var agent = CreateAgent(approvalClient);
 
@@ -167,7 +167,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvedToolNames = approvingHandler.RequestedApprovals
             .SelectMany(r => r.Select(t => t.ToolName))
             .ToList();
-        approvedToolNames.ShouldNotContain(n => n.Contains("glob_files"), "Whitelisted tool should not be in approval requests");
+        approvedToolNames.ShouldNotContain(n => n.Contains("fs_glob"), "Whitelisted tool should not be in approval requests");
 
         await agent.DisposeAsync();
     }
