@@ -98,6 +98,10 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         {
             result = await client.CallToolAsync(toolName, args, cancellationToken: ct);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
