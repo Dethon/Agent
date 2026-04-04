@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class MoveTool(IVirtualFileSystemRegistry registry)
+public class VfsMoveTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "move";
     public const string Name = "move";

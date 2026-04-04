@@ -16,13 +16,13 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     {
         var tools = new (string Key, Func<AIFunction> Factory)[]
         {
-            (TextReadTool.Key, () => AIFunctionFactory.Create(new TextReadTool(registry).RunAsync, name: $"domain:{Feature}:{TextReadTool.Name}")),
-            (TextCreateTool.Key, () => AIFunctionFactory.Create(new TextCreateTool(registry).RunAsync, name: $"domain:{Feature}:{TextCreateTool.Name}")),
-            (TextEditTool.Key, () => AIFunctionFactory.Create(new TextEditTool(registry).RunAsync, name: $"domain:{Feature}:{TextEditTool.Name}")),
-            (GlobFilesTool.Key, () => AIFunctionFactory.Create(new GlobFilesTool(registry).RunAsync, name: $"domain:{Feature}:{GlobFilesTool.Name}")),
-            (TextSearchTool.Key, () => AIFunctionFactory.Create(new TextSearchTool(registry).RunAsync, name: $"domain:{Feature}:{TextSearchTool.Name}")),
-            (MoveTool.Key, () => AIFunctionFactory.Create(new MoveTool(registry).RunAsync, name: $"domain:{Feature}:{MoveTool.Name}")),
-            (RemoveTool.Key, () => AIFunctionFactory.Create(new RemoveTool(registry).RunAsync, name: $"domain:{Feature}:{RemoveTool.Name}")),
+            (VfsTextReadTool.Key, () => AIFunctionFactory.Create(new VfsTextReadTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextReadTool.Name}")),
+            (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(new VfsTextCreateTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextCreateTool.Name}")),
+            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(new VfsTextEditTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextEditTool.Name}")),
+            (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(new VfsGlobFilesTool(registry).RunAsync, name: $"domain:{Feature}:{VfsGlobFilesTool.Name}")),
+            (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextSearchTool.Name}")),
+            (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsMoveTool.Name}")),
+            (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsRemoveTool.Name}")),
         };
 
         return tools

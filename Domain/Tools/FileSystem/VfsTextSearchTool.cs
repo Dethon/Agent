@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class TextSearchTool(IVirtualFileSystemRegistry registry)
+public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "search";
     public const string Name = "text_search";

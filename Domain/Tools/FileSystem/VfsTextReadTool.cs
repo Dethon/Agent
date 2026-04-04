@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class TextReadTool(IVirtualFileSystemRegistry registry)
+public class VfsTextReadTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "read";
     public const string Name = "text_read";

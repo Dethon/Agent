@@ -10,11 +10,11 @@ public class GlobFilesToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly GlobFilesTool _tool;
+    private readonly VfsGlobFilesTool _tool;
 
     public GlobFilesToolTests()
     {
-        _tool = new GlobFilesTool(_registry.Object);
+        _tool = new VfsGlobFilesTool(_registry.Object);
     }
 
     [Fact]

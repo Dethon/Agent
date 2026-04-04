@@ -10,11 +10,11 @@ public class TextEditToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly TextEditTool _tool;
+    private readonly VfsTextEditTool _tool;
 
     public TextEditToolTests()
     {
-        _tool = new TextEditTool(_registry.Object);
+        _tool = new VfsTextEditTool(_registry.Object);
     }
 
     [Fact]

@@ -10,11 +10,11 @@ public class RemoveToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly RemoveTool _tool;
+    private readonly VfsRemoveTool _tool;
 
     public RemoveToolTests()
     {
-        _tool = new RemoveTool(_registry.Object);
+        _tool = new VfsRemoveTool(_registry.Object);
     }
 
     [Fact]

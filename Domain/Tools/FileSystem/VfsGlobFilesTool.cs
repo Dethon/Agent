@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class GlobFilesTool(IVirtualFileSystemRegistry registry)
+public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "glob";
     public const string Name = "glob_files";

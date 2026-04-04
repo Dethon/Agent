@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class TextCreateTool(IVirtualFileSystemRegistry registry)
+public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "create";
     public const string Name = "text_create";

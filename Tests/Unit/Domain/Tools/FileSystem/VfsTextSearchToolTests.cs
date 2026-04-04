@@ -10,11 +10,11 @@ public class TextSearchToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly TextSearchTool _tool;
+    private readonly VfsTextSearchTool _tool;
 
     public TextSearchToolTests()
     {
-        _tool = new TextSearchTool(_registry.Object);
+        _tool = new VfsTextSearchTool(_registry.Object);
     }
 
     [Fact]

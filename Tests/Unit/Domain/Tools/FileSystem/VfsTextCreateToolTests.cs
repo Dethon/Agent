@@ -10,11 +10,11 @@ public class TextCreateToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly TextCreateTool _tool;
+    private readonly VfsTextCreateTool _tool;
 
     public TextCreateToolTests()
     {
-        _tool = new TextCreateTool(_registry.Object);
+        _tool = new VfsTextCreateTool(_registry.Object);
     }
 
     [Fact]

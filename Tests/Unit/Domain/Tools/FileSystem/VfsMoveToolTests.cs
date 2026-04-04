@@ -10,11 +10,11 @@ public class MoveToolTests
 {
     private readonly Mock<IVirtualFileSystemRegistry> _registry = new();
     private readonly Mock<IFileSystemBackend> _backend = new();
-    private readonly MoveTool _tool;
+    private readonly VfsMoveTool _tool;
 
     public MoveToolTests()
     {
-        _tool = new MoveTool(_registry.Object);
+        _tool = new VfsMoveTool(_registry.Object);
     }
 
     [Fact]

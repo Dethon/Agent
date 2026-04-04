@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class TextEditTool(IVirtualFileSystemRegistry registry)
+public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "edit";
     public const string Name = "text_edit";

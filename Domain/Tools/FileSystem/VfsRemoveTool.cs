@@ -4,7 +4,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.FileSystem;
 
-public class RemoveTool(IVirtualFileSystemRegistry registry)
+public class VfsRemoveTool(IVirtualFileSystemRegistry registry)
 {
     public const string Key = "remove";
     public const string Name = "remove";
