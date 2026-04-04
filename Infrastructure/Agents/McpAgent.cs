@@ -9,6 +9,7 @@ using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
@@ -19,6 +20,8 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
     private readonly string[] _endpoints;
+    private readonly IReadOnlySet<string> _filesystemEnabledTools;
+    private readonly ILoggerFactory? _loggerFactory;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
     private readonly string _userId;
@@ -41,9 +44,13 @@ public sealed class McpAgent : DisposableAgent
         string? customInstructions = null,
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
-        bool enableResourceSubscriptions = true)
+        bool enableResourceSubscriptions = true,
+        IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
+        ILoggerFactory? loggerFactory = null)
     {
         _endpoints = endpoints;
+        _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
+        _loggerFactory = loggerFactory;
         _name = name;
         _description = description;
         _userId = userId;
@@ -215,6 +222,7 @@ public sealed class McpAgent : DisposableAgent
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
         var prompts = _domainPrompts
+            .Concat(session.FileSystemPrompts)
             .Concat(session.ClientManager.Prompts)
             .Prepend(BasePrompt.Instructions);
 
@@ -242,7 +250,8 @@ public sealed class McpAgent : DisposableAgent
 
             var newSession = await ThreadSession
                 .CreateAsync(_endpoints, _name, _userId, _description, _innerAgent,
-                             thread, _domainTools, ct, _enableResourceSubscriptions);
+                             thread, _domainTools, _filesystemEnabledTools, _loggerFactory,
+                             ct, _enableResourceSubscriptions);
             _threadSessions[thread] = newSession;
             return newSession;
         }, ct);

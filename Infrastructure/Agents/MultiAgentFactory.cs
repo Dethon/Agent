@@ -1,10 +1,12 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
@@ -13,7 +15,8 @@ public sealed class MultiAgentFactory(
     IAgentDefinitionProvider definitionProvider,
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
-    IMetricsPublisher? metricsPublisher = null) : IAgentFactory, IScheduleAgentFactory
+    IMetricsPublisher? metricsPublisher = null,
+    ILoggerFactory? loggerFactory = null) : IAgentFactory, IScheduleAgentFactory
 {
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
@@ -62,6 +65,8 @@ public sealed class MultiAgentFactory(
             .GetPromptsForFeatures(enabledFeatures)
             .ToList();
 
+        var filesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures);
+
         return new McpAgent(
             definition.McpServerEndpoints,
             effectiveClient,
@@ -72,7 +77,9 @@ public sealed class MultiAgentFactory(
             definition.CustomInstructions,
             domainTools,
             domainPrompts,
-            enableResourceSubscriptions: false);
+            enableResourceSubscriptions: false,
+            filesystemEnabledTools: filesystemEnabledTools,
+            loggerFactory: loggerFactory);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -95,6 +102,8 @@ public sealed class MultiAgentFactory(
             .GetPromptsForFeatures(definition.EnabledFeatures)
             .ToList();
 
+        var filesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures);
+
         return new McpAgent(
             definition.McpServerEndpoints,
             effectiveClient,
@@ -104,7 +113,32 @@ public sealed class MultiAgentFactory(
             userId,
             definition.CustomInstructions,
             domainTools,
-            domainPrompts);
+            domainPrompts,
+            filesystemEnabledTools: filesystemEnabledTools,
+            loggerFactory: loggerFactory);
+    }
+
+    private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
+    {
+        var fsParts = enabledFeatures
+            .Select(f => f.Split('.', 2))
+            .Where(p => p[0].Equals("filesystem", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (fsParts.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        if (fsParts.Any(p => p.Length == 1))
+        {
+            return FileSystemToolFeature.AllToolKeys;
+        }
+
+        return fsParts
+            .Where(p => p.Length == 2)
+            .Select(p => p[1])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)

@@ -38,9 +38,9 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         toolNames.ShouldContain("GetDownloadStatus");
         toolNames.ShouldContain("CleanupDownload");
 
-        // Library organization tools
-        toolNames.ShouldContain("GlobFiles");
-        toolNames.ShouldContain("Move");
+        // Filesystem backend tools
+        toolNames.ShouldContain("fs_glob");
+        toolNames.ShouldContain("fs_move");
 
         await client.DisposeAsync();
     }
@@ -229,11 +229,13 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "GlobFiles",
+            "fs_glob",
             new Dictionary<string, object?>
             {
-                ["pattern"] = "GlobTest/**/*.mkv",
-                ["mode"] = "Files"
+                ["filesystem"] = "media",
+                ["pattern"] = "**/*.mkv",
+                ["mode"] = "files",
+                ["basePath"] = "GlobTest"
             },
             cancellationToken: CancellationToken.None);
 
@@ -263,11 +265,13 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "GlobFiles",
+            "fs_glob",
             new Dictionary<string, object?>
             {
-                ["pattern"] = "GlobDeep/**/*.txt",
-                ["mode"] = "Files"
+                ["filesystem"] = "media",
+                ["pattern"] = "**/*.txt",
+                ["mode"] = "files",
+                ["basePath"] = "GlobDeep"
             },
             cancellationToken: CancellationToken.None);
 
@@ -305,9 +309,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "Move",
+            "fs_move",
             new Dictionary<string, object?>
             {
+                ["filesystem"] = "media",
                 ["sourcePath"] = sourcePath,
                 ["destinationPath"] = destPath
             },
@@ -340,9 +345,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "Move",
+            "fs_move",
             new Dictionary<string, object?>
             {
+                ["filesystem"] = "media",
                 ["sourcePath"] = sourcePath,
                 ["destinationPath"] = destPath
             },

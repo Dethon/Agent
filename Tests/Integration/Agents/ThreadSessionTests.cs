@@ -42,6 +42,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Assert - session and managers initialized
@@ -85,6 +87,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Assert - The session should have synced resources
@@ -114,6 +118,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Subscribe to resources
@@ -149,6 +155,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         var clientCount = session.ClientManager.Clients.Count;
@@ -177,6 +185,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Assert
@@ -203,6 +213,8 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Assert

@@ -33,7 +33,7 @@ check "base-sdk contains Domain.dll" "$rc"
 # Step 3: Build each leaf service
 SERVICES=(
     "Agent/Dockerfile:agent:Agent.dll"
-    "McpServerText/Dockerfile:mcp-text:McpServerText.dll"
+    "McpServerVault/Dockerfile:mcp-vault:McpServerVault.dll"
     "McpServerLibrary/Dockerfile:mcp-library:McpServerLibrary.dll"
     "McpServerMemory/Dockerfile:mcp-memory:McpServerMemory.dll"
     "McpServerIdealista/Dockerfile:mcp-idealista:McpServerIdealista.dll"

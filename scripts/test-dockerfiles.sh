@@ -28,7 +28,7 @@ check_inverse() {
 
 STANDARD_DOCKERFILES=(
     "Agent/Dockerfile"
-    "McpServerText/Dockerfile"
+    "McpServerVault/Dockerfile"
     "McpServerLibrary/Dockerfile"
     "McpServerMemory/Dockerfile"
     "McpServerIdealista/Dockerfile"
@@ -70,7 +70,7 @@ echo "=== Adversarial Checks: Preserved Properties ==="
 # Derive the expected DLL name from the directory portion of each Dockerfile path
 declare -A EXPECTED_DLLS=(
     ["Agent/Dockerfile"]="Agent.dll"
-    ["McpServerText/Dockerfile"]="McpServerText.dll"
+    ["McpServerVault/Dockerfile"]="McpServerVault.dll"
     ["McpServerLibrary/Dockerfile"]="McpServerLibrary.dll"
     ["McpServerMemory/Dockerfile"]="McpServerMemory.dll"
     ["McpServerIdealista/Dockerfile"]="McpServerIdealista.dll"
@@ -228,7 +228,7 @@ echo ""
 echo "Checking no service Dockerfile uses raw dotnet/sdk..."
 ALL_SERVICE_DOCKERFILES=(
     "Agent/Dockerfile"
-    "McpServerText/Dockerfile"
+    "McpServerVault/Dockerfile"
     "McpServerLibrary/Dockerfile"
     "McpServerMemory/Dockerfile"
     "McpServerIdealista/Dockerfile"

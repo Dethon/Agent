@@ -33,6 +33,7 @@ public static class ConfigModule
 
         services
             .AddMemoryCache()
+            .AddSingleton(settings)
             .AddTransient<DownloadPathConfig>(_ => new DownloadPathConfig(settings.DownloadLocation))
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.BaseLibraryPath))
             .AddSingleton(subscriptionTracker)
@@ -83,13 +84,14 @@ public static class ConfigModule
             .WithTools<McpCleanupDownloadTool>()
             .WithTools<McpContentRecommendationTool>()
             .WithTools<McpResubscribeDownloadsTool>()
-            // Organize tools
-            .WithTools<McpGlobFilesTool>()
-            .WithTools<McpMoveTool>()
+            // Filesystem backend tools
+            .WithTools<FsGlobTool>()
+            .WithTools<FsMoveTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>()
             // Resources
             .WithResources<McpDownloadResource>()
+            .WithResources<FileSystemResource>()
             .WithSubscribeToResourcesHandler(SubscriptionHandlers.SubscribeToResource)
             .WithUnsubscribeFromResourcesHandler(SubscriptionHandlers.UnsubscribeToResource)
             .WithListResourcesHandler(SubscriptionHandlers.ListResources);

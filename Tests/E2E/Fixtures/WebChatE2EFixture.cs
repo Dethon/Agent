@@ -9,7 +9,7 @@ public class WebChatE2EFixture : E2EFixtureBase
 {
     private INetwork? _network;
     private IContainer? _redis;
-    private IContainer? _mcpText;
+    private IContainer? _mcpVault;
     private IContainer? _mcpChannelSignalR;
     private IContainer? _agent;
     private IContainer? _webui;
@@ -52,25 +52,25 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _redis.StartAsync(ct);
 
-        // 3. Build and start mcp-text
-        var mcpTextImageName = $"mcp-text-e2e-{Guid.NewGuid():N}";
-        var mcpTextImage = new ImageFromDockerfileBuilder()
+        // 3. Build and start mcp-vault
+        var mcpVaultImageName = $"mcp-vault-e2e-{Guid.NewGuid():N}";
+        var mcpVaultImage = new ImageFromDockerfileBuilder()
             .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("McpServerText/Dockerfile")
-            .WithName(mcpTextImageName)
+            .WithDockerfile("McpServerVault/Dockerfile")
+            .WithName(mcpVaultImageName)
             .WithDeleteIfExists(false)
             .WithCleanUp(false)
             .Build();
-        await mcpTextImage.CreateAsync(ct);
+        await mcpVaultImage.CreateAsync(ct);
 
-        _mcpText = new ContainerBuilder(mcpTextImage)
+        _mcpVault = new ContainerBuilder(mcpVaultImage)
             .WithNetwork(_network)
-            .WithNetworkAliases("mcp-text")
+            .WithNetworkAliases("mcp-vault")
             .WithEnvironment("VAULTPATH", "/vault")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
-        await _mcpText.StartAsync(ct);
+        await _mcpVault.StartAsync(ct);
 
         // 4. Build and start mcp-channel-signalr
         var signalRImageName = $"mcp-channel-signalr-e2e-{Guid.NewGuid():N}";
@@ -117,7 +117,7 @@ public class WebChatE2EFixture : E2EFixtureBase
                   "id": "test-agent",
                   "name": "Test Agent",
                   "model": "z-ai/glm-4.7-flash",
-                  "mcpServerEndpoints": [ "http://mcp-text:8080/mcp" ],
+                  "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
                   "whitelistPatterns": ["__none__"]
                 }
               ],
@@ -279,9 +279,9 @@ public class WebChatE2EFixture : E2EFixtureBase
             await _mcpChannelSignalR.DisposeAsync();
         }
 
-        if (_mcpText is not null)
+        if (_mcpVault is not null)
         {
-            await _mcpText.DisposeAsync();
+            await _mcpVault.DisposeAsync();
         }
 
         if (_redis is not null)

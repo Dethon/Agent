@@ -8,6 +8,8 @@ namespace McpServerLibrary.ResourceSubscriptions;
 
 public static class SubscriptionHandlers
 {
+    private const string DownloadPrefix = "download://";
+
     public static ValueTask<EmptyResult> SubscribeToResource(
         RequestContext<SubscribeRequestParams> context, CancellationToken cancellationToken)
     {
@@ -16,6 +18,11 @@ public static class SubscriptionHandlers
         if (context.Services is null || string.IsNullOrEmpty(uri))
         {
             throw new InvalidOperationException("Service injection fault or URI is not available.");
+        }
+
+        if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return ValueTask.FromResult(new EmptyResult());
         }
 
         var subscriptionTracker = context.Services.GetRequiredService<SubscriptionTracker>();
@@ -33,6 +40,13 @@ public static class SubscriptionHandlers
         {
             throw new InvalidOperationException("State manager or URI is not available.");
         }
+
+        if (!uri.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+
+            return ValueTask.FromResult(new EmptyResult());
+        }
+
 
         subscriptionTracker.Remove(sessionId, uri);
         return ValueTask.FromResult(new EmptyResult());
@@ -57,6 +71,16 @@ public static class SubscriptionHandlers
             Description = $"Status of download with ID {id}",
             MimeType = "text/plain"
         }).ToList();
+
+        // Include static resources registered via [McpServerResource] attributes
+        // — the custom handler overrides the default listing so these must be added manually
+        resources.Add(new Resource
+        {
+            Uri = "filesystem://media",
+            Name = "Media Filesystem",
+            Description = "Media library filesystem",
+            MimeType = "application/json"
+        });
 
         return ValueTask.FromResult(new ListResourcesResult { Resources = resources });
     }

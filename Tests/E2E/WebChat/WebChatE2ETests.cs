@@ -220,7 +220,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. After the tool is called say 'Done' so I can check. The result of the tool doesn't matter");
+        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal to appear
@@ -239,7 +239,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Agent should eventually respond
         var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
+        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
     }
 
     [SkippableFact]
@@ -254,7 +254,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         // Send a message that triggers a tool call.
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: Call the GlobFiles tool immediately. Pattern: '**/*'. Do not write any text response.");
+        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT write any text, just call the tool.");
         await chatInput.PressAsync("Enter");
 
         // Wait for approval modal

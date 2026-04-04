@@ -10,8 +10,8 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
-    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
+public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, RedisFixture redisFixture)
+    : IClassFixture<McpVaultServerFixture>, IClassFixture<RedisFixture>
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .AddUserSecrets<McpAgentTests>()
@@ -48,12 +48,12 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("ApprovalTestMovies");
+        mcpFixture.CreateFile("ApprovalTestMovies/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Find all files using the GlobFiles tool with pattern **/*.",
+                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -63,7 +63,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         // Assert - should terminate with rejection message
         responses.ShouldNotBeEmpty();
         rejectingHandler.RequestedApprovals.ShouldNotBeEmpty();
-        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("GlobFiles");
+        rejectingHandler.RequestedApprovals[0][0].ToolName.ShouldContain("glob");
 
         await agent.DisposeAsync();
     }
@@ -78,12 +78,12 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("ApprovalTestApproved");
+        mcpFixture.CreateFile("ApprovalTestApproved/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Find all files using the GlobFiles tool with pattern **/*.",
+                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -108,16 +108,16 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:GlobFiles"]);
+            whitelistPatterns: ["*:glob_files"]);
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("WhitelistTestMovies");
+        mcpFixture.CreateFile("WhitelistTestMovies/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Find all files using the GlobFiles tool with pattern **/*.",
+                "IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT respond with text, just call the tool immediately.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -142,21 +142,20 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistPatterns: ["*:GlobFiles"]);
+            whitelistPatterns: ["*:glob_files"]);
 
         var agent = CreateAgent(approvalClient);
 
-        mcpFixture.CreateLibraryStructure("MixedTestSource");
-        mcpFixture.CreateLibraryStructure("MixedTestDest");
-        mcpFixture.CreateLibraryFile(Path.Combine("MixedTestSource", "test-file.mkv"), "content");
+        mcpFixture.CreateFile(Path.Combine("MixedTestSource", "test-file.mkv"), "content");
+        mcpFixture.CreateFile("MixedTestDest/placeholder.txt");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
-        var sourcePath = Path.Combine(mcpFixture.LibraryPath, "MixedTestSource", "test-file.mkv");
-        var destPath = Path.Combine(mcpFixture.LibraryPath, "MixedTestDest", "test-file.mkv");
+        var sourcePath = Path.Combine(mcpFixture.VaultPath, "MixedTestSource", "test-file.mkv");
+        var destPath = Path.Combine(mcpFixture.VaultPath, "MixedTestDest", "test-file.mkv");
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                $"First find all files using GlobFiles with pattern **/*.mkv, then move '{sourcePath}' to '{destPath}'.",
+                $"First find all .mkv files using your glob tool with pattern **/*.mkv, then move '{sourcePath}' to '{destPath}'.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -168,7 +167,7 @@ public class ToolApprovalChatClientTests(McpLibraryServerFixture mcpFixture, Red
         var approvedToolNames = approvingHandler.RequestedApprovals
             .SelectMany(r => r.Select(t => t.ToolName))
             .ToList();
-        approvedToolNames.ShouldNotContain("GlobFiles", "Whitelisted tool should not be in approval requests");
+        approvedToolNames.ShouldNotContain(n => n.Contains("glob_files"), "Whitelisted tool should not be in approval requests");
 
         await agent.DisposeAsync();
     }

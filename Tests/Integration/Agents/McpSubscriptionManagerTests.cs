@@ -45,6 +45,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Act - Sync should have happened during creation
@@ -78,6 +80,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Act - Remove the download and sync
@@ -108,6 +112,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Act - Sync with no resources
@@ -140,6 +146,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Sync with no resources to complete channel
@@ -177,6 +185,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Act & Assert - Should not throw
@@ -205,6 +215,8 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
+            new HashSet<string>(),
+            null,
             cts.Token);
 
         // Act

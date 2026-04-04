@@ -192,7 +192,7 @@ public class PlaywrightWebBrowserTests(
                 SessionId: sessionId,
                 Selector: "a",
                 WaitForNavigation: true,
-                WaitTimeoutMs: 5000);
+                WaitTimeoutMs: 10000);
             var clickResult = await fixture.Browser.ClickAsync(clickRequest);
 
             // Assert

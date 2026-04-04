@@ -175,20 +175,20 @@ services:
       - jackett
       - base-sdk
 
-  mcp-text:
-    image: mcp-text:latest
+  mcp-vault:
+    image: mcp-vault:latest
     logging:
       options:
         max-size: "5m"
         max-file: "3"
-    container_name: mcp-text
+    container_name: mcp-vault
     ports:
       - "6002:8080"
     build:
       context: ${REPOSITORY_PATH}
-      dockerfile: McpServerText/Dockerfile
+      dockerfile: McpServerVault/Dockerfile
       cache_from:
-        - mcp-text:latest
+        - mcp-vault:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
@@ -369,7 +369,7 @@ services:
       - jackbot
     depends_on:
       - mcp-library
-      - mcp-text
+      - mcp-vault
       - mcp-websearch
       - mcp-idealista
       - mcp-channel-signalr

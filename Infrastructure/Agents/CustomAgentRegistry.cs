@@ -16,7 +16,9 @@ public class CustomAgentRegistry
     public bool Remove(string userId, string agentId)
     {
         if (!_agentsByUser.TryGetValue(userId, out var userAgents))
+        {
             return false;
+        }
 
         return userAgents.TryRemove(agentId, out _);
     }
