@@ -45,7 +45,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -80,7 +80,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -112,7 +112,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -146,7 +146,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -185,7 +185,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -215,7 +215,7 @@ public class McpSubscriptionManagerTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 

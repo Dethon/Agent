@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -117,7 +118,7 @@ public sealed class MultiAgentFactory(
             loggerFactory: loggerFactory);
     }
 
-    private static IReadOnlySet<string>? ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
+    private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
     {
         var fsParts = enabledFeatures
             .Select(f => f.Split('.', 2))
@@ -131,7 +132,7 @@ public sealed class MultiAgentFactory(
 
         if (fsParts.Any(p => p.Length == 1))
         {
-            return null;
+            return FileSystemToolFeature.AllToolKeys;
         }
 
         return fsParts

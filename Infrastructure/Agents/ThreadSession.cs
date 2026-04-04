@@ -39,7 +39,7 @@ internal sealed class ThreadSession : IAsyncDisposable
         ChatClientAgent agent,
         AgentSession thread,
         IReadOnlyList<AIFunction> domainTools,
-        IReadOnlySet<string>? filesystemEnabledTools,
+        IReadOnlySet<string> filesystemEnabledTools,
         ILoggerFactory? loggerFactory,
         CancellationToken ct,
         bool enableResourceSubscriptions = true)
@@ -74,7 +74,7 @@ internal sealed class ThreadSessionBuilder(
     AgentSession thread,
     string userId,
     IReadOnlyList<AIFunction> domainTools,
-    IReadOnlySet<string>? filesystemEnabledTools,
+    IReadOnlySet<string> filesystemEnabledTools,
     ILoggerFactory? loggerFactory)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames =
@@ -104,7 +104,7 @@ internal sealed class ThreadSessionBuilder(
 
         if (fsRegistry.GetMounts().Count > 0)
         {
-            if (filesystemEnabledTools is { Count: 0 })
+            if (filesystemEnabledTools.Count == 0)
             {
                 var mountNames = string.Join(", ", fsRegistry.GetMounts().Select(m => m.Name));
                 fsLogger.LogDebug(

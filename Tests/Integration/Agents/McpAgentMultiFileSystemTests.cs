@@ -1,4 +1,5 @@
 using Domain.Extensions;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
@@ -15,8 +16,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
         .AddUserSecrets<McpAgentMultiFileSystemTests>()
         .Build();
 
-    private static readonly HashSet<string> _allFileSystemTools =
-        ["read", "create", "edit", "glob", "search", "move", "remove"];
+    private static readonly IReadOnlySet<string> _allFileSystemTools = FileSystemToolFeature.AllToolKeys;
 
     private static OpenRouterChatClient CreateLlmClient()
     {

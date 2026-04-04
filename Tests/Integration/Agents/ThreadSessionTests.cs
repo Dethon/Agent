@@ -42,7 +42,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -87,7 +87,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -118,7 +118,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -155,7 +155,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -185,7 +185,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 
@@ -213,7 +213,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
             agent,
             thread,
             [],
-            null,
+            new HashSet<string>(),
             null,
             cts.Token);
 

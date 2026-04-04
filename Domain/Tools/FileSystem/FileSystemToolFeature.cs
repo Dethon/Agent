@@ -8,6 +8,12 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
 {
     private const string Feature = "filesystem";
 
+    public static readonly IReadOnlySet<string> AllToolKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        VfsTextReadTool.Key, VfsTextCreateTool.Key, VfsTextEditTool.Key,
+        VfsGlobFilesTool.Key, VfsTextSearchTool.Key, VfsMoveTool.Key, VfsRemoveTool.Key
+    };
+
     public string FeatureName => Feature;
 
     public string? Prompt => BuildPrompt();

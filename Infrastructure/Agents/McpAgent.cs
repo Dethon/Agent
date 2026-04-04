@@ -20,7 +20,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<AIFunction> _domainTools;
     private readonly IReadOnlyList<string> _domainPrompts;
     private readonly string[] _endpoints;
-    private readonly IReadOnlySet<string>? _filesystemEnabledTools;
+    private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ChatClientAgent _innerAgent;
     private readonly string _name;
@@ -45,11 +45,11 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<AIFunction>? domainTools = null,
         IReadOnlyList<string>? domainPrompts = null,
         bool enableResourceSubscriptions = true,
-        IReadOnlySet<string>? filesystemEnabledTools = null,
+        IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
         ILoggerFactory? loggerFactory = null)
     {
         _endpoints = endpoints;
-        _filesystemEnabledTools = filesystemEnabledTools;
+        _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
         _loggerFactory = loggerFactory;
         _name = name;
         _description = description;
