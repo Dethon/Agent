@@ -1,3 +1,4 @@
+#pragma warning disable MAAI001 // ChatHistoryProvider.InvokingContext/InvokedContext are evaluation-only APIs
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Extensions;

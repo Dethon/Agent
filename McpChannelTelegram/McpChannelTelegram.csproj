@@ -18,8 +18,8 @@
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.12.8" />
-    <PackageReference Include="Telegram.Bot" Version="22.9.5.3" />
+    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
+    <PackageReference Include="Telegram.Bot" Version="22.9.6" />
   </ItemGroup>
 
   <ItemGroup>

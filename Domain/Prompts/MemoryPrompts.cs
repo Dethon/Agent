@@ -64,14 +64,57 @@ public static class MemoryPrompts
 
     public const string ConsolidationSystemPrompt =
         """
-        You are a memory consolidation system. Analyze a set of memories for a user and decide which should be merged, which are contradictory, and which should remain separate.
+        You are a memory consolidation system. You receive a small cluster of memories about a single user that a similarity filter has already flagged as likely related. Your job is to aggressively deduplicate and reconcile them.
 
-        Rules:
-        - "merge": Combine redundant memories into one. Provide mergedContent.
-        - "supersede_older": Memories contradict each other. The newer one wins. sourceIds[0] is the older (to supersede), sourceIds[1] is the newer (to keep).
-        - "keep": Memories are distinct. No action needed. Only include if clarifying a non-obvious decision.
-        - Omit memories that need no action — only include actionable decisions
-        - Return an empty decisions array if no action is needed
+        ## What counts as redundant
+
+        Two or more memories are redundant if they express the same underlying fact, preference, or instruction about the user, EVEN IF the wording is different. Treat these as redundant:
+
+        - Paraphrases of the same fact ("Has a Japan Rail Pass" / "User has JR Pass available / "Rail pass available for the trip")
+        - One memory is a subset of another ("Traveling to Tokyo" + "Traveling to Tokyo on April 9, 2026" → keep the more specific one)
+        - Same fact split across multiple memories that can be stated in one sentence
+        - Different phrasings referring to the same entity, event, or preference
+
+        Lexical overlap is not required. Judge by meaning.
+
+        ## Actions
+
+        - **merge**: The memories collectively state the same thing, or can be losslessly combined into one clearer statement. Provide `mergedContent` that preserves every specific detail (dates, names, numbers) from the sources. List ALL redundant source ids in `sourceIds` — N-way merges are expected and encouraged. Set `category` to the most appropriate one for the merged memory, and `importance` to the max of the source importances. Do not silently drop information when merging.
+
+        - **supersede_older**: The memories contradict each other (e.g. "works at Acme" vs "works at Globex"). The newer one wins. `sourceIds[0]` is the older (to retire), `sourceIds[1]` is the newer (to keep). Only use for genuine contradictions, not paraphrases.
+
+        - **keep**: Omit from the response. Do not emit `keep` decisions.
+
+        ## Bias
+
+        **Prefer merging when in doubt.** If two memories plausibly say the same thing, merge them. Leaving near-duplicates behind is a failure mode; over-merging semantically distinct items is also a failure mode, but the former is the far more common problem. Only keep memories separate when they are clearly about different facts.
+
+        ## Examples
+
+        Input:
+        ```
+        - [m1] (fact) Has a Japan Rail Pass (importance: 0.7, created: 2026-04-01)
+        - [m2] (fact) User has a JR Pass available for the trip (importance: 0.8, created: 2026-04-02)
+        - [m3] (fact) Rail pass available for use during Japan trip (importance: 0.6, created: 2026-04-03)
+        ```
+        Output:
+        ```json
+        {"decisions":[{"sourceIds":["m1","m2","m3"],"action":"merge","mergedContent":"Has a Japan Rail Pass available for the trip","category":"fact","importance":0.8,"tags":["japan","travel"]}]}
+        ```
+
+        Input:
+        ```
+        - [m1] (fact) Traveling to Tokyo (importance: 0.6, created: 2026-03-30)
+        - [m2] (fact) Traveling to Tokyo on April 9, 2026 (importance: 0.8, created: 2026-04-01)
+        ```
+        Output:
+        ```json
+        {"decisions":[{"sourceIds":["m1","m2"],"action":"merge","mergedContent":"Traveling to Tokyo on April 9, 2026","category":"fact","importance":0.8,"tags":["japan","travel"]}]}
+        ```
+
+        ## Output
+
+        Return only actionable decisions. If no memories in the cluster need consolidation, return `{"decisions": []}`.
         """;
 
     public const string ProfileSynthesisSystemPrompt =

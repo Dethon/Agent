@@ -153,8 +153,9 @@ public class MemoryDreamingServiceTests
             Tags: ["merged"]);
 
         _consolidator
-            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([mergeDecision]);
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([mergeDecision])
+            .ReturnsAsync([]);
 
         var embedding = new float[] { 0.1f, 0.2f };
         _embeddingService
@@ -174,6 +175,84 @@ public class MemoryDreamingServiceTests
         // Should supersede both source IDs to the new memory
         _store.Verify(s => s.SupersedeAsync("user1", "m1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.SupersedeAsync("user1", "m2", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_LoopsMergePassUntilConsolidatorReturnsEmpty()
+    {
+        var m1 = MakeMemory("m1", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var m2 = MakeMemory("m2", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+        var m3 = MakeMemory("m3", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
+
+        // After first merge, m1+m2 are superseded and a new memory appears.
+        // Second consolidation pass has the chance to merge the survivor with m3.
+        var afterFirstMerge = new List<MemoryEntry>
+        {
+            m1 with { SupersededById = "merged1" },
+            m2 with { SupersededById = "merged1" },
+            m3,
+            MakeMemory("merged1", "user1", MemoryCategory.Fact, 0.85, _now, _now)
+        };
+        var afterSecondMerge = new List<MemoryEntry>
+        {
+            m1 with { SupersededById = "merged1" },
+            m2 with { SupersededById = "merged1" },
+            m3 with { SupersededById = "merged2" },
+            (MakeMemory("merged1", "user1", MemoryCategory.Fact, 0.85, _now, _now)) with { SupersededById = "merged2" },
+            MakeMemory("merged2", "user1", MemoryCategory.Fact, 0.9, _now, _now)
+        };
+
+        _store
+            .SetupSequence(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { m1, m2, m3 })
+            .ReturnsAsync(afterFirstMerge)
+            .ReturnsAsync(afterSecondMerge)
+            .ReturnsAsync(afterSecondMerge);
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new MergeDecision(["m1", "m2"], MergeAction.Merge, "merged", MemoryCategory.Fact, 0.85, [])
+            ])
+            .ReturnsAsync([
+                new MergeDecision(["merged1", "m3"], MergeAction.Merge, "merged again", MemoryCategory.Fact, 0.9, [])
+            ])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "merged"), It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "merged again"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_MergeLoopIsBoundedByMaxPasses()
+    {
+        var memories = new List<MemoryEntry>
+        {
+            MakeMemory("a", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10)),
+            MakeMemory("b", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10))
+        };
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(memories);
+
+        // Consolidator never returns empty — only the bound should stop the loop.
+        // Use fresh (valid) source IDs on every pass by referencing the ones the store returns.
+        _consolidator
+            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<MemoryEntry> list, CancellationToken _) =>
+                list.Count >= 2
+                    ? [new MergeDecision([list[0].Id, list[1].Id], MergeAction.Merge, "x", MemoryCategory.Fact, 0.8, [])]
+                    : []);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+            Times.AtMost(_options.MaxMergePasses));
     }
 
     [Fact]

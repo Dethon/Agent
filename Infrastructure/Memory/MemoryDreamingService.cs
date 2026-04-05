@@ -14,6 +14,7 @@ public record MemoryDreamingOptions
     public double DecayFloor { get; init; } = 0.1;
     public MemoryCategory[] DecayExemptCategories { get; init; } = [MemoryCategory.Instruction];
     public int MaxRetries { get; init; } = 2;
+    public int MaxMergePasses { get; init; } = 3;
 }
 
 public class MemoryDreamingService(
@@ -67,17 +68,20 @@ public class MemoryDreamingService(
 
     public async Task RunDreamingForUserAsync(string userId, DateTimeOffset now, CancellationToken ct)
     {
-        var memories = await store.GetByUserIdAsync(userId, ct);
-        var activeMemories = memories.Where(m => m.SupersededById is null).ToList();
+        var activeMemories = await GetActiveMemoriesAsync(userId, ct);
 
-        // Step 1: Merge
-        var mergedCount = await MergeAsync(userId, activeMemories, ct);
-
-        // Re-fetch if any merges happened
-        if (mergedCount > 0)
+        // Step 1: Merge — loop until consolidation stabilizes or the bound is hit
+        var mergedCount = 0;
+        for (var pass = 0; pass < options.MaxMergePasses; pass++)
         {
-            memories = await store.GetByUserIdAsync(userId, ct);
-            activeMemories = memories.Where(m => m.SupersededById is null).ToList();
+            var passMerges = await MergeAsync(userId, activeMemories, ct);
+            if (passMerges == 0)
+            {
+                break;
+            }
+
+            mergedCount += passMerges;
+            activeMemories = await GetActiveMemoriesAsync(userId, ct);
         }
 
         // Step 2: Decay
@@ -103,28 +107,34 @@ public class MemoryDreamingService(
     private async Task<int> MergeAsync(string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
     {
         var decisions = await consolidator.ConsolidateAsync(activeMemories, ct);
+        var activeIds = activeMemories.Select(m => m.Id).ToHashSet();
         var mergedCount = 0;
 
         foreach (var decision in decisions)
         {
+            var validSourceIds = decision.SourceIds.Where(activeIds.Contains).Distinct().ToList();
+
             switch (decision.Action)
             {
-                case MergeAction.Merge:
-                    await ApplyMergeAsync(userId, decision, ct);
+                case MergeAction.Merge when validSourceIds.Count >= 2:
+                    await ApplyMergeAsync(userId, decision with { SourceIds = validSourceIds }, ct);
                     mergedCount++;
                     break;
 
-                case MergeAction.SupersedeOlder:
-                    if (decision.SourceIds.Count >= 2)
-                    {
-                        await store.SupersedeAsync(userId, decision.SourceIds[0], decision.SourceIds[1], ct);
-                        mergedCount++;
-                    }
+                case MergeAction.SupersedeOlder when validSourceIds.Count >= 2:
+                    await store.SupersedeAsync(userId, validSourceIds[0], validSourceIds[1], ct);
+                    mergedCount++;
                     break;
             }
         }
 
         return mergedCount;
+    }
+
+    private async Task<IReadOnlyList<MemoryEntry>> GetActiveMemoriesAsync(string userId, CancellationToken ct)
+    {
+        var memories = await store.GetByUserIdAsync(userId, ct);
+        return memories.Where(m => m.SupersededById is null).ToList();
     }
 
     private async Task ApplyMergeAsync(string userId, MergeDecision decision, CancellationToken ct)

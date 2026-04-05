@@ -12,6 +12,8 @@ public class OpenRouterMemoryConsolidator(
     IChatClient chatClient,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
+    private const double ClusterSimilarityThreshold = 0.82;
+
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -35,7 +37,32 @@ public class OpenRouterMemoryConsolidator(
     public async Task<IReadOnlyList<MergeDecision>> ConsolidateAsync(
         IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
     {
-        var summary = string.Join("\n", memories.Select(m =>
+        if (memories.Count == 0)
+        {
+            return [];
+        }
+
+        var clusters = BuildClusters(memories);
+        var decisions = new List<MergeDecision>();
+
+        foreach (var cluster in clusters)
+        {
+            var clusterDecisions = await ConsolidateClusterAsync(cluster, ct);
+            decisions.AddRange(clusterDecisions);
+        }
+
+        return decisions;
+    }
+
+    private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(
+        IReadOnlyList<MemoryEntry> cluster, CancellationToken ct)
+    {
+        var ordered = cluster
+            .OrderBy(m => m.Category)
+            .ThenBy(m => m.Content, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var summary = string.Join("\n", ordered.Select(m =>
             $"- [{m.Id}] ({m.Category.ToString().ToLowerInvariant()}) {m.Content} (importance: {m.Importance:F1}, created: {m.CreatedAt:yyyy-MM-dd})"));
 
         var messages = new List<ChatMessage>
@@ -45,6 +72,98 @@ public class OpenRouterMemoryConsolidator(
 
         var response = await chatClient.GetResponseAsync(messages, _consolidationChatOptions, ct);
         return ParseMergeDecisions(response.Text);
+    }
+
+    private static IReadOnlyList<IReadOnlyList<MemoryEntry>> BuildClusters(IReadOnlyList<MemoryEntry> memories)
+    {
+        var withEmbeddings = memories.Where(m => m.Embedding is { Length: > 0 }).ToList();
+        var withoutEmbeddings = memories.Where(m => m.Embedding is null or { Length: 0 }).ToList();
+
+        // No embeddings available at all → fall back to a single cluster over everything.
+        if (withEmbeddings.Count == 0)
+        {
+            return [memories];
+        }
+
+        var clusters = GreedyClusterByCosine(withEmbeddings, ClusterSimilarityThreshold);
+
+        // Keep only multi-member clusters — singletons have nothing to merge against.
+        var multiMember = clusters.Where(c => c.Count >= 2).Cast<IReadOnlyList<MemoryEntry>>().ToList();
+
+        // Memories without embeddings still deserve a consolidation pass among themselves.
+        if (withoutEmbeddings.Count >= 2)
+        {
+            multiMember.Add(withoutEmbeddings);
+        }
+
+        return multiMember;
+    }
+
+    private static List<List<MemoryEntry>> GreedyClusterByCosine(
+        IReadOnlyList<MemoryEntry> memories, double threshold)
+    {
+        var clusters = new List<List<MemoryEntry>>();
+        var centroids = new List<float[]>();
+
+        foreach (var memory in memories)
+        {
+            var embedding = memory.Embedding!;
+            var bestIndex = -1;
+            var bestSimilarity = threshold;
+
+            for (var i = 0; i < centroids.Count; i++)
+            {
+                var similarity = CosineSimilarity(embedding, centroids[i]);
+                if (similarity >= bestSimilarity)
+                {
+                    bestSimilarity = similarity;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex >= 0)
+            {
+                clusters[bestIndex].Add(memory);
+                centroids[bestIndex] = UpdateCentroid(centroids[bestIndex], embedding, clusters[bestIndex].Count);
+            }
+            else
+            {
+                clusters.Add([memory]);
+                centroids.Add((float[])embedding.Clone());
+            }
+        }
+
+        return clusters;
+    }
+
+    private static float[] UpdateCentroid(float[] current, float[] addition, int newCount)
+    {
+        var updated = new float[current.Length];
+        var prevCount = newCount - 1;
+        for (var i = 0; i < current.Length; i++)
+        {
+            updated[i] = (current[i] * prevCount + addition[i]) / newCount;
+        }
+        return updated;
+    }
+
+    private static double CosineSimilarity(float[] a, float[] b)
+    {
+        if (a.Length != b.Length)
+        {
+            return 0.0;
+        }
+
+        double dot = 0, magA = 0, magB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            magA += a[i] * a[i];
+            magB += b[i] * b[i];
+        }
+
+        var denom = Math.Sqrt(magA) * Math.Sqrt(magB);
+        return denom == 0 ? 0.0 : dot / denom;
     }
 
     public async Task<PersonalityProfile> SynthesizeProfileAsync(

@@ -118,7 +118,116 @@ public class OpenRouterMemoryConsolidatorTests
         result.ActiveProjects.ShouldBe(new[] { "Agent AI assistant", "Idealista scraper" });
     }
 
-    private static MemoryEntry CreateMemory(string id, string content) => new()
+    [Fact]
+    public async Task ConsolidateAsync_WithNoEmbeddings_SendsSingleCall()
+    {
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
+
+        var memories = new[]
+        {
+            CreateMemory("mem_1", "Works at Contoso"),
+            CreateMemory("mem_2", "Works on .NET projects"),
+            CreateMemory("mem_3", "Unrelated thing")
+        };
+
+        await _consolidator.ConsolidateAsync(memories, CancellationToken.None);
+
+        _chatClient.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_WithEmbeddings_ClustersSimilarMemoriesIntoSeparateLlmCalls()
+    {
+        // Two clusters: cluster A (nearly identical vectors), cluster B (orthogonal)
+        var clusterA1 = CreateMemory("a1", "Has a Japan Rail Pass", embedding: [1.0f, 0.0f, 0.0f]);
+        var clusterA2 = CreateMemory("a2", "User has a JR Pass for the trip", embedding: [0.99f, 0.01f, 0.0f]);
+        var clusterA3 = CreateMemory("a3", "Rail pass available", embedding: [0.98f, 0.02f, 0.0f]);
+        var clusterB1 = CreateMemory("b1", "Watches Dragon Raja", embedding: [0.0f, 1.0f, 0.0f]);
+        var clusterB2 = CreateMemory("b2", "Anime: Dragon Raja", embedding: [0.01f, 0.99f, 0.0f]);
+
+        var capturedPrompts = new List<string>();
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions, CancellationToken>((msgs, _, _) =>
+                capturedPrompts.Add(string.Join("\n", msgs.Select(m => m.Text))))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
+
+        await _consolidator.ConsolidateAsync(
+            [clusterA1, clusterA2, clusterA3, clusterB1, clusterB2],
+            CancellationToken.None);
+
+        // Two clusters → two LLM calls
+        capturedPrompts.Count.ShouldBe(2);
+
+        // Each cluster prompt contains only its own ids
+        var promptA = capturedPrompts.Single(p => p.Contains("a1"));
+        promptA.ShouldContain("a2");
+        promptA.ShouldContain("a3");
+        promptA.ShouldNotContain("b1");
+        promptA.ShouldNotContain("b2");
+
+        var promptB = capturedPrompts.Single(p => p.Contains("b1"));
+        promptB.ShouldContain("b2");
+        promptB.ShouldNotContain("a1");
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_SkipsSingletonClusters()
+    {
+        // Singleton (no similar neighbor) has nothing to merge against → no LLM call needed.
+        var loner = CreateMemory("x", "Unique thing", embedding: [1.0f, 0.0f, 0.0f]);
+        var pair1 = CreateMemory("p1", "Thing A", embedding: [0.0f, 1.0f, 0.0f]);
+        var pair2 = CreateMemory("p2", "Thing A restated", embedding: [0.01f, 0.99f, 0.0f]);
+
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
+
+        await _consolidator.ConsolidateAsync([loner, pair1, pair2], CancellationToken.None);
+
+        _chatClient.Verify(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ConsolidateAsync_AggregatesDecisionsFromAllClusters()
+    {
+        var a1 = CreateMemory("a1", "A first", embedding: [1.0f, 0.0f]);
+        var a2 = CreateMemory("a2", "A second", embedding: [0.99f, 0.01f]);
+        var b1 = CreateMemory("b1", "B first", embedding: [0.0f, 1.0f]);
+        var b2 = CreateMemory("b2", "B second", embedding: [0.01f, 0.99f]);
+
+        _chatClient.SetupSequence(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant,
+                """{"decisions":[{"sourceIds":["a1","a2"],"action":"merge","mergedContent":"A merged","category":"fact","importance":0.8,"tags":[]}]}""")))
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant,
+                """{"decisions":[{"sourceIds":["b1","b2"],"action":"merge","mergedContent":"B merged","category":"fact","importance":0.8,"tags":[]}]}""")));
+
+        var result = await _consolidator.ConsolidateAsync([a1, a2, b1, b2], CancellationToken.None);
+
+        result.Count.ShouldBe(2);
+        result.Select(r => r.MergedContent).ShouldBe(new[] { "A merged", "B merged" }, ignoreOrder: true);
+    }
+
+    private static MemoryEntry CreateMemory(string id, string content, float[]? embedding = null) => new()
     {
         Id = id,
         UserId = "user1",
@@ -126,6 +235,7 @@ public class OpenRouterMemoryConsolidatorTests
         Content = content,
         Importance = 0.7,
         Confidence = 0.9,
+        Embedding = embedding,
         CreatedAt = DateTimeOffset.UtcNow,
         LastAccessedAt = DateTimeOffset.UtcNow
     };
