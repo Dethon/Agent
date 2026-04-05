@@ -140,4 +140,33 @@ public class OpenRouterMemoryExtractorTests
             s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task ExtractAsync_WithMultiTurnWindow_BuildsPromptContainingCurrentMarkerAndTurns()
+    {
+        _store.Setup(s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        ChatMessage? capturedUserPrompt = null;
+        _chatClient.Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedUserPrompt = msgs.Single())
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates":[]}""")));
+
+        var window = new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "hot or cold?"),
+            new(ChatRole.User, "cold")
+        };
+
+        await _extractor.ExtractAsync(window, "user1", CancellationToken.None);
+
+        capturedUserPrompt.ShouldNotBeNull();
+        var promptText = capturedUserPrompt.Text;
+        promptText.ShouldContain("[CURRENT]");
+        promptText.ShouldContain("cold");
+        promptText.ShouldContain("hot or cold?");
+    }
 }
