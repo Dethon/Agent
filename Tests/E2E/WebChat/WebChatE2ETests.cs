@@ -237,9 +237,14 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Modal should dismiss
         await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
-        // Agent should eventually respond (auto-retrying assertion handles streaming→persisted DOM transitions)
+        // Wait for streaming to finish — the Cancel button is only visible while streaming.
+        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
+
+        // Agent should have responded with persisted content.
         var assistantMessage = page.Locator(".chat-message.assistant .message-content").First;
-        await Assertions.Expect(assistantMessage).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 120_000 });
+        await Assertions.Expect(assistantMessage)
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
     }
 
     [SkippableFact]
