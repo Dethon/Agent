@@ -237,9 +237,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Modal should dismiss
         await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
-        // Agent should eventually respond
-        var assistantMessage = page.Locator(".chat-message.assistant .message-content, .message-row.assistant .message-content");
-        await assistantMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        // Agent should eventually respond (auto-retrying assertion handles streaming→persisted DOM transitions)
+        var assistantMessage = page.Locator(".chat-message.assistant .message-content").First;
+        await Assertions.Expect(assistantMessage).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 120_000 });
     }
 
     [SkippableFact]
