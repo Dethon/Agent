@@ -137,7 +137,7 @@ public class MemoryRecallHook(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch thread history for recall window (key {Key})", stateKey);
-            return (null, stateKey);
+            return (null, null);
         }
     }
 
@@ -148,18 +148,12 @@ public class MemoryRecallHook(
             return currentText;
         }
 
-        var priorUserMessages = persisted
+        var lines = persisted
             .Where(m => m.Role == ChatRole.User)
             .TakeLast(windowUserTurns - 1)
             .Select(m => m.Text)
-            .ToList();
+            .Append(currentText);
 
-        if (priorUserMessages.Count == 0)
-        {
-            return currentText;
-        }
-
-        priorUserMessages.Add(currentText);
-        return string.Join("\n", priorUserMessages);
+        return string.Join("\n", lines);
     }
 }

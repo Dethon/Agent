@@ -321,6 +321,19 @@ public class MemoryRecallHookTests
         await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
 
         capturedEmbeddingInput.ShouldBe("hello");
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var hasItem = false;
+        try
+        {
+            await foreach (var _ in _queue.ReadAllAsync(cts.Token))
+            {
+                hasItem = true;
+                break;
+            }
+        }
+        catch (OperationCanceledException) { }
+        hasItem.ShouldBeFalse();
     }
 
     [Fact]
