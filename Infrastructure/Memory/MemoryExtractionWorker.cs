@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Memory;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -95,7 +96,11 @@ public class MemoryExtractionWorker(
         {
             try
             {
-                return await extractor.ExtractAsync(request.MessageContent, request.UserId, ct);
+                var tempWindow = new List<ChatMessage>
+                {
+                    new(ChatRole.User, request.MessageContent)
+                };
+                return await extractor.ExtractAsync(tempWindow, request.UserId, ct);
             }
             catch (Exception ex) when (attempt < options.MaxRetries)
             {

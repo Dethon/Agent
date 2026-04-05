@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Memory;
 using Infrastructure.Memory;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
@@ -45,7 +46,11 @@ public class MemoryExtractionWorkerTests
             Context: "Mentioned during introduction");
 
         _extractor
-            .Setup(e => e.ExtractAsync("Hello, I work at Contoso", "user1", It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(
+                It.Is<IReadOnlyList<ChatMessage>>(w =>
+                    w.Count == 1 && w[0].Text == "Hello, I work at Contoso"),
+                "user1",
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync([candidate]);
 
         var embedding = new float[] { 0.1f, 0.2f, 0.3f };
@@ -93,7 +98,10 @@ public class MemoryExtractionWorkerTests
             Context: null);
 
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync([candidate]);
 
         var embedding = new float[] { 0.1f, 0.2f, 0.3f };
@@ -130,7 +138,10 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_PublishesExtractionMetric()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
         MetricEvent? published = null;
@@ -167,7 +178,10 @@ public class MemoryExtractionWorkerTests
         await _worker.ProcessRequestAsync(request, CancellationToken.None);
 
         _extractor.Verify(
-            e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
             p => p.PublishAsync(It.IsAny<MemoryExtractionEvent>(), It.IsAny<CancellationToken>()),
@@ -178,7 +192,10 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_WhenExtractorFails_PublishesErrorEvent()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
         MetricEvent? published = null;

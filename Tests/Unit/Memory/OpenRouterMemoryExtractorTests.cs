@@ -49,7 +49,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, extractionJson)));
 
-        var result = await _extractor.ExtractAsync("Hello, I work at Contoso", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello, I work at Contoso")],
+            "user1", CancellationToken.None);
 
         result.Count.ShouldBe(1);
         result[0].Content.ShouldBe("Works at Contoso");
@@ -69,7 +71,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
-        var result = await _extractor.ExtractAsync("Just saying hi", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Just saying hi")],
+            "user1", CancellationToken.None);
         result.ShouldBeEmpty();
     }
 
@@ -85,7 +89,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, "not json at all")));
 
-        var result = await _extractor.ExtractAsync("Hello", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")],
+            "user1", CancellationToken.None);
         result.ShouldBeEmpty();
     }
 
@@ -110,7 +116,9 @@ public class OpenRouterMemoryExtractorTests
             .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
-        await _extractor.ExtractAsync("Hello", "user1", CancellationToken.None);
+        await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")],
+            "user1", CancellationToken.None);
 
         capturedMessages.ShouldNotBeNull();
         var userMsg = capturedMessages.Last();
