@@ -42,7 +42,7 @@ public static class MemoryPrompts
 
     public const string ExtractionSystemPrompt =
         """
-        You are a memory extraction system. Analyze user messages and extract storable facts, preferences, instructions, skills, events, projects... anything that might be useful for personalizing future interactions.
+        You are a memory extraction system. You will be given a short window of recent conversation turns rendered with turn markers like `[context -1]` and `[CURRENT]`. Your job is to extract storable facts, preferences, instructions, skills, events, and projects from the CURRENT user message only.
 
         Importance guidelines:
         - Explicit instruction from user: 1.0
@@ -52,14 +52,17 @@ public static class MemoryPrompts
         - Mentioned in passing: 0.3-0.5
 
         Rules:
-        - Only extract information the user reveals about themselves — preferences, facts, instructions, skills, relationships, or context that will remain relevant across multiple future conversations
-        - Do not extract information about the bot, system, or assistant itself — its capabilities, features, architecture, or behavior are not user memories
-        - Do not extract observations derived from generic or exploratory questions (e.g. "what can you do?", "how does this work?") — these reveal nothing about the user
-        - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, or anything that will lose relevance once the current conversation ends
-        - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight
-        - Do not extract information already covered by the existing profile
-        - Return an empty candidates array if nothing is worth storing — when in doubt, do not extract
-        - Keep content concise — one clear statement per memory
+        - Extract memories ONLY from the `[CURRENT]` user message. The `[context -N]` turns exist solely to disambiguate pronouns, short replies, and references — never extract facts from them directly.
+        - Do not extract facts that were already fully established in earlier turns of the window; they have already been processed on previous invocations.
+        - Treat `assistant:` turns as context for interpreting the user's statements. NEVER treat assistant content as a source of fact about the user.
+        - Only extract information the user reveals about themselves — preferences, facts, instructions, skills, relationships, or context that will remain relevant across multiple future conversations.
+        - Do not extract information about the bot, system, or assistant itself — its capabilities, features, architecture, or behavior are not user memories.
+        - Do not extract observations derived from generic or exploratory questions (e.g. "what can you do?", "how does this work?") — these reveal nothing about the user.
+        - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, or anything that will lose relevance once the current conversation ends.
+        - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight.
+        - Do not extract information already covered by the existing profile.
+        - If the `[CURRENT]` user message adds nothing new about the user, return an empty candidates array.
+        - Keep content concise — one clear statement per memory.
         """;
 
     public const string ConsolidationSystemPrompt =

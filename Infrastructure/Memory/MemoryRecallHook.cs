@@ -13,6 +13,7 @@ public record MemoryRecallOptions
 {
     public int DefaultLimit { get; init; } = 10;
     public bool IncludePersonalityProfile { get; init; } = true;
+    public int WindowUserTurns { get; init; } = 3;
 }
 
 public class MemoryRecallHook(

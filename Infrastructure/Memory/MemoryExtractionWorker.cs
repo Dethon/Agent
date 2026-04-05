@@ -13,6 +13,7 @@ public record MemoryExtractionOptions
     public double SimilarityThreshold { get; init; } = 0.85;
     public int MaxCandidatesPerMessage { get; init; } = 5;
     public int MaxRetries { get; init; } = 2;
+    public int WindowMixedTurns { get; init; } = 6;
 }
 
 public class MemoryExtractionWorker(
