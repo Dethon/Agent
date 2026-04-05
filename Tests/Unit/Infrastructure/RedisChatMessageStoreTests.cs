@@ -90,6 +90,28 @@ public class RedisChatMessageStoreTests
         assistantMsg.GetTimestamp().ShouldNotBeNull();
     }
 
+    [Fact]
+    public void TryGetStateKey_WhenKeyPresentInStateBag_ReturnsTrueAndKey()
+    {
+        var session = CreateSessionWithKey("my-conversation-id");
+
+        var result = RedisChatMessageStore.TryGetStateKey(session, out var stateKey);
+
+        result.ShouldBeTrue();
+        stateKey.ShouldBe("my-conversation-id");
+    }
+
+    [Fact]
+    public void TryGetStateKey_WhenKeyAbsent_ReturnsFalseAndNull()
+    {
+        var session = new Mock<AgentSession>().Object;
+
+        var result = RedisChatMessageStore.TryGetStateKey(session, out var stateKey);
+
+        result.ShouldBeFalse();
+        stateKey.ShouldBeNull();
+    }
+
     private static AgentSession CreateSessionWithKey(string key)
     {
         var session = new Mock<AgentSession>().Object;

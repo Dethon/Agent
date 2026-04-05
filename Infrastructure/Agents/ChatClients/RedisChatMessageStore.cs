@@ -8,6 +8,18 @@ namespace Infrastructure.Agents.ChatClients;
 public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistoryProvider
 {
     internal const string StateKey = "ChatHistoryProviderState";
+
+    public static bool TryGetStateKey(AgentSession session, out string? stateKey)
+    {
+        if (session.StateBag.TryGetValue<string>(StateKey, out var key) && !string.IsNullOrEmpty(key))
+        {
+            stateKey = key;
+            return true;
+        }
+        stateKey = null;
+        return false;
+    }
+
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public override IReadOnlyList<string> StateKeys => [StateKey];
