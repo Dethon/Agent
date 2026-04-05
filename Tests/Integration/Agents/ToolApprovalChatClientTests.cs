@@ -108,7 +108,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:fs_glob"]);
+            whitelistPatterns: ["*:fs_*"]);
 
         var agent = CreateAgent(approvalClient);
 
