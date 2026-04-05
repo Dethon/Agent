@@ -96,6 +96,7 @@ public class MemoryExtractionWorker(
         {
             try
             {
+                // TODO(Task 5): replace with thread-fetched window
                 var tempWindow = new List<ChatMessage>
                 {
                     new(ChatRole.User, request.MessageContent)

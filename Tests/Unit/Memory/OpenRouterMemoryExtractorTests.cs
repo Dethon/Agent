@@ -124,4 +124,20 @@ public class OpenRouterMemoryExtractorTests
         var userMsg = capturedMessages.Last();
         userMsg.Text.ShouldContain("Senior .NET developer");
     }
+
+    [Fact]
+    public async Task ExtractAsync_WithEmptyContextWindow_ReturnsEmptyAndSkipsChatClient()
+    {
+        var result = await _extractor.ExtractAsync(
+            [],
+            "user1", CancellationToken.None);
+
+        result.ShouldBeEmpty();
+        _chatClient.Verify(
+            c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _store.Verify(
+            s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }
