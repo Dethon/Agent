@@ -83,7 +83,6 @@ public class MemoryRecallHookTests
         await foreach (var item in _queue.ReadAllAsync(cts.Token))
         {
             item.UserId.ShouldBe("user1");
-            item.MessageContent.ShouldBe("I work at Contoso");
             item.ConversationId.ShouldBe("conv_1");
             break;
         }

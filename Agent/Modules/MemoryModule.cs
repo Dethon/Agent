@@ -67,14 +67,16 @@ public static class MemoryModule
             var recallOptions = new MemoryRecallOptions
             {
                 DefaultLimit = memoryConfig.GetValue("Recall:DefaultLimit", 10),
-                IncludePersonalityProfile = memoryConfig.GetValue("Recall:IncludePersonalityProfile", true)
+                IncludePersonalityProfile = memoryConfig.GetValue("Recall:IncludePersonalityProfile", true),
+                WindowUserTurns = memoryConfig.GetValue("Recall:WindowUserTurns", 3)
             };
             services.AddSingleton(recallOptions);
 
             var extractionOptions = new MemoryExtractionOptions
             {
                 SimilarityThreshold = memoryConfig.GetValue("Extraction:SimilarityThreshold", 0.85),
-                MaxCandidatesPerMessage = memoryConfig.GetValue("Extraction:MaxCandidatesPerMessage", 5)
+                MaxCandidatesPerMessage = memoryConfig.GetValue("Extraction:MaxCandidatesPerMessage", 5),
+                WindowMixedTurns = memoryConfig.GetValue("Extraction:WindowMixedTurns", 6)
             };
             services.AddSingleton(extractionOptions);
 

@@ -81,9 +81,9 @@ public class MemoryRecallHook(
                 }
             });
 
-            // Enqueue extraction request (non-blocking)
+            // NOTE: ThreadStateKey and AnchorIndex populated in Task 6 once thread plumbing lands.
             await extractionQueue.EnqueueAsync(
-                new MemoryExtractionRequest(userId, messageText, conversationId, agentId), ct);
+                new MemoryExtractionRequest(userId, string.Empty, -1, conversationId, agentId), ct);
 
             sw.Stop();
             await metricsPublisher.PublishAsync(new MemoryRecallEvent
