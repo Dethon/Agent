@@ -272,10 +272,16 @@ public class MemoryExtractionWorkerTests
     }
 
     [Fact]
-    public async Task ProcessRequestAsync_WithMissingThread_DropsRequestAndDoesNotCallExtractor()
+    public async Task ProcessRequestAsync_WithMissingThread_DropsRequestAndPublishesZeroMetric()
     {
         _threadStateStore.Setup(s => s.GetMessagesAsync("gone"))
             .ReturnsAsync((ChatMessage[]?)null);
+
+        MetricEvent? published = null;
+        _metricsPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((evt, _) => published = evt)
+            .Returns(Task.CompletedTask);
 
         var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null);
 
@@ -287,6 +293,11 @@ public class MemoryExtractionWorkerTests
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+        published.ShouldNotBeNull();
+        published.ShouldBeOfType<MemoryExtractionEvent>();
+        var evt = (MemoryExtractionEvent)published;
+        evt.CandidateCount.ShouldBe(0);
+        evt.StoredCount.ShouldBe(0);
     }
 
     [Fact]
