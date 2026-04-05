@@ -1,9 +1,10 @@
 using Domain.DTOs;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Contracts;
 
 public interface IMemoryExtractor
 {
     Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-        string messageContent, string userId, CancellationToken ct);
+        IReadOnlyList<ChatMessage> contextWindow, string userId, CancellationToken ct);
 }

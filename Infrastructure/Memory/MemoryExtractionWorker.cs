@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Memory;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -13,6 +14,7 @@ public record MemoryExtractionOptions
     public double SimilarityThreshold { get; init; } = 0.85;
     public int MaxCandidatesPerMessage { get; init; } = 5;
     public int MaxRetries { get; init; } = 2;
+    public int WindowMixedTurns { get; init; } = 6;
 }
 
 public class MemoryExtractionWorker(
@@ -20,6 +22,7 @@ public class MemoryExtractionWorker(
     IMemoryExtractor extractor,
     IEmbeddingService embeddingService,
     IMemoryStore store,
+    IThreadStateStore threadStateStore,
     IMetricsPublisher metricsPublisher,
     IAgentDefinitionProvider agentDefinitionProvider,
     ILogger<MemoryExtractionWorker> logger,
@@ -90,11 +93,35 @@ public class MemoryExtractionWorker(
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
         MemoryExtractionRequest request, CancellationToken ct)
     {
+        var thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
+        if (thread is null || request.AnchorIndex < 0 || request.AnchorIndex >= thread.Length)
+        {
+            if (!string.IsNullOrEmpty(request.FallbackContent))
+            {
+                return await ExtractWithFallbackAsync(request, ct);
+            }
+
+            logger.LogDebug(
+                "Extraction dropped: thread missing or anchor out of range (user {UserId}, key {Key}, anchor {Anchor})",
+                request.UserId, request.ThreadStateKey, request.AnchorIndex);
+            return [];
+        }
+
+        var window = thread
+            .Take(request.AnchorIndex + 1)
+            .TakeLast(options.WindowMixedTurns)
+            .ToList();
+
+        if (window.Count == 0)
+        {
+            return [];
+        }
+
         for (var attempt = 0; attempt <= options.MaxRetries; attempt++)
         {
             try
             {
-                return await extractor.ExtractAsync(request.MessageContent, request.UserId, ct);
+                return await extractor.ExtractAsync(window, request.UserId, ct);
             }
             catch (Exception ex) when (attempt < options.MaxRetries)
             {
@@ -103,6 +130,17 @@ public class MemoryExtractionWorker(
             }
         }
         return [];
+    }
+
+    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithFallbackAsync(
+        MemoryExtractionRequest request, CancellationToken ct)
+    {
+        logger.LogDebug(
+            "Thread unavailable, falling back to direct message extraction (user {UserId}, key {Key})",
+            request.UserId, request.ThreadStateKey);
+
+        var window = new List<ChatMessage> { new(ChatRole.User, request.FallbackContent!) };
+        return await extractor.ExtractAsync(window, request.UserId, ct);
     }
 
     private async Task<bool> StoreIfNovelAsync(
