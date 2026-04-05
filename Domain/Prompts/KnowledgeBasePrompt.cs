@@ -58,6 +58,12 @@ public static class KnowledgeBasePrompt
         **For bulk replacements:**
         → Use text_edit with replaceAll=true to replace all occurrences at once.
 
+        **Whole-file consistency:**
+        After any edit, mentally review the full file for consistency. Watch for duplicated headings,
+        broken cross-references, orphaned links, contradictory information, or formatting mismatches
+        introduced by the change. If the edit touches a section that other parts of the file reference,
+        verify those references still make sense. Read the file again after editing if needed.
+
         ### Response Style
 
         - Be concise but informative
