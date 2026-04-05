@@ -4,6 +4,8 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Memory;
+using Infrastructure.Agents.ChatClients;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
@@ -19,13 +21,20 @@ public record MemoryRecallOptions
 public class MemoryRecallHook(
     IMemoryStore store,
     IEmbeddingService embeddingService,
+    IThreadStateStore threadStateStore,
     MemoryExtractionQueue extractionQueue,
     IMetricsPublisher metricsPublisher,
     IAgentDefinitionProvider agentDefinitionProvider,
     ILogger<MemoryRecallHook> logger,
     MemoryRecallOptions options) : IMemoryRecallHook
 {
-    public async Task EnrichAsync(ChatMessage message, string userId, string? conversationId, string? agentId, CancellationToken ct)
+    public async Task EnrichAsync(
+        ChatMessage message,
+        string userId,
+        string? conversationId,
+        string? agentId,
+        AgentSession thread,
+        CancellationToken ct)
     {
         if (agentId is not null)
         {
@@ -45,7 +54,12 @@ public class MemoryRecallHook(
                 return;
             }
 
-            var embedding = await embeddingService.GenerateEmbeddingAsync(messageText, ct);
+            var (persisted, stateKey) = await TryFetchThreadAsync(thread);
+            var anchorIndex = persisted?.Length ?? 0;
+
+            var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
+
+            var embedding = await embeddingService.GenerateEmbeddingAsync(embeddingInput, ct);
 
             var memoriesTask = store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
             var profileTask = options.IncludePersonalityProfile
@@ -62,7 +76,6 @@ public class MemoryRecallHook(
                 message.SetMemoryContext(new MemoryContext(memories, profile));
             }
 
-            // Update access timestamps fire-and-forget
             _ = Task.Run(async () =>
             {
                 try
@@ -81,9 +94,11 @@ public class MemoryRecallHook(
                 }
             });
 
-            // NOTE: ThreadStateKey and AnchorIndex populated in Task 6 once thread plumbing lands.
-            await extractionQueue.EnqueueAsync(
-                new MemoryExtractionRequest(userId, string.Empty, -1, conversationId, agentId), ct);
+            if (stateKey is not null)
+            {
+                await extractionQueue.EnqueueAsync(
+                    new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId), ct);
+            }
 
             sw.Stop();
             await metricsPublisher.PublishAsync(new MemoryRecallEvent
@@ -105,5 +120,46 @@ public class MemoryRecallHook(
                 Message = $"Recall failed: {ex.Message}"
             }, ct);
         }
+    }
+
+    private async Task<(ChatMessage[]? Messages, string? StateKey)> TryFetchThreadAsync(AgentSession thread)
+    {
+        if (!RedisChatMessageStore.TryGetStateKey(thread, out var stateKey) || stateKey is null)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            var messages = await threadStateStore.GetMessagesAsync(stateKey);
+            return (messages, stateKey);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to fetch thread history for recall window (key {Key})", stateKey);
+            return (null, stateKey);
+        }
+    }
+
+    private static string BuildRecallWindowText(string currentText, ChatMessage[]? persisted, int windowUserTurns)
+    {
+        if (persisted is null || persisted.Length == 0 || windowUserTurns <= 1)
+        {
+            return currentText;
+        }
+
+        var priorUserMessages = persisted
+            .Where(m => m.Role == ChatRole.User)
+            .TakeLast(windowUserTurns - 1)
+            .Select(m => m.Text)
+            .ToList();
+
+        if (priorUserMessages.Count == 0)
+        {
+            return currentText;
+        }
+
+        priorUserMessages.Add(currentText);
+        return string.Join("\n", priorUserMessages);
     }
 }
