@@ -11,6 +11,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
 
     public static bool TryGetStateKey(AgentSession session, out string? stateKey)
     {
+        ArgumentNullException.ThrowIfNull(session);
         if (session.StateBag.TryGetValue<string>(StateKey, out var key) && !string.IsNullOrEmpty(key))
         {
             stateKey = key;
@@ -26,9 +27,9 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
 
     private static string ResolveRedisKey(AgentSession session)
     {
-        if (session.StateBag.TryGetValue<string>(StateKey, out var key) && !string.IsNullOrEmpty(key))
+        if (TryGetStateKey(session, out var key))
         {
-            return key;
+            return key!;
         }
 
         var newKey = Guid.NewGuid().ToString();

@@ -112,6 +112,17 @@ public class RedisChatMessageStoreTests
         stateKey.ShouldBeNull();
     }
 
+    [Fact]
+    public void TryGetStateKey_WhenStateBagContainsEmptyString_ReturnsFalseAndNull()
+    {
+        var session = CreateSessionWithKey(string.Empty);
+
+        var result = RedisChatMessageStore.TryGetStateKey(session, out var stateKey);
+
+        result.ShouldBeFalse();
+        stateKey.ShouldBeNull();
+    }
+
     private static AgentSession CreateSessionWithKey(string key)
     {
         var session = new Mock<AgentSession>().Object;
