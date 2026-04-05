@@ -1,5 +1,5 @@
 {
     "parallelizeAssembly": true,
     "parallelizeTestCollections": true,
-    "maxParallelThreads": 8
+    "maxParallelThreads": 1
 }
