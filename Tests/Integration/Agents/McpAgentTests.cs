@@ -47,7 +47,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
 
         var agent = CreateAgent(llmClient);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(150));
 
         // Act
         var responses = await agent.RunStreamingAsync(

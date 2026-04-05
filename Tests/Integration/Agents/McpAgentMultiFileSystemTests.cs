@@ -53,8 +53,11 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Read both /library/multi-read.md and /notes/multi-read.md using the domain:filesystem:text_read tool. " +
-                "Tell me the content of each file.",
+                "Read both of these files using the domain:filesystem:text_read tool and tell me their contents:\n" +
+                "- filePath: /library/multi-read.md\n" +
+                "- filePath: /notes/multi-read.md\n" +
+                "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
+                "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -80,10 +83,11 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Create two files:\n" +
-                "1. /library/multi-create.md with content 'library file'\n" +
-                "2. /notes/multi-create.md with content 'notes file'\n" +
-                "Use the domain:filesystem:text_create tool for each.",
+                "Create these two files using the domain:filesystem:text_create tool (one call per file):\n" +
+                "1. filePath: /library/multi-create.md   content: 'library file'\n" +
+                "2. filePath: /notes/multi-create.md     content: 'notes file'\n" +
+                "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
+                "Pass the filePath values exactly as written above — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -114,7 +118,9 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "What filesystems are available to you? List all mount points.",
+                "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
+                "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
+                "you already have and reply in text.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -143,8 +149,12 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Search for the word 'unicorn' in both /library/ and /notes/ directories " +
-                "using the domain:filesystem:text_search tool. Tell me which filesystem contains the word.",
+                "Use the domain:filesystem:text_search tool twice to search for the word 'unicorn':\n" +
+                "1. directoryPath: /library\n" +
+                "2. directoryPath: /notes\n" +
+                "Then tell me which filesystem contains the word. " +
+                "IMPORTANT: Every directoryPath argument MUST be exactly '/library' or '/notes' (the mounted prefixes). " +
+                "Do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

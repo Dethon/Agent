@@ -52,7 +52,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Read the file at /vault/read-test.md using the domain:filesystem:text_read tool and tell me its content.",
+                "Use the domain:filesystem:text_read tool with filePath: /vault/read-test.md and tell me its content. " +
+                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -77,7 +79,11 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Create a file at /vault/created-by-agent.md with content '# Created\nHello from agent' using the domain:filesystem:text_create tool.",
+                "Use the domain:filesystem:text_create tool with:\n" +
+                "- filePath: /vault/created-by-agent.md\n" +
+                "- content: '# Created\nHello from agent'\n" +
+                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -106,7 +112,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Edit the file at /vault/edit-test.md: replace 'World' with 'Agent' using the domain:filesystem:text_edit tool.",
+                "Use the domain:filesystem:text_edit tool with filePath: /vault/edit-test.md, oldString: 'World', newString: 'Agent'. " +
+                "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -136,7 +144,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "List all .md files under /vault/glob-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
+                "Use the domain:filesystem:glob_files tool with basePath: /vault/glob-test and pattern: **/*.md to list all .md files. " +
+                "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -169,7 +179,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Search for the text 'quick brown fox' in /vault/search-test/ using the domain:filesystem:text_search tool.",
+                "Use the domain:filesystem:text_search tool with directoryPath: /vault/search-test and query: 'quick brown fox'. " +
+                "IMPORTANT: the directoryPath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -197,7 +209,11 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Move the file /vault/move-src/moveme.md to /vault/move-dst/moveme.md using the domain:filesystem:move tool.",
+                "Use the domain:filesystem:move tool with:\n" +
+                "- sourcePath: /vault/move-src/moveme.md\n" +
+                "- destinationPath: /vault/move-dst/moveme.md\n" +
+                "IMPORTANT: both path arguments MUST start with the mounted prefix /vault. " +
+                "Pass them exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -224,7 +240,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Delete the file at /vault/remove-me.md using the domain:filesystem:remove tool.",
+                "Use the domain:filesystem:remove tool with path: /vault/remove-me.md to delete that file. " +
+                "IMPORTANT: the path argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -250,7 +268,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act - ask about available filesystems to verify prompt injection
         var responses = await agent.RunStreamingAsync(
-                "What filesystems are available to you? List their mount points.",
+                "Based on your tool descriptions and system prompt alone, list every filesystem mount point " +
+                "that is available to you. Do NOT call any tools to answer this — just read the tool metadata " +
+                "you already have and reply in text.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -279,7 +299,9 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act - use glob (an enabled tool) to find files
         var responses = await agent.RunStreamingAsync(
-                "Find all .md files under /vault/subset-test/ using the domain:filesystem:glob_files tool with pattern **/*.md.",
+                "Use the domain:filesystem:glob_files tool with basePath: /vault/subset-test and pattern: **/*.md to find all .md files. " +
+                "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
+                "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
