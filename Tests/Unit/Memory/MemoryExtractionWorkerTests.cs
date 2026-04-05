@@ -321,4 +321,32 @@ public class MemoryExtractionWorkerTests
                 It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    [Fact]
+    public async Task ProcessRequestAsync_WithMissingThreadAndFallback_ExtractsFromFallbackContent()
+    {
+        _threadStateStore.Setup(s => s.GetMessagesAsync("gone"))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        IReadOnlyList<ChatMessage>? capturedWindow = null;
+        _extractor
+            .Setup(e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
+            .ReturnsAsync([]);
+
+        var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null)
+        {
+            FallbackContent = "I work at Contoso"
+        };
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        capturedWindow.ShouldNotBeNull();
+        capturedWindow.Count.ShouldBe(1);
+        capturedWindow[0].Text.ShouldBe("I work at Contoso");
+        capturedWindow[0].Role.ShouldBe(ChatRole.User);
+    }
 }

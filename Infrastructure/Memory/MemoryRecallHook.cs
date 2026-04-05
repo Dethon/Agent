@@ -97,7 +97,10 @@ public class MemoryRecallHook(
             if (stateKey is not null)
             {
                 await extractionQueue.EnqueueAsync(
-                    new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId), ct);
+                    new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId)
+                    {
+                        FallbackContent = messageText
+                    }, ct);
             }
 
             sw.Stop();

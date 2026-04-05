@@ -96,6 +96,11 @@ public class MemoryExtractionWorker(
         var thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
         if (thread is null || request.AnchorIndex < 0 || request.AnchorIndex >= thread.Length)
         {
+            if (!string.IsNullOrEmpty(request.FallbackContent))
+            {
+                return await ExtractWithFallbackAsync(request, ct);
+            }
+
             logger.LogDebug(
                 "Extraction dropped: thread missing or anchor out of range (user {UserId}, key {Key}, anchor {Anchor})",
                 request.UserId, request.ThreadStateKey, request.AnchorIndex);
@@ -125,6 +130,17 @@ public class MemoryExtractionWorker(
             }
         }
         return [];
+    }
+
+    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithFallbackAsync(
+        MemoryExtractionRequest request, CancellationToken ct)
+    {
+        logger.LogDebug(
+            "Thread unavailable, falling back to direct message extraction (user {UserId}, key {Key})",
+            request.UserId, request.ThreadStateKey);
+
+        var window = new List<ChatMessage> { new(ChatRole.User, request.FallbackContent!) };
+        return await extractor.ExtractAsync(window, request.UserId, ct);
     }
 
     private async Task<bool> StoreIfNovelAsync(

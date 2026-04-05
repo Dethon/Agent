@@ -5,4 +5,7 @@ public record MemoryExtractionRequest(
     string ThreadStateKey,
     int AnchorIndex,
     string? ConversationId,
-    string? AgentId);
+    string? AgentId)
+{
+    public string? FallbackContent { get; init; }
+}
