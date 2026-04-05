@@ -51,6 +51,8 @@ public class ConversationWindowRendererTests
     [Fact]
     public void Render_WithAssistantAsFinalMessage_StillMarksFinalAsCurrent()
     {
+        // Defensive: the renderer doesn't enforce that the last message is a user turn.
+        // The caller (extraction worker) guarantees it, but the renderer stays general.
         var window = new List<ChatMessage>
         {
             new(ChatRole.User, "hi"),

@@ -13,9 +13,6 @@ public static class ConversationWindowRenderer
 
         var lastIndex = window.Count - 1;
 
-        // Assign a 1-based user-turn group to each non-current message.
-        // The group is the count of user messages in positions 0..i, clamped to min 1.
-        // This means pre-first-user messages share group 1 with the first user message.
         var groups = window
             .Take(lastIndex)
             .Select((msg, i) => Math.Max(1, window.Take(i + 1).Count(m => m.Role == ChatRole.User)))
