@@ -82,4 +82,28 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await Should.ThrowAsync<InvalidOperationException>(
             () => browser.NavigateAsync(request));
     }
+
+    [Fact]
+    public async Task ClickAsync_WithSelectOptionAction_ReturnsSessionNotFound()
+    {
+        var request = new ClickRequest(
+            SessionId: "non-existent-session",
+            Selector: "select",
+            Action: ClickAction.SelectOption,
+            InputValue: "option1");
+        var result = await _browser.ClickAsync(request);
+        result.Status.ShouldBe(ClickStatus.SessionNotFound);
+    }
+
+    [Fact]
+    public async Task ClickAsync_WithSetRangeAction_ReturnsSessionNotFound()
+    {
+        var request = new ClickRequest(
+            SessionId: "non-existent-session",
+            Selector: "input[type='range']",
+            Action: ClickAction.SetRange,
+            InputValue: "50");
+        var result = await _browser.ClickAsync(request);
+        result.Status.ShouldBe(ClickStatus.SessionNotFound);
+    }
 }

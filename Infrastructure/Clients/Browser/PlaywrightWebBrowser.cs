@@ -248,11 +248,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
             // Perform click action
             var urlBefore = page.Url;
+            var htmlBefore = await page.ContentAsync();
+            var contentBefore = PostActionAnalyzer.GetContentSnapshot(htmlBefore);
+
             await PerformClickAsync(locator, request);
 
             if (request.WaitForNavigation)
             {
-                // Wait for URL to change or load state
                 try
                 {
                     await page.WaitForURLAsync(
@@ -261,7 +263,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 }
                 catch (TimeoutException)
                 {
-                    // URL didn't change, might be SPA navigation - wait for network idle instead
                     await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
                         new PageWaitForLoadStateOptions { Timeout = request.WaitTimeoutMs });
                 }
@@ -274,12 +275,19 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
             _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
-            // Get page content after click
-            var html = await page.ContentAsync();
-            var content = HtmlConverter.Convert(html, WebFetchOutputFormat.Markdown);
-            if (content.Length > 10000)
+            // Adaptive content extraction (fall back to plain extraction on any analysis error)
+            string content;
+            try
             {
-                content = content[..10000] + "\n\n... (content truncated)";
+                content = await PostActionAnalyzer.AnalyzeAsync(
+                    page, request.Selector, urlBefore, contentBefore, ct);
+            }
+            catch
+            {
+                var html = await page.ContentAsync();
+                content = PostActionAnalyzer.GetContentSnapshot(html);
+                if (content.Length > 10000)
+                    content = content[..10000] + "\n\n... (content truncated)";
             }
 
             return new ClickResult(
@@ -583,6 +591,18 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 break;
             case ClickAction.Press:
                 await locator.PressAsync(request.Key ?? "Enter");
+                break;
+            case ClickAction.SelectOption:
+                await locator.SelectOptionAsync(request.InputValue ?? "");
+                break;
+            case ClickAction.SetRange:
+                await locator.EvaluateAsync("""
+                    (el, value) => {
+                        el.value = value;
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    """, request.InputValue ?? "0");
                 break;
             default:
                 await locator.ClickAsync();
