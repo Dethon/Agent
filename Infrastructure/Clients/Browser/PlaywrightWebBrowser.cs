@@ -480,6 +480,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
+    public Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
+        => throw new NotImplementedException("SnapshotAsync not yet implemented");
+
+    public Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
+        => throw new NotImplementedException("ActionAsync not yet implemented");
+
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await _sessions.CloseAsync(sessionId);

@@ -8,6 +8,8 @@ public interface IWebBrowser
     Task<ClickResult> ClickAsync(ClickRequest request, CancellationToken ct = default);
     Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default);
     Task<InspectResult> InspectAsync(InspectRequest request, CancellationToken ct = default);
+    Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default);
+    Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default);
     Task CloseSessionAsync(string sessionId, CancellationToken ct = default);
 }
 
@@ -206,3 +208,48 @@ public enum ClickAction
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);
+
+// --- Snapshot types ---
+
+public record SnapshotRequest(
+    string SessionId,
+    string? Selector = null);
+
+public record SnapshotResult(
+    string SessionId,
+    string? Url,
+    string? Snapshot,
+    int RefCount,
+    string? ErrorMessage);
+
+// --- Action types ---
+
+public enum WebActionType
+{
+    Click, Type, Fill, Select, Press, Clear,
+    Hover, Drag, Back, Screenshot, HandleDialog
+}
+
+public record WebActionRequest(
+    string SessionId,
+    string? Ref = null,
+    WebActionType Action = WebActionType.Click,
+    string? Value = null,
+    string? EndRef = null,
+    bool WaitForNavigation = false,
+    bool FullPage = false);
+
+public enum WebActionStatus
+{
+    Success, Error, ElementNotFound, SessionNotFound, Timeout
+}
+
+public record WebActionResult(
+    string SessionId,
+    WebActionStatus Status,
+    string? Url,
+    bool NavigationOccurred,
+    string? Snapshot,
+    byte[]? ScreenshotData,
+    string? DialogMessage,
+    string? ErrorMessage);
