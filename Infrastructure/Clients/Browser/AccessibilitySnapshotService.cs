@@ -195,7 +195,6 @@ public class AccessibilitySnapshotService
                         ':nth-of-type(' + (idx + 1) + ')';
                 }
                 container = container.parentElement;
-                i++;
             }
             return null;
         }
