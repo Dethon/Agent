@@ -277,7 +277,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 page.Url, false, null, null, $"ref is required for {request.Action} action.");
 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
-        await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 });
+        await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
 
         switch (request.Action)
         {
@@ -319,12 +319,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             try
             {
                 await page.WaitForURLAsync(url => url != urlBefore,
-                    new() { Timeout = 10000 });
+                    new() { Timeout = 30000 });
             }
             catch (TimeoutException)
             {
                 await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-                    new() { Timeout = 5000 });
+                    new() { Timeout = 15000 });
             }
         }
         else
