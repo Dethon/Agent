@@ -39,7 +39,7 @@ public static class MemoryModule
             services.AddSingleton<IMemoryExtractor>(sp =>
             {
                 var openRouterConfig = config.GetSection("openRouter");
-                var extractionModel = memoryConfig["Extraction:Model"] ?? "google/gemini-2.0-flash-001";
+                var extractionModel = memoryConfig["Extraction:Model"] ?? "z-ai/glm-4.7-flash:nitro";
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
@@ -53,7 +53,7 @@ public static class MemoryModule
             services.AddSingleton<IMemoryConsolidator>(sp =>
             {
                 var openRouterConfig = config.GetSection("openRouter");
-                var dreamingModel = memoryConfig["Dreaming:Model"] ?? "google/gemini-2.0-flash-001";
+                var dreamingModel = memoryConfig["Dreaming:Model"] ?? "z-ai/glm-4.7-flash:nitro";
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
@@ -67,14 +67,16 @@ public static class MemoryModule
             var recallOptions = new MemoryRecallOptions
             {
                 DefaultLimit = memoryConfig.GetValue("Recall:DefaultLimit", 10),
-                IncludePersonalityProfile = memoryConfig.GetValue("Recall:IncludePersonalityProfile", true)
+                IncludePersonalityProfile = memoryConfig.GetValue("Recall:IncludePersonalityProfile", true),
+                WindowUserTurns = memoryConfig.GetValue("Recall:WindowUserTurns", 3)
             };
             services.AddSingleton(recallOptions);
 
             var extractionOptions = new MemoryExtractionOptions
             {
                 SimilarityThreshold = memoryConfig.GetValue("Extraction:SimilarityThreshold", 0.85),
-                MaxCandidatesPerMessage = memoryConfig.GetValue("Extraction:MaxCandidatesPerMessage", 5)
+                MaxCandidatesPerMessage = memoryConfig.GetValue("Extraction:MaxCandidatesPerMessage", 5),
+                WindowMixedTurns = memoryConfig.GetValue("Extraction:WindowMixedTurns", 6)
             };
             services.AddSingleton(extractionOptions);
 

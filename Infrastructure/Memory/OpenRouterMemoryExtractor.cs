@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
+using Domain.Memory;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -28,13 +29,19 @@ public class OpenRouterMemoryExtractor(
     };
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-        string messageContent, string userId, CancellationToken ct)
+        IReadOnlyList<ChatMessage> contextWindow, string userId, CancellationToken ct)
     {
+        if (contextWindow.Count == 0)
+        {
+            return [];
+        }
+
         var profile = await store.GetProfileAsync(userId, ct);
+        var renderedWindow = ConversationWindowRenderer.Render(contextWindow);
 
         var userPrompt = profile is not null
-            ? $"Existing user profile:\n{profile.Summary}\n\nMessage to analyze:\n{messageContent}"
-            : $"Message to analyze:\n{messageContent}";
+            ? $"Existing user profile:\n{profile.Summary}\n\nConversation window:\n{renderedWindow}"
+            : $"Conversation window:\n{renderedWindow}";
 
         var userMessage = new ChatMessage(ChatRole.User, userPrompt);
         userMessage.SetSenderId(userId);

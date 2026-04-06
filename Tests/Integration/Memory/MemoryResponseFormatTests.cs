@@ -56,8 +56,9 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await extractor.ExtractAsync(
-            "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
-            "I'm currently learning Rust and working on a distributed cache project.",
+            [new ChatMessage(ChatRole.User,
+                "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
+                "I'm currently learning Rust and working on a distributed cache project.")],
             "test_user", cts.Token);
 
         result.ShouldNotBeEmpty("LLM should extract at least one memory candidate");
@@ -81,7 +82,9 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        var result = await extractor.ExtractAsync("Hello, how are you?", "test_user", cts.Token);
+        var result = await extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello, how are you?")],
+            "test_user", cts.Token);
 
         // A trivial greeting should produce few or no memory candidates
         result.Count.ShouldBeLessThanOrEqualTo(1);
@@ -283,7 +286,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 

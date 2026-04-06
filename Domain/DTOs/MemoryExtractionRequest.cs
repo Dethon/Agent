@@ -2,6 +2,10 @@ namespace Domain.DTOs;
 
 public record MemoryExtractionRequest(
     string UserId,
-    string MessageContent,
+    string? ThreadStateKey,
+    int AnchorIndex,
     string? ConversationId,
-    string? AgentId);
+    string? AgentId)
+{
+    public string? FallbackContent { get; init; }
+}

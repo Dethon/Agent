@@ -92,7 +92,7 @@ public class ChatMonitor(
                         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
                         if (memoryRecallHook is not null)
                         {
-                            await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, linkedCt);
+                            await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
                         }
                         // ReSharper disable once AccessToDisposedClosure
                         return agent

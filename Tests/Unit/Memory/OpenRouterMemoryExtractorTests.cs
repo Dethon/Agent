@@ -49,7 +49,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, extractionJson)));
 
-        var result = await _extractor.ExtractAsync("Hello, I work at Contoso", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello, I work at Contoso")],
+            "user1", CancellationToken.None);
 
         result.Count.ShouldBe(1);
         result[0].Content.ShouldBe("Works at Contoso");
@@ -69,7 +71,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
-        var result = await _extractor.ExtractAsync("Just saying hi", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Just saying hi")],
+            "user1", CancellationToken.None);
         result.ShouldBeEmpty();
     }
 
@@ -85,7 +89,9 @@ public class OpenRouterMemoryExtractorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, "not json at all")));
 
-        var result = await _extractor.ExtractAsync("Hello", "user1", CancellationToken.None);
+        var result = await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")],
+            "user1", CancellationToken.None);
         result.ShouldBeEmpty();
     }
 
@@ -110,10 +116,57 @@ public class OpenRouterMemoryExtractorTests
             .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
-        await _extractor.ExtractAsync("Hello", "user1", CancellationToken.None);
+        await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")],
+            "user1", CancellationToken.None);
 
         capturedMessages.ShouldNotBeNull();
         var userMsg = capturedMessages.Last();
         userMsg.Text.ShouldContain("Senior .NET developer");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WithEmptyContextWindow_ReturnsEmptyAndSkipsChatClient()
+    {
+        var result = await _extractor.ExtractAsync(
+            [],
+            "user1", CancellationToken.None);
+
+        result.ShouldBeEmpty();
+        _chatClient.Verify(
+            c => c.GetResponseAsync(It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _store.Verify(
+            s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_WithMultiTurnWindow_BuildsPromptContainingCurrentMarkerAndTurns()
+    {
+        _store.Setup(s => s.GetProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((PersonalityProfile?)null);
+
+        ChatMessage? capturedUserPrompt = null;
+        _chatClient.Setup(c => c.GetResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedUserPrompt = msgs.Single())
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates":[]}""")));
+
+        var window = new List<ChatMessage>
+        {
+            new(ChatRole.Assistant, "hot or cold?"),
+            new(ChatRole.User, "cold")
+        };
+
+        await _extractor.ExtractAsync(window, "user1", CancellationToken.None);
+
+        capturedUserPrompt.ShouldNotBeNull();
+        var promptText = capturedUserPrompt.Text;
+        promptText.ShouldContain("[CURRENT]");
+        promptText.ShouldContain("cold");
+        promptText.ShouldContain("hot or cold?");
     }
 }

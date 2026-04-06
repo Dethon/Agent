@@ -51,7 +51,9 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Find all .mkv files in the library using the fs_glob tool with pattern **/*.mkv",
+                "Use the fs_glob tool with:\n" +
+                "- pattern: **/*.mkv\n" +
+                "IMPORTANT: Pass the pattern exactly as written.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)
@@ -82,7 +84,10 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
         var responses = await agent.RunStreamingAsync(
-                $"Move the file from '{sourcePath}' to '{destPath}' using the fs_move tool.",
+                $"Use the fs_move tool with:\n" +
+                $"- sourcePath: {sourcePath}\n" +
+                $"- destinationPath: {destPath}\n" +
+                "IMPORTANT: Pass the paths exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
             .ToUpdateAiResponsePairs()
             .Where(x => x.Item2 is not null)

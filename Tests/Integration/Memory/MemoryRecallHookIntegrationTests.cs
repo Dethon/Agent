@@ -2,7 +2,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Extensions;
 using Domain.Memory;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Memory;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -44,15 +46,22 @@ public class MemoryRecallHookIntegrationTests(RedisFixture redisFixture) : IClas
             .ReturnsAsync(embedding);
 
         var agentDefinitionProvider = new Mock<IAgentDefinitionProvider>();
+        var threadStateStore = new Mock<IThreadStateStore>();
+        threadStateStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+
         var hook = new MemoryRecallHook(
-            store, embeddingService.Object, queue, metricsPublisher.Object,
+            store, embeddingService.Object, threadStateStore.Object, queue, metricsPublisher.Object,
             agentDefinitionProvider.Object,
             Mock.Of<ILogger<MemoryRecallHook>>(),
             new MemoryRecallOptions());
 
         var message = new ChatMessage(ChatRole.User, "What language should I use?");
 
-        await hook.EnrichAsync(message, userId, "conv_1", null, CancellationToken.None);
+        var session = new Mock<AgentSession>().Object;
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, "test-state-key");
+
+        await hook.EnrichAsync(message, userId, "conv_1", null, session, CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();

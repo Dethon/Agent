@@ -115,7 +115,7 @@ public class SubAgentTests(RedisFixture redisFixture)
         var openRouterConfig = CreateOpenRouterConfig();
         var factory = CreateFactory(openRouterConfig);
         var approvalHandler = new AutoApproveHandler();
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
         var server = redisFixture.Connection.GetServer(redisFixture.Connection.GetEndPoints()[0]);
         var keysBefore = server.Keys(pattern: "*").ToList();

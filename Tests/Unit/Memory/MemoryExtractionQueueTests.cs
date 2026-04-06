@@ -10,7 +10,7 @@ public class MemoryExtractionQueueTests
     public async Task EnqueueAsync_AndReadAllAsync_ReturnsEnqueuedItem()
     {
         var queue = new MemoryExtractionQueue();
-        var request = new MemoryExtractionRequest("user1", "Hello", "conv_1", null);
+        var request = new MemoryExtractionRequest("user1", "state-key", 0, "conv_1", null);
 
         await queue.EnqueueAsync(request, CancellationToken.None);
 
@@ -24,7 +24,7 @@ public class MemoryExtractionQueueTests
 
         items.Count.ShouldBe(1);
         items[0].UserId.ShouldBe("user1");
-        items[0].MessageContent.ShouldBe("Hello");
+        items[0].ThreadStateKey.ShouldBe("state-key");
     }
 
     [Fact]
@@ -32,8 +32,8 @@ public class MemoryExtractionQueueTests
     {
         var queue = new MemoryExtractionQueue();
 
-        await queue.EnqueueAsync(new MemoryExtractionRequest("user1", "First", null, null), CancellationToken.None);
-        await queue.EnqueueAsync(new MemoryExtractionRequest("user2", "Second", null, null), CancellationToken.None);
+        await queue.EnqueueAsync(new MemoryExtractionRequest("user1", "state-first", 0, null, null), CancellationToken.None);
+        await queue.EnqueueAsync(new MemoryExtractionRequest("user2", "state-second", 0, null, null), CancellationToken.None);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         var items = new List<MemoryExtractionRequest>();
@@ -47,7 +47,7 @@ public class MemoryExtractionQueueTests
 
         }
 
-        items[0].MessageContent.ShouldBe("First");
-        items[1].MessageContent.ShouldBe("Second");
+        items[0].ThreadStateKey.ShouldBe("state-first");
+        items[1].ThreadStateKey.ShouldBe("state-second");
     }
 }

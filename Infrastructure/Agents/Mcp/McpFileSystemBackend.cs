@@ -98,15 +98,14 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         {
             result = await client.CallToolAsync(toolName, args, cancellationToken: ct);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
-                $"This tool is not available on this filesystem backend.", ex);
+            return new JsonObject
+            {
+                ["error"] = true,
+                ["message"] = $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
+                              $"This tool is not available on this filesystem backend. Details: {ex.Message}"
+            };
         }
 
         if (result.IsError == true)
@@ -114,8 +113,11 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             var errorText = string.Join("\n", result.Content
                 .OfType<TextContentBlock>()
                 .Select(c => c.Text));
-            throw new InvalidOperationException(
-                $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}");
+            return new JsonObject
+            {
+                ["error"] = true,
+                ["message"] = $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}"
+            };
         }
 
         var text = string.Join("\n", result.Content
