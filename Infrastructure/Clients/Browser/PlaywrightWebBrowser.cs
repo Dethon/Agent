@@ -282,12 +282,11 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 content = await PostActionAnalyzer.AnalyzeAsync(
                     page, request.Selector, urlBefore, contentBefore, ct);
             }
-            catch
+            catch (Exception)
             {
+                // Widget detection may fail on some pages — fall back to full page content
                 var html = await page.ContentAsync();
                 content = PostActionAnalyzer.GetContentSnapshot(html);
-                if (content.Length > 10000)
-                    content = content[..10000] + "\n\n... (content truncated)";
             }
 
             return new ClickResult(
