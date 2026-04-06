@@ -109,6 +109,7 @@ public class WebClickTool(IWebBrowser browser)
             "press" => ClickAction.Press,
             "selectoption" => ClickAction.SelectOption,
             "setrange" => ClickAction.SetRange,
+            "type" => ClickAction.Type,
             _ => ClickAction.Click
         };
     }

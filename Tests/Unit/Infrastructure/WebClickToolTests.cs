@@ -10,6 +10,8 @@ public class WebClickToolTests
     [InlineData("selectOption", ClickAction.SelectOption)]
     [InlineData("setrange", ClickAction.SetRange)]
     [InlineData("setRange", ClickAction.SetRange)]
+    [InlineData("type", ClickAction.Type)]
+    [InlineData("Type", ClickAction.Type)]
     public void ParseAction_NewActions_ReturnCorrectEnum(string input, ClickAction expected)
     {
         var result = TestableWebClickTool.TestParseAction(input);

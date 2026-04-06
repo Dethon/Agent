@@ -200,7 +200,8 @@ public enum ClickAction
     Clear,
     Press,
     SelectOption,
-    SetRange
+    SetRange,
+    Type
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);
