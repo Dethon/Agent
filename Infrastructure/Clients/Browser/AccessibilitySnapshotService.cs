@@ -6,6 +6,7 @@ public class AccessibilitySnapshotService
 {
     private const string SnapshotScript = """
         (selectorScope) => {
+            document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
             let refCounter = 0;
 
             const implicitRoles = {
