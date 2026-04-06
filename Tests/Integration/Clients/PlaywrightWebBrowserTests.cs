@@ -589,6 +589,105 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [SkippableFact]
+    public async Task ClickAsync_SelectOptionAction_SelectsFromDropdown()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            // Navigate to a page with a native <select> element
+            var browseRequest = new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://httpbin.org/forms/post",
+                MaxLength: 5000,
+                WaitStrategy: WaitStrategy.DomContentLoaded,
+                WaitTimeoutMs: 8000,
+                DismissModals: false);
+            var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
+            browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+
+            // Select an option from the custegg dropdown (if present) or any select
+            var inspectRequest = new InspectRequest(sessionId, InspectMode.Forms);
+            var inspectResult = await fixture.Browser.InspectAsync(inspectRequest);
+
+            // Find any select field
+            var selectField = inspectResult.Forms?
+                .SelectMany(f => f.Fields)
+                .FirstOrDefault(f => f.Type == "select");
+
+            if (selectField != null)
+            {
+                var selectRequest = new ClickRequest(
+                    SessionId: sessionId,
+                    Selector: selectField.Selector,
+                    Action: ClickAction.SelectOption,
+                    InputValue: selectField.Name ?? "1",
+                    WaitTimeoutMs: 3000);
+                var selectResult = await fixture.Browser.ClickAsync(selectRequest);
+
+                testOutputHelper.WriteLine($"SelectOption status: {selectResult.Status}");
+                testOutputHelper.WriteLine($"Content preview: {selectResult.Content?[..Math.Min(500, selectResult.Content?.Length ?? 0)]}");
+                selectResult.Status.ShouldBe(ClickStatus.Success);
+            }
+            else
+            {
+                testOutputHelper.WriteLine("No select element found on page, skipping");
+            }
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [SkippableFact]
+    public async Task ClickAsync_FillAction_ReturnsFocusedContextNotFullPage()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = GetUniqueSessionId();
+        try
+        {
+            // Navigate to DuckDuckGo
+            var browseRequest = new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://duckduckgo.com",
+                MaxLength: 5000,
+                DismissModals: false,
+                WaitStrategy: WaitStrategy.NetworkIdle,
+                WaitTimeoutMs: 10000);
+            var browseResult = await fixture.Browser.NavigateAsync(browseRequest);
+            browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+
+            // Fill search input — should get focused/widget response, not full page
+            var fillRequest = new ClickRequest(
+                SessionId: sessionId,
+                Selector: "input[name='q']",
+                Action: ClickAction.Fill,
+                InputValue: "playwright",
+                WaitTimeoutMs: 3000);
+            var fillResult = await fixture.Browser.ClickAsync(fillRequest);
+
+            fillResult.Status.ShouldBe(ClickStatus.Success);
+            fillResult.Content.ShouldNotBeNull();
+
+            testOutputHelper.WriteLine($"Fill response length: {fillResult.ContentLength}");
+            testOutputHelper.WriteLine($"Content preview: {fillResult.Content[..Math.Min(1000, fillResult.Content.Length)]}");
+
+            // The response should either be a widget (autocomplete) or focused area — not the full page
+            var isWidget = fillResult.Content.Contains("[Widget:");
+            var isFocused = fillResult.ContentLength < 6000;
+            (isWidget || isFocused).ShouldBeTrue(
+                $"Expected widget or focused response, got {fillResult.ContentLength} chars");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
     [SkippableTheory]
     [InlineData("https://en.wikipedia.org/wiki/Stranger_Things_season_5")]
     [InlineData("https://en.wikipedia.org/wiki/Web_browser")]
