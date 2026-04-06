@@ -117,19 +117,7 @@ public class MemoryExtractionWorker(
             return [];
         }
 
-        for (var attempt = 0; attempt <= options.MaxRetries; attempt++)
-        {
-            try
-            {
-                return await extractor.ExtractAsync(window, request.UserId, ct);
-            }
-            catch (Exception ex) when (attempt < options.MaxRetries)
-            {
-                logger.LogWarning(ex, "Extraction attempt {Attempt} failed for user {UserId}, retrying",
-                    attempt + 1, request.UserId);
-            }
-        }
-        return [];
+        return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
 
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithFallbackAsync(
@@ -140,7 +128,25 @@ public class MemoryExtractionWorker(
             request.UserId, request.ThreadStateKey);
 
         var window = new List<ChatMessage> { new(ChatRole.User, request.FallbackContent!) };
-        return await extractor.ExtractAsync(window, request.UserId, ct);
+        return await ExtractWithRetryAsync(window, request.UserId, ct);
+    }
+
+    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
+        IReadOnlyList<ChatMessage> window, string userId, CancellationToken ct)
+    {
+        for (var attempt = 0; attempt <= options.MaxRetries; attempt++)
+        {
+            try
+            {
+                return await extractor.ExtractAsync(window, userId, ct);
+            }
+            catch (Exception ex) when (attempt < options.MaxRetries)
+            {
+                logger.LogWarning(ex, "Extraction attempt {Attempt} failed for user {UserId}, retrying",
+                    attempt + 1, userId);
+            }
+        }
+        return [];
     }
 
     private async Task<bool> StoreIfNovelAsync(

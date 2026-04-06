@@ -323,6 +323,36 @@ public class MemoryExtractionWorkerTests
     }
 
     [Fact]
+    public async Task ProcessRequestAsync_WithMissingThreadAndFallback_RetriesOnTransientFailure()
+    {
+        _threadStateStore.Setup(s => s.GetMessagesAsync("gone"))
+            .ReturnsAsync((ChatMessage[]?)null);
+
+        var callCount = 0;
+        _extractor
+            .Setup(e => e.ExtractAsync(
+                It.IsAny<IReadOnlyList<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ChatMessage> _, string _, CancellationToken _) =>
+            {
+                callCount++;
+                if (callCount <= 2)
+                    throw new HttpRequestException("transient");
+                return new List<ExtractionCandidate>();
+            });
+
+        var request = new MemoryExtractionRequest("user1", "gone", 0, "conv_1", null)
+        {
+            FallbackContent = "I work at Contoso"
+        };
+
+        await _worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        callCount.ShouldBe(3);
+    }
+
+    [Fact]
     public async Task ProcessRequestAsync_WithMissingThreadAndFallback_ExtractsFromFallbackContent()
     {
         _threadStateStore.Setup(s => s.GetMessagesAsync("gone"))
