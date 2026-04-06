@@ -21,9 +21,9 @@ public class McpWebClickTool(IWebBrowser browser)
         [Description(
             "Optional text to match within matching elements (filters results to elements containing this text)")]
         string? text = null,
-        [Description("Action: 'click' (default), 'fill', 'clear', 'press', 'selectOption', 'setRange', 'doubleclick', 'rightclick', 'hover'")]
+        [Description("Action: 'click' (default), 'fill', 'type', 'clear', 'press', 'selectOption', 'setRange', 'doubleclick', 'rightclick', 'hover'")]
         string? action = null,
-        [Description("Text to type into input field (required for action='fill')")]
+        [Description("Text to type into input field (required for action='fill' or 'type')")]
         string? inputValue = null,
         [Description("Keyboard key to press (for action='press'): 'Enter', 'Tab', 'Escape', 'Backspace', etc.")]
         string? key = null,
