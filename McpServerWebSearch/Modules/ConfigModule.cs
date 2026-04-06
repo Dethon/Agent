@@ -61,8 +61,6 @@ public static class ConfigModule
                 }))
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
-                .WithTools<McpWebClickTool>()
-                .WithTools<McpWebInspectTool>()
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
                 .WithPrompts<McpSystemPrompt>();

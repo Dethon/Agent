@@ -38,20 +38,6 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ClickAsync_WithNoSession_ReturnsSessionNotFound()
-    {
-        // Act
-        var request = new ClickRequest(
-            SessionId: "non-existent-session",
-            Selector: "a");
-        var result = await _browser.ClickAsync(request);
-
-        // Assert
-        result.Status.ShouldBe(ClickStatus.SessionNotFound);
-        result.ErrorMessage.ShouldNotBeNullOrEmpty();
-    }
-
-    [Fact]
     public async Task GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound()
     {
         // Act
@@ -83,39 +69,4 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
             () => browser.NavigateAsync(request));
     }
 
-    [Fact]
-    public async Task ClickAsync_WithSelectOptionAction_ReturnsSessionNotFound()
-    {
-        var request = new ClickRequest(
-            SessionId: "non-existent-session",
-            Selector: "select",
-            Action: ClickAction.SelectOption,
-            InputValue: "option1");
-        var result = await _browser.ClickAsync(request);
-        result.Status.ShouldBe(ClickStatus.SessionNotFound);
-    }
-
-    [Fact]
-    public async Task ClickAsync_WithSetRangeAction_ReturnsSessionNotFound()
-    {
-        var request = new ClickRequest(
-            SessionId: "non-existent-session",
-            Selector: "input[type='range']",
-            Action: ClickAction.SetRange,
-            InputValue: "50");
-        var result = await _browser.ClickAsync(request);
-        result.Status.ShouldBe(ClickStatus.SessionNotFound);
-    }
-
-    [Fact]
-    public async Task ClickAsync_WithTypeAction_ReturnsSessionNotFound()
-    {
-        var request = new ClickRequest(
-            SessionId: "non-existent-session",
-            Selector: "input.autocomplete",
-            Action: ClickAction.Type,
-            InputValue: "Odawara");
-        var result = await _browser.ClickAsync(request);
-        result.Status.ShouldBe(ClickStatus.SessionNotFound);
-    }
 }
