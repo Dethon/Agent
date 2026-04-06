@@ -21,8 +21,8 @@ public class WebInspectTool(IWebBrowser browser)
           - Extracts JSON-LD structured data (Product, Article, Organization, etc.)
           - Provides suggestions like "Found 24 items: use selector='.product-card'"
         - 'search': Find visible TEXT in page, returns matches with context and selectors
-        - 'forms': Detailed form inspection with all fields and buttons
-        - 'interactive': All clickable elements (buttons, links) with selectors
+        - 'forms': Detailed form inspection — finds ALL input fields including standalone inputs outside <form> tags
+        - 'interactive': All interactive elements — buttons, links, and input fields with selectors
         - 'tables': Extract all tables as structured JSON with headers and rows
 
         IMPORTANT: To extract elements by CSS selector (e.g., '.product', '#main'), use WebBrowse
@@ -31,6 +31,8 @@ public class WebInspectTool(IWebBrowser browser)
         Examples:
         - Analyze page structure: mode="structure" → get suggestions for extraction
         - Find text on page: mode="search", query="price"
+        - Discover form fields: mode="forms" → finds inputs even if not inside <form> tags
+        - Find all interactive elements: mode="interactive" → buttons, links, and input fields
         - Extract tables: mode="tables" → get structured data from all tables
         """;
 
