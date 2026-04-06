@@ -10,7 +10,8 @@ public class WebActionTool(IWebBrowser browser)
     protected const string Description =
         """
         Interacts with an element on the current page by ref from WebSnapshot.
-        After the action, returns a snapshot of the affected area.
+        After the action, returns a diff showing only what changed on the page.
+        Use WebSnapshot with a selector if you need more context.
 
         Actions requiring ref:
         - 'click': Click the element

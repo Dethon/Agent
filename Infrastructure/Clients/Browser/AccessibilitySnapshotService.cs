@@ -145,9 +145,11 @@ public class AccessibilitySnapshotService
                 if (!role && children.length === 0) return null;
 
                 const isKnown = role && (interactiveRoles.has(role) || structuralRoles.has(role));
+                const clickableStructural = new Set(['cell','listitem','columnheader']);
+
                 if (isKnown) {
                     let ref = null;
-                    if (interactiveRoles.has(role) && isVisible(el)) {
+                    if ((interactiveRoles.has(role) || clickableStructural.has(role)) && isVisible(el)) {
                         refCounter++;
                         ref = 'e' + refCounter;
                         el.setAttribute('data-ref', ref);
@@ -184,17 +186,21 @@ public class AccessibilitySnapshotService
         (selector) => {
             const el = document.querySelector(selector);
             if (!el) return null;
-            const tags = ['FORM','SECTION','ARTICLE','MAIN','DIALOG','FIELDSET'];
-            const roles = ['dialog','form','region','listbox','menu'];
+            const tags = new Set(['FORM','SECTION','ARTICLE','MAIN','DIALOG','FIELDSET','NAV','ASIDE','HEADER','FOOTER']);
+            const roles = new Set(['dialog','form','region','listbox','menu','navigation','complementary','banner','contentinfo']);
+
+            function toSelector(node) {
+                if (node.id) return '#' + CSS.escape(node.id);
+                const idx = Array.from(node.parentElement?.children || [])
+                    .filter(c => c.tagName === node.tagName).indexOf(node);
+                return node.tagName.toLowerCase() + ':nth-of-type(' + (idx + 1) + ')';
+            }
+
             let container = el.parentElement;
-            for (let i = 0; i < 4 && container; i++) {
-                if (tags.includes(container.tagName) ||
-                    roles.includes(container.getAttribute('role'))) {
-                    if (container.id) return '#' + CSS.escape(container.id);
-                    const idx = Array.from(container.parentElement?.children || [])
-                        .filter(c => c.tagName === container.tagName).indexOf(container);
-                    return container.tagName.toLowerCase() +
-                        ':nth-of-type(' + (idx + 1) + ')';
+            for (let i = 0; i < 8 && container && container !== document.body; i++) {
+                if (tags.has(container.tagName) ||
+                    roles.has(container.getAttribute('role'))) {
+                    return toSelector(container);
                 }
                 container = container.parentElement;
             }

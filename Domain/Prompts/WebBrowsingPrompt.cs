@@ -30,15 +30,16 @@ public static class WebBrowsingPrompt
         - Returns the accessibility tree showing ALL elements: headings, text, buttons, links,
           form fields, dropdowns, and their current state (expanded, checked, disabled, etc.)
         - Each interactive element has a ref you use with WebAction
-        - This is your primary tool for understanding what's on the page and finding elements
-        - Call this after WebBrowse to see interactive elements, or after WebAction to see results
+        - Use the selector parameter to scope to a specific section when you know what part
+          of the page you need (e.g. 'main', 'form', '.results'). Omit for full page.
+        - Call after WebBrowse to see interactive elements, or after WebAction for full context
 
         **WebAction** - Interact with elements
         - Target elements by ref from WebSnapshot
         - Actions: click, type (triggers autocomplete), fill (set value directly),
           select (native dropdowns), press (keyboard keys), clear, hover, focus, drag
         - Special actions (no ref needed): back (navigate back), handleDialog
-        - Returns a snapshot of the area around the element after the action
+        - Returns a diff showing only what changed on the page after the action
 
         ### Core Workflows
 
@@ -118,9 +119,9 @@ public static class WebBrowsingPrompt
            has autocomplete/suggestions (types character-by-character to trigger JS handlers).
            Use action="fill" for simple text fields where you just need to set the value.
 
-        4. **Read the snapshot after actions**: WebAction returns a snapshot of the affected
-           area. If an autocomplete opened, you'll see the options. If a form submitted,
-           you'll see the result. Call WebSnapshot for the full page if needed.
+        4. **Read the diff after actions**: WebAction returns only what changed on the page.
+           If an autocomplete opened, you'll see the new options. If a form submitted,
+           you'll see the result. Use WebSnapshot(selector='...') if you need more context.
 
         5. **Start with Search**: Use WebSearch to find URLs rather than guessing.
 

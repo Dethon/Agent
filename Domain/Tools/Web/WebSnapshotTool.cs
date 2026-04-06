@@ -9,15 +9,17 @@ public class WebSnapshotTool(IWebBrowser browser)
 
     protected const string Description =
         """
-        Returns the accessibility tree of the current page showing all elements:
-        headings, text, buttons, links, form fields, dropdowns, and their current
-        state (expanded, checked, disabled, etc.).
+        Returns the accessibility tree showing all elements: headings, text, buttons,
+        links, form fields, dropdowns, and their current state.
 
         Each interactive element has a ref you use with WebAction to interact with it.
 
+        Use the selector parameter to scope to a specific section when you know what
+        part of the page you need (e.g. selector='main', selector='form'). Omit for full page.
+
         Use this to understand page state and find elements before interacting.
-        Call after WebBrowse to see interactive elements, or after WebAction to see
-        the full page when the scoped response isn't enough.
+        Call after WebBrowse to see interactive elements, or after WebAction when the
+        diff response isn't enough context.
         """;
 
     protected async Task<JsonNode> RunAsync(

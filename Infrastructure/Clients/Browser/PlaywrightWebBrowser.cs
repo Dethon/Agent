@@ -279,6 +279,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
 
+        // Capture before-snapshot for diffing (refs stripped for comparison)
+        var before = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+        var beforeLines = SnapshotLinesForDiff(before.Snapshot);
+
         switch (request.Action)
         {
             case WebActionType.Click:
@@ -342,11 +346,35 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var navigationOccurred = page.Url != urlBefore;
         _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
-        var targetSelector = $"[data-ref='{request.Ref}']";
-        var snapshot = await _snapshotService.CaptureScopedAsync(page, targetSelector, request.SessionId);
+        // Capture after-snapshot and diff against before
+        var after = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+        var diff = BuildSnapshotDiff(beforeLines, after.Snapshot);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, navigationOccurred, snapshot.Snapshot, null, null);
+            page.Url, navigationOccurred, diff, null, null);
+    }
+
+    private static HashSet<string> SnapshotLinesForDiff(string snapshot)
+    {
+        return snapshot.Split('\n')
+            .Select(line => StripRefs(line))
+            .ToHashSet();
+    }
+
+    private static string StripRefs(string line)
+        => System.Text.RegularExpressions.Regex.Replace(line, @"\s*\[ref=e\d+\]", "");
+
+    private static string BuildSnapshotDiff(HashSet<string> beforeLines, string afterSnapshot)
+    {
+        var afterLines = afterSnapshot.Split('\n');
+        var newLines = afterLines
+            .Where(line => !beforeLines.Contains(StripRefs(line)))
+            .ToList();
+
+        if (newLines.Count == 0)
+            return "[no visible changes]";
+
+        return string.Join('\n', newLines);
     }
 
     private async Task SmartWaitAsync(IPage page, WebActionRequest request, CancellationToken ct)
@@ -429,6 +457,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
             page.Url, false, snapshot.Snapshot, message, null);
+    }
+
+    public async Task EvaluateOnSessionAsync(string sessionId, string script)
+    {
+        var session = _sessions.Get(sessionId)
+            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
+        await session.Page.EvaluateAsync(script);
     }
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
