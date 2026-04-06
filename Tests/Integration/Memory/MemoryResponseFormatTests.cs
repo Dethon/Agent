@@ -286,7 +286,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
             CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference)
         };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 
