@@ -235,7 +235,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var session = _sessions.Get(request.SessionId);
         if (session == null)
             return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
-                null, false, null, null, null, "Session not found. Use WebBrowse first.");
+                null, false, null, null, "Session not found. Use WebBrowse first.");
 
         var page = session.Page;
         var urlBefore = page.Url;
@@ -245,7 +245,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             return request.Action switch
             {
                 WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
-                WebActionType.Screenshot => await ExecuteScreenshotAsync(request, page),
                 WebActionType.HandleDialog => await ExecuteHandleDialogAsync(request, page),
                 _ => await ExecuteElementActionAsync(request, page, urlBefore, ct)
             };
@@ -253,7 +252,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         catch (TimeoutException)
         {
             return new WebActionResult(request.SessionId, WebActionStatus.Timeout,
-                page.Url, false, null, null, null, "Operation timed out.");
+                page.Url, false, null, null, "Operation timed out.");
         }
         catch (PlaywrightException ex)
         {
@@ -261,12 +260,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 ? WebActionStatus.ElementNotFound
                 : WebActionStatus.Error;
             return new WebActionResult(request.SessionId, status,
-                page.Url, false, null, null, null, ex.Message);
+                page.Url, false, null, null, ex.Message);
         }
         catch (Exception ex)
         {
             return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                page.Url, false, null, null, null, ex.Message);
+                page.Url, false, null, null, ex.Message);
         }
     }
 
@@ -275,7 +274,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     {
         if (string.IsNullOrEmpty(request.Ref))
             return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                page.Url, false, null, null, null, $"ref is required for {request.Action} action.");
+                page.Url, false, null, null, $"ref is required for {request.Action} action.");
 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 });
@@ -307,12 +306,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
                     return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                        page.Url, false, null, null, null, "endRef is required for drag action.");
+                        page.Url, false, null, null, "endRef is required for drag action.");
                 await locator.DragToAsync(AccessibilitySnapshotService.ResolveRef(page, request.EndRef));
                 break;
             default:
                 return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                    page.Url, false, null, null, null, $"Unhandled element action: {request.Action}");
+                    page.Url, false, null, null, $"Unhandled element action: {request.Action}");
         }
 
         if (request.WaitForNavigation)
@@ -340,7 +339,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var snapshot = await _snapshotService.CaptureScopedAsync(page, targetSelector, request.SessionId);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, navigationOccurred, snapshot.Snapshot, null, null, null);
+            page.Url, navigationOccurred, snapshot.Snapshot, null, null);
     }
 
     private async Task SmartWaitAsync(IPage page, WebActionRequest request, CancellationToken ct)
@@ -399,29 +398,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null, null);
-    }
-
-    private async Task<WebActionResult> ExecuteScreenshotAsync(
-        WebActionRequest request, IPage page)
-    {
-        byte[] data;
-        if (!string.IsNullOrEmpty(request.Ref))
-        {
-            var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
-            data = await locator.ScreenshotAsync(new() { Type = ScreenshotType.Png });
-        }
-        else
-        {
-            data = await page.ScreenshotAsync(new()
-            {
-                Type = ScreenshotType.Png,
-                FullPage = request.FullPage
-            });
-        }
-
-        return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, false, null, data, null, null);
+            page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null);
     }
 
     private async Task<WebActionResult> ExecuteHandleDialogAsync(
@@ -432,7 +409,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
         if (message is null)
             return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                page.Url, false, null, null, null, "No dialog pending.");
+                page.Url, false, null, null, "No dialog pending.");
 
         // Dialogs are auto-accepted by the event handler (Playwright blocks the page
         // until handled). This action returns the dialog message for the agent to see.
@@ -440,7 +417,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, false, snapshot.Snapshot, null, message, null);
+            page.Url, false, snapshot.Snapshot, message, null);
     }
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)

@@ -19,7 +19,6 @@ public class WebActionToolTests
     [InlineData("hover", WebActionType.Hover)]
     [InlineData("drag", WebActionType.Drag)]
     [InlineData("back", WebActionType.Back)]
-    [InlineData("screenshot", WebActionType.Screenshot)]
     [InlineData("handledialog", WebActionType.HandleDialog)]
     [InlineData("dialog", WebActionType.HandleDialog)]
     [InlineData("CLICK", WebActionType.Click)]
@@ -34,6 +33,7 @@ public class WebActionToolTests
     [InlineData("unknown")]
     [InlineData("tap")]
     [InlineData("swipe")]
+    [InlineData("screenshot")]
     public void ParseActionType_ThrowsForUnknownAction(string input)
     {
         Should.Throw<ArgumentException>(() => WebActionTool.ParseActionType(input));

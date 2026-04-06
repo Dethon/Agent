@@ -73,7 +73,7 @@ public record SnapshotResult(
 public enum WebActionType
 {
     Click, Type, Fill, Select, Press, Clear,
-    Hover, Drag, Back, Screenshot, HandleDialog
+    Hover, Drag, Back, HandleDialog
 }
 
 public record WebActionRequest(
@@ -82,8 +82,7 @@ public record WebActionRequest(
     WebActionType Action = WebActionType.Click,
     string? Value = null,
     string? EndRef = null,
-    bool WaitForNavigation = false,
-    bool FullPage = false);
+    bool WaitForNavigation = false);
 
 public enum WebActionStatus
 {
@@ -96,6 +95,5 @@ public record WebActionResult(
     string? Url,
     bool NavigationOccurred,
     string? Snapshot,
-    byte[]? ScreenshotData,
     string? DialogMessage,
     string? ErrorMessage);

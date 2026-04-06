@@ -18,7 +18,7 @@ public class McpWebActionTool(IWebBrowser browser)
         RequestContext<CallToolRequestParams> context,
         [Description("Element ref from WebSnapshot (required for click, type, fill, select, press, clear, hover, drag)")]
         string? @ref = null,
-        [Description("Action: 'click' (default), 'type', 'fill', 'select', 'press', 'clear', 'hover', 'drag', 'back', 'screenshot', 'handleDialog'")]
+        [Description("Action: 'click' (default), 'type', 'fill', 'select', 'press', 'clear', 'hover', 'drag', 'back', 'handleDialog'")]
         string? action = null,
         [Description("Value: text to type/fill, option text for select, key name for press (Enter/Tab/Escape/ArrowDown), 'accept'/'dismiss' for handleDialog")]
         string? value = null,
@@ -26,12 +26,10 @@ public class McpWebActionTool(IWebBrowser browser)
         string? endRef = null,
         [Description("Wait for page navigation after action (for clicks that load new pages)")]
         bool waitForNavigation = false,
-        [Description("For screenshot: capture full scrollable page instead of viewport")]
-        bool fullPage = false,
         CancellationToken ct = default)
     {
         var sessionId = context.Server.StateKey;
-        var result = await RunAsync(sessionId, @ref, action, value, endRef, waitForNavigation, fullPage, ct);
-        return ToolResponse.Create(result);
+        var result = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, ct);
+        return ToolResponse.Create(ToJson(result));
     }
 }

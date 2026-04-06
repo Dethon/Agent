@@ -24,21 +24,19 @@ public class WebActionTool(IWebBrowser browser)
 
         Actions NOT requiring ref:
         - 'back': Navigate back in browser history.
-        - 'screenshot': Take page screenshot. Optional ref scopes to element. fullPage=true for full page.
         - 'handleDialog': Accept/dismiss JS dialog. Set value to 'accept' or 'dismiss'.
 
         Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.
         For autocomplete: type partial text -> response shows options -> click option ref.
         """;
 
-    protected async Task<JsonNode> RunAsync(
+    protected async Task<WebActionResult> ExecuteAsync(
         string sessionId,
         string? @ref,
         string? action,
         string? value,
         string? endRef,
         bool waitForNavigation,
-        bool fullPage,
         CancellationToken ct)
     {
         var actionType = ParseActionType(action);
@@ -49,11 +47,13 @@ public class WebActionTool(IWebBrowser browser)
             Action: actionType,
             Value: value,
             EndRef: endRef,
-            WaitForNavigation: waitForNavigation,
-            FullPage: fullPage);
+            WaitForNavigation: waitForNavigation);
 
-        var result = await browser.ActionAsync(request, ct);
+        return await browser.ActionAsync(request, ct);
+    }
 
+    protected static JsonNode ToJson(WebActionResult result)
+    {
         if (result.Status is not WebActionStatus.Success)
         {
             return new JsonObject
@@ -77,9 +77,6 @@ public class WebActionTool(IWebBrowser browser)
         if (result.Snapshot is not null)
             response["snapshot"] = result.Snapshot;
 
-        if (result.ScreenshotData is not null)
-            response["screenshot"] = Convert.ToBase64String(result.ScreenshotData);
-
         if (result.DialogMessage is not null)
             response["dialogMessage"] = result.DialogMessage;
 
@@ -101,7 +98,6 @@ public class WebActionTool(IWebBrowser browser)
             "hover" => WebActionType.Hover,
             "drag" => WebActionType.Drag,
             "back" => WebActionType.Back,
-            "screenshot" => WebActionType.Screenshot,
             "handledialog" or "dialog" => WebActionType.HandleDialog,
             _ => throw new ArgumentException($"Unknown action: {action}")
         };
