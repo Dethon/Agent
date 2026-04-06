@@ -18,43 +18,23 @@ public class McpWebBrowseTool(IWebBrowser browser)
         RequestContext<CallToolRequestParams> context,
         [Description("The URL to navigate to")]
         string url,
-        [Description("Maximum characters to return (100-100000)")]
-        int maxLength,
-        [Description("Character offset to start from - use with maxLength to paginate through large content")]
-        int offset,
-        [Description("CSS selector to extract specific elements - returns ALL matches (e.g., '.product', '#main')")]
+        [Description("Maximum characters to return (100-100000, default: 10000)")]
+        int maxLength = 10000,
+        [Description("Character offset to start from (use 0 for beginning, increase to paginate)")]
+        int offset = 0,
+        [Description("CSS selector to extract specific elements (e.g. '.product-card', '#main'). Returns ALL matches.")]
         string? selector = null,
-        [Description("Output format: 'markdown' or 'html' (default: 'markdown')")]
-        string? format = null,
-        [Description("Include hyperlinks in output (default: true)")]
-        bool includeLinks = true,
-        [Description("Use readability mode to extract article content, stripping navigation/ads (default: false)")]
+        [Description("Extract clean article content, stripping ads, navigation, sidebars")]
         bool useReadability = false,
-        [Description(
-            "Wait strategy: 'domcontentloaded' (default), 'networkidle', 'load', 'selector', or 'stable'. Use 'networkidle' for pages needing full resource loading, 'stable' for JS-heavy SPAs")]
-        string? waitStrategy = null,
-        [Description(
-            "CSS selector to wait for before extracting content. Use with waitStrategy='selector' or as additional wait condition")]
-        string? waitSelector = null,
-        [Description("Maximum time in ms to wait for page load (1000-120000, default: 30000)")]
-        int waitTimeoutMs = 30000,
-        [Description("Extra delay in ms after page load for dynamic content (0-10000, default: 1000)")]
-        int extraDelayMs = 1000,
-        [Description("Scroll page to trigger lazy-loaded content (default: false)")]
+        [Description("Scroll page to trigger lazy-loaded content")]
         bool scrollToLoad = false,
         [Description("Number of scroll steps for lazy loading (1-10, default: 3)")]
         int scrollSteps = 3,
-        [Description("Wait until DOM stops changing - best for complex SPAs (default: false)")]
-        bool waitForStability = false,
-        [Description("Auto-dismiss cookie popups, age gates, newsletters (default: true)")]
-        bool dismissModals = true,
         CancellationToken ct = default)
     {
         var sessionId = context.Server.StateKey;
-        var result = await RunAsync(sessionId, url, selector, format, maxLength, offset, includeLinks,
-            useReadability,
-            waitStrategy, waitSelector, waitTimeoutMs, extraDelayMs, scrollToLoad, scrollSteps,
-            waitForStability, dismissModals, ct);
+        var result = await RunAsync(sessionId, url, selector, maxLength, offset,
+            useReadability, scrollToLoad, scrollSteps, ct);
         return ToolResponse.Create(result);
     }
 }

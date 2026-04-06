@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
 
 namespace Domain.Tools.Web;
 
@@ -10,53 +9,43 @@ public class WebBrowseTool(IWebBrowser browser)
 
     protected const string Description =
         """
-        Navigates to a URL in a persistent browser session.
-        Automatically dismisses cookie consent, age gates, and other popups.
-        Use this for multi-step browsing - the session persists between calls.
-        Returns page content after modal dismissal.
-        Use WebClick to interact with elements after navigating.
+        Navigates to a URL and returns page content as markdown.
+        Maintains a persistent browser session (cookies, login state preserved).
+        Automatically dismisses cookie popups, age gates, newsletter modals.
+
+        Use selector to extract specific elements (e.g., selector=".product-card").
+        Use maxLength/offset for pagination of long content.
+        Use useReadability=true for clean article extraction (strips ads, nav, sidebars).
+        Use scrollToLoad=true for pages with lazy-loaded content.
+
+        Returns structured data (JSON-LD) when available on the page.
+
+        For interacting with pages (clicking, filling forms), use WebSnapshot + WebAction.
         """;
 
     protected async Task<JsonNode> RunAsync(
         string sessionId,
         string url,
         string? selector,
-        string? format,
         int maxLength,
         int offset,
-        bool includeLinks,
         bool useReadability,
-        string? waitStrategy,
-        string? waitSelector,
-        int waitTimeoutMs,
-        int extraDelayMs,
         bool scrollToLoad,
         int scrollSteps,
-        bool waitForStability,
-        bool dismissModals,
         CancellationToken ct)
     {
-        var outputFormat = ParseFormat(format);
-        var parsedWaitStrategy = ParseWaitStrategy(waitStrategy);
+        maxLength = Math.Clamp(maxLength, 100, 100000);
+        scrollSteps = Math.Clamp(scrollSteps, 1, 10);
 
         var request = new BrowseRequest(
             SessionId: sessionId,
             Url: url,
             Selector: selector,
-            Format: outputFormat,
-            MaxLength: Math.Clamp(maxLength, 100, 100000),
-            Offset: Math.Max(0, offset),
-            IncludeLinks: includeLinks,
+            MaxLength: maxLength,
+            Offset: offset,
             UseReadability: useReadability,
-            WaitStrategy: parsedWaitStrategy,
-            WaitSelector: waitSelector,
-            WaitTimeoutMs: Math.Clamp(waitTimeoutMs, 1000, 120000),
-            ExtraDelayMs: Math.Clamp(extraDelayMs, 0, 10000),
             ScrollToLoad: scrollToLoad,
-            ScrollSteps: Math.Clamp(scrollSteps, 1, 10),
-            WaitForStability: waitForStability,
-            DismissModals: dismissModals
-        );
+            ScrollSteps: scrollSteps);
 
         var result = await browser.NavigateAsync(request, ct);
 
@@ -73,7 +62,7 @@ public class WebBrowseTool(IWebBrowser browser)
 
         var response = new JsonObject
         {
-            ["status"] = result.Status == BrowseStatus.Success ? "success" : "partial",
+            ["status"] = result.Status == BrowseStatus.CaptchaRequired ? "captcha_required" : "success",
             ["sessionId"] = result.SessionId,
             ["url"] = result.Url,
             ["title"] = result.Title,
@@ -82,7 +71,7 @@ public class WebBrowseTool(IWebBrowser browser)
             ["truncated"] = result.Truncated
         };
 
-        if (result.Metadata != null)
+        if (result.Metadata is not null)
         {
             response["metadata"] = new JsonObject
             {
@@ -93,73 +82,28 @@ public class WebBrowseTool(IWebBrowser browser)
             };
         }
 
-        if (result.Links is { Count: > 0 })
+        if (result.StructuredData is { Count: > 0 })
         {
-            var linksArray = new JsonArray();
-            foreach (var link in result.Links.Take(20))
+            var sdArray = new JsonArray();
+            foreach (var sd in result.StructuredData)
             {
-                linksArray.Add(new JsonObject
+                sdArray.Add(new JsonObject
                 {
-                    ["text"] = link.Text,
-                    ["url"] = link.Url
+                    ["type"] = sd.Type,
+                    ["data"] = sd.RawJson
                 });
             }
-
-            response["links"] = linksArray;
+            response["structuredData"] = sdArray;
         }
 
         if (result.DismissedModals is { Count: > 0 })
         {
-            var modalsArray = new JsonArray();
-            foreach (var modal in result.DismissedModals)
-            {
-                modalsArray.Add(new JsonObject
-                {
-                    ["type"] = modal.Type.ToString(),
-                    ["selector"] = modal.Selector,
-                    ["buttonText"] = modal.ButtonText
-                });
-            }
-
-            response["dismissedModals"] = modalsArray;
-        }
-
-        if (!string.IsNullOrEmpty(result.ErrorMessage))
-        {
-            response["message"] = result.ErrorMessage;
+            var modals = new JsonArray();
+            foreach (var m in result.DismissedModals)
+                modals.Add(m.Type.ToString());
+            response["dismissedModals"] = modals;
         }
 
         return response;
-    }
-
-    private static WebFetchOutputFormat ParseFormat(string? format)
-    {
-        if (string.IsNullOrEmpty(format))
-        {
-            return WebFetchOutputFormat.Markdown;
-        }
-
-        return format.ToLowerInvariant() switch
-        {
-            "html" => WebFetchOutputFormat.Html,
-            _ => WebFetchOutputFormat.Markdown
-        };
-    }
-
-    private static WaitStrategy ParseWaitStrategy(string? strategy)
-    {
-        if (string.IsNullOrEmpty(strategy))
-        {
-            return WaitStrategy.DomContentLoaded;
-        }
-
-        return strategy.ToLowerInvariant() switch
-        {
-            "networkidle" => WaitStrategy.NetworkIdle,
-            "load" => WaitStrategy.Load,
-            "selector" => WaitStrategy.Selector,
-            "stable" => WaitStrategy.Stable,
-            _ => WaitStrategy.DomContentLoaded
-        };
     }
 }

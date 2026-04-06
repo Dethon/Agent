@@ -121,21 +121,11 @@ public record BrowseRequest(
     string SessionId,
     string Url,
     string? Selector = null,
-    WebFetchOutputFormat Format = WebFetchOutputFormat.Markdown,
     int MaxLength = 10000,
     int Offset = 0,
-    bool IncludeLinks = true,
     bool UseReadability = false,
-    WaitStrategy WaitStrategy = WaitStrategy.NetworkIdle,
-    string? WaitSelector = null,
-    int WaitTimeoutMs = 30000,
-    int ExtraDelayMs = 1000,
     bool ScrollToLoad = false,
-    int ScrollSteps = 3,
-    bool WaitForStability = false,
-    int StabilityCheckMs = 500,
-    bool DismissModals = true,
-    ModalDismissalConfig? ModalConfig = null);
+    int ScrollSteps = 3);
 
 public record BrowseResult(
     string SessionId,
@@ -146,7 +136,7 @@ public record BrowseResult(
     int ContentLength,
     bool Truncated,
     WebPageMetadata? Metadata,
-    IReadOnlyList<ExtractedLink>? Links,
+    IReadOnlyList<StructuredData>? StructuredData,
     IReadOnlyList<ModalDismissed>? DismissedModals,
     string? ErrorMessage);
 

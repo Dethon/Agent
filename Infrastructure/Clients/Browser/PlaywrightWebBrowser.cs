@@ -41,35 +41,31 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Brief random delay before navigation
             await Task.Delay(_random.Next(50, 150), ct);
 
-            var waitUntil = MapWaitStrategy(request.WaitStrategy);
             var navigationTimedOut = false;
 
             try
             {
                 await page.GotoAsync(request.Url, new PageGotoOptions
                 {
-                    WaitUntil = waitUntil,
-                    Timeout = request.WaitTimeoutMs
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 30000
                 });
             }
             catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
             {
-                // Navigation timed out (common for JS-heavy sites like Reddit that never reach NetworkIdle)
-                // Check if we have content loaded and proceed with it
+                // Navigation timed out — check if we have content loaded and proceed with it
                 var currentUrl = page.Url;
                 if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
                 {
                     navigationTimedOut = true;
-                    // Continue processing - we have partial content
                 }
                 else
                 {
-                    throw; // Re-throw if we have no content at all
+                    throw;
                 }
             }
             catch (TimeoutException)
             {
-                // Fallback for System.TimeoutException if thrown
                 var currentUrl = page.Url;
                 if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
                 {
@@ -100,7 +96,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         ContentLength: 0,
                         Truncated: false,
                         Metadata: null,
-                        Links: null,
+                        StructuredData: null,
                         DismissedModals: null,
                         ErrorMessage: captchaResult.Message
                     );
@@ -108,27 +104,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
                 // Refresh page after setting cookie
                 await page.ReloadAsync(new PageReloadOptions
-                { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
+                { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
                 html = await page.ContentAsync();
                 captchaRetries++;
             }
 
-            // Auto-dismiss modals if enabled
-            IReadOnlyList<ModalDismissed>? dismissedModals = null;
-            if (request.DismissModals)
-            {
-                dismissedModals = await _modalDismisser.DismissModalsAsync(page, request.ModalConfig, ct);
-            }
-
-            // Element-based waiting if selector strategy or explicit wait selector provided
-            if (request.WaitStrategy == WaitStrategy.Selector && !string.IsNullOrEmpty(request.WaitSelector))
-            {
-                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
-            }
-            else if (!string.IsNullOrEmpty(request.WaitSelector))
-            {
-                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
-            }
+            // Always dismiss modals
+            var dismissedModals = await _modalDismisser.DismissModalsAsync(page, null, ct);
 
             // Scroll-to-load for lazy-loaded content
             if (request.ScrollToLoad)
@@ -136,30 +118,22 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 await ScrollToLoadAsync(page, request.ScrollSteps, ct);
             }
 
-            // Wait for DOM stability
-            if (request.WaitForStability || request.WaitStrategy == WaitStrategy.Stable)
-            {
-                await WaitForDomStabilityAsync(page, request.StabilityCheckMs, ct);
-            }
-
-            // Configurable delay for dynamic content
-            await Task.Delay(request.ExtraDelayMs, ct);
+            // Always wait for DOM stability
+            await WaitForDomStabilityAsync(page, ct: ct);
 
             // Re-fetch HTML after all waiting
             html = await page.ContentAsync();
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
+            var structuredData = ExtractStructuredData(html);
 
-            // Determine status - partial if navigation timed out or processing was partial
             var status = navigationTimedOut || processed.IsPartial
                 ? BrowseStatus.Partial
                 : BrowseStatus.Success;
 
-            // Build error message
             var errorMessage = processed.ErrorMessage;
             if (navigationTimedOut)
             {
-                var timeoutMsg = "Page did not fully load (NetworkIdle timeout). Content may be incomplete. " +
-                                 "Try waitStrategy='domcontentloaded' for JS-heavy sites.";
+                var timeoutMsg = "Page did not fully load (DOMContentLoaded timeout). Content may be incomplete.";
                 errorMessage = string.IsNullOrEmpty(errorMessage) ? timeoutMsg : $"{timeoutMsg} {errorMessage}";
             }
 
@@ -172,7 +146,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 ContentLength: processed.ContentLength,
                 Truncated: processed.Truncated,
                 Metadata: processed.Metadata,
-                Links: processed.Links,
+                StructuredData: structuredData.Count > 0 ? structuredData : null,
                 DismissedModals: dismissedModals,
                 ErrorMessage: errorMessage
             );
@@ -373,7 +347,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 ContentLength: processed.ContentLength,
                 Truncated: processed.Truncated,
                 Metadata: processed.Metadata,
-                Links: processed.Links,
+                StructuredData: null,
                 DismissedModals: null,
                 ErrorMessage: processed.ErrorMessage
             );
@@ -885,8 +859,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
     private static async Task WaitForDomStabilityAsync(
         IPage page,
-        int checkIntervalMs,
-        CancellationToken ct,
+        int checkIntervalMs = 500,
+        CancellationToken ct = default,
         int stableCountRequired = 2,
         int maxChecks = 6)
     {
@@ -915,6 +889,42 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
+    private static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
+    {
+        var matches = System.Text.RegularExpressions.Regex.Matches(html,
+            @"<script[^>]*type=[""']application/ld\+json[""'][^>]*>(.*?)</script>",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return matches
+            .SelectMany(match =>
+            {
+                try
+                {
+                    var json = match.Groups[1].Value.Trim();
+                    var doc = System.Text.Json.JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("@graph", out var graph) &&
+                        graph.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        return graph.EnumerateArray().Select(item =>
+                        {
+                            var type = item.TryGetProperty("@type", out var t) ? t.GetString() : "Unknown";
+                            return new StructuredData(type ?? "Unknown", item.GetRawText());
+                        });
+                    }
+
+                    var rootType = root.TryGetProperty("@type", out var rt) ? rt.GetString() : "Unknown";
+                    return new[] { new StructuredData(rootType ?? "Unknown", json) }.AsEnumerable();
+                }
+                catch
+                {
+                    return Enumerable.Empty<StructuredData>();
+                }
+            })
+            .ToList();
+    }
+
     private static bool ValidateUrl(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https");
@@ -931,7 +941,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             ContentLength: 0,
             Truncated: false,
             Metadata: null,
-            Links: null,
+            StructuredData: null,
             DismissedModals: null,
             ErrorMessage: message
         );

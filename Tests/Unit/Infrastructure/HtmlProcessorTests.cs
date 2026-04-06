@@ -1,5 +1,4 @@
 using Domain.Contracts;
-using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Shouldly;
 
@@ -116,33 +115,6 @@ public class HtmlProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_ExtractsLinks()
-    {
-        // Arrange
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test Page</title></head>
-                   <body>
-                       <a href="https://example.com/page1">Link 1</a>
-                       <a href="https://example.com/page2">Link 2</a>
-                       <a href="/relative">Relative Link</a>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", IncludeLinks: true);
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.Links.ShouldNotBeNull();
-        result.Links.Count.ShouldBe(2); // Only absolute URLs
-        result.Links.ShouldContain(l => l.Text == "Link 1" && l.Url == "https://example.com/page1");
-        result.Links.ShouldContain(l => l.Text == "Link 2" && l.Url == "https://example.com/page2");
-    }
-
-    [Fact]
     public async Task ProcessAsync_WithMarkdownFormat_ConvertsToMarkdown()
     {
         // Arrange
@@ -157,8 +129,7 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
-            Format: WebFetchOutputFormat.Markdown);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -193,35 +164,6 @@ public class HtmlProcessorTests
         result.Content!.Length.ShouldBeLessThanOrEqualTo(520); // Actual returned content should be truncated
         result.ContentLength.ShouldBeGreaterThan(500); // ContentLength is total length (for pagination)
         result.Content!.ShouldContain("[Content truncated...]");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_WithHtmlFormat_ReturnsRawHtml()
-    {
-        // Arrange
-        var html = """
-                   <!DOCTYPE html>
-                   <html>
-                   <head><title>Test</title></head>
-                   <body>
-                       <div class="container">
-                           <h1>Title</h1>
-                           <p>Paragraph with <strong>bold</strong> text.</p>
-                       </div>
-                   </body>
-                   </html>
-                   """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
-            Format: WebFetchOutputFormat.Html);
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.Content.ShouldNotBeNull();
-        result.Content.ShouldContain("<div class=\"container\">");
-        result.Content.ShouldContain("<h1>Title</h1>");
-        result.Content.ShouldContain("<strong>bold</strong>");
     }
 
     [Fact]
@@ -260,7 +202,7 @@ public class HtmlProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_WithClassSelector_CombinesLinksFromAllMatches()
+    public async Task ProcessAsync_WithClassSelector_LinksInContentAreRendered()
     {
         // Arrange
         var html = """
@@ -277,17 +219,15 @@ public class HtmlProcessorTests
                    </body>
                    </html>
                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".card",
-            IncludeLinks: true);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Selector: ".card");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
 
-        // Assert - Links from all matches should be combined
-        result.Links.ShouldNotBeNull();
-        result.Links.Count.ShouldBe(2);
-        result.Links.ShouldContain(l => l.Url == "https://example.com/1");
-        result.Links.ShouldContain(l => l.Url == "https://example.com/2");
+        // Assert - Links from all matches are rendered as markdown
+        result.Content.ShouldNotBeNull();
+        result.Content.ShouldContain("https://example.com/1");
+        result.Content.ShouldContain("https://example.com/2");
     }
 
     [Fact]
@@ -341,10 +281,8 @@ public class HtmlProcessorTests
         result.Content.ShouldBe("");
     }
 
-    [Theory]
-    [InlineData(WebFetchOutputFormat.Html)]
-    [InlineData(WebFetchOutputFormat.Markdown)]
-    public async Task ProcessAsync_WithMultiClassSelector_ReturnsMatchedElements(WebFetchOutputFormat format)
+    [Fact]
+    public async Task ProcessAsync_WithMultiClassSelector_ReturnsMatchedElements()
     {
         // Arrange - selector with multiple classes
         var html = """
@@ -364,8 +302,7 @@ public class HtmlProcessorTests
         var request = new BrowseRequest(
             SessionId: "test",
             Url: "http://example.com/test",
-            Selector: "li.item.active",
-            Format: format);
+            Selector: "li.item.active");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -409,10 +346,8 @@ public class HtmlProcessorTests
         result.Content.ShouldNotContain("After content");
     }
 
-    [Theory]
-    [InlineData(WebFetchOutputFormat.Markdown)]
-    [InlineData(WebFetchOutputFormat.Html)]
-    public async Task ProcessAsync_WithControlCharacters_StripsInvalidChars(WebFetchOutputFormat format)
+    [Fact]
+    public async Task ProcessAsync_WithControlCharacters_StripsInvalidChars()
     {
         // Arrange - Content with control characters that break LLM APIs (422)
         // ReSharper disable VariableLengthStringHexEscapeSequence
@@ -421,7 +356,7 @@ public class HtmlProcessorTests
                    "<p>Has\x00null\x01and\x02control\x1Fchars</p>" +
                    "<p>Tabs\tand\nnewlines are fine</p>" +
                    "</body></html>";
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test", Format: format);
+        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test");
 
         // Act
         var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
@@ -431,35 +366,5 @@ public class HtmlProcessorTests
         result.Content.ShouldContain("Normal text");
         var invalidChars = result.Content!.Where(c => c < ' ' && c != '\t' && c != '\n' && c != '\r').ToList();
         invalidChars.ShouldBeEmpty($"Content contains invalid control characters: {string.Join(", ", invalidChars.Select(c => $"U+{(int)c:X4}"))}");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_WithHtmlFormat_TruncatesWithValidHtml()
-    {
-        // Arrange
-        var longContent = string.Join("\n",
-            Enumerable.Range(1, 100).Select(i => $"<div><p>Paragraph {i} with some content.</p></div>"));
-        var html = $"""
-                    <!DOCTYPE html>
-                    <html>
-                    <head><title>Test</title></head>
-                    <body><main>{longContent}</main></body>
-                    </html>
-                    """;
-        var request = new BrowseRequest(SessionId: "test", Url: "http://example.com/test",
-            Format: WebFetchOutputFormat.Html, MaxLength: 500);
-
-        // Act
-        var result = await HtmlProcessor.ProcessAsync(request, html, CancellationToken.None);
-
-        // Assert
-        result.Truncated.ShouldBeTrue();
-        result.Content.ShouldNotBeNull();
-        // HTML truncation should use HTML comment
-        result.Content.ShouldContain("<!-- Content truncated -->");
-        // Should not end with unclosed tags
-        result.Content.ShouldNotEndWith("<");
-        result.Content.ShouldNotEndWith("<div");
-        result.Content.ShouldNotEndWith("<p");
     }
 }
