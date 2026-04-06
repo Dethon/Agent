@@ -300,7 +300,7 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_WhenThreadStoreThrows_FallsBackToCurrentMessageOnly()
+    public async Task EnrichAsync_WhenThreadStoreThrows_StillEnqueuesExtractionWithFallback()
     {
         var message = new ChatMessage(ChatRole.User, "hello");
         var session = CreateSessionWithStateKey("state-broken");
@@ -322,18 +322,14 @@ public class MemoryRecallHookTests
 
         capturedEmbeddingInput.ShouldBe("hello");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        var hasItem = false;
-        try
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var item in _queue.ReadAllAsync(cts.Token))
         {
-            await foreach (var _ in _queue.ReadAllAsync(cts.Token))
-            {
-                hasItem = true;
-                break;
-            }
+            item.UserId.ShouldBe("user1");
+            item.ThreadStateKey.ShouldBe("state-broken");
+            item.FallbackContent.ShouldBe("hello");
+            break;
         }
-        catch (OperationCanceledException) { }
-        hasItem.ShouldBeFalse();
     }
 
     [Fact]

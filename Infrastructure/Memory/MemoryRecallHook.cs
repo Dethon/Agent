@@ -140,7 +140,7 @@ public class MemoryRecallHook(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to fetch thread history for recall window (key {Key})", stateKey);
-            return (null, null);
+            return (null, stateKey);
         }
     }
 
