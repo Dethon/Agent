@@ -198,7 +198,9 @@ public enum ClickAction
     Hover,
     Fill,
     Clear,
-    Press
+    Press,
+    SelectOption,
+    SetRange
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);

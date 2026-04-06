@@ -37,7 +37,7 @@ public class WebClickTool(IWebBrowser browser)
         int waitTimeoutMs,
         CancellationToken ct)
     {
-        var clickAction = ParseAction(action);
+        var clickAction = ParseActionValue(action);
 
         var request = new ClickRequest(
             SessionId: sessionId,
@@ -75,7 +75,7 @@ public class WebClickTool(IWebBrowser browser)
         };
     }
 
-    private static ClickAction ParseAction(string? action)
+    protected internal static ClickAction ParseActionValue(string? action)
     {
         if (string.IsNullOrEmpty(action))
         {
@@ -90,6 +90,8 @@ public class WebClickTool(IWebBrowser browser)
             "fill" => ClickAction.Fill,
             "clear" => ClickAction.Clear,
             "press" => ClickAction.Press,
+            "selectoption" => ClickAction.SelectOption,
+            "setrange" => ClickAction.SetRange,
             _ => ClickAction.Click
         };
     }
