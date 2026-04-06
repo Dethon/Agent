@@ -17,13 +17,30 @@ public class WebClickTool(IWebBrowser browser)
         - 'fill': Type text into an input field (requires inputValue)
         - 'clear': Clear an input field
         - 'press': Press a keyboard key (requires key: Enter, Tab, Escape, etc.)
+        - 'selectOption': Select from a <select> dropdown (requires inputValue: option value or label)
+        - 'setRange': Set a slider/range input value (requires inputValue: numeric value)
         - 'doubleclick': Double-click the element
+        - 'rightclick': Right-click the element
         - 'hover': Hover over the element
+
+        The response adapts to what happened:
+        - If a widget opened (calendar, dropdown, suggestions), you'll see the widget state and available options with selectors
+        - If the page changed significantly, you'll see the new page content
+        - Otherwise, you'll see the area around the element you interacted with
+
+        Widget workflows:
+        - Datepicker: click the date input → read calendar options → click desired date
+        - Autocomplete: fill with partial text → read suggestions → click desired suggestion
+        - Dropdown (native): use selectOption with the desired value
+        - Dropdown (custom): click to open → read options → click desired option
+        - Slider: use setRange with the desired numeric value
 
         Form workflow example:
         1. WebClick(selector="input[name='email']", action="fill", inputValue="user@example.com")
-        2. WebClick(selector="input[name='password']", action="fill", inputValue="secret")
-        3. WebClick(selector="button[type='submit']", waitForNavigation=true)
+        2. WebClick(selector="select[name='country']", action="selectOption", inputValue="Spain")
+        3. WebClick(selector="input[name='checkin']") → calendar opens, read dates
+        4. WebClick(selector=".calendar-day[data-date='2026-04-15']") → date selected
+        5. WebClick(selector="button[type='submit']", waitForNavigation=true)
         """;
 
     protected async Task<JsonNode> RunAsync(
