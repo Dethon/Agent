@@ -93,42 +93,40 @@ public class MemoryExtractionWorker(
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(
         MemoryExtractionRequest request, CancellationToken ct)
     {
-        var thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
-        if (thread is null || request.AnchorIndex < 0 || request.AnchorIndex >= thread.Length)
-        {
-            if (!string.IsNullOrEmpty(request.FallbackContent))
-            {
-                return await ExtractWithFallbackAsync(request, ct);
-            }
-
-            logger.LogDebug(
-                "Extraction dropped: thread missing or anchor out of range (user {UserId}, key {Key}, anchor {Anchor})",
-                request.UserId, request.ThreadStateKey, request.AnchorIndex);
-            return [];
-        }
-
-        var window = thread
-            .Take(request.AnchorIndex + 1)
-            .TakeLast(options.WindowMixedTurns)
-            .ToList();
-
+        var window = await BuildExtractionWindowAsync(request);
         if (window.Count == 0)
         {
+            logger.LogDebug(
+                "Extraction dropped: no window could be built (user {UserId}, key {Key}, anchor {Anchor})",
+                request.UserId, request.ThreadStateKey, request.AnchorIndex);
             return [];
         }
 
         return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
 
-    private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithFallbackAsync(
-        MemoryExtractionRequest request, CancellationToken ct)
+    private async Task<List<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {
-        logger.LogDebug(
-            "Thread unavailable, falling back to direct message extraction (user {UserId}, key {Key})",
-            request.UserId, request.ThreadStateKey);
+        ChatMessage[]? thread = null;
+        if (request.ThreadStateKey is not null)
+        {
+            thread = await threadStateStore.GetMessagesAsync(request.ThreadStateKey);
+        }
 
-        var window = new List<ChatMessage> { new(ChatRole.User, request.FallbackContent!) };
-        return await ExtractWithRetryAsync(window, request.UserId, ct);
+        var hasFallback = !string.IsNullOrEmpty(request.FallbackContent);
+        var contextSlots = hasFallback ? options.WindowMixedTurns - 1 : options.WindowMixedTurns;
+
+        var window = (thread?
+            .Take(Math.Max(0, request.AnchorIndex))
+            .TakeLast(contextSlots)
+            .ToList()) ?? [];
+
+        if (hasFallback)
+        {
+            window.Add(new ChatMessage(ChatRole.User, request.FallbackContent!));
+        }
+
+        return window;
     }
 
     private async Task<IReadOnlyList<ExtractionCandidate>> ExtractWithRetryAsync(

@@ -2,7 +2,7 @@ namespace Domain.DTOs;
 
 public record MemoryExtractionRequest(
     string UserId,
-    string ThreadStateKey,
+    string? ThreadStateKey,
     int AnchorIndex,
     string? ConversationId,
     string? AgentId)

@@ -94,14 +94,11 @@ public class MemoryRecallHook(
                 }
             });
 
-            if (stateKey is not null)
-            {
-                await extractionQueue.EnqueueAsync(
-                    new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId)
-                    {
-                        FallbackContent = messageText
-                    }, ct);
-            }
+            await extractionQueue.EnqueueAsync(
+                new MemoryExtractionRequest(userId, stateKey, anchorIndex, conversationId, agentId)
+                {
+                    FallbackContent = messageText
+                }, ct);
 
             sw.Stop();
             await metricsPublisher.PublishAsync(new MemoryRecallEvent

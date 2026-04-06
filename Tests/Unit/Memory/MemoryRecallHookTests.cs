@@ -333,15 +333,13 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_WhenSessionHasNoStateKey_FallsBackToCurrentMessageOnly()
+    public async Task EnrichAsync_WhenSessionHasNoStateKey_StillEnqueuesExtractionWithFallback()
     {
         var message = new ChatMessage(ChatRole.User, "hello");
         var session = new Mock<AgentSession>().Object;
 
-        string? capturedEmbeddingInput = null;
         _embeddingService
             .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<string, CancellationToken>((text, _) => capturedEmbeddingInput = text)
             .ReturnsAsync(_testEmbedding);
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
                 It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
@@ -350,7 +348,16 @@ public class MemoryRecallHookTests
 
         await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
 
-        capturedEmbeddingInput.ShouldBe("hello");
         _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var item in _queue.ReadAllAsync(cts.Token))
+        {
+            item.UserId.ShouldBe("user1");
+            item.ThreadStateKey.ShouldBeNull();
+            item.AnchorIndex.ShouldBe(0);
+            item.FallbackContent.ShouldBe("hello");
+            break;
+        }
     }
 }

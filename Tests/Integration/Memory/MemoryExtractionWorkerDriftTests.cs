@@ -56,13 +56,16 @@ public class MemoryExtractionWorkerDriftTests(RedisFixture redisFixture) : IClas
             NullLogger<MemoryExtractionWorker>.Instance,
             new MemoryExtractionOptions());
 
-        // Create extraction request anchored at index 2 (before appending new messages)
+        // Create extraction request anchored at 3 persisted messages; FallbackContent is the current user message
         var request = new MemoryExtractionRequest(
             UserId: $"user-{Guid.NewGuid():N}",
             ThreadStateKey: stateKey,
-            AnchorIndex: 2,
+            AnchorIndex: 3,
             ConversationId: "conv-drift",
-            AgentId: null);
+            AgentId: null)
+        {
+            FallbackContent = "Japan in April"
+        };
 
         // Act: append 3 more messages to the thread AFTER creating the request
         await threadStore.SetMessagesAsync(stateKey,
@@ -78,10 +81,11 @@ public class MemoryExtractionWorkerDriftTests(RedisFixture redisFixture) : IClas
         // Process the request with anchor frozen at index 2
         await worker.ProcessRequestAsync(request, CancellationToken.None);
 
-        // Assert: window must only contain messages up to anchor, not the new ones
+        // Assert: window contains context from thread[..3] + FallbackContent, not drift messages
         capturedWindow.ShouldNotBeNull();
         capturedWindow.ShouldNotContain(m => m.Text.Contains("Thailand"));
         capturedWindow.ShouldNotContain(m => m.Text == "Great choice!");
         capturedWindow[^1].Text.ShouldBe("Japan in April");
+        capturedWindow[^1].Role.ShouldBe(ChatRole.User);
     }
 }
