@@ -110,7 +110,8 @@ public record InspectButton(string Tag, string? Text, string Selector, int Count
 
 public record InspectInteractive(
     IReadOnlyList<InspectButton> Buttons,
-    IReadOnlyList<InspectLink> Links);
+    IReadOnlyList<InspectLink> Links,
+    IReadOnlyList<InspectFormField> Inputs);
 
 public record InspectLink(string? Text, string Selector, int Count = 1);
 

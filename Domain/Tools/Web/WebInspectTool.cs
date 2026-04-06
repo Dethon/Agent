@@ -319,6 +319,22 @@ public class WebInspectTool(IWebBrowser browser)
         }
 
         response["links"] = linksArray;
+
+        var inputsArray = new JsonArray();
+        foreach (var input in interactive.Inputs)
+        {
+            inputsArray.Add(new JsonObject
+            {
+                ["type"] = input.Type,
+                ["name"] = input.Name,
+                ["label"] = input.Label,
+                ["placeholder"] = input.Placeholder,
+                ["selector"] = input.Selector,
+                ["required"] = input.Required
+            });
+        }
+
+        response["inputs"] = inputsArray;
     }
 
     private static void AddTablesToResponse(JsonObject response, IReadOnlyList<ExtractedTable> tables)

@@ -583,13 +583,14 @@ public static partial class HtmlInspector
         var root = GetScopedElement(document, selectorScope);
         if (root == null)
         {
-            return new InspectInteractive([], []);
+            return new InspectInteractive([], [], []);
         }
 
         var buttons = ExtractButtons(root);
         var links = ExtractLinks(root);
+        var inputs = ExtractFormFields(root);
 
-        return new InspectInteractive(buttons, links);
+        return new InspectInteractive(buttons, links, inputs);
     }
 
     private static IElement? GetScopedElement(IDocument document, string? selectorScope)

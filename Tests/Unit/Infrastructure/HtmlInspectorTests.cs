@@ -718,6 +718,35 @@ public class HtmlInspectorTests
         deleteButtons.Count.ShouldBe(3);
     }
 
+    [Fact]
+    public async Task InspectInteractive_FindsInputFields()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html><body>
+                                <input type="text" id="search" placeholder="Search...">
+                                <select name="category">
+                                    <option>All</option>
+                                    <option>Books</option>
+                                </select>
+                                <textarea name="notes" placeholder="Notes"></textarea>
+                                <input type="hidden" name="token" value="abc">
+                                <button>Submit</button>
+                                <a href="/home">Home</a>
+                            </body></html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var result = HtmlInspector.InspectInteractive(document, null);
+
+        result.Buttons.Count.ShouldBe(1);
+        result.Links.Count.ShouldBe(1);
+        result.Inputs.Count.ShouldBe(3); // text + select + textarea (not hidden)
+        result.Inputs.ShouldContain(f => f.Placeholder == "Search...");
+        result.Inputs.ShouldContain(f => f.Type == "select");
+        result.Inputs.ShouldContain(f => f.Type == "textarea");
+    }
+
     #endregion
 
     #region Edge Cases
