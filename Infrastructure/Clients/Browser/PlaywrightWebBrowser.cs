@@ -603,6 +603,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                     }
                     """, request.InputValue ?? "0");
                 break;
+            case ClickAction.Type:
+                await locator.ClearAsync();
+                await locator.PressSequentiallyAsync(request.InputValue ?? "", new() { Delay = 50 });
+                break;
             default:
                 await locator.ClickAsync();
                 break;

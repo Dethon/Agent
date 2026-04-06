@@ -106,4 +106,16 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         var result = await _browser.ClickAsync(request);
         result.Status.ShouldBe(ClickStatus.SessionNotFound);
     }
+
+    [Fact]
+    public async Task ClickAsync_WithTypeAction_ReturnsSessionNotFound()
+    {
+        var request = new ClickRequest(
+            SessionId: "non-existent-session",
+            Selector: "input.autocomplete",
+            Action: ClickAction.Type,
+            InputValue: "Odawara");
+        var result = await _browser.ClickAsync(request);
+        result.Status.ShouldBe(ClickStatus.SessionNotFound);
+    }
 }
