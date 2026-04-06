@@ -818,33 +818,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    private static WaitUntilState MapWaitStrategy(WaitStrategy strategy)
-    {
-        return strategy switch
-        {
-            WaitStrategy.NetworkIdle => WaitUntilState.NetworkIdle,
-            WaitStrategy.Load => WaitUntilState.Load,
-            WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
-            _ => WaitUntilState.DOMContentLoaded
-        };
-    }
-
-    private static async Task WaitForSelectorAsync(IPage page, string selector, int timeoutMs)
-    {
-        try
-        {
-            await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = timeoutMs
-            });
-        }
-        catch (TimeoutException)
-        {
-            // Selector didn't appear within timeout - continue with whatever content we have
-        }
-    }
-
     private static async Task ScrollToLoadAsync(IPage page, int scrollSteps, CancellationToken ct)
     {
         for (var i = 1; i <= scrollSteps; i++)
