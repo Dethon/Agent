@@ -358,8 +358,11 @@ public class MemoryExtractionWorkerTests
             {
                 callCount++;
                 if (callCount <= 2)
+                {
                     throw new HttpRequestException("transient");
-                return new List<ExtractionCandidate>();
+                }
+
+                return [];
             });
 
         var request = new MemoryExtractionRequest("user1", null, 0, "conv_1", null)
