@@ -35,6 +35,7 @@ public class WebBrowseTool(IWebBrowser browser)
         CancellationToken ct)
     {
         maxLength = Math.Clamp(maxLength, 100, 100000);
+        offset = Math.Max(0, offset);
         scrollSteps = Math.Clamp(scrollSteps, 1, 10);
 
         var request = new BrowseRequest(
@@ -103,6 +104,9 @@ public class WebBrowseTool(IWebBrowser browser)
                 modals.Add(m.Type.ToString());
             response["dismissedModals"] = modals;
         }
+
+        if (!string.IsNullOrEmpty(result.ErrorMessage))
+            response["message"] = result.ErrorMessage;
 
         return response;
     }
