@@ -20,6 +20,7 @@ public class WebActionTool(IWebBrowser browser)
         - 'press': Press keyboard key. Set value to key name (Enter, Tab, Escape, ArrowDown).
         - 'clear': Clear input field.
         - 'hover': Hover over element (triggers tooltips, menus).
+        - 'focus': Focus element (triggers datepickers, dropdowns that open on focus).
         - 'drag': Drag element to target. Set endRef to destination element ref.
 
         Actions NOT requiring ref:
@@ -96,6 +97,7 @@ public class WebActionTool(IWebBrowser browser)
             "press" => WebActionType.Press,
             "clear" => WebActionType.Clear,
             "hover" => WebActionType.Hover,
+            "focus" => WebActionType.Focus,
             "drag" => WebActionType.Drag,
             "back" => WebActionType.Back,
             "handledialog" or "dialog" => WebActionType.HandleDialog,

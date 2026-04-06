@@ -18,7 +18,7 @@ public class McpWebActionTool(IWebBrowser browser)
         RequestContext<CallToolRequestParams> context,
         [Description("Element ref from WebSnapshot (required for click, type, fill, select, press, clear, hover, drag)")]
         string? @ref = null,
-        [Description("Action: 'click' (default), 'type', 'fill', 'select', 'press', 'clear', 'hover', 'drag', 'back', 'handleDialog'")]
+        [Description("Action: 'click' (default), 'type', 'fill', 'select', 'press', 'clear', 'hover', 'focus', 'drag', 'back', 'handleDialog'")]
         string? action = null,
         [Description("Value: text to type/fill, option text for select, key name for press (Enter/Tab/Escape/ArrowDown), 'accept'/'dismiss' for handleDialog")]
         string? value = null,

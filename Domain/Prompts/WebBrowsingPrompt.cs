@@ -36,7 +36,7 @@ public static class WebBrowsingPrompt
         **WebAction** - Interact with elements
         - Target elements by ref from WebSnapshot
         - Actions: click, type (triggers autocomplete), fill (set value directly),
-          select (native dropdowns), press (keyboard keys), clear, hover, drag
+          select (native dropdowns), press (keyboard keys), clear, hover, focus, drag
         - Special actions (no ref needed): back (navigate back), handleDialog
         - Returns a snapshot of the area around the element after the action
 

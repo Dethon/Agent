@@ -17,6 +17,7 @@ public class WebActionToolTests
     [InlineData("press", WebActionType.Press)]
     [InlineData("clear", WebActionType.Clear)]
     [InlineData("hover", WebActionType.Hover)]
+    [InlineData("focus", WebActionType.Focus)]
     [InlineData("drag", WebActionType.Drag)]
     [InlineData("back", WebActionType.Back)]
     [InlineData("handledialog", WebActionType.HandleDialog)]

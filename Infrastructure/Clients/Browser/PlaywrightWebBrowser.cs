@@ -283,6 +283,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             case WebActionType.Click:
                 await locator.ClickAsync();
+                if (await HasJQueryAsync(page))
+                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
                 break;
             case WebActionType.Type:
                 await locator.ClearAsync();
@@ -302,6 +304,11 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 break;
             case WebActionType.Hover:
                 await locator.HoverAsync();
+                break;
+            case WebActionType.Focus:
+                await locator.FocusAsync();
+                if (await HasJQueryAsync(page))
+                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
                 break;
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
@@ -348,6 +355,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             WebActionType.Type => (2000, 200),
             WebActionType.Click => (2000, 200),
+            WebActionType.Focus => (2000, 200),
             WebActionType.Hover => (1000, 200),
             _ => (300, 300)
         };
@@ -370,6 +378,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             previousHtml = currentHtml;
         }
     }
+
+    private static async Task<bool> HasJQueryAsync(IPage page)
+        => await page.EvaluateAsync<bool>("() => typeof jQuery !== 'undefined'");
 
     private static async Task<string> GetNearbyHtmlAsync(IPage page, string targetSelector)
     {
