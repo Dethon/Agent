@@ -609,6 +609,67 @@ public class HtmlInspectorTests
         forms[0].Selector.ShouldContain("contact");
     }
 
+    [Fact]
+    public async Task InspectForms_FindsStandaloneInputsOutsideFormTags()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html><body>
+                                <form id="login" name="login">
+                                    <input type="text" name="username" placeholder="Username">
+                                    <button type="submit">Login</button>
+                                </form>
+                                <div class="search-widget">
+                                    <input type="text" id="departureStation" placeholder="Departure">
+                                    <select id="arrivalStation" disabled>
+                                        <option>Select arrival</option>
+                                    </select>
+                                    <button>Search</button>
+                                </div>
+                            </body></html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var forms = HtmlInspector.InspectForms(document, null);
+
+        // Should find the actual form AND a synthetic entry for standalone inputs
+        forms.Count.ShouldBe(2);
+
+        // First entry: the real form
+        forms[0].Name.ShouldBe("login");
+        forms[0].Fields.Count.ShouldBe(1);
+
+        // Second entry: standalone inputs (no form wrapper)
+        var standalone = forms[1];
+        standalone.Name.ShouldBeNull();
+        standalone.Action.ShouldBeNull();
+        standalone.Method.ShouldBeNull();
+        standalone.Fields.Count.ShouldBe(2); // departureStation + arrivalStation
+        standalone.Fields.ShouldContain(f => f.Placeholder == "Departure");
+        standalone.Fields.ShouldContain(f => f.Type == "select");
+    }
+
+    [Fact]
+    public async Task InspectForms_NoStandaloneEntry_WhenAllInputsInsideForms()
+    {
+        const string html = """
+                            <!DOCTYPE html>
+                            <html><body>
+                                <form id="login" name="login">
+                                    <input type="text" name="username">
+                                    <button type="submit">Login</button>
+                                </form>
+                            </body></html>
+                            """;
+
+        var document = await ParseHtmlAsync(html);
+        var forms = HtmlInspector.InspectForms(document, null);
+
+        // Should only have the real form — no synthetic entry
+        forms.Count.ShouldBe(1);
+        forms[0].Name.ShouldBe("login");
+    }
+
     #endregion
 
     #region Interactive Element Tests

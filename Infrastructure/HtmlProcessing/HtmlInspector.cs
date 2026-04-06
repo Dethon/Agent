@@ -525,21 +525,57 @@ public static partial class HtmlInspector
             return [];
         }
 
-        return root.QuerySelectorAll("form")
-            .Select(form => new
+        var forms = root.QuerySelectorAll("form")
+            .Select(form => new InspectForm(
+                Name: form.GetAttribute("name"),
+                Action: form.GetAttribute("action"),
+                Method: form.GetAttribute("method")?.ToUpperInvariant(),
+                Selector: GenerateSelector(form),
+                Fields: ExtractFormFields(form),
+                Buttons: ExtractFormButtons(form)))
+            .ToList();
+
+        // Find inputs outside any <form> tag
+        var standaloneInputs = root.QuerySelectorAll("input, select, textarea")
+            .Where(el => el.Closest("form") == null)
+            .ToList();
+
+        if (standaloneInputs.Count > 0)
+        {
+            var fields = standaloneInputs
+                .Select(input => new
+                {
+                    input,
+                    type = input.TagName.ToLowerInvariant() switch
+                    {
+                        "select" => "select",
+                        "textarea" => "textarea",
+                        _ => input.GetAttribute("type") ?? "text"
+                    }
+                })
+                .Where(t => t.type is not ("hidden" or "submit" or "button"))
+                .Select(t => new InspectFormField(
+                    Type: t.type,
+                    Name: t.input.GetAttribute("name"),
+                    Label: FindLabel(t.input, root),
+                    Placeholder: t.input.GetAttribute("placeholder"),
+                    Selector: GenerateSelector(t.input),
+                    Required: t.input.HasAttribute("required")))
+                .ToList();
+
+            if (fields.Count > 0)
             {
-                form,
-                fields = ExtractFormFields(form)
-            })
-            .Select(t => new
-            {
-                t,
-                buttons = ExtractFormButtons(t.form)
-            })
-            .Select(t => new InspectForm(Name: t.t.form.GetAttribute("name"),
-                Action: t.t.form.GetAttribute("action"),
-                Method: t.t.form.GetAttribute("method")?.ToUpperInvariant(), Selector: GenerateSelector(t.t.form),
-                Fields: t.t.fields, Buttons: t.buttons)).ToList();
+                forms.Add(new InspectForm(
+                    Name: null,
+                    Action: null,
+                    Method: null,
+                    Selector: "body",
+                    Fields: fields,
+                    Buttons: []));
+            }
+        }
+
+        return forms;
     }
 
     public static InspectInteractive InspectInteractive(IDocument document, string? selectorScope)
@@ -601,12 +637,12 @@ public static partial class HtmlInspector
                 Required: t.t.t.t.input.HasAttribute("required"))).ToList();
     }
 
-    private static string? FindLabel(IElement input, IElement form)
+    private static string? FindLabel(IElement input, IElement scope)
     {
         var id = input.GetAttribute("id");
         if (!string.IsNullOrEmpty(id))
         {
-            var label = form.QuerySelector($"label[for='{id}']");
+            var label = scope.QuerySelector($"label[for='{id}']");
             if (label != null)
             {
                 return CollapseWhitespace(label.TextContent.Trim());
