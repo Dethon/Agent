@@ -69,9 +69,9 @@ public static class PostActionAnalyzer
         return tier switch
         {
             ResponseTier.Widget => WidgetDetector.FormatWidgetContent(widget!),
-            ResponseTier.FullPage => HtmlConverter.Truncate(contentAfter, MaxContentLength),
+            ResponseTier.FullPage => TruncateContent(contentAfter, MaxContentLength),
             ResponseTier.Focused => await ExtractFocusedAreaAsync(page, targetSelector, contentAfter),
-            _ => HtmlConverter.Truncate(contentAfter, MaxContentLength)
+            _ => TruncateContent(contentAfter, MaxContentLength)
         };
     }
 
@@ -111,9 +111,15 @@ public static class PostActionAnalyzer
         {
             var focusedContent = HtmlConverter.Convert(focusedHtml, WebFetchOutputFormat.Markdown);
             if (focusedContent.Length > 50)
-                return HtmlConverter.Truncate(focusedContent, FocusedAreaMaxLength);
+                return TruncateContent(focusedContent, FocusedAreaMaxLength);
         }
 
-        return HtmlConverter.Truncate(fullContent, MaxContentLength);
+        return TruncateContent(fullContent, MaxContentLength);
+    }
+
+    private static string TruncateContent(string content, int maxLength)
+    {
+        if (content.Length <= maxLength) return content;
+        return content[..maxLength] + "\n\n... (content truncated)";
     }
 }
