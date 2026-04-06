@@ -1,0 +1,109 @@
+using System.Text.Json.Nodes;
+using Domain.Contracts;
+
+namespace Domain.Tools.Web;
+
+public class WebActionTool(IWebBrowser browser)
+{
+    protected const string Name = "WebAction";
+
+    protected const string Description =
+        """
+        Interacts with an element on the current page by ref from WebSnapshot.
+        After the action, returns a snapshot of the affected area.
+
+        Actions requiring ref:
+        - 'click': Click the element
+        - 'type': Type character-by-character (triggers autocomplete). Set value to text.
+        - 'fill': Set input value directly (no keystroke events). Set value to text.
+        - 'select': Select native dropdown option. Set value to option text.
+        - 'press': Press keyboard key. Set value to key name (Enter, Tab, Escape, ArrowDown).
+        - 'clear': Clear input field.
+        - 'hover': Hover over element (triggers tooltips, menus).
+        - 'drag': Drag element to target. Set endRef to destination element ref.
+
+        Actions NOT requiring ref:
+        - 'back': Navigate back in browser history.
+        - 'screenshot': Take page screenshot. Optional ref scopes to element. fullPage=true for full page.
+        - 'handleDialog': Accept/dismiss JS dialog. Set value to 'accept' or 'dismiss'.
+
+        Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.
+        For autocomplete: type partial text -> response shows options -> click option ref.
+        """;
+
+    protected async Task<JsonNode> RunAsync(
+        string sessionId,
+        string? @ref,
+        string? action,
+        string? value,
+        string? endRef,
+        bool waitForNavigation,
+        bool fullPage,
+        CancellationToken ct)
+    {
+        var actionType = ParseActionType(action);
+
+        var request = new WebActionRequest(
+            SessionId: sessionId,
+            Ref: @ref,
+            Action: actionType,
+            Value: value,
+            EndRef: endRef,
+            WaitForNavigation: waitForNavigation,
+            FullPage: fullPage);
+
+        var result = await browser.ActionAsync(request, ct);
+
+        if (result.Status is not WebActionStatus.Success)
+        {
+            return new JsonObject
+            {
+                ["status"] = "error",
+                ["sessionId"] = result.SessionId,
+                ["errorType"] = result.Status.ToString(),
+                ["url"] = result.Url,
+                ["message"] = result.ErrorMessage
+            };
+        }
+
+        var response = new JsonObject
+        {
+            ["status"] = "success",
+            ["sessionId"] = result.SessionId,
+            ["url"] = result.Url,
+            ["navigationOccurred"] = result.NavigationOccurred
+        };
+
+        if (result.Snapshot is not null)
+            response["snapshot"] = result.Snapshot;
+
+        if (result.ScreenshotData is not null)
+            response["screenshot"] = Convert.ToBase64String(result.ScreenshotData);
+
+        if (result.DialogMessage is not null)
+            response["dialogMessage"] = result.DialogMessage;
+
+        return response;
+    }
+
+    public static WebActionType ParseActionType(string? action)
+    {
+        if (string.IsNullOrEmpty(action)) return WebActionType.Click;
+
+        return action.ToLowerInvariant() switch
+        {
+            "click" => WebActionType.Click,
+            "type" => WebActionType.Type,
+            "fill" => WebActionType.Fill,
+            "select" or "selectoption" => WebActionType.Select,
+            "press" => WebActionType.Press,
+            "clear" => WebActionType.Clear,
+            "hover" => WebActionType.Hover,
+            "drag" => WebActionType.Drag,
+            "back" => WebActionType.Back,
+            "screenshot" => WebActionType.Screenshot,
+            "handledialog" or "dialog" => WebActionType.HandleDialog,
+            _ => throw new ArgumentException($"Unknown action: {action}")
+        };
+    }
+}

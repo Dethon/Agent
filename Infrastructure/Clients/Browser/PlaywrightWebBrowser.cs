@@ -498,8 +498,219 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    public Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
-        => throw new NotImplementedException("ActionAsync not yet implemented");
+    public async Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session == null)
+            return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
+                null, false, null, null, null, "Session not found. Use WebBrowse first.");
+
+        var page = session.Page;
+        var urlBefore = page.Url;
+
+        try
+        {
+            return request.Action switch
+            {
+                WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
+                WebActionType.Screenshot => await ExecuteScreenshotAsync(request, page),
+                WebActionType.HandleDialog => await ExecuteHandleDialogAsync(request, page),
+                _ => await ExecuteElementActionAsync(request, page, urlBefore, ct)
+            };
+        }
+        catch (TimeoutException)
+        {
+            return new WebActionResult(request.SessionId, WebActionStatus.Timeout,
+                page.Url, false, null, null, null, "Operation timed out.");
+        }
+        catch (PlaywrightException ex)
+        {
+            var status = ex.Message.Contains("not found") || ex.Message.Contains("no element")
+                ? WebActionStatus.ElementNotFound
+                : WebActionStatus.Error;
+            return new WebActionResult(request.SessionId, status,
+                page.Url, false, null, null, null, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                page.Url, false, null, null, null, ex.Message);
+        }
+    }
+
+    private async Task<WebActionResult> ExecuteElementActionAsync(
+        WebActionRequest request, IPage page, string urlBefore, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(request.Ref))
+            return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                page.Url, false, null, null, null, $"ref is required for {request.Action} action.");
+
+        var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
+        await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = 5000 });
+
+        switch (request.Action)
+        {
+            case WebActionType.Click:
+                await locator.ClickAsync();
+                break;
+            case WebActionType.Type:
+                await locator.ClearAsync();
+                await locator.PressSequentiallyAsync(request.Value ?? "", new() { Delay = 50 });
+                break;
+            case WebActionType.Fill:
+                await locator.FillAsync(request.Value ?? "");
+                break;
+            case WebActionType.Select:
+                await locator.SelectOptionAsync(request.Value ?? "");
+                break;
+            case WebActionType.Press:
+                await locator.PressAsync(request.Value ?? "Enter");
+                break;
+            case WebActionType.Clear:
+                await locator.ClearAsync();
+                break;
+            case WebActionType.Hover:
+                await locator.HoverAsync();
+                break;
+            case WebActionType.Drag:
+                if (string.IsNullOrEmpty(request.EndRef))
+                    return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                        page.Url, false, null, null, null, "endRef is required for drag action.");
+                await locator.DragToAsync(AccessibilitySnapshotService.ResolveRef(page, request.EndRef));
+                break;
+        }
+
+        if (request.WaitForNavigation)
+        {
+            try
+            {
+                await page.WaitForURLAsync(url => url != urlBefore,
+                    new() { Timeout = 10000 });
+            }
+            catch (TimeoutException)
+            {
+                await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                    new() { Timeout = 5000 });
+            }
+        }
+        else
+        {
+            await SmartWaitAsync(page, request, ct);
+        }
+
+        var navigationOccurred = page.Url != urlBefore;
+        _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+
+        var targetSelector = $"[data-ref='{request.Ref}']";
+        var snapshot = await _snapshotService.CaptureScopedAsync(page, targetSelector, request.SessionId);
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, navigationOccurred, snapshot.Snapshot, null, null, null);
+    }
+
+    private async Task SmartWaitAsync(IPage page, WebActionRequest request, CancellationToken ct)
+    {
+        var (maxWaitMs, intervalMs) = request.Action switch
+        {
+            WebActionType.Type => (2000, 200),
+            WebActionType.Click => (2000, 200),
+            WebActionType.Hover => (1000, 200),
+            _ => (300, 300)
+        };
+
+        if (request.Ref is null || maxWaitMs <= intervalMs)
+        {
+            await Task.Delay(maxWaitMs, ct);
+            return;
+        }
+
+        var targetSelector = $"[data-ref='{request.Ref}']";
+        var previousHtml = await GetNearbyHtmlAsync(page, targetSelector);
+        var elapsed = 0;
+        while (elapsed < maxWaitMs)
+        {
+            await Task.Delay(intervalMs, ct);
+            elapsed += intervalMs;
+            var currentHtml = await GetNearbyHtmlAsync(page, targetSelector);
+            if (currentHtml == previousHtml) break;
+            previousHtml = currentHtml;
+        }
+    }
+
+    private static async Task<string> GetNearbyHtmlAsync(IPage page, string targetSelector)
+    {
+        return await page.EvaluateAsync<string>("""
+            (selector) => {
+                const el = document.querySelector(selector);
+                if (!el) return '';
+                const tags = ['FORM','SECTION','ARTICLE','MAIN','DIALOG','FIELDSET'];
+                const roles = ['dialog','form','region','listbox','menu'];
+                let container = el.parentElement;
+                for (let i = 0; i < 4 && container; i++) {
+                    if (tags.includes(container.tagName) ||
+                        roles.includes(container.getAttribute('role'))) break;
+                    container = container.parentElement;
+                }
+                return (container || el.parentElement || el).innerHTML.substring(0, 3000);
+            }
+        """, targetSelector);
+    }
+
+    private async Task<WebActionResult> ExecuteBackAsync(
+        WebActionRequest request, IPage page, string urlBefore, CancellationToken ct)
+    {
+        await page.GoBackAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+        var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null, null);
+    }
+
+    private async Task<WebActionResult> ExecuteScreenshotAsync(
+        WebActionRequest request, IPage page)
+    {
+        byte[] data;
+        if (!string.IsNullOrEmpty(request.Ref))
+        {
+            var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
+            data = await locator.ScreenshotAsync(new() { Type = ScreenshotType.Png });
+        }
+        else
+        {
+            data = await page.ScreenshotAsync(new()
+            {
+                Type = ScreenshotType.Png,
+                FullPage = request.FullPage
+            });
+        }
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, false, null, data, null, null);
+    }
+
+    private async Task<WebActionResult> ExecuteHandleDialogAsync(
+        WebActionRequest request, IPage page)
+    {
+        var session = _sessions.Get(request.SessionId)!;
+        if (session.PendingDialog is null)
+            return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                page.Url, false, null, null, null, "No dialog pending.");
+
+        var dialog = session.PendingDialog;
+        var message = dialog.Message;
+
+        if (string.Equals(request.Value, "dismiss", StringComparison.OrdinalIgnoreCase))
+            await dialog.DismissAsync();
+        else
+            await dialog.AcceptAsync(request.Value is null or "accept" ? "" : request.Value);
+
+        _sessions.SetPendingDialog(request.SessionId, null, null);
+        var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, false, snapshot.Snapshot, null, message, null);
+    }
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {

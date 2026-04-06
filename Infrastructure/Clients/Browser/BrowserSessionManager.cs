@@ -30,6 +30,19 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             var page = await context.NewPageAsync();
+
+            page.Dialog += (_, dialog) =>
+            {
+                if (_sessions.TryGetValue(sessionId, out var s))
+                {
+                    _sessions[sessionId] = s with
+                    {
+                        PendingDialog = dialog,
+                        LastDialogMessage = dialog.Message
+                    };
+                }
+            };
+
             var session = new BrowserSession(
                 SessionId: sessionId,
                 Page: page,
@@ -59,6 +72,19 @@ public class BrowserSessionManager : IAsyncDisposable
             _sessions[sessionId] = session with
             {
                 CurrentUrl = url,
+                LastAccessedAt = DateTimeOffset.UtcNow
+            };
+        }
+    }
+
+    public void SetPendingDialog(string sessionId, IDialog? dialog, string? message)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            _sessions[sessionId] = session with
+            {
+                PendingDialog = dialog,
+                LastDialogMessage = message,
                 LastAccessedAt = DateTimeOffset.UtcNow
             };
         }
@@ -100,4 +126,6 @@ public record BrowserSession(
     IPage Page,
     string CurrentUrl,
     DateTimeOffset CreatedAt,
-    DateTimeOffset LastAccessedAt);
+    DateTimeOffset LastAccessedAt,
+    IDialog? PendingDialog = null,
+    string? LastDialogMessage = null);
