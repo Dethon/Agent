@@ -12,7 +12,7 @@ public class OpenRouterMemoryConsolidator(
     IChatClient chatClient,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
-    private const double ClusterSimilarityThreshold = 0.82;
+    private const double ClusterSimilarityThreshold = 0.60;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
