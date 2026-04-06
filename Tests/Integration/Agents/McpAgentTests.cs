@@ -23,7 +23,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "z-ai/glm-4.7-flash");
+        return new OpenRouterChatClient(apiUrl, apiKey, "google/gemini-2.5-flash");
     }
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
