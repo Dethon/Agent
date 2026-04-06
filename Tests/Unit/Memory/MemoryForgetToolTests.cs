@@ -172,29 +172,6 @@ public class MemoryForgetToolTests
     }
 
     [Fact]
-    public async Task Run_ArchiveMode_CallsSupersedeAsync()
-    {
-        var userId = "user1";
-        var query = "my job";
-        var fakeEmbedding = new float[] { 0.1f };
-        var memory = CreateMemory("mem1", "I work at Acme", MemoryCategory.Fact);
-
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
-        _store.Setup(s => s.SearchAsync(
-                userId, query, fakeEmbedding, null, null, null, 100, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new MemorySearchResult(memory, 0.9)]);
-        _store.Setup(s => s.SupersedeAsync(userId, "mem1", "archived", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var tool = CreateTool();
-        var result = await tool.Run(userId, query: query, mode: ForgetMode.Archive);
-
-        _store.Verify(s => s.SupersedeAsync(userId, "mem1", "archived", It.IsAny<CancellationToken>()), Times.Once);
-        result["action"]!.GetValue<string>().ShouldBe("archive");
-    }
-
-    [Fact]
     public async Task Run_NoMemoryIdOrQuery_ReturnsError()
     {
         var tool = CreateTool();

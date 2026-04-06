@@ -14,7 +14,6 @@ public record MemoryEntry
     public required DateTimeOffset CreatedAt { get; init; }
     public required DateTimeOffset LastAccessedAt { get; init; }
     public int AccessCount { get; init; }
-    public string? SupersededById { get; init; }
     public MemorySource? Source { get; init; }
 }
 

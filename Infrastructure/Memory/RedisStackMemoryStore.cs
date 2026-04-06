@@ -57,7 +57,7 @@ public class RedisStackMemoryStore : IMemoryStore
             }
 
             var memory = MemorySerializer.FromHash(hash);
-            if (memory is { SupersededById: null })
+            if (memory is not null)
             {
                 memories.Add(memory);
             }
@@ -117,18 +117,6 @@ public class RedisStackMemoryStore : IMemoryStore
         }
 
         return await UpdateMemory(memory with { Importance = Math.Clamp(importance, 0, 1) }, ct);
-    }
-
-    public async Task<bool> SupersedeAsync(string userId, string oldMemoryId, string newMemoryId,
-        CancellationToken ct = default)
-    {
-        var memory = await GetByIdAsync(userId, oldMemoryId, ct);
-        if (memory is null)
-        {
-            return false;
-        }
-
-        return await UpdateMemory(memory with { SupersededById = newMemoryId }, ct);
     }
 
     public async Task<PersonalityProfile?> GetProfileAsync(string userId, CancellationToken ct = default)
@@ -193,7 +181,7 @@ public class RedisStackMemoryStore : IMemoryStore
 
         return result.Documents
             .Select(ParseSearchDocument)
-            .Where(r => r.Memory is { SupersededById: null })
+            .Where(r => r.Memory is not null)
             .OrderByDescending(r => r.Relevance)
             .Take(limit)
             .ToList();
@@ -284,7 +272,6 @@ public class RedisStackMemoryStore : IMemoryStore
             .AddNumericField("createdAt", sortable: true)
             .AddNumericField("lastAccessedAt", sortable: true)
             .AddNumericField("accessCount")
-            .AddTagField("supersededById", separator: "|")
             .AddVectorField("embedding", Schema.VectorField.VectorAlgo.HNSW, new Dictionary<string, object>
             {
                 ["TYPE"] = "FLOAT32",
@@ -351,7 +338,6 @@ public class RedisStackMemoryStore : IMemoryStore
                 new HashEntry("createdAt", m.CreatedAt.ToUnixTimeMilliseconds()),
                 new HashEntry("lastAccessedAt", m.LastAccessedAt.ToUnixTimeMilliseconds()),
                 new HashEntry("accessCount", m.AccessCount),
-                new HashEntry("supersededById", m.SupersededById ?? ""),
                 new HashEntry("embedding",
                     m.Embedding != null ? VectorSerializer.ToBytes(m.Embedding) : Array.Empty<byte>()),
                 new HashEntry("sourceJson", m.Source != null ? JsonSerializer.Serialize(m.Source) : "")
@@ -377,7 +363,6 @@ public class RedisStackMemoryStore : IMemoryStore
 
             Enum.TryParse<MemoryCategory>(d.GetValueOrDefault("category", "Fact").ToString(), out var category);
 
-            var supersededById = d.GetValueOrDefault("supersededById", "").ToString();
             var sourceJson = d.GetValueOrDefault("sourceJson", "").ToString();
 
             return new MemoryEntry
@@ -394,7 +379,6 @@ public class RedisStackMemoryStore : IMemoryStore
                 LastAccessedAt =
                     DateTimeOffset.FromUnixTimeMilliseconds((long)d.GetValueOrDefault("lastAccessedAt", 0)),
                 AccessCount = (int)d.GetValueOrDefault("accessCount", 0),
-                SupersededById = string.IsNullOrEmpty(supersededById) ? null : supersededById,
                 Embedding = VectorSerializer.FromBytes(d.GetValueOrDefault("embedding", RedisValue.Null)),
                 Source = string.IsNullOrEmpty(sourceJson) ? null : JsonSerializer.Deserialize<MemorySource>(sourceJson)
             };

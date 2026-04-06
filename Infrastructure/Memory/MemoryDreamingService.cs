@@ -122,7 +122,7 @@ public class MemoryDreamingService(
                     break;
 
                 case MergeAction.SupersedeOlder when validSourceIds.Count >= 2:
-                    await store.SupersedeAsync(userId, validSourceIds[0], validSourceIds[1], ct);
+                    await store.DeleteAsync(userId, validSourceIds[0], ct);
                     mergedCount++;
                     break;
             }
@@ -133,8 +133,7 @@ public class MemoryDreamingService(
 
     private async Task<IReadOnlyList<MemoryEntry>> GetActiveMemoriesAsync(string userId, CancellationToken ct)
     {
-        var memories = await store.GetByUserIdAsync(userId, ct);
-        return memories.Where(m => m.SupersededById is null).ToList();
+        return await store.GetByUserIdAsync(userId, ct);
     }
 
     private async Task ApplyMergeAsync(string userId, MergeDecision decision, CancellationToken ct)
@@ -161,7 +160,7 @@ public class MemoryDreamingService(
 
         foreach (var sourceId in decision.SourceIds)
         {
-            await store.SupersedeAsync(userId, sourceId, stored.Id, ct);
+            await store.DeleteAsync(userId, sourceId, ct);
         }
     }
 

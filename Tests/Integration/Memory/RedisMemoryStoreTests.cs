@@ -222,47 +222,6 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
     }
 
     [Fact]
-    public async Task SupersedeAsync_MarksOldMemoryAsSuperseded()
-    {
-        // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        var oldMemory = CreateMemory(userId, "Old info");
-        var newMemory = CreateMemory(userId, "New info");
-        await store.StoreAsync(oldMemory);
-        await store.StoreAsync(newMemory);
-
-        // Act
-        var superseded = await store.SupersedeAsync(userId, oldMemory.Id, newMemory.Id);
-        var retrievedOld = await store.GetByIdAsync(userId, oldMemory.Id);
-
-        // Assert
-        superseded.ShouldBeTrue();
-        retrievedOld.ShouldNotBeNull();
-        retrievedOld.SupersededById.ShouldBe(newMemory.Id);
-    }
-
-    [Fact]
-    public async Task GetByUserIdAsync_ExcludesSupersededMemories()
-    {
-        // Arrange
-        var store = CreateStore();
-        var userId = $"user_{Guid.NewGuid():N}";
-        var oldMemory = CreateMemory(userId, "Old info");
-        var newMemory = CreateMemory(userId, "New info");
-        await store.StoreAsync(oldMemory);
-        await store.StoreAsync(newMemory);
-        await store.SupersedeAsync(userId, oldMemory.Id, newMemory.Id);
-
-        // Act
-        var memories = await store.GetByUserIdAsync(userId);
-
-        // Assert
-        memories.Count.ShouldBe(1);
-        memories[0].Content.ShouldBe("New info");
-    }
-
-    [Fact]
     public async Task SearchAsync_WithCategoryFilter_ReturnsMatchingMemories()
     {
         // Arrange
@@ -438,7 +397,7 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
     }
 
     [Fact]
-    public async Task GetStatsAsync_ExcludesSupersededMemories()
+    public async Task GetStatsAsync_ExcludesDeletedMemories()
     {
         // Arrange
         var store = CreateStore();
@@ -447,7 +406,7 @@ public class RedisMemoryStoreTests(RedisFixture redisFixture) : IClassFixture<Re
         var newMemory = CreateMemory(userId, "New");
         await store.StoreAsync(oldMemory);
         await store.StoreAsync(newMemory);
-        await store.SupersedeAsync(userId, oldMemory.Id, newMemory.Id);
+        await store.DeleteAsync(userId, oldMemory.Id);
 
         // Act
         var stats = await store.GetStatsAsync(userId);

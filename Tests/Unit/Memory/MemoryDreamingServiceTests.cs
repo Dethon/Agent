@@ -172,9 +172,37 @@ public class MemoryDreamingServiceTests
                 m.Importance == 0.85),
             It.IsAny<CancellationToken>()), Times.Once);
 
-        // Should supersede both source IDs to the new memory
-        _store.Verify(s => s.SupersedeAsync("user1", "m1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
-        _store.Verify(s => s.SupersedeAsync("user1", "m2", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        // Should delete both source memories after merge
+        _store.Verify(s => s.DeleteAsync("user1", "m1", It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.DeleteAsync("user1", "m2", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunDreamingForUserAsync_SupersedeOlder_DeletesOldMemory()
+    {
+        var oldMemory = MakeMemory("old", "user1", MemoryCategory.Fact, 0.5, _now.AddDays(-30), _now.AddDays(-30));
+        var newMemory = MakeMemory("new", "user1", MemoryCategory.Fact, 0.9, _now.AddDays(-1), _now.AddDays(-1));
+
+        _store
+            .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { oldMemory, newMemory });
+
+        var supersedeDecision = new MergeDecision(
+            SourceIds: ["old", "new"],
+            Action: MergeAction.SupersedeOlder);
+
+        _consolidator
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([supersedeDecision])
+            .ReturnsAsync([]);
+
+        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+
+        // Should delete the old (superseded) memory
+        _store.Verify(s => s.DeleteAsync("user1", "old", It.IsAny<CancellationToken>()), Times.Once);
+
+        // Should NOT delete the new (surviving) memory
+        _store.Verify(s => s.DeleteAsync("user1", "new", It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -184,21 +212,15 @@ public class MemoryDreamingServiceTests
         var m2 = MakeMemory("m2", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
         var m3 = MakeMemory("m3", "user1", MemoryCategory.Fact, 0.7, _now.AddDays(-10), _now.AddDays(-10));
 
-        // After first merge, m1+m2 are superseded and a new memory appears.
+        // After first merge, m1+m2 are deleted and a new memory appears.
         // Second consolidation pass has the chance to merge the survivor with m3.
         var afterFirstMerge = new List<MemoryEntry>
         {
-            m1 with { SupersededById = "merged1" },
-            m2 with { SupersededById = "merged1" },
             m3,
             MakeMemory("merged1", "user1", MemoryCategory.Fact, 0.85, _now, _now)
         };
         var afterSecondMerge = new List<MemoryEntry>
         {
-            m1 with { SupersededById = "merged1" },
-            m2 with { SupersededById = "merged1" },
-            m3 with { SupersededById = "merged2" },
-            (MakeMemory("merged1", "user1", MemoryCategory.Fact, 0.85, _now, _now)) with { SupersededById = "merged2" },
             MakeMemory("merged2", "user1", MemoryCategory.Fact, 0.9, _now, _now)
         };
 

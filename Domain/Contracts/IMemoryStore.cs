@@ -22,7 +22,6 @@ public interface IMemoryStore
 
     Task<bool> UpdateAccessAsync(string userId, string memoryId, CancellationToken ct = default);
     Task<bool> UpdateImportanceAsync(string userId, string memoryId, double importance, CancellationToken ct = default);
-    Task<bool> SupersedeAsync(string userId, string oldMemoryId, string newMemoryId, CancellationToken ct = default);
 
     Task<PersonalityProfile?> GetProfileAsync(string userId, CancellationToken ct = default);
     Task<PersonalityProfile> SaveProfileAsync(PersonalityProfile profile, CancellationToken ct = default);

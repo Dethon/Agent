@@ -85,7 +85,7 @@ public static class MemoryPrompts
 
         - **merge**: The memories collectively state the same thing, or can be losslessly combined into one clearer statement. Provide `mergedContent` that preserves every specific detail (dates, names, numbers) from the sources. List ALL redundant source ids in `sourceIds` — N-way merges are expected and encouraged. Set `category` to the most appropriate one for the merged memory, and `importance` to the max of the source importances. Do not silently drop information when merging.
 
-        - **supersede_older**: The memories contradict each other (e.g. "works at Acme" vs "works at Globex"). The newer one wins. `sourceIds[0]` is the older (to retire), `sourceIds[1]` is the newer (to keep). Only use for genuine contradictions, not paraphrases.
+        - **supersede_older**: The memories contradict each other (e.g. "works at Acme" vs "works at Globex"). The newer one wins. `sourceIds[0]` is the older (to delete), `sourceIds[1]` is the newer (to keep). Only use for genuine contradictions, not paraphrases.
 
         - **keep**: Omit from the response. Do not emit `keep` decisions.
 
