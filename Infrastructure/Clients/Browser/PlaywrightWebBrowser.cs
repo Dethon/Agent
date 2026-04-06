@@ -578,6 +578,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         page.Url, false, null, null, null, "endRef is required for drag action.");
                 await locator.DragToAsync(AccessibilitySnapshotService.ResolveRef(page, request.EndRef));
                 break;
+            default:
+                return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                    page.Url, false, null, null, null, $"Unhandled element action: {request.Action}");
         }
 
         if (request.WaitForNavigation)
@@ -693,18 +696,14 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         WebActionRequest request, IPage page)
     {
         var session = _sessions.Get(request.SessionId)!;
-        if (session.PendingDialog is null)
+        var message = session.LastDialogMessage;
+
+        if (message is null)
             return new WebActionResult(request.SessionId, WebActionStatus.Error,
                 page.Url, false, null, null, null, "No dialog pending.");
 
-        var dialog = session.PendingDialog;
-        var message = dialog.Message;
-
-        if (string.Equals(request.Value, "dismiss", StringComparison.OrdinalIgnoreCase))
-            await dialog.DismissAsync();
-        else
-            await dialog.AcceptAsync(request.Value is null or "accept" ? "" : request.Value);
-
+        // Dialogs are auto-accepted by the event handler (Playwright blocks the page
+        // until handled). This action returns the dialog message for the agent to see.
         _sessions.SetPendingDialog(request.SessionId, null, null);
         var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
 

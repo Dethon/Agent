@@ -31,16 +31,18 @@ public class BrowserSessionManager : IAsyncDisposable
 
             var page = await context.NewPageAsync();
 
-            page.Dialog += (_, dialog) =>
+            page.Dialog += async (_, dialog) =>
             {
                 if (_sessions.TryGetValue(sessionId, out var s))
                 {
                     _sessions[sessionId] = s with
                     {
-                        PendingDialog = dialog,
                         LastDialogMessage = dialog.Message
                     };
                 }
+
+                // Playwright blocks the page until dialogs are handled
+                await dialog.AcceptAsync();
             };
 
             var session = new BrowserSession(
