@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
@@ -204,8 +205,10 @@ public class AccessibilitySnapshotService
     public async Task<SnapshotCaptureResult> CaptureAsync(
         IPage page, string? selectorScope, string sessionId)
     {
-        var result = await page.EvaluateAsync<SnapshotJsResult>(SnapshotScript, selectorScope);
-        return new SnapshotCaptureResult(result.Snapshot, result.RefCount);
+        var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, selectorScope);
+        var snapshot = result.GetProperty("snapshot").GetString() ?? "";
+        var refCount = result.GetProperty("refCount").GetInt32();
+        return new SnapshotCaptureResult(snapshot, refCount);
     }
 
     public async Task<SnapshotCaptureResult> CaptureScopedAsync(
@@ -221,5 +224,4 @@ public class AccessibilitySnapshotService
         => page.Locator($"[data-ref='{@ref}']");
 
     public record SnapshotCaptureResult(string Snapshot, int RefCount);
-    private record SnapshotJsResult(string Snapshot, int RefCount);
 }
