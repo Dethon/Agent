@@ -63,6 +63,7 @@ public static class ConfigModule
                 .WithTools<McpWebBrowseTool>()
                 .WithTools<McpWebClickTool>()
                 .WithTools<McpWebInspectTool>()
+                .WithTools<McpWebSnapshotTool>()
                 .WithPrompts<McpSystemPrompt>();
 
             return services;

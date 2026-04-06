@@ -16,6 +16,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new();
     private readonly ModalDismisser _modalDismisser = new();
+    private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();
     private bool _initialized;
     private const int MaxCaptchaRetries = 2;
@@ -480,8 +481,22 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    public Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
-        => throw new NotImplementedException("SnapshotAsync not yet implemented");
+    public async Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session == null)
+            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use WebBrowse first.");
+
+        try
+        {
+            var result = await _snapshotService.CaptureAsync(session.Page, request.Selector, request.SessionId);
+            return new SnapshotResult(request.SessionId, session.Page.Url, result.Snapshot, result.RefCount, null);
+        }
+        catch (Exception ex)
+        {
+            return new SnapshotResult(request.SessionId, session.Page.Url, null, 0, ex.Message);
+        }
+    }
 
     public Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
         => throw new NotImplementedException("ActionAsync not yet implemented");
