@@ -634,36 +634,14 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             await page.EvaluateAsync("""
                 () => {
-                    // Remove dismissed modals, dialog overlays, and cookie banners
-                    document.querySelectorAll(
-                        '[role="dialog"], [role="alertdialog"], [aria-modal="true"], ' +
-                        '[class*="cookie-banner"], [class*="cookieBanner"], [id*="cookie-banner"], ' +
-                        '[class*="consent-banner"], [id*="consent"]'
-                    ).forEach(el => el.remove());
-
-                    // Remove elements with [hidden] attribute — truly hidden content
-                    // Note: aria-hidden="true" is NOT removed here because sites toggle it dynamically
-                    // (dropdowns, menus) and Playwright's accessibility tree already excludes them
-                    document.querySelectorAll('[hidden]').forEach(el => el.remove());
-
-                    // Remove site chrome (navigation, headers, footers) — page title is captured separately
-                    document.querySelectorAll('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]').forEach(el => el.remove());
-
-                    // Remove script/style/noscript tags — they contribute nothing to text content
+                    // Remove script/style/noscript — they contribute nothing to text content
                     document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
 
-                    // Remove container elements with display:none — truly hidden content (collapsed filters, hidden menus, etc.)
-                    // Only check container-level elements to avoid perf issues on large DOMs.
-                    // Preserve hidden elements that sit next to form inputs — these are typically
-                    // autocomplete dropdowns, suggestion lists, or datepickers that become visible
-                    // after user interaction.
-                    document.querySelectorAll('div, section, aside, ul, ol, li, form, fieldset, details, dialog').forEach(el => {
-                        if (!el.parentNode || window.getComputedStyle(el).display !== 'none') return;
-                        const siblings = el.parentElement?.children;
-                        if (siblings && Array.from(siblings).some(s => s !== el &&
-                            (s.tagName === 'INPUT' || s.tagName === 'SELECT' || s.tagName === 'TEXTAREA'))) return;
-                        el.remove();
-                    });
+                    // Remove iframes (ads, trackers) — they contribute no text content
+                    document.querySelectorAll('iframe').forEach(el => el.remove());
+
+                    // Remove SVGs — icons/graphics that bloat HTML without adding text value
+                    document.querySelectorAll('svg').forEach(el => el.remove());
 
                     // Strip image src attributes — long CDN URLs bloat markdown without adding value
                     // Alt text is preserved for context
@@ -676,22 +654,13 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         img.removeAttribute('data-path');
                     });
 
-                    // Remove iframes (ads, trackers) — they contribute no text content
-                    document.querySelectorAll('iframe').forEach(el => el.remove());
-
-                    // Remove SVGs — icons/graphics that bloat HTML without adding text value
-                    document.querySelectorAll('svg').forEach(el => el.remove());
-
                     // Compact link hrefs: strip tracking params and shorten same-site URLs
-                    // This dramatically reduces markdown size since [text](url) includes full URLs
                     const currentHost = location.hostname;
                     document.querySelectorAll('a[href]').forEach(a => {
                         try {
                             const url = new URL(a.href);
-                            // Strip common tracking parameters
                             ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
                              'ats','atc','ata','ref','cid','frm','noc'].forEach(p => url.searchParams.delete(p));
-                            // For same-site links, use path only
                             if (url.hostname === currentHost || url.hostname === 'www.' + currentHost) {
                                 a.setAttribute('href', url.pathname + url.search + url.hash);
                             } else {
