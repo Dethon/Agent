@@ -63,7 +63,12 @@ public class WebBrowseTool(IWebBrowser browser)
 
         var response = new JsonObject
         {
-            ["status"] = result.Status == BrowseStatus.CaptchaRequired ? "captcha_required" : "success",
+            ["status"] = result.Status switch
+            {
+                BrowseStatus.CaptchaRequired => "captcha_required",
+                BrowseStatus.Partial => "partial",
+                _ => "success"
+            },
             ["sessionId"] = result.SessionId,
             ["url"] = result.Url,
             ["title"] = result.Title,
