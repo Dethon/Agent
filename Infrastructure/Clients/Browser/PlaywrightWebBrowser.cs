@@ -108,7 +108,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             }
 
             // Always dismiss modals
-            var dismissedModals = await _modalDismisser.DismissModalsAsync(page, null, ct);
+            var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
 
             // Extract structured data before stripping DOM noise,
             // because StripDomNoiseAsync removes <script> tags including ld+json

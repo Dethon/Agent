@@ -92,11 +92,10 @@ public class ModalDismisser
 
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
         IPage page,
-        ModalDismissalConfig? config,
         CancellationToken ct)
     {
-        var patterns = GetEffectivePatterns(config);
-        var timeout = config?.TimeoutMs ?? 3000;
+        var patterns = _defaultPatterns;
+        const int timeout = 3000;
 
         // Brief wait for modals to appear
         await Task.Delay(200, ct);
@@ -143,28 +142,6 @@ public class ModalDismisser
             // Modal dismissal is best-effort
             return null;
         }
-    }
-
-    private IReadOnlyList<ModalPattern> GetEffectivePatterns(ModalDismissalConfig? config)
-    {
-        if (config == null || !config.Enabled)
-        {
-            return config?.Enabled == false ? [] : _defaultPatterns;
-        }
-
-        var patterns = new List<ModalPattern>();
-
-        // Add default patterns, excluding disabled types
-        var disabledTypes = config.DisabledTypes?.ToHashSet() ?? [];
-        patterns.AddRange(_defaultPatterns.Where(p => !disabledTypes.Contains(p.Type)));
-
-        // Add custom patterns
-        if (config.CustomPatterns != null)
-        {
-            patterns.AddRange(config.CustomPatterns);
-        }
-
-        return patterns;
     }
 
     private async Task<ModalDismissed?> TryDismissPatternAsync(
