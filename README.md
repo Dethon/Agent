@@ -14,14 +14,15 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
 - **Download Resubscription** - Resume tracking in-progress downloads after restart
-- **Web Search** - Search the web and fetch content via Brave Search API
-- **Memory System** - Built-in proactive memory with LLM-based extraction, vector recall, and periodic consolidation (dreaming)
+- **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
+- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, and delete
+- **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
 - **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, schedule history, memory analytics, and live service health
 - **Subagent Delegation** - Parent agents can spawn ephemeral subagents for parallel or heavy tasks
-- **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, and FileBrowser
+- **Docker Compose Stack** - Full media server setup with qBittorrent, Jackett, FileBrowser, and Camoufox
 
 ## Architecture
 
@@ -52,13 +53,21 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
       ▼               ▼              ▼              ▼
 ┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌─────────────┐
 │MCP Library │ │ MCP Vault  │ │MCP WebSearch│ │MCP Idealista│
-└─────┬──────┘ └────────────┘ └─────────────┘ └──────┬──────┘
-      │                                              │
-┌─────┴──────┐                                 ┌─────┴──────┐
-│ qBittorrent│                                 │ Idealista  │
-│  Jackett   │                                 │    API     │
-│ FileBrowser│                                 └────────────┘
-└────────────┘
+│filesystem: │ │filesystem: │ │             │ │             │
+│  //media   │ │  //vault   │ │             │ │             │
+└─────┬──────┘ └────────────┘ └──────┬──────┘ └──────┬──────┘
+      │                              │               │
+┌─────┴──────┐                 ┌─────┴──────┐  ┌─────┴──────┐
+│ qBittorrent│                 │  Camoufox  │  │ Idealista  │
+│  Jackett   │                 │ (anti-det  │  │    API     │
+│ FileBrowser│                 │  browser)  │  └────────────┘
+└────────────┘                 └────────────┘
+
+              ┌───────────────────────────────────┐
+              │  Virtual Filesystem (domain)      │
+              │  Discovers filesystem:// resources │
+              │  Mounts → Registry → Domain tools │
+              └───────────────────────────────────┘
 
               ┌───────────────────────────────────┐
               │       Memory (built-in)           │
@@ -86,12 +95,12 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 ### MCP Tool Servers
 
-| Server            | Tools                                                                                                                                           | Purpose                                                                                 |
-|-------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| **mcp-library**   | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendationTool, ListFiles, ListDirectories, Move | Search and download content via Jackett/qBittorrent, organize media files                |
-| **mcp-vault**      | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                                                   | Manage a knowledge vault of markdown notes and text files                                |
-| **mcp-websearch** | WebSearch, WebBrowse, WebClick, WebInspect                                                                                                      | Search the web and browse pages with persistent browser sessions                         |
-| **mcp-idealista** | IdealistaPropertySearch                                                                                                                         | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
+| Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
+|-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
+| **mcp-library**   | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendation, FsGlob, FsMove | `filesystem://media`  | Search and download content via Jackett/qBittorrent, organize media files                |
+| **mcp-vault**     | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                          | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
+| **mcp-websearch** | WebSearch, WebBrowse, WebSnapshot, WebAction                                                                            |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
+| **mcp-idealista** | IdealistaPropertySearch                                                                                                 |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 
 ### MCP Channel Servers
 
@@ -103,10 +112,10 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 ### Agents
 
-| Agent     | MCP Servers                                         | Purpose                                                                   |
-|-----------|-----------------------------------------------------|---------------------------------------------------------------------------|
-| **Jack**  | mcp-library, mcp-websearch                          | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-websearch, mcp-idealista               | Knowledge base management ("Scribe" persona) with subagent delegation |
+| Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
+|-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
+| **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
+| **Jonas** | mcp-vault, mcp-websearch, mcp-idealista             | filesystem, scheduling, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation     |
 
 ### Multi-Agent Configuration
 
@@ -115,7 +124,7 @@ Agents are defined as configuration data, each with:
 - Specific MCP server endpoints
 - Tool whitelist patterns (e.g., `mcp:mcp-library:*`, `domain:subagents:*`)
 - Custom system instructions
-- Enabled features (e.g., `scheduling`, `subagents`)
+- Enabled features (e.g., `filesystem`, `scheduling`, `subagents`, `memory`)
 
 #### Subagents
 
@@ -135,7 +144,7 @@ Agent routing:
 | `Infrastructure`         | External service clients (MCP, OpenRouter, push notifications)  |
 | `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
 | `McpServerVault`          | MCP server for text/markdown file inspection and editing        |
-| `McpServerWebSearch`     | MCP server for web search and content fetching                  |
+| `McpServerWebSearch`     | MCP server for web search and browsing via Camoufox             |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
@@ -192,29 +201,31 @@ QBITTORRENT__PASSWORD=your_password
 # Agent definitions (array)
 AGENTS__0__ID=jack
 AGENTS__0__NAME=Jack
-AGENTS__0__MODEL=google/gemini-2.0-flash-001
-AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/sse
-AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/sse
-AGENTS__0__WHITELISTPATTERNS__0=mcp:mcp-library:*
-AGENTS__0__WHITELISTPATTERNS__1=mcp:mcp-websearch:*
-AGENTS__0__ENABLEDFEATURES__0=scheduling
+AGENTS__0__MODEL=z-ai/glm-5.1
+AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/mcp
+AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/mcp
+AGENTS__0__ENABLEDFEATURES__0=filesystem.glob
+AGENTS__0__ENABLEDFEATURES__1=filesystem.move
+AGENTS__0__WHITELISTPATTERNS__0=domain:filesystem:*
+AGENTS__0__WHITELISTPATTERNS__1=mcp:mcp-library:*
+AGENTS__0__WHITELISTPATTERNS__2=mcp:mcp-websearch:*
 AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
 
 # Subagent definitions (per-agent, optional)
 SUBAGENTS__0__ID=jonas-worker
 SUBAGENTS__0__NAME=Jonas Worker
 SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
-SUBAGENTS__0__MODEL=z-ai/glm-5:nitro
-SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/sse
+SUBAGENTS__0__MODEL=z-ai/glm-5.1
+SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/mcp
 SUBAGENTS__0__MAXEXECUTIONSECONDS=600
 
 # Channel endpoints (agent connects to these)
 CHANNELENDPOINTS__0__CHANNELID=signalr
-CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/sse
+CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/mcp
 CHANNELENDPOINTS__1__CHANNELID=telegram
-CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/sse
+CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/mcp
 CHANNELENDPOINTS__2__CHANNELID=servicebus
-CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/sse
+CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/mcp
 
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
@@ -259,6 +270,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Channel SignalR      | 6010 | WebChat channel server         |
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
 | MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
+| Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
 
 ## Usage
 
@@ -360,12 +372,13 @@ Configure permanent auto-approvals using glob patterns:
 {
   "whitelistPatterns": [
     "mcp:mcp-library:*",
-    "mcp:localhost:*"
+    "domain:filesystem:*",
+    "domain:memory:*"
   ]
 }
 ```
 
-Pattern format: `mcp:<server>:<tool>` with `*` wildcard support.
+Pattern format: `mcp:<server>:<tool>` or `domain:<feature>:<tool>` with `*` wildcard support.
 
 ### Chat Commands
 
@@ -381,7 +394,7 @@ The agent uses Redis to persist conversation history and memory across restarts:
 - **Chat History** - All messages are stored with a 30-day expiry
 - **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
 - **Download Tracking** - Use `ResubscribeDownloads` tool to resume tracking downloads after restart
-- **Memory Storage** - Proactively extracted memories stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
+- **Memory Storage** - Proactively extracted memories from windowed conversation context, stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
 - **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL
 - **Service Health** - Heartbeat-based health tracking with 60-second TTL keys in Redis

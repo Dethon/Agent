@@ -56,6 +56,17 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Memory DI module | `Agent/Modules/MemoryModule.cs` |
 | Memory extraction queue | `Domain/Memory/*.cs` |
 | Subagent DI module | `Agent/Modules/SubAgentModule.cs` |
+| Filesystem tools & feature | `Domain/Tools/FileSystem/*.cs` |
+| Filesystem contracts | `Domain/Contracts/IFileSystem*.cs`, `Domain/Contracts/IVirtualFileSystemRegistry.cs` |
+| Filesystem DTOs | `Domain/DTOs/FileSystemMount.cs` |
+| Virtual filesystem registry | `Infrastructure/Agents/VirtualFileSystemRegistry.cs` |
+| MCP filesystem backend | `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs`, `McpFileSystemDiscovery.cs` |
+| Local filesystem client | `Infrastructure/Clients/LocalFileSystemClient.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library}/McpResources/FileSystemResource.cs` |
+| Web browsing tools | `Domain/Tools/Web/*.cs` |
+| Web browsing prompt | `Domain/Prompts/WebBrowsingPrompt.cs` |
+| Web browser contracts | `Domain/Contracts/IWebBrowser.cs` |
+| Playwright browser client | `Infrastructure/Clients/Browser/*.cs` |
 | Unit & integration tests | `Tests/{Unit,Integration}/**/*Tests.cs` |
 | E2E tests | `Tests/E2E/{Dashboard,WebChat}/*E2ETests.cs` |
 | E2E fixtures | `Tests/E2E/Fixtures/*.cs` |
@@ -131,8 +142,8 @@ Services publish `MetricEvent` DTOs via `IMetricsPublisher` → Redis Pub/Sub ch
 ### Memory Architecture
 
 Memory is a built-in agent feature (not a separate MCP server). It runs as services inside the Agent process:
-- **Extraction**: `ChatMonitor` queues conversation turns → `MemoryExtractionWorker` processes the queue → `IMemoryExtractor` (LLM-based) identifies memories to store → `IMemoryStore` (Redis Stack with vector search) persists them.
-- **Recall**: `MemoryRecallHook` runs before each agent turn, retrieves relevant memories via semantic search, and injects them into the system prompt.
+- **Extraction**: `ChatMonitor` queues conversation turns → `MemoryExtractionWorker` processes the queue, fetches the persisted thread, and slices a conversation window anchored at the recall point → `IMemoryExtractor` (LLM-based) receives the windowed context (formatted by `ConversationWindowRenderer` with `[CURRENT]`/`[context -N]` markers) and identifies memories to store → `IMemoryStore` (Redis Stack with vector search) persists them. Falls back to direct message content when the thread is unavailable.
+- **Recall**: `MemoryRecallHook` runs before each agent turn, builds a user-only conversation window from the persisted thread for context, sets an anchor index for extraction, retrieves relevant memories via semantic search, and injects them into the system prompt.
 - **Dreaming**: `MemoryDreamingService` periodically consolidates and prunes memories using `IMemoryConsolidator` (LLM-based).
 - **Metrics**: Extraction, recall, and dreaming events are published as `MetricEvent` DTOs for the Observability dashboard.
 
@@ -143,6 +154,14 @@ Transports (WebChat, Telegram, ServiceBus) run as independent MCP channel server
 - **Outbound**: `send_reply` tool (agent response → user), `request_approval` tool (tool approval flow)
 
 New transports can be added by deploying a new channel MCP server — zero agent changes needed.
+
+### Virtual Filesystem Architecture
+
+The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 7 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`) that dispatch through the registry. Raw MCP `fs_*` tools are filtered out when domain tools are active. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
+
+### Web Browsing Architecture
+
+Web browsing runs in McpServerWebSearch via three tools: `WebBrowse` (navigate + extract content), `WebSnapshot` (capture accessibility tree with interactive element refs), and `WebAction` (interact with elements by ref — click, type, fill, select, etc.). The browser backend is `PlaywrightWebBrowser` connecting to Camoufox via WebSocket. `AccessibilitySnapshotService` injects JavaScript to traverse the DOM, infer ARIA roles, and assign unique refs (`e-1`, `e-2`, …) to interactive elements. `BrowserSessionManager` keeps pages alive per session with cookie persistence. `ModalDismisser` auto-closes common popups (cookie banners, newsletters, age gates).
 
 ### Camoufox
 
