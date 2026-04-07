@@ -283,8 +283,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
 
-        // Capture before-snapshot for diffing (refs stripped for comparison)
-        var before = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+        // Capture before-snapshot for diffing — use preserveRefs to avoid clearing the
+        // data-ref attributes that the locator depends on
+        var before = await _snapshotService.CaptureAsync(page, null, request.SessionId, preserveRefs: true);
         var beforeLines = SnapshotLinesForDiff(before.Snapshot);
 
         switch (request.Action)
@@ -297,6 +298,28 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             case WebActionType.Type:
                 await locator.ClearAsync();
                 await locator.PressSequentiallyAsync(request.Value ?? "", new() { Delay = 50 });
+                // Force-trigger input events using the native value setter to ensure
+                // framework-managed inputs (React, Vue) and autocomplete widgets respond,
+                // even in browsers where Playwright's synthetic keyboard events don't trigger them.
+                // Also trigger jQuery events — jQuery handlers receive jQuery event objects
+                // (not native events) so they bypass isTrusted checks that block synthetic
+                // keyboard events in anti-detect browsers like Camoufox.
+                await locator.EvaluateAsync("""
+                    el => {
+                        const nativeSetter = Object.getOwnPropertyDescriptor(
+                            HTMLInputElement.prototype, 'value')?.set;
+                        if (nativeSetter) {
+                            nativeSetter.call(el, el.value);
+                        }
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (typeof jQuery !== 'undefined') {
+                            const $el = jQuery(el);
+                            $el.trigger(jQuery.Event('keyup', { keyCode: 65, which: 65 }));
+                            $el.trigger(jQuery.Event('input'));
+                        }
+                    }
+                """);
                 break;
             case WebActionType.Fill:
                 await locator.FillAsync(request.Value ?? "");
@@ -316,7 +339,8 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             case WebActionType.Focus:
                 await locator.FocusAsync();
                 if (await HasJQueryAsync(page))
-                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
+                    await locator.EvaluateAsync(
+                        "el => jQuery(el).trigger(jQuery.Event('focus', { keyCode: 9, which: 9 }))");
                 break;
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
@@ -619,9 +643,16 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                     document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
 
                     // Remove container elements with display:none — truly hidden content (collapsed filters, hidden menus, etc.)
-                    // Only check container-level elements to avoid perf issues on large DOMs
+                    // Only check container-level elements to avoid perf issues on large DOMs.
+                    // Preserve hidden elements that sit next to form inputs — these are typically
+                    // autocomplete dropdowns, suggestion lists, or datepickers that become visible
+                    // after user interaction.
                     document.querySelectorAll('div, section, aside, ul, ol, li, form, fieldset, details, dialog').forEach(el => {
-                        if (el.parentNode && window.getComputedStyle(el).display === 'none') el.remove();
+                        if (!el.parentNode || window.getComputedStyle(el).display !== 'none') return;
+                        const siblings = el.parentElement?.children;
+                        if (siblings && Array.from(siblings).some(s => s !== el &&
+                            (s.tagName === 'INPUT' || s.tagName === 'SELECT' || s.tagName === 'TEXTAREA'))) return;
+                        el.remove();
                     });
 
                     // Strip image src attributes — long CDN URLs bloat markdown without adding value

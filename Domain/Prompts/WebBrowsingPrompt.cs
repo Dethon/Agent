@@ -59,9 +59,11 @@ public static class WebBrowsingPrompt
 
         **Autocomplete / Combobox fields:**
         ```
-        WebAction(ref="input-ref", action="type", value="Odaw") → diff shows dropdown options with refs
-        WebAction(ref="option-ref", action="click") → diff shows selected value
+        WebAction(ref="input-ref", action="type", value="Odawara") → types the value
+        WebAction(ref="input-ref", action="press", value="Enter") → confirms autocomplete selection
         ```
+        If the diff shows dropdown options after typing, click the desired option instead.
+        Pressing Enter after typing selects the best match and sets hidden form values.
 
         **Multi-page navigation:**
         ```
@@ -112,7 +114,7 @@ public static class WebBrowsingPrompt
         |-----------|----------|
         | Content truncated | Use offset to paginate or selector to target |
         | Can't find element | WebSnapshot to see what's available |
-        | Autocomplete not opening | Try action="type" with partial text |
+        | Autocomplete not opening | Type the full value, then press Enter to confirm selection |
         | Page not loading | Try scrollToLoad=true for lazy content |
         | Session expired | Fresh WebBrowse to create new session |
         | Modal blocking content | Usually auto-dismissed; find close button via WebSnapshot |

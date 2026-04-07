@@ -6,8 +6,12 @@ namespace Infrastructure.Clients.Browser;
 public class AccessibilitySnapshotService
 {
     private const string SnapshotScript = """
-        (selectorScope) => {
-            document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
+        (args) => {
+            const selectorScope = typeof args === 'string' ? args : args?.scope;
+            const preserveRefs = args?.preserveRefs === true;
+            if (!preserveRefs) {
+                document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
+            }
             let refCounter = 0;
 
             const implicitRoles = {
@@ -87,8 +91,11 @@ public class AccessibilitySnapshotService
                 const title = el.getAttribute('title');
                 if (title) return title.trim();
 
-                const role = getRole(el);
-                if (['button','link','heading','tab','menuitem','option','cell','columnheader'].includes(role)) {
+                let role = getRole(el);
+                if (!role || (!interactiveRoles.has(role) && !structuralRoles.has(role))) {
+                    role = inferClickable(el) || role;
+                }
+                if (['button','link','heading','tab','menuitem','option','cell','columnheader','listitem'].includes(role)) {
                     const text = el.textContent?.trim();
                     if (text && text.length <= 80) return text;
                     if (text) return text.substring(0, 77) + '...';
@@ -135,9 +142,26 @@ public class AccessibilitySnapshotService
                        getComputedStyle(el).position === 'fixed';
             }
 
+            function inferClickable(el) {
+                if (getComputedStyle(el).cursor !== 'pointer') return null;
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return null;
+                // Skip large containers — real buttons are compact
+                if (rect.width > 500 && rect.height > 100) return null;
+                const text = el.textContent?.trim();
+                if (!text || text.length > 40) return null;
+                // Skip if it contains interactive children (they'll get their own refs)
+                if (el.querySelector('a,button,input,select,textarea,[role="button"],[role="link"]')) return null;
+                return 'button';
+            }
+
             function buildTree(el) {
                 if (isHidden(el)) return null;
-                const role = getRole(el);
+                let role = getRole(el);
+                // If the implicit role is not in our known sets, try inferring clickability
+                if (!role || (!interactiveRoles.has(role) && !structuralRoles.has(role))) {
+                    role = inferClickable(el) || role;
+                }
                 const children = Array.from(el.children)
                     .map(c => buildTree(c)).filter(Boolean);
 
@@ -151,9 +175,10 @@ public class AccessibilitySnapshotService
                     let ref = null;
                     if ((interactiveRoles.has(role) || clickableStructural.has(role)) && isVisible(el)) {
                         refCounter++;
-                        ref = 'e' + refCounter;
-                        el.setAttribute('data-ref', ref);
+                        ref = preserveRefs ? (el.getAttribute('data-ref') || 'e' + refCounter) : 'e' + refCounter;
+                        if (!preserveRefs) el.setAttribute('data-ref', ref);
                     }
+
                     return { role, name: getName(el), state: getState(el),
                              value: getValue(el), ref, children };
                 }
@@ -161,9 +186,16 @@ public class AccessibilitySnapshotService
                 return children.length > 0 ? { role: null, children } : null;
             }
 
+            const collapseRoles = new Set(['list','listitem']);
+
             function format(node, indent) {
                 if (!node) return '';
                 if (!node.role) {
+                    return node.children.map(c => format(c, indent)).filter(Boolean).join('\n');
+                }
+                // Collapse unnamed, refless list/listitem wrappers to reduce nesting noise
+                if (collapseRoles.has(node.role) && !node.ref && !node.name
+                    && node.state.length === 0 && !node.value) {
                     return node.children.map(c => format(c, indent)).filter(Boolean).join('\n');
                 }
                 let line = '  '.repeat(indent) + '- ' + node.role;
@@ -209,9 +241,13 @@ public class AccessibilitySnapshotService
         """;
 
     public async Task<SnapshotCaptureResult> CaptureAsync(
-        IPage page, string? selectorScope, string sessionId)
+        IPage page, string? selectorScope, string sessionId, bool preserveRefs = false)
     {
-        var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, selectorScope);
+        object args = selectorScope is not null || preserveRefs
+            ? new { scope = selectorScope, preserveRefs }
+            : (object)selectorScope!;
+
+        var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, args);
         var snapshot = result.GetProperty("snapshot").GetString() ?? "";
         var refCount = result.GetProperty("refCount").GetInt32();
         return new SnapshotCaptureResult(snapshot, refCount);
