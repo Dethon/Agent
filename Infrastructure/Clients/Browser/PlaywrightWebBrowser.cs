@@ -376,12 +376,16 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var navigationOccurred = page.Url != urlBefore;
         _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
 
-        // Capture after-snapshot and diff against before
         var after = await _snapshotService.CaptureAsync(page, null, request.SessionId);
-        var diff = BuildSnapshotDiff(beforeLines, after.Snapshot, request.Ref!, request.Action);
+
+        // On navigation the entire page changed — return the new snapshot directly
+        // instead of a diff that would duplicate all content as removed + added lines
+        var snapshot = navigationOccurred
+            ? after.Snapshot
+            : BuildSnapshotDiff(beforeLines, after.Snapshot, request.Ref!, request.Action);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, navigationOccurred, diff, null, null);
+            page.Url, navigationOccurred, snapshot, null, null);
     }
 
     private static Dictionary<string, int> SnapshotLinesForDiff(string snapshot)
