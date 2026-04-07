@@ -110,6 +110,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Always dismiss modals
             var dismissedModals = await _modalDismisser.DismissModalsAsync(page, null, ct);
 
+            // Strip hidden overlays, dismissed modals, and non-content noise from DOM
+            // to prevent them from consuming the content budget during HTML processing
+            await StripDomNoiseAsync(page);
+
             // Scroll-to-load for lazy-loaded content
             if (request.ScrollToLoad)
             {
@@ -590,6 +594,52 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
 
         await page.EvaluateAsync("() => window.scrollTo(0, 0)");
+    }
+
+    private static async Task StripDomNoiseAsync(IPage page)
+    {
+        try
+        {
+            await page.EvaluateAsync("""
+                () => {
+                    // Remove dismissed modals, dialog overlays, and cookie banners
+                    document.querySelectorAll(
+                        '[role="dialog"], [role="alertdialog"], [aria-modal="true"], ' +
+                        '[class*="cookie-banner"], [class*="cookieBanner"], [id*="cookie-banner"], ' +
+                        '[class*="consent-banner"], [id*="consent"]'
+                    ).forEach(el => el.remove());
+
+                    // Remove elements explicitly hidden by the page
+                    document.querySelectorAll('[aria-hidden="true"], [hidden]').forEach(el => el.remove());
+
+                    // Remove script/style/noscript tags — they contribute nothing to text content
+                    document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+
+                    // Strip image src attributes — long CDN URLs bloat markdown without adding value
+                    // Alt text is preserved for context
+                    document.querySelectorAll('img').forEach(img => {
+                        img.removeAttribute('src');
+                        img.removeAttribute('srcset');
+                        img.removeAttribute('data-src');
+                        img.removeAttribute('data-image');
+                        img.removeAttribute('data-mediabook');
+                        img.removeAttribute('data-path');
+                    });
+
+                    // Remove zero-dimension layout elements that are invisible noise
+                    document.querySelectorAll('div, section, aside, nav, footer, header, ul, ol, li, iframe').forEach(el => {
+                        const rect = el.getBoundingClientRect();
+                        if (rect.width === 0 && rect.height === 0) {
+                            el.remove();
+                        }
+                    });
+                }
+            """);
+        }
+        catch
+        {
+            // DOM cleanup is best-effort — page content can still be processed without it
+        }
     }
 
     private static async Task WaitForDomStabilityAsync(
