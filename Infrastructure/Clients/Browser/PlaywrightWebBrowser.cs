@@ -612,8 +612,17 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                     // Remove elements explicitly hidden by the page
                     document.querySelectorAll('[aria-hidden="true"], [hidden]').forEach(el => el.remove());
 
+                    // Remove site chrome (navigation, headers, footers) — page title is captured separately
+                    document.querySelectorAll('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]').forEach(el => el.remove());
+
                     // Remove script/style/noscript tags — they contribute nothing to text content
                     document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+
+                    // Remove container elements with display:none — truly hidden content (collapsed filters, hidden menus, etc.)
+                    // Only check container-level elements to avoid perf issues on large DOMs
+                    document.querySelectorAll('div, section, aside, ul, ol, li, form, fieldset, details, dialog').forEach(el => {
+                        if (el.parentNode && window.getComputedStyle(el).display === 'none') el.remove();
+                    });
 
                     // Strip image src attributes — long CDN URLs bloat markdown without adding value
                     // Alt text is preserved for context
@@ -626,12 +635,28 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         img.removeAttribute('data-path');
                     });
 
-                    // Remove zero-dimension layout elements that are invisible noise
-                    document.querySelectorAll('div, section, aside, nav, footer, header, ul, ol, li, iframe').forEach(el => {
-                        const rect = el.getBoundingClientRect();
-                        if (rect.width === 0 && rect.height === 0) {
-                            el.remove();
-                        }
+                    // Remove iframes (ads, trackers) — they contribute no text content
+                    document.querySelectorAll('iframe').forEach(el => el.remove());
+
+                    // Remove SVGs — icons/graphics that bloat HTML without adding text value
+                    document.querySelectorAll('svg').forEach(el => el.remove());
+
+                    // Compact link hrefs: strip tracking params and shorten same-site URLs
+                    // This dramatically reduces markdown size since [text](url) includes full URLs
+                    const currentHost = location.hostname;
+                    document.querySelectorAll('a[href]').forEach(a => {
+                        try {
+                            const url = new URL(a.href);
+                            // Strip common tracking parameters
+                            ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+                             'ats','atc','ata','ref','cid','frm','noc'].forEach(p => url.searchParams.delete(p));
+                            // For same-site links, use path only
+                            if (url.hostname === currentHost || url.hostname === 'www.' + currentHost) {
+                                a.setAttribute('href', url.pathname + url.search + url.hash);
+                            } else {
+                                a.setAttribute('href', url.toString());
+                            }
+                        } catch { /* skip malformed URLs */ }
                     });
                 }
             """);

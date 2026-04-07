@@ -14,9 +14,6 @@ public class WebSnapshotTool(IWebBrowser browser)
 
         Each interactive element has a ref you use with WebAction to interact with it.
 
-        Use the selector parameter to scope to a specific section when you know what
-        part of the page you need (e.g. selector='main', selector='form'). Omit for full page.
-
         Use this to understand page state and find elements before interacting.
         Call after WebBrowse to see interactive elements, or after WebAction when the
         diff response isn't enough context.

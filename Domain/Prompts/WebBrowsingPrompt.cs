@@ -30,8 +30,8 @@ public static class WebBrowsingPrompt
         - Returns the accessibility tree showing ALL elements: headings, text, buttons, links,
           form fields, dropdowns, and their current state (expanded, checked, disabled, etc.)
         - Each interactive element has a ref you use with WebAction
-        - Use the selector parameter to scope to a specific section when you know what part
-          of the page you need (e.g. 'main', 'form', '.results'). Omit for full page.
+        - Use the selector parameter only when you know the exact CSS selector for the section
+          you need. When in doubt, omit it for full page.
         - Call after WebBrowse to see interactive elements, or after WebAction for full context
 
         **WebAction** - Interact with elements
@@ -52,76 +52,57 @@ public static class WebBrowsingPrompt
         **Interacting with a page (forms, buttons, navigation):**
         ```
         WebBrowse(url="...") → Load the page
-        WebSnapshot() → See all elements with refs
-        WebAction(ref="...", action="fill", value="...") → Fill a field
-        WebAction(ref="...", action="click") → Click a button
+        WebSnapshot() → See all elements with refs (ONE snapshot, then chain actions)
+        WebAction(ref="...", action="fill", value="...") → diff shows what changed
+        WebAction(ref="...", action="click") → diff shows result, use new refs from diff
         ```
 
         **Autocomplete / Combobox fields:**
         ```
-        WebSnapshot() → Find the input field ref
-        WebAction(ref="input-ref", action="type", value="Odaw") → Type slowly to trigger suggestions
-          → Response includes snapshot showing expanded dropdown with options
-        WebAction(ref="option-ref", action="click") → Click the desired suggestion
+        WebAction(ref="input-ref", action="type", value="Odaw") → diff shows dropdown options with refs
+        WebAction(ref="option-ref", action="click") → diff shows selected value
         ```
 
         **Multi-page navigation:**
         ```
-        WebSnapshot() → Find navigation link ref
-        WebAction(ref="next-ref", action="click", waitForNavigation=true) → Navigate
-        WebBrowse or WebSnapshot → See new page
-        ```
-
-        **Extracting structured data (products, search results):**
-        ```
-        WebBrowse(url="...") → Get page content
-        If you need specific elements → WebBrowse(selector=".product-card")
-        If you need structured data → Check structuredData in WebBrowse response
+        WebAction(ref="next-ref", action="click", waitForNavigation=true) → diff shows new page content
+        Only call WebSnapshot if you need refs not visible in the diff
         ```
 
         **Hover menus / tooltips:**
         ```
-        WebSnapshot() → Find element ref
-        WebAction(ref="menu-ref", action="hover") → Hover triggers submenu/tooltip
-          → Response snapshot shows newly visible elements
-        WebAction(ref="submenu-item-ref", action="click") → Click revealed item
-        ```
-
-        **Drag and drop:**
-        ```
-        WebSnapshot() → Find source and target refs
-        WebAction(ref="card-ref", action="drag", endRef="column-ref") → Drag to target
+        WebAction(ref="menu-ref", action="hover") → diff shows revealed submenu with refs
+        WebAction(ref="submenu-item-ref", action="click") → diff shows result
         ```
 
         **Going back:**
         ```
-        WebAction(action="back") → Navigate to previous page
-        WebSnapshot() → See previous page state
+        WebAction(action="back") → diff shows previous page content
         ```
 
         **JS dialogs (alert/confirm/prompt):**
         ```
-        If an action triggers a JS dialog, the response will indicate a dialog is pending
         WebAction(action="handleDialog", value="accept") → Accept the dialog
         WebAction(action="handleDialog", value="dismiss") → Dismiss the dialog
         ```
 
         ### Key Principles
 
-        1. **Snapshot before acting**: Always use WebSnapshot to see the current state before
-           interacting. Don't guess selectors — use refs from the snapshot.
+        1. **One snapshot, then chain actions**: Call WebSnapshot once to get refs, then use
+           WebAction repeatedly. Each action returns a diff with new refs — use those for
+           the next action. Only call WebSnapshot again if you need refs not in the diff.
 
-        2. **WebBrowse for content, WebSnapshot for state**: Use WebBrowse when you need to
-           read text content (articles, product descriptions, search results). Use WebSnapshot
-           when you need to understand page structure or find interactive elements.
+        2. **WebBrowse for content, WebSnapshot for structure**: Use WebBrowse to read text
+           (articles, products, search results). Use WebSnapshot to find interactive elements
+           and get refs. Don't call both for the same purpose.
 
         3. **Type for autocomplete, fill for direct input**: Use action="type" when the field
            has autocomplete/suggestions (types character-by-character to trigger JS handlers).
            Use action="fill" for simple text fields where you just need to set the value.
 
-        4. **Read the diff after actions**: WebAction returns only what changed on the page.
-           If an autocomplete opened, you'll see the new options. If a form submitted,
-           you'll see the result. Use WebSnapshot(selector='...') if you need more context.
+        4. **Read the diff**: WebAction returns only what changed — added elements with `+`,
+           removed with `-`. New refs in the diff are valid for the next action. Only call
+           WebSnapshot if the diff doesn't have what you need.
 
         5. **Start with Search**: Use WebSearch to find URLs rather than guessing.
 
