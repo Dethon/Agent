@@ -207,10 +207,14 @@ public class AccessibilitySnapshotService
                 return cl.length > 0 ? line + '\n' + cl.join('\n') : line;
             }
 
-            const root = selectorScope ? document.querySelector(selectorScope) : document.body;
-            if (!root) return { snapshot: '', refCount: 0 };
-            const tree = buildTree(root);
-            return { snapshot: tree ? format(tree, 0) : '', refCount: refCounter };
+            if (!selectorScope) {
+                const tree = buildTree(document.body);
+                return { snapshot: tree ? format(tree, 0) : '', refCount: refCounter };
+            }
+            const roots = [...document.querySelectorAll(selectorScope)];
+            if (roots.length === 0) return { snapshot: '', refCount: 0 };
+            const parts = roots.map(r => buildTree(r)).filter(Boolean).map(t => format(t, 0)).filter(Boolean);
+            return { snapshot: parts.join('\n'), refCount: refCounter };
         }
         """;
 
