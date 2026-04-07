@@ -384,27 +384,51 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             page.Url, navigationOccurred, diff, null, null);
     }
 
-    private static HashSet<string> SnapshotLinesForDiff(string snapshot)
+    private static Dictionary<string, int> SnapshotLinesForDiff(string snapshot)
     {
-        return snapshot.Split('\n')
-            .Select(StripRefs)
-            .ToHashSet();
+        var counts = new Dictionary<string, int>();
+        foreach (var line in snapshot.Split('\n').Select(StripRefs))
+        {
+            counts[line] = counts.GetValueOrDefault(line) + 1;
+        }
+        return counts;
     }
 
     private static string StripRefs(string line)
         => System.Text.RegularExpressions.Regex.Replace(line, @"\s*\[ref=e\d+\]", "");
 
     private static string BuildSnapshotDiff(
-        HashSet<string> beforeLines, string afterSnapshot, string actedRef, WebActionType action)
+        Dictionary<string, int> beforeCounts, string afterSnapshot, string actedRef, WebActionType action)
     {
         var afterLines = afterSnapshot.Split('\n');
-        var afterStripped = afterLines.Select(StripRefs).ToHashSet();
+        var afterCounts = new Dictionary<string, int>();
+        foreach (var line in afterLines.Select(StripRefs))
+        {
+            afterCounts[line] = afterCounts.GetValueOrDefault(line) + 1;
+        }
 
         var refTag = $"[ref={actedRef}]";
         var actedLine = afterLines.FirstOrDefault(l => l.Contains(refTag));
 
-        var removed = beforeLines.Where(line => !afterStripped.Contains(line)).ToList();
-        var added = afterLines.Where(line => !beforeLines.Contains(StripRefs(line))).ToList();
+        var removed = beforeCounts
+            .SelectMany(kv =>
+                Enumerable.Repeat(kv.Key, Math.Max(0, kv.Value - afterCounts.GetValueOrDefault(kv.Key))))
+            .ToList();
+
+        // Track how many surplus occurrences of each line to include as added
+        var surplusBudget = afterCounts.ToDictionary(
+            kv => kv.Key,
+            kv => Math.Max(0, kv.Value - beforeCounts.GetValueOrDefault(kv.Key)));
+        var added = new List<string>();
+        foreach (var line in afterLines)
+        {
+            var stripped = StripRefs(line);
+            if (surplusBudget.GetValueOrDefault(stripped) > 0)
+            {
+                added.Add(line);
+                surplusBudget[stripped]--;
+            }
+        }
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"[{action} on {actedRef}]");
