@@ -148,5 +148,69 @@ public class StreamServiceTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task WriteReplyAsync_FirstAgentCompletes_StreamStaysAliveForSecondAgent()
+    {
+        // Arrange: simulate two messages on the same topic (message1 then enqueued message2)
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        var (channel, _) = _sut.GetOrCreateStream("topic1", "prompt1", "user1", CancellationToken.None);
+        _sut.TryIncrementPending("topic1"); // message 1
+        _sut.TryIncrementPending("topic1"); // message 2 (enqueued)
+
+        var reader = channel.Subscribe();
+
+        // Act: first agent completes its response
+        await _sut.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "100:200", Content = "done with download 1",
+            ContentType = "text", IsComplete = true, MessageId = "msg-1"
+        });
+
+        // Assert: stream should still be alive for second agent
+        _sut.IsStreaming("topic1").ShouldBeTrue();
+
+        // Second agent should be able to write
+        await _sut.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "100:200", Content = "starting download 2",
+            ContentType = "text", IsComplete = false, MessageId = "msg-2"
+        });
+
+        // Read all messages: content from agent 1, IsComplete from agent 1, then content from agent 2
+        var msg1 = await reader.ReadAsync();
+        msg1.Content.ShouldBe("done with download 1");
+
+        var complete1 = await reader.ReadAsync();
+        complete1.IsComplete.ShouldBeTrue();
+
+        var msg2 = await reader.ReadAsync();
+        msg2.Content.ShouldBe("starting download 2");
+    }
+
+    [Fact]
+    public async Task WriteReplyAsync_LastAgentCompletes_StreamTornDown()
+    {
+        // Arrange: two pending messages
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _sut.GetOrCreateStream("topic1", "prompt1", "user1", CancellationToken.None);
+        _sut.TryIncrementPending("topic1"); // message 1
+        _sut.TryIncrementPending("topic1"); // message 2
+
+        // Act: both agents complete
+        await _sut.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "100:200", Content = "", ContentType = "stream_complete",
+            IsComplete = true, MessageId = "msg-1"
+        });
+        await _sut.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "100:200", Content = "", ContentType = "stream_complete",
+            IsComplete = true, MessageId = "msg-2"
+        });
+
+        // Assert: stream should be torn down after last agent completes
+        _sut.IsStreaming("topic1").ShouldBeFalse();
+    }
+
     public void Dispose() => _sut.Dispose();
 }

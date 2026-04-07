@@ -120,10 +120,6 @@ public sealed class ChatHub(
         await foreach (var msg in liveStream.IgnoreCancellation(cancellationToken))
         {
             yield return msg;
-            if (msg.IsComplete || msg.Error is not null)
-            {
-                break;
-            }
         }
     }
 
@@ -180,14 +176,11 @@ public sealed class ChatHub(
             session.AgentId,
             cancellationToken);
 
-        // Stream responses back to the browser
+        // Stream responses back to the browser — the loop ends when the channel completes
+        // (i.e. when the last pending agent finishes), not on individual IsComplete messages.
         await foreach (var msg in subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
         {
             yield return msg;
-            if (msg.IsComplete || msg.Error is not null)
-            {
-                break;
-            }
         }
     }
 
