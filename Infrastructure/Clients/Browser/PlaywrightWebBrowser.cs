@@ -348,7 +348,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
         // Capture after-snapshot and diff against before
         var after = await _snapshotService.CaptureAsync(page, null, request.SessionId);
-        var diff = BuildSnapshotDiff(beforeLines, after.Snapshot);
+        var diff = BuildSnapshotDiff(beforeLines, after.Snapshot, request.Ref!, request.Action);
 
         return new WebActionResult(request.SessionId, WebActionStatus.Success,
             page.Url, navigationOccurred, diff, null, null);
@@ -357,24 +357,49 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private static HashSet<string> SnapshotLinesForDiff(string snapshot)
     {
         return snapshot.Split('\n')
-            .Select(line => StripRefs(line))
+            .Select(StripRefs)
             .ToHashSet();
     }
 
     private static string StripRefs(string line)
         => System.Text.RegularExpressions.Regex.Replace(line, @"\s*\[ref=e\d+\]", "");
 
-    private static string BuildSnapshotDiff(HashSet<string> beforeLines, string afterSnapshot)
+    private static string BuildSnapshotDiff(
+        HashSet<string> beforeLines, string afterSnapshot, string actedRef, WebActionType action)
     {
         var afterLines = afterSnapshot.Split('\n');
-        var newLines = afterLines
-            .Where(line => !beforeLines.Contains(StripRefs(line)))
-            .ToList();
+        var afterStripped = afterLines.Select(StripRefs).ToHashSet();
 
-        if (newLines.Count == 0)
-            return "[no visible changes]";
+        var refTag = $"[ref={actedRef}]";
+        var actedLine = afterLines.FirstOrDefault(l => l.Contains(refTag));
 
-        return string.Join('\n', newLines);
+        var removed = beforeLines.Where(line => !afterStripped.Contains(line)).ToList();
+        var added = afterLines.Where(line => !beforeLines.Contains(StripRefs(line))).ToList();
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[{action} on {actedRef}]");
+        if (actedLine is not null)
+            sb.AppendLine($"[after: {actedLine.TrimStart()}]");
+
+        if (removed.Count == 0 && added.Count == 0)
+        {
+            sb.AppendLine("[no visible changes]");
+            return sb.ToString().TrimEnd();
+        }
+
+        sb.AppendLine();
+        foreach (var line in removed)
+        {
+            sb.Append("- ");
+            sb.AppendLine(line);
+        }
+        foreach (var line in added)
+        {
+            sb.Append("+ ");
+            sb.AppendLine(line);
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     private async Task SmartWaitAsync(IPage page, WebActionRequest request, CancellationToken ct)

@@ -91,8 +91,13 @@ public class JQueryFocusWidgetTests(
             $input.on('focus', function() {
                 document.getElementById('dropdown').style.display = 'block';
             });
-            $input.on('blur', function() {
-                setTimeout(function() { document.getElementById('dropdown').style.display = 'none'; }, 300);
+
+            // Option buttons close dropdown and update input value
+            document.querySelectorAll('#dropdown button').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    document.getElementById('date-input').value = this.getAttribute('data-value');
+                    document.getElementById('dropdown').style.display = 'none';
+                });
             });
         }
         """;
@@ -146,6 +151,58 @@ public class JQueryFocusWidgetTests(
             clickResult.Snapshot.ShouldNotBeNull("Action should return a snapshot");
             // Dropdown options should be visible — proves jQuery focus handler fired
             clickResult.Snapshot.ShouldContain("option");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    [SkippableFact]
+    public async Task ClickAction_OnDropdownOption_ClosesDropdownAndShowsRemovedLines()
+    {
+        Skip.IfNot(fixture.IsAvailable, $"Playwright not available: {fixture.InitializationError}");
+
+        var sessionId = $"test-{Guid.NewGuid():N}";
+        try
+        {
+            var browseResult = await fixture.Browser.NavigateAsync(new BrowseRequest(
+                SessionId: sessionId,
+                Url: "https://example.com"));
+            browseResult.Status.ShouldBe(BrowseStatus.Success);
+
+            await fixture.Browser.EvaluateOnSessionAsync(sessionId, InjectTestWidgetScript);
+
+            // Take snapshot, find input, click to open dropdown
+            var snapshot = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
+            var inputRef = System.Text.RegularExpressions.Regex.Match(
+                snapshot.Snapshot!.Split('\n').First(l => l.Contains("textbox") && l.Contains("ref=")),
+                @"ref=(e\d+)").Groups[1].Value;
+
+            var openResult = await fixture.Browser.ActionAsync(new WebActionRequest(
+                SessionId: sessionId, Ref: inputRef, Action: WebActionType.Click));
+            openResult.Status.ShouldBe(WebActionStatus.Success);
+            openResult.Snapshot.ShouldContain("+ ");
+            output.WriteLine($"Open diff:\n{openResult.Snapshot}");
+
+            // Find an option ref from the diff
+            var optionLine = openResult.Snapshot!.Split('\n')
+                .First(l => l.Contains("option") && l.Contains("ref="));
+            var optionRef = System.Text.RegularExpressions.Regex.Match(optionLine, @"ref=(e\d+)").Groups[1].Value;
+            output.WriteLine($"Clicking option ref: {optionRef}");
+
+            // Click the option — dropdown should close (removed lines in diff)
+            var selectResult = await fixture.Browser.ActionAsync(new WebActionRequest(
+                SessionId: sessionId, Ref: optionRef, Action: WebActionType.Click));
+
+            selectResult.Status.ShouldBe(WebActionStatus.Success);
+            output.WriteLine($"Select diff:\n{selectResult.Snapshot}");
+
+            // Diff should show removed lines (the dropdown disappearing)
+            var diffLines = selectResult.Snapshot!.Split('\n');
+            diffLines.ShouldContain(l => l.StartsWith("- "), "Diff should have removed lines (dropdown closed)");
+            diffLines.ShouldContain(l => l.StartsWith("- ") && l.Contains("option"),
+                "Removed lines should include the dropdown options");
         }
         finally
         {
