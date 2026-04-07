@@ -243,9 +243,9 @@ public class AccessibilitySnapshotService
     public async Task<SnapshotCaptureResult> CaptureAsync(
         IPage page, string? selectorScope, string sessionId, bool preserveRefs = false)
     {
-        object args = selectorScope is not null || preserveRefs
+        var args = selectorScope is not null || preserveRefs
             ? new { scope = selectorScope, preserveRefs }
-            : (object)selectorScope!;
+            : null;
 
         var result = await page.EvaluateAsync<JsonElement>(SnapshotScript, args);
         var snapshot = result.GetProperty("snapshot").GetString() ?? "";
