@@ -110,6 +110,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Always dismiss modals
             var dismissedModals = await _modalDismisser.DismissModalsAsync(page, null, ct);
 
+            // Extract structured data before stripping DOM noise,
+            // because StripDomNoiseAsync removes <script> tags including ld+json
+            var structuredData = ExtractStructuredData(html);
+
             // Strip hidden overlays, dismissed modals, and non-content noise from DOM
             // to prevent them from consuming the content budget during HTML processing
             await StripDomNoiseAsync(page);
@@ -126,7 +130,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Re-fetch HTML after all waiting
             html = await page.ContentAsync();
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
-            var structuredData = ExtractStructuredData(html);
 
             var status = navigationTimedOut || processed.IsPartial
                 ? BrowseStatus.Partial
