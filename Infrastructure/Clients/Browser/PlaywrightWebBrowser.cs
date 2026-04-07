@@ -641,8 +641,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         '[class*="consent-banner"], [id*="consent"]'
                     ).forEach(el => el.remove());
 
-                    // Remove elements explicitly hidden by the page
-                    document.querySelectorAll('[aria-hidden="true"], [hidden]').forEach(el => el.remove());
+                    // Remove elements with [hidden] attribute — truly hidden content
+                    // Note: aria-hidden="true" is NOT removed here because sites toggle it dynamically
+                    // (dropdowns, menus) and Playwright's accessibility tree already excludes them
+                    document.querySelectorAll('[hidden]').forEach(el => el.remove());
 
                     // Remove site chrome (navigation, headers, footers) — page title is captured separately
                     document.querySelectorAll('nav, header, footer, [role="navigation"], [role="banner"], [role="contentinfo"]').forEach(el => el.remove());
