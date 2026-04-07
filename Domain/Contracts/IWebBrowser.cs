@@ -73,7 +73,7 @@ public record SnapshotResult(
 public enum WebActionType
 {
     Click, Type, Fill, Select, Press, Clear,
-    Hover, Focus, Drag, Back, HandleDialog
+    Hover, Focus, Drag, Back
 }
 
 public record WebActionRequest(

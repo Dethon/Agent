@@ -38,7 +38,7 @@ public static class WebBrowsingPrompt
         - Target elements by ref from WebSnapshot
         - Actions: click, type (triggers autocomplete), fill (set value directly),
           select (native dropdowns), press (keyboard keys), clear, hover, focus, drag
-        - Special actions (no ref needed): back (navigate back), handleDialog
+        - Special actions (no ref needed): back (navigate back)
         - Returns a diff showing only what changed on the page after the action
 
         ### Core Workflows
@@ -82,12 +82,6 @@ public static class WebBrowsingPrompt
         WebAction(action="back") → diff shows previous page content
         ```
 
-        **JS dialogs (alert/confirm/prompt):**
-        ```
-        WebAction(action="handleDialog", value="accept") → Accept the dialog
-        WebAction(action="handleDialog", value="dismiss") → Dismiss the dialog
-        ```
-
         ### Key Principles
 
         1. **One snapshot, then chain actions**: Call WebSnapshot once to get refs, then use
@@ -118,7 +112,7 @@ public static class WebBrowsingPrompt
         | Page not loading | Try scrollToLoad=true for lazy content |
         | Session expired | Fresh WebBrowse to create new session |
         | Modal blocking content | Usually auto-dismissed; find close button via WebSnapshot |
-        | JS dialog blocking | WebAction(action="handleDialog", value="accept" or "dismiss") |
+        | JS dialog blocking | Dialogs are auto-accepted; check dialogMessage in response |
         | Need full page state | WebSnapshot() to see all elements |
         | Hidden hover content | WebAction(action="hover") to reveal tooltips/menus |
         | Need to go back | WebAction(action="back") instead of re-browsing previous URL |

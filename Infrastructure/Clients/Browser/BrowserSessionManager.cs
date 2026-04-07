@@ -31,19 +31,8 @@ public class BrowserSessionManager : IAsyncDisposable
 
             var page = await context.NewPageAsync();
 
-            page.Dialog += async (_, dialog) =>
-            {
-                if (_sessions.TryGetValue(sessionId, out var s))
-                {
-                    _sessions[sessionId] = s with
-                    {
-                        LastDialogMessage = dialog.Message
-                    };
-                }
-
-                // Playwright blocks the page until dialogs are handled
-                await dialog.AcceptAsync();
-            };
+            // Playwright blocks the page until dialogs are handled — auto-accept all
+            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
 
             var session = new BrowserSession(
                 SessionId: sessionId,
@@ -79,18 +68,6 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
-    public void SetPendingDialog(string sessionId, IDialog? dialog, string? message)
-    {
-        if (_sessions.TryGetValue(sessionId, out var session))
-        {
-            _sessions[sessionId] = session with
-            {
-                PendingDialog = dialog,
-                LastDialogMessage = message,
-                LastAccessedAt = DateTimeOffset.UtcNow
-            };
-        }
-    }
 
     public async Task CloseAsync(string sessionId)
     {
@@ -128,6 +105,4 @@ public record BrowserSession(
     IPage Page,
     string CurrentUrl,
     DateTimeOffset CreatedAt,
-    DateTimeOffset LastAccessedAt,
-    IDialog? PendingDialog = null,
-    string? LastDialogMessage = null);
+    DateTimeOffset LastAccessedAt);

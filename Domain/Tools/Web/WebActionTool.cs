@@ -26,7 +26,6 @@ public class WebActionTool(IWebBrowser browser)
 
         Actions NOT requiring ref:
         - 'back': Navigate back in browser history.
-        - 'handleDialog': Accept/dismiss JS dialog. Set value to 'accept' or 'dismiss'.
 
         Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.
         For autocomplete: type partial text -> response shows options -> click option ref.
@@ -101,7 +100,6 @@ public class WebActionTool(IWebBrowser browser)
             "focus" => WebActionType.Focus,
             "drag" => WebActionType.Drag,
             "back" => WebActionType.Back,
-            "handledialog" or "dialog" => WebActionType.HandleDialog,
             _ => throw new ArgumentException($"Unknown action: {action}")
         };
     }

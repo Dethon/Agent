@@ -252,7 +252,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             return request.Action switch
             {
                 WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
-                WebActionType.HandleDialog => await ExecuteHandleDialogAsync(request, page),
                 _ => await ExecuteElementActionAsync(request, page, urlBefore, ct)
             };
         }
@@ -496,24 +495,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null);
     }
 
-    private async Task<WebActionResult> ExecuteHandleDialogAsync(
-        WebActionRequest request, IPage page)
-    {
-        var session = _sessions.Get(request.SessionId)!;
-        var message = session.LastDialogMessage;
-
-        if (message is null)
-            return new WebActionResult(request.SessionId, WebActionStatus.Error,
-                page.Url, false, null, null, "No dialog pending.");
-
-        // Dialogs are auto-accepted by the event handler (Playwright blocks the page
-        // until handled). This action returns the dialog message for the agent to see.
-        _sessions.SetPendingDialog(request.SessionId, null, null);
-        var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
-
-        return new WebActionResult(request.SessionId, WebActionStatus.Success,
-            page.Url, false, snapshot.Snapshot, message, null);
-    }
 
     public async Task EvaluateOnSessionAsync(string sessionId, string script)
     {
