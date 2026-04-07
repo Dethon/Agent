@@ -30,6 +30,10 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             var page = await context.NewPageAsync();
+
+            // Playwright blocks the page until dialogs are handled — auto-accept all
+            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+
             var session = new BrowserSession(
                 SessionId: sessionId,
                 Page: page,
@@ -63,6 +67,7 @@ public class BrowserSessionManager : IAsyncDisposable
             };
         }
     }
+
 
     public async Task CloseAsync(string sessionId)
     {

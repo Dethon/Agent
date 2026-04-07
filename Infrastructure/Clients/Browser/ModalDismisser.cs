@@ -36,16 +36,18 @@ public class ModalDismisser
         new(
             Type: ModalType.AgeGate,
             ContainerSelector:
-            "[class*='age'], [id*='age'], [class*='verify'], [id*='verify'], [class*='adult'], [id*='adult'], [class*='18'], [id*='18']",
+            "[class*='age'], [id*='age'], [class*='verify'], [id*='verify'], [class*='adult'], [id*='adult'], [class*='18'], [id*='18'], [class*='ageDisclaimer'], [class*='age-disclaimer']",
             ButtonSelectors:
             [
                 "button[class*='enter'], button[id*='enter']",
                 "button[class*='confirm'], button[id*='confirm']",
                 "button[class*='yes'], button[id*='yes']",
+                "button[class*='over18'], button[class*='Over18']",
                 "a[class*='enter'], a[id*='enter']",
                 "a[class*='yes'], a[id*='yes']",
                 "[data-action*='enter']",
-                "[data-action*='confirm']"
+                "[data-action*='confirm']",
+                "[data-label*='over18']"
             ],
             ButtonTextPatterns:
             ["yes", "enter", "confirm", "i am", "soy mayor", "si", "entrar", "over 18", "over 21", "i'm over"]
@@ -90,11 +92,10 @@ public class ModalDismisser
 
     public async Task<IReadOnlyList<ModalDismissed>> DismissModalsAsync(
         IPage page,
-        ModalDismissalConfig? config,
         CancellationToken ct)
     {
-        var patterns = GetEffectivePatterns(config);
-        var timeout = config?.TimeoutMs ?? 3000;
+        var patterns = _defaultPatterns;
+        const int timeout = 3000;
 
         // Brief wait for modals to appear
         await Task.Delay(200, ct);
@@ -143,49 +144,44 @@ public class ModalDismisser
         }
     }
 
-    private IReadOnlyList<ModalPattern> GetEffectivePatterns(ModalDismissalConfig? config)
-    {
-        if (config == null || !config.Enabled)
-        {
-            return config?.Enabled == false ? [] : _defaultPatterns;
-        }
-
-        var patterns = new List<ModalPattern>();
-
-        // Add default patterns, excluding disabled types
-        var disabledTypes = config.DisabledTypes?.ToHashSet() ?? [];
-        patterns.AddRange(_defaultPatterns.Where(p => !disabledTypes.Contains(p.Type)));
-
-        // Add custom patterns
-        if (config.CustomPatterns != null)
-        {
-            patterns.AddRange(config.CustomPatterns);
-        }
-
-        return patterns;
-    }
-
     private async Task<ModalDismissed?> TryDismissPatternAsync(
         IPage page,
         ModalPattern pattern,
         int timeout,
         CancellationToken ct)
     {
-        // First check if the container exists
+        // Check if any matching container is visible (not just the first DOM match)
         if (!string.IsNullOrEmpty(pattern.ContainerSelector))
         {
+            var containerLocator = page.Locator(pattern.ContainerSelector);
+
             try
             {
-                var container = page.Locator(pattern.ContainerSelector).First;
-                await container.WaitForAsync(new LocatorWaitForOptions
+                await containerLocator.First.WaitForAsync(new LocatorWaitForOptions
                 {
-                    State = WaitForSelectorState.Visible,
                     Timeout = timeout
                 });
             }
             catch
             {
-                // Container not found or timeout
+                // No containers found at all
+                return null;
+            }
+
+            var count = await containerLocator.CountAsync();
+            var anyVisible = false;
+
+            for (var i = 0; i < Math.Min(count, 10); i++)
+            {
+                if (await containerLocator.Nth(i).IsVisibleAsync())
+                {
+                    anyVisible = true;
+                    break;
+                }
+            }
+
+            if (!anyVisible)
+            {
                 return null;
             }
         }

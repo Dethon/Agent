@@ -1,7 +1,5 @@
 using System.Text.RegularExpressions;
-using AngleSharp;
 using Domain.Contracts;
-using Domain.DTOs;
 using Infrastructure.HtmlProcessing;
 using Microsoft.Playwright;
 
@@ -16,6 +14,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new();
     private readonly ModalDismisser _modalDismisser = new();
+    private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();
     private bool _initialized;
     private const int MaxCaptchaRetries = 2;
@@ -40,35 +39,31 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             // Brief random delay before navigation
             await Task.Delay(_random.Next(50, 150), ct);
 
-            var waitUntil = MapWaitStrategy(request.WaitStrategy);
             var navigationTimedOut = false;
 
             try
             {
                 await page.GotoAsync(request.Url, new PageGotoOptions
                 {
-                    WaitUntil = waitUntil,
-                    Timeout = request.WaitTimeoutMs
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 30000
                 });
             }
             catch (PlaywrightException ex) when (ex.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase))
             {
-                // Navigation timed out (common for JS-heavy sites like Reddit that never reach NetworkIdle)
-                // Check if we have content loaded and proceed with it
+                // Navigation timed out — check if we have content loaded and proceed with it
                 var currentUrl = page.Url;
                 if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
                 {
                     navigationTimedOut = true;
-                    // Continue processing - we have partial content
                 }
                 else
                 {
-                    throw; // Re-throw if we have no content at all
+                    throw;
                 }
             }
             catch (TimeoutException)
             {
-                // Fallback for System.TimeoutException if thrown
                 var currentUrl = page.Url;
                 if (!string.IsNullOrEmpty(currentUrl) && currentUrl != "about:blank")
                 {
@@ -99,7 +94,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                         ContentLength: 0,
                         Truncated: false,
                         Metadata: null,
-                        Links: null,
+                        StructuredData: null,
                         DismissedModals: null,
                         ErrorMessage: captchaResult.Message
                     );
@@ -107,27 +102,21 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
 
                 // Refresh page after setting cookie
                 await page.ReloadAsync(new PageReloadOptions
-                { WaitUntil = waitUntil, Timeout = request.WaitTimeoutMs });
+                { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
                 html = await page.ContentAsync();
                 captchaRetries++;
             }
 
-            // Auto-dismiss modals if enabled
-            IReadOnlyList<ModalDismissed>? dismissedModals = null;
-            if (request.DismissModals)
-            {
-                dismissedModals = await _modalDismisser.DismissModalsAsync(page, request.ModalConfig, ct);
-            }
+            // Always dismiss modals
+            var dismissedModals = await _modalDismisser.DismissModalsAsync(page, ct);
 
-            // Element-based waiting if selector strategy or explicit wait selector provided
-            if (request.WaitStrategy == WaitStrategy.Selector && !string.IsNullOrEmpty(request.WaitSelector))
-            {
-                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
-            }
-            else if (!string.IsNullOrEmpty(request.WaitSelector))
-            {
-                await WaitForSelectorAsync(page, request.WaitSelector, request.WaitTimeoutMs);
-            }
+            // Extract structured data before stripping DOM noise,
+            // because StripDomNoiseAsync removes <script> tags including ld+json
+            var structuredData = ExtractStructuredData(html);
+
+            // Strip hidden overlays, dismissed modals, and non-content noise from DOM
+            // to prevent them from consuming the content budget during HTML processing
+            await StripDomNoiseAsync(page);
 
             // Scroll-to-load for lazy-loaded content
             if (request.ScrollToLoad)
@@ -135,30 +124,21 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 await ScrollToLoadAsync(page, request.ScrollSteps, ct);
             }
 
-            // Wait for DOM stability
-            if (request.WaitForStability || request.WaitStrategy == WaitStrategy.Stable)
-            {
-                await WaitForDomStabilityAsync(page, request.StabilityCheckMs, ct);
-            }
-
-            // Configurable delay for dynamic content
-            await Task.Delay(request.ExtraDelayMs, ct);
+            // Always wait for DOM stability
+            await WaitForDomStabilityAsync(page, ct: ct);
 
             // Re-fetch HTML after all waiting
             html = await page.ContentAsync();
             var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
-            // Determine status - partial if navigation timed out or processing was partial
             var status = navigationTimedOut || processed.IsPartial
                 ? BrowseStatus.Partial
                 : BrowseStatus.Success;
 
-            // Build error message
             var errorMessage = processed.ErrorMessage;
             if (navigationTimedOut)
             {
-                var timeoutMsg = "Page did not fully load (NetworkIdle timeout). Content may be incomplete. " +
-                                 "Try waitStrategy='domcontentloaded' for JS-heavy sites.";
+                var timeoutMsg = "Page did not fully load (DOMContentLoaded timeout). Content may be incomplete.";
                 errorMessage = string.IsNullOrEmpty(errorMessage) ? timeoutMsg : $"{timeoutMsg} {errorMessage}";
             }
 
@@ -171,7 +151,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 ContentLength: processed.ContentLength,
                 Truncated: processed.Truncated,
                 Metadata: processed.Metadata,
-                Links: processed.Links,
+                StructuredData: structuredData.Count > 0 ? structuredData : null,
                 DismissedModals: dismissedModals,
                 ErrorMessage: errorMessage
             );
@@ -191,142 +171,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         catch (Exception ex)
         {
             return CreateErrorResult(request.SessionId, request.Url, $"Error: {ex.Message}");
-        }
-    }
-
-    public async Task<ClickResult> ClickAsync(ClickRequest request, CancellationToken ct = default)
-    {
-        var session = _sessions.Get(request.SessionId);
-        if (session == null)
-        {
-            return new ClickResult(
-                request.SessionId,
-                ClickStatus.SessionNotFound,
-                null,
-                null,
-                0,
-                "No active browser session found. Use WebBrowse first to navigate to a page.",
-                false
-            );
-        }
-
-        var page = session.Page;
-        var originalUrl = page.Url;
-
-        try
-        {
-            // Find element by selector, optionally filter by text
-            var locator = page.Locator(request.Selector);
-            if (!string.IsNullOrEmpty(request.Text))
-            {
-                locator = locator.Filter(new LocatorFilterOptions { HasText = request.Text });
-            }
-
-            locator = locator.First;
-
-            // Check if element exists and is visible
-            try
-            {
-                await locator.WaitForAsync(new LocatorWaitForOptions
-                {
-                    State = WaitForSelectorState.Visible,
-                    Timeout = 5000
-                });
-            }
-            catch (TimeoutException)
-            {
-                return new ClickResult(
-                    request.SessionId,
-                    ClickStatus.ElementNotFound,
-                    page.Url,
-                    null,
-                    0,
-                    $"Element not found or not visible: {request.Selector}",
-                    false
-                );
-            }
-
-            // Perform click action
-            var urlBefore = page.Url;
-            await PerformClickAsync(locator, request);
-
-            if (request.WaitForNavigation)
-            {
-                // Wait for URL to change or load state
-                try
-                {
-                    await page.WaitForURLAsync(
-                        url => url != urlBefore,
-                        new PageWaitForURLOptions { Timeout = request.WaitTimeoutMs });
-                }
-                catch (TimeoutException)
-                {
-                    // URL didn't change, might be SPA navigation - wait for network idle instead
-                    await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-                        new PageWaitForLoadStateOptions { Timeout = request.WaitTimeoutMs });
-                }
-            }
-            else
-            {
-                // Wait a bit for any dynamic content changes
-                await Task.Delay(500, ct);
-            }
-
-            _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
-
-            // Get page content after click
-            var html = await page.ContentAsync();
-            var content = HtmlConverter.Convert(html, WebFetchOutputFormat.Markdown);
-            if (content.Length > 10000)
-            {
-                content = content[..10000] + "\n\n... (content truncated)";
-            }
-
-            return new ClickResult(
-                request.SessionId,
-                ClickStatus.Success,
-                page.Url,
-                content,
-                content.Length,
-                null,
-                page.Url != originalUrl
-            );
-        }
-        catch (TimeoutException)
-        {
-            return new ClickResult(
-                request.SessionId,
-                ClickStatus.Timeout,
-                page.Url,
-                null,
-                0,
-                "Click operation timed out",
-                false
-            );
-        }
-        catch (PlaywrightException ex) when (ex.Message.Contains("not found") || ex.Message.Contains("no element"))
-        {
-            return new ClickResult(
-                request.SessionId,
-                ClickStatus.ElementNotFound,
-                page.Url,
-                null,
-                0,
-                $"Element not found: {request.Selector}",
-                false
-            );
-        }
-        catch (Exception ex)
-        {
-            return new ClickResult(
-                request.SessionId,
-                ClickStatus.Error,
-                page.Url,
-                null,
-                0,
-                $"Error: {ex.Message}",
-                false
-            );
         }
     }
 
@@ -365,7 +209,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
                 ContentLength: processed.ContentLength,
                 Truncated: processed.Truncated,
                 Metadata: processed.Metadata,
-                Links: processed.Links,
+                StructuredData: null,
                 DismissedModals: null,
                 ErrorMessage: processed.ErrorMessage
             );
@@ -376,101 +220,315 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    public async Task<InspectResult> InspectAsync(InspectRequest request, CancellationToken ct = default)
+    public async Task<SnapshotResult> SnapshotAsync(SnapshotRequest request, CancellationToken ct = default)
     {
         var session = _sessions.Get(request.SessionId);
         if (session == null)
-        {
-            return new InspectResult(
-                request.SessionId,
-                null,
-                null,
-                request.Mode,
-                null,
-                null,
-                null,
-                null,
-                null,
-                "No active browser session found. Use WebBrowse first to navigate to a page."
-            );
-        }
+            return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use WebBrowse first.");
 
         try
         {
-            var html = await session.Page.ContentAsync();
-            var title = await session.Page.TitleAsync();
-            var document = await BrowsingContext.New(Configuration.Default).OpenAsync(req => req.Content(html), ct);
-
-            InspectStructure? structure = null;
-            InspectSearchResult? searchResult = null;
-            IReadOnlyList<InspectForm>? forms = null;
-            InspectInteractive? interactive = null;
-            IReadOnlyList<ExtractedTable>? tables = null;
-
-            switch (request.Mode)
-            {
-                case InspectMode.Structure:
-                    structure = HtmlInspector.InspectStructure(document, request.Selector);
-                    break;
-                case InspectMode.Search:
-                    if (string.IsNullOrEmpty(request.Query))
-                    {
-                        return new InspectResult(
-                            request.SessionId,
-                            session.Page.Url,
-                            title,
-                            request.Mode,
-                            null,
-                            null,
-                            null,
-                            null,
-                            null,
-                            "Query is required for search mode"
-                        );
-                    }
-
-                    searchResult = HtmlInspector.SearchText(document, request.Query, request.Regex,
-                        request.MaxResults, request.Selector);
-                    break;
-                case InspectMode.Forms:
-                    forms = HtmlInspector.InspectForms(document, request.Selector);
-                    break;
-                case InspectMode.Interactive:
-                    interactive = HtmlInspector.InspectInteractive(document, request.Selector);
-                    break;
-                case InspectMode.Tables:
-                    tables = HtmlInspector.ExtractTables(document, request.Selector);
-                    break;
-            }
-
-            return new InspectResult(
-                SessionId: request.SessionId,
-                Url: session.Page.Url,
-                Title: title,
-                Mode: request.Mode,
-                Structure: structure,
-                SearchResult: searchResult,
-                Forms: forms,
-                Interactive: interactive,
-                Tables: tables,
-                ErrorMessage: null
-            );
+            var result = await _snapshotService.CaptureAsync(session.Page, request.Selector, request.SessionId);
+            return new SnapshotResult(request.SessionId, session.Page.Url, result.Snapshot, result.RefCount, null);
         }
         catch (Exception ex)
         {
-            return new InspectResult(
-                request.SessionId,
-                session.CurrentUrl,
-                null,
-                request.Mode,
-                null,
-                null,
-                null,
-                null,
-                null,
-                $"Error: {ex.Message}"
-            );
+            return new SnapshotResult(request.SessionId, session.Page.Url, null, 0, ex.Message);
         }
+    }
+
+    public async Task<WebActionResult> ActionAsync(WebActionRequest request, CancellationToken ct = default)
+    {
+        var session = _sessions.Get(request.SessionId);
+        if (session == null)
+            return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
+                null, false, null, null, "Session not found. Use WebBrowse first.");
+
+        var page = session.Page;
+        var urlBefore = page.Url;
+
+        try
+        {
+            return request.Action switch
+            {
+                WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
+                _ => await ExecuteElementActionAsync(request, page, urlBefore, ct)
+            };
+        }
+        catch (TimeoutException)
+        {
+            return new WebActionResult(request.SessionId, WebActionStatus.Timeout,
+                page.Url, false, null, null, "Operation timed out.");
+        }
+        catch (PlaywrightException ex)
+        {
+            var status = ex.Message.Contains("not found") || ex.Message.Contains("no element")
+                ? WebActionStatus.ElementNotFound
+                : WebActionStatus.Error;
+            return new WebActionResult(request.SessionId, status,
+                page.Url, false, null, null, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                page.Url, false, null, null, ex.Message);
+        }
+    }
+
+    private async Task<WebActionResult> ExecuteElementActionAsync(
+        WebActionRequest request, IPage page, string urlBefore, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(request.Ref))
+            return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                page.Url, false, null, null, $"ref is required for {request.Action} action.");
+
+        var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
+        await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
+
+        // Capture before-snapshot for diffing — use preserveRefs to avoid clearing the
+        // data-ref attributes that the locator depends on
+        var before = await _snapshotService.CaptureAsync(page, null, request.SessionId, preserveRefs: true);
+        var beforeLines = SnapshotLinesForDiff(before.Snapshot);
+
+        switch (request.Action)
+        {
+            case WebActionType.Click:
+                await locator.ClickAsync();
+                if (await HasJQueryAsync(page))
+                    await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
+                break;
+            case WebActionType.Type:
+                await locator.ClearAsync();
+                await locator.PressSequentiallyAsync(request.Value ?? "", new() { Delay = 50 });
+                // Force-trigger input events using the native value setter to ensure
+                // framework-managed inputs (React, Vue) and autocomplete widgets respond,
+                // even in browsers where Playwright's synthetic keyboard events don't trigger them.
+                // Also trigger jQuery events — jQuery handlers receive jQuery event objects
+                // (not native events) so they bypass isTrusted checks that block synthetic
+                // keyboard events in anti-detect browsers like Camoufox.
+                await locator.EvaluateAsync("""
+                    el => {
+                        const nativeSetter = Object.getOwnPropertyDescriptor(
+                            HTMLInputElement.prototype, 'value')?.set;
+                        if (nativeSetter) {
+                            nativeSetter.call(el, el.value);
+                        }
+                        el.dispatchEvent(new Event('input', { bubbles: true }));
+                        el.dispatchEvent(new Event('change', { bubbles: true }));
+                        if (typeof jQuery !== 'undefined') {
+                            const $el = jQuery(el);
+                            $el.trigger(jQuery.Event('keyup', { keyCode: 65, which: 65 }));
+                            $el.trigger(jQuery.Event('input'));
+                        }
+                    }
+                """);
+                break;
+            case WebActionType.Fill:
+                await locator.FillAsync(request.Value ?? "");
+                break;
+            case WebActionType.Select:
+                await locator.SelectOptionAsync(request.Value ?? "");
+                break;
+            case WebActionType.Press:
+                await locator.PressAsync(request.Value ?? "Enter");
+                break;
+            case WebActionType.Clear:
+                await locator.ClearAsync();
+                break;
+            case WebActionType.Hover:
+                await locator.HoverAsync();
+                break;
+            case WebActionType.Focus:
+                await locator.FocusAsync();
+                if (await HasJQueryAsync(page))
+                    await locator.EvaluateAsync(
+                        "el => jQuery(el).trigger(jQuery.Event('focus', { keyCode: 9, which: 9 }))");
+                break;
+            case WebActionType.Drag:
+                if (string.IsNullOrEmpty(request.EndRef))
+                    return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                        page.Url, false, null, null, "endRef is required for drag action.");
+                await locator.DragToAsync(AccessibilitySnapshotService.ResolveRef(page, request.EndRef));
+                break;
+            default:
+                return new WebActionResult(request.SessionId, WebActionStatus.Error,
+                    page.Url, false, null, null, $"Unhandled element action: {request.Action}");
+        }
+
+        if (request.WaitForNavigation)
+        {
+            try
+            {
+                await page.WaitForURLAsync(url => url != urlBefore,
+                    new() { Timeout = 30000 });
+            }
+            catch (TimeoutException)
+            {
+                await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+                    new() { Timeout = 15000 });
+            }
+        }
+        else
+        {
+            await SmartWaitAsync(page, request, ct);
+        }
+
+        var navigationOccurred = page.Url != urlBefore;
+        _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+
+        var after = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+
+        // On navigation the entire page changed — return the new snapshot directly
+        // instead of a diff that would duplicate all content as removed + added lines
+        var snapshot = navigationOccurred
+            ? after.Snapshot
+            : BuildSnapshotDiff(beforeLines, after.Snapshot, request.Ref!, request.Action);
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, navigationOccurred, snapshot, null, null);
+    }
+
+    private static Dictionary<string, int> SnapshotLinesForDiff(string snapshot)
+    {
+        var counts = new Dictionary<string, int>();
+        foreach (var line in snapshot.Split('\n').Select(StripRefs))
+        {
+            counts[line] = counts.GetValueOrDefault(line) + 1;
+        }
+        return counts;
+    }
+
+    private static string StripRefs(string line)
+        => System.Text.RegularExpressions.Regex.Replace(line, @"\s*\[ref=e\d+\]", "");
+
+    private static string BuildSnapshotDiff(
+        Dictionary<string, int> beforeCounts, string afterSnapshot, string actedRef, WebActionType action)
+    {
+        var afterLines = afterSnapshot.Split('\n');
+        var afterCounts = new Dictionary<string, int>();
+        foreach (var line in afterLines.Select(StripRefs))
+        {
+            afterCounts[line] = afterCounts.GetValueOrDefault(line) + 1;
+        }
+
+        var refTag = $"[ref={actedRef}]";
+        var actedLine = afterLines.FirstOrDefault(l => l.Contains(refTag));
+
+        var removed = beforeCounts
+            .SelectMany(kv =>
+                Enumerable.Repeat(kv.Key, Math.Max(0, kv.Value - afterCounts.GetValueOrDefault(kv.Key))))
+            .ToList();
+
+        // Track how many surplus occurrences of each line to include as added
+        var surplusBudget = afterCounts.ToDictionary(
+            kv => kv.Key,
+            kv => Math.Max(0, kv.Value - beforeCounts.GetValueOrDefault(kv.Key)));
+        var added = new List<string>();
+        foreach (var line in afterLines)
+        {
+            var stripped = StripRefs(line);
+            if (surplusBudget.GetValueOrDefault(stripped) > 0)
+            {
+                added.Add(line);
+                surplusBudget[stripped]--;
+            }
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[{action} on {actedRef}]");
+        if (actedLine is not null)
+            sb.AppendLine($"[after: {actedLine.TrimStart()}]");
+
+        if (removed.Count == 0 && added.Count == 0)
+        {
+            sb.AppendLine("[no visible changes]");
+            return sb.ToString().TrimEnd();
+        }
+
+        sb.AppendLine();
+        foreach (var line in removed)
+        {
+            sb.Append("- ");
+            sb.AppendLine(line);
+        }
+        foreach (var line in added)
+        {
+            sb.Append("+ ");
+            sb.AppendLine(line);
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private async Task SmartWaitAsync(IPage page, WebActionRequest request, CancellationToken ct)
+    {
+        var (maxWaitMs, intervalMs) = request.Action switch
+        {
+            WebActionType.Type => (2000, 200),
+            WebActionType.Click => (2000, 200),
+            WebActionType.Focus => (2000, 200),
+            WebActionType.Hover => (1000, 200),
+            _ => (300, 300)
+        };
+
+        if (request.Ref is null || maxWaitMs <= intervalMs)
+        {
+            await Task.Delay(maxWaitMs, ct);
+            return;
+        }
+
+        var targetSelector = $"[data-ref='{request.Ref}']";
+        var previousHtml = await GetNearbyHtmlAsync(page, targetSelector);
+        var elapsed = 0;
+        while (elapsed < maxWaitMs)
+        {
+            await Task.Delay(intervalMs, ct);
+            elapsed += intervalMs;
+            var currentHtml = await GetNearbyHtmlAsync(page, targetSelector);
+            if (currentHtml == previousHtml) break;
+            previousHtml = currentHtml;
+        }
+    }
+
+    private static async Task<bool> HasJQueryAsync(IPage page)
+        => await page.EvaluateAsync<bool>("() => typeof jQuery !== 'undefined'");
+
+    private static async Task<string> GetNearbyHtmlAsync(IPage page, string targetSelector)
+    {
+        return await page.EvaluateAsync<string>("""
+            (selector) => {
+                const el = document.querySelector(selector);
+                if (!el) return '';
+                const tags = ['FORM','SECTION','ARTICLE','MAIN','DIALOG','FIELDSET'];
+                const roles = ['dialog','form','region','listbox','menu'];
+                let container = el.parentElement;
+                for (let i = 0; i < 4 && container; i++) {
+                    if (tags.includes(container.tagName) ||
+                        roles.includes(container.getAttribute('role'))) break;
+                    container = container.parentElement;
+                }
+                return (container || el.parentElement || el).innerHTML.substring(0, 3000);
+            }
+        """, targetSelector);
+    }
+
+    private async Task<WebActionResult> ExecuteBackAsync(
+        WebActionRequest request, IPage page, string urlBefore, CancellationToken ct)
+    {
+        await page.GoBackAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+        _sessions.UpdateCurrentUrl(request.SessionId, page.Url);
+        var snapshot = await _snapshotService.CaptureAsync(page, null, request.SessionId);
+
+        return new WebActionResult(request.SessionId, WebActionStatus.Success,
+            page.Url, page.Url != urlBefore, snapshot.Snapshot, null, null);
+    }
+
+
+    public async Task EvaluateOnSessionAsync(string sessionId, string script)
+    {
+        var session = _sessions.Get(sessionId)
+            ?? throw new InvalidOperationException($"Session '{sessionId}' not found");
+        await session.Page.EvaluateAsync(script);
     }
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
@@ -562,61 +620,6 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    private static async Task PerformClickAsync(ILocator locator, ClickRequest request)
-    {
-        switch (request.Action)
-        {
-            case ClickAction.DoubleClick:
-                await locator.DblClickAsync();
-                break;
-            case ClickAction.RightClick:
-                await locator.ClickAsync(new LocatorClickOptions { Button = MouseButton.Right });
-                break;
-            case ClickAction.Hover:
-                await locator.HoverAsync();
-                break;
-            case ClickAction.Fill:
-                await locator.FillAsync(request.InputValue ?? "");
-                break;
-            case ClickAction.Clear:
-                await locator.ClearAsync();
-                break;
-            case ClickAction.Press:
-                await locator.PressAsync(request.Key ?? "Enter");
-                break;
-            default:
-                await locator.ClickAsync();
-                break;
-        }
-    }
-
-    private static WaitUntilState MapWaitStrategy(WaitStrategy strategy)
-    {
-        return strategy switch
-        {
-            WaitStrategy.NetworkIdle => WaitUntilState.NetworkIdle,
-            WaitStrategy.Load => WaitUntilState.Load,
-            WaitStrategy.Selector => WaitUntilState.DOMContentLoaded,
-            _ => WaitUntilState.DOMContentLoaded
-        };
-    }
-
-    private static async Task WaitForSelectorAsync(IPage page, string selector, int timeoutMs)
-    {
-        try
-        {
-            await page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = timeoutMs
-            });
-        }
-        catch (TimeoutException)
-        {
-            // Selector didn't appear within timeout - continue with whatever content we have
-        }
-    }
-
     private static async Task ScrollToLoadAsync(IPage page, int scrollSteps, CancellationToken ct)
     {
         for (var i = 1; i <= scrollSteps; i++)
@@ -629,10 +632,59 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         await page.EvaluateAsync("() => window.scrollTo(0, 0)");
     }
 
+    private static async Task StripDomNoiseAsync(IPage page)
+    {
+        try
+        {
+            await page.EvaluateAsync("""
+                () => {
+                    // Remove script/style/noscript — they contribute nothing to text content
+                    document.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+
+                    // Remove iframes (ads, trackers) — they contribute no text content
+                    document.querySelectorAll('iframe').forEach(el => el.remove());
+
+                    // Remove SVGs — icons/graphics that bloat HTML without adding text value
+                    document.querySelectorAll('svg').forEach(el => el.remove());
+
+                    // Strip image src attributes — long CDN URLs bloat markdown without adding value
+                    // Alt text is preserved for context
+                    document.querySelectorAll('img').forEach(img => {
+                        img.removeAttribute('src');
+                        img.removeAttribute('srcset');
+                        img.removeAttribute('data-src');
+                        img.removeAttribute('data-image');
+                        img.removeAttribute('data-mediabook');
+                        img.removeAttribute('data-path');
+                    });
+
+                    // Compact link hrefs: strip tracking params and shorten same-site URLs
+                    const currentHost = location.hostname;
+                    document.querySelectorAll('a[href]').forEach(a => {
+                        try {
+                            const url = new URL(a.href);
+                            ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+                             'ats','atc','ata','ref','cid','frm','noc'].forEach(p => url.searchParams.delete(p));
+                            if (url.hostname === currentHost || url.hostname === 'www.' + currentHost) {
+                                a.setAttribute('href', url.pathname + url.search + url.hash);
+                            } else {
+                                a.setAttribute('href', url.toString());
+                            }
+                        } catch { /* skip malformed URLs */ }
+                    });
+                }
+            """);
+        }
+        catch
+        {
+            // DOM cleanup is best-effort — page content can still be processed without it
+        }
+    }
+
     private static async Task WaitForDomStabilityAsync(
         IPage page,
-        int checkIntervalMs,
-        CancellationToken ct,
+        int checkIntervalMs = 500,
+        CancellationToken ct = default,
         int stableCountRequired = 2,
         int maxChecks = 6)
     {
@@ -661,6 +713,42 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
+    private static IReadOnlyList<StructuredData> ExtractStructuredData(string html)
+    {
+        var matches = System.Text.RegularExpressions.Regex.Matches(html,
+            @"<script[^>]*type=[""']application/ld\+json[""'][^>]*>(.*?)</script>",
+            System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        return matches
+            .SelectMany(match =>
+            {
+                try
+                {
+                    var json = match.Groups[1].Value.Trim();
+                    var doc = System.Text.Json.JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("@graph", out var graph) &&
+                        graph.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        return graph.EnumerateArray().Select(item =>
+                        {
+                            var type = item.TryGetProperty("@type", out var t) ? t.GetString() : "Unknown";
+                            return new StructuredData(type ?? "Unknown", item.GetRawText());
+                        });
+                    }
+
+                    var rootType = root.TryGetProperty("@type", out var rt) ? rt.GetString() : "Unknown";
+                    return new[] { new StructuredData(rootType ?? "Unknown", json) }.AsEnumerable();
+                }
+                catch
+                {
+                    return Enumerable.Empty<StructuredData>();
+                }
+            })
+            .ToList();
+    }
+
     private static bool ValidateUrl(string url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https");
@@ -677,7 +765,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             ContentLength: 0,
             Truncated: false,
             Metadata: null,
-            Links: null,
+            StructuredData: null,
             DismissedModals: null,
             ErrorMessage: message
         );

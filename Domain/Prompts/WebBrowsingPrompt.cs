@@ -15,163 +15,107 @@ public static class WebBrowsingPrompt
         **WebSearch** - Search the web for information
         - Returns titles, URLs, snippets from search results
         - Use to find relevant pages before browsing
-        - Supports date filtering and site-specific searches
 
         **WebBrowse** - Navigate to URLs and extract content
+        - Navigates to a URL and returns page content as markdown
         - Maintains a persistent browser session (cookies, login state preserved)
         - Automatically dismisses cookie popups, age gates, newsletter modals
-        - Supports CSS selectors for targeted extraction - returns ALL matching elements
-        - Use selector parameter to extract by class/id (e.g., selector=".product")
-        - Output formats: markdown (default) or html
-        - REQUIRED: maxLength and offset parameters for pagination:
-          - maxLength: Maximum characters to return (100-100000)
-          - offset: Character position to start from (use 0 for beginning)
-          - Response includes contentLength (total) and truncated flag
+        - Use selector parameter to extract specific elements (e.g., selector=".product-card")
+        - Use maxLength/offset for pagination of long content
+        - Use useReadability=true for clean article extraction (strips ads, nav, sidebars)
+        - Use scrollToLoad=true for pages with lazy-loaded content
+        - Returns JSON-LD structured data when available (check structuredData in response)
 
-        **WebInspect** - Analyze page structure without full content
-        - Use when pages are large or content is truncated
-        - Returns CSS selectors for targeted extraction
-        - Modes: structure, search, forms, interactive
-        - IMPORTANT: search mode finds visible TEXT only, not CSS selectors
-        - To find elements by selector, use WebBrowse with selector parameter
+        **WebSnapshot** - See the current page state
+        - Returns the accessibility tree showing ALL elements: headings, text, buttons, links,
+          form fields, dropdowns, and their current state (expanded, checked, disabled, etc.)
+        - Each interactive element has a ref you use with WebAction
+        - Use the selector parameter only when you know the exact CSS selector for the section
+          you need. When in doubt, omit it for full page.
+        - Call after WebBrowse to see interactive elements, or after WebAction for full context
 
-        **WebClick** - Interact with page elements
-        - Actions: click, fill (type text), clear, press (keyboard), doubleclick, hover
-        - Use action="fill" with inputValue to type into input fields
-        - Use action="press" with key="Enter" to submit forms
-        - Supports text matching to find specific elements
-        - Can wait for navigation after clicking
+        **WebAction** - Interact with elements
+        - Target elements by ref from WebSnapshot
+        - Actions: click, type (triggers autocomplete), fill (set value directly),
+          select (native dropdowns), press (keyboard keys), clear, hover, focus, drag
+        - Special actions (no ref needed): back (navigate back, returns full snapshot)
+        - Element actions return a diff showing only what changed on the page
 
-        ### Core Workflow Patterns
+        ### Core Workflows
 
-        **1. Simple Research (Search → Browse)**
+        **Reading a page:**
         ```
-        WebSearch(query="topic") → Get URLs
-        WebBrowse(url="result_url", maxLength=10000, offset=0) → Get content
-        Summarize findings
+        WebBrowse(url="...") → Read markdown content
+        If truncated → Use offset to paginate OR selector to target specific section
         ```
 
-        **2. Large Page Extraction (Browse → Inspect → Targeted Browse)**
+        **Interacting with a page (forms, buttons, navigation):**
         ```
-        WebBrowse(url="...", maxLength=10000, offset=0) → Content truncated
-        WebInspect(mode="structure") → See page sections
-        WebBrowse(url="...", maxLength=10000, offset=0, selector="main.content") → Get specific section
-        ```
-
-        **3. Finding Text on Page (Inspect Search → Browse)**
-        ```
-        WebBrowse(url="...", maxLength=10000, offset=0) → Page loaded but need to find specific text
-        WebInspect(mode="search", query="price") → Find where "price" appears (returns selectors)
-        WebBrowse(url="...", maxLength=10000, offset=0, selector="returned-selector") → Extract that section
+        WebBrowse(url="...") → Load the page
+        WebSnapshot() → See all elements with refs (ONE snapshot, then chain actions)
+        WebAction(ref="...", action="fill", value="...") → diff shows what changed
+        WebAction(ref="...", action="click") → diff shows result, use new refs from diff
         ```
 
-        **4. Extracting Multiple Items by Class (Direct Browse)**
+        **Autocomplete / Combobox fields:**
         ```
-        WebBrowse(url="...", maxLength=10000, offset=0, selector=".product-card") → Returns ALL matching elements
-        WebBrowse(url="...", maxLength=10000, offset=0, selector=".search-result") → Get all search results
+        WebAction(ref="input-ref", action="type", value="Odawara") → types the value
+        WebAction(ref="input-ref", action="press", value="Enter") → confirms autocomplete selection
         ```
+        If the diff shows dropdown options after typing, click the desired option instead.
+        Pressing Enter after typing selects the best match and sets hidden form values.
 
-        **5. Form Interaction (Fill → Submit)**
+        **Multi-page navigation:**
         ```
-        WebBrowse(url="form_page", maxLength=10000, offset=0)
-        WebInspect(mode="forms") → Get field selectors
-        WebClick(selector="input[name='email']", action="fill", inputValue="user@example.com")
-        WebClick(selector="input[name='password']", action="fill", inputValue="secretpass")
-        WebClick(selector="button[type='submit']", waitForNavigation=true) → Submit
-        ```
-
-        **6. Multi-Page Navigation (Click with navigation)**
-        ```
-        WebBrowse(url="start_page", maxLength=10000, offset=0)
-        WebInspect(mode="interactive") → Find navigation links
-        WebClick(selector="a.next-page", waitForNavigation=true) → Navigate
+        WebAction(ref="next-ref", action="click", waitForNavigation=true) → diff shows new page content
+        Only call WebSnapshot if you need refs not visible in the diff
         ```
 
-        **7. Reading Long Content in Chunks (Pagination)**
+        **Hover menus / tooltips:**
         ```
-        WebBrowse(url="...", maxLength=5000, offset=0) → First 5000 chars, truncated=true, contentLength=15000
-        WebBrowse(url="...", maxLength=5000, offset=5000) → Next 5000 chars
-        WebBrowse(url="...", maxLength=5000, offset=10000) → Final 5000 chars
+        WebAction(ref="menu-ref", action="hover") → diff shows revealed submenu with refs
+        WebAction(ref="submenu-item-ref", action="click") → diff shows result
         ```
 
-        ### Handling Common Situations
+        **Going back:**
+        ```
+        WebAction(action="back") → full snapshot of previous page
+        ```
 
-        **Content Truncated:**
-        - Check contentLength in response to know total size
-        - Option 1: Use offset to read remaining content in chunks
-        - Option 2: Use WebInspect to understand page structure, then use selector to target specific sections
-        - Option 3: Extract multiple sections in separate targeted calls
-        - Don't immediately increase maxLength - prefer chunking or targeting
+        ### Key Principles
 
-        **Can't Find Element:**
-        - Use WebInspect(mode="interactive") to see available buttons/links
-        - Use WebInspect(mode="search", query="button text") to locate
-        - Check if content is in an iframe (may need different approach)
+        1. **One snapshot, then chain actions**: Call WebSnapshot once to get refs, then use
+           WebAction repeatedly. Each action returns a diff with new refs — use those for
+           the next action. Only call WebSnapshot again if you need refs not in the diff.
 
-        **JavaScript-Heavy Sites (SPAs):**
-        - Use waitStrategy="domcontentloaded" for sites with continuous network activity (Reddit, Twitter, etc.)
-        - Use waitStrategy="stable" for React/Vue/Angular sites that eventually settle
-        - Set waitForStability=true if content loads dynamically
-        - Use scrollToLoad=true for infinite scroll pages
-        - Increase extraDelayMs if content appears after initial load
-        - If you see "NetworkIdle timeout" in response, retry with waitStrategy="domcontentloaded"
+        2. **WebBrowse for content, WebSnapshot for structure**: Use WebBrowse to read text
+           (articles, products, search results). Use WebSnapshot to find interactive elements
+           and get refs. Don't call both for the same purpose.
 
-        **Authentication Required:**
-        - Session persists - login state is maintained
-        - Fill login form using WebClick sequence
-        - Subsequent WebBrowse calls will have authenticated session
+        3. **Type for autocomplete, fill for direct input**: Use action="type" when the field
+           has autocomplete/suggestions (types character-by-character to trigger JS handlers).
+           Use action="fill" for simple text fields where you just need to set the value.
 
-        **Modal Popups:**
-        - dismissModals=true (default) handles most cookie/newsletter popups
-        - If modal blocks content, use WebInspect to find close button
-        - Click the close button explicitly if auto-dismiss fails
+        4. **Read the diff**: WebAction returns only what changed — added elements with `+`,
+           removed with `-`. New refs in the diff are valid for the next action. Only call
+           WebSnapshot if the diff doesn't have what you need.
 
-        ### Best Practices
-
-        1. **Start with Search**: Use WebSearch to find relevant URLs rather than guessing
-        2. **Inspect Before Clicking**: Use WebInspect to discover available elements
-        3. **Target Precisely**: Use CSS selectors to extract exactly what's needed
-        4. **Wait Appropriately**: Use waitForNavigation when clicks load new pages
-        5. **Iterate if Needed**: Large pages may require multiple targeted extractions
+        5. **Start with Search**: Use WebSearch to find URLs rather than guessing.
 
         ### Error Recovery
 
-        **NetworkIdle Timeout (status: "partial"):**
-        - Content may still be usable - check if you got what you needed
-        - Retry with waitStrategy="domcontentloaded" for JS-heavy sites
-        - For Reddit/Twitter/social media, always use domcontentloaded
-
-        **Selector Not Found:**
-        - Use WebInspect(mode="structure") to see available elements
-        - Try broader selector (class without tag, or parent element)
-        - Content may be dynamically loaded - try extraDelayMs=2000
-
-        **Session Not Found:**
-        - Start fresh with WebBrowse to create a new session
-        - Previous session expired or was closed
-
-        **Element Not Clickable:**
-        - Use WebInspect(mode="interactive") to find visible elements
-        - Modal may be blocking - ensure dismissModals=true
-        - Try waiting longer with increased waitTimeoutMs
-
-        ### When to Retry
-
-        | Failure | Strategy |
-        |---------|----------|
-        | Timeout/Partial | Retry with waitStrategy="domcontentloaded" |
-        | Selector miss | WebInspect first, then retry with correct selector |
-        | Element not found | Add extraDelayMs, then retry |
-        | Session lost | Fresh WebBrowse to create new session |
-
-        ### Quick Decision Guide
-
-        - **First visit?** → WebBrowse(maxLength=10000, offset=0)
-        - **Content truncated?** → Use offset to paginate OR WebInspect to find specific selector
-        - **Need to find text?** → WebInspect(mode="search", query="...")
-        - **Need to click?** → WebInspect(mode="interactive") first
-        - **Filling a form?** → WebInspect(mode="forms") → WebClick(action="fill") for each field
-        - **Page not loading?** → Try waitStrategy="domcontentloaded", extraDelayMs=2000
+        | Situation | Strategy |
+        |-----------|----------|
+        | Content truncated | Use offset to paginate or selector to target |
+        | Can't find element | WebSnapshot to see what's available |
+        | Autocomplete not opening | Type the full value, then press Enter to confirm selection |
+        | Page not loading | Try scrollToLoad=true for lazy content |
+        | Session expired | Fresh WebBrowse to create new session |
+        | Modal blocking content | Usually auto-dismissed; find close button via WebSnapshot |
+        | JS dialog blocking | Dialogs are auto-accepted; check dialogMessage in response |
+        | Need full page state | WebSnapshot() to see all elements |
+        | Hidden hover content | WebAction(action="hover") to reveal tooltips/menus |
+        | Need to go back | WebAction(action="back") instead of re-browsing previous URL |
 
         ### Response Style
 
@@ -185,8 +129,7 @@ public static class WebBrowsingPrompt
 
         - Cannot access pages requiring CAPTCHA (unless CapSolver configured)
         - Cannot interact with file download dialogs
-        - Cannot execute arbitrary JavaScript
-        - Session is per-conversation - resets between conversations
+        - Session is per-conversation — resets between conversations
         - Some sites may block automated access
         """;
 }

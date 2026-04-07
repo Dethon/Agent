@@ -142,6 +142,13 @@ public sealed class StreamService(
 
         lock (_streamLock)
         {
+            // Decrement pending count — only tear down when the last agent finishes
+            var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
+            if (remaining > 0)
+            {
+                return;
+            }
+
             // Resolve space slug and topic name before cleanup
             if (sessionService.TryGetSession(topicId, out var session))
             {

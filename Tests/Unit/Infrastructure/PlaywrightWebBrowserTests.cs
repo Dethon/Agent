@@ -38,20 +38,6 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ClickAsync_WithNoSession_ReturnsSessionNotFound()
-    {
-        // Act
-        var request = new ClickRequest(
-            SessionId: "non-existent-session",
-            Selector: "a");
-        var result = await _browser.ClickAsync(request);
-
-        // Assert
-        result.Status.ShouldBe(ClickStatus.SessionNotFound);
-        result.ErrorMessage.ShouldNotBeNullOrEmpty();
-    }
-
-    [Fact]
     public async Task GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound()
     {
         // Act
@@ -82,4 +68,5 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         await Should.ThrowAsync<InvalidOperationException>(
             () => browser.NavigateAsync(request));
     }
+
 }

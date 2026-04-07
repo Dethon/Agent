@@ -13,7 +13,6 @@ public record HtmlProcessingResult(
     int ContentLength,
     bool Truncated,
     WebPageMetadata? Metadata,
-    IReadOnlyList<ExtractedLink>? Links,
     bool IsPartial,
     string? ErrorMessage);
 
@@ -46,27 +45,19 @@ public static partial class HtmlProcessor
                 $"CSS selector '{request.Selector}' did not match any elements");
         }
 
-        // Combine content from all matching elements
-        var contentParts = elements.Select(e => HtmlConverter.Convert(e, request.Format)).ToList();
-        var separator = request.Format == WebFetchOutputFormat.Html ? "\n" : "\n\n---\n\n";
-        var content = string.Join(separator, contentParts);
+        var contentParts = elements.Select(e => HtmlConverter.Convert(e, WebFetchOutputFormat.Markdown)).ToList();
+        var content = string.Join("\n\n---\n\n", contentParts);
 
-        // Combine links from all matching elements
-        var links = request.IncludeLinks
-            ? elements.SelectMany(ExtractLinks).DistinctBy(l => l.Url).ToList()
-            : null;
-
-        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content, request.Format,
-            ExtractMetadata(document), links);
+        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content,
+            ExtractMetadata(document));
     }
 
     private static HtmlProcessingResult ProcessFullBody(BrowseRequest request, IDocument document)
     {
-        var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, request.Format);
-        var links = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
+        var content = HtmlConverter.Convert(document.Body ?? document.DocumentElement, WebFetchOutputFormat.Markdown);
 
-        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content, request.Format,
-            ExtractMetadata(document), links);
+        return CreateSuccessResult(request.MaxLength, request.Offset, document.Title, content,
+            ExtractMetadata(document));
     }
 
     private static async Task<HtmlProcessingResult> ProcessWithReadabilityAsync(
@@ -80,12 +71,9 @@ public static partial class HtmlProcessor
         }
 
         var metadata = UpdateMetadataFromArticle(ExtractMetadata(document), article);
-        var articleContent = FormatArticleContent(article, request.Format);
-        var articleLinks = request.IncludeLinks && document.Body != null ? ExtractLinks(document.Body) : null;
+        var articleContent = HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown);
 
-        return CreateSuccessResult(request.MaxLength, request.Offset, article.Title, articleContent, request.Format,
-            metadata,
-            articleLinks);
+        return CreateSuccessResult(request.MaxLength, request.Offset, article.Title, articleContent, metadata);
     }
 
     private static WebPageMetadata ExtractMetadata(IDocument document)
@@ -131,32 +119,6 @@ public static partial class HtmlProcessor
         return new WebPageMetadata(description, author, datePublished, siteName);
     }
 
-    private static List<ExtractedLink> ExtractLinks(IElement element)
-    {
-        var links = new List<ExtractedLink>();
-        var anchors = element.QuerySelectorAll("a[href]");
-
-        foreach (var anchor in anchors)
-        {
-            var href = anchor.GetAttribute("href");
-            var text = anchor.TextContent.Trim();
-
-            if (string.IsNullOrEmpty(href) || string.IsNullOrEmpty(text) || !href.StartsWith("http"))
-            {
-                continue;
-            }
-
-            if (text.Length > 100)
-            {
-                text = text[..97] + "...";
-            }
-
-            links.Add(new ExtractedLink(Text: text, Url: href));
-        }
-
-        return links.Take(50).ToList();
-    }
-
     private static WebPageMetadata UpdateMetadataFromArticle(WebPageMetadata metadata, Article article)
     {
         return metadata with
@@ -169,18 +131,8 @@ public static partial class HtmlProcessor
         };
     }
 
-    private static string FormatArticleContent(Article article, WebFetchOutputFormat format)
-    {
-        return format switch
-        {
-            WebFetchOutputFormat.Html => article.Content,
-            _ => HtmlConverter.Convert(article.Content, WebFetchOutputFormat.Markdown)
-        };
-    }
-
     private static HtmlProcessingResult CreateSuccessResult(
-        int maxLength, int offset, string? title, string content, WebFetchOutputFormat format, WebPageMetadata metadata,
-        List<ExtractedLink>? links)
+        int maxLength, int offset, string? title, string content, WebPageMetadata metadata)
     {
         var totalLength = content.Length;
 
@@ -198,9 +150,7 @@ public static partial class HtmlProcessor
         var truncated = content.Length > maxLength;
         if (truncated)
         {
-            content = format == WebFetchOutputFormat.Html
-                ? HtmlConverter.TruncateHtml(content, maxLength)
-                : HtmlConverter.Truncate(content, maxLength);
+            content = HtmlConverter.Truncate(content, maxLength);
         }
 
         // Strip control characters that cause LLM API 422 errors (keep \t, \n, \r)
@@ -214,7 +164,6 @@ public static partial class HtmlProcessor
             ContentLength: totalLength,
             Truncated: truncated || hasMore,
             Metadata: metadata,
-            Links: links,
             IsPartial: false,
             ErrorMessage: null
         );
@@ -229,7 +178,6 @@ public static partial class HtmlProcessor
             ContentLength: 0,
             Truncated: false,
             Metadata: metadata,
-            Links: null,
             IsPartial: true,
             ErrorMessage: errorMessage
         );
