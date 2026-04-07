@@ -10,10 +10,10 @@ public class WebActionTool(IWebBrowser browser)
     protected const string Description =
         """
         Interacts with an element on the current page by ref from WebSnapshot.
-        After the action, returns a diff showing only what changed on the page.
+        Element actions return a diff showing only what changed on the page.
         Use WebSnapshot with a selector if you need more context.
 
-        Actions requiring ref:
+        Actions requiring ref (return diff):
         - 'click': Click the element
         - 'type': Type character-by-character (triggers autocomplete). Set value to text.
         - 'fill': Set input value directly (no keystroke events). Set value to text.
@@ -24,7 +24,7 @@ public class WebActionTool(IWebBrowser browser)
         - 'focus': Focus element (triggers datepickers, dropdowns that open on focus).
         - 'drag': Drag element to target. Set endRef to destination element ref.
 
-        Actions NOT requiring ref:
+        Actions NOT requiring ref (return full snapshot):
         - 'back': Navigate back in browser history.
 
         Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.

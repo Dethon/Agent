@@ -38,8 +38,8 @@ public static class WebBrowsingPrompt
         - Target elements by ref from WebSnapshot
         - Actions: click, type (triggers autocomplete), fill (set value directly),
           select (native dropdowns), press (keyboard keys), clear, hover, focus, drag
-        - Special actions (no ref needed): back (navigate back)
-        - Returns a diff showing only what changed on the page after the action
+        - Special actions (no ref needed): back (navigate back, returns full snapshot)
+        - Element actions return a diff showing only what changed on the page
 
         ### Core Workflows
 
@@ -79,7 +79,7 @@ public static class WebBrowsingPrompt
 
         **Going back:**
         ```
-        WebAction(action="back") → diff shows previous page content
+        WebAction(action="back") → full snapshot of previous page
         ```
 
         ### Key Principles
