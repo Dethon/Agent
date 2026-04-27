@@ -36,18 +36,16 @@ public class DashboardE2EFixture : E2EFixtureBase
         await _redis.StartAsync(ct);
 
         // 3. Build Observability image
-        var observabilityImageName = $"observability-e2e-{Guid.NewGuid():N}";
-        var observabilityImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("Observability/Dockerfile")
-            .WithName(observabilityImageName)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await observabilityImage.CreateAsync(ct);
+        const string observabilityImageName = "observability-e2e:latest";
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot,
+            "Observability/Dockerfile",
+            observabilityImageName,
+            ["Domain", "Infrastructure", "Observability"],
+            ct);
 
         // 4. Start Observability
-        _observability = new ContainerBuilder(observabilityImage)
+        _observability = new ContainerBuilder(observabilityImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("observability")
             .WithPortBinding(8080, true)
