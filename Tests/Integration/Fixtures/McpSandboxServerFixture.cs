@@ -4,10 +4,10 @@ using System.Runtime.InteropServices;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
 using McpServerSandbox.McpResources;
 using McpServerSandbox.McpTools;
-using McpServerSandbox.Services;
 using McpServerSandbox.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -53,7 +53,15 @@ public class McpSandboxServerFixture : IAsyncLifetime
             .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.ContainerRoot))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
-            .AddSingleton<BashRunner>()
+            .AddSingleton(new BashRunnerOptions
+            {
+                ContainerRoot = settings.ContainerRoot,
+                HomeDir = settings.HomeDir,
+                DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
+                MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
+                OutputCapBytes = settings.OutputCapBytes
+            })
+            .AddSingleton<ICommandRunner, BashRunner>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

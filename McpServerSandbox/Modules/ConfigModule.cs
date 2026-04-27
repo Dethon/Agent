@@ -1,11 +1,11 @@
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Bash;
 using Infrastructure.Utils;
 using McpServerSandbox.McpPrompts;
 using McpServerSandbox.McpResources;
 using McpServerSandbox.McpTools;
-using McpServerSandbox.Services;
 using McpServerSandbox.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +32,15 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.ContainerRoot))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
-            .AddSingleton<BashRunner>()
+            .AddSingleton(new BashRunnerOptions
+            {
+                ContainerRoot = settings.ContainerRoot,
+                HomeDir = settings.HomeDir,
+                DefaultTimeoutSeconds = settings.DefaultTimeoutSeconds,
+                MaxTimeoutSeconds = settings.MaxTimeoutSeconds,
+                OutputCapBytes = settings.OutputCapBytes
+            })
+            .AddSingleton<ICommandRunner, BashRunner>()
             .AddMcpServer()
             .WithHttpTransport()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

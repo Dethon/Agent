@@ -1,11 +1,11 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
-using McpServerSandbox.Settings;
+using Domain.Contracts;
 
-namespace McpServerSandbox.Services;
+namespace Infrastructure.Clients.Bash;
 
-public class BashRunner(McpSettings settings)
+public class BashRunner(BashRunnerOptions options) : ICommandRunner
 {
     public async Task<JsonNode> RunAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
@@ -20,7 +20,7 @@ public class BashRunner(McpSettings settings)
         }
 
         var effectiveTimeout = TimeSpan.FromSeconds(
-            Math.Clamp(timeoutSeconds ?? settings.DefaultTimeoutSeconds, 1, settings.MaxTimeoutSeconds));
+            Math.Clamp(timeoutSeconds ?? options.DefaultTimeoutSeconds, 1, options.MaxTimeoutSeconds));
 
         var psi = new ProcessStartInfo("bash")
         {
@@ -39,8 +39,8 @@ public class BashRunner(McpSettings settings)
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(effectiveTimeout);
 
-        var stdoutTask = ReadCappedAsync(process.StandardOutput, settings.OutputCapBytes, ct);
-        var stderrTask = ReadCappedAsync(process.StandardError, settings.OutputCapBytes, ct);
+        var stdoutTask = ReadCappedAsync(process.StandardOutput, options.OutputCapBytes, ct);
+        var stderrTask = ReadCappedAsync(process.StandardError, options.OutputCapBytes, ct);
 
         var timedOut = false;
         try
@@ -79,12 +79,12 @@ public class BashRunner(McpSettings settings)
     {
         if (string.IsNullOrEmpty(path) || path == ".")
         {
-            return settings.HomeDir;
+            return options.HomeDir;
         }
 
         var combined = Path.IsPathRooted(path)
             ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(settings.ContainerRoot, path));
+            : Path.GetFullPath(Path.Combine(options.ContainerRoot, path));
 
         return combined;
     }

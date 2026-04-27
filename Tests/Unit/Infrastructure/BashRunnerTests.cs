@@ -1,22 +1,20 @@
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
-using McpServerSandbox.Services;
-using McpServerSandbox.Settings;
+using Infrastructure.Clients.Bash;
 using Shouldly;
 using Xunit;
 
-namespace Tests.Unit.McpServerSandbox;
+namespace Tests.Unit.Infrastructure;
 
 public class BashRunnerTests
 {
-    private readonly McpSettings _settings = new()
+    private readonly BashRunnerOptions _settings = new()
     {
         ContainerRoot = "/",
         HomeDir = "/tmp",
         DefaultTimeoutSeconds = 2,
         MaxTimeoutSeconds = 3,
-        OutputCapBytes = 1024,
-        AllowedExtensions = []
+        OutputCapBytes = 1024
     };
 
     private static void SkipIfNotLinux()
