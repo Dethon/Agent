@@ -44,6 +44,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Observability", "Observabil
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dashboard.Client", "Dashboard.Client\Dashboard.Client.csproj", "{3CFAB3FF-1507-449B-A5E6-38A393004D3D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerSandbox", "McpServerSandbox\McpServerSandbox.csproj", "{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -234,6 +236,18 @@ Global
 		{3CFAB3FF-1507-449B-A5E6-38A393004D3D}.Release|x64.Build.0 = Release|Any CPU
 		{3CFAB3FF-1507-449B-A5E6-38A393004D3D}.Release|x86.ActiveCfg = Release|Any CPU
 		{3CFAB3FF-1507-449B-A5E6-38A393004D3D}.Release|x86.Build.0 = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|x64.Build.0 = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Debug|x86.Build.0 = Debug|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x64.ActiveCfg = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x64.Build.0 = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x86.ActiveCfg = Release|Any CPU
+		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
