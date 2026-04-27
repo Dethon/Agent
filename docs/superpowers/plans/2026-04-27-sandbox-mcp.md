@@ -494,7 +494,7 @@ Create `McpServerSandbox/appsettings.json`:
   "ContainerRoot": "/",
   "HomeDir": "/home/sandbox_user",
   "DefaultTimeoutSeconds": 60,
-  "MaxTimeoutSeconds": 600,
+  "MaxTimeoutSeconds": 1800,
   "OutputCapBytes": 65536,
   "AllowedExtensions": [
     "",

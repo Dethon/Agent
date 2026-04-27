@@ -115,7 +115,7 @@ McpServerSandbox/
 │                                       # creates non-root sandbox_user with $HOME=/home/sandbox_user
 ├── appsettings.json
 ├── Settings/McpSettings.cs            # ContainerRoot="/", HomeDir="/home/sandbox_user",
-│                                       # DefaultTimeoutSeconds=60, MaxTimeoutSeconds=600,
+│                                       # DefaultTimeoutSeconds=60, MaxTimeoutSeconds=1800,
 │                                       # OutputCapBytes=65536
 ├── Modules/ConfigModule.cs            # WithTools<Fs*Tool>() x8 (incl. FsExecTool),
 │                                       # WithResources<FileSystemResource>,
@@ -169,7 +169,7 @@ mcp-sandbox:
     - McpSettings__ContainerRoot=/
     - McpSettings__HomeDir=/home/sandbox_user
     - McpSettings__DefaultTimeoutSeconds=60
-    - McpSettings__MaxTimeoutSeconds=600
+    - McpSettings__MaxTimeoutSeconds=1800
     - McpSettings__OutputCapBytes=65536
   volumes:
     - sandbox-data:/home/sandbox_user
