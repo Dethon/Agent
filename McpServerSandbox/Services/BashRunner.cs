@@ -39,8 +39,8 @@ public class BashRunner(McpSettings settings)
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(effectiveTimeout);
 
-        var stdoutTask = ReadCappedAsync(process.StandardOutput, settings.OutputCapBytes, timeoutCts.Token);
-        var stderrTask = ReadCappedAsync(process.StandardError, settings.OutputCapBytes, timeoutCts.Token);
+        var stdoutTask = ReadCappedAsync(process.StandardOutput, settings.OutputCapBytes, ct);
+        var stderrTask = ReadCappedAsync(process.StandardError, settings.OutputCapBytes, ct);
 
         var timedOut = false;
         try
