@@ -69,10 +69,13 @@ public class AutocompleteDropdownTests(
             clickResult.Status.ShouldBe(WebActionStatus.Success);
             output.WriteLine($"Click diff:\n{clickResult.Snapshot}");
 
-            // Verify the hidden departure input was set via JS eval
+            // Verify the hidden departure input for the JR train form was set via JS eval.
+            // The page has multiple inputs with name="departure" (flight booking + JR route),
+            // so the selector must be scoped to the JR train suggest container.
             await fixture.Browser.EvaluateOnSessionAsync(sessionId, """
                 (() => {
-                    const hidden = document.querySelector('input[name="departure"]');
+                    const hidden = document.querySelector(
+                        '.p-book__jr__form__station__suggest__departure input[name="departure"]');
                     if (!hidden || !hidden.value) throw new Error('Hidden departure input not set');
                     window.__testDepartureCode = hidden.value;
                 })()
