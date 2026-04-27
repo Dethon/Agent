@@ -127,6 +127,7 @@ public static class MemoryPrompts
 
         Rules:
         - Synthesize from ALL provided memories
+        - Always generate a summary field for the profile
         - Be concise — focus on actionable personality traits
         - Only include fields where you have sufficient evidence
         """;
