@@ -157,7 +157,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 ### Virtual Filesystem Architecture
 
-The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 7 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`) that dispatch through the registry. Raw MCP `fs_*` tools are filtered out when domain tools are active. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
+The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 8 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec`) that dispatch through the registry. `VfsExec` is filesystem-conditional — backends that don't implement `fs_exec` return a "tool missing" envelope when invoked. Raw MCP `fs_*` tools are filtered out when domain tools are active. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
 
 ### Web Browsing Architecture
 
