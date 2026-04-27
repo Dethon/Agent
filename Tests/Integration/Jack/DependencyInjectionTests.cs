@@ -85,8 +85,8 @@ public class DependencyInjectionTests
                 ["openRouter:apiUrl"] = "https://openrouter.ai/api/v1/",
                 ["openRouter:apiKey"] = "test-api-key",
                 ["Memory:Embedding:Model"] = "openai/text-embedding-3-small",
-                ["Memory:Extraction:Model"] = "google/gemini-2.0-flash-001",
-                ["Memory:Dreaming:Model"] = "google/gemini-2.0-flash-001"
+                ["Memory:Extraction:Model"] = "google/gemini-2.5-flash",
+                ["Memory:Dreaming:Model"] = "google/gemini-2.5-flash"
             })
             .Build();
         services.ConfigureAgents(settings, cmdParams, config);

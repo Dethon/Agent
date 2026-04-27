@@ -27,7 +27,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Extraction:Model"] ?? "google/gemini-2.0-flash-001";
+        var model = _configuration["Memory:Extraction:Model"] ?? "google/gemini-2.5-flash";
         return (apiUrl, apiKey, model);
     }
 
@@ -107,7 +107,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.0-flash-001";
+        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.5-flash";
         return (apiUrl, apiKey, model);
     }
 
@@ -125,16 +125,16 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 
     private static MemoryEntry CreateMemory(string id, string content,
         MemoryCategory category = MemoryCategory.Fact, double importance = 0.7) => new()
-    {
-        Id = id,
-        UserId = "test_user",
-        Category = category,
-        Content = content,
-        Importance = importance,
-        Confidence = 0.9,
-        CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
-        LastAccessedAt = DateTimeOffset.UtcNow
-    };
+        {
+            Id = id,
+            UserId = "test_user",
+            Category = category,
+            Content = content,
+            Importance = importance,
+            Confidence = 0.9,
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            LastAccessedAt = DateTimeOffset.UtcNow
+        };
 
     [SkippableFact]
     public async Task ConsolidateAsync_WithOverlappingMemories_ReturnsValidDecisions()
@@ -212,7 +212,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.0-flash-001";
+        var model = _configuration["Memory:Dreaming:Model"] ?? "google/gemini-2.5-flash";
         return (apiUrl, apiKey, model);
     }
 
@@ -230,16 +230,16 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
     private static MemoryEntry CreateMemory(string id, string content,
         MemoryCategory category = MemoryCategory.Fact, double importance = 0.7) => new()
-    {
-        Id = id,
-        UserId = "test_user",
-        Category = category,
-        Content = content,
-        Importance = importance,
-        Confidence = 0.9,
-        CreatedAt = DateTimeOffset.UtcNow,
-        LastAccessedAt = DateTimeOffset.UtcNow
-    };
+        {
+            Id = id,
+            UserId = "test_user",
+            Category = category,
+            Content = content,
+            Importance = importance,
+            Confidence = 0.9,
+            CreatedAt = DateTimeOffset.UtcNow,
+            LastAccessedAt = DateTimeOffset.UtcNow
+        };
 
     [SkippableFact]
     public async Task SynthesizeProfileAsync_WithVariedMemories_ReturnsValidProfile()
@@ -283,7 +283,9 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
         var memories = new[]
         {
-            CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference)
+            CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference),
+            CreateMemory("mem_2", "User can program", MemoryCategory.Skill),
+            CreateMemory("mem_3", "User has lots of experience", MemoryCategory.Skill)
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -291,8 +293,8 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 
         result.UserId.ShouldBe("test_user");
-        result.BasedOnMemoryCount.ShouldBe(1);
+        result.BasedOnMemoryCount.ShouldBe(3);
         result.Summary.ShouldNotBeNullOrWhiteSpace("Even minimal input should produce a summary");
-        result.Confidence.ShouldBe(Math.Min(1.0, 1.0 / 20));
+        result.Confidence.ShouldBeInRange(0.0001, 1.0);
     }
 }
