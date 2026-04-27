@@ -57,6 +57,8 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         {
             try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
             try { await process.WaitForExitAsync(CancellationToken.None); } catch { /* best-effort */ }
+            try { await stdoutTask; } catch { /* drain reader before process disposal */ }
+            try { await stderrTask; } catch { /* drain reader before process disposal */ }
             throw;
         }
 

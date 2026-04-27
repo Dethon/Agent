@@ -179,4 +179,41 @@ public class BashRunnerTests
         File.Exists(sentinel).ShouldBeFalse(
             $"bash subprocess leaked after caller cancellation; sentinel '{sentinel}' was created");
     }
+
+    [SkippableFact]
+    public async Task RunAsync_CallerCancels_DoesNotLeakUnobservedReaderExceptions()
+    {
+        SkipIfNotLinux();
+        var runner = new BashRunner(_settings);
+
+        var unobserved = new List<Exception>();
+        void handler(object? _, UnobservedTaskExceptionEventArgs e)
+        {
+            unobserved.AddRange(e.Exception.InnerExceptions);
+            e.SetObserved();
+        }
+        TaskScheduler.UnobservedTaskException += handler;
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            // Continuous output keeps reader tasks pending on ReadAsync at the moment of cancel.
+            var task = runner.RunAsync("", "yes hello", timeoutSeconds: 30, cts.Token);
+            await Task.Delay(200);
+            cts.Cancel();
+            await Should.ThrowAsync<OperationCanceledException>(task);
+
+            for (var i = 0; i < 3; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                await Task.Delay(50);
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= handler;
+        }
+
+        unobserved.ShouldBeEmpty();
+    }
 }
