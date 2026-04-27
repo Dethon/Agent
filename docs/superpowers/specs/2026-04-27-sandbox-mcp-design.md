@@ -11,7 +11,7 @@ Give the agent a Linux sandbox in which it can write files and execute arbitrary
 ## Non-Goals
 
 - Long-running / streaming / background jobs — synchronous-capped only.
-- Per-call ephemeral subcontainers, external "BaaS" services, or remote shells — execution happens inside the MCP server's own container.
+- Per-call ephemeral subcontainers, external bash services, or remote shells — execution happens inside the MCP server's own container.
 - Network egress restrictions — the sandbox has full outbound network by design.
 - Multi-tenant sandbox isolation — one shared sandbox container, one shared persistent volume.
 - Approval-flow plumbing changes — `VfsExec` reuses the existing per-tool approval config.
