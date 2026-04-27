@@ -53,6 +53,12 @@ public class BashRunner(McpSettings settings)
             try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
             await process.WaitForExitAsync(CancellationToken.None);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+            try { await process.WaitForExitAsync(CancellationToken.None); } catch { /* best-effort */ }
+            throw;
+        }
 
         var stdoutResult = await stdoutTask;
         var stderrResult = await stderrTask;

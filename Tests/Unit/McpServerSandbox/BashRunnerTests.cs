@@ -155,4 +155,30 @@ public class BashRunnerTests
 
         result["stderr"]!.GetValue<string>().ShouldBe("oops\n");
     }
+
+    [SkippableFact]
+    public async Task RunAsync_CallerCancels_KillsProcessTreeBeforeThrowing()
+    {
+        SkipIfNotLinux();
+        var runner = new BashRunner(_settings);
+
+        // Sentinel file the bash process touches after a delay; if the process is killed
+        // promptly the file should never appear, but if it leaks it will.
+        var sentinel = Path.Combine(Path.GetTempPath(), $"bash-cancel-{Guid.NewGuid():N}.flag");
+        var command = $"sleep 3 && touch '{sentinel}'";
+
+        using var cts = new CancellationTokenSource();
+        var task = runner.RunAsync("", command, timeoutSeconds: 30, cts.Token);
+
+        // Give bash time to start, then cancel.
+        await Task.Delay(300);
+        cts.Cancel();
+
+        await Should.ThrowAsync<OperationCanceledException>(task);
+
+        // Wait past the sleep duration; if the process leaked the sentinel will be created.
+        await Task.Delay(3500);
+        File.Exists(sentinel).ShouldBeFalse(
+            $"bash subprocess leaked after caller cancellation; sentinel '{sentinel}' was created");
+    }
 }
