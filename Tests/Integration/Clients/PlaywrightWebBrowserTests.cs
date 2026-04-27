@@ -377,7 +377,7 @@ public class PlaywrightWebBrowserTests(
                 snapshots[i].SessionId.ShouldBe(sessions[i]);
                 snapshots[i].Snapshot.ShouldNotBeNullOrEmpty();
                 snapshots[i].RefCount.ShouldBeGreaterThan(0);
-                snapshots[i].Url.ShouldContain("wikipedia.org");
+                snapshots[i].Url!.ShouldContain("wikipedia.org");
 
                 testOutputHelper.WriteLine($"Session {i} ({urls[i]}): {snapshots[i].RefCount} refs, " +
                                            $"snapshot length: {snapshots[i].Snapshot!.Length}");

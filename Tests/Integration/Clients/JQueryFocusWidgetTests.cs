@@ -182,7 +182,7 @@ public class JQueryFocusWidgetTests(
             var openResult = await fixture.Browser.ActionAsync(new WebActionRequest(
                 SessionId: sessionId, Ref: inputRef, Action: WebActionType.Click));
             openResult.Status.ShouldBe(WebActionStatus.Success);
-            openResult.Snapshot.ShouldContain("+ ");
+            openResult.Snapshot!.ShouldContain("+ ");
             output.WriteLine($"Open diff:\n{openResult.Snapshot}");
 
             // Find an option ref from the diff
@@ -261,7 +261,9 @@ public class JQueryFocusWidgetTests(
                 .ToList();
             output.WriteLine($"Table-related lines ({tableLines.Count}):");
             foreach (var line in tableLines.Take(30))
+            {
                 output.WriteLine($"  {line}");
+            }
 
             // Check for day-of-week headers (Su/Mo/Tu or Sun/Mon/Tue) — definitive datepicker signal
             var hasDayHeaders = snapshotLines.Any(l =>

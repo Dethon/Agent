@@ -9,11 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\WebChat.Client\WebChat.Client.csproj"/>
+    <ProjectReference Include="..\WebChat.Client\WebChat.Client.csproj" />
   </ItemGroup>
 
 </Project>

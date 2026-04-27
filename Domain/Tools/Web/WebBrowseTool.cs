@@ -106,12 +106,17 @@ public class WebBrowseTool(IWebBrowser browser)
         {
             var modals = new JsonArray();
             foreach (var m in result.DismissedModals)
+            {
                 modals.Add(m.Type.ToString());
+            }
+
             response["dismissedModals"] = modals;
         }
 
         if (!string.IsNullOrEmpty(result.ErrorMessage))
+        {
             response["message"] = result.ErrorMessage;
+        }
 
         return response;
     }

@@ -77,17 +77,24 @@ public class WebActionTool(IWebBrowser browser)
         };
 
         if (result.Snapshot is not null)
+        {
             response["snapshot"] = result.Snapshot;
+        }
 
         if (result.DialogMessage is not null)
+        {
             response["dialogMessage"] = result.DialogMessage;
+        }
 
         return response;
     }
 
     public static WebActionType ParseActionType(string? action)
     {
-        if (string.IsNullOrEmpty(action)) return WebActionType.Click;
+        if (string.IsNullOrEmpty(action))
+        {
+            return WebActionType.Click;
+        }
 
         return action.ToLowerInvariant() switch
         {
