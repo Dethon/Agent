@@ -121,17 +121,22 @@ public class BashRunner(McpSettings settings)
             }
 
             var remaining = capBytes - byteCount;
-            for (var i = 0; i < read && remaining > 0; i++)
-            {
-                var charBytes = Encoding.UTF8.GetByteCount(buffer, i, 1);
-                if (charBytes > remaining)
+            var taken = 0;
+            var fitting = buffer.Take(read)
+                .Select(c => (Char: c, Bytes: Encoding.UTF8.GetByteCount(new[] { c })))
+                .TakeWhile(x =>
                 {
-                    break;
-                }
-                sb.Append(buffer[i]);
-                remaining -= charBytes;
-                byteCount += charBytes;
-            }
+                    if (taken + x.Bytes > remaining)
+                    {
+                        return false;
+                    }
+                    taken += x.Bytes;
+                    return true;
+                })
+                .Select(x => x.Char)
+                .ToArray();
+            sb.Append(fitting);
+            byteCount += taken;
             truncated = true;
         }
 
