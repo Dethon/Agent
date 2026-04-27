@@ -202,6 +202,32 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-sandbox:
+    image: mcp-sandbox:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-sandbox
+    ports:
+      - "6004:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerSandbox/Dockerfile
+      cache_from:
+        - mcp-sandbox:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    volumes:
+      - sandbox-data:/home/sandbox_user
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      - base-sdk
+
   camoufox:
     build: ./camoufox
     logging:
@@ -370,6 +396,7 @@ services:
     depends_on:
       - mcp-library
       - mcp-vault
+      - mcp-sandbox
       - mcp-websearch
       - mcp-idealista
       - mcp-channel-signalr
@@ -449,6 +476,9 @@ services:
     depends_on:
       - webui
       - agent
+
+volumes:
+  sandbox-data:
 
 networks:
   jackbot:
