@@ -11,7 +11,8 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     public static readonly IReadOnlySet<string> AllToolKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         VfsTextReadTool.Key, VfsTextCreateTool.Key, VfsTextEditTool.Key,
-        VfsGlobFilesTool.Key, VfsTextSearchTool.Key, VfsMoveTool.Key, VfsRemoveTool.Key
+        VfsGlobFilesTool.Key, VfsTextSearchTool.Key, VfsMoveTool.Key, VfsRemoveTool.Key,
+        VfsExecTool.Key
     };
 
     public string FeatureName => Feature;
@@ -29,6 +30,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextSearchTool.Name}")),
             (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsMoveTool.Name}")),
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsRemoveTool.Name}")),
+            (VfsExecTool.Key, () => AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain:{Feature}:{VfsExecTool.Name}")),
         };
 
         return tools
