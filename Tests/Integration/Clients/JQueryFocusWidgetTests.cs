@@ -242,10 +242,13 @@ public class JQueryFocusWidgetTests(
             var dateRef = refMatch.Groups[1].Value;
             output.WriteLine($"Date ref: {dateRef}");
 
-            // Force=true bypasses Playwright's "receives events" actionability check. Navitime
-            // layers a non-semantic overlay over the input that isn't in the accessibility snapshot
-            // but intercepts hit-testing, so a normal click hangs forever on receives-events when
-            // this test runs after another browser test in the same process.
+            // Force=true bypasses Playwright's "receives events" actionability check. Navitime's
+            // markup positions a non-semantic <label class="control-label"> on top of the readonly
+            // date input. The label has no ARIA role so it's absent from the accessibility snapshot,
+            // but it captures hit-testing — Playwright's elementFromPoint at the input's center
+            // returns the label, the click never becomes actionable, and we hit the timeout. The
+            // page also auto-scrolls between snapshot and click, which compounds the problem but
+            // isn't the root cause. Force dispatches the click directly on the input.
             var clickResult = await fixture.Browser.ActionAsync(new WebActionRequest(
                 SessionId: sessionId,
                 Ref: dateRef,

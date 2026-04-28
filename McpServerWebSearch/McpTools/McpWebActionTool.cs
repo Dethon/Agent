@@ -26,10 +26,12 @@ public class McpWebActionTool(IWebBrowser browser)
         string? endRef = null,
         [Description("Wait for page navigation after action (for clicks that load new pages)")]
         bool waitForNavigation = false,
+        [Description("Retry-only flag for click after a Timeout. Bypasses actionability checks (visible/stable/enabled/not-obscured) and dispatches the click directly on the ref. Use when a non-semantic overlay (e.g. a floating <label>) hides the input from hit-testing but the snapshot shows the right element. Never set on the first attempt.")]
+        bool force = false,
         CancellationToken ct = default)
     {
         var sessionId = context.Server.StateKey;
-        var result = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, ct);
+        var result = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, force, ct);
         return ToolResponse.Create(ToJson(result));
     }
 }
