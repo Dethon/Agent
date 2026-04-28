@@ -242,11 +242,15 @@ public class JQueryFocusWidgetTests(
             var dateRef = refMatch.Groups[1].Value;
             output.WriteLine($"Date ref: {dateRef}");
 
-            // Click the date input
+            // Force=true bypasses Playwright's "receives events" actionability check. Navitime
+            // layers a non-semantic overlay over the input that isn't in the accessibility snapshot
+            // but intercepts hit-testing, so a normal click hangs forever on receives-events when
+            // this test runs after another browser test in the same process.
             var clickResult = await fixture.Browser.ActionAsync(new WebActionRequest(
                 SessionId: sessionId,
                 Ref: dateRef,
-                Action: WebActionType.Click));
+                Action: WebActionType.Click,
+                Force: true));
 
             clickResult.Status.ShouldBe(WebActionStatus.Success);
             output.WriteLine($"Click result snapshot:\n{clickResult.Snapshot}");

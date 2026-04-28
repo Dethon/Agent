@@ -82,7 +82,8 @@ public record WebActionRequest(
     WebActionType Action = WebActionType.Click,
     string? Value = null,
     string? EndRef = null,
-    bool WaitForNavigation = false);
+    bool WaitForNavigation = false,
+    bool Force = false);
 
 public enum WebActionStatus
 {

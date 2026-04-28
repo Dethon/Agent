@@ -299,7 +299,7 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         switch (request.Action)
         {
             case WebActionType.Click:
-                await locator.ClickAsync();
+                await locator.ClickAsync(new() { Force = request.Force });
                 if (await HasJQueryAsync(page))
                 {
                     await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
