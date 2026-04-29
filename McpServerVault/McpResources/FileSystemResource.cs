@@ -19,7 +19,7 @@ public class FileSystemResource(McpSettings settings)
         {
             name = "vault",
             mountPoint = "/vault",
-            description = $"Personal document vault ({settings.VaultPath}) — markdown notes, docs, and text-based knowledge. Persistent and per-user. Read/write only — does NOT support fs_exec."
+            description = $"Personal Obsidian vault ({settings.VaultPath}) — markdown notes with wikilinks, embeds, frontmatter, and tags; the user edits the same files in Obsidian. Persistent host-mounted directory. Read/write text only (allowed extensions enforced); does NOT support fs_exec. See the Vault Filesystem (Obsidian) prompt for conventions."
         });
     }
 }
