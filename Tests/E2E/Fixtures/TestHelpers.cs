@@ -1,11 +1,11 @@
+using System.Collections.Concurrent;
 using DotNet.Testcontainers.Builders;
 
 namespace Tests.E2E.Fixtures;
 
 internal static class TestHelpers
 {
-    // Serialises concurrent base-sdk builds across all test-collection fixtures.
-    private static readonly SemaphoreSlim _baseSdkBuildLock = new(1, 1);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _imageLocks = new();
 
     internal static string FindSolutionRoot()
     {
@@ -23,53 +23,77 @@ internal static class TestHelpers
         throw new InvalidOperationException("Could not find solution root directory.");
     }
 
+    internal static Task EnsureBaseSdkImageAsync(string solutionRoot, CancellationToken ct) =>
+        EnsureImageAsync(
+            solutionRoot,
+            "Dockerfile.base-sdk",
+            "base-sdk:latest",
+            ["Domain", "Infrastructure"],
+            ct);
+
     /// <summary>
-    /// Builds the shared base-sdk:latest image exactly once, even when multiple test
-    /// collections start concurrently.  If the image already exists but is older than
-    /// the newest source file in Domain/ or Infrastructure/, it is rebuilt automatically.
+    /// Builds a Docker image under a stable tag, replacing any prior image with the same name.
+    /// Uses a per-image semaphore so concurrent fixtures sharing a tag serialise their builds,
+    /// and a source-timestamp check to skip rebuilds when nothing in the watched dirs has changed.
     /// </summary>
-    internal static async Task EnsureBaseSdkImageAsync(string solutionRoot, CancellationToken ct)
+    internal static async Task EnsureImageAsync(
+        string solutionRoot,
+        string dockerfile,
+        string imageName,
+        IReadOnlyList<string> watchedDirs,
+        CancellationToken ct)
     {
-        await _baseSdkBuildLock.WaitAsync(ct);
+        var gate = _imageLocks.GetOrAdd(imageName, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
         try
         {
-            var imageCreatedAt = await GetDockerImageCreatedAtAsync("base-sdk:latest", ct);
+            var imageCreatedAt = await GetDockerImageCreatedAtAsync(imageName, ct);
             if (imageCreatedAt.HasValue)
             {
-                var newestSource = GetNewestSourceTimestamp(solutionRoot);
+                var newestSource = GetNewestSourceTimestamp(solutionRoot, watchedDirs, dockerfile);
                 if (newestSource <= imageCreatedAt.Value)
                 {
                     return;
                 }
             }
 
-            var baseSdkImage = new ImageFromDockerfileBuilder()
+            var image = new ImageFromDockerfileBuilder()
                 .WithDockerfileDirectory(solutionRoot)
-                .WithDockerfile("Dockerfile.base-sdk")
-                .WithName("base-sdk:latest")
+                .WithDockerfile(dockerfile)
+                .WithName(imageName)
                 .WithDeleteIfExists(true)
                 .WithCleanUp(false)
                 .Build();
-            await baseSdkImage.CreateAsync(ct);
+            await image.CreateAsync(ct);
         }
         finally
         {
-            _baseSdkBuildLock.Release();
+            gate.Release();
         }
     }
 
     private static readonly string[] _buildOutputDirs = ["bin", "obj"];
 
-    private static DateTimeOffset GetNewestSourceTimestamp(string solutionRoot)
+    private static DateTimeOffset GetNewestSourceTimestamp(
+        string solutionRoot,
+        IReadOnlyList<string> watchedDirs,
+        string dockerfile)
     {
-        var dirs = new[] { "Domain", "Infrastructure" };
-        return dirs
+        var dirTimestamps = watchedDirs
             .Select(d => Path.Combine(solutionRoot, d))
             .Where(Directory.Exists)
             .SelectMany(d => Directory.EnumerateFiles(d, "*", SearchOption.AllDirectories)
                 .Where(f => !_buildOutputDirs.Any(b =>
                     f.Contains($"{Path.DirectorySeparatorChar}{b}{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))))
-            .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero))
+            .Select(f => new DateTimeOffset(File.GetLastWriteTimeUtc(f), TimeSpan.Zero));
+
+        var dockerfilePath = Path.Combine(solutionRoot, dockerfile);
+        var dockerfileTimestamp = File.Exists(dockerfilePath)
+            ? new DateTimeOffset(File.GetLastWriteTimeUtc(dockerfilePath), TimeSpan.Zero)
+            : DateTimeOffset.MinValue;
+
+        return dirTimestamps
+            .Append(dockerfileTimestamp)
             .DefaultIfEmpty(DateTimeOffset.MaxValue)
             .Max();
     }

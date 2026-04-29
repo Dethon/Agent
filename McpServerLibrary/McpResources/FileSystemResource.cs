@@ -19,7 +19,7 @@ public class FileSystemResource(McpSettings settings)
         {
             name = "media",
             mountPoint = "/media",
-            description = $"Media library ({settings.BaseLibraryPath})"
+            description = $"Media library ({settings.BaseLibraryPath}) — books, audiobooks, and other downloaded media. Read/list focused; treat writes as organisational only. Does NOT support fs_exec."
         });
     }
 }

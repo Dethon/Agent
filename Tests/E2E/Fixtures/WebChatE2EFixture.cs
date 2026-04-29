@@ -53,17 +53,15 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _redis.StartAsync(ct);
 
         // 3. Build and start mcp-vault
-        var mcpVaultImageName = $"mcp-vault-e2e-{Guid.NewGuid():N}";
-        var mcpVaultImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("McpServerVault/Dockerfile")
-            .WithName(mcpVaultImageName)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await mcpVaultImage.CreateAsync(ct);
+        const string mcpVaultImageName = "mcp-vault-e2e:latest";
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot,
+            "McpServerVault/Dockerfile",
+            mcpVaultImageName,
+            ["Domain", "Infrastructure", "McpServerVault"],
+            ct);
 
-        _mcpVault = new ContainerBuilder(mcpVaultImage)
+        _mcpVault = new ContainerBuilder(mcpVaultImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
             .WithEnvironment("VAULTPATH", "/vault")
@@ -73,17 +71,15 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _mcpVault.StartAsync(ct);
 
         // 4. Build and start mcp-channel-signalr
-        var signalRImageName = $"mcp-channel-signalr-e2e-{Guid.NewGuid():N}";
-        var signalRImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("McpChannelSignalR/Dockerfile")
-            .WithName(signalRImageName)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await signalRImage.CreateAsync(ct);
+        const string signalRImageName = "mcp-channel-signalr-e2e:latest";
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot,
+            "McpChannelSignalR/Dockerfile",
+            signalRImageName,
+            ["Domain", "Infrastructure", "McpChannelSignalR"],
+            ct);
 
-        _mcpChannelSignalR = new ContainerBuilder(signalRImage)
+        _mcpChannelSignalR = new ContainerBuilder(signalRImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-channel-signalr")
             .WithPortBinding(8080, true)
@@ -95,15 +91,13 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _mcpChannelSignalR.StartAsync(ct);
 
         // 5. Build and start Agent
-        var agentImageName = $"agent-e2e-{Guid.NewGuid():N}";
-        var agentImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("Agent/Dockerfile")
-            .WithName(agentImageName)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await agentImage.CreateAsync(ct);
+        const string agentImageName = "agent-e2e:latest";
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot,
+            "Agent/Dockerfile",
+            agentImageName,
+            ["Domain", "Infrastructure", "Agent"],
+            ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Without this, the default appsettings.json baked into the image also registers
@@ -128,7 +122,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             }
             """);
 
-        _agent = new ContainerBuilder(agentImage)
+        _agent = new ContainerBuilder(agentImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
@@ -137,17 +131,15 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _agent.StartAsync(ct);
 
         // 6. Build and start WebUI
-        var webuiImageName = $"webui-e2e-{Guid.NewGuid():N}";
-        var webuiImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(solutionRoot)
-            .WithDockerfile("WebChat/Dockerfile")
-            .WithName(webuiImageName)
-            .WithDeleteIfExists(false)
-            .WithCleanUp(false)
-            .Build();
-        await webuiImage.CreateAsync(ct);
+        const string webuiImageName = "webui-e2e:latest";
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot,
+            "WebChat/Dockerfile",
+            webuiImageName,
+            ["Domain", "WebChat", "WebChat.Client"],
+            ct);
 
-        _webui = new ContainerBuilder(webuiImage)
+        _webui = new ContainerBuilder(webuiImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
             .WithPortBinding(8080, true)

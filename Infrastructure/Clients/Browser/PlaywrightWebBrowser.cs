@@ -224,7 +224,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     {
         var session = _sessions.Get(request.SessionId);
         if (session == null)
+        {
             return new SnapshotResult(request.SessionId, null, null, 0, "Session not found. Use WebBrowse first.");
+        }
 
         try
         {
@@ -241,8 +243,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     {
         var session = _sessions.Get(request.SessionId);
         if (session == null)
+        {
             return new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
                 null, false, null, null, "Session not found. Use WebBrowse first.");
+        }
 
         var page = session.Page;
         var urlBefore = page.Url;
@@ -279,8 +283,10 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         WebActionRequest request, IPage page, string urlBefore, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(request.Ref))
+        {
             return new WebActionResult(request.SessionId, WebActionStatus.Error,
                 page.Url, false, null, null, $"ref is required for {request.Action} action.");
+        }
 
         var locator = AccessibilitySnapshotService.ResolveRef(page, request.Ref);
         await locator.WaitForAsync(new() { State = WaitForSelectorState.Visible, Timeout = DefaultOperationTimeoutMs });
@@ -293,9 +299,12 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         switch (request.Action)
         {
             case WebActionType.Click:
-                await locator.ClickAsync();
+                await locator.ClickAsync(new() { Force = request.Force });
                 if (await HasJQueryAsync(page))
+                {
                     await locator.EvaluateAsync("el => jQuery(el).triggerHandler('focus')");
+                }
+
                 break;
             case WebActionType.Type:
                 await locator.ClearAsync();
@@ -341,13 +350,19 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             case WebActionType.Focus:
                 await locator.FocusAsync();
                 if (await HasJQueryAsync(page))
+                {
                     await locator.EvaluateAsync(
                         "el => jQuery(el).trigger(jQuery.Event('focus', { keyCode: 9, which: 9 }))");
+                }
+
                 break;
             case WebActionType.Drag:
                 if (string.IsNullOrEmpty(request.EndRef))
+                {
                     return new WebActionResult(request.SessionId, WebActionStatus.Error,
                         page.Url, false, null, null, "endRef is required for drag action.");
+                }
+
                 await locator.DragToAsync(AccessibilitySnapshotService.ResolveRef(page, request.EndRef));
                 break;
             default:
@@ -437,7 +452,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"[{action} on {actedRef}]");
         if (actedLine is not null)
+        {
             sb.AppendLine($"[after: {actedLine.TrimStart()}]");
+        }
 
         if (removed.Count == 0 && added.Count == 0)
         {
@@ -485,7 +502,11 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
             await Task.Delay(intervalMs, ct);
             elapsed += intervalMs;
             var currentHtml = await GetNearbyHtmlAsync(page, targetSelector);
-            if (currentHtml == previousHtml) break;
+            if (currentHtml == previousHtml)
+            {
+                break;
+            }
+
             previousHtml = currentHtml;
         }
     }

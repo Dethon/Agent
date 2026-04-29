@@ -30,6 +30,15 @@ public class WebActionTool(IWebBrowser browser)
 
         Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.
         For autocomplete: type partial text -> response shows options -> click option ref.
+
+        force: only set this on a click that returned 'Timeout'. By default, clicks wait until the
+        element is visible, stable, enabled, and not obscured by another element. Some pages layer
+        a non-semantic <label>, decorative overlay, or floating placeholder over an input — those
+        elements have no ARIA role, so they don't appear in the WebSnapshot but they intercept
+        hit-testing and the click hangs until timeout. force=true skips those checks and dispatches
+        the click directly on the target ref. Do NOT set force on the first attempt: the default
+        checks are also what catches genuine "wrong ref / element gone / a real modal is in the
+        way" bugs, and forcing them silently makes a click land on the wrong thing.
         """;
 
     protected async Task<WebActionResult> ExecuteAsync(
@@ -39,6 +48,7 @@ public class WebActionTool(IWebBrowser browser)
         string? value,
         string? endRef,
         bool waitForNavigation,
+        bool force,
         CancellationToken ct)
     {
         var actionType = ParseActionType(action);
@@ -49,7 +59,8 @@ public class WebActionTool(IWebBrowser browser)
             Action: actionType,
             Value: value,
             EndRef: endRef,
-            WaitForNavigation: waitForNavigation);
+            WaitForNavigation: waitForNavigation,
+            Force: force);
 
         return await browser.ActionAsync(request, ct);
     }
@@ -77,17 +88,24 @@ public class WebActionTool(IWebBrowser browser)
         };
 
         if (result.Snapshot is not null)
+        {
             response["snapshot"] = result.Snapshot;
+        }
 
         if (result.DialogMessage is not null)
+        {
             response["dialogMessage"] = result.DialogMessage;
+        }
 
         return response;
     }
 
     public static WebActionType ParseActionType(string? action)
     {
-        if (string.IsNullOrEmpty(action)) return WebActionType.Click;
+        if (string.IsNullOrEmpty(action))
+        {
+            return WebActionType.Click;
+        }
 
         return action.ToLowerInvariant() switch
         {

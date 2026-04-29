@@ -182,7 +182,7 @@ public class JQueryFocusWidgetTests(
             var openResult = await fixture.Browser.ActionAsync(new WebActionRequest(
                 SessionId: sessionId, Ref: inputRef, Action: WebActionType.Click));
             openResult.Status.ShouldBe(WebActionStatus.Success);
-            openResult.Snapshot.ShouldContain("+ ");
+            openResult.Snapshot!.ShouldContain("+ ");
             output.WriteLine($"Open diff:\n{openResult.Snapshot}");
 
             // Find an option ref from the diff
@@ -242,11 +242,18 @@ public class JQueryFocusWidgetTests(
             var dateRef = refMatch.Groups[1].Value;
             output.WriteLine($"Date ref: {dateRef}");
 
-            // Click the date input
+            // Force=true bypasses Playwright's "receives events" actionability check. Navitime's
+            // markup positions a non-semantic <label class="control-label"> on top of the readonly
+            // date input. The label has no ARIA role so it's absent from the accessibility snapshot,
+            // but it captures hit-testing — Playwright's elementFromPoint at the input's center
+            // returns the label, the click never becomes actionable, and we hit the timeout. The
+            // page also auto-scrolls between snapshot and click, which compounds the problem but
+            // isn't the root cause. Force dispatches the click directly on the input.
             var clickResult = await fixture.Browser.ActionAsync(new WebActionRequest(
                 SessionId: sessionId,
                 Ref: dateRef,
-                Action: WebActionType.Click));
+                Action: WebActionType.Click,
+                Force: true));
 
             clickResult.Status.ShouldBe(WebActionStatus.Success);
             output.WriteLine($"Click result snapshot:\n{clickResult.Snapshot}");
@@ -261,7 +268,9 @@ public class JQueryFocusWidgetTests(
                 .ToList();
             output.WriteLine($"Table-related lines ({tableLines.Count}):");
             foreach (var line in tableLines.Take(30))
+            {
                 output.WriteLine($"  {line}");
+            }
 
             // Check for day-of-week headers (Su/Mo/Tu or Sun/Mon/Tue) — definitive datepicker signal
             var hasDayHeaders = snapshotLines.Any(l =>
