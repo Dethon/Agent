@@ -65,6 +65,17 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
+  mcp-sandbox:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
   mcp-websearch:
     build:
       args:
