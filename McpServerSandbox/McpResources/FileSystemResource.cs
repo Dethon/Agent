@@ -18,7 +18,7 @@ public class FileSystemResource
         {
             name = "sandbox",
             mountPoint = "/sandbox",
-            description = "Linux sandbox: persistent /home/sandbox_user, ephemeral system dirs, full network, bash + Python via fs_exec"
+            description = "Linux sandbox container — supports command execution via fs_exec (bash, python3, pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral system dirs, full outbound network, no inbound ports. See the Sandbox Filesystem prompt for limits."
         });
     }
 }

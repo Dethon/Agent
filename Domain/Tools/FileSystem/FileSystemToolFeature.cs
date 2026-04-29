@@ -46,7 +46,23 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             return null;
         }
 
-        var mountList = string.Join("\n", mounts.Select(m => $"- {m.MountPoint} — {m.Description}"));
-        return $"## Available Filesystems\n\nAll file tool paths must start with one of these prefixes:\n{mountList}";
+        var mountList = string.Join("\n", mounts.Select(m => $"- `{m.MountPoint}` — {m.Description}"));
+        return $$"""
+            ## Available Filesystems
+
+            All `domain:filesystem:*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
+            {{mountList}}
+
+            ### How capabilities work
+
+            Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. The mount's description above is your primary signal for what it supports.
+
+            If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"error": true, "message": "...does not support '<op>'..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
+
+            ### Cross-mount reminders
+
+            - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.
+            - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
+            """;
     }
 }

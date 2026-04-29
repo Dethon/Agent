@@ -19,7 +19,7 @@ public class FileSystemResource(McpSettings settings)
         {
             name = "vault",
             mountPoint = "/vault",
-            description = $"Personal document vault ({settings.VaultPath})"
+            description = $"Personal document vault ({settings.VaultPath}) — markdown notes, docs, and text-based knowledge. Persistent and per-user. Read/write only — does NOT support fs_exec."
         });
     }
 }
