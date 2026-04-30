@@ -219,7 +219,7 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     volumes:
-      - sandbox-data:/home/sandbox_user
+      - ${SANDBOX_HOME_PATH:-./volumes/sandbox-home}:/home/sandbox_user
     restart: unless-stopped
     env_file:
       - .env
