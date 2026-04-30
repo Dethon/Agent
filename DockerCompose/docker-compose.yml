@@ -88,26 +88,26 @@ services:
     restart: unless-stopped
     networks:
       - jackbot
-#    depends_on:
-#      - flaresolverr
+        #    depends_on:
+        #      - flaresolverr
         
-#  flaresolverr:
-#    image: ghcr.io/flaresolverr/flaresolverr:latest
+  #  flaresolverr:
+  #    image: ghcr.io/flaresolverr/flaresolverr:latest
   #    logging:
   #      options:
   #        max-size: "5m"
   #        max-file: "3"
-#    container_name: flaresolverr
-#    environment:
-#      - LOG_LEVEL=info
-#      - LOG_HTML=false
-#      - CAPTCHA_SOLVER=none
-#      - TZ=UTC
-#    ports:
-#      - "8191:8191"
-#    networks:
-#      - jackbot
-#    restart: unless-stopped
+  #    container_name: flaresolverr
+  #    environment:
+  #      - LOG_LEVEL=info
+  #      - LOG_HTML=false
+  #      - CAPTCHA_SOLVER=none
+  #      - TZ=UTC
+  #    ports:
+  #      - "8191:8191"
+  #    networks:
+  #      - jackbot
+  #    restart: unless-stopped
 
   plex:
     image: lscr.io/linuxserver/plex:1.42.1
@@ -218,6 +218,7 @@ services:
         - mcp-sandbox:latest
       args:
         - BUILDKIT_INLINE_CACHE=1
+    user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ${SANDBOX_HOME_PATH:-./volumes/sandbox_home}:/home/sandbox_user
     restart: unless-stopped
