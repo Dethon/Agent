@@ -31,7 +31,7 @@ RUN dotnet restore "McpServerSandbox/McpServerSandbox.csproj"
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerSandbox/", "McpServerSandbox/"]
-WORKDIR "McpServerSandbox"
+WORKDIR "/src/McpServerSandbox"
 RUN dotnet publish "./McpServerSandbox.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final

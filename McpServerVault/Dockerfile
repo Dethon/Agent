@@ -10,7 +10,7 @@ RUN dotnet restore "McpServerVault/McpServerVault.csproj"
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerVault/", "McpServerVault/"]
-WORKDIR "McpServerVault"
+WORKDIR "/src/McpServerVault"
 RUN dotnet publish "./McpServerVault.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final

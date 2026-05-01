@@ -20,7 +20,7 @@ public class McpWebSnapshotTool(IWebBrowser browser)
         string? selector = null,
         CancellationToken ct = default)
     {
-        var sessionId = context.Server.StateKey;
+        var sessionId = context.Server.RequireSessionId();
         var result = await RunAsync(sessionId, selector, ct);
         return ToolResponse.Create(result);
     }

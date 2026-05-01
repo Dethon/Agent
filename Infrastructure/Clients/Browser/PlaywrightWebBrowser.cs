@@ -12,7 +12,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
     private IBrowser? _browser;
     private IBrowserContext? _context;
     private readonly SemaphoreSlim _initLock = new(1, 1);
-    private readonly BrowserSessionManager _sessions = new();
+    private readonly BrowserSessionManager _sessions = new(
+        idleTimeout: TimeSpan.FromMinutes(30),
+        pruneInterval: TimeSpan.FromMinutes(5));
     private readonly ModalDismisser _modalDismisser = new();
     private readonly AccessibilitySnapshotService _snapshotService = new();
     private readonly Random _random = new();

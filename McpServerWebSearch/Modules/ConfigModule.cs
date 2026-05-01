@@ -6,6 +6,8 @@ using Infrastructure.Utils;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,6 +16,8 @@ namespace McpServerWebSearch.Modules;
 
 public static class ConfigModule
 {
+    private const string SessionIdHeader = "Mcp-Session-Id";
+
     public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
     {
         var config = configBuilder
@@ -99,6 +103,42 @@ public static class ConfigModule
             });
 
             return services;
+        }
+    }
+
+    extension(IApplicationBuilder app)
+    {
+        // Closes the browser session for an MCP session when the client sends DELETE /mcp
+        // (the standard graceful-disconnect signal in the Streamable HTTP transport).
+        // Idle/abandoned sessions are reclaimed by BrowserSessionManager's prune timer.
+        public IApplicationBuilder UseBrowserSessionCleanupOnMcpDelete(string mcpPath)
+        {
+            return app.Use(async (context, next) =>
+            {
+                var isMcpDelete = HttpMethods.IsDelete(context.Request.Method)
+                    && context.Request.Path.StartsWithSegments(mcpPath)
+                    && context.Request.Headers.TryGetValue(SessionIdHeader, out var sessionIdHeader)
+                    && !string.IsNullOrEmpty(sessionIdHeader.ToString());
+
+                await next();
+
+                if (!isMcpDelete)
+                {
+                    return;
+                }
+
+                var sessionId = context.Request.Headers[SessionIdHeader].ToString();
+                try
+                {
+                    var browser = context.RequestServices.GetRequiredService<IWebBrowser>();
+                    await browser.CloseSessionAsync(sessionId, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    context.RequestServices.GetService<ILogger<Program>>()?
+                        .LogWarning(ex, "Failed to close browser session {SessionId} on MCP DELETE", sessionId);
+                }
+            });
         }
     }
 }

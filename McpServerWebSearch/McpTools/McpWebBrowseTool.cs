@@ -32,7 +32,7 @@ public class McpWebBrowseTool(IWebBrowser browser)
         int scrollSteps = 3,
         CancellationToken ct = default)
     {
-        var sessionId = context.Server.StateKey;
+        var sessionId = context.Server.RequireSessionId();
         var result = await RunAsync(sessionId, url, selector, maxLength, offset,
             useReadability, scrollToLoad, scrollSteps, ct);
         return ToolResponse.Create(result);

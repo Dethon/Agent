@@ -10,7 +10,7 @@ RUN dotnet restore "McpServerLibrary/McpServerLibrary.csproj"
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerLibrary/", "McpServerLibrary/"]
-WORKDIR "McpServerLibrary"
+WORKDIR "/src/McpServerLibrary"
 RUN dotnet publish "./McpServerLibrary.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final

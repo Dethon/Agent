@@ -10,7 +10,7 @@ RUN dotnet restore "McpChannelSignalR/McpChannelSignalR.csproj"
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpChannelSignalR/", "McpChannelSignalR/"]
-WORKDIR "McpChannelSignalR"
+WORKDIR "/src/McpChannelSignalR"
 RUN dotnet publish "./McpChannelSignalR.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final

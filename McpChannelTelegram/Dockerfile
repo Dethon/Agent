@@ -10,7 +10,7 @@ RUN dotnet restore "McpChannelTelegram/McpChannelTelegram.csproj"
 FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpChannelTelegram/", "McpChannelTelegram/"]
-WORKDIR "McpChannelTelegram"
+WORKDIR "/src/McpChannelTelegram"
 RUN dotnet publish "./McpChannelTelegram.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 FROM base AS final

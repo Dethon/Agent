@@ -8,6 +8,39 @@ public class BrowserSessionManager : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _idleTimeout;
+    private readonly ITimer? _pruneTimer;
+
+    public BrowserSessionManager(
+        TimeProvider? timeProvider = null,
+        TimeSpan? idleTimeout = null,
+        TimeSpan? pruneInterval = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(30);
+
+        if (pruneInterval is { } interval)
+        {
+            _pruneTimer = _timeProvider.CreateTimer(
+                _ => _ = SafePruneAsync(),
+                state: null,
+                dueTime: interval,
+                period: interval);
+        }
+    }
+
+    private async Task SafePruneAsync()
+    {
+        try
+        {
+            await PruneIdleAsync();
+        }
+        catch
+        {
+            // Periodic prune is best-effort — a single failure must not kill the timer
+        }
+    }
 
     public async Task<BrowserSession> GetOrCreateAsync(
         string sessionId,
@@ -16,7 +49,7 @@ public class BrowserSessionManager : IAsyncDisposable
     {
         if (_sessions.TryGetValue(sessionId, out var existing))
         {
-            _sessions[sessionId] = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
+            _sessions[sessionId] = existing with { LastAccessedAt = _timeProvider.GetUtcNow() };
             return existing;
         }
 
@@ -25,7 +58,7 @@ public class BrowserSessionManager : IAsyncDisposable
         {
             if (_sessions.TryGetValue(sessionId, out existing))
             {
-                _sessions[sessionId] = existing with { LastAccessedAt = DateTimeOffset.UtcNow };
+                _sessions[sessionId] = existing with { LastAccessedAt = _timeProvider.GetUtcNow() };
                 return existing;
             }
 
@@ -34,12 +67,13 @@ public class BrowserSessionManager : IAsyncDisposable
             // Playwright blocks the page until dialogs are handled — auto-accept all
             page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
 
+            var now = _timeProvider.GetUtcNow();
             var session = new BrowserSession(
                 SessionId: sessionId,
                 Page: page,
                 CurrentUrl: "about:blank",
-                CreatedAt: DateTimeOffset.UtcNow,
-                LastAccessedAt: DateTimeOffset.UtcNow
+                CreatedAt: now,
+                LastAccessedAt: now
             );
 
             _sessions[sessionId] = session;
@@ -63,7 +97,7 @@ public class BrowserSessionManager : IAsyncDisposable
             _sessions[sessionId] = session with
             {
                 CurrentUrl = url,
-                LastAccessedAt = DateTimeOffset.UtcNow
+                LastAccessedAt = _timeProvider.GetUtcNow()
             };
         }
     }
@@ -80,6 +114,20 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
+    public async Task PruneIdleAsync()
+    {
+        var cutoff = _timeProvider.GetUtcNow() - _idleTimeout;
+        var idleIds = _sessions
+            .Where(kv => kv.Value.LastAccessedAt < cutoff)
+            .Select(kv => kv.Key)
+            .ToList();
+
+        foreach (var id in idleIds)
+        {
+            await CloseAsync(id);
+        }
+    }
+
     private async Task CloseAllAsync()
     {
         var sessions = _sessions.Values.ToList();
@@ -93,6 +141,10 @@ public class BrowserSessionManager : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_pruneTimer is not null)
+        {
+            await _pruneTimer.DisposeAsync();
+        }
         await CloseAllAsync();
         _createLock.Dispose();
         GC.SuppressFinalize(this);

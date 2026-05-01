@@ -30,7 +30,7 @@ public class McpWebActionTool(IWebBrowser browser)
         bool force = false,
         CancellationToken ct = default)
     {
-        var sessionId = context.Server.StateKey;
+        var sessionId = context.Server.RequireSessionId();
         var result = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, force, ct);
         return ToolResponse.Create(ToJson(result));
     }
