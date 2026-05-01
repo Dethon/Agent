@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
@@ -38,7 +37,7 @@ public class McpLibraryServerFixture : IAsyncLifetime
         Directory.CreateDirectory(DownloadPath);
 
         _cache = new MemoryCache(new MemoryCacheOptions());
-        _port = GetAvailablePort();
+        _port = TestPort.GetAvailable();
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options =>
@@ -82,15 +81,6 @@ public class McpLibraryServerFixture : IAsyncLifetime
         await _host.StartAsync();
 
         McpEndpoint = $"http://localhost:{_port}/mcp";
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public void CreateLibraryStructure(string relativePath)

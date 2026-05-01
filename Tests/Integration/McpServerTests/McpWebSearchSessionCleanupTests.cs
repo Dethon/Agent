@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs;
 using McpServerWebSearch.Modules;
@@ -12,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using Shouldly;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpServerTests;
 
@@ -23,7 +23,7 @@ public class McpWebSearchSessionCleanupTests
     public async Task ClientDispose_TriggersBrowserCloseSession()
     {
         var fakeBrowser = new RecordingFakeWebBrowser();
-        var port = GetAvailablePort();
+        var port = TestPort.GetAvailable();
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
@@ -87,15 +87,11 @@ public class McpWebSearchSessionCleanupTests
 
             await Task.Delay(50);
         }
-    }
 
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
+        if (!condition())
+        {
+            throw new TimeoutException($"Condition not met within {timeout}");
+        }
     }
 
     private sealed class RecordingFakeWebBrowser : IWebBrowser

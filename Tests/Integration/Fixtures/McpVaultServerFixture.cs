@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using Domain.Tools.Config;
 using Infrastructure.Clients;
 using Infrastructure.Utils;
@@ -25,7 +24,7 @@ public class McpVaultServerFixture : IAsyncLifetime
         VaultPath = Path.Combine(Path.GetTempPath(), $"mcp-vault-{Guid.NewGuid()}");
         Directory.CreateDirectory(VaultPath);
 
-        var port = GetAvailablePort();
+        var port = TestPort.GetAvailable();
         var settings = new McpSettings
         {
             VaultPath = VaultPath,
@@ -83,15 +82,6 @@ public class McpVaultServerFixture : IAsyncLifetime
         }
 
         File.WriteAllText(fullPath, content);
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public async Task DisposeAsync()

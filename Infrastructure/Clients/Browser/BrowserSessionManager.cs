@@ -38,8 +38,13 @@ public class BrowserSessionManager : IAsyncDisposable
         }
         catch
         {
-            // Periodic prune is best-effort — a single failure must not kill the timer
+            // Why: a single failure must not kill the periodic timer
         }
+    }
+
+    private void Touch(string sessionId, BrowserSession session)
+    {
+        _sessions[sessionId] = session with { LastAccessedAt = _timeProvider.GetUtcNow() };
     }
 
     public async Task<BrowserSession> GetOrCreateAsync(
@@ -47,24 +52,24 @@ public class BrowserSessionManager : IAsyncDisposable
         IBrowserContext context,
         CancellationToken ct = default)
     {
-        if (_sessions.TryGetValue(sessionId, out var existing))
+        if (_sessions.TryGetValue(sessionId, out var existing) && !existing.Page.IsClosed)
         {
-            _sessions[sessionId] = existing with { LastAccessedAt = _timeProvider.GetUtcNow() };
+            Touch(sessionId, existing);
             return existing;
         }
 
         await _createLock.WaitAsync(ct);
         try
         {
-            if (_sessions.TryGetValue(sessionId, out existing))
+            if (_sessions.TryGetValue(sessionId, out existing) && !existing.Page.IsClosed)
             {
-                _sessions[sessionId] = existing with { LastAccessedAt = _timeProvider.GetUtcNow() };
+                Touch(sessionId, existing);
                 return existing;
             }
 
             var page = await context.NewPageAsync();
 
-            // Playwright blocks the page until dialogs are handled — auto-accept all
+            // Why: Playwright blocks the page until dialogs are handled
             page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
 
             var now = _timeProvider.GetUtcNow();
@@ -102,15 +107,11 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
-
     public async Task CloseAsync(string sessionId)
     {
-        if (_sessions.TryRemove(sessionId, out var session))
+        if (_sessions.TryRemove(sessionId, out var session) && !session.Page.IsClosed)
         {
-            if (!session.Page.IsClosed)
-            {
-                await session.Page.CloseAsync();
-            }
+            await session.Page.CloseAsync();
         }
     }
 
@@ -119,13 +120,9 @@ public class BrowserSessionManager : IAsyncDisposable
         var cutoff = _timeProvider.GetUtcNow() - _idleTimeout;
         var idleIds = _sessions
             .Where(kv => kv.Value.LastAccessedAt < cutoff)
-            .Select(kv => kv.Key)
-            .ToList();
+            .Select(kv => kv.Key);
 
-        foreach (var id in idleIds)
-        {
-            await CloseAsync(id);
-        }
+        await Task.WhenAll(idleIds.Select(CloseAsync));
     }
 
     private async Task CloseAllAsync()

@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.Tools.Config;
@@ -33,8 +32,8 @@ public class MultiFileSystemFixture : IAsyncLifetime
         Directory.CreateDirectory(LibraryPath);
         Directory.CreateDirectory(NotesPath);
 
-        var libraryPort = GetAvailablePort();
-        var notesPort = GetAvailablePort();
+        var libraryPort = TestPort.GetAvailable();
+        var notesPort = TestPort.GetAvailable();
 
         _libraryHost = BuildVaultHost(libraryPort, LibraryPath, builder => builder
             .WithResources<LibraryFileSystemResource>());
@@ -114,15 +113,6 @@ public class MultiFileSystemFixture : IAsyncLifetime
         }
 
         File.WriteAllText(fullPath, content);
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public async Task DisposeAsync()

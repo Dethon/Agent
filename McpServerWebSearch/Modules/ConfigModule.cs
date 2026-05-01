@@ -16,8 +16,6 @@ namespace McpServerWebSearch.Modules;
 
 public static class ConfigModule
 {
-    private const string SessionIdHeader = "Mcp-Session-Id";
-
     public static McpSettings GetSettings(this IConfigurationBuilder configBuilder)
     {
         var config = configBuilder
@@ -108,26 +106,23 @@ public static class ConfigModule
 
     extension(IApplicationBuilder app)
     {
-        // Closes the browser session for an MCP session when the client sends DELETE /mcp
-        // (the standard graceful-disconnect signal in the Streamable HTTP transport).
-        // Idle/abandoned sessions are reclaimed by BrowserSessionManager's prune timer.
         public IApplicationBuilder UseBrowserSessionCleanupOnMcpDelete(string mcpPath)
         {
             return app.Use(async (context, next) =>
             {
-                var isMcpDelete = HttpMethods.IsDelete(context.Request.Method)
+                var sessionId = HttpMethods.IsDelete(context.Request.Method)
                     && context.Request.Path.StartsWithSegments(mcpPath)
-                    && context.Request.Headers.TryGetValue(SessionIdHeader, out var sessionIdHeader)
-                    && !string.IsNullOrEmpty(sessionIdHeader.ToString());
+                    && context.Request.Headers.TryGetValue(McpServerExtensions.SessionIdHeader, out var header)
+                    ? header.ToString()
+                    : null;
 
                 await next();
 
-                if (!isMcpDelete)
+                if (string.IsNullOrEmpty(sessionId))
                 {
                     return;
                 }
 
-                var sessionId = context.Request.Headers[SessionIdHeader].ToString();
                 try
                 {
                     var browser = context.RequestServices.GetRequiredService<IWebBrowser>();

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using Domain.Contracts;
 using Domain.Tools.Config;
@@ -32,7 +31,7 @@ public class McpSandboxServerFixture : IAsyncLifetime
         HomeDir = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-{Guid.NewGuid()}");
         Directory.CreateDirectory(HomeDir);
 
-        var port = GetAvailablePort();
+        var port = TestPort.GetAvailable();
         var settings = new McpSettings
         {
             ContainerRoot = SandboxRoot,
@@ -92,15 +91,6 @@ public class McpSandboxServerFixture : IAsyncLifetime
         await _host.StartAsync();
 
         McpEndpoint = $"http://localhost:{port}/mcp";
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public async Task DisposeAsync()

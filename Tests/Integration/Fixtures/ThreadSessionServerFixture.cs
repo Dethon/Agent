@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
-using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.Downloads;
@@ -35,7 +34,7 @@ public class ThreadSessionServerFixture : IAsyncLifetime
         DownloadClient = new TestDownloadClient();
         TrackedDownloadsManager = new TrackedDownloadsManager(Cache);
 
-        _port = GetAvailablePort();
+        _port = TestPort.GetAvailable();
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, _port));
@@ -104,15 +103,6 @@ public class ThreadSessionServerFixture : IAsyncLifetime
         }).ToList();
 
         return ValueTask.FromResult(new ListResourcesResult { Resources = resources });
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     public async Task DisposeAsync()
