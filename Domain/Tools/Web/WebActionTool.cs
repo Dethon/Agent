@@ -97,6 +97,14 @@ public class WebActionTool(IWebBrowser browser)
             response["dialogMessage"] = result.DialogMessage;
         }
 
+        if (result.NavigationOccurred)
+        {
+            response["nextStep"] =
+                $"Navigated to {result.Url}. The snapshot above shows interactive refs only, not page text. " +
+                "If you need to read article/product/listing content, call WebBrowse with this URL. " +
+                "If you only need to interact further, use the refs in the snapshot with WebAction.";
+        }
+
         return response;
     }
 
