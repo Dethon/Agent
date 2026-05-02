@@ -102,7 +102,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     private static string ExtractServerName(string endpoint)
     {
         var uri = new Uri(endpoint);
-        return uri.Host;
+        return uri.IsDefaultPort ? uri.Host : $"{uri.Host}-{uri.Port}";
     }
 
     private static async Task<string[]> LoadPrompts(
