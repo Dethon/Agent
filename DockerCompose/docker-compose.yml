@@ -13,6 +13,12 @@ services:
       - ./volumes/redis_data:/data
     environment:
       - REDIS_ARGS=--appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     networks:
       - jackbot
@@ -320,8 +326,10 @@ services:
     networks:
       - jackbot
     depends_on:
-      - base-sdk
-      - redis
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   mcp-channel-telegram:
     image: mcp-channel-telegram:latest
@@ -345,8 +353,10 @@ services:
     networks:
       - jackbot
     depends_on:
-      - base-sdk
-      - redis
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   mcp-channel-servicebus:
     image: mcp-channel-servicebus:latest
@@ -395,16 +405,26 @@ services:
     networks:
       - jackbot
     depends_on:
-      - mcp-library
-      - mcp-vault
-      - mcp-sandbox
-      - mcp-websearch
-      - mcp-idealista
-      - mcp-channel-signalr
-      - mcp-channel-telegram
-      - mcp-channel-servicebus
-      - redis
-      - base-sdk
+      mcp-library:
+        condition: service_started
+      mcp-vault:
+        condition: service_started
+      mcp-sandbox:
+        condition: service_started
+      mcp-websearch:
+        condition: service_started
+      mcp-idealista:
+        condition: service_started
+      mcp-channel-signalr:
+        condition: service_started
+      mcp-channel-telegram:
+        condition: service_started
+      mcp-channel-servicebus:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      base-sdk:
+        condition: service_started
 
   webui:
     image: webui:latest
@@ -451,7 +471,8 @@ services:
       - .env
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - jackbot
 
