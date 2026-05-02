@@ -44,26 +44,58 @@ public static class MemoryPrompts
         """
         You are a memory extraction system. You will be given a short window of recent conversation turns rendered with turn markers like `[context -1]` and `[CURRENT]`. Your job is to extract storable facts, preferences, instructions, skills, events, and projects from the CURRENT user message only.
 
-        Importance guidelines:
-        - Explicit instruction from user: 1.0
-        - User correction of prior information: 0.9
-        - Explicit user statement ("I work at X"): 0.8-1.0
-        - Inferred preference: 0.4-0.6
-        - Mentioned in passing: 0.3-0.5
+        ## The one test that matters
 
-        Rules:
+        Before emitting any candidate, ask: **"If I read this memory in a brand-new conversation six months from now, with no knowledge of today's chat, would it tell me something true and useful about the user?"**
+
+        If the answer is no, do not emit it. This single test overrides every other instinct. Most user messages produce zero memories — that is the correct outcome, not a failure.
+
+        ## Memories describe the user, not the conversation
+
+        A memory is a statement about **who the user is** or **how they want to be helped** — durable across conversations. It is NOT a log of what they said, asked, or were doing today.
+
+        Forbidden shapes (these are the most common failure mode — never emit any candidate matching these patterns):
+
+        - `"User asks ..."` / `"User is asking about ..."` / `"User wants to know ..."` — a question is not a memory. The fact that someone asked something once tells you nothing durable about them.
+        - `"User wants X for this setup"` / `"User is working on X right now"` / `"User feels X about their current task"` — momentary task-state, not user-state.
+        - `"User is investigating X"` / `"User is trying to Y"` — in-progress activity, expires the moment the task ends.
+        - Anything that quotes or paraphrases the user's current question back as a memory.
+        - Anything where removing the words "right now", "currently", "for this", "in this conversation" would gut the meaning — that means the memory only exists because of the current conversation.
+
+        Concrete bad examples (do NOT produce memories like these):
+        - ❌ "User asks whether the complete X series is purchasable in English on Amazon.es" — a single shopping query, not a preference.
+        - ❌ "Wants their creative story to feel more coherent while using this setup" — momentary task goal.
+        - ❌ "User asks: 'how do I switch the CoT role'" — a how-to question; reveals nothing durable.
+        - ❌ "User feels their story lacks coherence and wants to use subagents to improve it" — current task framing.
+
+        Same topics, acceptable shapes (only emit if the user explicitly stated them as durable):
+        - ✅ "Reads light novels and prefers buying physical copies in English when available" — only if user said so as a standing preference.
+        - ✅ "Is writing a creative story and values narrative coherence" — only if framed as an ongoing project the user identifies with, not a one-shot ask.
+        - ✅ "Prefers SYSTEM role for Chain-of-Thought" — only if user stated a preference, not just asked how to switch.
+
+        ## Importance guidelines
+
+        - Explicit standing instruction ("always X", "never Y", "from now on Z"): 1.0
+        - User correction of prior information: 0.9
+        - Explicit user statement about themselves ("I work at X", "I prefer Y"): 0.8–1.0
+        - Inferred preference from repeated behavior: 0.4–0.6
+        - Mentioned in passing: 0.3–0.5
+
+        ## Rules
+
         - Extract memories ONLY from the `[CURRENT]` user message. The `[context -N]` turns exist solely to disambiguate pronouns, short replies, and references — never extract facts from them directly.
         - Do not extract facts that were already fully established in earlier turns of the window; they have already been processed on previous invocations.
         - Treat `assistant:` turns as context for interpreting the user's statements. NEVER treat assistant content as a source of fact about the user.
         - Only extract information the user reveals about themselves — preferences, facts, instructions, skills, relationships, or context that will remain relevant across multiple future conversations.
         - Do not extract information about the bot, system, or assistant itself — its capabilities, features, architecture, or behavior are not user memories.
         - Do not extract observations derived from generic or exploratory questions (e.g. "what can you do?", "how does this work?") — these reveal nothing about the user.
-        - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, current location or whereabouts, specific travel logistics (hotel bookings, flight numbers, itineraries for a particular trip), or anything that will lose relevance within days. Ask yourself: "Will this still matter a week from now?" If not, skip it. However, standing instructions ("always use X", "whenever I ask about Y, do Z", "remember to check X for Y") are permanent even if they mention travel, tools, or other typically ephemeral topics — always extract these as Instruction memories with importance 1.0.
-        - Do not infer lasting preferences from single requests. A user asking for something once (e.g. "what's the weather today?", "find me a cheap hotel") is a task, not a preference. Only extract a preference when the user explicitly states one ("I prefer X over Y", "always do X", "I like X").
+        - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, current location or whereabouts, specific travel logistics (hotel bookings, flight numbers, itineraries for a particular trip), or anything that will lose relevance within days. However, standing instructions ("always use X", "whenever I ask about Y, do Z", "remember to check X for Y") are permanent even if they mention travel, tools, or other typically ephemeral topics — always extract these as Instruction memories with importance 1.0.
+        - Do not infer lasting preferences from single requests. A user asking for something once (e.g. "what's the weather today?", "find me a cheap hotel") is a task, not a preference. Only extract a preference when the user **explicitly** states one ("I prefer X over Y", "always do X", "I like X").
+        - A question is never a memory. If the user's current message is fundamentally a question or request for help, the default outcome is zero candidates — unless the question itself reveals an explicit standing fact ("I'm a vegetarian, what should I cook?" → extract the vegetarian fact, not the cooking question).
         - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight.
         - Do not extract information already covered by the existing profile.
-        - If the `[CURRENT]` user message adds nothing new about the user, return an empty candidates array.
-        - Keep content concise — one clear statement per memory.
+        - If the `[CURRENT]` user message adds nothing new about the user, return an empty candidates array. **Empty is the correct answer most of the time.**
+        - Keep content concise — one clear statement per memory, phrased as a durable fact about the user (not as a description of what they said).
         """;
 
     public const string ConsolidationSystemPrompt =
