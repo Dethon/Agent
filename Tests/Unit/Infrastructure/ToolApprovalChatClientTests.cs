@@ -19,10 +19,10 @@ public class ToolApprovalChatClientTests
         {
             invoked = true;
             return "result";
-        }, "mcp:server:TestTool");
+        }, "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         var client = new ToolApprovalChatClient(fakeClient, handler);
         var options = new ChatOptions { Tools = [function] };
@@ -32,14 +32,14 @@ public class ToolApprovalChatClientTests
 
         // Assert
         handler.RequestedApprovals.ShouldNotBeEmpty();
-        handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp:server:TestTool");
+        handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp__server__TestTool");
         invoked.ShouldBeTrue("Tool should have been invoked after approval");
     }
 
     [Theory]
-    [InlineData("mcp:server:TestTool", "mcp:server:TestTool", "mcp:server:TestTool")]
-    [InlineData("mcp:mcp-library:*", "mcp:mcp-library:FileSearch", "mcp:mcp-library:FileSearch")]
-    [InlineData("mcp:*", "mcp:any-server:AnyTool", "mcp:any-server:AnyTool")]
+    [InlineData("mcp__server__TestTool", "mcp__server__TestTool", "mcp__server__TestTool")]
+    [InlineData("mcp__mcp-library__*", "mcp__mcp-library__FileSearch", "mcp__mcp-library__FileSearch")]
+    [InlineData("mcp__*", "mcp__any-server__AnyTool", "mcp__any-server__AnyTool")]
     public async Task SendAsync_WhitelistedTool_SkipsApproval(string whitelistPattern, string toolName, string callToolName)
     {
         // Arrange
@@ -75,10 +75,10 @@ public class ToolApprovalChatClientTests
         {
             invoked = true;
             return "result";
-        }, "mcp:server:TestTool");
+        }, "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         var client = new ToolApprovalChatClient(fakeClient, handler);
         var options = new ChatOptions { Tools = [function] };
@@ -111,22 +111,22 @@ public class ToolApprovalChatClientTests
         {
             whitelistedInvoked = true;
             return "whitelisted result";
-        }, "mcp:trusted-server:WhitelistedTool");
+        }, "mcp__trusted-server__WhitelistedTool");
 
         var nonWhitelistedFunc = AIFunctionFactory.Create(() =>
         {
             nonWhitelistedInvoked = true;
             return "non-whitelisted result";
-        }, "mcp:untrusted-server:NonWhitelistedTool");
+        }, "mcp__untrusted-server__NonWhitelistedTool");
 
         var fakeClient = new FakeChatClient();
         // Return tool calls for both tools
         fakeClient.SetNextResponse(CreateMultiToolCallResponse(
-            ("mcp:trusted-server:WhitelistedTool", "call1"),
-            ("mcp:untrusted-server:NonWhitelistedTool", "call2")));
+            ("mcp__trusted-server__WhitelistedTool", "call1"),
+            ("mcp__untrusted-server__NonWhitelistedTool", "call2")));
 
         // Whitelist all tools from trusted-server
-        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp:trusted-server:*"]);
+        var client = new ToolApprovalChatClient(fakeClient, handler, whitelistPatterns: ["mcp__trusted-server__*"]);
         var options = new ChatOptions { Tools = [whitelistedFunc, nonWhitelistedFunc] };
 
         // Act
@@ -134,7 +134,7 @@ public class ToolApprovalChatClientTests
 
         // Assert
         handler.RequestedApprovals.ShouldHaveSingleItem();
-        handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp:untrusted-server:NonWhitelistedTool");
+        handler.RequestedApprovals[0][0].ToolName.ShouldBe("mcp__untrusted-server__NonWhitelistedTool");
         whitelistedInvoked.ShouldBeTrue();
         nonWhitelistedInvoked.ShouldBeTrue();
     }

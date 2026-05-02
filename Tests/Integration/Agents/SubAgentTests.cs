@@ -62,14 +62,14 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var approvalHandler = new AutoApproveHandler();
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, ["domain:subagents:*"], "test-user"));
+            SubAgentFactory: def => factory.CreateSubAgent(def, approvalHandler, ["domain__subagents__*"], "test-user"));
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
         var llmClient = new OpenRouterChatClient(
             openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "google/gemini-2.5-flash");
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(5));
-        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, ["domain:subagents:*"]);
+        using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, ["domain__subagents__*"]);
 
         await using var agent = new McpAgent(
             [],

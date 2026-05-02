@@ -23,14 +23,14 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     {
         var tools = new (string Key, Func<AIFunction> Factory)[]
         {
-            (VfsTextReadTool.Key, () => AIFunctionFactory.Create(new VfsTextReadTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextReadTool.Name}")),
-            (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(new VfsTextCreateTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextCreateTool.Name}")),
-            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(new VfsTextEditTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextEditTool.Name}")),
-            (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(new VfsGlobFilesTool(registry).RunAsync, name: $"domain:{Feature}:{VfsGlobFilesTool.Name}")),
-            (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain:{Feature}:{VfsTextSearchTool.Name}")),
-            (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsMoveTool.Name}")),
-            (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain:{Feature}:{VfsRemoveTool.Name}")),
-            (VfsExecTool.Key, () => AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain:{Feature}:{VfsExecTool.Name}")),
+            (VfsTextReadTool.Key, () => AIFunctionFactory.Create(new VfsTextReadTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextReadTool.Name}")),
+            (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(new VfsTextCreateTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextCreateTool.Name}")),
+            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(new VfsTextEditTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextEditTool.Name}")),
+            (VfsGlobFilesTool.Key, () => AIFunctionFactory.Create(new VfsGlobFilesTool(registry).RunAsync, name: $"domain__{Feature}__{VfsGlobFilesTool.Name}")),
+            (VfsTextSearchTool.Key, () => AIFunctionFactory.Create(new VfsTextSearchTool(registry).RunAsync, name: $"domain__{Feature}__{VfsTextSearchTool.Name}")),
+            (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}")),
+            (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
+            (VfsExecTool.Key, () => AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}")),
         };
 
         return tools
@@ -50,7 +50,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
         return $$"""
             ## Available Filesystems
 
-            All `domain:filesystem:*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
+            All `domain__filesystem__*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
             {{mountList}}
 
             ### How capabilities work

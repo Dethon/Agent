@@ -13,7 +13,7 @@ public static class ToolCallFormatter
         {
             using var doc = JsonDocument.Parse(jsonContent);
             var root = doc.RootElement;
-            var toolName = root.GetProperty("Name").GetString()?.Split(':').LastOrDefault() ?? "unknown";
+            var toolName = root.GetProperty("Name").GetString()?.Split("__").LastOrDefault() ?? "unknown";
             var sb = new StringBuilder();
             sb.AppendLine($"\ud83d\udd27 {toolName}");
 

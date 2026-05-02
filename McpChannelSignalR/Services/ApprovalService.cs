@@ -186,7 +186,7 @@ public sealed class ApprovalService(
 
         foreach (var request in requests)
         {
-            var toolName = request.ToolName.Split(':').Last();
+            var toolName = request.ToolName.Split("__").Last();
             sb.AppendLine($"🔧 {toolName}");
 
             if (request.Arguments.Count <= 0)

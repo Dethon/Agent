@@ -108,7 +108,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             rejectingHandler,
-            whitelistPatterns: ["*:fs_*"]);
+            whitelistPatterns: ["*__fs_*"]);
 
         var agent = CreateAgent(approvalClient);
 
@@ -142,7 +142,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         var approvalClient = new ToolApprovalChatClient(
             innerClient,
             approvingHandler,
-            whitelistPatterns: ["*:fs_glob"]);
+            whitelistPatterns: ["*__fs_glob"]);
 
         var agent = CreateAgent(approvalClient);
 

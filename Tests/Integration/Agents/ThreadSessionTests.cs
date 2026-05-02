@@ -55,7 +55,7 @@ public class ThreadSessionTests(ThreadSessionServerFixture fixture)
         // Assert - tools loaded from server
         session.ClientManager.Tools.ShouldNotBeEmpty();
         var toolNames = session.ClientManager.Tools.Select(t => t.Name).ToList();
-        toolNames.ShouldContain(n => n.EndsWith(":Echo"));
+        toolNames.ShouldContain(n => n.EndsWith("__Echo"));
 
         // Assert - prompts loaded from server
         session.ClientManager.Prompts.ShouldNotBeEmpty();

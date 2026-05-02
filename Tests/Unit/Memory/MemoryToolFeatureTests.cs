@@ -24,6 +24,6 @@ public class MemoryToolFeatureTests
     {
         var tools = CreateFeature().GetTools(new FeatureConfig()).ToList();
         tools.Count.ShouldBe(1);
-        tools[0].Name.ShouldBe("domain:memory:memory_forget");
+        tools[0].Name.ShouldBe("domain__memory__memory_forget");
     }
 }

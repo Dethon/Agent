@@ -40,7 +40,7 @@ public sealed class RequestApprovalTool
 
         if (p.Mode == "notify")
         {
-            var toolNames = toolRequests.Select(r => r.ToolName.Split(':').Last());
+            var toolNames = toolRequests.Select(r => r.ToolName.Split("__").Last());
             var message = $"\u2705 Auto-approved: {string.Join(", ", toolNames)}";
 
             await botClient.SendMessage(
@@ -72,7 +72,7 @@ public sealed class RequestApprovalTool
     private static string FormatApprovalMessage(List<ToolRequest> requests)
     {
         var sb = new StringBuilder();
-        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split(':').Last()));
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
         sb.AppendLine($"<b>\ud83d\udd27 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
 
         foreach (var request in requests)

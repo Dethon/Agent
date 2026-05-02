@@ -8,7 +8,7 @@ namespace Infrastructure.Agents.Mcp;
 internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerTool) : AIFunction
 {
     private const string McpPrefix = "mcp";
-    private const string Separator = ":";
+    private const string Separator = "__";
 
     public override string Name { get; } = $"{McpPrefix}{Separator}{serverName}{Separator}{innerTool.Name}";
 

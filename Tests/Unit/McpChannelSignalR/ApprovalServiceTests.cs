@@ -40,7 +40,7 @@ public class ApprovalServiceTests : IDisposable
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         var requests = SerializeRequests(
-            new ToolApprovalRequest("msg-1", "mcp:server:tool", new Dictionary<string, object?> { ["key"] = "val" }));
+            new ToolApprovalRequest("msg-1", "mcp__server__tool", new Dictionary<string, object?> { ["key"] = "val" }));
 
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = "request", Requests = requests });

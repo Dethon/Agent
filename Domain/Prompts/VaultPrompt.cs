@@ -30,7 +30,7 @@ public static class VaultPrompt
 
         ### Editing rules
 
-        - **Read before you edit.** Always `domain:filesystem:read` the file first to see the existing structure (frontmatter, headings, callouts, links).
+        - **Read before you edit.** Always `domain__filesystem__read` the file first to see the existing structure (frontmatter, headings, callouts, links).
         - **Use `text_edit`, not whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
         - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.

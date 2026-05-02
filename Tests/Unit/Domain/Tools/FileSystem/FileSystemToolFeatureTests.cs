@@ -32,14 +32,14 @@ public class FileSystemToolFeatureTests
         var tools = _feature.GetTools(config).ToList();
 
         tools.Count.ShouldBe(8);
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:text_read");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:text_create");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:text_edit");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:glob_files");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:text_search");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:move");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:remove");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:exec");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_create");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_edit");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__glob_files");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_search");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__remove");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__exec");
     }
 
     [Fact]
@@ -50,8 +50,8 @@ public class FileSystemToolFeatureTests
         var tools = _feature.GetTools(config).ToList();
 
         tools.Count.ShouldBe(2);
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:text_read");
-        tools.Select(t => t.Name).ShouldContain("domain:filesystem:move");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
     }
 
     [Fact]

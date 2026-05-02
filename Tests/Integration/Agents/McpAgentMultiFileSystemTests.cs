@@ -53,7 +53,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Read both of these files using the domain:filesystem:text_read tool and tell me their contents:\n" +
+                "Read both of these files using the domain__filesystem__text_read tool and tell me their contents:\n" +
                 "- filePath: /library/multi-read.md\n" +
                 "- filePath: /notes/multi-read.md\n" +
                 "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
@@ -83,7 +83,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Create these two files using the domain:filesystem:text_create tool (one call per file):\n" +
+                "Create these two files using the domain__filesystem__text_create tool (one call per file):\n" +
                 "1. filePath: /library/multi-create.md   content: 'library file'\n" +
                 "2. filePath: /notes/multi-create.md     content: 'notes file'\n" +
                 "IMPORTANT: Every filePath MUST begin with one of the mounted prefixes (/library or /notes). " +
@@ -149,7 +149,7 @@ public class McpAgentMultiFileSystemTests(MultiFileSystemFixture fsFixture, Redi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Use the domain:filesystem:text_search tool twice to search for the word 'unicorn':\n" +
+                "Use the domain__filesystem__text_search tool twice to search for the word 'unicorn':\n" +
                 "1. directoryPath: /library\n" +
                 "2. directoryPath: /notes\n" +
                 "Then tell me which filesystem contains the word. " +

@@ -17,14 +17,14 @@ public class SchedulingToolFeature(
     {
         yield return AIFunctionFactory.Create(
             createTool.RunAsync,
-            name: $"domain:{Feature}:{ScheduleCreateTool.Name}");
+            name: $"domain__{Feature}__{ScheduleCreateTool.Name}");
 
         yield return AIFunctionFactory.Create(
             listTool.RunAsync,
-            name: $"domain:{Feature}:{ScheduleListTool.Name}");
+            name: $"domain__{Feature}__{ScheduleListTool.Name}");
 
         yield return AIFunctionFactory.Create(
             deleteTool.RunAsync,
-            name: $"domain:{Feature}:{ScheduleDeleteTool.Name}");
+            name: $"domain__{Feature}__{ScheduleDeleteTool.Name}");
     }
 }

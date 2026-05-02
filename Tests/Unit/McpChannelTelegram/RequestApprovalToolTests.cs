@@ -32,7 +32,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_SendsAutoApprovedMessage()
     {
-        const string requests = """[{"toolName":"mcp:server:search","arguments":{"q":"test"}}]""";
+        const string requests = """[{"toolName":"mcp__server__search","arguments":{"q":"test"}}]""";
 
         var result = await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
 
@@ -45,7 +45,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_MultipleTools_ListsAllNames()
     {
-        const string requests = """[{"toolName":"mcp:a:search","arguments":{}},{"toolName":"mcp:b:write","arguments":{}}]""";
+        const string requests = """[{"toolName":"mcp__a__search","arguments":{}},{"toolName":"mcp__b__write","arguments":{}}]""";
 
         var result = await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
 
@@ -58,7 +58,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_RequestMode_SendsKeyboardAndWaitsForApproval()
     {
-        const string requests = """[{"toolName":"mcp:server:delete","arguments":{"path":"/tmp/file"}}]""";
+        const string requests = """[{"toolName":"mcp__server__delete","arguments":{"path":"/tmp/file"}}]""";
 
         var approvalTask = Task.Run(async () =>
             await RequestApprovalTool.McpRun("100:100", "request", requests, _services));
@@ -137,7 +137,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_ExtractsShortToolName()
     {
-        const string requests = """[{"toolName":"mcp:very:long:prefix:actual_tool","arguments":{}}]""";
+        const string requests = """[{"toolName":"mcp__very__long__prefix__actual_tool","arguments":{}}]""";
 
         await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
 

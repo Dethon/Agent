@@ -18,7 +18,7 @@ public class MemoryToolFeature(IMemoryStore store, IEmbeddingService embeddingSe
         var forgetTool = new MemoryForgetTool(store, embeddingService);
         yield return AIFunctionFactory.Create(
             forgetTool.Run,
-            name: $"domain:{Feature}:{MemoryForgetTool.Name}",
+            name: $"domain__{Feature}__{MemoryForgetTool.Name}",
             description: MemoryForgetTool.Description);
     }
 }

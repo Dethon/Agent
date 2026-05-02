@@ -20,10 +20,10 @@ public class ToolApprovalChatClientMetricsTests
         // Arrange
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp:server:TestTool");
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -39,7 +39,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert
         captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp:server:TestTool");
+        captured.ToolName.ShouldBe("mcp__server__TestTool");
         captured.Success.ShouldBeTrue();
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
         captured.Error.ShouldBeNull();
@@ -51,10 +51,10 @@ public class ToolApprovalChatClientMetricsTests
         // Arrange
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp:server:TestTool");
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -64,7 +64,7 @@ public class ToolApprovalChatClientMetricsTests
 
         var client = new ToolApprovalChatClient(
             fakeClient, handler,
-            whitelistPatterns: ["mcp:server:*"],
+            whitelistPatterns: ["mcp__server__*"],
             metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
 
@@ -73,7 +73,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert
         captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp:server:TestTool");
+        captured.ToolName.ShouldBe("mcp__server__TestTool");
         captured.Success.ShouldBeTrue();
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
@@ -85,10 +85,10 @@ public class ToolApprovalChatClientMetricsTests
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
         var function = AIFunctionFactory.Create(string () => throw new InvalidOperationException("boom"),
-            "mcp:server:FailTool");
+            "mcp__server__FailTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:FailTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__FailTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -107,7 +107,7 @@ public class ToolApprovalChatClientMetricsTests
         // Assert — FunctionInvokingChatClient catches exceptions from tool invocations
         // and returns them as error results, so the call succeeds but the tool "failed"
         captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp:server:FailTool");
+        captured.ToolName.ShouldBe("mcp__server__FailTool");
         captured.Success.ShouldBeFalse();
         captured.Error.ShouldNotBeNullOrEmpty();
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
@@ -118,10 +118,10 @@ public class ToolApprovalChatClientMetricsTests
     {
         // Arrange
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
-        var function = AIFunctionFactory.Create(() => "result", "mcp:server:TestTool");
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         var client = new ToolApprovalChatClient(fakeClient, handler);
         var options = new ChatOptions { Tools = [function] };
@@ -137,10 +137,10 @@ public class ToolApprovalChatClientMetricsTests
         // Arrange
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Rejected);
-        var function = AIFunctionFactory.Create(() => "result", "mcp:server:TestTool");
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
         var options = new ChatOptions { Tools = [function] };
@@ -167,10 +167,10 @@ public class ToolApprovalChatClientMetricsTests
             content = new[] { new { type = "text", text = "Connection refused" } },
             isError = true
         });
-        var function = AIFunctionFactory.Create(() => errorResult, "mcp:server:FailTool");
+        var function = AIFunctionFactory.Create(() => errorResult, "mcp__server__FailTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:FailTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__FailTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -186,7 +186,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert
         captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp:server:FailTool");
+        captured.ToolName.ShouldBe("mcp__server__FailTool");
         captured.Success.ShouldBeFalse();
         captured.Error.ShouldNotBeNullOrEmpty();
     }
@@ -241,10 +241,10 @@ public class ToolApprovalChatClientMetricsTests
             content = new[] { new { type = "text", text = "All good" } },
             isError = false
         });
-        var function = AIFunctionFactory.Create(() => successResult, "mcp:server:OkTool");
+        var function = AIFunctionFactory.Create(() => successResult, "mcp__server__OkTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:OkTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__OkTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -303,10 +303,10 @@ public class ToolApprovalChatClientMetricsTests
         // Arrange
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.ApprovedAndRemember);
-        var function = AIFunctionFactory.Create(() => "result", "mcp:server:TestTool");
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp:server:TestTool", "call1"));
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
 
         ToolCallEvent? captured = null;
         publisher
@@ -322,7 +322,7 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert
         captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp:server:TestTool");
+        captured.ToolName.ShouldBe("mcp__server__TestTool");
         captured.Success.ShouldBeTrue();
     }
 

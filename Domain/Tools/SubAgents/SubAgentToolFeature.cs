@@ -19,7 +19,7 @@ public class SubAgentToolFeature(
         var runTool = new SubAgentRunTool(registryOptions, config);
         yield return AIFunctionFactory.Create(
             runTool.RunAsync,
-            name: $"domain:{Feature}:{SubAgentRunTool.Name}",
+            name: $"domain__{Feature}__{SubAgentRunTool.Name}",
             description: runTool.Description);
     }
 }

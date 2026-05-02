@@ -179,8 +179,8 @@
 
     private static string ShortToolName(string name)
     {
-        var idx = name.LastIndexOf(':');
-        return idx >= 0 ? name[(idx + 1)..] : name;
+        var idx = name.LastIndexOf("__", StringComparison.Ordinal);
+        return idx >= 0 ? name[(idx + 2)..] : name;
     }
 
     private string _sortColumn = "Time";
