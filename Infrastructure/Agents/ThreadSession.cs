@@ -126,7 +126,7 @@ internal sealed class ThreadSessionBuilder(
         // When filesystem domain tools are active, filter out the raw MCP fs_* tools
         // they wrap to avoid exposing duplicate functionality to the LLM
         var mcpTools = fileSystemTools.Count > 0
-            ? clientManager.Tools.Where(t => !_fileSystemMcpToolNames.Any(n => t.Name.EndsWith($":{n}")))
+            ? clientManager.Tools.Where(t => !_fileSystemMcpToolNames.Any(n => t.Name.EndsWith($"__{n}")))
             : clientManager.Tools;
         _tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
