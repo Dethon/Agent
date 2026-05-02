@@ -13,7 +13,7 @@ namespace Tests.Unit.Infrastructure;
 // Source: https://platform.kimi.ai/docs/api/chat (ToolDefinition.function.name).
 public class ToolNameComplianceTests
 {
-    private static readonly Regex KimiToolNameRegex =
+    private static readonly Regex _kimiToolNameRegex =
         new("^[a-zA-Z_][a-zA-Z0-9-_]{2,63}$", RegexOptions.Compiled);
 
     [Theory]
@@ -26,7 +26,7 @@ public class ToolNameComplianceTests
         // Mirror Infrastructure.Agents.Mcp.QualifiedMcpTool.Name construction.
         var fullName = $"mcp__{serverName}__{innerToolName}";
 
-        KimiToolNameRegex.IsMatch(fullName).ShouldBeTrue(
+        _kimiToolNameRegex.IsMatch(fullName).ShouldBeTrue(
             $"Tool name '{fullName}' must comply with Kimi/OpenAI function-name regex.");
     }
 
@@ -41,7 +41,7 @@ public class ToolNameComplianceTests
             .ToList();
 
         names.ShouldNotBeEmpty();
-        names.ShouldAllBe(name => KimiToolNameRegex.IsMatch(name),
+        names.ShouldAllBe(name => _kimiToolNameRegex.IsMatch(name),
             "Every domain tool name must comply with Kimi/OpenAI function-name regex.");
     }
 }
