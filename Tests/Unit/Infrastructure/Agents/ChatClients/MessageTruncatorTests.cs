@@ -58,4 +58,51 @@ public class MessageTruncatorTests
             [new TextContent("abcd"), new TextContent("efgh")]); // 1 + 1 = 2 tokens
         MessageTruncator.EstimateMessageTokens(msg).ShouldBe(2 + 4);
     }
+
+    [Fact]
+    public void Truncate_NullMaxTokens_ReturnsOriginalUnchanged()
+    {
+        var msgs = new List<ChatMessage>
+        {
+            new(ChatRole.System, "sys"),
+            new(ChatRole.User, "hi")
+        };
+
+        var result = MessageTruncator.Truncate(
+            msgs, null, out var dropped, out var before, out var after);
+
+        result.ShouldBe(msgs);
+        dropped.ShouldBe(0);
+        before.ShouldBe(after);
+    }
+
+    [Fact]
+    public void Truncate_UnderThreshold_ReturnsOriginalUnchanged()
+    {
+        var msgs = new List<ChatMessage>
+        {
+            new(ChatRole.User, "hi") // tiny
+        };
+
+        var result = MessageTruncator.Truncate(
+            msgs, 10000, out var dropped, out var before, out var after);
+
+        result.ShouldBe(msgs);
+        dropped.ShouldBe(0);
+        before.ShouldBe(after);
+    }
+
+    [Fact]
+    public void Truncate_EmptyList_ReturnsOriginalUnchanged()
+    {
+        var msgs = new List<ChatMessage>();
+
+        var result = MessageTruncator.Truncate(
+            msgs, 100, out var dropped, out var before, out var after);
+
+        result.ShouldBe(msgs);
+        dropped.ShouldBe(0);
+        before.ShouldBe(0);
+        after.ShouldBe(0);
+    }
 }

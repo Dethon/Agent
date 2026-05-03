@@ -7,9 +7,35 @@ internal static class MessageTruncator
 {
     private const int PerMessageOverhead = 4;
     private const int OtherContentOverhead = 4;
+    private const double SafetyRatio = 0.95;
 
     public static int EstimateTokens(string text)
         => string.IsNullOrEmpty(text) ? 0 : (text.Length + 3) / 4;
+
+    public static IReadOnlyList<ChatMessage> Truncate(
+        IReadOnlyList<ChatMessage> messages,
+        int? maxContextTokens,
+        out int droppedCount,
+        out int tokensBefore,
+        out int tokensAfter)
+    {
+        droppedCount = 0;
+        tokensBefore = messages.Sum(EstimateMessageTokens);
+        tokensAfter = tokensBefore;
+
+        if (maxContextTokens is null or <= 0 || messages.Count == 0)
+        {
+            return messages;
+        }
+
+        var threshold = (int)Math.Floor(maxContextTokens.Value * SafetyRatio);
+        if (tokensBefore <= threshold)
+        {
+            return messages;
+        }
+
+        return messages; // truncation logic added in next task
+    }
 
     public static int EstimateMessageTokens(ChatMessage message)
     {
