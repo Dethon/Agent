@@ -170,6 +170,19 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
     public async Task<Dictionary<string, decimal>> GetTokenGroupedAsync(
         TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to)
     {
+        return metric switch
+        {
+            TokenMetric.Tokens or TokenMetric.Cost
+                => await GroupTokenUsageAsync(dimension, metric, from, to),
+            TokenMetric.TruncationCount or TokenMetric.MessagesDropped or TokenMetric.TokensTrimmed
+                => await GroupTruncationsAsync(dimension, metric, from, to),
+            _ => throw new ArgumentOutOfRangeException(nameof(metric))
+        };
+    }
+
+    private async Task<Dictionary<string, decimal>> GroupTokenUsageAsync(
+        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to)
+    {
         var events = await GetEventsAsync<TokenUsageEvent>("metrics:tokens:", from, to);
         return events
             .GroupBy(e => dimension switch
@@ -185,6 +198,29 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 {
                     TokenMetric.Tokens => g.Sum(e => (decimal)(e.InputTokens + e.OutputTokens)),
                     TokenMetric.Cost => g.Sum(e => e.Cost),
+                    _ => throw new ArgumentOutOfRangeException(nameof(metric))
+                });
+    }
+
+    private async Task<Dictionary<string, decimal>> GroupTruncationsAsync(
+        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<ContextTruncationEvent>("metrics:truncations:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                TokenDimension.User => e.Sender,
+                TokenDimension.Model => e.Model,
+                TokenDimension.Agent => e.AgentId ?? "unknown",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    TokenMetric.TruncationCount => (decimal)g.Count(),
+                    TokenMetric.MessagesDropped => g.Sum(e => (decimal)e.DroppedMessages),
+                    TokenMetric.TokensTrimmed => g.Sum(e => (decimal)(e.EstimatedTokensBefore - e.EstimatedTokensAfter)),
                     _ => throw new ArgumentOutOfRangeException(nameof(metric))
                 });
     }
