@@ -115,6 +115,9 @@ public sealed class MetricsCollectorService(
             case MemoryDreamingEvent dreaming:
                 await ProcessMemoryDreamingAsync(dreaming, db);
                 break;
+            case ContextTruncationEvent truncation:
+                await ProcessContextTruncationAsync(truncation, db);
+                break;
         }
     }
 
@@ -292,5 +295,27 @@ public sealed class MetricsCollectorService(
         await Task.WhenAll(tasks);
 
         await hubContext.Clients.All.SendAsync("OnMemoryDreaming", evt);
+    }
+
+    private async Task ProcessContextTruncationAsync(ContextTruncationEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:truncations:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+        var trimmed = evt.EstimatedTokensBefore - evt.EstimatedTokensAfter;
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, "truncations:count", 1),
+            db.HashIncrementAsync(totalsKey, "truncations:dropped", evt.DroppedMessages),
+            db.HashIncrementAsync(totalsKey, "truncations:tokensTrimmed", trimmed),
+            db.HashIncrementAsync(totalsKey, $"truncations:bySender:{evt.Sender}", 1),
+            db.HashIncrementAsync(totalsKey, $"truncations:byModel:{evt.Model}", 1),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+
+        await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
     }
 }
