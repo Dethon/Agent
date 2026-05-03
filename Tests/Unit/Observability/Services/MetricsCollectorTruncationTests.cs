@@ -63,7 +63,7 @@ public class MetricsCollectorTruncationTests
             "metrics:totals:2026-05-03", "truncations:byModel:z-ai/glm-5.1", 1, It.IsAny<CommandFlags>()), Times.Once);
         _clientProxy.Verify(p => p.SendCoreAsync(
             "OnContextTruncation",
-            It.Is<object?[]>(args => args.Length == 1 && args[0] == evt),
+            It.Is<object?[]>(args => args.Length == 1 && Equals(args[0], evt)),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 }
