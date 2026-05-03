@@ -68,13 +68,7 @@ public sealed class OpenRouterChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var materializedMessages = messages.ToList();
-
-        var sender = materializedMessages
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetSenderId();
-
-        var transformedMessages = materializedMessages.Select(x =>
+        var transformedMessages = messages.Select(x =>
         {
             var newMessage = x.Clone();
             var msgSender = newMessage.GetSenderId();
@@ -105,11 +99,16 @@ public sealed class OpenRouterChatClient : IChatClient
             return newMessage;
         }).ToList();
 
+        var sender = transformedMessages
+            .LastOrDefault(m => m.Role == ChatRole.User)
+            ?.GetSenderId();
+
         var truncated = MessageTruncator.Truncate(
             transformedMessages, _maxContextTokens,
-            out var droppedCount, out var tokensBefore, out var tokensAfter);
+            out var droppedCount, out var tokensBefore, out var tokensAfter,
+            out var overflowDetected);
 
-        if (droppedCount > 0 && _metricsPublisher is not null)
+        if (overflowDetected && _metricsPublisher is not null)
         {
             await _metricsPublisher.PublishAsync(new ContextTruncationEvent
             {

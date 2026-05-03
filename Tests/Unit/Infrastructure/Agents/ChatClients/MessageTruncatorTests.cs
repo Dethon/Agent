@@ -69,11 +69,12 @@ public class MessageTruncatorTests
         };
 
         var result = MessageTruncator.Truncate(
-            msgs, null, out var dropped, out var before, out var after);
+            msgs, null, out var dropped, out var before, out var after, out var overflow);
 
         result.ShouldBe(msgs);
         dropped.ShouldBe(0);
         before.ShouldBe(after);
+        overflow.ShouldBeFalse();
     }
 
     [Fact]
@@ -85,11 +86,12 @@ public class MessageTruncatorTests
         };
 
         var result = MessageTruncator.Truncate(
-            msgs, 10000, out var dropped, out var before, out var after);
+            msgs, 10000, out var dropped, out var before, out var after, out var overflow);
 
         result.ShouldBe(msgs);
         dropped.ShouldBe(0);
         before.ShouldBe(after);
+        overflow.ShouldBeFalse();
     }
 
     [Fact]
@@ -98,12 +100,13 @@ public class MessageTruncatorTests
         var msgs = new List<ChatMessage>();
 
         var result = MessageTruncator.Truncate(
-            msgs, 100, out var dropped, out var before, out var after);
+            msgs, 100, out var dropped, out var before, out var after, out var overflow);
 
         result.ShouldBe(msgs);
         dropped.ShouldBe(0);
         before.ShouldBe(0);
         after.ShouldBe(0);
+        overflow.ShouldBeFalse();
     }
 
     [Fact]
@@ -120,7 +123,7 @@ public class MessageTruncatorTests
         // total = 96. Threshold at 95% of 80 = 76. Need to drop until <= 76.
         var result = MessageTruncator.Truncate(
             msgs, maxContextTokens: 80,
-            out var dropped, out var before, out var after);
+            out var dropped, out var before, out var after, out var overflow);
 
         dropped.ShouldBeGreaterThanOrEqualTo(1);
         result.ShouldContain(sys);                // system pinned
@@ -128,6 +131,7 @@ public class MessageTruncatorTests
         result.ShouldNotContain(u1);              // oldest non-pinned dropped first
         after.ShouldBeLessThanOrEqualTo(76);
         before.ShouldBe(96);
+        overflow.ShouldBeTrue();
     }
 
     [Fact]
@@ -140,7 +144,7 @@ public class MessageTruncatorTests
 
         var result = MessageTruncator.Truncate(
             msgs, maxContextTokens: 50,
-            out _, out _, out _);
+            out _, out _, out _, out _);
 
         result.ShouldContain(sys1);
         result.ShouldContain(sys2);
@@ -160,7 +164,7 @@ public class MessageTruncatorTests
         // 58 > 38, drop u1 (oldest non-pinned) → 34, which is ≤ 38, stop.
         var result = MessageTruncator.Truncate(
             msgs, maxContextTokens: 40,
-            out var dropped, out _, out _);
+            out var dropped, out _, out _, out _);
 
         dropped.ShouldBe(1);
         result.ShouldContain(a1); // not dropped — already under threshold
@@ -184,7 +188,7 @@ public class MessageTruncatorTests
 
         var result = MessageTruncator.Truncate(
             msgs, maxContextTokens: 30,
-            out var dropped, out _, out _);
+            out var dropped, out _, out _, out _);
 
         dropped.ShouldBe(2); // pair dropped together
         result.ShouldNotContain(assistantWithCall);
@@ -214,12 +218,30 @@ public class MessageTruncatorTests
 
         var result = MessageTruncator.Truncate(
             msgs, maxContextTokens: 240,
-            out var dropped, out _, out _);
+            out var dropped, out _, out _, out _);
 
         // If bigAssistant is dropped, smallToolResult MUST also be dropped.
         var hasAssistant = result.Contains(bigAssistant);
         var hasResult = result.Contains(smallToolResult);
         hasAssistant.ShouldBe(hasResult); // both present or both absent
         dropped.ShouldBeGreaterThanOrEqualTo(2); // they go together
+    }
+
+    [Fact]
+    public void Truncate_PinnedOnlyOverflow_FlagsOverflowEvenWithoutDrops()
+    {
+        // System + last-user alone exceed the threshold; nothing else can be dropped.
+        var sys = new ChatMessage(ChatRole.System, new string('s', 800));
+        var lastUser = new ChatMessage(ChatRole.User, new string('u', 800));
+        var msgs = new List<ChatMessage> { sys, lastUser };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 50,
+            out var dropped, out var before, out var after, out var overflow);
+
+        dropped.ShouldBe(0);
+        before.ShouldBe(after); // nothing dropped
+        overflow.ShouldBeTrue();
+        result.Count.ShouldBe(2);
     }
 }

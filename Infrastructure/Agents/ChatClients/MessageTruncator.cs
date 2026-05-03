@@ -17,9 +17,11 @@ internal static class MessageTruncator
         int? maxContextTokens,
         out int droppedCount,
         out int tokensBefore,
-        out int tokensAfter)
+        out int tokensAfter,
+        out bool overflowDetected)
     {
         droppedCount = 0;
+        overflowDetected = false;
         tokensBefore = messages.Sum(EstimateMessageTokens);
         tokensAfter = tokensBefore;
 
@@ -33,6 +35,8 @@ internal static class MessageTruncator
         {
             return messages;
         }
+
+        overflowDetected = true;
 
         var lastUserIndex = LastIndexOfRole(messages, ChatRole.User);
         var pinned = new HashSet<int>(
