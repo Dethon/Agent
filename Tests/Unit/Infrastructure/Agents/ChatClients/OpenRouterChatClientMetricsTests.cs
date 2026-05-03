@@ -16,7 +16,7 @@ public class OpenRouterChatClientMetricsTests : IDisposable
 
     public OpenRouterChatClientMetricsTests()
     {
-        _sut = new OpenRouterChatClient(_innerClient.Object, "test-model", _publisher.Object);
+        _sut = new OpenRouterChatClient(_innerClient.Object, "test-model", metricsPublisher: _publisher.Object);
     }
 
     public void Dispose() => _sut.Dispose();
