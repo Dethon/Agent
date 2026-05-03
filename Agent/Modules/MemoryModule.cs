@@ -43,7 +43,9 @@ public static class MemoryModule
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
-                    extractionModel, metricsPublisher: metricsPublisher);
+                    extractionModel,
+                    maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
+                    metricsPublisher: metricsPublisher);
                 return new OpenRouterMemoryExtractor(
                     chatClient,
                     sp.GetRequiredService<IMemoryStore>(),
@@ -57,7 +59,9 @@ public static class MemoryModule
                 var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
                 var chatClient = new OpenRouterChatClient(
                     openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
-                    dreamingModel, metricsPublisher: metricsPublisher);
+                    dreamingModel,
+                    maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
+                    metricsPublisher: metricsPublisher);
                 return new OpenRouterMemoryConsolidator(
                     chatClient,
                     sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());

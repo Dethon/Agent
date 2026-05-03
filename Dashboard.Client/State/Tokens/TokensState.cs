@@ -11,4 +11,5 @@ public record TokensState
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
     public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
     public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    public long Truncations { get; init; }
 }

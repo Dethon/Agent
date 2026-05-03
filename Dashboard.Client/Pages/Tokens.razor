@@ -26,7 +26,7 @@
         <KpiCard Label="Input Tokens" Value="@_inputTokens.ToString("N0")" Color="var(--accent-blue)" />
         <KpiCard Label="Output Tokens" Value="@_outputTokens.ToString("N0")" Color="var(--accent-purple)" />
         <KpiCard Label="Cost" Value="@($"${_cost:F2}")" Color="var(--accent-green)" />
-        <KpiCard Label="Truncations" Value="@_truncations.ToString("N0")" Color="var(--accent-yellow)" />
+        <KpiCard Label="Truncations" Value="@_state.Truncations.ToString("N0")" Color="var(--accent-yellow)" />
     </section>
 
     <section class="section">
@@ -70,7 +70,6 @@
     private long _inputTokens;
     private long _outputTokens;
     private decimal _cost;
-    private long _truncations;
     private IDisposable? _sub;
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
@@ -158,8 +157,8 @@
     {
         var breakdown = await Api.GetTokenGroupedAsync(
             TokenDimension.Model, TokenMetric.TruncationCount, _from, _to);
-        _truncations = breakdown is null ? 0 : (long)breakdown.Values.Sum();
-        await InvokeAsync(StateHasChanged);
+        var total = breakdown is null ? 0 : (long)breakdown.Values.Sum();
+        Store.SetTruncations(total);
     }
 
     private string _sortColumn = "Time";

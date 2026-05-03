@@ -146,6 +146,13 @@ public sealed class MetricsHubEffect(
             await RefreshTokenBreakdownAsync(ct);
         }));
 
+        _subscriptions.Add(hub.OnContextTruncation(async evt =>
+        {
+            tokensStore.IncrementTruncations();
+            var ct = ResetCts(ref _tokenBreakdownCts);
+            await RefreshTokenBreakdownAsync(ct);
+        }));
+
         _subscriptions.Add(hub.OnToolCall(async evt =>
         {
             metricsStore.IncrementToolCall(!evt.Success);
