@@ -166,4 +166,60 @@ public class MessageTruncatorTests
         result.ShouldContain(a1); // not dropped — already under threshold
         result.ShouldNotContain(u1);
     }
+
+    [Fact]
+    public void Truncate_DropsToolCallAssistantTogetherWithMatchingToolResult()
+    {
+        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
+        var assistantWithCall = new ChatMessage(
+            ChatRole.Assistant,
+            [new FunctionCallContent("call-1", "doStuff",
+                new Dictionary<string, object?> { ["padding"] = new string('p', 200) })]);
+        var toolResult = new ChatMessage(
+            ChatRole.Tool,
+            [new FunctionResultContent("call-1", new string('r', 200))]);
+        var lastUser = new ChatMessage(ChatRole.User, new string('u', 4));
+
+        var msgs = new List<ChatMessage> { sys, assistantWithCall, toolResult, lastUser };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 30,
+            out var dropped, out _, out _);
+
+        dropped.ShouldBe(2); // pair dropped together
+        result.ShouldNotContain(assistantWithCall);
+        result.ShouldNotContain(toolResult);
+        result.ShouldContain(sys);
+        result.ShouldContain(lastUser);
+    }
+
+    [Fact]
+    public void Truncate_NeverSplitsToolCallResultPair()
+    {
+        // Without atomicity, dropping just the (oldest) assistant call could bring us under
+        // threshold and leave its result stranded — an invalid request shape for OpenAI.
+        // Inputs are sized so the BIG assistant call alone is enough to clear the threshold
+        // when dropped, which without pair-grouping would strand the small tool result.
+        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
+        var bigAssistant = new ChatMessage(
+            ChatRole.Assistant,
+            [new FunctionCallContent("call-1", "doStuff",
+                new Dictionary<string, object?> { ["padding"] = new string('p', 800) })]);
+        var smallToolResult = new ChatMessage(
+            ChatRole.Tool,
+            [new FunctionResultContent("call-1", "ok")]);
+        var lastUser = new ChatMessage(ChatRole.User, new string('u', 4));
+
+        var msgs = new List<ChatMessage> { sys, bigAssistant, smallToolResult, lastUser };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 240,
+            out var dropped, out _, out _);
+
+        // If bigAssistant is dropped, smallToolResult MUST also be dropped.
+        var hasAssistant = result.Contains(bigAssistant);
+        var hasResult = result.Contains(smallToolResult);
+        hasAssistant.ShouldBe(hasResult); // both present or both absent
+        dropped.ShouldBeGreaterThanOrEqualTo(2); // they go together
+    }
 }

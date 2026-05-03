@@ -39,26 +39,67 @@ internal static class MessageTruncator
             Enumerable.Range(0, messages.Count)
                 .Where(i => messages[i].Role == ChatRole.System || i == lastUserIndex));
 
-        var kept = messages.Select((m, i) => (Message: m, Index: i, Tokens: EstimateMessageTokens(m)))
-            .ToList();
+        var groups = BuildDropGroups(messages, pinned);
+
+        var kept = new HashSet<int>(Enumerable.Range(0, messages.Count));
         var currentTokens = tokensBefore;
 
-        for (var i = 0; i < kept.Count && currentTokens > threshold; )
+        foreach (var group in groups)
         {
-            if (pinned.Contains(kept[i].Index))
-            {
-                i++;
-                continue;
-            }
+            if (currentTokens <= threshold) break;
 
-            currentTokens -= kept[i].Tokens;
-            kept.RemoveAt(i);
-            droppedCount++;
-            // do not increment i — list shifted left
+            var groupTokens = group.Sum(idx => EstimateMessageTokens(messages[idx]));
+            foreach (var idx in group) kept.Remove(idx);
+            currentTokens -= groupTokens;
+            droppedCount += group.Count;
         }
 
         tokensAfter = currentTokens;
-        return kept.Select(k => k.Message).ToList();
+        return Enumerable.Range(0, messages.Count)
+            .Where(kept.Contains)
+            .Select(i => messages[i])
+            .ToList();
+    }
+
+    private static IReadOnlyList<IReadOnlyList<int>> BuildDropGroups(
+        IReadOnlyList<ChatMessage> messages, HashSet<int> pinned)
+    {
+        var groups = new List<IReadOnlyList<int>>();
+        var consumed = new HashSet<int>();
+
+        for (var i = 0; i < messages.Count; i++)
+        {
+            if (pinned.Contains(i) || consumed.Contains(i)) continue;
+
+            var msg = messages[i];
+            var callIds = msg.Contents.OfType<FunctionCallContent>().Select(c => c.CallId).ToHashSet();
+
+            if (msg.Role == ChatRole.Assistant && callIds.Count > 0)
+            {
+                var group = new List<int> { i };
+                consumed.Add(i);
+                for (var j = i + 1; j < messages.Count; j++)
+                {
+                    if (pinned.Contains(j) || consumed.Contains(j)) continue;
+                    var hasMatchingResult = messages[j].Contents
+                        .OfType<FunctionResultContent>()
+                        .Any(r => callIds.Contains(r.CallId));
+                    if (hasMatchingResult)
+                    {
+                        group.Add(j);
+                        consumed.Add(j);
+                    }
+                }
+                groups.Add(group);
+            }
+            else
+            {
+                groups.Add(new[] { i });
+                consumed.Add(i);
+            }
+        }
+
+        return groups;
     }
 
     private static int LastIndexOfRole(IReadOnlyList<ChatMessage> messages, ChatRole role)
