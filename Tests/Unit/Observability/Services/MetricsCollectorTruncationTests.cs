@@ -30,7 +30,7 @@ public class MetricsCollectorTruncationTests
     }
 
     [Fact]
-    public async Task ProcessEventAsync_ContextTruncation_IncrementsTotalsAndAddsToTimeline()
+    public async Task ProcessEventAsync_ContextTruncation_AddsToTimelineAndBroadcasts()
     {
         var evt = new ContextTruncationEvent
         {
@@ -52,15 +52,8 @@ public class MetricsCollectorTruncationTests
             It.IsAny<SortedSetWhen>(),
             It.IsAny<CommandFlags>()), Times.Once);
         _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-05-03", "truncations:count", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-05-03", "truncations:dropped", 3, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-05-03", "truncations:tokensTrimmed", 150, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-05-03", "truncations:bySender:alice", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-05-03", "truncations:byModel:z-ai/glm-5.1", 1, It.IsAny<CommandFlags>()), Times.Once);
+            It.IsAny<RedisKey>(), It.IsAny<RedisValue>(), It.IsAny<long>(), It.IsAny<CommandFlags>()),
+            Times.Never);
         _clientProxy.Verify(p => p.SendCoreAsync(
             "OnContextTruncation",
             It.Is<object?[]>(args => args.Length == 1 && Equals(args[0], evt)),
