@@ -13,4 +13,5 @@ public record SubAgentDefinition
     public string? CustomInstructions { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
     public int MaxExecutionSeconds { get; init; } = 120;
+    public int? MaxContextTokens { get; init; }
 }
