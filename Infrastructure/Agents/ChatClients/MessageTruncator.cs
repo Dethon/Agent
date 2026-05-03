@@ -22,7 +22,8 @@ internal static class MessageTruncator
     {
         droppedCount = 0;
         overflowDetected = false;
-        tokensBefore = messages.Sum(EstimateMessageTokens);
+        var tokenEstimates = messages.Select(EstimateMessageTokens).ToArray();
+        tokensBefore = tokenEstimates.Sum();
         tokensAfter = tokensBefore;
 
         if (maxContextTokens is null or <= 0 || messages.Count == 0)
@@ -39,22 +40,23 @@ internal static class MessageTruncator
         overflowDetected = true;
 
         var lastUserIndex = LastIndexOfRole(messages, ChatRole.User);
-        var pinned = new HashSet<int>(
-            Enumerable.Range(0, messages.Count)
-                .Where(i => messages[i].Role == ChatRole.System || i == lastUserIndex));
+        var pinned = Enumerable.Range(0, messages.Count)
+            .Where(i => messages[i].Role == ChatRole.System || i == lastUserIndex)
+            .ToHashSet();
 
         var groups = BuildDropGroups(messages, pinned);
 
-        var kept = new HashSet<int>(Enumerable.Range(0, messages.Count));
+        var kept = Enumerable.Range(0, messages.Count).ToHashSet();
         var currentTokens = tokensBefore;
 
         foreach (var group in groups)
         {
-            if (currentTokens <= threshold) break;
+            if (currentTokens <= threshold) {
+                break;
+            }
 
-            var groupTokens = group.Sum(idx => EstimateMessageTokens(messages[idx]));
-            foreach (var idx in group) kept.Remove(idx);
-            currentTokens -= groupTokens;
+            currentTokens -= group.Sum(i => tokenEstimates[i]);
+            kept.ExceptWith(group);
             droppedCount += group.Count;
         }
 
@@ -65,41 +67,37 @@ internal static class MessageTruncator
             .ToList();
     }
 
+    // Single forward pass: each tool-result message joins the group of its matching
+    // FunctionCall via a callId→groupIndex map, so this is O(n) instead of O(n²).
     private static IReadOnlyList<IReadOnlyList<int>> BuildDropGroups(
         IReadOnlyList<ChatMessage> messages, HashSet<int> pinned)
     {
-        var groups = new List<IReadOnlyList<int>>();
-        var consumed = new HashSet<int>();
+        var groups = new List<List<int>>();
+        var callIdToGroupIdx = new Dictionary<string, int>();
 
         for (var i = 0; i < messages.Count; i++)
         {
-            if (pinned.Contains(i) || consumed.Contains(i)) continue;
+            if (pinned.Contains(i)) {
+                continue;
+            }
 
             var msg = messages[i];
-            var callIds = msg.Contents.OfType<FunctionCallContent>().Select(c => c.CallId).ToHashSet();
+            var matchingGroupIdx = msg.Contents
+                .OfType<FunctionResultContent>()
+                .Select(r => callIdToGroupIdx.TryGetValue(r.CallId, out var gi) ? gi : -1)
+                .FirstOrDefault(idx => idx >= 0, -1);
 
-            if (msg.Role == ChatRole.Assistant && callIds.Count > 0)
+            if (matchingGroupIdx >= 0)
             {
-                var group = new List<int> { i };
-                consumed.Add(i);
-                for (var j = i + 1; j < messages.Count; j++)
-                {
-                    if (pinned.Contains(j) || consumed.Contains(j)) continue;
-                    var hasMatchingResult = messages[j].Contents
-                        .OfType<FunctionResultContent>()
-                        .Any(r => callIds.Contains(r.CallId));
-                    if (hasMatchingResult)
-                    {
-                        group.Add(j);
-                        consumed.Add(j);
-                    }
-                }
-                groups.Add(group);
+                groups[matchingGroupIdx].Add(i);
+                continue;
             }
-            else
+
+            var newGroupIdx = groups.Count;
+            groups.Add([i]);
+            foreach (var fc in msg.Contents.OfType<FunctionCallContent>())
             {
-                groups.Add(new[] { i });
-                consumed.Add(i);
+                callIdToGroupIdx[fc.CallId] = newGroupIdx;
             }
         }
 
@@ -110,7 +108,10 @@ internal static class MessageTruncator
     {
         for (var i = messages.Count - 1; i >= 0; i--)
         {
-            if (messages[i].Role == role) return i;
+            if (messages[i].Role == role)
+            {
+                return i;
+            }
         }
         return -1;
     }

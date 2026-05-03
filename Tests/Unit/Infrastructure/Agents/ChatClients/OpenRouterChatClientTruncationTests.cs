@@ -67,7 +67,9 @@ public class OpenRouterChatClientTruncationTests
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .Callback<MetricEvent, CancellationToken>((e, _) =>
             {
-                if (e is ContextTruncationEvent t) publishedEvent = t;
+                if (e is ContextTruncationEvent t) {
+                    publishedEvent = t;
+                }
             })
             .Returns(Task.CompletedTask);
 
