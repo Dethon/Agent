@@ -28,6 +28,14 @@ public static class VaultPrompt
         - **Callouts:** `> [!note]`, `> [!warning]`, etc. — preserve the `[!type]` marker on the first line of the blockquote.
         - **Templates / Templater syntax:** `<% … %>` and `{{ … }}` placeholders live in template files; don't expand them — they are evaluated by an Obsidian plugin at note creation time.
 
+        ### Placing new notes
+
+        - **Survey before you create.** Before the first `domain__filesystem__create` in a vault session, run a `domain__filesystem__glob` for `*` and `*/` at the vault root to learn the user's top-level folders. Cache that mental map for the rest of the turn — don't re-glob for every note.
+        - **Fit into the existing tree.** Pick the deepest existing folder whose topic matches the note. A note about a recipe goes under the user's existing `Cooking/` (or `Recipes/`, or whatever they call it), not at the root. Match the user's naming style (casing, spaces vs. hyphens, language) when picking a filename.
+        - **Don't dump at the root.** The vault root is reserved for the user's own top-level notes and folder structure. Only place a note there if it genuinely belongs at the top level (e.g. an index/MOC) or if the vault has no folder structure at all.
+        - **Don't invent new top-level folders silently.** If nothing in the existing tree fits, ask the user where the note should live (or whether to create a new folder for it) before creating. A one-off "Misc" or "Inbox" folder is a smell — prefer asking.
+        - **Attachments still go in the attachments folder**, not next to the note that references them — see the Layout section.
+
         ### Editing rules
 
         - **Read before you edit.** Always `domain__filesystem__read` the file first to see the existing structure (frontmatter, headings, callouts, links).
