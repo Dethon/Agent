@@ -26,6 +26,7 @@
         <KpiCard Label="Input Tokens" Value="@_inputTokens.ToString("N0")" Color="var(--accent-blue)" />
         <KpiCard Label="Output Tokens" Value="@_outputTokens.ToString("N0")" Color="var(--accent-purple)" />
         <KpiCard Label="Cost" Value="@($"${_cost:F2}")" Color="var(--accent-green)" />
+        <KpiCard Label="Truncations" Value="@_truncations.ToString("N0")" Color="var(--accent-yellow)" />
     </section>
 
     <section class="section">
@@ -69,6 +70,7 @@
     private long _inputTokens;
     private long _outputTokens;
     private decimal _cost;
+    private long _truncations;
     private IDisposable? _sub;
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
@@ -82,6 +84,9 @@
     [
         new("Tokens", nameof(TokenMetric.Tokens)),
         new("Cost ($)", nameof(TokenMetric.Cost)),
+        new("Truncations", nameof(TokenMetric.TruncationCount)),
+        new("Msgs dropped", nameof(TokenMetric.MessagesDropped)),
+        new("Tokens trimmed", nameof(TokenMetric.TokensTrimmed)),
     ];
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -114,6 +119,7 @@
         _from = _to.AddDays(-(_selectedDays - 1));
         Store.SetDateRange(_from, _to);
         await DataLoad.LoadAsync(_from, _to);
+        await ReloadTruncationsAsync();
     }
 
     private async Task OnDimensionChanged(string value)
@@ -138,6 +144,7 @@
         Store.SetDateRange(_from, _to);
         await Storage.SetAsync("tokens.days", value);
         await DataLoad.LoadAsync(_from, _to);
+        await ReloadTruncationsAsync();
     }
 
     private async Task ReloadBreakdown()
@@ -145,6 +152,14 @@
         var breakdown = await Api.GetTokenGroupedAsync(
             Store.State.GroupBy, Store.State.Metric, _from, _to);
         Store.SetBreakdown(breakdown ?? []);
+    }
+
+    private async Task ReloadTruncationsAsync()
+    {
+        var breakdown = await Api.GetTokenGroupedAsync(
+            TokenDimension.Model, TokenMetric.TruncationCount, _from, _to);
+        _truncations = breakdown is null ? 0 : (long)breakdown.Values.Sum();
+        await InvokeAsync(StateHasChanged);
     }
 
     private string _sortColumn = "Time";
