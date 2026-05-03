@@ -34,7 +34,40 @@ internal static class MessageTruncator
             return messages;
         }
 
-        return messages; // truncation logic added in next task
+        var lastUserIndex = LastIndexOfRole(messages, ChatRole.User);
+        var pinned = new HashSet<int>(
+            Enumerable.Range(0, messages.Count)
+                .Where(i => messages[i].Role == ChatRole.System || i == lastUserIndex));
+
+        var kept = messages.Select((m, i) => (Message: m, Index: i, Tokens: EstimateMessageTokens(m)))
+            .ToList();
+        var currentTokens = tokensBefore;
+
+        for (var i = 0; i < kept.Count && currentTokens > threshold; )
+        {
+            if (pinned.Contains(kept[i].Index))
+            {
+                i++;
+                continue;
+            }
+
+            currentTokens -= kept[i].Tokens;
+            kept.RemoveAt(i);
+            droppedCount++;
+            // do not increment i — list shifted left
+        }
+
+        tokensAfter = currentTokens;
+        return kept.Select(k => k.Message).ToList();
+    }
+
+    private static int LastIndexOfRole(IReadOnlyList<ChatMessage> messages, ChatRole role)
+    {
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].Role == role) return i;
+        }
+        return -1;
     }
 
     public static int EstimateMessageTokens(ChatMessage message)

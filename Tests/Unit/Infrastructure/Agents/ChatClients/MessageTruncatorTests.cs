@@ -105,4 +105,65 @@ public class MessageTruncatorTests
         before.ShouldBe(0);
         after.ShouldBe(0);
     }
+
+    [Fact]
+    public void Truncate_OverThreshold_DropsOldestNonPinnedMessage()
+    {
+        // Build 4 messages so per-message text dominates.
+        // Each "x" * 80 -> 20 tokens + 4 overhead = 24 tokens per message.
+        var sys  = new ChatMessage(ChatRole.System,    new string('s', 80));
+        var u1   = new ChatMessage(ChatRole.User,      new string('a', 80));
+        var a1   = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2   = new ChatMessage(ChatRole.User,      new string('c', 80)); // last user (pinned)
+        var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
+
+        // total = 96. Threshold at 95% of 80 = 76. Need to drop until <= 76.
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 80,
+            out var dropped, out var before, out var after);
+
+        dropped.ShouldBeGreaterThanOrEqualTo(1);
+        result.ShouldContain(sys);                // system pinned
+        result.ShouldContain(u2);                 // last user pinned
+        result.ShouldNotContain(u1);              // oldest non-pinned dropped first
+        after.ShouldBeLessThanOrEqualTo(76);
+        before.ShouldBe(96);
+    }
+
+    [Fact]
+    public void Truncate_AlwaysPreservesAllSystemMessages()
+    {
+        var sys1 = new ChatMessage(ChatRole.System, new string('a', 400));
+        var sys2 = new ChatMessage(ChatRole.System, new string('b', 400));
+        var u1   = new ChatMessage(ChatRole.User,   new string('c', 80));
+        var msgs = new List<ChatMessage> { sys1, sys2, u1 };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 50,
+            out _, out _, out _);
+
+        result.ShouldContain(sys1);
+        result.ShouldContain(sys2);
+        result.ShouldContain(u1); // last user always preserved
+    }
+
+    [Fact]
+    public void Truncate_StopsDroppingOnceUnderThreshold()
+    {
+        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
+        var u1  = new ChatMessage(ChatRole.User,      new string('a', 80));
+        var a1  = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2  = new ChatMessage(ChatRole.User,      new string('c', 4));
+        var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
+
+        // Totals: sys=5, u1=24, a1=24, u2=5 → 58. Threshold floor(40*0.95)=38.
+        // 58 > 38, drop u1 (oldest non-pinned) → 34, which is ≤ 38, stop.
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 40,
+            out var dropped, out _, out _);
+
+        dropped.ShouldBe(1);
+        result.ShouldContain(a1); // not dropped — already under threshold
+        result.ShouldNotContain(u1);
+    }
 }
