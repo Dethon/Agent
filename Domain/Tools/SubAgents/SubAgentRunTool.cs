@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.SubAgents;
@@ -63,6 +64,7 @@ public class SubAgentRunTool(
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(profile.MaxExecutionSeconds));
 
             var userMessage = new ChatMessage(ChatRole.User, prompt);
+            userMessage.SetSenderId(featureConfig.UserId);
             var response = await agent.RunAsync(
                 [userMessage], cancellationToken: timeoutCts.Token);
 

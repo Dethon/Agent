@@ -57,7 +57,8 @@ public sealed class MultiAgentFactory(
             .Where(f => !f.Equals("subagents", StringComparison.OrdinalIgnoreCase));
 
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId));
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, whitelistPatterns, userId),
+            UserId: userId);
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(enabledFeatures, featureConfig)
             .ToList();
@@ -94,7 +95,8 @@ public sealed class MultiAgentFactory(
         var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
         var featureConfig = new FeatureConfig(
-            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId));
+            SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId),
+            UserId: userId);
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();

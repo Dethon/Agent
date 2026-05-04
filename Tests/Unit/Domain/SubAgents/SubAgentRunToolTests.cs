@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.Extensions;
 using Domain.Tools.SubAgents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -18,8 +19,10 @@ public class SubAgentRunToolTests
         McpServerEndpoints = []
     };
 
-    private static FeatureConfig CreateConfig(Func<SubAgentDefinition, DisposableAgent>? factory = null) =>
-        new(SubAgentFactory: factory);
+    private static FeatureConfig CreateConfig(
+        Func<SubAgentDefinition, DisposableAgent>? factory = null,
+        string? userId = null) =>
+        new(SubAgentFactory: factory, UserId: userId);
 
     private static SubAgentRunTool CreateTool(FeatureConfig config, params SubAgentDefinition[] profiles) =>
         new(new SubAgentRegistryOptions { SubAgents = profiles }, config);
@@ -83,6 +86,22 @@ public class SubAgentRunToolTests
     }
 
     [Fact]
+    public async Task RunAsync_PropagatesUserIdAsSenderOnUserMessage()
+    {
+        var stubAgent = new StubDisposableAgent("Summary result");
+        var config = CreateConfig(factory: _ => stubAgent, userId: "user-42");
+
+        var tool = CreateTool(config, _testProfile);
+
+        var result = await tool.RunAsync("summarizer", "summarize this");
+
+        result["status"]!.GetValue<string>().ShouldBe("completed");
+        stubAgent.LastMessages.ShouldNotBeNull();
+        var userMessage = stubAgent.LastMessages.Single(m => m.Role == ChatRole.User);
+        userMessage.GetSenderId().ShouldBe("user-42");
+    }
+
+    [Fact]
     public async Task RunAsync_ProfileLookup_IsCaseInsensitive()
     {
         var stubAgent = new StubDisposableAgent("result");
@@ -100,6 +119,8 @@ file sealed class StubAgentSession : AgentSession;
 
 file sealed class StubDisposableAgent(string responseText) : DisposableAgent
 {
+    public IReadOnlyList<ChatMessage>? LastMessages { get; private set; }
+
     public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
     public override ValueTask DisposeThreadSessionAsync(AgentSession thread) => ValueTask.CompletedTask;
 
@@ -107,6 +128,7 @@ file sealed class StubDisposableAgent(string responseText) : DisposableAgent
         IEnumerable<ChatMessage> messages, AgentSession? session = null,
         AgentRunOptions? options = null, CancellationToken cancellationToken = default)
     {
+        LastMessages = messages.ToList();
         return Task.FromResult(new AgentResponse(new ChatMessage(ChatRole.Assistant, responseText)));
     }
 
