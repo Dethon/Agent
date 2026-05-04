@@ -31,7 +31,7 @@ public class McpWebActionTool(IWebBrowser browser)
         CancellationToken ct = default)
     {
         var sessionId = context.Server.RequireSessionId();
-        var json = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, force, ct);
-        return ToolResponse.Create(json);
+        var result = await ExecuteAsync(sessionId, @ref, action, value, endRef, waitForNavigation, force, ct);
+        return ToolResponse.Create(ToJson(result));
     }
 }

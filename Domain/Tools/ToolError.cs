@@ -2,8 +2,24 @@ using System.Text.Json.Nodes;
 
 namespace Domain.Tools;
 
+// Standard error envelope for tool responses: { ok:false, errorCode, message, retryable, hint? }.
+//
+// When to call ToolError.Create explicitly:
+//   - The tool has a specific code worth surfacing (e.g. cross_filesystem, element_not_found).
+//   - The tool can offer concrete recovery guidance via `hint`.
+//   - The retryable flag isn't obvious from the exception type.
+//
+// When to just throw and let the boundary wrap it:
+//   - Generic argument/not-found failures with no extra context.
+//   - Infrastructure.Utils.ToolResponse.Create(Exception) auto-wraps thrown exceptions
+//     into this envelope at the MCP boundary using ToolResponse.MapErrorCode.
+//
+// Two paths exist on purpose: explicit envelopes for tools that know more than the
+// generic mapping can express, fall-through throws for everything else.
 public static class ToolError
 {
+    // Keep ToolResponse.MapErrorCode (Infrastructure/Utils/ToolResponse.cs) in sync —
+    // every code the boundary wrapper produces must appear here.
     public static class Codes
     {
         public const string InvalidArgument = "invalid_argument";

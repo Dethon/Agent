@@ -67,13 +67,13 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient)
     {
         if (string.IsNullOrEmpty(locationId) && string.IsNullOrEmpty(center))
         {
-            return ToolResponse.Create(new InvalidOperationException(
+            return ToolResponse.Create(new ArgumentException(
                 "Either 'locationId' or 'center' with 'distance' must be provided."));
         }
 
         if (!string.IsNullOrEmpty(center) && !distance.HasValue)
         {
-            return ToolResponse.Create(new InvalidOperationException(
+            return ToolResponse.Create(new ArgumentException(
                 "When using 'center', 'distance' parameter is required."));
         }
 

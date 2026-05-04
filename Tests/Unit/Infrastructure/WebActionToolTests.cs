@@ -33,8 +33,8 @@ public class WebActionToolTests
     [InlineData("tap")]
     [InlineData("swipe")]
     [InlineData("screenshot")]
-    public void ParseActionType_ReturnsNullForUnknownAction(string input)
+    public void ParseActionType_ThrowsForUnknownAction(string input)
     {
-        WebActionTool.ParseActionType(input).ShouldBeNull();
+        Should.Throw<ArgumentException>(() => WebActionTool.ParseActionType(input));
     }
 }

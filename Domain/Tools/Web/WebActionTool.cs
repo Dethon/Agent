@@ -41,7 +41,7 @@ public class WebActionTool(IWebBrowser browser)
         way" bugs, and forcing them silently makes a click land on the wrong thing.
         """;
 
-    protected async Task<JsonNode> ExecuteAsync(
+    protected async Task<WebActionResult> ExecuteAsync(
         string sessionId,
         string? @ref,
         string? action,
@@ -51,26 +51,16 @@ public class WebActionTool(IWebBrowser browser)
         bool force,
         CancellationToken ct)
     {
-        var actionType = ParseActionType(action);
-        if (actionType is null)
-        {
-            return ToolError.Create(
-                ToolError.Codes.InvalidArgument,
-                $"Unknown action: '{action}'. Valid actions: click, type, fill, select, press, clear, hover, focus, drag, back.",
-                retryable: false);
-        }
-
         var request = new WebActionRequest(
             SessionId: sessionId,
             Ref: @ref,
-            Action: actionType.Value,
+            Action: ParseActionType(action),
             Value: value,
             EndRef: endRef,
             WaitForNavigation: waitForNavigation,
             Force: force);
 
-        var result = await browser.ActionAsync(request, ct);
-        return ToJson(result);
+        return await browser.ActionAsync(request, ct);
     }
 
     protected static JsonNode ToJson(WebActionResult result)
@@ -132,7 +122,7 @@ public class WebActionTool(IWebBrowser browser)
         return response;
     }
 
-    public static WebActionType? ParseActionType(string? action)
+    public static WebActionType ParseActionType(string? action)
     {
         if (string.IsNullOrEmpty(action))
         {
@@ -151,7 +141,7 @@ public class WebActionTool(IWebBrowser browser)
             "focus" => WebActionType.Focus,
             "drag" => WebActionType.Drag,
             "back" => WebActionType.Back,
-            _ => null
+            _ => throw new ArgumentException($"Unknown action: {action}")
         };
     }
 }

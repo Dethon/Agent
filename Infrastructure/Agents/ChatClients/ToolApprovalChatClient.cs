@@ -109,6 +109,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         }
     }
 
+    // Both checks are required, not redundant:
+    //   - MCP tool results carry the envelope inside `content` AND have `isError:true` at the
+    //     protocol level (set by ToolResponse.Create(Exception/JsonNode) at the boundary).
+    //   - In-process Domain tool invocations return the envelope directly with no `isError`
+    //     wrapper, so we still need the `ok:false` check to catch those.
     private static (bool IsError, string? Message) DetectError(object? result)
     {
         if (result is not JsonElement { ValueKind: JsonValueKind.Object } json)
@@ -116,13 +121,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return (false, null);
         }
 
-        // MCP tools: CallToolResult with isError: true
         if (json.TryGetProperty("isError", out var isError) && isError.ValueKind == JsonValueKind.True)
         {
             return (true, json.TryGetProperty("content", out var content) ? content.ToString() : null);
         }
 
-        // Domain tools: standard envelope { "ok": false, "errorCode": "...", "message": "..." }
         if (json.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False)
         {
             return (true, json.TryGetProperty("message", out var message) ? message.GetString() : null);

@@ -13,6 +13,9 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         var cwd = ResolveCwd(path);
         if (!Directory.Exists(cwd))
         {
+            // Explicit envelope (not throw): ICommandRunner is also consumed outside the MCP
+            // boundary (e.g. VfsExec dispatching directly), so we can't rely on the
+            // ToolResponse exception-wrap to produce one for us.
             return ToolError.Create(
                 ToolError.Codes.NotFound,
                 $"Working directory '{cwd}' does not exist or is not a directory.",

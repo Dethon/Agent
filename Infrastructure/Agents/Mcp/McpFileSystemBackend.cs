@@ -112,6 +112,10 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Client-side dispatch failure: the call never reached the server's
+            // AddCallToolFilter (e.g. tool not registered, schema mismatch, transport error).
+            // Server-side rejections arrive as result.IsError=true with an envelope payload
+            // and are handled below.
             return ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
                 $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +

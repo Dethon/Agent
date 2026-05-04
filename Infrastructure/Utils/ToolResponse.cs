@@ -26,6 +26,10 @@ public static class ToolResponse
         };
     }
 
+    // Inspects the envelope so an `ok:false` payload propagates to MCP's IsError flag.
+    // Previously this method always set IsError=false; the change lets envelope-shaped
+    // failures from Domain tools surface at the MCP protocol level (and through any
+    // downstream consumer that branches on IsError) without a separate signal channel.
     public static CallToolResult Create(JsonNode json)
     {
         var isError = json is JsonObject obj
