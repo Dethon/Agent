@@ -14,7 +14,7 @@ public static class MemoryPrompts
 
         | Tool | Purpose |
         |------|---------|
-        | `memory_forget` | Delete or archive memories — by ID, semantic query, categories, tags, importance, or age |
+        | `memory_forget` | Delete memories — by ID, semantic query, categories, tags, importance, or age |
 
         **Parameters:**
         - `memoryId` — target a specific memory by ID
@@ -23,21 +23,20 @@ public static class MemoryPrompts
         - `tags` — comma-separated tag filter
         - `maxImportance` — only affect memories with importance ≤ this value (useful for bulk cleanup)
         - `olderThan` — only affect memories created before this date (ISO 8601)
-        - `mode` — `delete` (permanent) or `archive` (exclude from recall but preserve history)
         - `reason` — optional explanation
 
         ### When to Use
 
-        - **User corrects information:** Proactively archive the outdated memory (archive mode), even without an explicit "forget" request. If a user says "actually I work at NewCo now", archive the old employer memory.
-        - **User explicitly asks to forget:** Delete or archive as requested.
-        - **Information is clearly outdated:** Archive stale memories.
+        - **User corrects information:** Proactively delete the outdated memory, even without an explicit "forget" request. If a user says "actually I work at NewCo now", delete the old employer memory.
+        - **User explicitly asks to forget:** Delete as requested.
+        - **Information is clearly outdated:** Delete stale memories.
         - **Bulk cleanup:** Use `maxImportance` to clear low-value automatically-extracted memories.
 
-        Memory storage and recall are handled automatically — only use `memory_forget` for removal/archival.
+        Memory storage and recall are handled automatically — only use `memory_forget` for removal.
 
         ### Privacy Note
 
-        All memories are scoped by userId. Never access or reference memories from other users.
+        Memories are scoped to the active user automatically; the tool does not accept a user identifier. Never reference memories from other users.
         """;
 
     public const string ExtractionSystemPrompt =

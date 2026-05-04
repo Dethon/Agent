@@ -4,7 +4,10 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Memory;
 
-public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingService)
+public class MemoryForgetTool(
+    IMemoryStore store,
+    IEmbeddingService embeddingService,
+    FeatureConfig featureConfig)
 {
     private const int ContentPreviewLength = 100;
     private const int SearchLimit = 100;
@@ -26,7 +29,6 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
                                          """;
 
     public async Task<JsonNode> Run(
-        string userId,
         string? memoryId = null,
         string? query = null,
         string? categories = null,
@@ -36,6 +38,15 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
         string? reason = null,
         CancellationToken ct = default)
     {
+        var userId = featureConfig.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return ToolError.Create(
+                ToolError.Codes.Unavailable,
+                "Memory operations require an authenticated user context",
+                retryable: false);
+        }
+
         if (string.IsNullOrWhiteSpace(memoryId) && string.IsNullOrWhiteSpace(query))
         {
             return ToolError.Create(
