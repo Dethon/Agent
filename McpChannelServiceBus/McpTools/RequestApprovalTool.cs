@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using ModelContextProtocol.Server;
 
@@ -11,10 +12,9 @@ public sealed class RequestApprovalTool
     [Description("Request tool approval — ServiceBus auto-approves all tools")]
     public static string McpRun(
         [Description("Conversation ID (correlationId)")] string conversationId,
-        [Description("Mode: request (interactive) or notify (fire-and-forget)")] string mode,
+        [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("JSON array of tool requests [{toolName, arguments}]")] string requests)
     {
-        // Constructing the DTO ensures all required fields are present at compile time
         _ = new RequestApprovalParams
         {
             ConversationId = conversationId,
@@ -23,6 +23,6 @@ public sealed class RequestApprovalTool
         };
 
         // ServiceBus has no interactive user — auto-approve everything
-        return mode == "notify" ? "notified" : "approved";
+        return mode == ApprovalMode.Notify ? "notified" : "approved";
     }
 }

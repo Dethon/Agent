@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Tools.RealEstate;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
@@ -14,12 +15,12 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient)
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
-        [Description("Country code: 'es' (Spain), 'it' (Italy), or 'pt' (Portugal)")]
-        string country,
-        [Description("Operation type: 'sale' or 'rent'")]
-        string operation,
-        [Description("Property type: 'homes', 'offices', 'premises', 'garages', or 'bedrooms'")]
-        string propertyType,
+        [Description("Country: es (Spain), it (Italy), or pt (Portugal)")]
+        IdealistaCountry country,
+        [Description("Operation type")]
+        IdealistaOperation operation,
+        [Description("Property type")]
+        IdealistaPropertyType propertyType,
         [Description(
             "Idealista location ID (e.g., '0-EU-ES-28' for Madrid province). Either locationId OR center+distance is required.")]
         string? locationId = null,
@@ -44,11 +45,10 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient)
         string? bedrooms = null,
         [Description("Number of bathrooms as comma-separated values (e.g., '1,2'). Use '3' for 3+.")]
         string? bathrooms = null,
-        [Description(
-            "Sort field: 'price', 'size', 'rooms', 'publicationDate', 'modificationDate', 'pricedown', 'distance'")]
-        string? order = null,
-        [Description("Sort direction: 'asc' or 'desc'")]
-        string? sort = null,
+        [Description("Sort field")]
+        IdealistaSortField? order = null,
+        [Description("Sort direction")]
+        IdealistaSortDirection? sort = null,
         [Description("Filter for properties with elevator")]
         bool? elevator = null,
         [Description("Filter for properties with garage")]
@@ -61,8 +61,8 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient)
         bool? airConditioning = null,
         [Description("Filter for new development properties only")]
         bool? newDevelopment = null,
-        [Description("Property condition: 'good' or 'renew'")]
-        string? preservation = null,
+        [Description("Property condition")]
+        IdealistaPreservation? preservation = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(locationId) && string.IsNullOrEmpty(center))

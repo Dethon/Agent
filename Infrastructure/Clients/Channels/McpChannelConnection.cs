@@ -101,7 +101,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             new Dictionary<string, object?>
             {
                 ["conversationId"] = conversationId,
-                ["mode"] = "request",
+                ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(ApprovalMode.Request)),
                 ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);
@@ -123,7 +123,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             new Dictionary<string, object?>
             {
                 ["conversationId"] = conversationId,
-                ["mode"] = "notify",
+                ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(ApprovalMode.Notify)),
                 ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);

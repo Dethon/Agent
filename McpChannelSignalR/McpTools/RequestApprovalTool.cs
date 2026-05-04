@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using ModelContextProtocol.Server;
@@ -12,7 +13,7 @@ public sealed class RequestApprovalTool
     [Description("Request tool approval from user or notify about auto-approved tools")]
     public static async Task<string> McpRun(
         [Description("Conversation ID")] string conversationId,
-        [Description("Mode: request (interactive) or notify (fire-and-forget)")] string mode,
+        [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
         IServiceProvider services)
     {
@@ -25,7 +26,7 @@ public sealed class RequestApprovalTool
 
         var approvalService = services.GetRequiredService<IApprovalService>();
 
-        if (p.Mode == "notify")
+        if (p.Mode == ApprovalMode.Notify)
         {
             await approvalService.NotifyAutoApprovedAsync(p);
             return "notified";

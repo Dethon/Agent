@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using JetBrains.Annotations;
 
 namespace Domain.Contracts;
@@ -10,9 +11,9 @@ public interface IIdealistaClient
 [PublicAPI]
 public record IdealistaSearchQuery
 {
-    public required string Country { get; init; }
-    public required string Operation { get; init; }
-    public required string PropertyType { get; init; }
+    public required IdealistaCountry Country { get; init; }
+    public required IdealistaOperation Operation { get; init; }
+    public required IdealistaPropertyType PropertyType { get; init; }
     public string? Center { get; init; }
     public double? Distance { get; init; }
     public string? LocationId { get; init; }
@@ -22,8 +23,8 @@ public record IdealistaSearchQuery
     public double? MaxPrice { get; init; }
     public double? MinPrice { get; init; }
     public string? SinceDate { get; init; }
-    public string? Order { get; init; }
-    public string? Sort { get; init; }
+    public IdealistaSortField? Order { get; init; }
+    public IdealistaSortDirection? Sort { get; init; }
     public bool? HasMultimedia { get; init; }
 
     // Size filters (homes, offices, premises)
@@ -39,7 +40,7 @@ public record IdealistaSearchQuery
     public bool? CountryHouse { get; init; }
     public string? Bedrooms { get; init; }
     public string? Bathrooms { get; init; }
-    public string? Preservation { get; init; }
+    public IdealistaPreservation? Preservation { get; init; }
     public bool? NewDevelopment { get; init; }
     public string? Furnished { get; init; }
     public bool? Garage { get; init; }

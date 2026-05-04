@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools.RealEstate;
 
@@ -25,9 +26,9 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         """;
 
     protected async Task<JsonNode> RunAsync(
-        string country,
-        string operation,
-        string propertyType,
+        IdealistaCountry country,
+        IdealistaOperation operation,
+        IdealistaPropertyType propertyType,
         string? locationId,
         string? center,
         double? distance,
@@ -39,15 +40,15 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         double? maxSize,
         string? bedrooms,
         string? bathrooms,
-        string? order,
-        string? sort,
+        IdealistaSortField? order,
+        IdealistaSortDirection? sort,
         bool? elevator,
         bool? garage,
         bool? terrace,
         bool? swimmingPool,
         bool? airConditioning,
         bool? newDevelopment,
-        string? preservation,
+        IdealistaPreservation? preservation,
         CancellationToken ct)
     {
         var query = new IdealistaSearchQuery
