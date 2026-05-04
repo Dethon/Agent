@@ -24,7 +24,7 @@ public abstract class TextToolBase(string vaultPath, string[] allowedExtensions)
         var ext = Path.GetExtension(fullPath).ToLowerInvariant();
         if (!allowedExtensions.Contains(ext))
         {
-            throw new InvalidOperationException(
+            throw new ArgumentException(
                 $"File type '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
         }
 

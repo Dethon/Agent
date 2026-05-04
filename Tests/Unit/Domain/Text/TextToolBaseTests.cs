@@ -53,7 +53,7 @@ public class TextToolBaseTests : IDisposable
         var filePath = Path.Combine(_testDir, "test.exe");
         File.WriteAllText(filePath, "content");
 
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<ArgumentException>(() =>
             _tool.TestValidateAndResolvePath("test.exe"));
 
         ex.Message.ShouldContain("not allowed");

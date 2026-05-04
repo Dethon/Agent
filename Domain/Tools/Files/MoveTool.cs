@@ -35,7 +35,7 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
     {
         if (path.Contains("..", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
+            throw new ArgumentException(
                 $"{nameof(MoveTool)} path must not contain '..' segments.");
         }
 
@@ -49,10 +49,10 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 
         if (!canonicalPath.StartsWith(canonicalLibraryPath, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidOperationException($"""
-                                                 {nameof(MoveTool)} path must be within the library.
-                                                 Resolved path '{canonicalPath}' is not under library path '{canonicalLibraryPath}'.
-                                                 """);
+            throw new ArgumentException($"""
+                                         {nameof(MoveTool)} path must be within the library.
+                                         Resolved path '{canonicalPath}' is not under library path '{canonicalLibraryPath}'.
+                                         """);
         }
 
         return path;

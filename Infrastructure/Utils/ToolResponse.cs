@@ -66,11 +66,14 @@ public static class ToolResponse
         };
     }
 
+    // Exception → envelope code mapping. FileNotFoundException/DirectoryNotFoundException
+    // derive from IOException, so list them first; the switch matches the most specific arm.
     private static string MapErrorCode(Exception ex) => ex switch
     {
         ArgumentException => ToolError.Codes.InvalidArgument,
         FileNotFoundException => ToolError.Codes.NotFound,
         DirectoryNotFoundException => ToolError.Codes.NotFound,
+        IOException => ToolError.Codes.AlreadyExists,
         UnauthorizedAccessException => ToolError.Codes.InvalidArgument,
         TimeoutException => ToolError.Codes.Timeout,
         OperationCanceledException => ToolError.Codes.Timeout,
@@ -82,6 +85,7 @@ public static class ToolResponse
         ArgumentException => false,
         FileNotFoundException => false,
         DirectoryNotFoundException => false,
+        IOException => false,
         UnauthorizedAccessException => false,
         TimeoutException => true,
         OperationCanceledException => true,

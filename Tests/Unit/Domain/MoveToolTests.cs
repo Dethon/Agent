@@ -80,11 +80,11 @@ public class MoveToolTests
         var validPath = Path.Combine(_libraryPath, "movies", "test.mkv");
 
         // Act & Assert - source outside
-        await Should.ThrowAsync<InvalidOperationException>(
+        await Should.ThrowAsync<ArgumentException>(
             () => tool.TestRun(outsidePath, validPath, CancellationToken.None));
 
         // Act & Assert - destination outside
-        await Should.ThrowAsync<InvalidOperationException>(
+        await Should.ThrowAsync<ArgumentException>(
             () => tool.TestRun(validPath, outsidePath, CancellationToken.None));
     }
 
@@ -92,7 +92,7 @@ public class MoveToolTests
     [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task Run_WithDoubleDotInPath_ThrowsInvalidOperationException(bool absolute, bool inSource)
+    public async Task Run_WithDoubleDotInPath_ThrowsArgumentException(bool absolute, bool inSource)
     {
         // Arrange
         var tool = CreateTool();
@@ -104,7 +104,7 @@ public class MoveToolTests
         var destination = inSource ? validPath : maliciousPath;
 
         // Act & Assert
-        await Should.ThrowAsync<InvalidOperationException>(
+        await Should.ThrowAsync<ArgumentException>(
             () => tool.TestRun(source, destination, CancellationToken.None));
     }
 

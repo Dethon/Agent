@@ -20,7 +20,7 @@ public class QBittorrentDownloadClient(
         var downloadItem = await GetDownloadItem(id, 100, 2000, cancellationToken);
         if (downloadItem is null)
         {
-            throw new InvalidOperationException("Torrent cannot be added, try another link. Search again if necessary");
+            throw new ArgumentException("Torrent cannot be added, try another link. Search again if necessary");
         }
     }
 

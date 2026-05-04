@@ -41,7 +41,7 @@ public class TextEditToolTests : IDisposable
     {
         var filePath = CreateTestFile("test.txt", "foo bar foo baz foo");
 
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<ArgumentException>(() =>
             _tool.TestRun(filePath, "foo", "FOO"));
         ex.Message.ShouldContain("3 occurrences");
         ex.Message.ShouldContain("disambiguate");
@@ -65,7 +65,7 @@ public class TextEditToolTests : IDisposable
     {
         var filePath = CreateTestFile("test.txt", "Hello World");
 
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<ArgumentException>(() =>
             _tool.TestRun(filePath, "Missing", "X"));
         ex.Message.ShouldContain("not found");
     }
@@ -75,7 +75,7 @@ public class TextEditToolTests : IDisposable
     {
         var filePath = CreateTestFile("test.txt", "Hello World");
 
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<ArgumentException>(() =>
             _tool.TestRun(filePath, "hello world", "X"));
         ex.Message.ShouldContain("Did you mean");
     }

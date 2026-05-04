@@ -35,16 +35,16 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             var suggestion = FindCaseInsensitiveSuggestion(content, oldString);
             if (suggestion is not null)
             {
-                throw new InvalidOperationException(
+                throw new ArgumentException(
                     $"Text '{Truncate(oldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?");
             }
 
-            throw new InvalidOperationException($"Text '{Truncate(oldString, 100)}' not found in file.");
+            throw new ArgumentException($"Text '{Truncate(oldString, 100)}' not found in file.");
         }
 
         if (!replaceAll && positions.Count > 1)
         {
-            throw new InvalidOperationException(
+            throw new ArgumentException(
                 $"Found {positions.Count} occurrences of the specified text. Provide more surrounding context in oldString to disambiguate, or set replaceAll=true.");
         }
 
