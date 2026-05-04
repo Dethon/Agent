@@ -120,22 +120,23 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
                 hint: "Pick a different mount or a different operation.");
         }
 
-        if (result.IsError == true)
-        {
-            var errorText = string.Join("\n", result.Content
-                .OfType<TextContentBlock>()
-                .Select(c => c.Text));
-            return ToolError.Create(
-                ToolError.Codes.InternalError,
-                $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}",
-                retryable: false);
-        }
-
         var text = string.Join("\n", result.Content
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
 
-        return JsonNode.Parse(text)
+        var parsed = JsonNode.Parse(text);
+
+        if (result.IsError == true)
+        {
+            return parsed is JsonObject envelope && envelope["ok"] is JsonValue
+                ? envelope
+                : ToolError.Create(
+                    ToolError.Codes.InternalError,
+                    $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {text}",
+                    retryable: false);
+        }
+
+        return parsed
             ?? throw new InvalidOperationException($"Failed to parse response from {toolName}");
     }
 }
