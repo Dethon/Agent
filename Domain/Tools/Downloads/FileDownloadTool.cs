@@ -10,13 +10,13 @@ public class FileDownloadTool(
     ITrackedDownloadsManager trackedDownloadsManager,
     DownloadPathConfig pathConfig)
 {
-    protected const string Name = "FileDownload";
+    protected const string Name = "download_file";
 
     protected const string Description = """
-                                         Download a file from the internet using a file id that can be obtained from the 
-                                         FileSearch tool. 
-                                         The SearchResultId parameter is the id EXACTLY as it appears in the response of 
-                                         the FileSearch tool.
+                                         Download a file from the internet using a file id that can be obtained from the
+                                         file_search tool.
+                                         The SearchResultId parameter is the id EXACTLY as it appears in the response of
+                                         the file_search tool.
                                          """;
 
     protected async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
@@ -37,7 +37,7 @@ public class FileDownloadTool(
             return ToolError.Create(
                 ToolError.Codes.NotFound,
                 $"No search result found for id {searchResultId}. " +
-                "Make sure to run the FileSearch tool first and use the correct id.",
+                "Make sure to run the file_search tool first and use the correct id.",
                 retryable: false);
         }
 

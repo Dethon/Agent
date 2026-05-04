@@ -33,10 +33,10 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var toolNames = tools.Select(t => t.Name).ToList();
 
         // Download tools
-        toolNames.ShouldContain("FileSearch");
-        toolNames.ShouldContain("FileDownload");
-        toolNames.ShouldContain("GetDownloadStatus");
-        toolNames.ShouldContain("CleanupDownload");
+        toolNames.ShouldContain("file_search");
+        toolNames.ShouldContain("download_file");
+        toolNames.ShouldContain("download_status");
+        toolNames.ShouldContain("download_cleanup");
 
         // Filesystem backend tools
         toolNames.ShouldContain("fs_glob");
@@ -60,7 +60,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act - search for something generic that Jackett might return results for
         var result = await client.CallToolAsync(
-            "FileSearch",
+            "file_search",
             new Dictionary<string, object?>
             {
                 ["searchStrings"] = new[] { "test" }
@@ -93,7 +93,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act - try to download with an ID that doesn't exist in search results
         var result = await client.CallToolAsync(
-            "FileDownload",
+            "download_file",
             new Dictionary<string, object?>
             {
                 ["searchResultId"] = 12345
@@ -104,7 +104,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         result.ShouldNotBeNull();
         var content = GetTextContent(result);
         content.ShouldContain(
-            "No search result found for id 12345. Make sure to run the FileSearch tool first and use the correct");
+            "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
 
         await client.DisposeAsync();
     }
@@ -126,7 +126,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "GetDownloadStatus",
+            "download_status",
             new Dictionary<string, object?>
             {
                 ["downloadId"] = 99999
@@ -158,7 +158,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act - cleanup a non-existent download should still succeed
         var result = await client.CallToolAsync(
-            "CleanupDownload",
+            "download_cleanup",
             new Dictionary<string, object?>
             {
                 ["downloadId"] = 99999
@@ -190,7 +190,7 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Act
         var result = await client.CallToolAsync(
-            "CleanupDownload",
+            "download_cleanup",
             new Dictionary<string, object?>
             {
                 ["downloadId"] = downloadId

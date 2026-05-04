@@ -5,7 +5,7 @@ namespace Domain.Tools.Web;
 
 public class WebBrowseTool(IWebBrowser browser)
 {
-    protected const string Name = "WebBrowse";
+    protected const string Name = "web_browse";
 
     protected const string Description =
         """
@@ -20,7 +20,7 @@ public class WebBrowseTool(IWebBrowser browser)
 
         Returns structured data (JSON-LD) when available on the page.
 
-        For interacting with pages (clicking, filling forms), use WebSnapshot + WebAction.
+        For interacting with pages (clicking, filling forms), use web_snapshot + web_action.
         """;
 
     protected async Task<JsonNode> RunAsync(
@@ -57,7 +57,7 @@ public class WebBrowseTool(IWebBrowser browser)
                 BrowseStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
                     false,
-                    "The browser session has expired. Call WebBrowse again with a fresh sessionId."),
+                    "The browser session has expired. Call web_browse again with a fresh sessionId."),
                 _ => (ToolError.Codes.InternalError, true, (string?)null)
             };
             var error = ToolError.Create(

@@ -18,7 +18,7 @@ public class ToolNameComplianceTests
 
     [Theory]
     [InlineData("mcp-vault", "vault_search")]
-    [InlineData("mcp-library", "FileSearch")]
+    [InlineData("mcp-library", "file_search")]
     [InlineData("mcp-websearch", "web_browse")]
     [InlineData("mcp-channel-servicebus", "send_reply")]
     public void QualifiedMcpToolName_MatchesKimiRegex(string serverName, string innerToolName)

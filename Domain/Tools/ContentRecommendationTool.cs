@@ -2,7 +2,7 @@ namespace Domain.Tools;
 
 public class ContentRecommendationTool
 {
-    protected const string Name = "ContentRecommendationTool";
+    protected const string Name = "content_recommend";
 
     protected const string Description = """
                                          Generates personalized content recommendations (movies, series, books, music, games, etc.) 

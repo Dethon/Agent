@@ -97,10 +97,10 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
 |-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
-| **mcp-library**   | FileSearch, FileDownload, GetDownloadStatus, CleanupDownload, ResubscribeDownloads, ContentRecommendation, FsGlob, FsMove | `filesystem://media`  | Search and download content via Jackett/qBittorrent, organize media files                |
+| **mcp-library**   | file_search, download_file, download_status, download_cleanup, download_resubscribe, content_recommend, fs_glob, fs_move | `filesystem://media`  | Search and download content via Jackett/qBittorrent, organize media files                |
 | **mcp-vault**     | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                          | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
-| **mcp-websearch** | WebSearch, WebBrowse, WebSnapshot, WebAction                                                                            |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
-| **mcp-idealista** | IdealistaPropertySearch                                                                                                 |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
+| **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
+| **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 
 ### MCP Channel Servers
 
@@ -393,7 +393,7 @@ The agent uses Redis to persist conversation history and memory across restarts:
 
 - **Chat History** - All messages are stored with a 30-day expiry
 - **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
-- **Download Tracking** - Use `ResubscribeDownloads` tool to resume tracking downloads after restart
+- **Download Tracking** - Use `download_resubscribe` tool to resume tracking downloads after restart
 - **Memory Storage** - Proactively extracted memories from windowed conversation context, stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
 - **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL

@@ -10,7 +10,7 @@ public class ResubscribeDownloadsTool(
     IDownloadClient downloadClient,
     ITrackedDownloadsManager trackedDownloadsManager)
 {
-    protected const string Name = "ResubscribeDownloads";
+    protected const string Name = "download_resubscribe";
 
     protected const string Description = """
                                          Resubscribes to download progress updates for the specified download IDs.

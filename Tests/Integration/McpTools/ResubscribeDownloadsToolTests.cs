@@ -31,13 +31,13 @@ public class ResubscribeDownloadsToolTests(ThreadSessionServerFixture fixture)
 
         // First call to establish tracking for trackedId
         await client.CallToolAsync(
-            "ResubscribeDownloads",
+            "download_resubscribe",
             new Dictionary<string, object?> { ["downloadIds"] = new[] { trackedId } },
             cancellationToken: cts.Token);
 
         // Act - Now call with all IDs including the one already tracked
         var result = await client.CallToolAsync(
-            "ResubscribeDownloads",
+            "download_resubscribe",
             new Dictionary<string, object?>
             { ["downloadIds"] = new[] { inProgressId, completedId, trackedId, notFoundId } },
             cancellationToken: cts.Token);
@@ -63,7 +63,7 @@ public class ResubscribeDownloadsToolTests(ThreadSessionServerFixture fixture)
 
         // Act - First call should resubscribe
         var firstResult = await client.CallToolAsync(
-            "ResubscribeDownloads",
+            "download_resubscribe",
             new Dictionary<string, object?> { ["downloadIds"] = new[] { downloadId } },
             cancellationToken: cts.Token);
 
@@ -72,7 +72,7 @@ public class ResubscribeDownloadsToolTests(ThreadSessionServerFixture fixture)
 
         // Assert - Second call should show it's already tracked (proving it was added)
         var secondResult = await client.CallToolAsync(
-            "ResubscribeDownloads",
+            "download_resubscribe",
             new Dictionary<string, object?> { ["downloadIds"] = new[] { downloadId } },
             cancellationToken: cts.Token);
 

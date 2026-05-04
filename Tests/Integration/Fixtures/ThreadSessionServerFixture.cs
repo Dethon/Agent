@@ -201,7 +201,7 @@ public class TestResubscribeDownloadsTool(
     ITrackedDownloadsManager trackedDownloadsManager)
     : ResubscribeDownloadsTool(downloadClient, trackedDownloadsManager)
 {
-    [McpServerTool(Name = "ResubscribeDownloads")]
+    [McpServerTool(Name = "download_resubscribe")]
     [Description("Resubscribes to download progress updates for the specified download IDs")]
     public async Task<CallToolResult> McpRun(
         RequestContext<CallToolRequestParams> context,

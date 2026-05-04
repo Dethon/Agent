@@ -5,14 +5,14 @@ namespace Domain.Tools.Web;
 
 public class WebActionTool(IWebBrowser browser)
 {
-    protected const string Name = "WebAction";
+    protected const string Name = "web_action";
 
     protected const string Description =
         """
-        Interacts with an element on the current page by ref from WebSnapshot.
+        Interacts with an element on the current page by ref from web_snapshot.
         Returns a diff showing only what changed — unless the action caused navigation,
         in which case the full new page snapshot is returned instead.
-        Use WebSnapshot with a selector if you need more context after a diff.
+        Use web_snapshot with a selector if you need more context after a diff.
 
         Actions requiring ref:
         - 'click': Click the element
@@ -28,13 +28,13 @@ public class WebActionTool(IWebBrowser browser)
         Actions NOT requiring ref (return full snapshot):
         - 'back': Navigate back in browser history.
 
-        Workflow: WebSnapshot -> find ref -> WebAction(ref, action) -> read snapshot in response.
+        Workflow: web_snapshot -> find ref -> web_action(ref, action) -> read snapshot in response.
         For autocomplete: type partial text -> response shows options -> click option ref.
 
         force: only set this on a click that returned 'Timeout'. By default, clicks wait until the
         element is visible, stable, enabled, and not obscured by another element. Some pages layer
         a non-semantic <label>, decorative overlay, or floating placeholder over an input — those
-        elements have no ARIA role, so they don't appear in the WebSnapshot but they intercept
+        elements have no ARIA role, so they don't appear in the web_snapshot but they intercept
         hit-testing and the click hangs until timeout. force=true skips those checks and dispatches
         the click directly on the target ref. Do NOT set force on the first attempt: the default
         checks are also what catches genuine "wrong ref / element gone / a real modal is in the
@@ -72,11 +72,11 @@ public class WebActionTool(IWebBrowser browser)
                 WebActionStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
                     false,
-                    "The browser session has expired. Call WebBrowse to start a new session."),
+                    "The browser session has expired. Call web_browse to start a new session."),
                 WebActionStatus.ElementNotFound => (
                     ToolError.Codes.ElementNotFound,
                     false,
-                    "Call WebSnapshot to refresh element refs — the page or DOM may have changed."),
+                    "Call web_snapshot to refresh element refs — the page or DOM may have changed."),
                 WebActionStatus.Timeout => (
                     ToolError.Codes.Timeout,
                     true,
@@ -115,8 +115,8 @@ public class WebActionTool(IWebBrowser browser)
         {
             response["nextStep"] =
                 $"Navigated to {result.Url}. The snapshot above shows interactive refs only, not page text. " +
-                "If you need to read article/product/listing content, call WebBrowse with this URL. " +
-                "If you only need to interact further, use the refs in the snapshot with WebAction.";
+                "If you need to read article/product/listing content, call web_browse with this URL. " +
+                "If you only need to interact further, use the refs in the snapshot with web_action.";
         }
 
         return response;

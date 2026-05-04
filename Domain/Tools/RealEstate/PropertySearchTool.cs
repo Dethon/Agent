@@ -13,7 +13,7 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    protected const string Name = "IdealistaPropertySearch";
+    protected const string Name = "property_search";
 
     protected const string Description =
         """

@@ -26,7 +26,7 @@ public class SubscriptionMonitorTests(ThreadSessionServerFixture fixture)
         await using var client = await CreateMcpClient(sessionKey, cts.Token);
 
         await client.CallToolAsync(
-            "ResubscribeDownloads",
+            "download_resubscribe",
             new Dictionary<string, object?> { ["downloadIds"] = new[] { id1, id2 } },
             cancellationToken: cts.Token);
 
