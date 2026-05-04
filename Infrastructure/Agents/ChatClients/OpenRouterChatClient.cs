@@ -103,10 +103,11 @@ public sealed class OpenRouterChatClient : IChatClient
             .LastOrDefault(m => m.Role == ChatRole.User)
             ?.GetSenderId();
 
+        var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
         var truncated = MessageTruncator.Truncate(
             transformedMessages, _maxContextTokens,
             out var droppedCount, out var tokensBefore, out var tokensAfter,
-            out var overflowDetected);
+            out var overflowDetected, fixedOverheadTokens: fixedOverhead);
 
         if (overflowDetected && _metricsPublisher is not null)
         {

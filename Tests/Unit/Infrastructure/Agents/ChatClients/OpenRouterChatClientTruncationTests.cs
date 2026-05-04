@@ -85,6 +85,50 @@ public class OpenRouterChatClientTruncationTests
     }
 
     [Fact]
+    public async Task GetStreamingResponseAsync_OverheadFromInstructionsTriggersTruncation()
+    {
+        // Messages alone are tiny, but Instructions push us over the threshold.
+        var sut = new OpenRouterChatClient(
+            _innerClient.Object, "test-model", maxContextTokens: 80,
+            metricsPublisher: _publisher.Object);
+
+        var sys = new ChatMessage(ChatRole.System, "s");
+        var u1  = new ChatMessage(ChatRole.User,   new string('a', 80)); // 24 tokens
+        var u2  = new ChatMessage(ChatRole.User,   "hi");
+        u2.SetSenderId("alice");
+
+        // 80*4=320 chars → 80 tokens of instructions, dwarfing the 80-token budget.
+        var options = new ChatOptions { Instructions = new string('x', 320) };
+
+        IEnumerable<ChatMessage>? captured = null;
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(),
+                It.IsAny<ChatOptions?>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>(
+                (msgs, _, _) => captured = msgs.ToList())
+            .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
+
+        ContextTruncationEvent? publishedEvent = null;
+        _publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) =>
+            {
+                if (e is ContextTruncationEvent t) {
+                    publishedEvent = t;
+                }
+            })
+            .Returns(Task.CompletedTask);
+
+        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2], options)) { }
+
+        publishedEvent.ShouldNotBeNull();
+        publishedEvent!.DroppedMessages.ShouldBeGreaterThanOrEqualTo(1);
+        captured!.ShouldNotContain(u1); // dropped to make room for overhead
+    }
+
+    [Fact]
     public async Task GetStreamingResponseAsync_UnderThreshold_DoesNotPublishTruncationEvent()
     {
         var sut = new OpenRouterChatClient(

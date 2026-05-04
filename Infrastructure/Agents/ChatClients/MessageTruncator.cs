@@ -7,10 +7,35 @@ internal static class MessageTruncator
 {
     private const int PerMessageOverhead = 4;
     private const int OtherContentOverhead = 4;
+    private const int PerToolOverhead = 4;
     private const double SafetyRatio = 0.95;
 
     public static int EstimateTokens(string text)
         => string.IsNullOrEmpty(text) ? 0 : (text.Length + 3) / 4;
+
+    public static int EstimateOptionsOverheadTokens(ChatOptions? options)
+    {
+        if (options is null)
+        {
+            return 0;
+        }
+
+        var instructionsTokens = EstimateTokens(options.Instructions ?? string.Empty);
+        var toolsTokens = (options.Tools ?? Enumerable.Empty<AITool>())
+            .Sum(EstimateToolTokens);
+        return instructionsTokens + toolsTokens;
+    }
+
+    private static int EstimateToolTokens(AITool tool)
+    {
+        var schemaTokens = tool is AIFunction fn
+            ? EstimateTokens(fn.JsonSchema.GetRawText())
+            : 0;
+        return EstimateTokens(tool.Name)
+            + EstimateTokens(tool.Description ?? string.Empty)
+            + schemaTokens
+            + PerToolOverhead;
+    }
 
     public static IReadOnlyList<ChatMessage> Truncate(
         IReadOnlyList<ChatMessage> messages,
@@ -18,12 +43,14 @@ internal static class MessageTruncator
         out int droppedCount,
         out int tokensBefore,
         out int tokensAfter,
-        out bool overflowDetected)
+        out bool overflowDetected,
+        int fixedOverheadTokens = 0)
     {
         droppedCount = 0;
         overflowDetected = false;
         var tokenEstimates = messages.Select(EstimateMessageTokens).ToArray();
-        tokensBefore = tokenEstimates.Sum();
+        var messageTokens = tokenEstimates.Sum();
+        tokensBefore = messageTokens + fixedOverheadTokens;
         tokensAfter = tokensBefore;
 
         if (maxContextTokens is null or <= 0 || messages.Count == 0)

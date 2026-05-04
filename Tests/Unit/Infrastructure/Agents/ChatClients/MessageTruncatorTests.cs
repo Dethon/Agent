@@ -244,4 +244,108 @@ public class MessageTruncatorTests
         overflow.ShouldBeTrue();
         result.Count.ShouldBe(2);
     }
+
+    [Fact]
+    public void Truncate_FixedOverhead_CountsTowardThreshold()
+    {
+        // Messages alone: sys=5, u1=24, a1=24, u2=5 → 58 (well under 95% of 80 = 76).
+        // With 30 tokens of fixed overhead → 88, over threshold. u1 dropped → 64 ≤ 76.
+        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
+        var u1  = new ChatMessage(ChatRole.User,      new string('a', 80));
+        var a1  = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2  = new ChatMessage(ChatRole.User,      new string('c', 4));
+        var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 80,
+            out var dropped, out var before, out var after, out var overflow,
+            fixedOverheadTokens: 30);
+
+        overflow.ShouldBeTrue();
+        before.ShouldBe(58 + 30);
+        dropped.ShouldBe(1);
+        after.ShouldBeLessThanOrEqualTo(76);
+        result.ShouldContain(sys);
+        result.ShouldContain(u2);
+        result.ShouldContain(a1);
+        result.ShouldNotContain(u1);
+    }
+
+    [Fact]
+    public void Truncate_FixedOverheadAlonePushesOverThreshold_FlagsOverflow()
+    {
+        var sys = new ChatMessage(ChatRole.System, "s");
+        var lastUser = new ChatMessage(ChatRole.User, "u");
+        var msgs = new List<ChatMessage> { sys, lastUser };
+
+        var result = MessageTruncator.Truncate(
+            msgs, maxContextTokens: 100,
+            out var dropped, out var before, out var after, out var overflow,
+            fixedOverheadTokens: 1000);
+
+        overflow.ShouldBeTrue();
+        before.ShouldBeGreaterThan(100);
+        // Nothing droppable (only pinned messages).
+        dropped.ShouldBe(0);
+        after.ShouldBe(before);
+        result.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void EstimateOptionsOverheadTokens_NullOptions_ReturnsZero()
+    {
+        MessageTruncator.EstimateOptionsOverheadTokens(null).ShouldBe(0);
+    }
+
+    [Fact]
+    public void EstimateOptionsOverheadTokens_Instructions_CountsAsTokens()
+    {
+        var options = new ChatOptions { Instructions = new string('x', 400) }; // 100 tokens
+
+        var overhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
+
+        overhead.ShouldBe(100);
+    }
+
+    [Fact]
+    public void EstimateOptionsOverheadTokens_FunctionTools_CountsNameDescriptionAndSchema()
+    {
+        var fn = AIFunctionFactory.Create(
+            (string padding) => "ok",
+            new AIFunctionFactoryOptions { Name = "doStuff", Description = "does the thing" });
+        var options = new ChatOptions { Tools = [fn] };
+
+        var overhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
+
+        var expectedTokens =
+            MessageTruncator.EstimateTokens(fn.Name)
+            + MessageTruncator.EstimateTokens(fn.Description)
+            + MessageTruncator.EstimateTokens(fn.JsonSchema.GetRawText())
+            + 4; // per-tool overhead
+
+        overhead.ShouldBe(expectedTokens);
+    }
+
+    [Fact]
+    public void EstimateOptionsOverheadTokens_InstructionsAndTools_Sums()
+    {
+        var fn = AIFunctionFactory.Create(
+            (string p) => "ok",
+            new AIFunctionFactoryOptions { Name = "f", Description = "d" });
+        var options = new ChatOptions
+        {
+            Instructions = new string('x', 400),
+            Tools = [fn]
+        };
+
+        var overhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
+
+        var expectedToolTokens =
+            MessageTruncator.EstimateTokens(fn.Name)
+            + MessageTruncator.EstimateTokens(fn.Description)
+            + MessageTruncator.EstimateTokens(fn.JsonSchema.GetRawText())
+            + 4;
+
+        overhead.ShouldBe(100 + expectedToolTokens);
+    }
 }
