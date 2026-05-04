@@ -133,6 +133,7 @@ public sealed class FakeMetricsHub : MetricsHubService
     private readonly List<Func<MemoryRecallEvent, Task>> _recallHandlers = [];
     private readonly List<Func<MemoryExtractionEvent, Task>> _extractionHandlers = [];
     private readonly List<Func<MemoryDreamingEvent, Task>> _dreamingHandlers = [];
+    private readonly List<Func<ContextTruncationEvent, Task>> _truncationHandlers = [];
 
     public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
     {
@@ -182,6 +183,12 @@ public sealed class FakeMetricsHub : MetricsHubService
         return new ActionDisposable(() => _dreamingHandlers.Remove(handler));
     }
 
+    public override IDisposable OnContextTruncation(Func<ContextTruncationEvent, Task> handler)
+    {
+        _truncationHandlers.Add(handler);
+        return new ActionDisposable(() => _truncationHandlers.Remove(handler));
+    }
+
     public override void OnReconnected(Func<string?, Task> handler) { }
     public override void OnClosed(Func<Exception?, Task> handler) { }
     public override void OnReconnecting(Func<Exception?, Task> handler) { }
@@ -209,6 +216,9 @@ public sealed class FakeMetricsHub : MetricsHubService
 
     public Task FireMemoryDreaming(MemoryDreamingEvent evt) =>
         Task.WhenAll(_dreamingHandlers.Select(h => h(evt)));
+
+    public Task FireContextTruncation(ContextTruncationEvent evt) =>
+        Task.WhenAll(_truncationHandlers.Select(h => h(evt)));
 
     private sealed class ActionDisposable(Action action) : IDisposable
     {

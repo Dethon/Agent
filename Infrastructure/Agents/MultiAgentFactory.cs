@@ -45,7 +45,7 @@ public sealed class MultiAgentFactory(
             ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : null;
 
-        var chatClient = CreateChatClient(definition.Model, agentPublisher);
+        var chatClient = CreateChatClient(definition.Model, agentPublisher, definition.MaxContextTokens);
 
         var effectiveClient = new ToolApprovalChatClient(
             chatClient,
@@ -87,7 +87,7 @@ public sealed class MultiAgentFactory(
         var agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, definition.Name)
             : metricsPublisher;
-        var chatClient = CreateChatClient(definition.Model, agentPublisher);
+        var chatClient = CreateChatClient(definition.Model, agentPublisher, definition.MaxContextTokens);
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
@@ -141,12 +141,13 @@ public sealed class MultiAgentFactory(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null)
+    private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null)
     {
         return new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             openRouterConfig.ApiKey,
             model,
+            maxContextTokens ?? openRouterConfig.MaxContextTokens,
             publisher ?? metricsPublisher);
     }
 }
@@ -155,6 +156,7 @@ public record OpenRouterConfig
 {
     public required string ApiUrl { get; init; }
     public required string ApiKey { get; init; }
+    public int? MaxContextTokens { get; init; }
 }
 
 public sealed class AgentRegistryOptions

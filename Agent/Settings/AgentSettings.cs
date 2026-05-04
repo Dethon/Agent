@@ -16,6 +16,7 @@ public record OpenRouterConfiguration
 {
     public required string ApiUrl { get; [UsedImplicitly] init; }
     public required string ApiKey { get; [UsedImplicitly] init; }
+    public int? MaxContextTokens { get; [UsedImplicitly] init; }
 }
 
 public record RedisConfiguration

@@ -42,6 +42,9 @@ public class MetricsHubService : IAsyncDisposable
     public virtual IDisposable OnMemoryDreaming(Func<MemoryDreamingEvent, Task> handler) =>
         _connection!.On("OnMemoryDreaming", handler);
 
+    public virtual IDisposable OnContextTruncation(Func<ContextTruncationEvent, Task> handler) =>
+        _connection!.On("OnContextTruncation", handler);
+
     public virtual IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler) =>
         _connection!.On("OnHealthUpdate", handler);
 

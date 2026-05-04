@@ -22,7 +22,8 @@ public static class InjectorModule
             var llmConfig = new OpenRouterConfig
             {
                 ApiUrl = settings.OpenRouter.ApiUrl,
-                ApiKey = settings.OpenRouter.ApiKey
+                ApiKey = settings.OpenRouter.ApiKey,
+                MaxContextTokens = settings.OpenRouter.MaxContextTokens
             };
 
             services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);

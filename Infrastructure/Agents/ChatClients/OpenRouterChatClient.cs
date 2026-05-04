@@ -21,20 +21,32 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly ConcurrentQueue<string> _reasoningQueue = new();
     private readonly ConcurrentQueue<decimal> _costQueue = new();
     private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly int? _maxContextTokens;
     private readonly string _model;
 
-    public OpenRouterChatClient(string endpoint, string apiKey, string model, IMetricsPublisher? metricsPublisher = null)
+    public OpenRouterChatClient(
+        string endpoint,
+        string apiKey,
+        string model,
+        int? maxContextTokens = null,
+        IMetricsPublisher? metricsPublisher = null)
     {
         _model = model;
+        _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _httpClient = CreateHttpClient(_reasoningQueue, _costQueue);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
 
-    internal OpenRouterChatClient(IChatClient innerClient, string model, IMetricsPublisher? metricsPublisher = null)
+    internal OpenRouterChatClient(
+        IChatClient innerClient,
+        string model,
+        int? maxContextTokens = null,
+        IMetricsPublisher? metricsPublisher = null)
     {
         _model = model;
+        _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _client = innerClient;
     }
@@ -56,13 +68,7 @@ public sealed class OpenRouterChatClient : IChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var materializedMessages = messages.ToList();
-
-        var sender = materializedMessages
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetSenderId();
-
-        var transformedMessages = materializedMessages.Select(x =>
+        var transformedMessages = messages.Select(x =>
         {
             var newMessage = x.Clone();
             var msgSender = newMessage.GetSenderId();
@@ -91,11 +97,34 @@ public sealed class OpenRouterChatClient : IChatClient
             }
 
             return newMessage;
-        });
+        }).ToList();
+
+        var sender = transformedMessages
+            .LastOrDefault(m => m.Role == ChatRole.User)
+            ?.GetSenderId();
+
+        var fixedOverhead = MessageTruncator.EstimateOptionsOverheadTokens(options);
+        var truncated = MessageTruncator.Truncate(
+            transformedMessages, _maxContextTokens,
+            out var droppedCount, out var tokensBefore, out var tokensAfter,
+            out var overflowDetected, fixedOverheadTokens: fixedOverhead);
+
+        if (overflowDetected && _metricsPublisher is not null)
+        {
+            await _metricsPublisher.PublishAsync(new ContextTruncationEvent
+            {
+                Sender = sender ?? "unknown",
+                Model = _model,
+                DroppedMessages = droppedCount,
+                EstimatedTokensBefore = tokensBefore,
+                EstimatedTokensAfter = tokensAfter,
+                MaxContextTokens = _maxContextTokens ?? 0
+            }, ct);
+        }
 
         UsageContent? usage = null;
 
-        await foreach (var update in _client.GetStreamingResponseAsync(transformedMessages, options, ct))
+        await foreach (var update in _client.GetStreamingResponseAsync(truncated, options, ct))
         {
             AppendReasoningContent(update);
             update.SetTimestamp(DateTimeOffset.UtcNow);
