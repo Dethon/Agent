@@ -58,9 +58,9 @@ public static class DownloaderPrompt
         Your goal is to find the best possible version of the requested file.
 
         *   **Broad Cannonballs, Not Musket Shot:** Start with short, broad search strings. The title alone is often best (e.g., `The Lost City of Z`). Do not include year, director, or quality tags in the *initial* search. Use that extra information for filtering, not searching.
-        *   **Fire a Volley:** You **must** perform multiple searches with slightly different strings to maximize your chances. You can call the `search` with multiple search strings.
-            *   *Good Example:* `search(queries=["The Lost City of Z", "Lost City Z"])`
-            *   *Bad Example:* `search(queries=["The Lost City of Z 2016 James Gray 1080p"])`
+        *   **Fire a Volley:** You **must** perform multiple searches with slightly different strings to maximize your chances — the search tool accepts several alternatives in a single call, so use them.
+            *   *Good shape:* short title-only variants like `"The Lost City of Z"` and `"Lost City Z"`.
+            *   *Bad shape:* a single over-specified string like `"The Lost City of Z 2016 James Gray 1080p"`.
         *   **Changing separators:** Changing the separators between words can help find different results. For example, `The-Lost-City-of-Z`, `The Lost City of Z`, `The.Lost.City.of.Z`, etc.
         *   **Quality Over All:** Scour the search results for the best treasure. Your priorities are:
             1.  **High-Quality:** For video content, 1080p is the minimum acceptable quality. Prioritize 4K if available, but **strictly avoid HDR** versions. For other content types (music, software, books), prioritize completeness and high seeder count.
