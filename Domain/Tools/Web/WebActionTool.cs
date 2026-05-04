@@ -41,7 +41,7 @@ public class WebActionTool(IWebBrowser browser)
         way" bugs, and forcing them silently makes a click land on the wrong thing.
         """;
 
-    protected async Task<WebActionResult> ExecuteAsync(
+    protected async Task<JsonNode> ExecuteAsync(
         string sessionId,
         string? @ref,
         string? action,
@@ -52,31 +52,55 @@ public class WebActionTool(IWebBrowser browser)
         CancellationToken ct)
     {
         var actionType = ParseActionType(action);
+        if (actionType is null)
+        {
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                $"Unknown action: '{action}'. Valid actions: click, type, fill, select, press, clear, hover, focus, drag, back.",
+                retryable: false);
+        }
 
         var request = new WebActionRequest(
             SessionId: sessionId,
             Ref: @ref,
-            Action: actionType,
+            Action: actionType.Value,
             Value: value,
             EndRef: endRef,
             WaitForNavigation: waitForNavigation,
             Force: force);
 
-        return await browser.ActionAsync(request, ct);
+        var result = await browser.ActionAsync(request, ct);
+        return ToJson(result);
     }
 
     protected static JsonNode ToJson(WebActionResult result)
     {
         if (result.Status is not WebActionStatus.Success)
         {
-            return new JsonObject
+            var (code, retryable, hint) = result.Status switch
             {
-                ["status"] = "error",
-                ["sessionId"] = result.SessionId,
-                ["errorType"] = result.Status.ToString(),
-                ["url"] = result.Url,
-                ["message"] = result.ErrorMessage
+                WebActionStatus.SessionNotFound => (
+                    ToolError.Codes.SessionNotFound,
+                    false,
+                    "The browser session has expired. Call WebBrowse to start a new session."),
+                WebActionStatus.ElementNotFound => (
+                    ToolError.Codes.ElementNotFound,
+                    false,
+                    "Call WebSnapshot to refresh element refs — the page or DOM may have changed."),
+                WebActionStatus.Timeout => (
+                    ToolError.Codes.Timeout,
+                    true,
+                    "Element may be obscured by an overlay. Retry once with force=true if you're certain the ref is correct."),
+                _ => (ToolError.Codes.InternalError, true, (string?)null)
             };
+            var error = ToolError.Create(
+                code,
+                result.ErrorMessage ?? "Action failed",
+                retryable,
+                hint);
+            error["sessionId"] = result.SessionId;
+            error["url"] = result.Url;
+            return error;
         }
 
         var response = new JsonObject
@@ -108,7 +132,7 @@ public class WebActionTool(IWebBrowser browser)
         return response;
     }
 
-    public static WebActionType ParseActionType(string? action)
+    public static WebActionType? ParseActionType(string? action)
     {
         if (string.IsNullOrEmpty(action))
         {
@@ -127,7 +151,7 @@ public class WebActionTool(IWebBrowser browser)
             "focus" => WebActionType.Focus,
             "drag" => WebActionType.Drag,
             "back" => WebActionType.Back,
-            _ => throw new ArgumentException($"Unknown action: {action}")
+            _ => null
         };
     }
 }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 
 namespace Infrastructure.Clients.Bash;
 
@@ -12,11 +13,10 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         var cwd = ResolveCwd(path);
         if (!Directory.Exists(cwd))
         {
-            return new JsonObject
-            {
-                ["error"] = true,
-                ["message"] = $"Working directory '{cwd}' does not exist or is not a directory."
-            };
+            return ToolError.Create(
+                ToolError.Codes.NotFound,
+                $"Working directory '{cwd}' does not exist or is not a directory.",
+                retryable: false);
         }
 
         var effectiveTimeout = TimeSpan.FromSeconds(

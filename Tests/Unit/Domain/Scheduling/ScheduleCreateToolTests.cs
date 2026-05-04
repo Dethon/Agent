@@ -24,24 +24,30 @@ public class ScheduleCreateToolTests
     {
         // Missing agent id
         var missing = await _tool.TestRun("", "prompt", "0 9 * * *", null, null);
-        missing["error"]?.GetValue<string>().ShouldBe("agentId is required");
+        missing["ok"]!.GetValue<bool>().ShouldBeFalse();
+        missing["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        missing["message"]!.GetValue<string>().ShouldBe("agentId is required");
 
         // Neither cron nor runAt
         var neither = await _tool.TestRun("jack", "prompt", null, null, null);
-        neither["error"]?.GetValue<string>().ShouldBe("Either cronExpression or runAt must be provided");
+        neither["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        neither["message"]!.GetValue<string>().ShouldBe("Either cronExpression or runAt must be provided");
 
         // Both cron and runAt
         var both = await _tool.TestRun("jack", "prompt", "0 9 * * *", DateTime.UtcNow.AddDays(1), null);
-        both["error"]?.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
+        both["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        both["message"]!.GetValue<string>().ShouldBe("Provide only cronExpression OR runAt, not both");
 
         // Invalid cron expression
         _cronValidator.Setup(v => v.IsValid("invalid")).Returns(false);
         var invalidCron = await _tool.TestRun("jack", "prompt", "invalid", null, null);
-        invalidCron["error"]?.GetValue<string>().ShouldContain("Invalid cron expression");
+        invalidCron["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        invalidCron["message"]!.GetValue<string>().ShouldContain("Invalid cron expression");
 
         // RunAt in the past
         var past = await _tool.TestRun("jack", "prompt", null, DateTime.UtcNow.AddHours(-1), null);
-        past["error"]?.GetValue<string>().ShouldBe("runAt must be in the future");
+        past["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        past["message"]!.GetValue<string>().ShouldBe("runAt must be in the future");
     }
 
     [Fact]
@@ -51,7 +57,9 @@ public class ScheduleCreateToolTests
 
         var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), null);
 
-        result["error"]?.GetValue<string>().ShouldBe("Agent 'unknown' not found");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        result["message"]!.GetValue<string>().ShouldBe("Agent 'unknown' not found");
     }
 
     [Fact]

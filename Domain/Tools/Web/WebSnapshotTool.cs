@@ -29,12 +29,12 @@ public class WebSnapshotTool(IWebBrowser browser)
 
         if (result.ErrorMessage is not null)
         {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["sessionId"] = result.SessionId,
-                ["message"] = result.ErrorMessage
-            };
+            var error = ToolError.Create(
+                ToolError.Codes.InternalError,
+                result.ErrorMessage,
+                retryable: false);
+            error["sessionId"] = result.SessionId;
+            return error;
         }
 
         return new JsonObject

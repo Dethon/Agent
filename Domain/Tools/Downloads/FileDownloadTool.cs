@@ -21,15 +21,24 @@ public class FileDownloadTool(
 
     protected async Task<JsonNode> Run(string sessionId, int searchResultId, CancellationToken ct)
     {
-        await CheckDownloadNotAdded(searchResultId, ct);
+        var existing = await client.GetDownloadItem(searchResultId, ct);
+        if (existing is not null)
+        {
+            return ToolError.Create(
+                ToolError.Codes.AlreadyExists,
+                "Download with this id already exists, try another id",
+                retryable: false);
+        }
 
         var savePath = $"{pathConfig.BaseDownloadPath}/{searchResultId}";
         var itemToDownload = searchResultsManager.Get(sessionId, searchResultId);
         if (itemToDownload == null)
         {
-            throw new InvalidOperationException(
+            return ToolError.Create(
+                ToolError.Codes.NotFound,
                 $"No search result found for id {searchResultId}. " +
-                "Make sure to run the FileSearch tool first and use the correct id.");
+                "Make sure to run the FileSearch tool first and use the correct id.",
+                retryable: false);
         }
 
         await client.Download(itemToDownload.Link, savePath, searchResultId, ct);
@@ -39,18 +48,9 @@ public class FileDownloadTool(
         {
             ["status"] = "success",
             ["message"] = $"""
-                           Download with id {searchResultId} started successfully. 
+                           Download with id {searchResultId} started successfully.
                            User will notify yoy when it is completed."
                            """
         };
-    }
-
-    private async Task CheckDownloadNotAdded(int downloadId, CancellationToken cancellationToken)
-    {
-        var downloadItem = await client.GetDownloadItem(downloadId, cancellationToken);
-        if (downloadItem != null)
-        {
-            throw new InvalidOperationException("Download with this id already exists, try another id");
-        }
     }
 }

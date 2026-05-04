@@ -90,7 +90,8 @@ public class BashRunnerTests
 
         var result = await runner.RunAsync("does/not/exist", "echo hi", null, CancellationToken.None);
 
-        result["error"]!.GetValue<bool>().ShouldBeTrue();
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
         result["message"]!.GetValue<string>().ShouldContain("does not exist");
     }
 

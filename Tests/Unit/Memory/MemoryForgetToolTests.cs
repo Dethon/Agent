@@ -177,7 +177,9 @@ public class MemoryForgetToolTests
         var tool = CreateTool();
         var result = await tool.Run("user1");
 
-        result["error"]!.GetValue<string>().ShouldBe("Either memoryId or query must be provided");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldBe("Either memoryId or query must be provided");
     }
 
     private static MemoryEntry CreateMemory(

@@ -122,12 +122,10 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return (true, json.TryGetProperty("content", out var content) ? content.ToString() : null);
         }
 
-        // Domain tools (e.g. SubAgentRunTool): { "status": "error", "error": "..." }
-        if (json.TryGetProperty("status", out var status) &&
-            status.ValueKind == JsonValueKind.String &&
-            status.GetString() == "error")
+        // Domain tools: standard envelope { "ok": false, "errorCode": "...", "message": "..." }
+        if (json.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False)
         {
-            return (true, json.TryGetProperty("error", out var error) ? error.GetString() : null);
+            return (true, json.TryGetProperty("message", out var message) ? message.GetString() : null);
         }
 
         return (false, null);

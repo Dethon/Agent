@@ -42,7 +42,15 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
                 maxResults, contextLines, outputMode, cancellationToken);
         }
 
-        var dirResolution = registry.Resolve(directoryPath ?? throw new ArgumentException("Either filePath or directoryPath must be provided"));
+        if (directoryPath is null)
+        {
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Either filePath or directoryPath must be provided",
+                retryable: false);
+        }
+
+        var dirResolution = registry.Resolve(directoryPath);
         return await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
             maxResults, contextLines, outputMode, cancellationToken);

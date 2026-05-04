@@ -29,8 +29,9 @@ public class ResubscribeDownloadsToolTests
 
         // Assert
         result.HasNewSubscriptions.ShouldBeFalse();
-        result.Response["status"]!.ToString().ShouldBe("error");
-        result.Response["message"]!.ToString().ShouldBe("No download IDs provided");
+        result.Response["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result.Response["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result.Response["message"]!.GetValue<string>().ShouldBe("No download IDs provided");
     }
 
     [Fact]

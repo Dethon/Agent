@@ -46,9 +46,12 @@ public class TextSearchToolTests
     }
 
     [Fact]
-    public async Task RunAsync_NeitherFilePathNorDirectoryPath_ThrowsArgumentException()
+    public async Task RunAsync_NeitherFilePathNorDirectoryPath_ReturnsInvalidArgumentError()
     {
-        await Should.ThrowAsync<ArgumentException>(
-            () => _tool.RunAsync("query", cancellationToken: CancellationToken.None));
+        var result = await _tool.RunAsync("query", cancellationToken: CancellationToken.None);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain("filePath or directoryPath");
     }
 }

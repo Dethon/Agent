@@ -26,11 +26,10 @@ public class ResubscribeDownloadsTool(
 
         if (downloadIds.Length == 0)
         {
-            var emptyResponse = new JsonObject
-            {
-                ["status"] = "error",
-                ["message"] = "No download IDs provided"
-            };
+            var emptyResponse = ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "No download IDs provided",
+                retryable: false);
             return new ResubscribeDownloadsResult(emptyResponse, false);
         }
 

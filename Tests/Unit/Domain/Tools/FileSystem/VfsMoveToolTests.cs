@@ -34,15 +34,20 @@ public class MoveToolTests
     }
 
     [Fact]
-    public async Task RunAsync_DifferentFilesystems_ThrowsClearError()
+    public async Task RunAsync_DifferentFilesystems_ReturnsCrossFilesystemError()
     {
-        var backend2 = new Mock<IFileSystemBackend>().Object;
+        var backend2 = new Mock<IFileSystemBackend>();
+        backend2.Setup(b => b.FilesystemName).Returns("vault");
+        _backend.Setup(b => b.FilesystemName).Returns("library");
         _registry.Setup(r => r.Resolve("/library/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "file.md"));
         _registry.Setup(r => r.Resolve("/vault/file.md"))
-            .Returns(new FileSystemResolution(backend2, "file.md"));
+            .Returns(new FileSystemResolution(backend2.Object, "file.md"));
 
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => _tool.RunAsync("/library/file.md", "/vault/file.md", cancellationToken: CancellationToken.None));
+        var result = await _tool.RunAsync("/library/file.md", "/vault/file.md", cancellationToken: CancellationToken.None);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("cross_filesystem");
+        result["message"]!.GetValue<string>().ShouldContain("Cannot move between different filesystems");
     }
 }

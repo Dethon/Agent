@@ -38,7 +38,10 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
     {
         if (string.IsNullOrWhiteSpace(memoryId) && string.IsNullOrWhiteSpace(query))
         {
-            return CreateErrorResponse("Either memoryId or query must be provided");
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Either memoryId or query must be provided",
+                retryable: false);
         }
 
         var affectedMemories = !string.IsNullOrWhiteSpace(memoryId)
@@ -126,11 +129,6 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
         return content.Length > ContentPreviewLength
             ? content[..ContentPreviewLength] + "..."
             : content;
-    }
-
-    private static JsonObject CreateErrorResponse(string message)
-    {
-        return new JsonObject { ["error"] = message };
     }
 
     private static JsonObject CreateSuccessResponse(List<AffectedMemory> affected, string? reason)

@@ -57,7 +57,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
 
             Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. The mount's description above is your primary signal for what it supports.
 
-            If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"error": true, "message": "...does not support '<op>'..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
+            If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"ok": false, "errorCode": "unsupported_operation", "message": "...", "retryable": false, "hint": "..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
 
             ### Cross-mount reminders
 

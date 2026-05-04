@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -111,12 +112,12 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new JsonObject
-            {
-                ["error"] = true,
-                ["message"] = $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
-                              $"This tool is not available on this filesystem backend. Details: {ex.Message}"
-            };
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
+                $"This tool is not available on this filesystem backend. Details: {ex.Message}",
+                retryable: false,
+                hint: "Pick a different mount or a different operation.");
         }
 
         if (result.IsError == true)
@@ -124,11 +125,10 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             var errorText = string.Join("\n", result.Content
                 .OfType<TextContentBlock>()
                 .Select(c => c.Text));
-            return new JsonObject
-            {
-                ["error"] = true,
-                ["message"] = $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}"
-            };
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}",
+                retryable: false);
         }
 
         var text = string.Join("\n", result.Content

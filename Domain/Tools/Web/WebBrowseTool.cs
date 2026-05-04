@@ -52,13 +52,22 @@ public class WebBrowseTool(IWebBrowser browser)
 
         if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound)
         {
-            return new JsonObject
+            var (code, retryable, hint) = result.Status switch
             {
-                ["status"] = "error",
-                ["sessionId"] = result.SessionId,
-                ["url"] = result.Url,
-                ["message"] = result.ErrorMessage
+                BrowseStatus.SessionNotFound => (
+                    ToolError.Codes.SessionNotFound,
+                    false,
+                    "The browser session has expired. Call WebBrowse again with a fresh sessionId."),
+                _ => (ToolError.Codes.InternalError, true, (string?)null)
             };
+            var error = ToolError.Create(
+                code,
+                result.ErrorMessage ?? "Browse failed",
+                retryable,
+                hint);
+            error["sessionId"] = result.SessionId;
+            error["url"] = result.Url;
+            return error;
         }
 
         var response = new JsonObject

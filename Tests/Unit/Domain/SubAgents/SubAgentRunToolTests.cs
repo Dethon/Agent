@@ -34,8 +34,9 @@ public class SubAgentRunToolTests
 
         var result = await tool.RunAsync("unknown", "do something");
 
-        result["status"]!.GetValue<string>().ShouldBe("error");
-        result["error"]!.GetValue<string>().ShouldContain("unknown");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        result["message"]!.GetValue<string>().ShouldContain("unknown");
     }
 
     [Fact]
@@ -46,8 +47,9 @@ public class SubAgentRunToolTests
 
         var result = await tool.RunAsync("summarizer", "do something");
 
-        result["status"]!.GetValue<string>().ShouldBe("error");
-        result["error"]!.GetValue<string>().ShouldContain("not available");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("unavailable");
+        result["message"]!.GetValue<string>().ShouldContain("not available");
     }
 
     [Fact]
@@ -81,8 +83,9 @@ public class SubAgentRunToolTests
 
         var result = await tool.RunAsync("summarizer", "do something");
 
-        result["status"]!.GetValue<string>().ShouldBe("error");
-        result["error"]!.GetValue<string>().ShouldContain("factory error");
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("internal_error");
+        result["message"]!.GetValue<string>().ShouldContain("factory error");
     }
 
     [Fact]

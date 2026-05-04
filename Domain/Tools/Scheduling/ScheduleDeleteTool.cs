@@ -20,17 +20,21 @@ public class ScheduleDeleteTool(IScheduleStore store)
     {
         if (string.IsNullOrWhiteSpace(scheduleId))
         {
-            return new JsonObject { ["error"] = "scheduleId is required" };
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "scheduleId is required",
+                retryable: false);
         }
 
         var existing = await store.GetAsync(scheduleId, ct);
         if (existing is null)
         {
-            return new JsonObject
-            {
-                ["status"] = "not_found",
-                ["scheduleId"] = scheduleId
-            };
+            var error = ToolError.Create(
+                ToolError.Codes.NotFound,
+                $"Schedule '{scheduleId}' not found",
+                retryable: false);
+            error["scheduleId"] = scheduleId;
+            return error;
         }
 
         await store.DeleteAsync(scheduleId, ct);
