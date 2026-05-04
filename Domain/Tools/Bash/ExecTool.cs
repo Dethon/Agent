@@ -5,8 +5,6 @@ namespace Domain.Tools.Bash;
 
 public class ExecTool(ICommandRunner runner)
 {
-    protected const string Name = "Exec";
-
     protected const string Description = """
         Execute a bash command (`bash -lc <command>`) inside the sandbox container.
         The path argument is a relative path under the sandbox root that becomes the CWD.

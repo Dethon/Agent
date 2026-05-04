@@ -6,8 +6,6 @@ namespace Domain.Tools.Files;
 
 public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    protected const string Name = "Remove";
-
     protected const string Description = """
                                          Removes a file or directory by moving it to a trash folder.
                                          The path can be absolute (under the library root) or relative

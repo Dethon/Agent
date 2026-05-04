@@ -5,8 +5,6 @@ namespace Domain.Tools.Text;
 public class TextReadTool(string vaultPath, string[] allowedExtensions)
     : TextToolBase(vaultPath, allowedExtensions)
 {
-    protected const string Name = "TextRead";
-
     protected const string Description = """
                                          Reads a text file and returns its content with line numbers.
 

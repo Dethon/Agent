@@ -142,7 +142,7 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
         }, cancellationToken: cts.Token);
 
         using var json = ParseToolJson(result);
-        json.RootElement.GetProperty("error").GetBoolean().ShouldBeTrue();
+        json.RootElement.GetProperty("ok").GetBoolean().ShouldBeFalse();
     }
 
     [SkippableFact]

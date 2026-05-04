@@ -6,8 +6,6 @@ namespace Domain.Tools.Files;
 
 public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    protected const string Name = "Move";
-
     protected const string Description = """
                                          Moves and/or renames a file or directory.
                                          Both arguments can be absolute paths under the library root, or relative paths

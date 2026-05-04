@@ -60,7 +60,7 @@ public class TextCreateToolTests : IDisposable
         var ex = Should.Throw<IOException>(() =>
             _tool.TestRun("existing.md", "New content"));
         ex.Message.ShouldContain("already exists");
-        ex.Message.ShouldContain("TextEdit");
+        ex.Message.ShouldContain("edit tool");
     }
 
     [Fact]

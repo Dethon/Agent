@@ -5,8 +5,6 @@ namespace Domain.Tools.Text;
 public class TextEditTool(string vaultPath, string[] allowedExtensions)
     : TextToolBase(vaultPath, allowedExtensions)
 {
-    protected const string Name = "TextEdit";
-
     protected const string Description = """
                                          Edits a text file by replacing exact string matches.
 
