@@ -49,7 +49,7 @@ public class FileDownloadTool(
             ["status"] = "success",
             ["message"] = $"""
                            Download with id {searchResultId} started successfully.
-                           User will notify yoy when it is completed."
+                           User will notify you when it is completed."
                            """
         };
     }
