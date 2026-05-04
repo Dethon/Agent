@@ -44,7 +44,7 @@ public class WebActionTool(IWebBrowser browser)
     protected async Task<WebActionResult> ExecuteAsync(
         string sessionId,
         string? @ref,
-        string? action,
+        WebActionType action,
         string? value,
         string? endRef,
         bool waitForNavigation,
@@ -54,7 +54,7 @@ public class WebActionTool(IWebBrowser browser)
         var request = new WebActionRequest(
             SessionId: sessionId,
             Ref: @ref,
-            Action: ParseActionType(action),
+            Action: action,
             Value: value,
             EndRef: endRef,
             WaitForNavigation: waitForNavigation,
@@ -122,26 +122,4 @@ public class WebActionTool(IWebBrowser browser)
         return response;
     }
 
-    public static WebActionType ParseActionType(string? action)
-    {
-        if (string.IsNullOrEmpty(action))
-        {
-            return WebActionType.Click;
-        }
-
-        return action.ToLowerInvariant() switch
-        {
-            "click" => WebActionType.Click,
-            "type" => WebActionType.Type,
-            "fill" => WebActionType.Fill,
-            "select" or "selectoption" => WebActionType.Select,
-            "press" => WebActionType.Press,
-            "clear" => WebActionType.Clear,
-            "hover" => WebActionType.Hover,
-            "focus" => WebActionType.Focus,
-            "drag" => WebActionType.Drag,
-            "back" => WebActionType.Back,
-            _ => throw new ArgumentException($"Unknown action: {action}")
-        };
-    }
 }

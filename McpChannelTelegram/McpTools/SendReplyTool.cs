@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
@@ -15,7 +16,7 @@ public sealed class SendReplyTool
     public static async Task<string> McpRun(
         [Description("Conversation ID in format chatId:threadId")] string conversationId,
         [Description("Response content")] string content,
-        [Description("Content type: text, reasoning, tool_call, error, stream_complete")] string contentType,
+        [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
@@ -37,11 +38,11 @@ public sealed class SendReplyTool
 
         switch (p.ContentType)
         {
-            case "reasoning":
+            case ReplyContentType.Reasoning:
                 // Telegram doesn't show reasoning — ignore
                 return "ok";
 
-            case "tool_call":
+            case ReplyContentType.ToolCall:
                 await botClient.SendMessage(
                     chatId,
                     ToolCallFormatter.Format(p.Content),
@@ -49,21 +50,20 @@ public sealed class SendReplyTool
                     cancellationToken: CancellationToken.None);
                 return "ok";
 
-            case "error":
+            case ReplyContentType.Error:
                 await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 await botClient.SendMessage(
                     chatId,
-                    $"\u26a0\ufe0f {p.Content}",
+                    $"⚠️ {p.Content}",
                     messageThreadId: threadId,
                     cancellationToken: CancellationToken.None);
                 return "ok";
 
-            case "stream_complete":
+            case ReplyContentType.StreamComplete:
                 await SendAccumulatedAsync(botClient, accumulator, p.ConversationId, chatId, threadId);
                 return "ok";
 
             default:
-                // "text" or unknown — accumulate
                 accumulator.Append(p.ConversationId, p.Content);
 
                 if (p.IsComplete)

@@ -13,7 +13,7 @@ public interface IChannelConnection
     Task SendReplyAsync(
         string conversationId,
         string content,
-        string contentType,
+        ReplyContentType contentType,
         bool isComplete,
         string? messageId,
         CancellationToken ct);

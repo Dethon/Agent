@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Internal;
@@ -36,15 +37,15 @@ public sealed class StreamService(
 
         var message = contentType switch
         {
-            "text" => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId },
-            "reasoning" => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
-            "tool_call" => new ChatStreamMessage { ToolCalls = ToolCallFormatter.Format(content), MessageId = effectiveMessageId },
-            "error" => new ChatStreamMessage { Error = content, IsComplete = true },
-            "stream_complete" => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
+            ReplyContentType.Text => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId },
+            ReplyContentType.Reasoning => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
+            ReplyContentType.ToolCall => new ChatStreamMessage { ToolCalls = ToolCallFormatter.Format(content), MessageId = effectiveMessageId },
+            ReplyContentType.Error => new ChatStreamMessage { Error = content, IsComplete = true },
+            ReplyContentType.StreamComplete => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
         };
 
-        if (isComplete && contentType != "error" && contentType != "stream_complete")
+        if (isComplete && contentType != ReplyContentType.Error && contentType != ReplyContentType.StreamComplete)
         {
             await WriteMessageAsync(topicId, message);
             var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId };
@@ -53,7 +54,7 @@ public sealed class StreamService(
             return;
         }
 
-        if (contentType is "error" or "stream_complete")
+        if (contentType is ReplyContentType.Error or ReplyContentType.StreamComplete)
         {
             await WriteMessageAsync(topicId, message);
             CompleteStream(topicId);

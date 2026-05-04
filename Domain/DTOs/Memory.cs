@@ -19,6 +19,7 @@ public record MemoryEntry
 
 public record MemorySource(string? ConversationId, string? MessageId);
 
+[System.Text.Json.Serialization.JsonConverter(typeof(Domain.Json.SnakeCaseLowerEnumConverter<MemoryCategory>))]
 public enum MemoryCategory
 {
     Preference,

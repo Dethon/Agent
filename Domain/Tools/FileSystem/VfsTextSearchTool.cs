@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools.FileSystem;
 
@@ -30,8 +31,8 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         int maxResults = 50,
         [Description("Lines of context around each match (default: 1)")]
         int contextLines = 1,
-        [Description("'content' or 'filesOnly' (default: 'content')")]
-        string outputMode = "content",
+        [Description("Return full content with context, or just the matching file paths")]
+        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
         CancellationToken cancellationToken = default)
     {
         if (filePath is not null)

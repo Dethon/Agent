@@ -31,7 +31,7 @@ public class MemoryForgetTool(
     public async Task<JsonNode> Run(
         string? memoryId = null,
         string? query = null,
-        string? categories = null,
+        MemoryCategory[]? categories = null,
         string? tags = null,
         string? olderThan = null,
         double? maxImportance = null,
@@ -57,7 +57,7 @@ public class MemoryForgetTool(
 
         var affectedMemories = !string.IsNullOrWhiteSpace(memoryId)
             ? await ForgetById(userId, memoryId, ct)
-            : await ForgetBySearch(userId, query!, ParseCategories(categories), ParseTags(tags),
+            : await ForgetBySearch(userId, query!, categories?.ToList(), ParseTags(tags),
                 ParseDate(olderThan), maxImportance, ct);
 
         return CreateSuccessResponse(affectedMemories, reason);
@@ -96,21 +96,6 @@ public class MemoryForgetTool(
             }));
 
         return affected.OfType<AffectedMemory>().ToList();
-    }
-
-    private static List<MemoryCategory>? ParseCategories(string? categories)
-    {
-        if (string.IsNullOrWhiteSpace(categories))
-        {
-            return null;
-        }
-
-        return categories
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(c => Enum.TryParse<MemoryCategory>(c, ignoreCase: true, out var cat) ? cat : (MemoryCategory?)null)
-            .Where(c => c.HasValue)
-            .Select(c => c!.Value)
-            .ToList();
     }
 
     private static List<string>? ParseTags(string? tags)

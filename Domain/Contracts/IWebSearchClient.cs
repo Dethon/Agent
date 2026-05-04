@@ -25,6 +25,7 @@ public record WebSearchResultItem(
     string Domain,
     DateOnly? DatePublished);
 
+[System.Text.Json.Serialization.JsonConverter(typeof(Domain.Json.SnakeCaseLowerEnumConverter<DateRange>))]
 public enum DateRange
 {
     Day,

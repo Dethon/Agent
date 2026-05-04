@@ -71,7 +71,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
     public async Task SendReplyAsync(
         string conversationId,
         string content,
-        string contentType,
+        ReplyContentType contentType,
         bool isComplete,
         string? messageId,
         CancellationToken ct)
@@ -83,7 +83,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             {
                 ["conversationId"] = conversationId,
                 ["content"] = content,
-                ["contentType"] = contentType,
+                ["contentType"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(contentType.ToString()),
                 ["isComplete"] = isComplete,
                 ["messageId"] = messageId
             },

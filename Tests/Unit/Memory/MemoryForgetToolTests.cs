@@ -142,7 +142,7 @@ public class MemoryForgetToolTests
             .ReturnsAsync(true);
 
         var tool = CreateTool();
-        var result = await tool.Run(query: query, categories: "Preference");
+        var result = await tool.Run(query: query, categories: [MemoryCategory.Preference]);
 
         result["affectedCount"]!.GetValue<int>().ShouldBe(1);
     }

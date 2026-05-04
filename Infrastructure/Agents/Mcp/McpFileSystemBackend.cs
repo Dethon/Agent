@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Tools;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -45,19 +47,19 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, string mode, CancellationToken ct)
+    public async Task<JsonNode> GlobAsync(string basePath, string pattern, VfsGlobMode mode, CancellationToken ct)
     {
         return await CallToolAsync("fs_glob", new Dictionary<string, object?>
         {
             ["filesystem"] = filesystemName,
             ["basePath"] = basePath,
             ["pattern"] = pattern,
-            ["mode"] = mode
+            ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(mode.ToString())
         }, ct);
     }
 
     public async Task<JsonNode> SearchAsync(string query, bool regex, string? path, string? directoryPath,
-        string? filePattern, int maxResults, int contextLines, string outputMode, CancellationToken ct)
+        string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
         return await CallToolAsync("fs_search", new Dictionary<string, object?>
         {
@@ -69,7 +71,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             ["filePattern"] = filePattern,
             ["maxResults"] = maxResults,
             ["contextLines"] = contextLines,
-            ["outputMode"] = outputMode
+            ["outputMode"] = JsonNamingPolicy.CamelCase.ConvertName(outputMode.ToString())
         }, ct);
     }
 

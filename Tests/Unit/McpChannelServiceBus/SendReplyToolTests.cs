@@ -1,4 +1,5 @@
 using Azure.Messaging.ServiceBus;
+using Domain.DTOs;
 using McpChannelServiceBus.McpTools;
 using McpChannelServiceBus.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,8 +34,8 @@ public class SendReplyToolTests
     [Fact]
     public async Task Run_WithNonTextContentType_ReturnsOkWithoutSending()
     {
-        var reasoningResult = await SendReplyTool.McpRun("corr-1", "thinking...", "reasoning", false, null, _services);
-        var toolCallResult = await SendReplyTool.McpRun("corr-1", "{}", "tool_call", false, null, _services);
+        var reasoningResult = await SendReplyTool.McpRun("corr-1", "thinking...", ReplyContentType.Reasoning, false, null, _services);
+        var toolCallResult = await SendReplyTool.McpRun("corr-1", "{}", ReplyContentType.ToolCall, false, null, _services);
 
         reasoningResult.ShouldBe("ok");
         toolCallResult.ShouldBe("ok");
@@ -48,7 +49,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("corr-1", "partial text");
 
-        var result = await SendReplyTool.McpRun("corr-1", "something broke", "error", false, null, _services);
+        var result = await SendReplyTool.McpRun("corr-1", "something broke", ReplyContentType.Error, false, null, _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -59,7 +60,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_Error_NoAccumulated_SendsErrorOnly()
     {
-        var result = await SendReplyTool.McpRun("corr-1", "something broke", "error", false, null, _services);
+        var result = await SendReplyTool.McpRun("corr-1", "something broke", ReplyContentType.Error, false, null, _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -72,7 +73,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("corr-1", "full response");
 
-        var result = await SendReplyTool.McpRun("corr-1", "", "stream_complete", true, null, _services);
+        var result = await SendReplyTool.McpRun("corr-1", "", ReplyContentType.StreamComplete, true, null, _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -83,7 +84,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_StreamComplete_NoAccumulated_DoesNotSend()
     {
-        var result = await SendReplyTool.McpRun("corr-1", "", "stream_complete", true, null, _services);
+        var result = await SendReplyTool.McpRun("corr-1", "", ReplyContentType.StreamComplete, true, null, _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -94,7 +95,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_TextNotComplete_AccumulatesWithoutSending()
     {
-        var result = await SendReplyTool.McpRun("corr-1", "chunk1", "text", false, "msg-1", _services);
+        var result = await SendReplyTool.McpRun("corr-1", "chunk1", ReplyContentType.Text, false, "msg-1", _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -107,7 +108,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("corr-1", "chunk1");
 
-        var result = await SendReplyTool.McpRun("corr-1", "chunk2", "text", true, "msg-1", _services);
+        var result = await SendReplyTool.McpRun("corr-1", "chunk2", ReplyContentType.Text, true, "msg-1", _services);
 
         result.ShouldBe("ok");
         _busSender.Verify(s => s.SendMessageAsync(
@@ -118,9 +119,9 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_MultipleChunks_AccumulatesAll()
     {
-        await SendReplyTool.McpRun("corr-1", "a", "text", false, "msg-1", _services);
-        await SendReplyTool.McpRun("corr-1", "b", "text", false, "msg-1", _services);
-        await SendReplyTool.McpRun("corr-1", "c", "text", true, "msg-1", _services);
+        await SendReplyTool.McpRun("corr-1", "a", ReplyContentType.Text, false, "msg-1", _services);
+        await SendReplyTool.McpRun("corr-1", "b", ReplyContentType.Text, false, "msg-1", _services);
+        await SendReplyTool.McpRun("corr-1", "c", ReplyContentType.Text, true, "msg-1", _services);
 
         _busSender.Verify(s => s.SendMessageAsync(
             It.IsAny<ServiceBusMessage>(),
