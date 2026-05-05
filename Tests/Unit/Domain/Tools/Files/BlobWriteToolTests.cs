@@ -106,6 +106,38 @@ public class BlobWriteToolTests : IDisposable
             _tool.TestRun("out.bin", b64, offset: -1, overwrite: false, createDirectories: true));
     }
 
+    [Fact]
+    public void Run_EmptyContent_CreatesEmptyFile()
+    {
+        var result = _tool.TestRun("empty.bin", contentBase64: "", offset: 0,
+            overwrite: false, createDirectories: true);
+
+        File.Exists(Path.Combine(_root, "empty.bin")).ShouldBeTrue();
+        File.ReadAllBytes(Path.Combine(_root, "empty.bin")).Length.ShouldBe(0);
+        result["bytesWritten"]!.GetValue<int>().ShouldBe(0);
+        result["totalBytes"]!.GetValue<long>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_SequentialMultiChunk_AssemblesCorrectFile()
+    {
+        // Simulate the realistic flow: chunk0 at offset=0, chunk1 at offset=4, chunk2 at offset=8.
+        var c0 = new byte[] { 1, 2, 3, 4 };
+        var c1 = new byte[] { 5, 6, 7, 8 };
+        var c2 = new byte[] { 9, 10 };
+
+        _tool.TestRun("multi.bin", Convert.ToBase64String(c0), offset: 0,
+            overwrite: true, createDirectories: true);
+        _tool.TestRun("multi.bin", Convert.ToBase64String(c1), offset: 4,
+            overwrite: true, createDirectories: true);
+        var last = _tool.TestRun("multi.bin", Convert.ToBase64String(c2), offset: 8,
+            overwrite: true, createDirectories: true);
+
+        File.ReadAllBytes(Path.Combine(_root, "multi.bin"))
+            .ShouldBe(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+        last["totalBytes"]!.GetValue<long>().ShouldBe(10);
+    }
+
     private class TestableBlobWriteTool(string root) : BlobWriteTool(root)
     {
         public JsonNode TestRun(string path, string contentBase64, long offset, bool overwrite, bool createDirectories)
