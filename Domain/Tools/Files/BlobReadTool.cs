@@ -36,7 +36,11 @@ public class BlobReadTool(string rootPath)
             while (actuallyRead < toRead)
             {
                 var n = stream.Read(buffer, actuallyRead, toRead - actuallyRead);
-                if (n == 0) break;
+                if (n == 0)
+                {
+                    break;
+                }
+
                 actuallyRead += n;
             }
         }

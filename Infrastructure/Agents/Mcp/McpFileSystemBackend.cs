@@ -145,8 +145,15 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             buffer.Write(bytes, 0, bytes.Length);
             offset += bytes.Length;
 
-            if (node["eof"]!.GetValue<bool>()) break;
-            if (bytes.Length == 0) break;
+            if (node["eof"]!.GetValue<bool>())
+            {
+                break;
+            }
+
+            if (bytes.Length == 0)
+            {
+                break;
+            }
         }
 
         buffer.Position = 0;
@@ -164,7 +171,10 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         {
             ct.ThrowIfCancellationRequested();
             var read = await content.ReadAsync(buffer.AsMemory(0, chunkSize), ct);
-            if (read == 0) break;
+            if (read == 0)
+            {
+                break;
+            }
 
             var chunk = read == chunkSize ? buffer : buffer[..read];
             var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>

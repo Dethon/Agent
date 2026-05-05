@@ -155,7 +155,10 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                     ["bytes"] = bytes
                 });
                 transferred++;
-                if (bytes >= 0) totalBytes += bytes;
+                if (bytes >= 0)
+                {
+                    totalBytes += bytes;
+                }
             }
             catch (OperationCanceledException)
             {

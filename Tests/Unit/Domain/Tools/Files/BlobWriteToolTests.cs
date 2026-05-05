@@ -18,7 +18,10 @@ public class BlobWriteToolTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, true);
+        }
     }
 
     [Fact]
@@ -93,7 +96,10 @@ public class BlobWriteToolTests : IDisposable
         }
         finally
         {
-            if (Directory.Exists(sibling)) Directory.Delete(sibling, true);
+            if (Directory.Exists(sibling))
+            {
+                Directory.Delete(sibling, true);
+            }
         }
     }
 
