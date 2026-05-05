@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerSandbox.Settings;
@@ -15,10 +16,8 @@ public class FsEditTool(McpSettings settings)
     [Description(Description)]
     public CallToolResult McpRun(
         string path,
-        string oldString,
-        string newString,
-        bool replaceAll = false)
+        IReadOnlyList<TextEdit> edits)
     {
-        return ToolResponse.Create(Run(path, oldString, newString, replaceAll));
+        return ToolResponse.Create(Run(path, edits));
     }
 }

@@ -32,14 +32,17 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
-    public async Task<JsonNode> EditAsync(string path, string oldString, string newString, bool replaceAll, CancellationToken ct)
+    public async Task<JsonNode> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         return await CallToolAsync("fs_edit", new Dictionary<string, object?>
         {
             ["path"] = path,
-            ["oldString"] = oldString,
-            ["newString"] = newString,
-            ["replaceAll"] = replaceAll
+            ["edits"] = edits.Select(e => new Dictionary<string, object?>
+            {
+                ["oldString"] = e.OldString,
+                ["newString"] = e.NewString,
+                ["replaceAll"] = e.ReplaceAll
+            }).ToList()
         }, ct);
     }
 
