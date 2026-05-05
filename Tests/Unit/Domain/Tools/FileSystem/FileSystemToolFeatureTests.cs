@@ -31,7 +31,7 @@ public class FileSystemToolFeatureTests
         var config = new FeatureConfig();
         var tools = _feature.GetTools(config).ToList();
 
-        tools.Count.ShouldBe(8);
+        tools.Count.ShouldBe(9);
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_create");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_edit");
@@ -40,6 +40,7 @@ public class FileSystemToolFeatureTests
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__remove");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__exec");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__file_info");
     }
 
     [Fact]

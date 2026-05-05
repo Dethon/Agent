@@ -8,6 +8,7 @@ public interface IFileSystemBackend
     string FilesystemName { get; }
 
     Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct);
+    Task<JsonNode> InfoAsync(string path, CancellationToken ct);
     Task<JsonNode> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct);
     Task<JsonNode> EditAsync(string path, string oldString, string newString, bool replaceAll, CancellationToken ct);
     Task<JsonNode> GlobAsync(string basePath, string pattern, VfsGlobMode mode, CancellationToken ct);

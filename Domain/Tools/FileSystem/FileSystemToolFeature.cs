@@ -12,7 +12,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
     {
         VfsTextReadTool.Key, VfsTextCreateTool.Key, VfsTextEditTool.Key,
         VfsGlobFilesTool.Key, VfsTextSearchTool.Key, VfsMoveTool.Key, VfsRemoveTool.Key,
-        VfsExecTool.Key
+        VfsExecTool.Key, VfsFileInfoTool.Key
     };
 
     public string FeatureName => Feature;
@@ -31,6 +31,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}")),
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}")),
             (VfsExecTool.Key, () => AIFunctionFactory.Create(new VfsExecTool(registry).RunAsync, name: $"domain__{Feature}__{VfsExecTool.Name}")),
+            (VfsFileInfoTool.Key, () => AIFunctionFactory.Create(new VfsFileInfoTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileInfoTool.Name}")),
         };
 
         return tools

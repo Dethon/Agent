@@ -93,6 +93,15 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
+    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
+    {
+        return await CallToolAsync("fs_info", new Dictionary<string, object?>
+        {
+            ["filesystem"] = filesystemName,
+            ["path"] = path
+        }, ct);
+    }
+
     public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         return await CallToolAsync("fs_exec", new Dictionary<string, object?>
