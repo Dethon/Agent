@@ -104,7 +104,6 @@ public class McpVaultServerTests(McpVaultServerFixture fixture) : IClassFixture<
             "fs_read",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "vault",
                 ["path"] = "test-read.md"
             },
             cancellationToken: CancellationToken.None);

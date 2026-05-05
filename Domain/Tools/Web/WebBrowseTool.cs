@@ -3,9 +3,11 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Web;
 
+public record WebBrowseToolResult(JsonNode Envelope, string? Body, string? Snapshot = null);
+
 public class WebBrowseTool(IWebBrowser browser)
 {
-    protected const string Name = "WebBrowse";
+    protected const string Name = "web_browse";
 
     protected const string Description =
         """
@@ -17,13 +19,16 @@ public class WebBrowseTool(IWebBrowser browser)
         Use maxLength/offset for pagination of long content.
         Use useReadability=true for clean article extraction (strips ads, nav, sidebars).
         Use scrollToLoad=true for pages with lazy-loaded content.
+        Use snapshot=true to include the accessibility tree in the same call when you intend
+        to interact with the page (saves a follow-up web_snapshot round trip).
 
         Returns structured data (JSON-LD) when available on the page.
 
-        For interacting with pages (clicking, filling forms), use WebSnapshot + WebAction.
+        For interacting with pages (clicking, filling forms), use snapshot=true (or web_snapshot)
+        and then web_action.
         """;
 
-    protected async Task<JsonNode> RunAsync(
+    protected async Task<WebBrowseToolResult> RunAsync(
         string sessionId,
         string url,
         string? selector,
@@ -32,6 +37,7 @@ public class WebBrowseTool(IWebBrowser browser)
         bool useReadability,
         bool scrollToLoad,
         int scrollSteps,
+        bool snapshot,
         CancellationToken ct)
     {
         maxLength = Math.Clamp(maxLength, 100, 100000);
@@ -52,16 +58,25 @@ public class WebBrowseTool(IWebBrowser browser)
 
         if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound)
         {
-            return new JsonObject
+            var (code, retryable, hint) = result.Status switch
             {
-                ["status"] = "error",
-                ["sessionId"] = result.SessionId,
-                ["url"] = result.Url,
-                ["message"] = result.ErrorMessage
+                BrowseStatus.SessionNotFound => (
+                    ToolError.Codes.SessionNotFound,
+                    false,
+                    "The browser session has expired. Call web_browse again with a fresh sessionId."),
+                _ => (ToolError.Codes.InternalError, true, (string?)null)
             };
+            var error = ToolError.Create(
+                code,
+                result.ErrorMessage ?? "Browse failed",
+                retryable,
+                hint);
+            error["sessionId"] = result.SessionId;
+            error["url"] = result.Url;
+            return new WebBrowseToolResult(error, null);
         }
 
-        var response = new JsonObject
+        var envelope = new JsonObject
         {
             ["status"] = result.Status switch
             {
@@ -72,14 +87,13 @@ public class WebBrowseTool(IWebBrowser browser)
             ["sessionId"] = result.SessionId,
             ["url"] = result.Url,
             ["title"] = result.Title,
-            ["content"] = result.Content,
             ["contentLength"] = result.ContentLength,
             ["truncated"] = result.Truncated
         };
 
         if (result.Metadata is not null)
         {
-            response["metadata"] = new JsonObject
+            envelope["metadata"] = new JsonObject
             {
                 ["description"] = result.Metadata.Description,
                 ["author"] = result.Metadata.Author,
@@ -99,7 +113,7 @@ public class WebBrowseTool(IWebBrowser browser)
                     ["data"] = sd.RawJson
                 });
             }
-            response["structuredData"] = sdArray;
+            envelope["structuredData"] = sdArray;
         }
 
         if (result.DismissedModals is { Count: > 0 })
@@ -110,14 +124,29 @@ public class WebBrowseTool(IWebBrowser browser)
                 modals.Add(m.Type.ToString());
             }
 
-            response["dismissedModals"] = modals;
+            envelope["dismissedModals"] = modals;
         }
 
         if (!string.IsNullOrEmpty(result.ErrorMessage))
         {
-            response["message"] = result.ErrorMessage;
+            envelope["message"] = result.ErrorMessage;
         }
 
-        return response;
+        string? snapshotBody = null;
+        if (snapshot && result.Status is BrowseStatus.Success or BrowseStatus.Partial)
+        {
+            var snapshotResult = await browser.SnapshotAsync(new SnapshotRequest(sessionId, selector), ct);
+            if (snapshotResult.ErrorMessage is null)
+            {
+                envelope["refCount"] = snapshotResult.RefCount;
+                snapshotBody = snapshotResult.Snapshot ?? string.Empty;
+            }
+            else
+            {
+                envelope["snapshotError"] = snapshotResult.ErrorMessage;
+            }
+        }
+
+        return new WebBrowseToolResult(envelope, result.Content ?? string.Empty, snapshotBody);
     }
 }

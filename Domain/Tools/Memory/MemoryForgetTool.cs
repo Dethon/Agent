@@ -4,7 +4,10 @@ using Domain.DTOs;
 
 namespace Domain.Tools.Memory;
 
-public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingService)
+public class MemoryForgetTool(
+    IMemoryStore store,
+    IEmbeddingService embeddingService,
+    FeatureConfig featureConfig)
 {
     private const int ContentPreviewLength = 100;
     private const int SearchLimit = 100;
@@ -26,24 +29,35 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
                                          """;
 
     public async Task<JsonNode> Run(
-        string userId,
         string? memoryId = null,
         string? query = null,
-        string? categories = null,
+        MemoryCategory[]? categories = null,
         string? tags = null,
         string? olderThan = null,
         double? maxImportance = null,
         string? reason = null,
         CancellationToken ct = default)
     {
+        var userId = featureConfig.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return ToolError.Create(
+                ToolError.Codes.Unavailable,
+                "Memory operations require an authenticated user context",
+                retryable: false);
+        }
+
         if (string.IsNullOrWhiteSpace(memoryId) && string.IsNullOrWhiteSpace(query))
         {
-            return CreateErrorResponse("Either memoryId or query must be provided");
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Either memoryId or query must be provided",
+                retryable: false);
         }
 
         var affectedMemories = !string.IsNullOrWhiteSpace(memoryId)
             ? await ForgetById(userId, memoryId, ct)
-            : await ForgetBySearch(userId, query!, ParseCategories(categories), ParseTags(tags),
+            : await ForgetBySearch(userId, query!, categories?.ToList(), ParseTags(tags),
                 ParseDate(olderThan), maxImportance, ct);
 
         return CreateSuccessResponse(affectedMemories, reason);
@@ -84,21 +98,6 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
         return affected.OfType<AffectedMemory>().ToList();
     }
 
-    private static List<MemoryCategory>? ParseCategories(string? categories)
-    {
-        if (string.IsNullOrWhiteSpace(categories))
-        {
-            return null;
-        }
-
-        return categories
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(c => Enum.TryParse<MemoryCategory>(c, ignoreCase: true, out var cat) ? cat : (MemoryCategory?)null)
-            .Where(c => c.HasValue)
-            .Select(c => c!.Value)
-            .ToList();
-    }
-
     private static List<string>? ParseTags(string? tags)
     {
         if (string.IsNullOrWhiteSpace(tags))
@@ -126,11 +125,6 @@ public class MemoryForgetTool(IMemoryStore store, IEmbeddingService embeddingSer
         return content.Length > ContentPreviewLength
             ? content[..ContentPreviewLength] + "..."
             : content;
-    }
-
-    private static JsonObject CreateErrorResponse(string message)
-    {
-        return new JsonObject { ["error"] = message };
     }
 
     private static JsonObject CreateSuccessResponse(List<AffectedMemory> affected, string? reason)

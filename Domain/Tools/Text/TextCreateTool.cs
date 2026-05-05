@@ -4,8 +4,6 @@ namespace Domain.Tools.Text;
 
 public class TextCreateTool(string vaultPath, string[] allowedExtensions)
 {
-    protected const string Name = "TextCreate";
-
     protected const string Description = """
                                          Creates a new text or markdown file in the vault.
 
@@ -53,7 +51,7 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
         var ext = Path.GetExtension(fullPath).ToLowerInvariant();
         if (!allowedExtensions.Contains(ext))
         {
-            throw new InvalidOperationException(
+            throw new ArgumentException(
                 $"File extension '{ext}' not allowed. Allowed: {string.Join(", ", allowedExtensions)}");
         }
     }
@@ -62,8 +60,8 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
     {
         if (File.Exists(fullPath))
         {
-            throw new InvalidOperationException(
-                $"File already exists: {originalPath}. Use TextEdit to modify existing files.");
+            throw new IOException(
+                $"File already exists: {originalPath}. Use the edit tool to modify existing files.");
         }
     }
 

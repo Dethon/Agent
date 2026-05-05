@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,7 @@ public class RequestApprovalToolTests
     {
         const string requests = """[{"toolName":"mcp__server__search","arguments":{"q":"test"}}]""";
 
-        var result = await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
+        var result = await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 
         result.ShouldBe("notified");
         _botClient.Verify(b => b.SendRequest(
@@ -47,7 +48,7 @@ public class RequestApprovalToolTests
     {
         const string requests = """[{"toolName":"mcp__a__search","arguments":{}},{"toolName":"mcp__b__write","arguments":{}}]""";
 
-        var result = await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
+        var result = await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 
         result.ShouldBe("notified");
         _botClient.Verify(b => b.SendRequest(
@@ -61,7 +62,7 @@ public class RequestApprovalToolTests
         const string requests = """[{"toolName":"mcp__server__delete","arguments":{"path":"/tmp/file"}}]""";
 
         var approvalTask = Task.Run(async () =>
-            await RequestApprovalTool.McpRun("100:100", "request", requests, _services));
+            await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
 
         // Give time for the approval to be registered
         await Task.Delay(200);
@@ -82,7 +83,7 @@ public class RequestApprovalToolTests
         const string requests = """[{"toolName":"tool","arguments":{}}]""";
 
         _ = Task.Run(async () =>
-            await RequestApprovalTool.McpRun("100:100", "request", requests, _services));
+            await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
 
         await Task.Delay(200);
 
@@ -109,7 +110,7 @@ public class RequestApprovalToolTests
 
         // Re-run with the setup
         var approvalTask2 = Task.Run(async () =>
-            await RequestApprovalTool.McpRun("100:100", "request", requests, _services));
+            await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
 
         await Task.Delay(300);
 
@@ -131,7 +132,7 @@ public class RequestApprovalToolTests
         const string requests = """[{"toolName":"tool","arguments":{}}]""";
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => RequestApprovalTool.McpRun("999:999", "notify", requests, _services));
+            () => RequestApprovalTool.McpRun("999:999", ApprovalMode.Notify, requests, _services));
     }
 
     [Fact]
@@ -139,7 +140,7 @@ public class RequestApprovalToolTests
     {
         const string requests = """[{"toolName":"mcp__very__long__prefix__actual_tool","arguments":{}}]""";
 
-        await RequestApprovalTool.McpRun("100:100", "notify", requests, _services);
+        await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 
         _botClient.Verify(b => b.SendRequest(
             It.Is<SendMessageRequest>(r => r.Text.Contains("actual_tool")),

@@ -112,7 +112,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__text_edit tool with filePath: /vault/edit-test.md, oldString: 'World', newString: 'Agent'. " +
+                "Use the domain__filesystem__text_edit tool with filePath: /vault/edit-test.md and edits: [{ oldString: 'World', newString: 'Agent' }]. " +
                 "IMPORTANT: the filePath argument MUST start with the mounted prefix /vault. " +
                 "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)

@@ -6,7 +6,7 @@ namespace Domain.Tools.Files;
 
 public class FileSearchTool(ISearchClient client, ISearchResultsManager searchResultsManager)
 {
-    protected const string Name = "FileSearch";
+    protected const string Name = "file_search";
 
     protected const string Description = """
                                          Search for a file in the internet using a multiple alternative search strings.

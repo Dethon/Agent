@@ -40,20 +40,18 @@ public class SubAgentRunTool(
 
         if (profile is null)
         {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["error"] = $"Unknown subagent: '{subAgentId}'. Available: {string.Join(", ", _profiles.Select(p => p.Id))}"
-            };
+            return ToolError.Create(
+                ToolError.Codes.NotFound,
+                $"Unknown subagent: '{subAgentId}'. Available: {string.Join(", ", _profiles.Select(p => p.Id))}",
+                retryable: false);
         }
 
         if (featureConfig.SubAgentFactory is null)
         {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["error"] = "Subagent execution is not available in this context"
-            };
+            return ToolError.Create(
+                ToolError.Codes.Unavailable,
+                "Subagent execution is not available in this context",
+                retryable: false);
         }
 
         try
@@ -74,13 +72,19 @@ public class SubAgentRunTool(
                 ["result"] = response.Text
             };
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return ToolError.Create(
+                ToolError.Codes.Timeout,
+                $"Subagent '{profile.Id}' exceeded its maximum execution time of {profile.MaxExecutionSeconds}s",
+                retryable: true);
+        }
         catch (Exception ex)
         {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["error"] = ex.Message
-            };
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                ex.Message,
+                retryable: true);
         }
     }
 }

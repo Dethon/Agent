@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Services;
@@ -52,7 +53,7 @@ public class StreamServiceTests : IDisposable
         var reader = channel.Subscribe();
 
         await _sut.WriteReplyAsync(new SendReplyParams
-        { ConversationId = "100:200", Content = "hello", ContentType = "text", IsComplete = false, MessageId = "msg-1" });
+        { ConversationId = "100:200", Content = "hello", ContentType = ReplyContentType.Text, IsComplete = false, MessageId = "msg-1" });
 
         var msg = await reader.ReadAsync();
         msg.Content.ShouldBe("hello");
@@ -66,7 +67,7 @@ public class StreamServiceTests : IDisposable
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
-        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
 
         _sut.IsStreaming("topic1").ShouldBeFalse();
     }
@@ -115,7 +116,7 @@ public class StreamServiceTests : IDisposable
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
-        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
 
         // Allow fire-and-forget to complete
         await Task.Delay(100);
@@ -135,7 +136,7 @@ public class StreamServiceTests : IDisposable
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
-        { ConversationId = "100:200", Content = "", ContentType = "stream_complete", IsComplete = true });
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
 
         // Allow fire-and-forget to complete
         await Task.Delay(100);
@@ -163,7 +164,7 @@ public class StreamServiceTests : IDisposable
         await _sut.WriteReplyAsync(new SendReplyParams
         {
             ConversationId = "100:200", Content = "done with download 1",
-            ContentType = "text", IsComplete = true, MessageId = "msg-1"
+            ContentType = ReplyContentType.Text, IsComplete = true, MessageId = "msg-1"
         });
 
         // Assert: stream should still be alive for second agent
@@ -173,7 +174,7 @@ public class StreamServiceTests : IDisposable
         await _sut.WriteReplyAsync(new SendReplyParams
         {
             ConversationId = "100:200", Content = "starting download 2",
-            ContentType = "text", IsComplete = false, MessageId = "msg-2"
+            ContentType = ReplyContentType.Text, IsComplete = false, MessageId = "msg-2"
         });
 
         // Read all messages: content from agent 1, IsComplete from agent 1, then content from agent 2
@@ -199,12 +200,12 @@ public class StreamServiceTests : IDisposable
         // Act: both agents complete
         await _sut.WriteReplyAsync(new SendReplyParams
         {
-            ConversationId = "100:200", Content = "", ContentType = "stream_complete",
+            ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete,
             IsComplete = true, MessageId = "msg-1"
         });
         await _sut.WriteReplyAsync(new SendReplyParams
         {
-            ConversationId = "100:200", Content = "", ContentType = "stream_complete",
+            ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete,
             IsComplete = true, MessageId = "msg-2"
         });
 

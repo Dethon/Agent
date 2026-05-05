@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools.FileSystem;
 
@@ -30,8 +31,8 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         int maxResults = 50,
         [Description("Lines of context around each match (default: 1)")]
         int contextLines = 1,
-        [Description("'content' or 'filesOnly' (default: 'content')")]
-        string outputMode = "content",
+        [Description("Return full content with context, or just the matching file paths")]
+        VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
         CancellationToken cancellationToken = default)
     {
         if (filePath is not null)
@@ -42,7 +43,15 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
                 maxResults, contextLines, outputMode, cancellationToken);
         }
 
-        var dirResolution = registry.Resolve(directoryPath ?? throw new ArgumentException("Either filePath or directoryPath must be provided"));
+        if (directoryPath is null)
+        {
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "Either filePath or directoryPath must be provided",
+                retryable: false);
+        }
+
+        var dirResolution = registry.Resolve(directoryPath);
         return await dirResolution.Backend.SearchAsync(
             query, regex, null, dirResolution.RelativePath, filePattern,
             maxResults, contextLines, outputMode, cancellationToken);

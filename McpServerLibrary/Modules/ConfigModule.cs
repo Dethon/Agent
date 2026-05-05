@@ -87,6 +87,7 @@ public static class ConfigModule
             // Filesystem backend tools
             .WithTools<FsGlobTool>()
             .WithTools<FsMoveTool>()
+            .WithTools<FsInfoTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>()
             // Resources

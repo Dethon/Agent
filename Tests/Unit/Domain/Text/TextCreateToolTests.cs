@@ -57,16 +57,16 @@ public class TextCreateToolTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_testDir, "existing.md"), "Old content");
 
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<IOException>(() =>
             _tool.TestRun("existing.md", "New content"));
         ex.Message.ShouldContain("already exists");
-        ex.Message.ShouldContain("TextEdit");
+        ex.Message.ShouldContain("edit tool");
     }
 
     [Fact]
     public void Run_DisallowedExtension_ThrowsException()
     {
-        var ex = Should.Throw<InvalidOperationException>(() =>
+        var ex = Should.Throw<ArgumentException>(() =>
             _tool.TestRun("script.ps1", "Get-Process"));
         ex.Message.ShouldContain("not allowed");
     }

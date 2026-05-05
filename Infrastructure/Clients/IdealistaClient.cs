@@ -1,8 +1,10 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
+using Domain.DTOs;
 using JetBrains.Annotations;
 
 namespace Infrastructure.Clients;
@@ -18,7 +20,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
     {
         await EnsureValidTokenAsync(ct);
 
-        var url = $"3.5/{query.Country}/search";
+        var url = $"3.5/{ToWire(query.Country)}/search";
         var content = BuildSearchContent(query);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -83,9 +85,9 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
     {
         var parameters = new Dictionary<string, string>
         {
-            ["country"] = query.Country,
-            ["operation"] = query.Operation,
-            ["propertyType"] = query.PropertyType
+            ["country"] = ToWire(query.Country),
+            ["operation"] = ToWire(query.Operation),
+            ["propertyType"] = ToWire(query.PropertyType)
         };
 
         AddIfNotNull(parameters, "center", query.Center);
@@ -97,8 +99,8 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         AddIfNotNull(parameters, "maxPrice", query.MaxPrice?.ToString());
         AddIfNotNull(parameters, "minPrice", query.MinPrice?.ToString());
         AddIfNotNull(parameters, "sinceDate", query.SinceDate);
-        AddIfNotNull(parameters, "order", query.Order);
-        AddIfNotNull(parameters, "sort", query.Sort);
+        AddIfNotNull(parameters, "order", query.Order is { } o ? ToCamelWire(o) : null);
+        AddIfNotNull(parameters, "sort", query.Sort is { } s ? ToWire(s) : null);
         AddIfNotNull(parameters, "hasMultimedia", query.HasMultimedia?.ToString().ToLowerInvariant());
 
         // Size filters
@@ -114,7 +116,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         AddIfTrue(parameters, "countryHouse", query.CountryHouse);
         AddIfNotNull(parameters, "bedrooms", query.Bedrooms);
         AddIfNotNull(parameters, "bathrooms", query.Bathrooms);
-        AddIfNotNull(parameters, "preservation", query.Preservation);
+        AddIfNotNull(parameters, "preservation", query.Preservation is { } p ? ToWire(p) : null);
         AddIfTrue(parameters, "newDevelopment", query.NewDevelopment);
         AddIfNotNull(parameters, "furnished", query.Furnished);
         AddIfTrue(parameters, "garage", query.Garage);
@@ -158,6 +160,12 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
 
         return new FormUrlEncodedContent(parameters);
     }
+
+    private static string ToWire<T>(T value) where T : struct, Enum
+        => JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
+
+    private static string ToCamelWire<T>(T value) where T : struct, Enum
+        => JsonNamingPolicy.CamelCase.ConvertName(value.ToString());
 
     private static void AddIfNotNull(Dictionary<string, string> parameters, string key, string? value)
     {

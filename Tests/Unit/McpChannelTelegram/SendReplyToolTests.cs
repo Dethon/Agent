@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,8 +32,8 @@ public class SendReplyToolTests
     [Fact]
     public async Task Run_WithNonTextContentType_ReturnsOkWithoutSending()
     {
-        var reasoningResult = await SendReplyTool.McpRun("100:100", "thinking...", "reasoning", false, null, _services);
-        var toolCallResult = await SendReplyTool.McpRun("100:100", """{"Name":"mcp__server__search","Arguments":{"query":"test"}}""", "tool_call", false, null, _services);
+        var reasoningResult = await SendReplyTool.McpRun("100:100", "thinking...", ReplyContentType.Reasoning, false, null, _services);
+        var toolCallResult = await SendReplyTool.McpRun("100:100", """{"Name":"mcp__server__search","Arguments":{"query":"test"}}""", ReplyContentType.ToolCall, false, null, _services);
 
         reasoningResult.ShouldBe("ok");
         toolCallResult.ShouldBe("ok");
@@ -46,7 +47,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("100:100", "partial text");
 
-        var result = await SendReplyTool.McpRun("100:100", "something broke", "error", false, null, _services);
+        var result = await SendReplyTool.McpRun("100:100", "something broke", ReplyContentType.Error, false, null, _services);
 
         result.ShouldBe("ok");
         // Two sends: one for accumulated text, one for error
@@ -60,7 +61,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("100:100", "full response");
 
-        var result = await SendReplyTool.McpRun("100:100", "", "stream_complete", true, null, _services);
+        var result = await SendReplyTool.McpRun("100:100", "", ReplyContentType.StreamComplete, true, null, _services);
 
         result.ShouldBe("ok");
         _botClient.Verify(b => b.SendRequest(
@@ -71,7 +72,7 @@ public class SendReplyToolTests
     [Fact]
     public async Task McpRun_TextNotComplete_AccumulatesWithoutSending()
     {
-        var result = await SendReplyTool.McpRun("100:100", "chunk1", "text", false, "msg-1", _services);
+        var result = await SendReplyTool.McpRun("100:100", "chunk1", ReplyContentType.Text, false, "msg-1", _services);
 
         result.ShouldBe("ok");
         _botClient.Verify(b => b.SendRequest(
@@ -84,7 +85,7 @@ public class SendReplyToolTests
     {
         _accumulator.Append("100:100", "chunk1");
 
-        var result = await SendReplyTool.McpRun("100:100", "chunk2", "text", true, "msg-1", _services);
+        var result = await SendReplyTool.McpRun("100:100", "chunk2", ReplyContentType.Text, true, "msg-1", _services);
 
         result.ShouldBe("ok");
         _botClient.Verify(b => b.SendRequest(
@@ -96,7 +97,7 @@ public class SendReplyToolTests
     public async Task McpRun_ForumThread_PassesThreadId()
     {
         // chatId:threadId where threadId != chatId means forum thread
-        var result = await SendReplyTool.McpRun("100:42", "hello", "text", true, null, _services);
+        var result = await SendReplyTool.McpRun("100:42", "hello", ReplyContentType.Text, true, null, _services);
         _accumulator.Append("100:42", "hello");
 
         result.ShouldBe("ok");
@@ -106,7 +107,7 @@ public class SendReplyToolTests
     public async Task McpRun_NonForumChat_PassesNullThreadId()
     {
         // chatId:threadId where threadId == chatId means non-forum
-        var result = await SendReplyTool.McpRun("100:100", "hello", "text", true, null, _services);
+        var result = await SendReplyTool.McpRun("100:100", "hello", ReplyContentType.Text, true, null, _services);
 
         result.ShouldBe("ok");
     }
@@ -115,13 +116,13 @@ public class SendReplyToolTests
     public async Task McpRun_UnknownChat_ThrowsInvalidOperation()
     {
         await Should.ThrowAsync<InvalidOperationException>(
-            () => SendReplyTool.McpRun("999:999", "hello", "text", true, null, _services));
+            () => SendReplyTool.McpRun("999:999", "hello", ReplyContentType.Text, true, null, _services));
     }
 
     [Fact]
     public async Task McpRun_StreamComplete_NoAccumulated_DoesNotSend()
     {
-        var result = await SendReplyTool.McpRun("100:100", "", "stream_complete", true, null, _services);
+        var result = await SendReplyTool.McpRun("100:100", "", ReplyContentType.StreamComplete, true, null, _services);
 
         result.ShouldBe("ok");
         _botClient.Verify(b => b.SendRequest(

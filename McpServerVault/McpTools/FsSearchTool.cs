@@ -14,7 +14,6 @@ public class FsSearchTool(McpSettings settings)
     [McpServerTool(Name = "fs_search")]
     [Description(Description)]
     public CallToolResult McpRun(
-        string filesystem,
         string query,
         bool regex = false,
         string? path = null,

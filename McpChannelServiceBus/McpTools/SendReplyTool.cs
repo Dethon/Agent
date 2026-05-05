@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelServiceBus.Services;
 using ModelContextProtocol.Server;
@@ -13,7 +14,7 @@ public sealed class SendReplyTool
     public static async Task<string> McpRun(
         [Description("Conversation ID (correlationId)")] string conversationId,
         [Description("Response content")] string content,
-        [Description("Content type: text, reasoning, tool_call, error, stream_complete")] string contentType,
+        [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
@@ -32,12 +33,12 @@ public sealed class SendReplyTool
 
         switch (p.ContentType)
         {
-            case "reasoning":
-            case "tool_call":
+            case ReplyContentType.Reasoning:
+            case ReplyContentType.ToolCall:
                 // ServiceBus doesn't need intermediate updates
                 return "ok";
 
-            case "error":
+            case ReplyContentType.Error:
                 var errorContent = accumulator.Flush(p.ConversationId);
                 var errorMessage = string.IsNullOrEmpty(errorContent)
                     ? p.Content
@@ -45,7 +46,7 @@ public sealed class SendReplyTool
                 await responseSender.SendResponseAsync(p.ConversationId, errorMessage);
                 return "ok";
 
-            case "stream_complete":
+            case ReplyContentType.StreamComplete:
                 var accumulated = accumulator.Flush(p.ConversationId);
                 if (!string.IsNullOrEmpty(accumulated))
                 {
@@ -54,7 +55,6 @@ public sealed class SendReplyTool
                 return "ok";
 
             default:
-                // "text" or unknown — accumulate
                 accumulator.Append(p.ConversationId, p.Content);
 
                 if (p.IsComplete)

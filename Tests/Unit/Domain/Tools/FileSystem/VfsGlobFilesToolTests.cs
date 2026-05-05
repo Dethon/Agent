@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -23,10 +24,10 @@ public class GlobFilesToolTests
         var expected = new JsonObject { ["files"] = new JsonArray("a.md", "b.md") };
         _registry.Setup(r => r.Resolve("/library"))
             .Returns(new FileSystemResolution(_backend.Object, ""));
-        _backend.Setup(b => b.GlobAsync("", "**/*.md", "files", It.IsAny<CancellationToken>()))
+        _backend.Setup(b => b.GlobAsync("", "**/*.md", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
-        var result = await _tool.RunAsync("/library", "**/*.md", "files", cancellationToken: CancellationToken.None);
+        var result = await _tool.RunAsync("/library", "**/*.md", VfsGlobMode.Files, cancellationToken: CancellationToken.None);
 
         result.ShouldBe(expected);
     }
@@ -37,10 +38,10 @@ public class GlobFilesToolTests
         var expected = new JsonObject { ["directories"] = new JsonObject() };
         _registry.Setup(r => r.Resolve("/vault/docs"))
             .Returns(new FileSystemResolution(_backend.Object, "docs"));
-        _backend.Setup(b => b.GlobAsync("docs", "*", "directories", It.IsAny<CancellationToken>()))
+        _backend.Setup(b => b.GlobAsync("docs", "*", VfsGlobMode.Directories, It.IsAny<CancellationToken>()))
             .ReturnsAsync(expected);
 
-        var result = await _tool.RunAsync("/vault/docs", "*", "directories", cancellationToken: CancellationToken.None);
+        var result = await _tool.RunAsync("/vault/docs", "*", VfsGlobMode.Directories, cancellationToken: CancellationToken.None);
 
         result.ShouldBe(expected);
     }

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
@@ -18,7 +19,7 @@ public sealed class RequestApprovalTool
     [Description("Request tool approval from user or notify about auto-approved tools")]
     public static async Task<string> McpRun(
         [Description("Conversation ID in format chatId:threadId")] string conversationId,
-        [Description("Mode: request (interactive) or notify (fire-and-forget)")] string mode,
+        [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
         IServiceProvider services)
     {
@@ -38,7 +39,7 @@ public sealed class RequestApprovalTool
         var toolRequests = JsonSerializer.Deserialize<List<ToolRequest>>(p.Requests,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
 
-        if (p.Mode == "notify")
+        if (p.Mode == ApprovalMode.Notify)
         {
             var toolNames = toolRequests.Select(r => r.ToolName.Split("__").Last());
             var message = $"\u2705 Auto-approved: {string.Join(", ", toolNames)}";

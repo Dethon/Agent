@@ -7,7 +7,7 @@ namespace Domain.Tools.Downloads;
 
 public class GetDownloadStatusTool(IDownloadClient client, ISearchResultsManager searchResultsManager)
 {
-    protected const string Name = "GetDownloadStatus";
+    protected const string Name = "download_status";
 
     protected const string Description = """
                                          Returns the status of download referenced by DownloadId.

@@ -192,17 +192,19 @@ public class ToolApprovalChatClientMetricsTests
     }
 
     [Fact]
-    public async Task InvokeFunctionAsync_DomainToolReturnsStatusError_PublishesFailureEvent()
+    public async Task InvokeFunctionAsync_DomainToolReturnsErrorEnvelope_PublishesFailureEvent()
     {
         // Arrange
         var publisher = new Mock<IMetricsPublisher>();
         var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
 
-        // Simulate a domain tool (like SubAgentRunTool) returning JsonObject with status: "error"
+        // Simulate a domain tool (like SubAgentRunTool) returning the standard error envelope
         var errorResult = new JsonObject
         {
-            ["status"] = "error",
-            ["error"] = "Unknown subagent: 'invalid'"
+            ["ok"] = false,
+            ["errorCode"] = "not_found",
+            ["message"] = "Unknown subagent: 'invalid'",
+            ["retryable"] = false
         };
         var function = AIFunctionFactory.Create(() => errorResult, "run_subagent");
 

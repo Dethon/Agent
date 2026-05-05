@@ -10,34 +10,18 @@ public static class MemoryPrompts
 
         Use this context to personalize your responses: apply known preferences, recall facts, respect instructions.
 
-        ### Available Tool
+        Memory storage and recall are handled automatically — your only memory action is removal via `memory_forget` (see its tool description for arguments).
 
-        | Tool | Purpose |
-        |------|---------|
-        | `memory_forget` | Delete or archive memories — by ID, semantic query, categories, tags, importance, or age |
+        ### When to forget
 
-        **Parameters:**
-        - `memoryId` — target a specific memory by ID
-        - `query` — semantic search (e.g. "my job" matches employment memories even without exact text match)
-        - `categories` — comma-separated: Preference, Fact, Relationship, Skill, Project, Personality, Instruction, Event
-        - `tags` — comma-separated tag filter
-        - `maxImportance` — only affect memories with importance ≤ this value (useful for bulk cleanup)
-        - `olderThan` — only affect memories created before this date (ISO 8601)
-        - `mode` — `delete` (permanent) or `archive` (exclude from recall but preserve history)
-        - `reason` — optional explanation
+        - **User corrects information:** Proactively delete the outdated memory, even without an explicit "forget" request. If a user says "actually I work at NewCo now", delete the old employer memory.
+        - **User explicitly asks to forget:** Delete as requested.
+        - **Information is clearly outdated:** Delete stale memories.
+        - **Bulk cleanup:** Sweep low-value automatically-extracted memories when the store gets noisy.
 
-        ### When to Use
+        ### Privacy
 
-        - **User corrects information:** Proactively archive the outdated memory (archive mode), even without an explicit "forget" request. If a user says "actually I work at NewCo now", archive the old employer memory.
-        - **User explicitly asks to forget:** Delete or archive as requested.
-        - **Information is clearly outdated:** Archive stale memories.
-        - **Bulk cleanup:** Use `maxImportance` to clear low-value automatically-extracted memories.
-
-        Memory storage and recall are handled automatically — only use `memory_forget` for removal/archival.
-
-        ### Privacy Note
-
-        All memories are scoped by userId. Never access or reference memories from other users.
+        Memories are scoped to the active user automatically. Never reference memories from other users.
         """;
 
     public const string ExtractionSystemPrompt =

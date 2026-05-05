@@ -33,7 +33,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = "",
             ["command"] = "python3 -c 'print(2+2)'"
         }, cancellationToken: cts.Token);
@@ -55,7 +54,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
         // Write hello.py via fs_create
         await client.CallToolAsync("fs_create", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = Path.Combine(relHome, "hello.py"),
             ["content"] = "print('hi from agent')",
             ["overwrite"] = true,
@@ -65,7 +63,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
         // Run it via fs_exec
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = relHome,
             ["command"] = "python3 hello.py"
         }, cancellationToken: cts.Token);
@@ -83,7 +80,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = "",
             ["command"] = "false"
         }, cancellationToken: cts.Token);
@@ -101,7 +97,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = "",
             ["command"] = "sleep 30",
             ["timeoutSeconds"] = 1
@@ -119,7 +114,6 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = "",
             ["command"] = "yes a | head -c 200000"
         }, cancellationToken: cts.Token);
@@ -136,13 +130,12 @@ public class McpAgentSandboxTests(McpSandboxServerFixture fixture) : IClassFixtu
 
         var result = await client.CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = "sandbox",
             ["path"] = "this/does/not/exist",
             ["command"] = "echo hi"
         }, cancellationToken: cts.Token);
 
         using var json = ParseToolJson(result);
-        json.RootElement.GetProperty("error").GetBoolean().ShouldBeTrue();
+        json.RootElement.GetProperty("ok").GetBoolean().ShouldBeFalse();
     }
 
     [SkippableFact]

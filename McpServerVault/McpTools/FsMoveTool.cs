@@ -16,7 +16,6 @@ public class FsMoveTool(
     [McpServerTool(Name = "fs_move")]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        string filesystem,
         string sourcePath,
         string destinationPath,
         CancellationToken cancellationToken = default)

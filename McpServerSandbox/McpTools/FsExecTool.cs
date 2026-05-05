@@ -13,7 +13,6 @@ public class FsExecTool(ICommandRunner runner) : ExecTool(runner)
     [McpServerTool(Name = "fs_exec")]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        string filesystem,
         string path,
         string command,
         int? timeoutSeconds = null,

@@ -14,7 +14,6 @@ public class FsReadTool(McpSettings settings)
     [McpServerTool(Name = "fs_read")]
     [Description(Description)]
     public CallToolResult McpRun(
-        string filesystem,
         string path,
         int? offset = null,
         int? limit = null)

@@ -30,7 +30,7 @@ public static class VaultPrompt
 
         ### Placing new notes
 
-        - **Survey before you create.** Before the first `domain__filesystem__create` in a vault session, run a `domain__filesystem__glob` for `*` and `*/` at the vault root to learn the user's top-level folders. Cache that mental map for the rest of the turn — don't re-glob for every note.
+        - **Survey before you create.** Before creating the first note in a vault session, glob the vault root for top-level folders (and any obvious sub-folders for the topic). Cache that mental map for the rest of the turn — don't re-glob for every note.
         - **Fit into the existing tree.** Pick the deepest existing folder whose topic matches the note. A note about a recipe goes under the user's existing `Cooking/` (or `Recipes/`, or whatever they call it), not at the root. Match the user's naming style (casing, spaces vs. hyphens, language) when picking a filename.
         - **Don't dump at the root.** The vault root is reserved for the user's own top-level notes and folder structure. Only place a note there if it genuinely belongs at the top level (e.g. an index/MOC) or if the vault has no folder structure at all.
         - **Don't invent new top-level folders silently.** If nothing in the existing tree fits, ask the user where the note should live (or whether to create a new folder for it) before creating. A one-off "Misc" or "Inbox" folder is a smell — prefer asking.
@@ -38,16 +38,16 @@ public static class VaultPrompt
 
         ### Editing rules
 
-        - **Read before you edit.** Always `domain__filesystem__read` the file first to see the existing structure (frontmatter, headings, callouts, links).
-        - **Use `text_edit`, not whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
+        - **Read before you edit.** Always read the file first to see the existing structure (frontmatter, headings, callouts, links).
+        - **Prefer surgical edits over whole-file rewrites.** Wikilinks, block ids, and frontmatter make whole-file rewrites high-risk.
         - **Headings are referenceable.** Other notes may link to `[[ThisNote#Some Heading]]`. Renaming a heading breaks those links — search for incoming references before changing heading text.
         - **Attachments stay where they are.** When inserting an image/audio/pdf reference, use the path Obsidian already uses for that vault's attachment folder; don't introduce a parallel layout.
         - **Daily notes** (commonly `Daily/YYYY-MM-DD.md` or similar) are managed by the Daily Notes core plugin. Append to them rather than restructuring them.
 
         ### Capabilities & limits
 
-        - All standard filesystem ops are supported: `read`, `create`, `edit`, `glob`, `search`, `move`, `remove`. **`exec` is not available** on the vault — use the sandbox if you need to run a script over vault content (copy the file across first; the two filesystems do not share storage).
-        - Writes are restricted to the configured allowed extensions (`.md`, `.txt`, `.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.conf`, `.cfg`). Attempts to create files with other extensions return an error envelope.
+        - The vault supports the standard filesystem operations except command execution. If you need to run a script over vault content, use the sandbox (copy the file across first; the two filesystems do not share storage).
+        - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error tells you which extensions are accepted — pick one rather than guessing.
         - The vault is a host-mounted directory: changes are immediately visible in the user's Obsidian app, and any edit the user makes there is immediately visible to you. Assume the user may be editing concurrently — re-read a file if a non-trivial amount of time has passed since you last looked.
         - There is no built-in versioning. Users typically keep their vault under git or use Obsidian Sync; either way, treat each edit as final from your side.
         """;

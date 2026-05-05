@@ -52,7 +52,7 @@ public class RemoveToolTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Run_WithPathContainingDoubleDot_ThrowsInvalidOperationException(bool isAbsolute)
+    public async Task Run_WithPathContainingDoubleDot_ThrowsArgumentException(bool isAbsolute)
     {
         // Arrange
         var tool = CreateTool();
@@ -61,7 +61,7 @@ public class RemoveToolTests
             : Path.Combine("..", "etc", "passwd");
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
+        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
             await tool.TestRun(maliciousPath, CancellationToken.None));
 
         exception.Message.ShouldContain("must not contain '..'");
@@ -70,7 +70,7 @@ public class RemoveToolTests
     }
 
     [Fact]
-    public async Task Run_WithPathOutsideLibrary_ThrowsInvalidOperationException()
+    public async Task Run_WithPathOutsideLibrary_ThrowsArgumentException()
     {
         // Arrange
         var tool = CreateTool();
@@ -79,7 +79,7 @@ public class RemoveToolTests
             : "/other/folder/file.txt";
 
         // Act & Assert
-        var exception = await Should.ThrowAsync<InvalidOperationException>(async () =>
+        var exception = await Should.ThrowAsync<ArgumentException>(async () =>
             await tool.TestRun(outsidePath, CancellationToken.None));
 
         exception.Message.ShouldContain("must be within the library");

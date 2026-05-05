@@ -16,7 +16,6 @@ public class FsDeleteTool(
     [McpServerTool(Name = "fs_delete")]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        string filesystem,
         string path,
         CancellationToken cancellationToken = default)
     {

@@ -6,13 +6,11 @@ namespace Domain.Tools.Text;
 public class TextSearchTool(string vaultPath, string[] allowedExtensions)
     : TextToolBase(vaultPath, allowedExtensions)
 {
-    protected const string Name = "TextSearch";
-
     protected const string Description = """
                                          Searches for text across files in the vault, or within a single file.
 
                                          Returns matching files with line numbers and context.
-                                         To modify matching content, use TextEdit with a text target.
+                                         To modify matching content, use the edit tool with a text target.
 
                                          Parameters:
                                          - query: Text or regex pattern to search for

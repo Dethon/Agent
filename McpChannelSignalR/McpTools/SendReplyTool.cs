@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
 using ModelContextProtocol.Server;
@@ -13,7 +14,7 @@ public sealed class SendReplyTool
     public static async Task<string> McpRun(
         [Description("Conversation ID")] string conversationId,
         [Description("Response content")] string content,
-        [Description("Content type: text, reasoning, tool_call, error, stream_complete")] string contentType,
+        [Description("Kind of chunk being sent")] ReplyContentType contentType,
         [Description("Whether this is the final chunk")] bool isComplete,
         [Description("Message ID for grouping related chunks into bubbles")] string? messageId,
         IServiceProvider services)

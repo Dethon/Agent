@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools.FileSystem;
 
@@ -22,8 +23,8 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         string basePath,
         [Description("Glob pattern (e.g., **/*.md)")]
         string pattern,
-        [Description("'files' or 'directories'")]
-        string mode = "directories",
+        [Description("Whether to match files or directories")]
+        VfsGlobMode mode = VfsGlobMode.Directories,
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(basePath);

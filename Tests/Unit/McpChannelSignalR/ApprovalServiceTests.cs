@@ -43,7 +43,7 @@ public class ApprovalServiceTests : IDisposable
             new ToolApprovalRequest("msg-1", "mcp__server__tool", new Dictionary<string, object?> { ["key"] = "val" }));
 
         var approvalTask = _sut.RequestApprovalAsync(
-            new RequestApprovalParams { ConversationId = "100:200", Mode = "request", Requests = requests });
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
         var pending = _sut.GetPendingApprovalForTopic("topic1");
         pending.ShouldNotBeNull();
@@ -65,7 +65,7 @@ public class ApprovalServiceTests : IDisposable
             new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>()));
 
         var approvalTask = _sut.RequestApprovalAsync(
-            new RequestApprovalParams { ConversationId = "100:200", Mode = "request", Requests = requests });
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
         var pending = _sut.GetPendingApprovalForTopic("topic1");
         await _sut.RespondToApprovalAsync(pending!.ApprovalId, "rejected");
@@ -84,7 +84,7 @@ public class ApprovalServiceTests : IDisposable
             new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>()));
 
         var approvalTask = _sut.RequestApprovalAsync(
-            new RequestApprovalParams { ConversationId = "100:200", Mode = "request", Requests = requests });
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
         _sut.CancelPendingApprovalsForTopic("topic1");
 
@@ -103,7 +103,7 @@ public class ApprovalServiceTests : IDisposable
             new ToolApprovalRequest("msg-1", "search", new Dictionary<string, object?> { ["q"] = "test" }));
 
         await _sut.NotifyAutoApprovedAsync(
-            new RequestApprovalParams { ConversationId = "100:200", Mode = "notify", Requests = requests });
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Notify, Requests = requests });
 
         var msg = await reader.ReadAsync();
         msg.ToolCalls.ShouldNotBeNullOrEmpty();

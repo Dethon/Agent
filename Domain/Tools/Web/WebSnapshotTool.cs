@@ -3,23 +3,25 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Web;
 
+public record WebSnapshotToolResult(JsonNode Envelope, string? Body);
+
 public class WebSnapshotTool(IWebBrowser browser)
 {
-    protected const string Name = "WebSnapshot";
+    protected const string Name = "web_snapshot";
 
     protected const string Description =
         """
         Returns the accessibility tree showing all elements: headings, text, buttons,
         links, form fields, dropdowns, and their current state.
 
-        Each interactive element has a ref you use with WebAction to interact with it.
+        Each interactive element has a ref you use with web_action to interact with it.
 
         Use this to understand page state and find elements before interacting.
-        Call after WebBrowse to see interactive elements, or after WebAction when the
+        Call after web_browse to see interactive elements, or after web_action when the
         diff response isn't enough context.
         """;
 
-    protected async Task<JsonNode> RunAsync(
+    protected async Task<WebSnapshotToolResult> RunAsync(
         string sessionId,
         string? selector,
         CancellationToken ct)
@@ -29,21 +31,22 @@ public class WebSnapshotTool(IWebBrowser browser)
 
         if (result.ErrorMessage is not null)
         {
-            return new JsonObject
-            {
-                ["status"] = "error",
-                ["sessionId"] = result.SessionId,
-                ["message"] = result.ErrorMessage
-            };
+            var error = ToolError.Create(
+                ToolError.Codes.InternalError,
+                result.ErrorMessage,
+                retryable: false);
+            error["sessionId"] = result.SessionId;
+            return new WebSnapshotToolResult(error, null);
         }
 
-        return new JsonObject
+        var envelope = new JsonObject
         {
             ["status"] = "success",
             ["sessionId"] = result.SessionId,
             ["url"] = result.Url,
-            ["snapshot"] = result.Snapshot,
             ["refCount"] = result.RefCount
         };
+
+        return new WebSnapshotToolResult(envelope, result.Snapshot ?? string.Empty);
     }
 }

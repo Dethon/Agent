@@ -49,7 +49,10 @@ public class ScheduleCreateTool(
         var agentDefinition = agentProvider.GetById(agentId);
         if (agentDefinition is null)
         {
-            return new JsonObject { ["error"] = $"Agent '{agentId}' not found" };
+            return ToolError.Create(
+                ToolError.Codes.NotFound,
+                $"Agent '{agentId}' not found",
+                retryable: false);
         }
 
         var nextRunAt = CalculateNextRunAt(cronExpression, runAt);
@@ -81,27 +84,27 @@ public class ScheduleCreateTool(
     {
         if (string.IsNullOrWhiteSpace(agentId))
         {
-            return new JsonObject { ["error"] = "agentId is required" };
+            return ToolError.Create(ToolError.Codes.InvalidArgument, "agentId is required", retryable: false);
         }
 
         if (cronExpression is null && runAt is null)
         {
-            return new JsonObject { ["error"] = "Either cronExpression or runAt must be provided" };
+            return ToolError.Create(ToolError.Codes.InvalidArgument, "Either cronExpression or runAt must be provided", retryable: false);
         }
 
         if (cronExpression is not null && runAt is not null)
         {
-            return new JsonObject { ["error"] = "Provide only cronExpression OR runAt, not both" };
+            return ToolError.Create(ToolError.Codes.InvalidArgument, "Provide only cronExpression OR runAt, not both", retryable: false);
         }
 
         if (cronExpression is not null && !cronValidator.IsValid(cronExpression))
         {
-            return new JsonObject { ["error"] = $"Invalid cron expression: {cronExpression}" };
+            return ToolError.Create(ToolError.Codes.InvalidArgument, $"Invalid cron expression: {cronExpression}", retryable: false);
         }
 
         if (runAt is not null && runAt <= DateTime.UtcNow)
         {
-            return new JsonObject { ["error"] = "runAt must be in the future" };
+            return ToolError.Create(ToolError.Codes.InvalidArgument, "runAt must be in the future", retryable: false);
         }
 
         return null;

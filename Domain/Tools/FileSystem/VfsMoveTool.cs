@@ -27,11 +27,14 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
 
         if (sourceResolution.Backend != destResolution.Backend)
         {
-            throw new InvalidOperationException(
+            return ToolError.Create(
+                ToolError.Codes.CrossFilesystem,
                 $"Cannot move between different filesystems. " +
                 $"Source is on '{sourceResolution.Backend.FilesystemName}', " +
                 $"destination is on '{destResolution.Backend.FilesystemName}'. " +
-                $"Both paths must be on the same filesystem.");
+                $"Both paths must be on the same filesystem.",
+                retryable: false,
+                hint: "Copy the file across mounts manually (read from source, create at destination), then remove the source.");
         }
 
         return await sourceResolution.Backend.MoveAsync(

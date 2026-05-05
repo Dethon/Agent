@@ -7,8 +7,6 @@ namespace Domain.Tools.Files;
 
 public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
-    protected const string Name = "GlobFiles";
-
     protected const string Description = """
                                          Searches for files or directories matching a glob pattern relative to the library root.
                                          Supports * (single segment), ** (recursive), and ? (single char).

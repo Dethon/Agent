@@ -20,8 +20,8 @@ public class McpWebSearchTool(IWebSearchClient searchClient)
         int maxResults = 10,
         [Description("Limit search to specific domain (e.g., 'imdb.com', 'wikipedia.org')")]
         string? site = null,
-        [Description("Filter by recency: 'day', 'week', 'month', 'year'")]
-        string? dateRange = null,
+        [Description("Filter results by recency window")]
+        DateRange? dateRange = null,
         CancellationToken ct = default)
     {
         var result = await RunAsync(query, maxResults, site, dateRange, ct);

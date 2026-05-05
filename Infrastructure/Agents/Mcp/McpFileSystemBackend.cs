@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
+using Domain.Tools;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -13,7 +15,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_read", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["offset"] = offset,
             ["limit"] = limit
@@ -24,7 +25,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_create", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["content"] = content,
             ["overwrite"] = overwrite,
@@ -32,35 +32,35 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
-    public async Task<JsonNode> EditAsync(string path, string oldString, string newString, bool replaceAll, CancellationToken ct)
+    public async Task<JsonNode> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         return await CallToolAsync("fs_edit", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
-            ["oldString"] = oldString,
-            ["newString"] = newString,
-            ["replaceAll"] = replaceAll
+            ["edits"] = edits.Select(e => new Dictionary<string, object?>
+            {
+                ["oldString"] = e.OldString,
+                ["newString"] = e.NewString,
+                ["replaceAll"] = e.ReplaceAll
+            }).ToList()
         }, ct);
     }
 
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, string mode, CancellationToken ct)
+    public async Task<JsonNode> GlobAsync(string basePath, string pattern, VfsGlobMode mode, CancellationToken ct)
     {
         return await CallToolAsync("fs_glob", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["basePath"] = basePath,
             ["pattern"] = pattern,
-            ["mode"] = mode
+            ["mode"] = mode.ToString()
         }, ct);
     }
 
     public async Task<JsonNode> SearchAsync(string query, bool regex, string? path, string? directoryPath,
-        string? filePattern, int maxResults, int contextLines, string outputMode, CancellationToken ct)
+        string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
         return await CallToolAsync("fs_search", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["query"] = query,
             ["regex"] = regex,
             ["path"] = path,
@@ -68,7 +68,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             ["filePattern"] = filePattern,
             ["maxResults"] = maxResults,
             ["contextLines"] = contextLines,
-            ["outputMode"] = outputMode
+            ["outputMode"] = outputMode.ToString()
         }, ct);
     }
 
@@ -76,7 +76,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_move", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath
         }, ct);
@@ -86,7 +85,14 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_delete", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
+            ["path"] = path
+        }, ct);
+    }
+
+    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
+    {
+        return await CallToolAsync("fs_info", new Dictionary<string, object?>
+        {
             ["path"] = path
         }, ct);
     }
@@ -95,7 +101,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["command"] = command,
             ["timeoutSeconds"] = timeoutSeconds
@@ -111,31 +116,35 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return new JsonObject
-            {
-                ["error"] = true,
-                ["message"] = $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
-                              $"This tool is not available on this filesystem backend. Details: {ex.Message}"
-            };
-        }
-
-        if (result.IsError == true)
-        {
-            var errorText = string.Join("\n", result.Content
-                .OfType<TextContentBlock>()
-                .Select(c => c.Text));
-            return new JsonObject
-            {
-                ["error"] = true,
-                ["message"] = $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {errorText}"
-            };
+            // Client-side dispatch failure: the call never reached the server's
+            // AddCallToolFilter (e.g. tool not registered, schema mismatch, transport error).
+            // Server-side rejections arrive as result.IsError=true with an envelope payload
+            // and are handled below.
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"The '{filesystemName}' filesystem does not support the '{toolName}' operation. " +
+                $"This tool is not available on this filesystem backend. Details: {ex.Message}",
+                retryable: false,
+                hint: "Pick a different mount or a different operation.");
         }
 
         var text = string.Join("\n", result.Content
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
 
-        return JsonNode.Parse(text)
+        var parsed = JsonNode.Parse(text);
+
+        if (result.IsError == true)
+        {
+            return parsed is JsonObject envelope && envelope["ok"] is JsonValue
+                ? envelope
+                : ToolError.Create(
+                    ToolError.Codes.InternalError,
+                    $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {text}",
+                    retryable: false);
+        }
+
+        return parsed
             ?? throw new InvalidOperationException($"Failed to parse response from {toolName}");
     }
 }

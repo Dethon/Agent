@@ -161,7 +161,7 @@ The agent exposes a unified virtual filesystem across MCP servers. Each MCP serv
 
 ### Web Browsing Architecture
 
-Web browsing runs in McpServerWebSearch via three tools: `WebBrowse` (navigate + extract content), `WebSnapshot` (capture accessibility tree with interactive element refs), and `WebAction` (interact with elements by ref — click, type, fill, select, etc.). The browser backend is `PlaywrightWebBrowser` connecting to Camoufox via WebSocket. `AccessibilitySnapshotService` injects JavaScript to traverse the DOM, infer ARIA roles, and assign unique refs (`e-1`, `e-2`, …) to interactive elements. `BrowserSessionManager` keeps pages alive per session with cookie persistence. `ModalDismisser` auto-closes common popups (cookie banners, newsletters, age gates).
+Web browsing runs in McpServerWebSearch via three tools: `web_browse` (navigate + extract content), `web_snapshot` (capture accessibility tree with interactive element refs), and `web_action` (interact with elements by ref — click, type, fill, select, etc.). The browser backend is `PlaywrightWebBrowser` connecting to Camoufox via WebSocket. `AccessibilitySnapshotService` injects JavaScript to traverse the DOM, infer ARIA roles, and assign unique refs (`e-1`, `e-2`, …) to interactive elements. `BrowserSessionManager` keeps pages alive per session with cookie persistence. `ModalDismisser` auto-closes common popups (cookie banners, newsletters, age gates).
 
 ### Camoufox
 

@@ -16,7 +16,6 @@ public class FsGlobTool(
     [McpServerTool(Name = "fs_glob")]
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
-        string filesystem,
         string pattern,
         string mode = "directories",
         string basePath = "",

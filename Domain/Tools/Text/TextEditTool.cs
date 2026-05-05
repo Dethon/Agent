@@ -1,75 +1,98 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 
 namespace Domain.Tools.Text;
 
 public class TextEditTool(string vaultPath, string[] allowedExtensions)
     : TextToolBase(vaultPath, allowedExtensions)
 {
-    protected const string Name = "TextEdit";
-
     protected const string Description = """
-                                         Edits a text file by replacing exact string matches.
+                                         Edits a text file by applying a non-empty list of edits in order, atomically.
 
                                          Parameters:
                                          - filePath: Path to file (absolute or relative to vault)
-                                         - oldString: Exact text to find (case-sensitive)
-                                         - newString: Replacement text
-                                         - replaceAll: Replace all occurrences (default: false)
+                                         - edits: Ordered list of edits. Each edit has:
+                                           - oldString: Exact text to find (case-sensitive)
+                                           - newString: Replacement text
+                                           - replaceAll: Replace all occurrences (default: false)
 
-                                         When replaceAll is false, oldString must appear exactly once.
-                                         If multiple occurrences are found, the tool fails with the count — provide more surrounding context in oldString to disambiguate.
+                                         Edits are applied sequentially against the running file contents — edit N sees the result of edits 1…N-1.
+                                         If any edit fails (oldString not found, or multiple matches without replaceAll), the file is not written.
+
+                                         When replaceAll is false, oldString must appear exactly once at that point in the sequence.
+                                         If multiple occurrences are found, the tool fails — provide more surrounding context in oldString to disambiguate.
 
                                          Insert: include surrounding context in oldString, add new lines in newString.
                                          Delete: include content in oldString, omit it from newString.
                                          """;
 
-    protected JsonNode Run(string filePath, string oldString, string newString, bool replaceAll = false)
+    protected JsonNode Run(string filePath, IReadOnlyList<TextEdit> edits)
     {
+        ArgumentNullException.ThrowIfNull(edits);
+        if (edits.Count == 0)
+        {
+            throw new ArgumentException("edits must contain at least one entry.", nameof(edits));
+        }
+
         var fullPath = ValidateAndResolvePath(filePath);
         var content = File.ReadAllText(fullPath);
 
-        var positions = FindAllOccurrences(content, oldString);
+        var perEditResults = new JsonArray();
+        var totalReplaced = 0;
 
-        if (positions.Count == 0)
+        foreach (var edit in edits)
         {
-            var suggestion = FindCaseInsensitiveSuggestion(content, oldString);
-            if (suggestion is not null)
+            var positions = FindAllOccurrences(content, edit.OldString);
+
+            if (positions.Count == 0)
             {
-                throw new InvalidOperationException(
-                    $"Text '{Truncate(oldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?");
+                var suggestion = FindCaseInsensitiveSuggestion(content, edit.OldString);
+                if (suggestion is not null)
+                {
+                    throw new ArgumentException(
+                        $"Text '{Truncate(edit.OldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?");
+                }
+
+                throw new ArgumentException($"Text '{Truncate(edit.OldString, 100)}' not found in file.");
             }
 
-            throw new InvalidOperationException($"Text '{Truncate(oldString, 100)}' not found in file.");
+            if (!edit.ReplaceAll && positions.Count > 1)
+            {
+                throw new ArgumentException(
+                    $"Found {positions.Count} occurrences of the specified text. Provide more surrounding context in oldString to disambiguate, or set replaceAll=true.");
+            }
+
+            var firstPosition = positions[0];
+            content = edit.ReplaceAll
+                ? content.Replace(edit.OldString, edit.NewString, StringComparison.Ordinal)
+                : ReplaceFirst(content, edit.OldString, edit.NewString, firstPosition);
+
+            var replacedCount = edit.ReplaceAll ? positions.Count : 1;
+            totalReplaced += replacedCount;
+
+            var (startLine, endLine) = ComputeAffectedLines(content, firstPosition, edit.NewString.Length);
+
+            perEditResults.Add(new JsonObject
+            {
+                ["occurrencesReplaced"] = replacedCount,
+                ["affectedLines"] = new JsonObject
+                {
+                    ["start"] = startLine,
+                    ["end"] = endLine
+                }
+            });
         }
-
-        if (!replaceAll && positions.Count > 1)
-        {
-            throw new InvalidOperationException(
-                $"Found {positions.Count} occurrences of the specified text. Provide more surrounding context in oldString to disambiguate, or set replaceAll=true.");
-        }
-
-        var replacedContent = replaceAll
-            ? content.Replace(oldString, newString, StringComparison.Ordinal)
-            : ReplaceFirst(content, oldString, newString, positions[0]);
-
-        var replacedCount = replaceAll ? positions.Count : 1;
 
         var tempPath = fullPath + ".tmp";
-        File.WriteAllText(tempPath, replacedContent);
+        File.WriteAllText(tempPath, content);
         File.Move(tempPath, fullPath, overwrite: true);
-
-        var (startLine, endLine) = ComputeAffectedLines(content, positions[0], oldString.Length);
 
         return new JsonObject
         {
             ["status"] = "success",
             ["filePath"] = fullPath,
-            ["occurrencesReplaced"] = replacedCount,
-            ["affectedLines"] = new JsonObject
-            {
-                ["start"] = startLine,
-                ["end"] = endLine
-            }
+            ["totalOccurrencesReplaced"] = totalReplaced,
+            ["edits"] = perEditResults
         };
     }
 
@@ -98,12 +121,12 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         return index >= 0 ? content.Substring(index, searchText.Length) : null;
     }
 
-    private static (int StartLine, int EndLine) ComputeAffectedLines(string content, int position, int oldLength)
+    private static (int StartLine, int EndLine) ComputeAffectedLines(string content, int position, int newLength)
     {
         var startLine = content[..position].Count(c => c == '\n') + 1;
-        var oldTextContent = content.Substring(position, oldLength);
-        var linesInOld = oldTextContent.Count(c => c == '\n');
-        return (startLine, startLine + linesInOld);
+        var newTextContent = content.Substring(position, newLength);
+        var linesInNew = newTextContent.Count(c => c == '\n');
+        return (startLine, startLine + linesInNew);
     }
 
     private static string Truncate(string text, int maxLength)

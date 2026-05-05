@@ -5,7 +5,7 @@ namespace Domain.Tools.Web;
 
 public class WebSearchTool(IWebSearchClient searchClient)
 {
-    protected const string Name = "WebSearch";
+    protected const string Name = "web_search";
 
     protected const string Description = """
                                          Searches the web and returns relevant results with titles, snippets, and URLs.
@@ -17,16 +17,14 @@ public class WebSearchTool(IWebSearchClient searchClient)
         string query,
         int maxResults,
         string? site,
-        string? dateRange,
+        DateRange? dateRange,
         CancellationToken ct)
     {
-        var dateRangeEnum = ParseDateRange(dateRange);
-
         var searchQuery = new WebSearchQuery(
             Query: query,
             MaxResults: Math.Clamp(maxResults, 1, 20),
             Site: site,
-            DateRange: dateRangeEnum
+            DateRange: dateRange
         );
 
         var result = await searchClient.SearchAsync(searchQuery, ct);
@@ -67,20 +65,4 @@ public class WebSearchTool(IWebSearchClient searchClient)
         };
     }
 
-    private static DateRange? ParseDateRange(string? dateRange)
-    {
-        if (string.IsNullOrEmpty(dateRange))
-        {
-            return null;
-        }
-
-        return dateRange.ToLowerInvariant() switch
-        {
-            "day" => DateRange.Day,
-            "week" => DateRange.Week,
-            "month" => DateRange.Month,
-            "year" => DateRange.Year,
-            _ => null
-        };
-    }
 }

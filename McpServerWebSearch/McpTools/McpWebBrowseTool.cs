@@ -30,11 +30,15 @@ public class McpWebBrowseTool(IWebBrowser browser)
         bool scrollToLoad = false,
         [Description("Number of scroll steps for lazy loading (1-10, default: 3)")]
         int scrollSteps = 3,
+        [Description("Include the accessibility tree (snapshot) in the same call. Use when you intend to interact with the page; saves a separate web_snapshot round trip.")]
+        bool snapshot = false,
         CancellationToken ct = default)
     {
         var sessionId = context.Server.RequireSessionId();
         var result = await RunAsync(sessionId, url, selector, maxLength, offset,
-            useReadability, scrollToLoad, scrollSteps, ct);
-        return ToolResponse.Create(result);
+            useReadability, scrollToLoad, scrollSteps, snapshot, ct);
+        return result.Body is null
+            ? ToolResponse.Create(result.Envelope)
+            : ToolResponse.Create(result.Envelope, result.Body, result.Snapshot);
     }
 }

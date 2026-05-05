@@ -128,12 +128,12 @@ public class ChatMonitor(
         }
     }
 
-    private static IEnumerable<(string Content, string ContentType, bool IsComplete)> MapResponseUpdate(
+    private static IEnumerable<(string Content, ReplyContentType ContentType, bool IsComplete)> MapResponseUpdate(
         AgentResponseUpdate update)
     {
         foreach (var aiContent in update.Contents)
         {
-            var mapped = aiContent switch
+            (string, ReplyContentType, bool)? mapped = aiContent switch
             {
                 TextContent text when !string.IsNullOrEmpty(text.Text)
                     => (text.Text, ReplyContentType.Text, false),
@@ -145,12 +145,12 @@ public class ChatMonitor(
                     => (error.Message, ReplyContentType.Error, false),
                 StreamCompleteContent
                     => (string.Empty, ReplyContentType.StreamComplete, true),
-                _ => default
+                _ => null
             };
 
-            if (mapped != default)
+            if (mapped is { } value)
             {
-                yield return mapped;
+                yield return value;
             }
         }
     }

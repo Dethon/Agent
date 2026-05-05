@@ -18,7 +18,6 @@ public class FsMoveTool(
     public async Task<CallToolResult> McpRun(
         string sourcePath,
         string destinationPath,
-        string filesystem = "",
         CancellationToken cancellationToken = default)
     {
         return ToolResponse.Create(await Run(sourcePath, destinationPath, cancellationToken));

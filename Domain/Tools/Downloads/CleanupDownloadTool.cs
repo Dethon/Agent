@@ -11,7 +11,7 @@ public class CleanupDownloadTool(
     IFileSystemClient fileSystemClient,
     DownloadPathConfig downloadPath)
 {
-    protected const string Name = "CleanupDownload";
+    protected const string Name = "download_cleanup";
 
     protected const string Description = """
                                          Removes a download task from the download manager and deletes any leftover files in the download directory.

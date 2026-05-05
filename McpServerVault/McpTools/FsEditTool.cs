@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.DTOs;
 using Domain.Tools.Text;
 using Infrastructure.Utils;
 using McpServerVault.Settings;
@@ -14,12 +15,9 @@ public class FsEditTool(McpSettings settings)
     [McpServerTool(Name = "fs_edit")]
     [Description(Description)]
     public CallToolResult McpRun(
-        string filesystem,
         string path,
-        string oldString,
-        string newString,
-        bool replaceAll = false)
+        IReadOnlyList<TextEdit> edits)
     {
-        return ToolResponse.Create(Run(path, oldString, newString, replaceAll));
+        return ToolResponse.Create(Run(path, edits));
     }
 }

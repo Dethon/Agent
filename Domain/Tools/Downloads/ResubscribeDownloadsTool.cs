@@ -10,7 +10,7 @@ public class ResubscribeDownloadsTool(
     IDownloadClient downloadClient,
     ITrackedDownloadsManager trackedDownloadsManager)
 {
-    protected const string Name = "ResubscribeDownloads";
+    protected const string Name = "download_resubscribe";
 
     protected const string Description = """
                                          Resubscribes to download progress updates for the specified download IDs.
@@ -26,11 +26,10 @@ public class ResubscribeDownloadsTool(
 
         if (downloadIds.Length == 0)
         {
-            var emptyResponse = new JsonObject
-            {
-                ["status"] = "error",
-                ["message"] = "No download IDs provided"
-            };
+            var emptyResponse = ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                "No download IDs provided",
+                retryable: false);
             return new ResubscribeDownloadsResult(emptyResponse, false);
         }
 
