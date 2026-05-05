@@ -22,6 +22,8 @@ public class McpWebSnapshotTool(IWebBrowser browser)
     {
         var sessionId = context.Server.RequireSessionId();
         var result = await RunAsync(sessionId, selector, ct);
-        return ToolResponse.Create(result);
+        return result.Body is null
+            ? ToolResponse.Create(result.Envelope)
+            : ToolResponse.Create(result.Envelope, result.Body);
     }
 }

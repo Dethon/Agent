@@ -51,6 +51,25 @@ public static class ToolResponse
         };
     }
 
+    public static CallToolResult Create(JsonNode envelope, string body)
+    {
+        var isError = envelope is JsonObject obj
+                      && obj.TryGetPropertyValue("ok", out var ok)
+                      && ok is JsonValue v
+                      && v.TryGetValue<bool>(out var okValue)
+                      && !okValue;
+
+        return new CallToolResult
+        {
+            IsError = isError,
+            Content =
+            [
+                new TextContentBlock { Text = envelope.ToJsonString() },
+                new TextContentBlock { Text = body }
+            ]
+        };
+    }
+
     public static CallToolResult Create(string message)
     {
         return new CallToolResult

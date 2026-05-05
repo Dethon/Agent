@@ -35,6 +35,8 @@ public class McpWebBrowseTool(IWebBrowser browser)
         var sessionId = context.Server.RequireSessionId();
         var result = await RunAsync(sessionId, url, selector, maxLength, offset,
             useReadability, scrollToLoad, scrollSteps, ct);
-        return ToolResponse.Create(result);
+        return result.Body is null
+            ? ToolResponse.Create(result.Envelope)
+            : ToolResponse.Create(result.Envelope, result.Body);
     }
 }

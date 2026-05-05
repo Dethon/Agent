@@ -24,6 +24,26 @@ internal sealed class QualifiedMcpTool(string serverName, McpClientTool innerToo
         AIFunctionArguments arguments,
         CancellationToken cancellationToken)
     {
-        return await innerTool.InvokeAsync(arguments, cancellationToken);
+        var result = await innerTool.InvokeAsync(arguments, cancellationToken);
+        return Flatten(result);
+    }
+
+    // Multi-block tool results from MCP arrive here as AIContent[]. The downstream
+    // OpenAI bridge (Microsoft.Extensions.AI.OpenAI) JSON-serializes any non-string
+    // FunctionResultContent.Result into the tool message, which re-escapes every
+    // body character. Flattening to a single string short-circuits that path.
+    internal static object? Flatten(object? result)
+    {
+        if (result is not IList<AIContent> contents || contents.Count <= 1)
+        {
+            return result;
+        }
+
+        if (!contents.All(c => c is TextContent))
+        {
+            return result;
+        }
+
+        return string.Join("\n\n", contents.OfType<TextContent>().Select(c => c.Text));
     }
 }

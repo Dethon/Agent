@@ -3,6 +3,8 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Web;
 
+public record WebSnapshotToolResult(JsonNode Envelope, string? Body);
+
 public class WebSnapshotTool(IWebBrowser browser)
 {
     protected const string Name = "web_snapshot";
@@ -19,7 +21,7 @@ public class WebSnapshotTool(IWebBrowser browser)
         diff response isn't enough context.
         """;
 
-    protected async Task<JsonNode> RunAsync(
+    protected async Task<WebSnapshotToolResult> RunAsync(
         string sessionId,
         string? selector,
         CancellationToken ct)
@@ -34,16 +36,17 @@ public class WebSnapshotTool(IWebBrowser browser)
                 result.ErrorMessage,
                 retryable: false);
             error["sessionId"] = result.SessionId;
-            return error;
+            return new WebSnapshotToolResult(error, null);
         }
 
-        return new JsonObject
+        var envelope = new JsonObject
         {
             ["status"] = "success",
             ["sessionId"] = result.SessionId,
             ["url"] = result.Url,
-            ["snapshot"] = result.Snapshot,
             ["refCount"] = result.RefCount
         };
+
+        return new WebSnapshotToolResult(envelope, result.Snapshot ?? string.Empty);
     }
 }
