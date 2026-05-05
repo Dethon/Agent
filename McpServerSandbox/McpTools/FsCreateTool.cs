@@ -14,7 +14,6 @@ public class FsCreateTool(McpSettings settings)
     [McpServerTool(Name = "fs_create")]
     [Description(Description)]
     public CallToolResult McpRun(
-        string filesystem,
         string path,
         string content,
         bool overwrite = false,

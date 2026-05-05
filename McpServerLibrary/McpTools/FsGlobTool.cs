@@ -19,7 +19,6 @@ public class FsGlobTool(
         string pattern,
         string mode = "directories",
         string basePath = "",
-        string filesystem = "",
         CancellationToken cancellationToken = default)
     {
         var globMode = mode.Equals("files", StringComparison.OrdinalIgnoreCase)

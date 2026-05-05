@@ -232,7 +232,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "fs_glob",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "media",
                 ["pattern"] = "**/*.mkv",
                 ["mode"] = "files",
                 ["basePath"] = "GlobTest"
@@ -268,7 +267,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "fs_glob",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "media",
                 ["pattern"] = "**/*.txt",
                 ["mode"] = "files",
                 ["basePath"] = "GlobDeep"
@@ -312,7 +310,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "fs_move",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "media",
                 ["sourcePath"] = sourcePath,
                 ["destinationPath"] = destPath
             },
@@ -348,7 +345,6 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "fs_move",
             new Dictionary<string, object?>
             {
-                ["filesystem"] = "media",
                 ["sourcePath"] = sourcePath,
                 ["destinationPath"] = destPath
             },

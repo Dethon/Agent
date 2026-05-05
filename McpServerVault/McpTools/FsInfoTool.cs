@@ -12,7 +12,7 @@ public class FsInfoTool(McpSettings settings) : FileInfoTool(settings.VaultPath)
 {
     [McpServerTool(Name = "fs_info")]
     [Description(Description)]
-    public CallToolResult McpRun(string filesystem, string path)
+    public CallToolResult McpRun(string path)
     {
         return ToolResponse.Create(Run(path));
     }

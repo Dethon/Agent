@@ -15,7 +15,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_read", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["offset"] = offset,
             ["limit"] = limit
@@ -26,7 +25,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_create", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["content"] = content,
             ["overwrite"] = overwrite,
@@ -38,7 +36,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_edit", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["oldString"] = oldString,
             ["newString"] = newString,
@@ -50,7 +47,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_glob", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["basePath"] = basePath,
             ["pattern"] = pattern,
             ["mode"] = mode.ToString()
@@ -62,7 +58,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_search", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["query"] = query,
             ["regex"] = regex,
             ["path"] = path,
@@ -78,7 +73,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_move", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath
         }, ct);
@@ -88,7 +82,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_delete", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path
         }, ct);
     }
@@ -97,7 +90,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_info", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path
         }, ct);
     }
@@ -106,7 +98,6 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
     {
         return await CallToolAsync("fs_exec", new Dictionary<string, object?>
         {
-            ["filesystem"] = filesystemName,
             ["path"] = path,
             ["command"] = command,
             ["timeoutSeconds"] = timeoutSeconds

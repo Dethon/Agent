@@ -14,7 +14,6 @@ public class FsEditTool(McpSettings settings)
     [McpServerTool(Name = "fs_edit")]
     [Description(Description)]
     public CallToolResult McpRun(
-        string filesystem,
         string path,
         string oldString,
         string newString,
