@@ -27,7 +27,7 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
         var dst = registry.Resolve(destinationPath);
 
         var info = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
-        var isDirectory = info["type"]?.GetValue<string>() == "directory";
+        var isDirectory = info["isDirectory"]?.GetValue<bool>() == true;
 
         if (isDirectory)
         {

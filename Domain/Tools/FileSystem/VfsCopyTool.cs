@@ -29,7 +29,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         var dst = registry.Resolve(destinationPath);
 
         var info = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
-        var isDirectory = info["type"]?.GetValue<string>() == "directory";
+        var isDirectory = info["isDirectory"]?.GetValue<bool>() == true;
 
         if (isDirectory)
         {
@@ -126,9 +126,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             var srcRel = entry is JsonValue jv
                 ? jv.GetValue<string>()
                 : entry!["path"]!.GetValue<string>();
-            var tail = srcRel.StartsWith(src.RelativePath, StringComparison.Ordinal)
-                ? srcRel[src.RelativePath.Length..].TrimStart('/')
-                : srcRel;
+            var tail = ExtractTail(srcRel, src.RelativePath);
             var dstRel = string.IsNullOrEmpty(tail)
                 ? dst.RelativePath
                 : $"{dst.RelativePath.TrimEnd('/')}/{tail}";
@@ -195,5 +193,30 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             },
             ["entries"] = perEntry
         };
+    }
+
+    private static string ExtractTail(string srcRel, string sourceDir)
+    {
+        var dir = sourceDir.Trim('/');
+        if (string.IsNullOrEmpty(dir))
+        {
+            return srcRel.TrimStart('/');
+        }
+
+        var normalized = srcRel.Replace('\\', '/');
+        var prefix = dir + "/";
+        if (normalized.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return normalized[prefix.Length..];
+        }
+
+        var marker = "/" + dir + "/";
+        var idx = normalized.IndexOf(marker, StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            return normalized[(idx + marker.Length)..];
+        }
+
+        return Path.GetFileName(normalized);
     }
 }
