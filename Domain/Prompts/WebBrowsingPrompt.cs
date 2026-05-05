@@ -25,9 +25,10 @@ public static class WebBrowsingPrompt
         **Reading a page.** Call web_browse. If the response is truncated or you need a specific
         region, narrow it (the tool description shows how) before falling back to a second call.
 
-        **Interacting with a page.** Load with web_browse, then take **one** web_snapshot to discover
-        refs, then chain web_action calls. Each web_action returns a diff with new refs — use those
-        for the next action and only call web_snapshot again if the diff doesn't show what you need.
+        **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
+        in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
+        use those for the next action and only call web_snapshot again if the diff doesn't show what
+        you need. (Use a standalone web_snapshot only when you need a fresh tree mid-session.)
 
         **Autocomplete / combobox fields.** Type the value to trigger the page's JS handler; if a
         dropdown appears in the diff, click the option you want, otherwise confirm the selection

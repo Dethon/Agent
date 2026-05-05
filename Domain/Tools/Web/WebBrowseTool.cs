@@ -3,7 +3,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Web;
 
-public record WebBrowseToolResult(JsonNode Envelope, string? Body);
+public record WebBrowseToolResult(JsonNode Envelope, string? Body, string? Snapshot = null);
 
 public class WebBrowseTool(IWebBrowser browser)
 {
@@ -19,10 +19,13 @@ public class WebBrowseTool(IWebBrowser browser)
         Use maxLength/offset for pagination of long content.
         Use useReadability=true for clean article extraction (strips ads, nav, sidebars).
         Use scrollToLoad=true for pages with lazy-loaded content.
+        Use snapshot=true to include the accessibility tree in the same call when you intend
+        to interact with the page (saves a follow-up web_snapshot round trip).
 
         Returns structured data (JSON-LD) when available on the page.
 
-        For interacting with pages (clicking, filling forms), use web_snapshot + web_action.
+        For interacting with pages (clicking, filling forms), use snapshot=true (or web_snapshot)
+        and then web_action.
         """;
 
     protected async Task<WebBrowseToolResult> RunAsync(
@@ -34,6 +37,7 @@ public class WebBrowseTool(IWebBrowser browser)
         bool useReadability,
         bool scrollToLoad,
         int scrollSteps,
+        bool snapshot,
         CancellationToken ct)
     {
         maxLength = Math.Clamp(maxLength, 100, 100000);
@@ -128,6 +132,21 @@ public class WebBrowseTool(IWebBrowser browser)
             envelope["message"] = result.ErrorMessage;
         }
 
-        return new WebBrowseToolResult(envelope, result.Content ?? string.Empty);
+        string? snapshotBody = null;
+        if (snapshot && result.Status is BrowseStatus.Success or BrowseStatus.Partial)
+        {
+            var snapshotResult = await browser.SnapshotAsync(new SnapshotRequest(sessionId, selector), ct);
+            if (snapshotResult.ErrorMessage is null)
+            {
+                envelope["refCount"] = snapshotResult.RefCount;
+                snapshotBody = snapshotResult.Snapshot ?? string.Empty;
+            }
+            else
+            {
+                envelope["snapshotError"] = snapshotResult.ErrorMessage;
+            }
+        }
+
+        return new WebBrowseToolResult(envelope, result.Content ?? string.Empty, snapshotBody);
     }
 }

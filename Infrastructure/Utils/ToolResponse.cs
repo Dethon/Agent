@@ -51,7 +51,7 @@ public static class ToolResponse
         };
     }
 
-    public static CallToolResult Create(JsonNode envelope, string body)
+    public static CallToolResult Create(JsonNode envelope, params string?[] bodies)
     {
         var isError = envelope is JsonObject obj
                       && obj.TryGetPropertyValue("ok", out var ok)
@@ -59,14 +59,15 @@ public static class ToolResponse
                       && v.TryGetValue<bool>(out var okValue)
                       && !okValue;
 
+        var content = new List<ContentBlock> { new TextContentBlock { Text = envelope.ToJsonString() } };
+        content.AddRange(bodies
+            .Where(b => b is not null)
+            .Select(b => (ContentBlock)new TextContentBlock { Text = b! }));
+
         return new CallToolResult
         {
             IsError = isError,
-            Content =
-            [
-                new TextContentBlock { Text = envelope.ToJsonString() },
-                new TextContentBlock { Text = body }
-            ]
+            Content = content
         };
     }
 
