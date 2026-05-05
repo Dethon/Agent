@@ -15,7 +15,7 @@ public class VfsMoveToolCrossFsTests
         var src = new Mock<IFileSystemBackend>();
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file", ["bytes"] = 5 });
+            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
         src.Setup(b => b.OpenReadStreamAsync("a.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes("hello")));
         src.Setup(b => b.DeleteAsync("a.md", It.IsAny<CancellationToken>()))
@@ -45,7 +45,7 @@ public class VfsMoveToolCrossFsTests
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
         backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file" });
+            .ReturnsAsync(new JsonObject { ["isDirectory"] = false });
         backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["status"] = "moved" });
 

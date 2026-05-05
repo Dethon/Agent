@@ -14,7 +14,7 @@ public class VfsCopyToolTests
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
         backend.Setup(b => b.InfoAsync("notes/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file", ["bytes"] = 42 });
+            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 42 });
         backend.Setup(b => b.CopyAsync("notes/a.md", "notes/b.md", false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["status"] = "copied", ["bytes"] = 42 });
 
@@ -40,7 +40,7 @@ public class VfsCopyToolTests
         var src = new Mock<IFileSystemBackend>();
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file", ["bytes"] = 5 });
+            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
         src.Setup(b => b.OpenReadStreamAsync("a.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("hello")));
 
@@ -68,7 +68,7 @@ public class VfsCopyToolTests
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
         backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file" });
+            .ReturnsAsync(new JsonObject { ["isDirectory"] = false });
         backend.Setup(b => b.CopyAsync("a.md", "b.md", false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["status"] = "copied" });
 
