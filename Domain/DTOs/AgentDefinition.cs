@@ -15,4 +15,5 @@ public record AgentDefinition
     public string? TelegramBotToken { get; init; }
     public string[] EnabledFeatures { get; init; } = [];
     public int? MaxContextTokens { get; init; }
+    public string? ReasoningEffort { get; init; }
 }

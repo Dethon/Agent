@@ -30,11 +30,27 @@ public sealed class OpenRouterChatClient : IChatClient
         string model,
         int? maxContextTokens = null,
         IMetricsPublisher? metricsPublisher = null)
+        : this(endpoint, apiKey, model, maxContextTokens, metricsPublisher,
+            new SocketsHttpHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+            })
+    {
+    }
+
+    private OpenRouterChatClient(
+        string endpoint,
+        string apiKey,
+        string model,
+        int? maxContextTokens,
+        IMetricsPublisher? metricsPublisher,
+        HttpMessageHandler innerHandler)
     {
         _model = model;
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
-        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue);
+        _httpClient = CreateHttpClient(_reasoningQueue, _costQueue, innerHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
         _client = CreateClient(endpoint, apiKey, model, _transport);
     }
@@ -49,6 +65,18 @@ public sealed class OpenRouterChatClient : IChatClient
         _maxContextTokens = maxContextTokens;
         _metricsPublisher = metricsPublisher;
         _client = innerClient;
+    }
+
+    internal static OpenRouterChatClient CreateForTesting(
+        string endpoint,
+        string apiKey,
+        string model,
+        HttpMessageHandler innerHandler)
+    {
+        return new OpenRouterChatClient(
+            endpoint, apiKey, model,
+            maxContextTokens: null, metricsPublisher: null,
+            innerHandler: innerHandler);
     }
 
     private ChatClientMetadata Metadata => _client.GetService<ChatClientMetadata>() ?? new ChatClientMetadata();
@@ -234,15 +262,13 @@ public sealed class OpenRouterChatClient : IChatClient
     }
 
     private static HttpClient CreateHttpClient(
-        ConcurrentQueue<string> reasoningQueue, ConcurrentQueue<decimal> costQueue)
+        ConcurrentQueue<string> reasoningQueue,
+        ConcurrentQueue<decimal> costQueue,
+        HttpMessageHandler innerHandler)
     {
         var handler = new ReasoningHandler(reasoningQueue, costQueue)
         {
-            InnerHandler = new SocketsHttpHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(2)
-            }
+            InnerHandler = innerHandler
         };
         return new HttpClient(handler);
     }

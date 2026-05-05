@@ -80,7 +80,8 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             enableResourceSubscriptions: false,
             filesystemEnabledTools: filesystemEnabledTools,
-            loggerFactory: loggerFactory);
+            loggerFactory: loggerFactory,
+            reasoningEffort: definition.ReasoningEffort);
     }
 
     public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
@@ -117,7 +118,8 @@ public sealed class MultiAgentFactory(
             domainTools,
             domainPrompts,
             filesystemEnabledTools: filesystemEnabledTools,
-            loggerFactory: loggerFactory);
+            loggerFactory: loggerFactory,
+            reasoningEffort: definition.ReasoningEffort);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)

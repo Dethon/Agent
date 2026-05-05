@@ -14,4 +14,5 @@ public record SubAgentDefinition
     public string[] EnabledFeatures { get; init; } = [];
     public int MaxExecutionSeconds { get; init; } = 120;
     public int? MaxContextTokens { get; init; }
+    public string? ReasoningEffort { get; init; }
 }

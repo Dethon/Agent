@@ -26,6 +26,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _name;
     private readonly string _userId;
     private readonly bool _enableResourceSubscriptions;
+    private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
@@ -46,7 +47,8 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<string>? domainPrompts = null,
         bool enableResourceSubscriptions = true,
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        string? reasoningEffort = null)
     {
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
@@ -58,19 +60,10 @@ public sealed class McpAgent : DisposableAgent
         _domainTools = domainTools ?? [];
         _domainPrompts = domainPrompts ?? [];
         _enableResourceSubscriptions = enableResourceSubscriptions;
+        _reasoningEffort = ParseEffort(reasoningEffort);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
-            ChatOptions = new ChatOptions
-            {
-                AdditionalProperties = new AdditionalPropertiesDictionary
-                {
-                    // OpenRouter expects a JSON object; using JsonObject avoids anonymous-type serialization quirks.
-                    ["reasoning"] = new JsonObject { ["effort"] = "low" },
-                    ["include_reasoning"] = true,
-                    ["reasoning_effort"] = "low"
-                }
-            },
             Description = description,
             ChatHistoryProvider = new RedisChatMessageStore(stateStore)
         });
@@ -234,8 +227,31 @@ public sealed class McpAgent : DisposableAgent
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.Tools],
-            Instructions = string.Join("\n\n", prompts)
+            Instructions = string.Join("\n\n", prompts),
+            Reasoning = _reasoningEffort is null
+                ? null
+                : new ReasoningOptions { Effort = _reasoningEffort.Value }
         });
+    }
+
+    internal static ReasoningEffort? ParseEffort(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.ToLowerInvariant() switch
+        {
+            "none" => ReasoningEffort.None,
+            "low" => ReasoningEffort.Low,
+            "medium" => ReasoningEffort.Medium,
+            "high" => ReasoningEffort.High,
+            "xhigh" or "extrahigh" or "extra-high" or "max" => ReasoningEffort.ExtraHigh,
+            _ => throw new ArgumentException(
+                $"Unknown reasoningEffort '{value}'. Valid values: none, low, medium, high, xhigh.",
+                nameof(value))
+        };
     }
 
 
