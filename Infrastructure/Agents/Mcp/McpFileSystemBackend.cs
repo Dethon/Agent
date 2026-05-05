@@ -107,6 +107,25 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
+    public async Task<JsonNode> CopyAsync(string sourcePath, string destinationPath,
+        bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        return await CallToolAsync("fs_copy", new Dictionary<string, object?>
+        {
+            ["sourcePath"] = sourcePath,
+            ["destinationPath"] = destinationPath,
+            ["overwrite"] = overwrite,
+            ["createDirectories"] = createDirectories
+        }, ct);
+    }
+
+    public Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct)
+        => throw new NotImplementedException();
+
+    public Task WriteFromStreamAsync(string path, Stream content,
+        bool overwrite, bool createDirectories, CancellationToken ct)
+        => throw new NotImplementedException();
+
     private async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
     {
         CallToolResult result;
