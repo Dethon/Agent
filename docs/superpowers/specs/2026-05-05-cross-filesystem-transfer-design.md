@@ -71,7 +71,7 @@ The existing text methods (`ReadAsync`, `CreateAsync`, `EditAsync`, …) are unt
 - `OpenReadStreamAsync` — `File.OpenRead`.
 - `WriteFromStreamAsync` — `File.Create` + `Stream.CopyToAsync`, honouring `overwrite` and `createDirectories`.
 
-**`McpFileSystemBackend`** (vault, library, idealista):
+**`McpFileSystemBackend`** (vault, library, sandbox):
 
 Backed by three new raw MCP tools per filesystem-exposing server:
 
@@ -83,7 +83,7 @@ The backend exposes `OpenReadStreamAsync` and `WriteFromStreamAsync` as `Stream`
 
 These three raw tools are filtered out of the agent's tool surface, alongside the existing `fs_*` raws, when domain tools are active.
 
-MCP servers that gain the new tools: **McpServerVault**, **McpServerLibrary**, **McpServerSandbox**, **McpServerIdealista** — every server exposing a `filesystem://` resource today.
+MCP servers that gain the new tools: **McpServerVault**, **McpServerLibrary**, **McpServerSandbox** — every server exposing a `filesystem://` resource today. (Idealista does not expose a filesystem.) Library is currently read-only-ish (only `fs_glob`/`fs_info`/`fs_move` exposed); adding `fs_blob_read` and `fs_copy` lets the agent extract media files into other mounts. `fs_blob_write` on Library is a deliberate capability extension consistent with its existing `fs_move` (organisational writes).
 
 ## Tool behaviour
 
@@ -184,7 +184,6 @@ The transfer loop honours `CancellationToken`. On cancellation the result reflec
 - `McpServerVault/McpTools/` — add `fs_copy`, `fs_blob_read`, `fs_blob_write` tools.
 - `McpServerLibrary/McpTools/` — same.
 - `McpServerSandbox/McpTools/` — same.
-- `McpServerIdealista/McpTools/` — same.
 
 **Tests:**
 
