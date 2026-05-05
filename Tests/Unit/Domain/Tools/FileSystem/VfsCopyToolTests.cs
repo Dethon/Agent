@@ -61,4 +61,26 @@ public class VfsCopyToolTests
             "a.md", It.IsAny<Stream>(), false, true, It.IsAny<CancellationToken>()), Times.Once);
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task RunAsync_SameFsFile_BackendOmitsBytes_ReturnsMinusOne()
+    {
+        var backend = new Mock<IFileSystemBackend>();
+        backend.SetupGet(b => b.FilesystemName).Returns("vault");
+        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JsonObject { ["type"] = "file" });
+        backend.Setup(b => b.CopyAsync("a.md", "b.md", false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JsonObject { ["status"] = "copied" });
+
+        var registry = new Mock<IVirtualFileSystemRegistry>();
+        registry.Setup(r => r.Resolve("/vault/a.md"))
+            .Returns(new FileSystemResolution(backend.Object, "a.md"));
+        registry.Setup(r => r.Resolve("/vault/b.md"))
+            .Returns(new FileSystemResolution(backend.Object, "b.md"));
+
+        var tool = new VfsCopyTool(registry.Object);
+        var result = await tool.RunAsync("/vault/a.md", "/vault/b.md");
+
+        result["bytes"]!.GetValue<long>().ShouldBe(-1L);
+    }
 }

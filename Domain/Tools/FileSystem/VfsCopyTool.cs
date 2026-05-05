@@ -63,7 +63,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 ["status"] = "ok",
                 ["source"] = srcVirtual,
                 ["destination"] = dstVirtual,
-                ["bytes"] = native["bytes"]?.DeepClone()
+                ["bytes"] = (native["bytes"] is JsonValue v && v.TryGetValue<long>(out var b) ? b : -1L)
             };
         }
 
