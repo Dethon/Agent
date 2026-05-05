@@ -119,8 +119,39 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         }, ct);
     }
 
-    public Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct)
-        => throw new NotImplementedException();
+    public async Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct)
+    {
+        const int chunkSize = 256 * 1024;
+        var buffer = new MemoryStream();
+        long offset = 0;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var node = await CallToolAsync("fs_blob_read", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["offset"] = offset,
+                ["length"] = chunkSize
+            }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_read failed: {obj["message"]?.GetValue<string>()}");
+            }
+
+            var b64 = node["contentBase64"]!.GetValue<string>();
+            var bytes = Convert.FromBase64String(b64);
+            buffer.Write(bytes, 0, bytes.Length);
+            offset += bytes.Length;
+
+            if (node["eof"]!.GetValue<bool>()) break;
+            if (bytes.Length == 0) break;
+        }
+
+        buffer.Position = 0;
+        return buffer;
+    }
 
     public Task WriteFromStreamAsync(string path, Stream content,
         bool overwrite, bool createDirectories, CancellationToken ct)
