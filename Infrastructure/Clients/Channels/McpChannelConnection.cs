@@ -83,7 +83,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             {
                 ["conversationId"] = conversationId,
                 ["content"] = content,
-                ["contentType"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(contentType.ToString()),
+                ["contentType"] = contentType.ToString(),
                 ["isComplete"] = isComplete,
                 ["messageId"] = messageId
             },
@@ -101,7 +101,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             new Dictionary<string, object?>
             {
                 ["conversationId"] = conversationId,
-                ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(ApprovalMode.Request)),
+                ["mode"] = nameof(ApprovalMode.Request),
                 ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);
@@ -123,7 +123,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             new Dictionary<string, object?>
             {
                 ["conversationId"] = conversationId,
-                ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(ApprovalMode.Notify)),
+                ["mode"] = nameof(ApprovalMode.Notify),
                 ["requests"] = JsonSerializer.Serialize(requests)
             },
             cancellationToken: ct);
