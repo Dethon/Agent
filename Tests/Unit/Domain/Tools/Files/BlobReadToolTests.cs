@@ -77,6 +77,39 @@ public class BlobReadToolTests : IDisposable
     }
 
     [Fact]
+    public void Run_EmptyFile_ReturnsEmptyContentAndEof()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), Array.Empty<byte>());
+
+        var result = _tool.TestRun("blob.bin", offset: 0, length: 100);
+
+        result["contentBase64"]!.GetValue<string>().ShouldBe("");
+        result["eof"]!.GetValue<bool>().ShouldBeTrue();
+        result["totalBytes"]!.GetValue<long>().ShouldBe(0);
+    }
+
+    [Fact]
+    public void Run_OffsetAtOrPastEnd_ReturnsEmptyContentAndEof()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[10]);
+
+        var result = _tool.TestRun("blob.bin", offset: 10, length: 100);
+
+        result["contentBase64"]!.GetValue<string>().ShouldBe("");
+        result["eof"]!.GetValue<bool>().ShouldBeTrue();
+        result["totalBytes"]!.GetValue<long>().ShouldBe(10);
+    }
+
+    [Fact]
+    public void Run_NegativeLength_Throws()
+    {
+        File.WriteAllBytes(Path.Combine(_root, "blob.bin"), new byte[10]);
+
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            _tool.TestRun("blob.bin", offset: 0, length: -1));
+    }
+
+    [Fact]
     public void Run_PathToSiblingDirectoryWithRootPrefix_Throws()
     {
         var sibling = _root + "-evil";

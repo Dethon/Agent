@@ -15,6 +15,8 @@ public class BlobReadTool(string rootPath)
     protected JsonNode Run(string path, long offset, int length)
     {
         var resolved = ResolveAndValidate(path);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
         if (!File.Exists(resolved))
         {
             throw new FileNotFoundException($"File not found: {path}");
@@ -26,23 +28,23 @@ public class BlobReadTool(string rootPath)
         var toRead = (int)Math.Min(clampedLength, available);
 
         var buffer = new byte[toRead];
+        var actuallyRead = 0;
         if (toRead > 0)
         {
             using var stream = File.OpenRead(resolved);
             stream.Seek(offset, SeekOrigin.Begin);
-            var read = 0;
-            while (read < toRead)
+            while (actuallyRead < toRead)
             {
-                var n = stream.Read(buffer, read, toRead - read);
+                var n = stream.Read(buffer, actuallyRead, toRead - actuallyRead);
                 if (n == 0) break;
-                read += n;
+                actuallyRead += n;
             }
         }
 
-        var eof = offset + toRead >= info.Length;
+        var eof = offset + actuallyRead >= info.Length;
         return new JsonObject
         {
-            ["contentBase64"] = Convert.ToBase64String(buffer),
+            ["contentBase64"] = Convert.ToBase64String(buffer, 0, actuallyRead),
             ["eof"] = eof,
             ["totalBytes"] = info.Length
         };
