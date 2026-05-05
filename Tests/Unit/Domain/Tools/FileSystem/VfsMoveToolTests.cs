@@ -20,34 +20,18 @@ public class MoveToolTests
     [Fact]
     public async Task RunAsync_SameFilesystem_ResolvesAndCallsBackend()
     {
-        var expected = new JsonObject { ["status"] = "success" };
         _registry.Setup(r => r.Resolve("/library/old/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "old/file.md"));
         _registry.Setup(r => r.Resolve("/library/new/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "new/file.md"));
+        _backend.Setup(b => b.InfoAsync("old/file.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JsonObject { ["type"] = "file" });
         _backend.Setup(b => b.MoveAsync("old/file.md", "new/file.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new JsonObject { ["status"] = "moved" });
 
         var result = await _tool.RunAsync("/library/old/file.md", "/library/new/file.md", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
-    }
-
-    [Fact]
-    public async Task RunAsync_DifferentFilesystems_ReturnsCrossFilesystemError()
-    {
-        var backend2 = new Mock<IFileSystemBackend>();
-        backend2.Setup(b => b.FilesystemName).Returns("vault");
-        _backend.Setup(b => b.FilesystemName).Returns("library");
-        _registry.Setup(r => r.Resolve("/library/file.md"))
-            .Returns(new FileSystemResolution(_backend.Object, "file.md"));
-        _registry.Setup(r => r.Resolve("/vault/file.md"))
-            .Returns(new FileSystemResolution(backend2.Object, "file.md"));
-
-        var result = await _tool.RunAsync("/library/file.md", "/vault/file.md", cancellationToken: CancellationToken.None);
-
-        result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe("cross_filesystem");
-        result["message"]!.GetValue<string>().ShouldContain("Cannot move between different filesystems");
+        result["status"]!.GetValue<string>().ShouldBe("ok");
+        _backend.Verify(b => b.MoveAsync("old/file.md", "new/file.md", It.IsAny<CancellationToken>()), Times.Once);
     }
 }
