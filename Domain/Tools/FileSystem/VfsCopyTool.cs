@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs;
 
 namespace Domain.Tools.FileSystem;
 
@@ -88,13 +89,111 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         };
     }
 
-    internal static Task<JsonNode> TransferDirectoryAsync(
+    internal static async Task<JsonNode> TransferDirectoryAsync(
         FileSystemResolution src, FileSystemResolution dst,
         string srcVirtual, string dstVirtual,
         bool overwrite, bool createDirectories, bool deleteSource,
         CancellationToken ct)
     {
-        // Implemented in Task 13.
-        throw new NotImplementedException();
+        if (ReferenceEquals(src.Backend, dst.Backend))
+        {
+            var native = deleteSource
+                ? await src.Backend.MoveAsync(src.RelativePath, dst.RelativePath, ct)
+                : await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath, overwrite, createDirectories, ct);
+
+            return new JsonObject
+            {
+                ["status"] = "ok",
+                ["source"] = srcVirtual,
+                ["destination"] = dstVirtual,
+                ["bytes"] = native["bytes"] is JsonValue v && v.TryGetValue<long>(out var b) ? b : -1L
+            };
+        }
+
+        var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", VfsGlobMode.Files, ct);
+        var entries = glob is JsonArray arr
+            ? arr
+            : (glob["entries"] as JsonArray ?? glob["files"] as JsonArray ?? new JsonArray());
+
+        var perEntry = new JsonArray();
+        var transferred = 0;
+        var failed = 0;
+        long totalBytes = 0;
+
+        foreach (var entry in entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            var srcRel = entry is JsonValue jv
+                ? jv.GetValue<string>()
+                : entry!["path"]!.GetValue<string>();
+            var tail = srcRel.StartsWith(src.RelativePath, StringComparison.Ordinal)
+                ? srcRel[src.RelativePath.Length..].TrimStart('/')
+                : srcRel;
+            var dstRel = string.IsNullOrEmpty(tail)
+                ? dst.RelativePath
+                : $"{dst.RelativePath.TrimEnd('/')}/{tail}";
+            var dstVirtualEntry = $"{dstVirtual.TrimEnd('/')}/{tail}";
+            var srcVirtualEntry = $"{srcVirtual.TrimEnd('/')}/{tail}";
+
+            try
+            {
+                long bytes;
+                await using (var stream = await src.Backend.OpenReadStreamAsync(srcRel, ct))
+                {
+                    await dst.Backend.WriteFromStreamAsync(dstRel, stream, overwrite, createDirectories, ct);
+                    bytes = stream.CanSeek ? stream.Length : 0;
+                }
+
+                if (deleteSource)
+                {
+                    await src.Backend.DeleteAsync(srcRel, ct);
+                }
+
+                perEntry.Add(new JsonObject
+                {
+                    ["source"] = srcVirtualEntry,
+                    ["destination"] = dstVirtualEntry,
+                    ["status"] = "ok",
+                    ["bytes"] = bytes
+                });
+                transferred++;
+                totalBytes += bytes;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                perEntry.Add(new JsonObject
+                {
+                    ["source"] = srcVirtualEntry,
+                    ["destination"] = dstVirtualEntry,
+                    ["status"] = "failed",
+                    ["error"] = ex.Message
+                });
+                failed++;
+            }
+        }
+
+        var status = (transferred, failed) switch
+        {
+            (_, 0) => "ok",
+            (0, _) => "failed",
+            _ => "partial"
+        };
+
+        return new JsonObject
+        {
+            ["status"] = status,
+            ["summary"] = new JsonObject
+            {
+                ["transferred"] = transferred,
+                ["failed"] = failed,
+                ["skipped"] = 0,
+                ["totalBytes"] = totalBytes
+            },
+            ["entries"] = perEntry
+        };
     }
 }
