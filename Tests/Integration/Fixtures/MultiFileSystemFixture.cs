@@ -84,7 +84,10 @@ public class MultiFileSystemFixture : IAsyncLifetime
             .WithTools<FsGlobTool>()
             .WithTools<FsSearchTool>()
             .WithTools<FsMoveTool>()
-            .WithTools<FsDeleteTool>();
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsCopyTool>()
+            .WithTools<FsBlobReadTool>()
+            .WithTools<FsBlobWriteTool>();
 
         addResources(mcpBuilder);
 
