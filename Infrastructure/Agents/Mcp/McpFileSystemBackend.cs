@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -54,7 +53,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             ["filesystem"] = filesystemName,
             ["basePath"] = basePath,
             ["pattern"] = pattern,
-            ["mode"] = JsonNamingPolicy.SnakeCaseLower.ConvertName(mode.ToString())
+            ["mode"] = mode.ToString()
         }, ct);
     }
 
@@ -71,7 +70,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
             ["filePattern"] = filePattern,
             ["maxResults"] = maxResults,
             ["contextLines"] = contextLines,
-            ["outputMode"] = JsonNamingPolicy.CamelCase.ConvertName(outputMode.ToString())
+            ["outputMode"] = outputMode.ToString()
         }, ct);
     }
 

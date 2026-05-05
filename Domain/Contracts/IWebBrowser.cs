@@ -70,7 +70,6 @@ public record SnapshotResult(
 
 // --- Action types ---
 
-[System.Text.Json.Serialization.JsonConverter(typeof(Domain.Json.SnakeCaseLowerEnumConverter<WebActionType>))]
 public enum WebActionType
 {
     Click, Type, Fill, Select, Press, Clear,
