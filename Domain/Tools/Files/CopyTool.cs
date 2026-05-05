@@ -82,8 +82,15 @@ public class CopyTool(string rootPath)
             : Path.GetFullPath(Path.Combine(rootPath, normalized));
 
         var canonicalRoot = Path.GetFullPath(rootPath);
-        return fullPath.StartsWith(canonicalRoot, StringComparison.OrdinalIgnoreCase)
-            ? fullPath
-            : throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
+        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? canonicalRoot
+            : canonicalRoot + Path.DirectorySeparatorChar;
+
+        if (fullPath.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase) ||
+            fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            return fullPath;
+        }
+        throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
     }
 }

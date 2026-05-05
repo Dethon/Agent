@@ -74,6 +74,26 @@ public class CopyToolTests : IDisposable
             _tool.TestRun("../escape.txt", "dst.txt", overwrite: false, createDirectories: true));
     }
 
+    [Fact]
+    public void Run_PathToSiblingDirectoryWithRootPrefix_Throws()
+    {
+        var sibling = _root + "-evil";
+        Directory.CreateDirectory(sibling);
+        try
+        {
+            File.WriteAllText(Path.Combine(sibling, "secret.txt"), "leak");
+            var rootName = Path.GetFileName(_root);
+            var malicious = $"../{rootName}-evil/secret.txt";
+
+            Should.Throw<UnauthorizedAccessException>(() =>
+                _tool.TestRun(malicious, "dst.txt", overwrite: false, createDirectories: true));
+        }
+        finally
+        {
+            if (Directory.Exists(sibling)) Directory.Delete(sibling, true);
+        }
+    }
+
     private class TestableCopyTool(string root) : CopyTool(root)
     {
         public JsonNode TestRun(string source, string destination, bool overwrite, bool createDirectories)
