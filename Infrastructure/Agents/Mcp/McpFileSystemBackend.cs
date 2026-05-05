@@ -186,7 +186,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
 
         if (offset == 0)
         {
-            await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
             {
                 ["path"] = path,
                 ["contentBase64"] = "",
@@ -194,6 +194,11 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
                 ["overwrite"] = overwrite,
                 ["createDirectories"] = createDirectories
             }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+            }
         }
     }
 

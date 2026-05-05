@@ -39,6 +39,21 @@ public class McpFileSystemBackendStreamTests(MultiFileSystemFixture fx)
         File.ReadAllBytes(Path.Combine(fx.NotesPath, "written.bin")).ShouldBe(bytes);
     }
 
+    [Fact]
+    public async Task WriteFromStreamAsync_EmptyStream_CreatesEmptyFile()
+    {
+        await using var client = await CreateClient(fx.NotesEndpoint);
+        var backend = new McpFileSystemBackend(client, "notes");
+
+        await using var input = new MemoryStream(Array.Empty<byte>());
+        await backend.WriteFromStreamAsync("empty.bin", input,
+            overwrite: false, createDirectories: true, CancellationToken.None);
+
+        var path = Path.Combine(fx.NotesPath, "empty.bin");
+        File.Exists(path).ShouldBeTrue();
+        File.ReadAllBytes(path).Length.ShouldBe(0);
+    }
+
     private static async Task<McpClient> CreateClient(string endpoint)
     {
         return await McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions
