@@ -25,6 +25,20 @@ public class McpFileSystemBackendStreamTests(MultiFileSystemFixture fx)
         ms.ToArray().ShouldBe(bytes);
     }
 
+    [Fact]
+    public async Task WriteFromStreamAsync_LargeFile_WritesAllBytes()
+    {
+        var bytes = Enumerable.Range(0, 600 * 1024).Select(i => (byte)(i % 256)).ToArray();
+        await using var client = await CreateClient(fx.NotesEndpoint);
+        var backend = new McpFileSystemBackend(client, "notes");
+
+        await using var input = new MemoryStream(bytes);
+        await backend.WriteFromStreamAsync("written.bin", input,
+            overwrite: false, createDirectories: true, CancellationToken.None);
+
+        File.ReadAllBytes(Path.Combine(fx.NotesPath, "written.bin")).ShouldBe(bytes);
+    }
+
     private static async Task<McpClient> CreateClient(string endpoint)
     {
         return await McpClient.CreateAsync(new HttpClientTransport(new HttpClientTransportOptions

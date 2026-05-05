@@ -153,9 +153,49 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         return buffer;
     }
 
-    public Task WriteFromStreamAsync(string path, Stream content,
+    public async Task WriteFromStreamAsync(string path, Stream content,
         bool overwrite, bool createDirectories, CancellationToken ct)
-        => throw new NotImplementedException();
+    {
+        const int chunkSize = 256 * 1024;
+        var buffer = new byte[chunkSize];
+        long offset = 0;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var read = await content.ReadAsync(buffer.AsMemory(0, chunkSize), ct);
+            if (read == 0) break;
+
+            var chunk = read == chunkSize ? buffer : buffer[..read];
+            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["contentBase64"] = Convert.ToBase64String(chunk),
+                ["offset"] = offset,
+                ["overwrite"] = overwrite,
+                ["createDirectories"] = createDirectories
+            }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+            }
+
+            offset += read;
+        }
+
+        if (offset == 0)
+        {
+            await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["contentBase64"] = "",
+                ["offset"] = 0L,
+                ["overwrite"] = overwrite,
+                ["createDirectories"] = createDirectories
+            }, ct);
+        }
+    }
 
     private async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
     {
