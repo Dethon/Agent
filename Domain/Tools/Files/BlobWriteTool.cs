@@ -4,6 +4,10 @@ namespace Domain.Tools.Files;
 
 public class BlobWriteTool(string rootPath)
 {
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
         Writes a chunk of raw bytes (base64-encoded) to a file at the given offset.
         Used by the agent's cross-filesystem transfer machinery to stream binary content.
@@ -62,8 +66,8 @@ public class BlobWriteTool(string rootPath)
             ? canonicalRoot
             : canonicalRoot + Path.DirectorySeparatorChar;
 
-        if (fullPath.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase) ||
-            fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
+            fullPath.StartsWith(rootWithSep, _pathComparison))
         {
             return fullPath;
         }

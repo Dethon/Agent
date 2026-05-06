@@ -4,6 +4,10 @@ namespace Domain.Tools.Files;
 
 public class CopyTool(string rootPath)
 {
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
         Copies a file or directory within this filesystem.
         Both arguments can be absolute paths under the filesystem root, or relative paths
@@ -86,8 +90,8 @@ public class CopyTool(string rootPath)
             ? canonicalRoot
             : canonicalRoot + Path.DirectorySeparatorChar;
 
-        if (fullPath.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase) ||
-            fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
+            fullPath.StartsWith(rootWithSep, _pathComparison))
         {
             return fullPath;
         }

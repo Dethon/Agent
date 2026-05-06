@@ -6,6 +6,10 @@ public class BlobReadTool(string rootPath)
 {
     public const int MaxChunkSizeBytes = 256 * 1024;
 
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
         Reads a chunk of raw bytes from a file as base64. Used by the agent's cross-filesystem
         transfer machinery to stream binary content. `length` is clamped to 256 KiB per call.
@@ -66,8 +70,8 @@ public class BlobReadTool(string rootPath)
             ? canonicalRoot
             : canonicalRoot + Path.DirectorySeparatorChar;
 
-        if (fullPath.Equals(canonicalRoot, StringComparison.OrdinalIgnoreCase) ||
-            fullPath.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        if (fullPath.Equals(canonicalRoot, _pathComparison) ||
+            fullPath.StartsWith(rootWithSep, _pathComparison))
         {
             return fullPath;
         }

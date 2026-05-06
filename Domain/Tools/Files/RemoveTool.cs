@@ -6,6 +6,10 @@ namespace Domain.Tools.Files;
 
 public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
                                          Removes a file or directory by moving it to a trash folder.
                                          The path can be absolute (under the library root) or relative
@@ -42,7 +46,7 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         var canonicalLibraryPath = Path.GetFullPath(libraryPath.BaseLibraryPath);
         var canonicalFilePath = Path.GetFullPath(path);
 
-        return !canonicalFilePath.StartsWith(canonicalLibraryPath, StringComparison.OrdinalIgnoreCase)
+        return !canonicalFilePath.StartsWith(canonicalLibraryPath, _pathComparison)
             ? throw new ArgumentException($"""
                                            {nameof(RemoveTool)} path must be within the library.
                                            Resolved path '{canonicalFilePath}' is not under library path '{canonicalLibraryPath}'.

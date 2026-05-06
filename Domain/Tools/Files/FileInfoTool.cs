@@ -4,6 +4,10 @@ namespace Domain.Tools.Files;
 
 public class FileInfoTool(string rootPath)
 {
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
                                          Returns metadata about a path: exists, isDirectory, size (files only), and lastModified.
                                          Use as a cheap guard before read/edit/move/delete to avoid errors on missing paths.
@@ -16,7 +20,7 @@ public class FileInfoTool(string rootPath)
             ? Path.GetFullPath(path)
             : Path.GetFullPath(Path.Combine(rootPath, path));
 
-        if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+        if (!fullPath.StartsWith(rootPath, _pathComparison))
         {
             throw new UnauthorizedAccessException("Access denied: path must be within root directory");
         }
