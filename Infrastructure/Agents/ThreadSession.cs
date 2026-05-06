@@ -80,7 +80,7 @@ internal sealed class ThreadSessionBuilder(
     private static readonly HashSet<string> _fileSystemMcpToolNames =
     [
         "fs_read", "fs_create", "fs_edit", "fs_glob", "fs_search", "fs_move", "fs_delete", "fs_exec",
-        "fs_copy", "fs_blob_read", "fs_blob_write"
+        "fs_copy", "fs_info", "fs_blob_read", "fs_blob_write"
     ];
 
     private IReadOnlyList<AITool> _tools = [];
