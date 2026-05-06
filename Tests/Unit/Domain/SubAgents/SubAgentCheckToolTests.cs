@@ -1,4 +1,3 @@
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.SubAgent;
 using Domain.Tools.SubAgents;
@@ -37,7 +36,7 @@ public class SubAgentCheckToolTests
     public async Task RunAsync_KnownHandle_ReturnsViewWithSnapshots()
     {
         var view = MakeCompletedView();
-        var sessions = new FakeSessions(view);
+        var sessions = new FakeSubAgentSessions { GetFunc = _ => view };
         var config = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentCheckTool(config);
 
@@ -74,7 +73,7 @@ public class SubAgentCheckToolTests
     [Fact]
     public async Task RunAsync_UnknownHandle_ReturnsNotFound()
     {
-        var sessions = new FakeSessions(null);
+        var sessions = new FakeSubAgentSessions { GetFunc = _ => null };
         var config = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentCheckTool(config);
 
@@ -96,16 +95,4 @@ public class SubAgentCheckToolTests
         result["errorCode"]!.ToString().ShouldBe("unavailable");
     }
 
-    private sealed class FakeSessions(SubAgentSessionView? view) : ISubAgentSessions
-    {
-        public int ActiveCount => 0;
-
-        public string Start(SubAgentDefinition profile, string prompt, bool silent) => "h-new";
-        public SubAgentSessionView? Get(string handle) => view;
-        public IReadOnlyList<SubAgentSessionView> List() => view is null ? [] : [view];
-        public void Cancel(string handle, SubAgentCancelSource source) { }
-        public Task<SubAgentWaitResult> WaitAsync(IReadOnlyList<string> handles, SubAgentWaitMode mode,
-            TimeSpan timeout, CancellationToken ct) => Task.FromResult(new SubAgentWaitResult([], []));
-        public bool Release(string handle) => false;
-    }
 }

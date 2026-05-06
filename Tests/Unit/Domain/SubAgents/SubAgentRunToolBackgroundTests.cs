@@ -1,7 +1,5 @@
 using Domain.Agents;
-using Domain.Contracts;
 using Domain.DTOs;
-using Domain.DTOs.SubAgent;
 using Domain.Tools.SubAgents;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -20,7 +18,7 @@ public class SubAgentRunToolBackgroundTests
     [Fact]
     public async Task RunAsync_WithBackgroundFlag_StartsAndReturnsHandle()
     {
-        var sessions = new FakeSessions("handle-42");
+        var sessions = new FakeSubAgentSessions { StartFunc = (_, _, _) => "handle-42" };
         var config = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentRunTool(
             new SubAgentRegistryOptions { SubAgents = [Profile()] }, config);
@@ -30,21 +28,21 @@ public class SubAgentRunToolBackgroundTests
         result["status"]!.ToString().ShouldBe("started");
         result["handle"]!.ToString().ShouldBe("handle-42");
         result["subagent_id"]!.ToString().ShouldBe("researcher");
-        sessions.StartCount.ShouldBe(1);
-        sessions.LastSilent.ShouldBe(false);
+        sessions.StartCallCount.ShouldBe(1);
+        sessions.LastStartSilent.ShouldBe(false);
     }
 
     [Fact]
     public async Task RunAsync_WithBackgroundFlag_PassesSilentTrueToSessions()
     {
-        var sessions = new FakeSessions();
+        var sessions = new FakeSubAgentSessions { StartFunc = (_, _, _) => "h-42" };
         var registry = new SubAgentRegistryOptions { SubAgents = [Profile()] };
         var cfg = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentRunTool(registry, cfg);
 
         await tool.RunAsync("researcher", "go", run_in_background: true, silent: true);
 
-        sessions.LastSilent.ShouldBeTrue();
+        sessions.LastStartSilent.ShouldBeTrue();
     }
 
     [Fact]
@@ -63,7 +61,7 @@ public class SubAgentRunToolBackgroundTests
     [Fact]
     public async Task RunAsync_WithoutBackgroundFlag_PreservesExistingBehavior()
     {
-        var sessions = new FakeSessions("handle-99");
+        var sessions = new FakeSubAgentSessions { StartFunc = (_, _, _) => "handle-99" };
         var config = new FeatureConfig(
             SubAgentFactory: _ => new FakeBlockingAgent(),
             SubAgentSessions: sessions);
@@ -74,31 +72,7 @@ public class SubAgentRunToolBackgroundTests
 
         result["status"]!.ToString().ShouldBe("completed");
         result["result"]!.ToString().ShouldBe("ok");
-        sessions.StartCount.ShouldBe(0);
-    }
-
-    private sealed class FakeSessions(string handle = "h-default") : ISubAgentSessions
-    {
-        public int StartCount { get; private set; }
-        public string? LastHandle { get; private set; }
-        public bool LastSilent { get; private set; }
-
-        public int ActiveCount => StartCount;
-
-        public string Start(SubAgentDefinition profile, string prompt, bool silent)
-        {
-            StartCount++;
-            LastHandle = handle;
-            LastSilent = silent;
-            return handle;
-        }
-
-        public SubAgentSessionView? Get(string h) => null;
-        public IReadOnlyList<SubAgentSessionView> List() => [];
-        public void Cancel(string h, SubAgentCancelSource source) { }
-        public Task<SubAgentWaitResult> WaitAsync(IReadOnlyList<string> handles, SubAgentWaitMode mode,
-            TimeSpan timeout, CancellationToken ct) => Task.FromResult(new SubAgentWaitResult([], []));
-        public bool Release(string h) => false;
+        sessions.StartCallCount.ShouldBe(0);
     }
 }
 
