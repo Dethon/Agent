@@ -4,6 +4,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.SubAgent;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -18,10 +19,31 @@ public class ChatMonitor(
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
-    ILogger<ChatMonitor> logger)
+    ILogger<ChatMonitor> logger,
+    ISubAgentSessionsRegistry? subAgentRegistry = null)
 {
     public async Task Monitor(CancellationToken cancellationToken)
     {
+        foreach (var ch in channels)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var req in ch.SubAgentCancelRequests.WithCancellation(cancellationToken))
+                    {
+                        if (subAgentRegistry?.TryGetByConversation(req.ConversationId, out var sessions) == true)
+                            sessions.Cancel(req.Handle, Domain.DTOs.SubAgent.SubAgentCancelSource.User);
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "SubAgentCancelRequests subscription failed for channel {ChannelId}", ch.ChannelId);
+                }
+            }, cancellationToken);
+        }
+
         try
         {
             var merged = channels
@@ -63,6 +85,9 @@ public class ChatMonitor(
 
         context.RegisterCompletionCallback(group.Complete);
 
+        var sessionManager = subAgentRegistry?.GetOrCreate(agentKey);
+        sessionManager?.RebindReply(first.Channel, first.Message.ConversationId);
+
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
@@ -94,14 +119,22 @@ public class ChatMonitor(
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
                         }
-                        // ReSharper disable once AccessToDisposedClosure
-                        return agent
-                            .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
-                            .WithErrorHandling(linkedCt)
-                            .ToUpdateAiResponsePairs()
-                            .Append((
-                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                            .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
+                        sessionManager?.SetParentTurnActive(true);
+                        try
+                        {
+                            // ReSharper disable once AccessToDisposedClosure
+                            return agent
+                                .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
+                                .WithErrorHandling(linkedCt)
+                                .ToUpdateAiResponsePairs()
+                                .Append((
+                                    new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
+                                .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
+                        }
+                        finally
+                        {
+                            sessionManager?.SetParentTurnActive(false);
+                        }
                 }
             })
             .Merge(linkedCt);
