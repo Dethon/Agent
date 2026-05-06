@@ -25,10 +25,6 @@ public class FsGlobTool(
             ? GlobMode.Files
             : GlobMode.Directories;
 
-        var effectivePattern = string.IsNullOrEmpty(basePath)
-            ? pattern
-            : $"{basePath.TrimEnd('/')}/{pattern}";
-
-        return ToolResponse.Create(await Run(effectivePattern, globMode, cancellationToken));
+        return ToolResponse.Create(await Run(pattern, globMode, cancellationToken, basePath));
     }
 }

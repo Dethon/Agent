@@ -61,9 +61,11 @@ public static class KnowledgeBasePrompt
         2. **Persist results, not steps.** Keep working files in `/sandbox/home/sandbox_user/...`. When
            the user wants the *result* in their notes, write a clean Markdown summary into the vault;
            don't dump raw script output into a note.
-        3. **Crossing surfaces.** The vault and sandbox are separate filesystems — `exec` cannot read
-           `/vault` paths directly. If a sandbox command needs vault content, read it with the vault
-           tools and pass it through, or write it into the sandbox first.
+        3. **Crossing surfaces.** The vault and sandbox are separate filesystems and `exec` only
+           runs against `/sandbox` paths — it cannot reach `/vault` directly. To bring vault content
+           into the sandbox (or push a sandbox result back into the vault), use the `copy` or `move`
+           tool with paths on the two mounts: it streams across natively, handles files and
+           directories, and is a single call — no manual read-then-create dance.
         4. **Be honest about what you ran.** When you used the sandbox, briefly say what you executed and
            what came back; the user should be able to reproduce it.
 

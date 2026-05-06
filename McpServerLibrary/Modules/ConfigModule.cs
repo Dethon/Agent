@@ -88,6 +88,9 @@ public static class ConfigModule
             .WithTools<FsGlobTool>()
             .WithTools<FsMoveTool>()
             .WithTools<FsInfoTool>()
+            .WithTools<FsCopyTool>()
+            .WithTools<FsBlobReadTool>()
+            .WithTools<FsBlobWriteTool>()
             // Prompts
             .WithPrompts<McpSystemPrompt>()
             // Resources

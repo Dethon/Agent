@@ -5,7 +5,7 @@ namespace Domain.Tools;
 // Standard error envelope for tool responses: { ok:false, errorCode, message, retryable, hint? }.
 //
 // When to call ToolError.Create explicitly:
-//   - The tool has a specific code worth surfacing (e.g. cross_filesystem, element_not_found).
+//   - The tool has a specific code worth surfacing (e.g. captcha_required, element_not_found).
 //   - The tool can offer concrete recovery guidance via `hint`.
 //   - The retryable flag isn't obvious from the exception type.
 //
@@ -32,7 +32,6 @@ public static class ToolError
         public const string CaptchaRequired = "captcha_required";
         public const string Timeout = "timeout";
         public const string InternalError = "internal_error";
-        public const string CrossFilesystem = "cross_filesystem";
     }
 
     public static JsonObject Create(

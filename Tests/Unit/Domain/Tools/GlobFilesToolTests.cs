@@ -129,6 +129,41 @@ public class GlobFilesToolTests
         obj["message"]!.GetValue<string>().ShouldContain("250");
     }
 
+    [Fact]
+    public async Task Run_WithBasePath_FilesMode_UsesJoinedRootAndUnchangedPattern()
+    {
+        var expectedRoot = Path.Combine(BasePath, "home/sandbox_user/xfs_tree");
+        _mockClient.Setup(c => c.GlobFiles(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
+
+        var result = await _tool.TestRun("**/*", GlobMode.Files, "home/sandbox_user/xfs_tree", CancellationToken.None);
+
+        result.AsArray().Count.ShouldBe(1);
+        _mockClient.Verify(c => c.GlobFiles(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Run_WithBasePath_DirectoriesMode_UsesJoinedRootAndUnchangedPattern()
+    {
+        var expectedRoot = Path.Combine(BasePath, "docs");
+        _mockClient.Setup(c => c.GlobDirectories(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "sub")]);
+
+        var result = await _tool.TestRun("**/*", GlobMode.Directories, "docs", CancellationToken.None);
+
+        result.AsArray().Count.ShouldBe(1);
+        _mockClient.Verify(c => c.GlobDirectories(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("../etc")]
+    [InlineData("foo/../bar")]
+    public async Task Run_WithBasePathContainingDotDot_ThrowsArgumentException(string basePath)
+    {
+        await Should.ThrowAsync<ArgumentException>(
+            () => _tool.TestRun("**/*", GlobMode.Files, basePath, CancellationToken.None));
+    }
+
     private class TestableGlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         : GlobFilesTool(client, libraryPath)
     {
@@ -137,5 +172,8 @@ public class GlobFilesToolTests
 
         public Task<JsonNode> TestRun(string pattern, GlobMode mode, CancellationToken cancellationToken)
             => Run(pattern, mode, cancellationToken);
+
+        public Task<JsonNode> TestRun(string pattern, GlobMode mode, string basePath, CancellationToken cancellationToken)
+            => Run(pattern, mode, cancellationToken, basePath);
     }
 }

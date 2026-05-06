@@ -6,6 +6,10 @@ namespace Domain.Tools.Files;
 
 public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
 {
+    private static readonly StringComparison _pathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
     protected const string Description = """
                                          Moves and/or renames a file or directory.
                                          Both arguments can be absolute paths under the library root, or relative paths
@@ -45,7 +49,7 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         var canonicalPath = Path.GetFullPath(path);
         var canonicalLibraryPath = Path.GetFullPath(libraryPath.BaseLibraryPath);
 
-        if (!canonicalPath.StartsWith(canonicalLibraryPath, StringComparison.OrdinalIgnoreCase))
+        if (!canonicalPath.StartsWith(canonicalLibraryPath, _pathComparison))
         {
             throw new ArgumentException($"""
                                          {nameof(MoveTool)} path must be within the library.

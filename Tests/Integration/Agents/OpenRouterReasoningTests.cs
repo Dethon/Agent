@@ -20,7 +20,7 @@ public class OpenRouterReasoningTests
         var apiKey = _configuration["openRouter:apiKey"]
                      ?? throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["openRouter:reasoningModel"] ?? "z-ai/glm-4.7-flash";
+        var model = _configuration["openRouter:reasoningModel"] ?? "google/gemini-2.5-flash";
         return (apiUrl, apiKey, model);
     }
 
@@ -34,10 +34,10 @@ public class OpenRouterReasoningTests
 
         var options = new ChatOptions
         {
-            AdditionalProperties = new AdditionalPropertiesDictionary
+            Reasoning = new ReasoningOptions
             {
-                ["reasoning"] = new JsonObject { ["effort"] = "low" },
-                ["include_reasoning"] = true
+                Effort = ReasoningEffort.Low,
+                Output = ReasoningOutput.Full
             }
         };
 

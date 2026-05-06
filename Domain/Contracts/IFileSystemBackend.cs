@@ -17,4 +17,12 @@ public interface IFileSystemBackend
     Task<JsonNode> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct);
     Task<JsonNode> DeleteAsync(string path, CancellationToken ct);
     Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct);
+
+    Task<JsonNode> CopyAsync(string sourcePath, string destinationPath,
+        bool overwrite, bool createDirectories, CancellationToken ct);
+
+    IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct);
+
+    Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct);
 }
