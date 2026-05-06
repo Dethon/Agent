@@ -9,4 +9,6 @@ public interface IHubEventDispatcher
     void HandleApprovalResolved(ApprovalResolvedNotification notification);
     void HandleToolCalls(ToolCallsNotification notification);
     void HandleUserMessage(UserMessageNotification notification);
+    void HandleSubAgentAnnounced(SubAgentAnnouncedNotification notification);
+    void HandleSubAgentUpdated(SubAgentUpdatedNotification notification);
 }

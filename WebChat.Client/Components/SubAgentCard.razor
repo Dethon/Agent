@@ -1,0 +1,69 @@
+@using WebChat.Client.State.SubAgents
+@inherits StoreSubscriberComponent
+@inject SubAgentStore SubAgentStore
+@inject WebChat.Client.Services.SubAgentService SubAgentService
+
+@if (_card is not null)
+{
+    <div class="subagent-card @StatusCssClass">
+        <div class="subagent-card-header">
+            <span class="subagent-icon">⚙</span>
+            <span class="subagent-handle">@_card.Handle</span>
+            <span class="subagent-id">(@_card.SubAgentId)</span>
+        </div>
+        <div class="subagent-status">
+            <span class="subagent-status-dot"></span>
+            <span class="subagent-status-text">@_card.Status</span>
+        </div>
+        @if (_card.Status == "Running")
+        {
+            <button class="subagent-cancel-btn" @onclick="HandleCancel" disabled="@_isCancelling">
+                @(_isCancelling ? "Cancelling…" : "Cancel")
+            </button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string Handle { get; set; } = default!;
+
+    private SubAgentCardState? _card;
+    private bool _isCancelling;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(SubAgentStore.StateObservable,
+            state => state.Cards.GetValueOrDefault(Handle),
+            card => _card = card);
+    }
+
+    private string StatusCssClass => _card?.Status switch
+    {
+        "Running" => "subagent-card--running",
+        "Completed" => "subagent-card--completed",
+        "Failed" => "subagent-card--failed",
+        "Cancelled" => "subagent-card--cancelled",
+        _ => ""
+    };
+
+    private async Task HandleCancel()
+    {
+        if (_card is null || _isCancelling)
+        {
+            return;
+        }
+
+        _isCancelling = true;
+        StateHasChanged();
+
+        try
+        {
+            await SubAgentService.CancelSubAgentAsync(_card.TopicId, Handle);
+        }
+        finally
+        {
+            _isCancelling = false;
+        }
+    }
+}

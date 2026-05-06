@@ -5,6 +5,7 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
+using WebChat.Client.State.SubAgents;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Hub;
@@ -93,6 +94,16 @@ public sealed class HubEventDispatcher(
             Reasoning: null,
             ToolCalls: notification.ToolCalls,
             MessageId: notification.MessageId));
+    }
+
+    public void HandleSubAgentAnnounced(SubAgentAnnouncedNotification notification)
+    {
+        dispatcher.Dispatch(new SubAgentAnnounced(notification.TopicId, notification.Handle, notification.SubAgentId));
+    }
+
+    public void HandleSubAgentUpdated(SubAgentUpdatedNotification notification)
+    {
+        dispatcher.Dispatch(new SubAgentUpdated(notification.TopicId, notification.Handle, notification.Status));
     }
 
     public void HandleUserMessage(UserMessageNotification notification)
