@@ -88,6 +88,8 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
+            .WithTools<SubAgentAnnounceTool>()
+            .WithTools<SubAgentUpdateTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
