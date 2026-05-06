@@ -33,6 +33,10 @@ public class SubAgentRunTool(
         string subAgentId,
         [Description("The task/prompt to send to the subagent")]
         string prompt,
+        [Description("When true, starts the subagent in the background and returns a handle immediately instead of waiting for completion")]
+        bool run_in_background = false,
+        [Description("When true, the subagent runs silently without sending progress updates to the channel")]
+        bool silent = false,
         CancellationToken ct = default)
     {
         var profile = _profiles.FirstOrDefault(p =>
@@ -44,6 +48,35 @@ public class SubAgentRunTool(
                 ToolError.Codes.NotFound,
                 $"Unknown subagent: '{subAgentId}'. Available: {string.Join(", ", _profiles.Select(p => p.Id))}",
                 retryable: false);
+        }
+
+        if (run_in_background)
+        {
+            if (featureConfig.SubAgentSessions is null)
+            {
+                return ToolError.Create(
+                    ToolError.Codes.Unavailable,
+                    "Background subagent execution is not available in this context",
+                    retryable: false);
+            }
+
+            try
+            {
+                var handle = featureConfig.SubAgentSessions.Start(profile, prompt, silent);
+                return new JsonObject
+                {
+                    ["status"] = "started",
+                    ["handle"] = handle,
+                    ["subagent_id"] = profile.Id
+                };
+            }
+            catch (InvalidOperationException ex)
+            {
+                return ToolError.Create(
+                    ToolError.Codes.Unavailable,
+                    ex.Message,
+                    retryable: true);
+            }
         }
 
         if (featureConfig.SubAgentFactory is null)
