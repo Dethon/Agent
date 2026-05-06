@@ -13,26 +13,21 @@ public class SubAgentListTool(FeatureConfig featureConfig)
         "Returns a compact summary of all background subagent sessions. " +
         "Each entry includes handle, subagent_id, status, started_at, and elapsed_seconds.";
 
-    public JsonNode RunAsync(CancellationToken ct = default)
+    public Task<JsonNode> RunAsync(CancellationToken ct = default)
     {
         if (featureConfig.SubAgentSessions is null)
-        {
-            return ToolError.Create(
-                ToolError.Codes.Unavailable,
-                "Background subagent sessions are not available in this context",
-                retryable: false);
-        }
+            return Task.FromResult<JsonNode>(ToolError.Create(ToolError.Codes.Unavailable,
+                "Background subagent control is not available in this context", retryable: false));
 
-        return new JsonArray(
-            featureConfig.SubAgentSessions.List()
-                .Select(v => (JsonNode)new JsonObject
-                {
-                    ["handle"] = v.Handle,
-                    ["subagent_id"] = v.SubAgentId,
-                    ["status"] = v.Status.ToString().ToLowerInvariant(),
-                    ["started_at"] = v.StartedAt.ToString("O"),
-                    ["elapsed_seconds"] = v.ElapsedSeconds
-                })
-                .ToArray());
+        var arr = new JsonArray(featureConfig.SubAgentSessions.List()
+            .Select(v => (JsonNode)new JsonObject
+            {
+                ["handle"] = v.Handle,
+                ["subagent_id"] = v.SubAgentId,
+                ["status"] = v.Status.ToString().ToLowerInvariant(),
+                ["started_at"] = v.StartedAt.ToString("O"),
+                ["elapsed_seconds"] = v.ElapsedSeconds
+            }).ToArray());
+        return Task.FromResult<JsonNode>(arr);
     }
 }

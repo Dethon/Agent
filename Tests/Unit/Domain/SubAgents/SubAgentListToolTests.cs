@@ -9,31 +9,31 @@ namespace Tests.Unit.Domain.SubAgents;
 public class SubAgentListToolTests
 {
     [Fact]
-    public void RunAsync_NoSessions_ReturnsUnavailable()
+    public async Task RunAsync_NoSessions_ReturnsUnavailable()
     {
         var config = new FeatureConfig(SubAgentSessions: null);
         var tool = new SubAgentListTool(config);
 
-        var result = tool.RunAsync();
+        var result = await tool.RunAsync();
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.ToString().ShouldBe("unavailable");
     }
 
     [Fact]
-    public void RunAsync_EmptyList_ReturnsEmptyArray()
+    public async Task RunAsync_EmptyList_ReturnsEmptyArray()
     {
         var sessions = new FakeSubAgentSessions { ListFunc = () => [] };
         var config = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentListTool(config);
 
-        var result = tool.RunAsync();
+        var result = await tool.RunAsync();
 
         result.AsArray().Count.ShouldBe(0);
     }
 
     [Fact]
-    public void RunAsync_ReturnsCompactViewsForAllSessions()
+    public async Task RunAsync_ReturnsCompactViewsForAllSessions()
     {
         var v1 = new SubAgentSessionView
         {
@@ -58,7 +58,7 @@ public class SubAgentListToolTests
         var config = new FeatureConfig(SubAgentSessions: sessions);
         var tool = new SubAgentListTool(config);
 
-        var result = tool.RunAsync();
+        var result = await tool.RunAsync();
 
         var array = result.AsArray();
         array.Count.ShouldBe(2);
