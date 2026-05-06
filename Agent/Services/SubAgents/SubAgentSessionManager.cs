@@ -106,6 +106,8 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             throw new InvalidOperationException($"Cannot release running session '{handle}'.");
         _sessions.TryRemove(handle, out _);
         _runs.TryRemove(handle, out _);
+        // Session is terminal → DisposeAsync only releases _cts and the agent; safe to fire-and-forget.
+        _ = s.DisposeAsync().AsTask();
         return true;
     }
 
@@ -130,9 +132,11 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         lock (_wakeLock)
         {
             _wakeBuffer.Add(session.Handle);
-            // Restart debounce window
-            _wakeDebounceCts?.Cancel();
+            // Restart debounce window: capture old, install new, cancel+dispose old.
+            var oldCts = _wakeDebounceCts;
             _wakeDebounceCts = new CancellationTokenSource();
+            oldCts?.Cancel();
+            oldCts?.Dispose();
             // Schedule the debounce
             _ = ScheduleWakeFlushAsync(_wakeDebounceCts.Token);
         }
@@ -169,5 +173,8 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             await s.DisposeAsync();
         _sessions.Clear();
         _runs.Clear();
+        _wakeDebounceCts?.Cancel();
+        _wakeDebounceCts?.Dispose();
+        _wakeDebounceCts = null;
     }
 }
