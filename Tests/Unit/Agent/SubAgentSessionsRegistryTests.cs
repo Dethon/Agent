@@ -43,6 +43,17 @@ public sealed class SubAgentSessionsRegistryTests
         sessions.ShouldBeNull();
     }
 
+    [Fact]
+    public void TryGetByConversation_AfterGetOrCreate_FindsManager()
+    {
+        var reg = new SubAgentSessionsRegistry(MakeFactory());
+        var key = new AgentKey("conv-xyz", "agent1");
+        var created = reg.GetOrCreate(key);
+
+        reg.TryGetByConversation("conv-xyz", out var sessions).ShouldBeTrue();
+        sessions.ShouldBeSameAs(created);
+    }
+
     private static Func<AgentKey, SubAgentSessionManager> MakeFactory() =>
         _ => new SubAgentSessionManager(
             agentFactory: _ => throw new NotImplementedException(),
