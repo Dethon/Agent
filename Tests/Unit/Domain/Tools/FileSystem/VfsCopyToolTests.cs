@@ -41,13 +41,14 @@ public class VfsCopyToolTests
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
-        src.Setup(b => b.OpenReadStreamAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MemoryStream(System.Text.Encoding.UTF8.GetBytes("hello")));
+        src.Setup(b => b.ReadChunksAsync("a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(System.Text.Encoding.UTF8.GetBytes("hello")));
 
         var dst = new Mock<IFileSystemBackend>();
         dst.SetupGet(b => b.FilesystemName).Returns("sandbox");
-        dst.Setup(b => b.WriteFromStreamAsync(
-                "a.md", It.IsAny<Stream>(), false, true, It.IsAny<CancellationToken>()))
+        dst.Setup(b => b.WriteChunksAsync(
+                "a.md", It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
             .ReturnsAsync(5L);
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
@@ -61,8 +62,9 @@ public class VfsCopyToolTests
 
         result["status"]!.GetValue<string>().ShouldBe("ok");
         result["bytes"]!.GetValue<long>().ShouldBe(5L);
-        dst.Verify(b => b.WriteFromStreamAsync(
-            "a.md", It.IsAny<Stream>(), false, true, It.IsAny<CancellationToken>()), Times.Once);
+        dst.Verify(b => b.WriteChunksAsync(
+            "a.md", It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            false, true, It.IsAny<CancellationToken>()), Times.Once);
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
