@@ -10,6 +10,7 @@ using Shouldly;
 
 namespace Tests.Integration.Agents;
 
+[Trait("Category", "Integration")]
 public sealed class SubAgentBackgroundFlowTests
 {
     [Fact]
@@ -29,7 +30,8 @@ public sealed class SubAgentBackgroundFlowTests
 
         var injected = await ReadOneAsync(systemCh.Messages, TimeSpan.FromSeconds(5));
         injected.ShouldNotBeNull();
-        injected!.Content.ShouldContain(handle);
+        injected!.Content.ShouldContain($"handle={handle}");
+        injected.Content.ShouldContain("status=completed");
         injected.Content.ShouldContain("subagent_check");
         injected.ConversationId.ShouldBe("conv-1");
         injected.ChannelId.ShouldBe("system");
@@ -76,7 +78,9 @@ public sealed class SubAgentBackgroundFlowTests
 
         var injected = await ReadOneAsync(systemCh.Messages, TimeSpan.FromSeconds(5));
         injected.ShouldNotBeNull();
-        injected!.Content.ShouldContain("subagent_check");
+        injected!.Content.ShouldContain($"handle={handle}");
+        injected.Content.ShouldContain("status=cancelled");
+        injected.Content.ShouldContain("(cancelled by user)");
     }
 
     private static SubAgentDefinition Profile() => new()

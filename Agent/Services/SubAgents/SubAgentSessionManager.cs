@@ -178,13 +178,19 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
     {
         if (_systemChannel is null || _replyChannel is null) return Task.CompletedTask;
 
-        var handleList = string.Join(", ", handles);
-        var content = $"[system] subagent_check: Background subagent(s) completed: {handleList}. " +
-                      $"Call subagent_check with the handle(s) to review results.";
+        var lines = handles
+            .Select(h => Get(h) is { } v
+                ? $"  - handle={v.Handle}, subagent={v.SubAgentId}, status={v.Status.ToString().ToLowerInvariant()}"
+                  + (v.CancelledBy is not null ? $" (cancelled by {v.CancelledBy.ToString()!.ToLowerInvariant()})" : "")
+                : $"  - handle={h}");
+
+        var content = "[system] Background subagents have completed and are awaiting your attention:\n"
+                      + string.Join("\n", lines)
+                      + "\nUse subagent_check on each handle to retrieve results.";
 
         var msg = new ChannelMessage
         {
-            ChannelId = SystemChannelConnection.Id,
+            ChannelId = _systemChannel.ChannelId,
             ConversationId = _replyToConversationId,
             Sender = "system",
             Content = content,
