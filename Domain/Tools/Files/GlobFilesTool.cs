@@ -16,7 +16,8 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
     private const int FileResultCap = 200;
 
-    protected async Task<JsonNode> Run(string pattern, GlobMode mode, CancellationToken cancellationToken)
+    protected async Task<JsonNode> Run(string pattern, GlobMode mode, CancellationToken cancellationToken,
+        string? basePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
 
@@ -35,24 +36,50 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
             pattern = Path.GetRelativePath(libraryPath.BaseLibraryPath, pattern);
         }
 
+        var matcherRoot = ResolveMatcherRoot(basePath);
+
         return mode switch
         {
-            GlobMode.Directories => await RunDirectories(pattern, cancellationToken),
-            GlobMode.Files => await RunFiles(pattern, cancellationToken),
+            GlobMode.Directories => await RunDirectories(matcherRoot, pattern, cancellationToken),
+            GlobMode.Files => await RunFiles(matcherRoot, pattern, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Invalid glob mode")
         };
     }
 
-    private async Task<JsonNode> RunDirectories(string pattern, CancellationToken cancellationToken)
+    private string ResolveMatcherRoot(string? basePath)
     {
-        var result = await client.GlobDirectories(libraryPath.BaseLibraryPath, pattern, cancellationToken);
+        if (string.IsNullOrEmpty(basePath))
+        {
+            return libraryPath.BaseLibraryPath;
+        }
+
+        if (basePath.Contains(".."))
+        {
+            throw new ArgumentException("basePath must not contain '..' segments", nameof(basePath));
+        }
+
+        var combined = Path.Combine(libraryPath.BaseLibraryPath, basePath.TrimStart('/'));
+        var canonRoot = Path.GetFullPath(combined);
+        var canonBase = Path.GetFullPath(libraryPath.BaseLibraryPath);
+
+        if (!canonRoot.StartsWith(canonBase, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("basePath must resolve under the library root", nameof(basePath));
+        }
+
+        return canonRoot;
+    }
+
+    private async Task<JsonNode> RunDirectories(string root, string pattern, CancellationToken cancellationToken)
+    {
+        var result = await client.GlobDirectories(root, pattern, cancellationToken);
         return JsonSerializer.SerializeToNode(result)
                ?? throw new InvalidOperationException("Failed to serialize GlobDirectories result");
     }
 
-    private async Task<JsonNode> RunFiles(string pattern, CancellationToken cancellationToken)
+    private async Task<JsonNode> RunFiles(string root, string pattern, CancellationToken cancellationToken)
     {
-        var result = await client.GlobFiles(libraryPath.BaseLibraryPath, pattern, cancellationToken);
+        var result = await client.GlobFiles(root, pattern, cancellationToken);
 
         if (result.Length <= FileResultCap)
         {
