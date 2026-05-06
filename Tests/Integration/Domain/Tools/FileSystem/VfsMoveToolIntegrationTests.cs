@@ -26,8 +26,7 @@ public class VfsMoveToolIntegrationTests(MultiFileSystemFixture fx)
 
         result["status"]!.GetValue<string>().ShouldBe("ok");
         result["summary"]!["transferred"]!.GetValue<int>().ShouldBe(2);
-        File.Exists(Path.Combine(fx.LibraryPath, "project", "a.md")).ShouldBeFalse();
-        File.Exists(Path.Combine(fx.LibraryPath, "project", "sub", "b.md")).ShouldBeFalse();
+        Directory.Exists(Path.Combine(fx.LibraryPath, "project")).ShouldBeFalse();
         File.ReadAllText(Path.Combine(fx.NotesPath, "project", "a.md")).ShouldBe("alpha");
         File.ReadAllText(Path.Combine(fx.NotesPath, "project", "sub", "b.md")).ShouldBe("beta");
     }

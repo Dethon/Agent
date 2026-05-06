@@ -148,11 +148,6 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                     src.Backend.ReadChunksAsync(srcRel, ct),
                     overwrite, createDirectories, ct);
 
-                if (deleteSource)
-                {
-                    await src.Backend.DeleteAsync(srcRel, ct);
-                }
-
                 perEntry.Add(new JsonObject
                 {
                     ["source"] = srcVirtualEntry,
@@ -178,6 +173,11 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 });
                 failed++;
             }
+        }
+
+        if (deleteSource && failed == 0 && transferred > 0)
+        {
+            await src.Backend.DeleteAsync(src.RelativePath, ct);
         }
 
         var status = (transferred, failed) switch
