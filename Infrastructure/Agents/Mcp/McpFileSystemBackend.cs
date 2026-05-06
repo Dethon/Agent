@@ -120,101 +120,6 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
         }, ct);
     }
 
-    public async Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct)
-    {
-        const int chunkSize = 256 * 1024;
-        var buffer = new MemoryStream();
-        long offset = 0;
-
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var node = await CallToolAsync("fs_blob_read", new Dictionary<string, object?>
-            {
-                ["path"] = path,
-                ["offset"] = offset,
-                ["length"] = chunkSize
-            }, ct);
-
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
-            {
-                throw new IOException($"fs_blob_read failed: {obj["message"]?.GetValue<string>()}");
-            }
-
-            var b64 = node["contentBase64"]!.GetValue<string>();
-            var bytes = Convert.FromBase64String(b64);
-            buffer.Write(bytes, 0, bytes.Length);
-            offset += bytes.Length;
-
-            if (node["eof"]!.GetValue<bool>())
-            {
-                break;
-            }
-
-            if (bytes.Length == 0)
-            {
-                break;
-            }
-        }
-
-        buffer.Position = 0;
-        return buffer;
-    }
-
-    public async Task<long> WriteFromStreamAsync(string path, Stream content,
-        bool overwrite, bool createDirectories, CancellationToken ct)
-    {
-        const int chunkSize = 256 * 1024;
-        var buffer = new byte[chunkSize];
-        long offset = 0;
-
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var read = await content.ReadAsync(buffer.AsMemory(0, chunkSize), ct);
-            if (read == 0)
-            {
-                break;
-            }
-
-            var chunk = read == chunkSize ? buffer : buffer[..read];
-            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
-            {
-                ["path"] = path,
-                ["contentBase64"] = Convert.ToBase64String(chunk),
-                ["offset"] = offset,
-                ["overwrite"] = overwrite,
-                ["createDirectories"] = createDirectories
-            }, ct);
-
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
-            {
-                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
-            }
-
-            offset += read;
-        }
-
-        if (offset == 0)
-        {
-            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
-            {
-                ["path"] = path,
-                ["contentBase64"] = "",
-                ["offset"] = 0L,
-                ["overwrite"] = overwrite,
-                ["createDirectories"] = createDirectories
-            }, ct);
-
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
-            {
-                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
-            }
-        }
-
-        return offset;
-    }
-
     public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -282,7 +187,7 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
 
         if (offset == 0)
         {
-            // Empty source: still create the file (matches pre-change semantics of WriteFromStreamAsync).
+            // Empty source: still create the file with zero bytes.
             var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
             {
                 ["path"] = path,
