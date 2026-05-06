@@ -45,3 +45,15 @@ public record UserMessageNotification(
     DateTimeOffset? Timestamp,
     string? CorrelationId = null,
     string? SpaceSlug = null);
+
+public record SubAgentAnnouncedNotification(
+    string TopicId,
+    string Handle,
+    string SubAgentId,
+    string? SpaceSlug = null);
+
+public record SubAgentUpdatedNotification(
+    string TopicId,
+    string Handle,
+    string Status,
+    string? SpaceSlug = null);

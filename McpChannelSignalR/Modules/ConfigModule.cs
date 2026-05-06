@@ -40,6 +40,8 @@ public static class ConfigModule
             .AddSingleton<ISessionService>(sp => sp.GetRequiredService<SessionService>())
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
+            .AddSingleton<SubAgentSignalService>()
+            .AddSingleton<ISubAgentSignalService>(sp => sp.GetRequiredService<SubAgentSignalService>())
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>();
 
