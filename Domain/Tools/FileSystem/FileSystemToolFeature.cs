@@ -64,6 +64,7 @@ public class FileSystemToolFeature(IVirtualFileSystemRegistry registry) : IDomai
             ### Cross-mount reminders
 
             - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.
+            - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
             - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
             """;
     }

@@ -46,7 +46,7 @@ public static class VaultPrompt
 
         ### Capabilities & limits
 
-        - The vault supports the standard filesystem operations except command execution. If you need to run a script over vault content, use the sandbox (copy the file across first; the two filesystems do not share storage).
+        - The vault supports the standard filesystem operations except command execution. If you need to run a script over vault content, use the sandbox: the `copy` (or `move`) tool transfers files and directories across mounts in a single call — the two filesystems don't share storage, but you don't need to hand-roll a read/write loop to bridge them.
         - Writes are restricted to a configured set of text extensions; attempts outside that set return an error envelope. The error tells you which extensions are accepted — pick one rather than guessing.
         - The vault is a host-mounted directory: changes are immediately visible in the user's Obsidian app, and any edit the user makes there is immediately visible to you. Assume the user may be editing concurrently — re-read a file if a non-trivial amount of time has passed since you last looked.
         - There is no built-in versioning. Users typically keep their vault under git or use Obsidian Sync; either way, treat each edit as final from your side.
