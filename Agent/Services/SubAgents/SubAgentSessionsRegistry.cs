@@ -22,9 +22,9 @@ public sealed class SubAgentSessionsRegistry : ISubAgentSessionsRegistry, IAsync
         return mgr;
     }
 
-    public ISubAgentSessions GetOrCreateExplicit(AgentKey key, Func<SubAgentSessionManager> factory)
+    public ISubAgentSessions GetOrCreateExplicit(AgentKey key, Func<ISubAgentSessions> factory)
     {
-        var mgr = _byKey.GetOrAdd(key, _ => factory());
+        var mgr = _byKey.GetOrAdd(key, _ => (SubAgentSessionManager)factory());
         _byConversation.TryAdd(key.ConversationId, key);
         return mgr;
     }

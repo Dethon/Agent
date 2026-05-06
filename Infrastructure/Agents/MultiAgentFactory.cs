@@ -16,7 +16,9 @@ public sealed class MultiAgentFactory(
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null,
-    ILoggerFactory? loggerFactory = null) : IAgentFactory, IScheduleAgentFactory
+    ILoggerFactory? loggerFactory = null,
+    ISubAgentSessionsRegistry? registry = null,
+    Func<AgentKey, Func<SubAgentDefinition, DisposableAgent>, string, ISubAgentSessions>? sessionManagerFactory = null) : IAgentFactory, IScheduleAgentFactory
 {
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
@@ -95,9 +97,19 @@ public sealed class MultiAgentFactory(
         var name = $"{definition.Name}-{agentKey.ConversationId}";
         var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
 
+        ISubAgentSessions? sessions = null;
+        if (registry is not null && sessionManagerFactory is not null)
+        {
+            var agentFactory = (Func<SubAgentDefinition, DisposableAgent>)(def =>
+                CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId));
+            sessions = registry.GetOrCreateExplicit(agentKey,
+                () => sessionManagerFactory(agentKey, agentFactory, agentKey.ConversationId));
+        }
+
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId),
-            UserId: userId);
+            UserId: userId,
+            SubAgentSessions: sessions);
         var domainTools = domainToolRegistry
             .GetToolsForFeatures(definition.EnabledFeatures, featureConfig)
             .ToList();

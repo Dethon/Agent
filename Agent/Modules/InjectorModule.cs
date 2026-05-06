@@ -1,7 +1,9 @@
 using Agent.App;
+using Agent.Services.SubAgents;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -38,13 +40,22 @@ public static class InjectorModule
                 .AddSingleton<CustomAgentRegistry>()
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
                 .AddSingleton<IAgentFactory>(sp =>
-                    new MultiAgentFactory(
+                {
+                    var sessionFactory = sp.GetService<SubAgentSessionManagerFactory>();
+                    Func<AgentKey, Func<SubAgentDefinition, DisposableAgent>, string, ISubAgentSessions>? sessionDelegate =
+                        sessionFactory is not null
+                            ? (key, factory, convId) => sessionFactory.Create(key, factory, convId)
+                            : null;
+                    return new MultiAgentFactory(
                         sp,
                         sp.GetRequiredService<IAgentDefinitionProvider>(),
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
-                        sp.GetService<ILoggerFactory>()))
+                        sp.GetService<ILoggerFactory>(),
+                        sp.GetService<ISubAgentSessionsRegistry>(),
+                        sessionDelegate);
+                })
                 .AddSingleton<IScheduleAgentFactory>(sp =>
                     (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
         }

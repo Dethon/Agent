@@ -25,6 +25,7 @@ public static class SubAgentModule
 
             services.AddSingleton<SystemChannelConnection>();
             services.AddSingleton<IChannelConnection>(sp => sp.GetRequiredService<SystemChannelConnection>());
+            services.AddSingleton<SubAgentSessionManagerFactory>();
 
             services.AddSingleton<ISubAgentSessionsRegistry>(_ =>
                 new SubAgentSessionsRegistry(_ => throw new InvalidOperationException(

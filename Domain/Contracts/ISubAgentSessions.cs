@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.SubAgent;
 
@@ -13,4 +14,7 @@ public interface ISubAgentSessions
         TimeSpan timeout, CancellationToken ct);
     bool Release(string handle);
     int ActiveCount { get; }
+
+    void SetParentTurnActive(bool active) { }
+    void RebindReply(IChannelConnection channel, string conversationId) { }
 }
