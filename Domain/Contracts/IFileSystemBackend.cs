@@ -21,8 +21,8 @@ public interface IFileSystemBackend
     Task<JsonNode> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct);
 
-    Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct);
+    IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct);
 
-    Task<long> WriteFromStreamAsync(string path, Stream content,
+    Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
         bool overwrite, bool createDirectories, CancellationToken ct);
 }

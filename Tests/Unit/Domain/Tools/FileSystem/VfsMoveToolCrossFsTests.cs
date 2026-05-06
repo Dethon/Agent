@@ -16,13 +16,17 @@ public class VfsMoveToolCrossFsTests
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
-        src.Setup(b => b.OpenReadStreamAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MemoryStream(Encoding.UTF8.GetBytes("hello")));
+        src.Setup(b => b.ReadChunksAsync("a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("hello")));
         src.Setup(b => b.DeleteAsync("a.md", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject { ["status"] = "deleted" });
 
         var dst = new Mock<IFileSystemBackend>();
         dst.SetupGet(b => b.FilesystemName).Returns("sandbox");
+        dst.Setup(b => b.WriteChunksAsync(
+                "a.md", It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5L);
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/a.md"))
@@ -34,7 +38,8 @@ public class VfsMoveToolCrossFsTests
         var result = await tool.RunAsync("/vault/a.md", "/sandbox/a.md");
 
         result["status"]!.GetValue<string>().ShouldBe("ok");
-        dst.Verify(b => b.WriteFromStreamAsync("a.md", It.IsAny<Stream>(),
+        dst.Verify(b => b.WriteChunksAsync("a.md",
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
             false, true, It.IsAny<CancellationToken>()), Times.Once);
         src.Verify(b => b.DeleteAsync("a.md", It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -59,6 +64,6 @@ public class VfsMoveToolCrossFsTests
         await tool.RunAsync("/vault/a.md", "/vault/b.md");
 
         backend.Verify(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()), Times.Once);
-        backend.Verify(b => b.OpenReadStreamAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        backend.Verify(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

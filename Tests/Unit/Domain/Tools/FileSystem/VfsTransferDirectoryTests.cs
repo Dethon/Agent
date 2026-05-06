@@ -20,12 +20,16 @@ public class VfsTransferDirectoryTests
                 new JsonObject { ["path"] = "src/a.md" },
                 new JsonObject { ["path"] = "src/sub/b.md" }
             });
-        src.Setup(b => b.OpenReadStreamAsync("src/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("A")));
-        src.Setup(b => b.OpenReadStreamAsync("src/sub/b.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("BB")));
+        src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
+        src.Setup(b => b.ReadChunksAsync("src/sub/b.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("BB")));
 
         var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
 
         var srcRes = new FileSystemResolution(src.Object, "src");
         var dstRes = new FileSystemResolution(dst.Object, "dst");
@@ -38,9 +42,11 @@ public class VfsTransferDirectoryTests
         result["summary"]!["transferred"]!.GetValue<int>().ShouldBe(2);
         result["summary"]!["failed"]!.GetValue<int>().ShouldBe(0);
         result["entries"]!.AsArray().Count.ShouldBe(2);
-        dst.Verify(b => b.WriteFromStreamAsync("dst/a.md", It.IsAny<Stream>(),
+        dst.Verify(b => b.WriteChunksAsync("dst/a.md",
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
             false, true, It.IsAny<CancellationToken>()), Times.Once);
-        dst.Verify(b => b.WriteFromStreamAsync("dst/sub/b.md", It.IsAny<Stream>(),
+        dst.Verify(b => b.WriteChunksAsync("dst/sub/b.md",
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
             false, true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -54,12 +60,17 @@ public class VfsTransferDirectoryTests
                 new JsonObject { ["path"] = "src/a.md" },
                 new JsonObject { ["path"] = "src/b.md" }
             });
-        src.Setup(b => b.OpenReadStreamAsync("src/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("A")));
-        src.Setup(b => b.OpenReadStreamAsync("src/b.md", It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new IOException("boom"));
+        src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
+        src.Setup(b => b.ReadChunksAsync("src/b.md", It.IsAny<CancellationToken>()))
+            .Throws(new IOException("boom"));
 
         var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
+
         var srcRes = new FileSystemResolution(src.Object, "src");
         var dstRes = new FileSystemResolution(dst.Object, "dst");
 
@@ -82,10 +93,15 @@ public class VfsTransferDirectoryTests
                 new JsonObject { ["path"] = "src/a.md" },
                 new JsonObject { ["path"] = "elsewhere/secret.md" }
             });
-        src.Setup(b => b.OpenReadStreamAsync("src/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("A")));
+        src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
 
         var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
+
         var srcRes = new FileSystemResolution(src.Object, "src");
         var dstRes = new FileSystemResolution(dst.Object, "dst");
 
@@ -103,9 +119,10 @@ public class VfsTransferDirectoryTests
         failedEntry["error"]!.GetValue<string>().ShouldContain("not under source directory");
         failedEntry["destination"].ShouldBeNull();
 
-        dst.Verify(b => b.WriteFromStreamAsync(
+        dst.Verify(b => b.WriteChunksAsync(
                 It.Is<string>(p => p.Contains("secret")),
-                It.IsAny<Stream>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
+                It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -115,10 +132,15 @@ public class VfsTransferDirectoryTests
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonArray { new JsonObject { ["path"] = "src/a.md" } });
-        src.Setup(b => b.OpenReadStreamAsync("src/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => new MemoryStream(Encoding.UTF8.GetBytes("A")));
+        src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
 
         var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
+
         var srcRes = new FileSystemResolution(src.Object, "src");
         var dstRes = new FileSystemResolution(dst.Object, "dst");
 
