@@ -119,45 +119,45 @@ public class ChatMonitor(
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
                         }
-                        sessionManager?.SetParentTurnActive(true);
-                        try
-                        {
-                            // ReSharper disable once AccessToDisposedClosure
-                            return agent
-                                .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
-                                .WithErrorHandling(linkedCt)
-                                .ToUpdateAiResponsePairs()
-                                .Append((
-                                    new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                                .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
-                        }
-                        finally
-                        {
-                            sessionManager?.SetParentTurnActive(false);
-                        }
+                        // ReSharper disable once AccessToDisposedClosure
+                        return agent
+                            .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
+                            .WithErrorHandling(linkedCt)
+                            .ToUpdateAiResponsePairs()
+                            .Append((
+                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
+                            .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
                 }
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
+        sessionManager?.SetParentTurnActive(true);
+        try
         {
-            foreach (var mapped in MapResponseUpdate(update))
+            await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
             {
-                await channel.SendReplyAsync(
-                    conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
-            }
-
-            foreach (var error in update.Contents.OfType<ErrorContent>())
-            {
-                await metricsPublisher.PublishAsync(new ErrorEvent
+                foreach (var mapped in MapResponseUpdate(update))
                 {
-                    Service = "agent",
-                    ErrorType = error.ErrorCode ?? "Unknown",
-                    Message = error.Message
-                }, ct);
-            }
+                    await channel.SendReplyAsync(
+                        conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+                }
 
-            yield return true;
+                foreach (var error in update.Contents.OfType<ErrorContent>())
+                {
+                    await metricsPublisher.PublishAsync(new ErrorEvent
+                    {
+                        Service = "agent",
+                        ErrorType = error.ErrorCode ?? "Unknown",
+                        Message = error.Message
+                    }, ct);
+                }
+
+                yield return true;
+            }
+        }
+        finally
+        {
+            sessionManager?.SetParentTurnActive(false);
         }
     }
 
