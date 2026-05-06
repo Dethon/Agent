@@ -13,27 +13,40 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
     public event Action<IReadOnlyList<string>>? WakeRequested;
 
     private readonly Func<SubAgentDefinition, DisposableAgent> _agentFactory;
-    private readonly string _replyToConversationId;
-    private readonly IChannelConnection? _replyChannel;
     private readonly TimeSpan _wakeDebounce;
     private readonly ConcurrentDictionary<string, SubAgentSession> _sessions = new();
     private readonly ConcurrentDictionary<string, Task> _runs = new();
+    private readonly SystemChannelConnection? _systemChannel;
+    private readonly AgentKey _agentKey;
 
     private readonly object _wakeLock = new();
     private readonly HashSet<string> _wakeBuffer = [];
     private CancellationTokenSource? _wakeDebounceCts;
     private bool _isParentTurnActive = true;
 
+    private volatile string _replyToConversationId;
+    private volatile IChannelConnection? _replyChannel;
+
     public SubAgentSessionManager(
         Func<SubAgentDefinition, DisposableAgent> agentFactory,
         string replyToConversationId,
         IChannelConnection? replyChannel,
-        TimeSpan? wakeDebounce = null)
+        TimeSpan? wakeDebounce = null,
+        SystemChannelConnection? systemChannel = null,
+        AgentKey agentKey = default)
     {
         _agentFactory = agentFactory;
         _replyToConversationId = replyToConversationId;
         _replyChannel = replyChannel;
         _wakeDebounce = wakeDebounce ?? TimeSpan.FromMilliseconds(250);
+        _systemChannel = systemChannel;
+        _agentKey = agentKey;
+    }
+
+    public void RebindReply(IChannelConnection channel, string conversationId)
+    {
+        _replyChannel = channel;
+        _replyToConversationId = conversationId;
     }
 
     public int ActiveCount => _sessions.Values.Count(s => !s.IsTerminal);
@@ -124,8 +137,6 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
 
     private void OnSessionTerminal(SubAgentSession session)
     {
-        // TODO(T8): post card status update through ReplyChannel here.
-
         // Skip wake if parent cancelled itself.
         if (session.CancelledBy == SubAgentCancelSource.Parent) return;
 
@@ -160,6 +171,28 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             _wakeBuffer.Clear();
         }
         WakeRequested?.Invoke(toEmit);
+        _ = EmitWakeAsync(toEmit);
+    }
+
+    private Task EmitWakeAsync(IReadOnlyList<string> handles)
+    {
+        if (_systemChannel is null || _replyChannel is null) return Task.CompletedTask;
+
+        var handleList = string.Join(", ", handles);
+        var content = $"[system] subagent_check: Background subagent(s) completed: {handleList}. " +
+                      $"Call subagent_check with the handle(s) to review results.";
+
+        var msg = new ChannelMessage
+        {
+            ChannelId = SystemChannelConnection.Id,
+            ConversationId = _replyToConversationId,
+            Sender = "system",
+            Content = content,
+            AgentId = _agentKey.AgentId
+        };
+
+        _systemChannel.InjectAsync(msg, _replyChannel);
+        return Task.CompletedTask;
     }
 
     private static string NewHandle() => Guid.NewGuid().ToString("N")[..16];
