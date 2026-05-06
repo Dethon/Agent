@@ -31,6 +31,9 @@ public static class SubAgentModule
                 new SubAgentSessionsRegistry(_ => throw new InvalidOperationException(
                     "Manager must be created via MultiAgentFactory which supplies agent + reply context.")));
 
+            services.AddSingleton<SubAgentCancelSink>();
+            services.AddSingleton<ISubAgentCancelSink>(sp => sp.GetRequiredService<SubAgentCancelSink>());
+
             services.AddTransient<IDomainToolFeature, SubAgentToolFeature>();
 
             return services;
