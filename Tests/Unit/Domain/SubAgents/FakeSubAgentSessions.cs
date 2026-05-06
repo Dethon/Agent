@@ -44,4 +44,7 @@ internal sealed class FakeSubAgentSessions : ISubAgentSessions
         LastCancelHandle = handle;
         LastCancelSource = source;
     }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+

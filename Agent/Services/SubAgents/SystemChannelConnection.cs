@@ -19,7 +19,7 @@ public sealed class SystemChannelConnection : IChannelConnection
 
     public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
 
-    public void InjectAsync(ChannelMessage message, IChannelConnection? replyChannel)
+    public void Inject(ChannelMessage message, IChannelConnection? replyChannel)
     {
         if (replyChannel is not null)
             _replyRoutes[message.ConversationId] = replyChannel;

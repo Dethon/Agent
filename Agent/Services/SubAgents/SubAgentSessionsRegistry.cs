@@ -6,7 +6,7 @@ namespace Agent.Services.SubAgents;
 
 public sealed class SubAgentSessionsRegistry : ISubAgentSessionsRegistry, IAsyncDisposable
 {
-    private readonly ConcurrentDictionary<AgentKey, SubAgentSessionManager> _byKey = new();
+    private readonly ConcurrentDictionary<AgentKey, ISubAgentSessions> _byKey = new();
     private readonly ConcurrentDictionary<string, AgentKey> _byConversation = new();
     private readonly Func<AgentKey, SubAgentSessionManager> _factory;
 
@@ -24,7 +24,7 @@ public sealed class SubAgentSessionsRegistry : ISubAgentSessionsRegistry, IAsync
 
     public ISubAgentSessions GetOrCreateExplicit(AgentKey key, Func<ISubAgentSessions> factory)
     {
-        var mgr = _byKey.GetOrAdd(key, _ => (SubAgentSessionManager)factory());
+        var mgr = _byKey.GetOrAdd(key, _ => factory());
         _byConversation.TryAdd(key.ConversationId, key);
         return mgr;
     }
@@ -50,8 +50,9 @@ public sealed class SubAgentSessionsRegistry : ISubAgentSessionsRegistry, IAsync
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var m in _byKey.Values) await m.DisposeAsync();
+        await Task.WhenAll(_byKey.Values.Select(m => m.DisposeAsync().AsTask()));
         _byKey.Clear();
         _byConversation.Clear();
     }
 }
+

@@ -18,14 +18,15 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
     private readonly ConcurrentDictionary<string, Task> _runs = new();
     private readonly SystemChannelConnection? _systemChannel;
     private readonly AgentKey _agentKey;
+    private readonly string _initialConversationId;
 
     private readonly object _wakeLock = new();
     private readonly HashSet<string> _wakeBuffer = [];
     private CancellationTokenSource? _wakeDebounceCts;
     private bool _isParentTurnActive = true;
 
-    private volatile string _replyToConversationId;
-    private volatile IChannelConnection? _replyChannel;
+    private sealed record ReplyTarget(IChannelConnection Channel, string ConversationId);
+    private volatile ReplyTarget? _replyTarget;
 
     public SubAgentSessionManager(
         Func<SubAgentDefinition, DisposableAgent> agentFactory,
@@ -36,8 +37,8 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         AgentKey agentKey = default)
     {
         _agentFactory = agentFactory;
-        _replyToConversationId = replyToConversationId;
-        _replyChannel = replyChannel;
+        _initialConversationId = replyToConversationId;
+        _replyTarget = replyChannel is null ? null : new ReplyTarget(replyChannel, replyToConversationId);
         _wakeDebounce = wakeDebounce ?? TimeSpan.FromMilliseconds(250);
         _systemChannel = systemChannel;
         _agentKey = agentKey;
@@ -45,8 +46,7 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
 
     public void RebindReply(IChannelConnection channel, string conversationId)
     {
-        _replyChannel = channel;
-        _replyToConversationId = conversationId;
+        _replyTarget = new ReplyTarget(channel, conversationId);
     }
 
     public int ActiveCount => _sessions.Values.Count(s => !s.IsTerminal);
@@ -57,11 +57,12 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             throw new InvalidOperationException(
                 $"Too many active subagents in this thread ({MaxConcurrentPerThread} max). Cancel or wait on existing handles first.");
 
+        var rt = _replyTarget;
         var handle = NewHandle();
         var session = new SubAgentSession(handle, profile, prompt, silent,
             agentFactory: () => _agentFactory(profile),
-            replyToConversationId: _replyToConversationId,
-            replyChannel: _replyChannel);
+            replyToConversationId: rt?.ConversationId ?? _initialConversationId,
+            replyChannel: rt?.Channel);
         _sessions[handle] = session;
 
         var run = Task.Run(async () =>
@@ -171,12 +172,13 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             _wakeBuffer.Clear();
         }
         WakeRequested?.Invoke(toEmit);
-        _ = EmitWakeAsync(toEmit);
+        EmitWake(toEmit);
     }
 
-    private Task EmitWakeAsync(IReadOnlyList<string> handles)
+    private void EmitWake(IReadOnlyList<string> handles)
     {
-        if (_systemChannel is null || _replyChannel is null) return Task.CompletedTask;
+        var rt = _replyTarget;
+        if (_systemChannel is null || rt is null) return;
 
         var lines = handles
             .Select(h => Get(h) is { } v
@@ -191,14 +193,13 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         var msg = new ChannelMessage
         {
             ChannelId = _systemChannel.ChannelId,
-            ConversationId = _replyToConversationId,
+            ConversationId = rt.ConversationId,
             Sender = "system",
             Content = content,
             AgentId = _agentKey.AgentId
         };
 
-        _systemChannel.InjectAsync(msg, _replyChannel);
-        return Task.CompletedTask;
+        _systemChannel.Inject(msg, rt.Channel);
     }
 
     private static string NewHandle() => Guid.NewGuid().ToString("N")[..16];

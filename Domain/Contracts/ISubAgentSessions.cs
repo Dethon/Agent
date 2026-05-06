@@ -1,10 +1,9 @@
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.SubAgent;
 
 namespace Domain.Contracts;
 
-public interface ISubAgentSessions
+public interface ISubAgentSessions : IAsyncDisposable
 {
     string Start(SubAgentDefinition profile, string prompt, bool silent);
     SubAgentSessionView? Get(string handle);
@@ -18,3 +17,4 @@ public interface ISubAgentSessions
     void SetParentTurnActive(bool active) { }
     void RebindReply(IChannelConnection channel, string conversationId) { }
 }
+
