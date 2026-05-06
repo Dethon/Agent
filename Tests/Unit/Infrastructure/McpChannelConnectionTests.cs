@@ -54,4 +54,25 @@ public class McpChannelConnectionTests
             break;
         }
     }
+
+    [Fact]
+    public async Task HandleCancelSubAgentNotification_WritesToCancelStream()
+    {
+        var sut = new McpChannelConnection("ch-3");
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            conversationId = "100:200",
+            handle = "worker-1"
+        });
+
+        sut.HandleCancelSubAgentNotification(payload);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var req in sut.SubAgentCancelRequests.WithCancellation(cts.Token))
+        {
+            req.ConversationId.ShouldBe("100:200");
+            req.Handle.ShouldBe("worker-1");
+            break;
+        }
+    }
 }
