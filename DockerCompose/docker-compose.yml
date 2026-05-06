@@ -226,10 +226,13 @@ services:
         - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
-      - ${SANDBOX_HOME_PATH:-./volumes/sandbox_home}:/home/sandbox_user
+      - ${SANDBOX_HOME_PATH:-./volumes/sandbox}:/home/sandbox_user
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      HOME: /home/sandbox_user
+      PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     networks:
       - jackbot
     depends_on:
@@ -498,9 +501,6 @@ services:
     depends_on:
       - webui
       - agent
-
-volumes:
-  sandbox-data:
 
 networks:
   jackbot:
