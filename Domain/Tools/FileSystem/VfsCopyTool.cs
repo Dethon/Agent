@@ -126,9 +126,19 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 ? jv.GetValue<string>()
                 : entry!["path"]!.GetValue<string>();
             var tail = ExtractTail(srcRel, src.RelativePath);
-            var dstRel = string.IsNullOrEmpty(tail)
-                ? dst.RelativePath
-                : $"{dst.RelativePath.TrimEnd('/')}/{tail}";
+            if (tail is null)
+            {
+                perEntry.Add(new JsonObject
+                {
+                    ["source"] = srcRel,
+                    ["status"] = "failed",
+                    ["error"] = $"Glob entry '{srcRel}' is not under source directory '{src.RelativePath}'; refusing to flatten."
+                });
+                failed++;
+                continue;
+            }
+
+            var dstRel = $"{dst.RelativePath.TrimEnd('/')}/{tail}";
             var dstVirtualEntry = $"{dstVirtual.TrimEnd('/')}/{tail}";
             var srcVirtualEntry = $"{srcVirtual.TrimEnd('/')}/{tail}";
 
@@ -193,28 +203,31 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         };
     }
 
-    private static string ExtractTail(string srcRel, string sourceDir)
+    private static string? ExtractTail(string srcRel, string sourceDir)
     {
+        var normalized = srcRel.Replace('\\', '/');
         var dir = sourceDir.Trim('/');
         if (string.IsNullOrEmpty(dir))
         {
-            return srcRel.TrimStart('/');
+            var rooted = normalized.TrimStart('/');
+            return string.IsNullOrEmpty(rooted) ? null : rooted;
         }
 
-        var normalized = srcRel.Replace('\\', '/');
         var prefix = dir + "/";
         if (normalized.StartsWith(prefix, StringComparison.Ordinal))
         {
-            return normalized[prefix.Length..];
+            var tail = normalized[prefix.Length..];
+            return string.IsNullOrEmpty(tail) ? null : tail;
         }
 
         var marker = "/" + dir + "/";
         var idx = normalized.IndexOf(marker, StringComparison.Ordinal);
         if (idx >= 0)
         {
-            return normalized[(idx + marker.Length)..];
+            var tail = normalized[(idx + marker.Length)..];
+            return string.IsNullOrEmpty(tail) ? null : tail;
         }
 
-        return Path.GetFileName(normalized);
+        return null;
     }
 }
