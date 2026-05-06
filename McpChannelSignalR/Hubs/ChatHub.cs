@@ -226,6 +226,11 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
+    public Task CancelSubAgent(string conversationId, string handle)
+    {
+        return notificationEmitter.EmitCancelSubAgentNotificationAsync(conversationId, handle);
+    }
+
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
     {
         return await redisStateService.GetAllTopicsAsync(agentId, spaceSlug);
