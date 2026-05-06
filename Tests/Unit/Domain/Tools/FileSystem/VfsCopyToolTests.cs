@@ -46,6 +46,9 @@ public class VfsCopyToolTests
 
         var dst = new Mock<IFileSystemBackend>();
         dst.SetupGet(b => b.FilesystemName).Returns("sandbox");
+        dst.Setup(b => b.WriteFromStreamAsync(
+                "a.md", It.IsAny<Stream>(), false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(5L);
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/a.md"))
@@ -57,6 +60,7 @@ public class VfsCopyToolTests
         var result = await tool.RunAsync("/vault/a.md", "/sandbox/a.md");
 
         result["status"]!.GetValue<string>().ShouldBe("ok");
+        result["bytes"]!.GetValue<long>().ShouldBe(5L);
         dst.Verify(b => b.WriteFromStreamAsync(
             "a.md", It.IsAny<Stream>(), false, true, It.IsAny<CancellationToken>()), Times.Once);
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);

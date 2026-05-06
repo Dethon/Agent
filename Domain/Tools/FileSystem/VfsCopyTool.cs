@@ -71,8 +71,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         long bytes;
         await using (var stream = await src.Backend.OpenReadStreamAsync(src.RelativePath, ct))
         {
-            await dst.Backend.WriteFromStreamAsync(dst.RelativePath, stream, overwrite, createDirectories, ct);
-            bytes = stream.CanSeek ? stream.Length : -1;
+            bytes = await dst.Backend.WriteFromStreamAsync(dst.RelativePath, stream, overwrite, createDirectories, ct);
         }
 
         if (deleteSource)
@@ -138,8 +137,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                 long bytes;
                 await using (var stream = await src.Backend.OpenReadStreamAsync(srcRel, ct))
                 {
-                    await dst.Backend.WriteFromStreamAsync(dstRel, stream, overwrite, createDirectories, ct);
-                    bytes = stream.CanSeek ? stream.Length : -1L;
+                    bytes = await dst.Backend.WriteFromStreamAsync(dstRel, stream, overwrite, createDirectories, ct);
                 }
 
                 if (deleteSource)
@@ -155,10 +153,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
                     ["bytes"] = bytes
                 });
                 transferred++;
-                if (bytes >= 0)
-                {
-                    totalBytes += bytes;
-                }
+                totalBytes += bytes;
             }
             catch (OperationCanceledException)
             {

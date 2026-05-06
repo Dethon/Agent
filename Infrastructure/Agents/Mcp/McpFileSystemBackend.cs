@@ -160,7 +160,7 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         return buffer;
     }
 
-    public async Task WriteFromStreamAsync(string path, Stream content,
+    public async Task<long> WriteFromStreamAsync(string path, Stream content,
         bool overwrite, bool createDirectories, CancellationToken ct)
     {
         const int chunkSize = 256 * 1024;
@@ -210,6 +210,8 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
                 throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
             }
         }
+
+        return offset;
     }
 
     private async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)

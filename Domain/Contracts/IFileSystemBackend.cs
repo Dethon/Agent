@@ -23,6 +23,6 @@ public interface IFileSystemBackend
 
     Task<Stream> OpenReadStreamAsync(string path, CancellationToken ct);
 
-    Task WriteFromStreamAsync(string path, Stream content,
+    Task<long> WriteFromStreamAsync(string path, Stream content,
         bool overwrite, bool createDirectories, CancellationToken ct);
 }
