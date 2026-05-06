@@ -20,9 +20,15 @@ public class FileInfoTool(string rootPath)
             ? Path.GetFullPath(path)
             : Path.GetFullPath(Path.Combine(rootPath, path));
 
-        if (!fullPath.StartsWith(rootPath, _pathComparison))
+        var canonicalRoot = Path.GetFullPath(rootPath);
+        var rootWithSep = canonicalRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? canonicalRoot
+            : canonicalRoot + Path.DirectorySeparatorChar;
+
+        if (!fullPath.Equals(canonicalRoot, _pathComparison) &&
+            !fullPath.StartsWith(rootWithSep, _pathComparison))
         {
-            throw new UnauthorizedAccessException("Access denied: path must be within root directory");
+            throw new UnauthorizedAccessException($"Access denied: path must be within {canonicalRoot}");
         }
 
         var fileExists = File.Exists(fullPath);

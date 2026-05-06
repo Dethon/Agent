@@ -77,6 +77,27 @@ public class FileInfoToolTests : IDisposable
     }
 
     [Fact]
+    public void Run_SiblingDirectoryWithRootPrefix_ThrowsUnauthorized()
+    {
+        var sibling = _testDir + "-evil";
+        Directory.CreateDirectory(sibling);
+        try
+        {
+            var leakTarget = Path.Combine(sibling, "secret.md");
+            File.WriteAllText(leakTarget, "shh");
+
+            Should.Throw<UnauthorizedAccessException>(() => _tool.TestRun(leakTarget));
+        }
+        finally
+        {
+            if (Directory.Exists(sibling))
+            {
+                Directory.Delete(sibling, true);
+            }
+        }
+    }
+
+    [Fact]
     public void Run_RelativePath_ResolvesUnderRoot()
     {
         File.WriteAllText(Path.Combine(_testDir, "rel.md"), "x");
