@@ -35,6 +35,19 @@ public class SubAgentRunToolBackgroundTests
     }
 
     [Fact]
+    public async Task RunAsync_WithBackgroundFlag_PassesSilentTrueToSessions()
+    {
+        var sessions = new FakeSessions();
+        var registry = new SubAgentRegistryOptions { SubAgents = [Profile()] };
+        var cfg = new FeatureConfig(SubAgentSessions: sessions);
+        var tool = new SubAgentRunTool(registry, cfg);
+
+        await tool.RunAsync("researcher", "go", run_in_background: true, silent: true);
+
+        sessions.LastSilent.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task RunAsync_WithBackgroundFlag_NoSessions_ReturnsUnavailable()
     {
         var config = new FeatureConfig(SubAgentSessions: null);
@@ -64,7 +77,7 @@ public class SubAgentRunToolBackgroundTests
         sessions.StartCount.ShouldBe(0);
     }
 
-    private sealed class FakeSessions(string handle) : ISubAgentSessions
+    private sealed class FakeSessions(string handle = "h-default") : ISubAgentSessions
     {
         public int StartCount { get; private set; }
         public string? LastHandle { get; private set; }
