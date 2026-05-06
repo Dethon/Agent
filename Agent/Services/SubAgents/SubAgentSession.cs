@@ -21,7 +21,7 @@ public sealed class SubAgentSession : IAsyncDisposable
     private readonly object _turnsLock = new();
     private readonly CancellationTokenSource _cts = new();
 
-    // -1 = Running; else cast to SubAgentTerminalState
+    // -1 = Running; else cast to SubAgentStatus
     private int _terminalState = -1;
 
     // -1 = not set; else cast to SubAgentCancelSource
@@ -53,10 +53,14 @@ public sealed class SubAgentSession : IAsyncDisposable
 
     public bool IsTerminal => Volatile.Read(ref _terminalState) >= 0;
 
-    public SubAgentCancelSource? CancelledBy =>
-        Volatile.Read(ref _cancelledBySource) < 0
-            ? null
-            : (SubAgentCancelSource)Volatile.Read(ref _cancelledBySource);
+    public SubAgentCancelSource? CancelledBy
+    {
+        get
+        {
+            var v = Volatile.Read(ref _cancelledBySource);
+            return v < 0 ? null : (SubAgentCancelSource)v;
+        }
+    }
 
     public async Task RunAsync(CancellationToken ct)
     {
@@ -85,8 +89,8 @@ public sealed class SubAgentSession : IAsyncDisposable
                 lock (_turnsLock) _turns.Add(lastTurn);
             }
 
-            _finalResult = recorder.FinalAssistantText;
-            TrySetTerminal(SubAgentTerminalState.Completed);
+            Volatile.Write(ref _finalResult, recorder.FinalAssistantText);
+            TrySetTerminal(SubAgentStatus.Completed);
         }
         catch (OperationCanceledException)
         {
@@ -95,22 +99,22 @@ public sealed class SubAgentSession : IAsyncDisposable
             {
                 // No caller set a source — timed out via _cts
                 Interlocked.CompareExchange(ref _cancelledBySource, (int)SubAgentCancelSource.System, -1);
-                _error = new SubAgentSessionError("Timeout",
-                    $"Subagent '{Profile.Id}' exceeded {Profile.MaxExecutionSeconds}s.");
+                Volatile.Write(ref _error, new SubAgentSessionError("Timeout",
+                    $"Subagent '{Profile.Id}' exceeded {Profile.MaxExecutionSeconds}s."));
             }
-            else
+            else if (Volatile.Read(ref _error) is null)
             {
                 var cancelledBy = (SubAgentCancelSource)src;
-                _error ??= new SubAgentSessionError("Cancelled",
-                    $"Subagent '{Profile.Id}' was cancelled by {cancelledBy}.");
+                Volatile.Write(ref _error, new SubAgentSessionError("Cancelled",
+                    $"Subagent '{Profile.Id}' was cancelled by {cancelledBy}."));
             }
 
-            TrySetTerminal(SubAgentTerminalState.Cancelled);
+            TrySetTerminal(SubAgentStatus.Cancelled);
         }
         catch (Exception ex)
         {
-            _error = new SubAgentSessionError("InternalError", ex.Message);
-            TrySetTerminal(SubAgentTerminalState.Failed);
+            Volatile.Write(ref _error, new SubAgentSessionError("InternalError", ex.Message));
+            TrySetTerminal(SubAgentStatus.Failed);
         }
     }
 
@@ -128,8 +132,8 @@ public sealed class SubAgentSession : IAsyncDisposable
     {
         var rawState = Volatile.Read(ref _terminalState);
         var status = rawState < 0
-            ? SubAgentTerminalState.Running
-            : (SubAgentTerminalState)rawState;
+            ? SubAgentStatus.Running
+            : (SubAgentStatus)rawState;
 
         IReadOnlyList<SubAgentTurnSnapshot> turns;
         lock (_turnsLock) turns = _turns.ToArray();
@@ -142,13 +146,13 @@ public sealed class SubAgentSession : IAsyncDisposable
             StartedAt = StartedAt,
             ElapsedSeconds = (DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
             Turns = turns,
-            Result = status == SubAgentTerminalState.Completed ? _finalResult : null,
+            Result = status == SubAgentStatus.Completed ? Volatile.Read(ref _finalResult) : null,
             CancelledBy = CancelledBy,
-            Error = _error
+            Error = Volatile.Read(ref _error)
         };
     }
 
-    private bool TrySetTerminal(SubAgentTerminalState state)
+    private bool TrySetTerminal(SubAgentStatus state)
         => Interlocked.CompareExchange(ref _terminalState, (int)state, -1) == -1;
 
     public async ValueTask DisposeAsync()

@@ -27,7 +27,7 @@ public sealed class SubAgentSessionTests
         await session.RunAsync(CancellationToken.None);
 
         var view = session.Snapshot();
-        view.Status.ShouldBe(SubAgentTerminalState.Completed);
+        view.Status.ShouldBe(SubAgentStatus.Completed);
         view.Result.ShouldBe("done");
         view.Turns.Count.ShouldBe(2);
         view.CancelledBy.ShouldBeNull();
@@ -46,7 +46,7 @@ public sealed class SubAgentSessionTests
         await runTask;
 
         var view = session.Snapshot();
-        view.Status.ShouldBe(SubAgentTerminalState.Cancelled);
+        view.Status.ShouldBe(SubAgentStatus.Cancelled);
         view.CancelledBy.ShouldBe(SubAgentCancelSource.User);
         view.Error.ShouldNotBeNull();
         view.Error!.Code.ShouldBe("Cancelled");
@@ -64,8 +64,8 @@ public sealed class SubAgentSessionTests
         await runTask;
 
         var view = session.Snapshot();
-        var validTerminalStates = new[] { SubAgentTerminalState.Completed, SubAgentTerminalState.Cancelled };
-        validTerminalStates.ShouldContain(view.Status);
+        var validStatuses = new[] { SubAgentStatus.Completed, SubAgentStatus.Cancelled };
+        validStatuses.ShouldContain(view.Status);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class SubAgentSessionTests
         await session.RunAsync(CancellationToken.None);
 
         var view = session.Snapshot();
-        view.Status.ShouldBe(SubAgentTerminalState.Cancelled);
+        view.Status.ShouldBe(SubAgentStatus.Cancelled);
         view.CancelledBy.ShouldBe(SubAgentCancelSource.System);
         view.Error.ShouldNotBeNull();
         view.Error!.Code.ShouldBe("Timeout");

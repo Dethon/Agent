@@ -4,7 +4,7 @@ public sealed record SubAgentSessionView
 {
     public required string Handle { get; init; }
     public required string SubAgentId { get; init; }
-    public required SubAgentTerminalState Status { get; init; }
+    public required SubAgentStatus Status { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required double ElapsedSeconds { get; init; }
     public required IReadOnlyList<SubAgentTurnSnapshot> Turns { get; init; }

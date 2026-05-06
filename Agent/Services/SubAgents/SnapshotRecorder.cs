@@ -62,8 +62,17 @@ public sealed class SnapshotRecorder
         return BuildAndReset();
     }
 
-    private SubAgentTurnSnapshot BuildAndReset()
+    private SubAgentTurnSnapshot? BuildAndReset()
     {
+        if (_assistantTextBuf.Length == 0 && _calls.Count == 0)
+        {
+            // Phantom turn (only tool results with no preceding assistant call) — skip.
+            _results.Clear();
+            _sawToolResultThisTurn = false;
+            _turnStart = DateTimeOffset.UtcNow;
+            return null;
+        }
+
         var snap = new SubAgentTurnSnapshot
         {
             Index = _index++,
