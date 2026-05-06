@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -7,7 +8,7 @@ using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal sealed class McpFileSystemBackend(McpClient client, string filesystemName) : IFileSystemBackend
+internal class McpFileSystemBackend(McpClient client, string filesystemName) : IFileSystemBackend
 {
     public string FilesystemName => filesystemName;
 
@@ -214,7 +215,93 @@ internal sealed class McpFileSystemBackend(McpClient client, string filesystemNa
         return offset;
     }
 
-    private async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
+    public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        const int chunkSize = 256 * 1024;
+        long offset = 0;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var node = await CallToolAsync("fs_blob_read", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["offset"] = offset,
+                ["length"] = chunkSize
+            }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_read failed: {obj["message"]?.GetValue<string>()}");
+            }
+
+            var bytes = Convert.FromBase64String(node["contentBase64"]!.GetValue<string>());
+            if (bytes.Length > 0)
+            {
+                offset += bytes.Length;
+                yield return bytes;
+            }
+
+            if (node["eof"]!.GetValue<bool>())
+            {
+                yield break;
+            }
+
+            if (bytes.Length == 0)
+            {
+                // Defensive: server reported !eof but sent nothing — break to avoid infinite loop.
+                yield break;
+            }
+        }
+    }
+
+    public async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        long offset = 0;
+
+        await foreach (var chunk in chunks.WithCancellation(ct))
+        {
+            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["contentBase64"] = Convert.ToBase64String(chunk.Span),
+                ["offset"] = offset,
+                ["overwrite"] = overwrite,
+                ["createDirectories"] = createDirectories
+            }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+            }
+
+            offset += chunk.Length;
+        }
+
+        if (offset == 0)
+        {
+            // Empty source: still create the file (matches pre-change semantics of WriteFromStreamAsync).
+            var node = await CallToolAsync("fs_blob_write", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["contentBase64"] = "",
+                ["offset"] = 0L,
+                ["overwrite"] = overwrite,
+                ["createDirectories"] = createDirectories
+            }, ct);
+
+            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            {
+                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+            }
+        }
+
+        return offset;
+    }
+
+    protected internal virtual async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
     {
         CallToolResult result;
         try

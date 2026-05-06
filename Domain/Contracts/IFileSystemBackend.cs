@@ -25,4 +25,9 @@ public interface IFileSystemBackend
 
     Task<long> WriteFromStreamAsync(string path, Stream content,
         bool overwrite, bool createDirectories, CancellationToken ct);
+
+    IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct);
+
+    Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct);
 }
