@@ -29,6 +29,7 @@ public static class ConfigModule
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
+            .AddSingleton<ISubAgentCardStore, SubAgentCardStore>()
             .AddHostedService<TelegramBotService>();
 
         services
