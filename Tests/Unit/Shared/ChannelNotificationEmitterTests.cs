@@ -94,6 +94,16 @@ public class ChannelNotificationEmitterTests
             sut.EmitMessageNotificationAsync("conv-1", "user", "hi", "agent1"));
     }
 
+    [Fact]
+    public async Task EmitCancelNotificationAsync_NoSessions_CompletesWithoutError()
+    {
+        var sut = new SignalRChannel.ChannelNotificationEmitter(
+            new Mock<ILogger<SignalRChannel.ChannelNotificationEmitter>>().Object);
+
+        await Should.NotThrowAsync(() =>
+            sut.EmitCancelNotificationAsync("conv-1", "agent1"));
+    }
+
     [Theory]
     [MemberData(nameof(Implementations))]
     public void RegisterSession_MultipleSessions_AllTracked(

@@ -220,10 +220,16 @@ public sealed class ChatHub(
         return true;
     }
 
-    public Task CancelTopic(string topicId)
+    public async Task CancelTopic(string topicId)
     {
+        if (sessionService.TryGetSession(topicId, out var session) && session is not null)
+        {
+            await notificationEmitter.EmitCancelNotificationAsync(
+                $"{session.ChatId}:{session.ThreadId}",
+                session.AgentId);
+        }
+
         streamService.CancelStream(topicId);
-        return Task.CompletedTask;
     }
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopics(string agentId, string spaceSlug = "default")
@@ -243,6 +249,8 @@ public sealed class ChatHub(
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
+        await notificationEmitter.EmitCancelNotificationAsync($"{chatId}:{threadId}", agentId);
+
         sessionService.EndSession(topicId);
         streamService.CancelStream(topicId);
         approvalService.CancelPendingApprovalsForTopic(topicId);

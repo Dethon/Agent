@@ -54,4 +54,27 @@ public class McpChannelConnectionTests
             break;
         }
     }
+
+    [Fact]
+    public async Task HandleCancelNotification_WritesSyntheticCancelMessage()
+    {
+        var sut = new McpChannelConnection("ch-3");
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            conversationId = "conv-77",
+            agentId = "agent-9"
+        });
+
+        sut.HandleChannelCancelNotification(payload);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
+        {
+            msg.ConversationId.ShouldBe("conv-77");
+            msg.Content.ShouldBe("/cancel");
+            msg.ChannelId.ShouldBe("ch-3");
+            msg.AgentId.ShouldBe("agent-9");
+            break;
+        }
+    }
 }

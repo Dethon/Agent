@@ -11,6 +11,9 @@ namespace Infrastructure.Clients.Channels;
 public sealed class McpChannelConnection(string channelId) : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private const string ChannelMessageNotification = "notifications/channel/message";
+    private const string ChannelCancelNotification = "notifications/channel/cancel";
+    private const string CancelCommandContent = "/cancel";
+    private const string SystemSender = "system";
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
     private McpClient? _client;
@@ -45,6 +48,19 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
                 return ValueTask.CompletedTask;
             });
+
+        _client.RegisterNotificationHandler(
+            ChannelCancelNotification,
+            (notification, _) =>
+            {
+                if (notification.Params is { } paramsNode)
+                {
+                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
+                    HandleChannelCancelNotification(element);
+                }
+
+                return ValueTask.CompletedTask;
+            });
     }
 
     public void HandleChannelMessageNotification(JsonElement payload)
@@ -61,6 +77,25 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             ConversationId = conversationId,
             Content = content,
             Sender = sender,
+            ChannelId = ChannelId,
+            AgentId = agentId
+        };
+
+        _messageChannel.Writer.TryWrite(message);
+    }
+
+    public void HandleChannelCancelNotification(JsonElement payload)
+    {
+        var conversationId = payload.GetProperty("conversationId").GetString()!;
+        var agentId = payload.TryGetProperty("agentId", out var agentIdProp)
+            ? agentIdProp.GetString()
+            : null;
+
+        var message = new ChannelMessage
+        {
+            ConversationId = conversationId,
+            Content = CancelCommandContent,
+            Sender = SystemSender,
             ChannelId = ChannelId,
             AgentId = agentId
         };

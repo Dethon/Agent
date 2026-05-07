@@ -54,5 +54,35 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
         await Task.WhenAll(tasks);
     }
 
+    public async Task EmitCancelNotificationAsync(
+        string conversationId,
+        string agentId,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            ConversationId = conversationId,
+            AgentId = agentId,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        var tasks = _activeSessions.Values.Select(async server =>
+        {
+            try
+            {
+                await server.SendNotificationAsync(
+                    "notifications/channel/cancel",
+                    payload,
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to emit channel/cancel notification to MCP session");
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
     public bool HasActiveSessions => !_activeSessions.IsEmpty;
 }
