@@ -1,7 +1,9 @@
 using System.Runtime.CompilerServices;
 using Agent.Services.SubAgents;
 using Domain.Agents;
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.SubAgent;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -185,13 +187,52 @@ public sealed class SubAgentSessionManagerTests
         mgr.Get(h).ShouldBeNull();
     }
 
-    private static SubAgentSessionManager MakeManager(int turnsPerAgent = 1, TimeSpan? delay = null)
+    [Fact]
+    public async Task Start_EmitsSessionStartedEvent()
+    {
+        var publisher = new FakeManagerMetricsPublisher();
+        var mgr = MakeManager(metricsPublisher: publisher);
+        var profile = Profile();
+
+        mgr.Start(profile, "prompt", silent: true);
+        mgr.Start(profile, "prompt2", silent: false);
+
+        // Allow async publish to complete
+        await Task.Delay(50);
+
+        var started = publisher.Events.OfType<SubAgentSessionStartedEvent>().ToList();
+        started.Count.ShouldBe(2);
+        started[0].SubAgentId.ShouldBe("researcher");
+        started[0].Mode.ShouldBe("background");
+        started[0].Silent.ShouldBeTrue();
+        started[1].Silent.ShouldBeFalse();
+    }
+
+    private static SubAgentSessionManager MakeManager(
+        int turnsPerAgent = 1, TimeSpan? delay = null, IMetricsPublisher? metricsPublisher = null)
     {
         return new SubAgentSessionManager(
             agentFactory: _ => new FakeStreamingAgentFactoryAgent(turnsPerAgent, delay ?? TimeSpan.Zero),
             replyToConversationId: "c1",
             replyChannel: null,
-            wakeDebounce: TimeSpan.FromMilliseconds(250));
+            wakeDebounce: TimeSpan.FromMilliseconds(250),
+            metricsPublisher: metricsPublisher);
+    }
+}
+
+file sealed class FakeManagerMetricsPublisher : IMetricsPublisher
+{
+    private readonly List<MetricEvent> _events = [];
+
+    public IReadOnlyList<MetricEvent> Events
+    {
+        get { lock (_events) return _events.ToArray(); }
+    }
+
+    public Task PublishAsync(MetricEvent metricEvent, CancellationToken ct = default)
+    {
+        lock (_events) _events.Add(metricEvent);
+        return Task.CompletedTask;
     }
 }
 

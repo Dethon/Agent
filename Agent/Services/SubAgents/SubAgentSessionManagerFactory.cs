@@ -4,7 +4,9 @@ using Domain.DTOs;
 
 namespace Agent.Services.SubAgents;
 
-public sealed class SubAgentSessionManagerFactory(SystemChannelConnection systemChannel)
+public sealed class SubAgentSessionManagerFactory(
+    SystemChannelConnection systemChannel,
+    IMetricsPublisher? metricsPublisher = null)
 {
     public ISubAgentSessions Create(
         AgentKey agentKey,
@@ -15,5 +17,6 @@ public sealed class SubAgentSessionManagerFactory(SystemChannelConnection system
             replyToConversationId: replyToConversationId,
             replyChannel: null,
             systemChannel: systemChannel,
-            agentKey: agentKey);
+            agentKey: agentKey,
+            metricsPublisher: metricsPublisher);
 }

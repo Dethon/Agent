@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.SubAgent;
 
 namespace Agent.Services.SubAgents;
@@ -19,6 +20,7 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
     private readonly SystemChannelConnection? _systemChannel;
     private readonly AgentKey _agentKey;
     private readonly string _initialConversationId;
+    private readonly IMetricsPublisher? _metricsPublisher;
 
     private readonly object _wakeLock = new();
     private readonly HashSet<string> _wakeBuffer = [];
@@ -34,7 +36,8 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         IChannelConnection? replyChannel,
         TimeSpan? wakeDebounce = null,
         SystemChannelConnection? systemChannel = null,
-        AgentKey agentKey = default)
+        AgentKey agentKey = default,
+        IMetricsPublisher? metricsPublisher = null)
     {
         _agentFactory = agentFactory;
         _initialConversationId = replyToConversationId;
@@ -42,6 +45,7 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         _wakeDebounce = wakeDebounce ?? TimeSpan.FromMilliseconds(250);
         _systemChannel = systemChannel;
         _agentKey = agentKey;
+        _metricsPublisher = metricsPublisher;
     }
 
     public void RebindReply(IChannelConnection channel, string conversationId)
@@ -59,11 +63,23 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
 
         var rt = _replyTarget;
         var handle = NewHandle();
+        var convId = rt?.ConversationId ?? _initialConversationId;
         var session = new SubAgentSession(handle, profile, prompt, silent,
             agentFactory: () => _agentFactory(profile),
-            replyToConversationId: rt?.ConversationId ?? _initialConversationId,
-            replyChannel: rt?.Channel);
+            replyToConversationId: convId,
+            replyChannel: rt?.Channel,
+            metricsPublisher: _metricsPublisher);
         _sessions[handle] = session;
+
+        _ = _metricsPublisher?.PublishAsync(new SubAgentSessionStartedEvent
+        {
+            SubAgentId = profile.Id,
+            Mode = "background",
+            Silent = silent,
+            Handle = handle,
+            AgentId = _agentKey.AgentId,
+            ConversationId = convId
+        });
 
         var run = Task.Run(async () =>
         {
