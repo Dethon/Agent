@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.SubAgent;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -11,8 +12,12 @@ namespace Infrastructure.Clients.Channels;
 public sealed class McpChannelConnection(string channelId) : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private const string ChannelMessageNotification = "notifications/channel/message";
+    private const string CancelSubAgentNotification = "notifications/channel/cancel_subagent";
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly Channel<SubAgentCancelRequest> _cancelChannel =
+        Channel.CreateUnbounded<SubAgentCancelRequest>(
+            new UnboundedChannelOptions { SingleWriter = false, SingleReader = false });
     private McpClient? _client;
 
     public string ChannelId { get; } = channelId;
@@ -45,9 +50,29 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
                 return ValueTask.CompletedTask;
             });
+
+        _client.RegisterNotificationHandler(
+            CancelSubAgentNotification,
+            (notification, _) =>
+            {
+                if (notification.Params is { } paramsNode)
+                {
+                    var element = JsonSerializer.Deserialize<JsonElement>(paramsNode.ToJsonString());
+                    HandleCancelSubAgentNotification(element);
+                }
+
+                return ValueTask.CompletedTask;
+            });
     }
 
-    public void HandleChannelMessageNotification(JsonElement payload)
+    internal void HandleCancelSubAgentNotification(JsonElement payload)
+    {
+        var conversationId = payload.GetProperty("conversationId").GetString()!;
+        var handle = payload.GetProperty("handle").GetString()!;
+        _cancelChannel.Writer.TryWrite(new SubAgentCancelRequest(conversationId, handle));
+    }
+
+    internal void HandleChannelMessageNotification(JsonElement payload)
     {
         var conversationId = payload.GetProperty("conversationId").GetString()!;
         var content = payload.GetProperty("content").GetString()!;
@@ -166,9 +191,65 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         }
     }
 
+    public IAsyncEnumerable<SubAgentCancelRequest> SubAgentCancelRequests =>
+        _cancelChannel.Reader.ReadAllAsync();
+
+    public async Task AnnounceSubAgentStartAsync(string conversationId, string handle, string subAgentId,
+        CancellationToken ct)
+    {
+        if (_client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.CallToolAsync(
+                "announce_subagent",
+                new Dictionary<string, object?>
+                {
+                    ["conversationId"] = conversationId,
+                    ["handle"] = handle,
+                    ["subAgentId"] = subAgentId
+                },
+                cancellationToken: ct);
+        }
+        catch (McpException)
+        {
+            // Channel may not support this tool — silently no-op
+        }
+    }
+
+    public async Task UpdateSubAgentStatusAsync(string conversationId, string handle, string status,
+        CancellationToken ct)
+    {
+        if (_client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _client.CallToolAsync(
+                "update_subagent",
+                new Dictionary<string, object?>
+                {
+                    ["conversationId"] = conversationId,
+                    ["handle"] = handle,
+                    ["status"] = status
+                },
+                cancellationToken: ct);
+        }
+        catch (McpException)
+        {
+            // Channel may not support this tool — silently no-op
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _messageChannel.Writer.TryComplete();
+        _cancelChannel.Writer.TryComplete();
         if (_client is not null)
         {
             await _client.DisposeAsync();

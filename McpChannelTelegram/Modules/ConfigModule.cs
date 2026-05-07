@@ -26,9 +26,11 @@ public static class ConfigModule
         services
             .AddSingleton(settings)
             .AddSingleton(notificationEmitter)
+            .AddSingleton<ISubAgentCancelNotifier>(notificationEmitter)
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
+            .AddSingleton<ISubAgentCardStore, SubAgentCardStore>()
             .AddHostedService<TelegramBotService>();
 
         services
@@ -53,6 +55,8 @@ public static class ConfigModule
             })
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<SubAgentAnnounceTool>()
+            .WithTools<SubAgentUpdateTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

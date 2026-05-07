@@ -15,4 +15,16 @@ public sealed class SubAgentToolFeatureTests
 
         feature.Prompt.ShouldBe(SubAgentPrompt.SystemPrompt);
     }
+
+    [Fact]
+    public void Prompt_DocumentsBackgroundFlagAndHelperTools()
+    {
+        var prompt = SubAgentPrompt.SystemPrompt;
+        prompt.ShouldContain("run_in_background");
+        prompt.ShouldContain("silent");
+        prompt.ShouldContain("subagent_check");
+        prompt.ShouldContain("subagent_wait");
+        prompt.ShouldContain("subagent_cancel");
+        prompt.ShouldContain("subagent_list");
+    }
 }

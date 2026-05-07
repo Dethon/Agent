@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.SubAgent;
 using JetBrains.Annotations;
 
 namespace Domain.Contracts;
@@ -33,4 +34,13 @@ public interface IChannelConnection
         string topicName,
         string sender,
         CancellationToken ct);
+
+    IAsyncEnumerable<SubAgentCancelRequest> SubAgentCancelRequests
+        => AsyncEnumerable.Empty<SubAgentCancelRequest>();
+
+    Task AnnounceSubAgentStartAsync(string conversationId, string handle, string subAgentId,
+        CancellationToken ct) => Task.CompletedTask;
+
+    Task UpdateSubAgentStatusAsync(string conversationId, string handle, string status,
+        CancellationToken ct) => Task.CompletedTask;
 }

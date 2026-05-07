@@ -1,4 +1,5 @@
 using McpChannelTelegram.Services;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Telegram.Bot;
@@ -8,8 +9,14 @@ namespace Tests.Unit.McpChannelTelegram;
 
 public class ApprovalCallbackRouterTests
 {
-    private readonly ApprovalCallbackRouter _sut = new();
+    private readonly ApprovalCallbackRouter _sut;
     private readonly Mock<ITelegramBotClient> _botClient = new();
+
+    public ApprovalCallbackRouterTests()
+    {
+        var emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _sut = new ApprovalCallbackRouter(emitter);
+    }
 
     [Theory]
     [InlineData("tool_approve", "approved")]

@@ -4,6 +4,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.SubAgent;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -18,10 +19,31 @@ public class ChatMonitor(
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
-    ILogger<ChatMonitor> logger)
+    ILogger<ChatMonitor> logger,
+    ISubAgentSessionsRegistry? subAgentRegistry = null)
 {
     public async Task Monitor(CancellationToken cancellationToken)
     {
+        foreach (var ch in channels)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await foreach (var req in ch.SubAgentCancelRequests.WithCancellation(cancellationToken))
+                    {
+                        if (subAgentRegistry?.TryGetByConversation(req.ConversationId, out var sessions) == true)
+                            sessions.Cancel(req.Handle, Domain.DTOs.SubAgent.SubAgentCancelSource.User);
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "SubAgentCancelRequests subscription failed for channel {ChannelId}", ch.ChannelId);
+                }
+            }, cancellationToken);
+        }
+
         try
         {
             var merged = channels
@@ -62,6 +84,9 @@ public class ChatMonitor(
         var thread = await GetOrRestoreThread(agent, agentKey, ct);
 
         context.RegisterCompletionCallback(group.Complete);
+
+        var sessionManager = subAgentRegistry?.GetOrCreate(agentKey);
+        sessionManager?.RebindReply(first.Channel, first.Message.ConversationId);
 
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
@@ -106,25 +131,45 @@ public class ChatMonitor(
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
+        var turnActive = false;
+        try
         {
-            foreach (var mapped in MapResponseUpdate(update))
+            await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
             {
-                await channel.SendReplyAsync(
-                    conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
-            }
-
-            foreach (var error in update.Contents.OfType<ErrorContent>())
-            {
-                await metricsPublisher.PublishAsync(new ErrorEvent
+                if (!turnActive)
                 {
-                    Service = "agent",
-                    ErrorType = error.ErrorCode ?? "Unknown",
-                    Message = error.Message
-                }, ct);
-            }
+                    sessionManager?.SetParentTurnActive(true);
+                    turnActive = true;
+                }
 
-            yield return true;
+                foreach (var mapped in MapResponseUpdate(update))
+                {
+                    await channel.SendReplyAsync(
+                        conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+                }
+
+                foreach (var error in update.Contents.OfType<ErrorContent>())
+                {
+                    await metricsPublisher.PublishAsync(new ErrorEvent
+                    {
+                        Service = "agent",
+                        ErrorType = error.ErrorCode ?? "Unknown",
+                        Message = error.Message
+                    }, ct);
+                }
+
+                if (update.Contents.OfType<StreamCompleteContent>().Any())
+                {
+                    sessionManager?.SetParentTurnActive(false);
+                    turnActive = false;
+                }
+
+                yield return true;
+            }
+        }
+        finally
+        {
+            if (turnActive) sessionManager?.SetParentTurnActive(false);
         }
     }
 

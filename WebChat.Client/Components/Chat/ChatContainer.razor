@@ -2,6 +2,8 @@
 @page "/{Slug}"
 @inherits StoreSubscriberComponent
 @inject IDispatcher Dispatcher
+@inject WebChat.Client.State.SubAgents.SubAgentStore SubAgentStore
+@inject WebChat.Client.State.Topics.TopicsStore TopicsStore
 
 <ApprovalModal />
 
@@ -10,6 +12,16 @@
 
     <div class="chat-container">
         <MessageList />
+
+        @if (_subAgentCards.Count > 0)
+        {
+            <div class="subagent-cards">
+                @foreach (var (key, _) in _subAgentCards)
+                {
+                    <SubAgentCard TopicId="@key.TopicId" Handle="@key.Handle" />
+                }
+            </div>
+        }
 
         <ConnectionStatus />
 
@@ -24,6 +36,31 @@
     public string? Slug { get; set; }
 
     private bool _initialized;
+    private string? _selectedTopicId;
+    private IReadOnlyDictionary<WebChat.Client.State.SubAgents.SubAgentCardKey, WebChat.Client.State.SubAgents.SubAgentCardState> _subAgentCards =
+        new Dictionary<WebChat.Client.State.SubAgents.SubAgentCardKey, WebChat.Client.State.SubAgents.SubAgentCardState>();
+
+    protected override void OnInitialized()
+    {
+        Subscribe(TopicsStore.StateObservable,
+            state => state.SelectedTopicId,
+            topicId =>
+            {
+                _selectedTopicId = topicId;
+                UpdateCards();
+            });
+
+        Subscribe(SubAgentStore.StateObservable,
+            state => state.Cards,
+            _ => UpdateCards());
+    }
+
+    private void UpdateCards()
+    {
+        _subAgentCards = SubAgentStore.State.Cards
+            .Where(kv => kv.Key.TopicId == _selectedTopicId)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
 
     protected override void OnParametersSet()
     {

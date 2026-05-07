@@ -47,6 +47,14 @@ public sealed class SignalREventSubscriber(
             hubConnection.On<UserMessageNotification>(
                 "OnUserMessage", hubEventDispatcher.HandleUserMessage));
 
+        _subscriptions.Add(
+            hubConnection.On<SubAgentAnnouncedNotification>(
+                "OnSubAgentAnnounced", hubEventDispatcher.HandleSubAgentAnnounced));
+
+        _subscriptions.Add(
+            hubConnection.On<SubAgentUpdatedNotification>(
+                "OnSubAgentUpdated", hubEventDispatcher.HandleSubAgentUpdated));
+
         IsSubscribed = true;
     }
 

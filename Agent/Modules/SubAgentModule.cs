@@ -1,3 +1,4 @@
+using Agent.Services.SubAgents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.SubAgents;
@@ -21,6 +22,14 @@ public static class SubAgentModule
 
             var registryOptions = new SubAgentRegistryOptions { SubAgents = subAgentDefinitions };
             services.AddSingleton(registryOptions);
+
+            services.AddSingleton<SystemChannelConnection>();
+            services.AddSingleton<IChannelConnection>(sp => sp.GetRequiredService<SystemChannelConnection>());
+            services.AddSingleton<SubAgentSessionManagerFactory>();
+
+            services.AddSingleton<ISubAgentSessionsRegistry>(_ =>
+                new SubAgentSessionsRegistry(_ => throw new InvalidOperationException(
+                    "Manager must be created via MultiAgentFactory which supplies agent + reply context.")));
 
             services.AddTransient<IDomainToolFeature, SubAgentToolFeature>();
 
