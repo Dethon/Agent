@@ -26,6 +26,7 @@ public static class ConfigModule
         services
             .AddSingleton(settings)
             .AddSingleton(notificationEmitter)
+            .AddSingleton<ISubAgentCancelNotifier>(notificationEmitter)
             .AddSingleton(new BotRegistry(settings.Bots))
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()

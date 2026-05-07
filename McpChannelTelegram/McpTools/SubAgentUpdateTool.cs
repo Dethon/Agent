@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
@@ -28,7 +29,9 @@ public sealed class SubAgentUpdateTool
             return "not_found";
         }
 
-        var text = $"🤖 <b>Subagent: {card.SubAgentId}</b>\nStatus: {status}";
+        var encodedId = WebUtility.HtmlEncode(card.SubAgentId);
+        var encodedStatus = WebUtility.HtmlEncode(status);
+        var text = $"🤖 <b>Subagent: {encodedId}</b>\nStatus: {encodedStatus}";
 
         await botClient.EditMessageText(
             card.ChatId,

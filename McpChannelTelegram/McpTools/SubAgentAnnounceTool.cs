@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
@@ -26,7 +27,8 @@ public sealed class SubAgentAnnounceTool
         var botClient = registry.GetBotForChat(chatId)
                         ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
-        var text = $"🤖 <b>Subagent: {subAgentId}</b>\nStatus: Running";
+        var encoded = WebUtility.HtmlEncode(subAgentId);
+        var text = $"🤖 <b>Subagent: {encoded}</b>\nStatus: Running";
         var keyboard = new InlineKeyboardMarkup([[
             InlineKeyboardButton.WithCallbackData("❌ Cancel", $"{CancelCallbackPrefix}{handle}")
         ]]);

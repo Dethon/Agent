@@ -1,7 +1,6 @@
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Telegram.Bot;
@@ -21,15 +20,14 @@ public class SubAgentTelegramChannelTests
 
     private readonly Mock<ITelegramBotClient> _botClient = new();
     private readonly SubAgentCardStore _cardStore = new();
-    private readonly ChannelNotificationEmitter _emitter;
+    private readonly Mock<ISubAgentCancelNotifier> _cancelNotifier = new();
     private readonly ApprovalCallbackRouter _callbackRouter;
     private readonly BotRegistry _botRegistry;
     private readonly IServiceProvider _services;
 
     public SubAgentTelegramChannelTests()
     {
-        _emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
-        _callbackRouter = new ApprovalCallbackRouter(_emitter);
+        _callbackRouter = new ApprovalCallbackRouter(_cancelNotifier.Object);
         _botRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
         {
             ["jack"] = _botClient.Object
@@ -41,7 +39,6 @@ public class SubAgentTelegramChannelTests
             .AddSingleton<ISubAgentCardStore>(_cardStore)
             .BuildServiceProvider();
 
-        // Default: SendMessage returns a message
         _botClient
             .Setup(b => b.SendRequest(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Message
@@ -90,6 +87,28 @@ public class SubAgentTelegramChannelTests
         card.ChatId.ShouldBe(ChatId);
         card.MessageId.ShouldBe(42);
         card.SubAgentId.ShouldBe(SubAgentId);
+    }
+
+    [Fact]
+    public async Task AnnounceTool_HtmlEncodesSubAgentId()
+    {
+        SendMessageRequest? captured = null;
+        _botClient
+            .Setup(b => b.SendRequest(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Telegram.Bot.Requests.Abstractions.IRequest<Message>, CancellationToken>(
+                (req, _) => captured = req as SendMessageRequest)
+            .ReturnsAsync(new Message
+            {
+                Id = 42,
+                Date = DateTime.UtcNow,
+                Chat = new Chat { Id = ChatId, Type = ChatType.Private }
+            });
+
+        await SubAgentAnnounceTool.McpRun(ConversationId, Handle, "R&D<script>", _services);
+
+        captured.ShouldNotBeNull();
+        captured!.Text.ShouldContain("R&amp;D&lt;script&gt;");
+        captured.Text.ShouldNotContain("<script>");
     }
 
     [Fact]
@@ -146,10 +165,6 @@ public class SubAgentTelegramChannelTests
     [Fact]
     public async Task CallbackQuery_SubagentCancel_EmitsNotificationAndAcknowledges()
     {
-        _emitter.RegisterSession("sess-1", null!);
-
-        // We can't easily intercept SendNotificationAsync on a real McpServer (it's null in test).
-        // Instead, verify through the AnswerCallbackQuery call which is the observable side-effect.
         var query = new CallbackQuery
         {
             Id = "cb-cancel-1",
@@ -166,6 +181,10 @@ public class SubAgentTelegramChannelTests
         var handled = await _callbackRouter.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
 
         handled.ShouldBeTrue();
+        _cancelNotifier.Verify(n => n.EmitCancelSubAgentNotificationAsync(
+            "100:100",
+            Handle,
+            It.IsAny<CancellationToken>()), Times.Once);
         _botClient.Verify(b => b.SendRequest(
             It.Is<AnswerCallbackQueryRequest>(r => r.Text == "Cancellation requested."),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -191,6 +210,10 @@ public class SubAgentTelegramChannelTests
         var handled = await _callbackRouter.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
 
         handled.ShouldBeTrue();
+        _cancelNotifier.Verify(n => n.EmitCancelSubAgentNotificationAsync(
+            "100:55",
+            Handle,
+            It.IsAny<CancellationToken>()), Times.Once);
         _botClient.Verify(b => b.SendRequest(
             It.Is<AnswerCallbackQueryRequest>(r => r.Text == "Cancellation requested."),
             It.IsAny<CancellationToken>()), Times.Once);

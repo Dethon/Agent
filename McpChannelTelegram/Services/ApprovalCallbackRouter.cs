@@ -5,7 +5,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace McpChannelTelegram.Services;
 
-public sealed class ApprovalCallbackRouter(ChannelNotificationEmitter notificationEmitter)
+public sealed class ApprovalCallbackRouter(ISubAgentCancelNotifier cancelNotifier)
 {
     private const string ApproveCallbackPrefix = "tool_approve:";
     private const string AlwaysCallbackPrefix = "tool_always:";
@@ -123,7 +123,7 @@ public sealed class ApprovalCallbackRouter(ChannelNotificationEmitter notificati
             var chatId = message.Chat.Id;
             var threadId = message.MessageThreadId ?? chatId;
             var conversationId = $"{chatId}:{threadId}";
-            await notificationEmitter.EmitCancelSubAgentNotificationAsync(conversationId, handle, cancellationToken);
+            await cancelNotifier.EmitCancelSubAgentNotificationAsync(conversationId, handle, cancellationToken);
         }
 
         await botClient.AnswerCallbackQuery(

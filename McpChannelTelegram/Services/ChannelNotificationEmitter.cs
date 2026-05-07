@@ -3,7 +3,7 @@ using ModelContextProtocol.Server;
 
 namespace McpChannelTelegram.Services;
 
-public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
+public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger) : ISubAgentCancelNotifier
 {
     private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
 
