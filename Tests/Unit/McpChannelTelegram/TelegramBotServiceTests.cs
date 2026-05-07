@@ -14,7 +14,7 @@ public class TelegramBotServiceTests : IDisposable
 {
     private readonly Mock<ITelegramBotClient> _botClient = new();
     private readonly ChannelNotificationEmitter _emitter;
-    private readonly ApprovalCallbackRouter _callbackRouter = new();
+    private readonly ApprovalCallbackRouter _callbackRouter;
     private readonly BotRegistry _botRegistry;
     private readonly TelegramBotService _sut;
     private readonly CancellationTokenSource _cts = new();
@@ -22,6 +22,7 @@ public class TelegramBotServiceTests : IDisposable
     public TelegramBotServiceTests()
     {
         _emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _callbackRouter = new ApprovalCallbackRouter(_emitter);
         var settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = "jack", BotToken = "unused" }],

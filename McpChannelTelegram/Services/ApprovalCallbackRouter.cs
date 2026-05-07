@@ -5,11 +5,12 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace McpChannelTelegram.Services;
 
-public sealed class ApprovalCallbackRouter
+public sealed class ApprovalCallbackRouter(ChannelNotificationEmitter notificationEmitter)
 {
     private const string ApproveCallbackPrefix = "tool_approve:";
     private const string AlwaysCallbackPrefix = "tool_always:";
     private const string RejectCallbackPrefix = "tool_reject:";
+    private const string SubAgentCancelPrefix = "subagent_cancel:";
 
     private readonly ConcurrentDictionary<string, ApprovalWaiter> _pending = new();
 
@@ -51,6 +52,10 @@ public sealed class ApprovalCallbackRouter
         {
             approvalId = data[RejectCallbackPrefix.Length..];
             result = "denied";
+        }
+        else if (data.StartsWith(SubAgentCancelPrefix, StringComparison.Ordinal))
+        {
+            return await HandleSubAgentCancelAsync(botClient, callbackQuery, cancellationToken);
         }
         else
         {
@@ -104,6 +109,29 @@ public sealed class ApprovalCallbackRouter
                 InlineKeyboardButton.WithCallbackData("\u274c Reject", $"{RejectCallbackPrefix}{approvalId}")
             ]
         ]);
+    }
+
+    private async Task<bool> HandleSubAgentCancelAsync(
+        ITelegramBotClient botClient,
+        CallbackQuery callbackQuery,
+        CancellationToken cancellationToken)
+    {
+        var handle = callbackQuery.Data![SubAgentCancelPrefix.Length..];
+        var message = callbackQuery.Message;
+        if (message is not null)
+        {
+            var chatId = message.Chat.Id;
+            var threadId = message.MessageThreadId ?? chatId;
+            var conversationId = $"{chatId}:{threadId}";
+            await notificationEmitter.EmitCancelSubAgentNotificationAsync(conversationId, handle, cancellationToken);
+        }
+
+        await botClient.AnswerCallbackQuery(
+            callbackQuery.Id,
+            "Cancellation requested.",
+            cancellationToken: cancellationToken);
+
+        return true;
     }
 
     private async Task<string> WaitAndCleanupAsync(string approvalId, ApprovalWaiter waiter)
