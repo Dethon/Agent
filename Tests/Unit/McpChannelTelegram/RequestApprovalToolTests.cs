@@ -2,6 +2,7 @@ using Domain.DTOs;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
 using Telegram.Bot;
@@ -13,11 +14,13 @@ namespace Tests.Unit.McpChannelTelegram;
 public class RequestApprovalToolTests
 {
     private readonly Mock<ITelegramBotClient> _botClient = new();
-    private readonly ApprovalCallbackRouter _router = new();
+    private readonly ApprovalCallbackRouter _router;
     private readonly IServiceProvider _services;
 
     public RequestApprovalToolTests()
     {
+        var emitter = new ChannelNotificationEmitter(new Mock<ILogger<ChannelNotificationEmitter>>().Object);
+        _router = new ApprovalCallbackRouter(emitter);
         var botRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
         {
             ["jack"] = _botClient.Object
