@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.SubAgent;
 using Microsoft.Extensions.AI;
 
@@ -20,6 +21,7 @@ public sealed class SubAgentSession : IAsyncDisposable
     private readonly List<SubAgentTurnSnapshot> _turns = [];
     private readonly object _turnsLock = new();
     private readonly CancellationTokenSource _cts = new();
+    private readonly IMetricsPublisher? _metricsPublisher;
 
     // -1 = Running; else cast to SubAgentStatus
     private int _terminalState = -1;
@@ -39,7 +41,8 @@ public sealed class SubAgentSession : IAsyncDisposable
         Func<DisposableAgent> agentFactory,
         string replyToConversationId,
         IChannelConnection? replyChannel = null,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null,
+        IMetricsPublisher? metricsPublisher = null)
     {
         Handle = handle;
         Profile = profile;
@@ -49,6 +52,7 @@ public sealed class SubAgentSession : IAsyncDisposable
         ReplyToConversationId = replyToConversationId;
         ReplyChannel = replyChannel;
         StartedAt = now ?? DateTimeOffset.UtcNow;
+        _metricsPublisher = metricsPublisher;
     }
 
     public bool IsTerminal => Volatile.Read(ref _terminalState) >= 0;
@@ -80,6 +84,7 @@ public sealed class SubAgentSession : IAsyncDisposable
                 if (recorder.OnUpdate(update) is { } completedTurn)
                 {
                     lock (_turnsLock) _turns.Add(completedTurn);
+                    PublishSnapshot(completedTurn.Index);
                 }
             }
 
@@ -87,10 +92,12 @@ public sealed class SubAgentSession : IAsyncDisposable
             if (lastTurn is not null)
             {
                 lock (_turnsLock) _turns.Add(lastTurn);
+                PublishSnapshot(lastTurn.Index);
             }
 
             Volatile.Write(ref _finalResult, recorder.FinalAssistantText);
             TrySetTerminal(SubAgentStatus.Completed);
+            PublishTerminal("completed", cancelledBy: null);
         }
         catch (OperationCanceledException)
         {
@@ -110,12 +117,44 @@ public sealed class SubAgentSession : IAsyncDisposable
             }
 
             TrySetTerminal(SubAgentStatus.Cancelled);
+            var cancelSrc = Volatile.Read(ref _cancelledBySource);
+            var cancelledByStr = cancelSrc >= 0
+                ? ((SubAgentCancelSource)cancelSrc).ToString().ToLowerInvariant()
+                : "system";
+            PublishTerminal("cancelled", cancelledByStr);
         }
         catch (Exception ex)
         {
             Volatile.Write(ref _error, new SubAgentSessionError("InternalError", ex.Message));
             TrySetTerminal(SubAgentStatus.Failed);
+            PublishTerminal("failed", cancelledBy: null);
         }
+    }
+
+    private void PublishSnapshot(int turnIndex)
+    {
+        _ = _metricsPublisher?.PublishAsync(new SubAgentSnapshotAppendedEvent
+        {
+            SubAgentId = Profile.Id,
+            Handle = Handle,
+            TurnIndex = turnIndex,
+            AgentId = null,
+            ConversationId = ReplyToConversationId
+        });
+    }
+
+    private void PublishTerminal(string terminalState, string? cancelledBy)
+    {
+        _ = _metricsPublisher?.PublishAsync(new SubAgentSessionTerminalEvent
+        {
+            SubAgentId = Profile.Id,
+            Handle = Handle,
+            TerminalState = terminalState,
+            CancelledBy = cancelledBy,
+            ElapsedSeconds = (DateTimeOffset.UtcNow - StartedAt).TotalSeconds,
+            AgentId = null,
+            ConversationId = ReplyToConversationId
+        });
     }
 
     public void Cancel(SubAgentCancelSource source)
