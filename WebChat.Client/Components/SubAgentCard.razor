@@ -26,6 +26,9 @@
 
 @code {
     [Parameter, EditorRequired]
+    public string TopicId { get; set; } = default!;
+
+    [Parameter, EditorRequired]
     public string Handle { get; set; } = default!;
 
     private SubAgentCardState? _card;
@@ -34,7 +37,7 @@
     protected override void OnInitialized()
     {
         Subscribe(SubAgentStore.StateObservable,
-            state => state.Cards.GetValueOrDefault(Handle),
+            state => state.Cards.GetValueOrDefault(new SubAgentCardKey(TopicId, Handle)),
             card => _card = card);
     }
 
@@ -59,7 +62,7 @@
 
         try
         {
-            await SubAgentService.CancelSubAgentAsync(_card.TopicId, Handle);
+            await SubAgentService.CancelSubAgentAsync(TopicId, Handle);
         }
         finally
         {

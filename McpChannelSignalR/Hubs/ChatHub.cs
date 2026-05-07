@@ -228,6 +228,11 @@ public sealed class ChatHub(
 
     public Task CancelSubAgent(string conversationId, string handle)
     {
+        if (!IsRegistered)
+        {
+            return Task.CompletedTask;
+        }
+
         return notificationEmitter.EmitCancelSubAgentNotificationAsync(conversationId, handle);
     }
 

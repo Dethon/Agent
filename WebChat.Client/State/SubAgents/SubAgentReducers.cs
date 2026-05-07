@@ -6,29 +6,32 @@ public static class SubAgentReducers
     {
         SubAgentAnnounced announced => state with
         {
-            Cards = Upsert(state.Cards, announced.Handle,
+            Cards = Upsert(state.Cards,
+                new SubAgentCardKey(announced.TopicId, announced.Handle),
                 new SubAgentCardState(announced.Handle, announced.SubAgentId, "Running", announced.TopicId))
         },
-        SubAgentUpdated updated when state.Cards.TryGetValue(updated.Handle, out var existing)
-            && existing.TopicId == updated.TopicId => state with
+        SubAgentUpdated updated when state.Cards.TryGetValue(
+            new SubAgentCardKey(updated.TopicId, updated.Handle), out var existing) => state with
         {
-            Cards = Upsert(state.Cards, updated.Handle, existing with { Status = updated.Status })
+            Cards = Upsert(state.Cards,
+                new SubAgentCardKey(updated.TopicId, updated.Handle),
+                existing with { Status = updated.Status })
         },
         SubAgentRemoved removed => state with
         {
             Cards = state.Cards
-                .Where(kv => !(kv.Value.TopicId == removed.TopicId && kv.Key == removed.Handle))
+                .Where(kv => kv.Key != new SubAgentCardKey(removed.TopicId, removed.Handle))
                 .ToDictionary(kv => kv.Key, kv => kv.Value)
         },
         _ => state
     };
 
-    private static IReadOnlyDictionary<string, SubAgentCardState> Upsert(
-        IReadOnlyDictionary<string, SubAgentCardState> cards,
-        string key,
+    private static IReadOnlyDictionary<SubAgentCardKey, SubAgentCardState> Upsert(
+        IReadOnlyDictionary<SubAgentCardKey, SubAgentCardState> cards,
+        SubAgentCardKey key,
         SubAgentCardState value)
     {
-        var dict = new Dictionary<string, SubAgentCardState>(cards) { [key] = value };
+        var dict = new Dictionary<SubAgentCardKey, SubAgentCardState>(cards) { [key] = value };
         return dict;
     }
 }

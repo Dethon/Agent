@@ -65,14 +65,14 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             });
     }
 
-    public void HandleCancelSubAgentNotification(JsonElement payload)
+    internal void HandleCancelSubAgentNotification(JsonElement payload)
     {
         var conversationId = payload.GetProperty("conversationId").GetString()!;
         var handle = payload.GetProperty("handle").GetString()!;
         _cancelChannel.Writer.TryWrite(new SubAgentCancelRequest(conversationId, handle));
     }
 
-    public void HandleChannelMessageNotification(JsonElement payload)
+    internal void HandleChannelMessageNotification(JsonElement payload)
     {
         var conversationId = payload.GetProperty("conversationId").GetString()!;
         var content = payload.GetProperty("content").GetString()!;
