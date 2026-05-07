@@ -131,11 +131,17 @@ public class ChatMonitor(
             })
             .Merge(linkedCt);
 
-        sessionManager?.SetParentTurnActive(true);
+        var turnActive = false;
         try
         {
             await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
             {
+                if (!turnActive)
+                {
+                    sessionManager?.SetParentTurnActive(true);
+                    turnActive = true;
+                }
+
                 foreach (var mapped in MapResponseUpdate(update))
                 {
                     await channel.SendReplyAsync(
@@ -152,12 +158,18 @@ public class ChatMonitor(
                     }, ct);
                 }
 
+                if (update.Contents.OfType<StreamCompleteContent>().Any())
+                {
+                    sessionManager?.SetParentTurnActive(false);
+                    turnActive = false;
+                }
+
                 yield return true;
             }
         }
         finally
         {
-            sessionManager?.SetParentTurnActive(false);
+            if (turnActive) sessionManager?.SetParentTurnActive(false);
         }
     }
 

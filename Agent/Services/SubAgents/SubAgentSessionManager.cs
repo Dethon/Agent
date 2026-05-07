@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.SubAgent;
+using Microsoft.Extensions.Logging;
 
 namespace Agent.Services.SubAgents;
 
@@ -21,6 +22,7 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
     private readonly AgentKey _agentKey;
     private readonly string _initialConversationId;
     private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly ILogger<SubAgentSessionManager>? _logger;
 
     private readonly object _wakeLock = new();
     private readonly HashSet<string> _wakeBuffer = [];
@@ -37,7 +39,8 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         TimeSpan? wakeDebounce = null,
         SystemChannelConnection? systemChannel = null,
         AgentKey agentKey = default,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        ILogger<SubAgentSessionManager>? logger = null)
     {
         _agentFactory = agentFactory;
         _initialConversationId = replyToConversationId;
@@ -46,6 +49,7 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
         _systemChannel = systemChannel;
         _agentKey = agentKey;
         _metricsPublisher = metricsPublisher;
+        _logger = logger;
     }
 
     public void RebindReply(IChannelConnection channel, string conversationId)
@@ -80,6 +84,11 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             AgentId = _agentKey.AgentId,
             ConversationId = convId
         });
+
+        if (!silent && rt is not null)
+        {
+            _ = SafeAnnounceAsync(rt, handle, profile.Id);
+        }
 
         var run = Task.Run(async () =>
         {
@@ -154,6 +163,16 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
 
     private void OnSessionTerminal(SubAgentSession session)
     {
+        if (!session.Silent)
+        {
+            var rt = _replyTarget;
+            if (rt is not null)
+            {
+                var view = session.Snapshot();
+                _ = SafeUpdateAsync(rt, session.Handle, view.Status.ToString().ToLowerInvariant());
+            }
+        }
+
         // Skip wake if parent cancelled itself.
         if (session.CancelledBy == SubAgentCancelSource.Parent) return;
 
@@ -167,6 +186,30 @@ public sealed class SubAgentSessionManager : ISubAgentSessions, IAsyncDisposable
             oldCts?.Dispose();
             // Schedule the debounce
             _ = ScheduleWakeFlushAsync(_wakeDebounceCts.Token);
+        }
+    }
+
+    private async Task SafeAnnounceAsync(ReplyTarget rt, string handle, string subAgentId)
+    {
+        try
+        {
+            await rt.Channel.AnnounceSubAgentStartAsync(rt.ConversationId, handle, subAgentId, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to announce subagent {Handle}", handle);
+        }
+    }
+
+    private async Task SafeUpdateAsync(ReplyTarget rt, string handle, string status)
+    {
+        try
+        {
+            await rt.Channel.UpdateSubAgentStatusAsync(rt.ConversationId, handle, status, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to update subagent {Handle} to {Status}", handle, status);
         }
     }
 
