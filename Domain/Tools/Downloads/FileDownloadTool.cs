@@ -18,9 +18,9 @@ public class FileDownloadTool(
 
                                          Provide ONE of:
                                            - searchResultId: an id from a prior file_search call.
-                                           - link + title: a magnet URI or .torrent URL the agent obtained via web tools
-                                             (web_search / web_browse / web_snapshot), plus a descriptive title (e.g. the
-                                             release name with quality and group, taken from the page where the link was found).
+                                           - link + title: a magnet URI or .torrent URL obtained from any other tool, plus a
+                                             descriptive title (e.g. the release name with quality and group, taken from
+                                             wherever the link was found).
 
                                          Do not provide both. The link path is intended as a fallback when file_search returns
                                          no usable results.

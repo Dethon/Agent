@@ -25,7 +25,7 @@ public class McpFileDownloadTool(
         RequestContext<CallToolRequestParams> context,
         [Description("Id from a prior file_search result. Mutually exclusive with link.")]
         int? searchResultId,
-        [Description("Magnet URI or http(s) .torrent URL obtained via web tools. Requires title. Mutually exclusive with searchResultId.")]
+        [Description("Magnet URI or http(s) .torrent URL obtained from any other tool. Requires title. Mutually exclusive with searchResultId.")]
         string? link,
         [Description("Descriptive title for the download (required when link is provided; ignored otherwise).")]
         string? title,
