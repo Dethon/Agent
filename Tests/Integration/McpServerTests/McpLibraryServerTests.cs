@@ -96,7 +96,9 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             "download_file",
             new Dictionary<string, object?>
             {
-                ["searchResultId"] = 12345
+                ["searchResultId"] = 12345,
+                ["link"] = null,
+                ["title"] = null
             },
             cancellationToken: CancellationToken.None);
 
@@ -105,6 +107,112 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
         var content = GetTextContent(result);
         content.ShouldContain(
             "No search result found for id 12345. Make sure to run the file_search tool first and use the correct");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FileDownloadTool_WithLinkAndTitle_StartsDownloadAndStatusReportsTitle()
+    {
+        // Arrange — use a small, well-seeded public-domain magnet for stability.
+        // Sintel (Blender Foundation, Creative Commons) is a long-standing test torrent.
+        const string link =
+            "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10" +
+            "&dn=Sintel" +
+            "&tr=udp%3A%2F%2Fexplodie.org%3A6969" +
+            "&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969" +
+            "&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337" +
+            "&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969" +
+            "&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337" +
+            "&tr=wss%3A%2F%2Ftracker.btorrent.xyz" +
+            "&tr=wss%3A%2F%2Ftracker.fastcast.nz" +
+            "&tr=wss%3A%2F%2Ftracker.openwebtorrent.com" +
+            "&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F";
+        const string title = "Sintel Test Title";
+        var expectedId = link.GetHashCode();
+
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        try
+        {
+            // Act — start download via the link path
+            var downloadResult = await client.CallToolAsync(
+                "download_file",
+                new Dictionary<string, object?>
+                {
+                    ["searchResultId"] = null,
+                    ["link"] = link,
+                    ["title"] = title
+                },
+                cancellationToken: CancellationToken.None);
+
+            // Assert — download_file accepted the link and returned success
+            downloadResult.ShouldNotBeNull();
+            var downloadContent = GetTextContent(downloadResult);
+            downloadContent.ShouldContain("success");
+
+            // Act — query status using the same id
+            var statusResult = await client.CallToolAsync(
+                "download_status",
+                new Dictionary<string, object?>
+                {
+                    ["downloadId"] = expectedId
+                },
+                cancellationToken: CancellationToken.None);
+
+            // Assert — status carries our supplied title (came from synthetic SearchResult cache)
+            var statusContent = GetTextContent(statusResult);
+            statusContent.ShouldContain(title);
+
+            // Cleanup — verify the same id flows through cleanup
+            var cleanupResult = await client.CallToolAsync(
+                "download_cleanup",
+                new Dictionary<string, object?>
+                {
+                    ["downloadId"] = expectedId
+                },
+                cancellationToken: CancellationToken.None);
+
+            var cleanupContent = GetTextContent(cleanupResult);
+            cleanupContent.ShouldContain("success");
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task FileDownloadTool_WithBothIdAndLink_ReturnsInvalidArgument()
+    {
+        // Arrange
+        var client = await McpClient.CreateAsync(
+            new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(fixture.McpEndpoint)
+            }),
+            cancellationToken: CancellationToken.None);
+
+        // Act
+        var result = await client.CallToolAsync(
+            "download_file",
+            new Dictionary<string, object?>
+            {
+                ["searchResultId"] = 1,
+                ["link"] = "magnet:?xt=urn:btih:x",
+                ["title"] = "x"
+            },
+            cancellationToken: CancellationToken.None);
+
+        // Assert
+        result.ShouldNotBeNull();
+        var content = GetTextContent(result);
+        content.ShouldContain("invalid_argument");
 
         await client.DisposeAsync();
     }
