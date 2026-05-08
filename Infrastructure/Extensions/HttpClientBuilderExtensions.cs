@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Extensions.Http;
@@ -23,5 +24,17 @@ public static class HttpClientBuilderExtensions
         return builder
             .AddPolicyHandler(retryPolicy)
             .AddPolicyHandler(singleTryTimeoutPolicy);
+    }
+
+    public static IHttpClientBuilder AddRetryOnRateLimitPolicy(
+        this IHttpClientBuilder builder,
+        int attempts,
+        TimeSpan waitTime)
+    {
+        var rateLimitPolicy = Policy<HttpResponseMessage>
+            .HandleResult(r => r.StatusCode == HttpStatusCode.TooManyRequests)
+            .WaitAndRetryAsync(attempts, _ => waitTime);
+
+        return builder.AddPolicyHandler(rateLimitPolicy);
     }
 }

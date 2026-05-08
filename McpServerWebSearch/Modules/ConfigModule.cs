@@ -78,8 +78,9 @@ public static class ConfigModule
                     httpClient.Timeout = TimeSpan.FromSeconds(30);
                     return new BraveSearchClient(httpClient, settings.BraveSearch.ApiKey);
                 })
+                .AddRetryOnRateLimitPolicy(attempts: 3, waitTime: TimeSpan.FromSeconds(2))
                 .AddRetryWithExponentialWaitPolicy(
-                    attempts: 2,
+                    attempts: 3,
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
 
