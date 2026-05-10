@@ -1,0 +1,42 @@
+using System.Text.Json.Nodes;
+using Domain.Contracts;
+
+namespace Domain.Tools.HomeAssistant;
+
+public class HomeCallServiceTool(IHomeAssistantClient client)
+{
+    protected const string Name = "home_call_service";
+
+    protected const string Description =
+        """
+        Calls a Home Assistant service. Pass `domain` and `service` (e.g. 'vacuum'/'start').
+        Use the `entity_id` parameter for the target entity; service-specific options go
+        in `data` as a JSON object. Returns the entities Home Assistant changed.
+        """;
+
+    protected async Task<JsonObject> RunAsync(
+        string domain, string service, string? entityId, JsonObject? data, CancellationToken ct)
+    {
+        IReadOnlyDictionary<string, JsonNode?>? payload = data is null
+            ? null
+            : data
+                .Where(kvp => entityId is null || !kvp.Key.Equals("entity_id", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
+
+        var result = await client.CallServiceAsync(domain, service, entityId, payload, ct);
+
+        var changed = result.ChangedEntities
+            .Select(e => (JsonNode?)new JsonObject
+            {
+                ["entity_id"] = e.EntityId,
+                ["state"] = e.State
+            })
+            .ToArray();
+
+        return new JsonObject
+        {
+            ["ok"] = true,
+            ["changed_entities"] = new JsonArray(changed)
+        };
+    }
+}
