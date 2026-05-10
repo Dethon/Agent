@@ -13,7 +13,7 @@ Give the agent control over the user's Home Assistant instance — and through i
 - Domain-typed tools (`vacuum_start`, `light_turn_on`, …). The agent uses generic discovery + service-call tools.
 - WebSocket subscriptions or live state push to the agent.
 - E2E tests that spin up Home Assistant in CI.
-- Any custom approval logic. The existing `ToolApprovalChatClient` whitelist handles it by tool name.
+- Any custom approval logic. All four tools are added to the existing `ToolApprovalChatClient` whitelist; no per-call prompts.
 
 ## Architecture
 
@@ -46,6 +46,7 @@ Agent (existing)
   - `Task<HaServiceCallResult> CallServiceAsync(string domain, string service, string? entityId, IReadOnlyDictionary<string, object?>? data, CancellationToken)`
 - `Domain/DTOs/HomeAssistant/*.cs` — records: `HaEntityState`, `HaEntitySummary`, `HaServiceDefinition`, `HaServiceField`, `HaServiceCallResult`.
 - `Domain/Tools/HomeAssistant/*.cs` — pure Domain tool classes (`HomeListEntitiesTool`, `HomeGetStateTool`, `HomeListServicesTool`, `HomeCallServiceTool`) holding `Name`/`Description` constants and a `RunAsync` that delegates to `IHomeAssistantClient`.
+- `Domain/Prompts/HomeAssistantPrompt.cs` — `Name`, `Description`, `SystemPrompt` constants matching the `IdealistaPrompt` convention. The `SystemPrompt` teaches: discover before acting (`home_list_entities` → `home_list_services` → `home_call_service`); prefer the `entity_id` parameter over inlining it in `data`; common service patterns per domain (e.g. `vacuum.start` / `vacuum.return_to_base`, `light.turn_on` with `brightness_pct`, `climate.set_temperature`); and that `home_get_state` is the way to confirm an action took effect.
 - `Domain/Exceptions/HomeAssistant*.cs` — typed exceptions: `HomeAssistantUnauthorizedException`, `HomeAssistantNotFoundException`, generic `HomeAssistantException`.
 
 ### Infrastructure layer
@@ -59,9 +60,9 @@ Agent (existing)
 
 - `Program.cs` — `WebApplication.CreateBuilder` + `MapMcp("/mcp")`.
 - `Settings/McpSettings.cs` — `HomeAssistantConfiguration { BaseUrl, Token }`.
-- `Modules/ConfigModule.cs` — registers settings, HA client, MCP server with `AddCallToolFilter` (global error → `ToolResponse.Create(ex)`), and the four `McpHome*Tool` types.
+- `Modules/ConfigModule.cs` — registers settings, HA client, MCP server with `AddCallToolFilter` (global error → `ToolResponse.Create(ex)`), the four `McpHome*Tool` types via `.WithTools<...>()`, and `McpSystemPrompt` via `.WithPrompts<McpSystemPrompt>()`.
 - `McpTools/McpHomeListEntitiesTool.cs`, `McpHomeGetStateTool.cs`, `McpHomeListServicesTool.cs`, `McpHomeCallServiceTool.cs` — each inherits the corresponding Domain tool, applies `[McpServerToolType]` / `[McpServerTool]` / `[Description]` attributes, returns `CallToolResult` via `ToolResponse.Create()`.
-- `McpPrompts/McpSystemPrompt.cs` — short prompt: "Use `home_list_entities` and `home_list_services` to discover before calling `home_call_service`. Prefer the `entity_id` parameter over inlining it in `data`."
+- `McpPrompts/McpSystemPrompt.cs` — `[McpServerPromptType]` class with a `[McpServerPrompt]` static method returning `HomeAssistantPrompt.SystemPrompt`. Mirrors `McpServerIdealista/McpPrompts/McpSystemPrompt.cs`.
 - `appsettings.json` — placeholder `HomeAssistant.BaseUrl`.
 - `Dockerfile` — same shape as other MCP servers.
 
@@ -69,25 +70,25 @@ Agent (existing)
 
 All tools prefixed `home_`. The generic-tools choice means new HA capabilities surface automatically without code changes.
 
-### `home_list_entities` *(read)*
+### `home_list_entities`
 
 - **Inputs:** `domain?: string`, `area?: string`, `limit?: int = 100`.
 - **Output:** `[{ entity_id, state, friendly_name, domain, last_changed }]` — projection of `/api/states` to keep context cost low. Sorted by `entity_id`.
 - **Behavior:** GET `/api/states`, filter where the `entity_id`'s domain (the part before the first dot) equals `domain`, optionally substring-match `area` against `friendly_name`, project, take `limit`.
 
-### `home_get_state` *(read)*
+### `home_get_state`
 
 - **Inputs:** `entity_id: string` (required).
 - **Output:** `{ entity_id, state, attributes, last_changed, last_updated }` — full attributes for one entity.
 - **Behavior:** GET `/api/states/{entity_id}`. 404 → `{ ok: false, message: "entity not found" }`.
 
-### `home_list_services` *(read)*
+### `home_list_services`
 
 - **Inputs:** `domain?: string`.
 - **Output:** `[{ domain, service, description, fields: { name: { description, required, example? } } }]` — flattened list (HA returns nested `{ domain: { service: meta } }`).
 - **Behavior:** GET `/api/services`, flatten, filter by domain if provided.
 
-### `home_call_service` *(write)*
+### `home_call_service`
 
 - **Inputs:** `domain: string`, `service: string`, `entity_id?: string`, `data?: object`.
 - **Output:** `{ ok: true, changed_entities: [{ entity_id, state }] }` — HA returns the touched entities; we surface that as confirmation. Non-2xx → `{ ok: false, message }`.
@@ -99,11 +100,11 @@ All tools prefixed `home_`. The generic-tools choice means new HA capabilities s
 2. `ToolApprovalChatClient` matches the name against the whitelist — auto-approved → invoked.
 3. MCP server hits `GET /api/states`, projects vacuums, returns the list.
 4. Agent sees `vacuum.roborock_s8` is `docked`, calls `home_call_service(domain="vacuum", service="start", entity_id="vacuum.roborock_s8")`.
-5. `home_call_service` is **not** in the whitelist → channel approval prompt fires → user approves.
+5. `home_call_service` is also whitelisted → auto-approved → invoked.
 6. MCP server POSTs `/api/services/vacuum/start` with body `{"target":{"entity_id":"vacuum.roborock_s8"}}` → HA returns the changed-entities list.
 7. Tool returns `{ ok: true, changed_entities: [...] }` → agent reports back to user.
 
-Approvals are unchanged — the agent's existing whitelist will need entries for `home_list_*` and `home_get_state` (auto-approved) while `home_call_service` stays out of the whitelist (always prompts).
+All four tool names go into the agent's existing whitelist; no per-call approval prompt.
 
 ## Hosting & configuration
 
@@ -149,7 +150,7 @@ Notes:
 - User Secrets (local, non-compose dev) — `HomeAssistant:Token`.
 - `appsettings.json` / `appsettings.Development.json` — `HomeAssistant.BaseUrl` placeholder. Non-secret.
 - Agent config — register the new MCP endpoint at `http://mcp-server-homeassistant:<port>/mcp` under the existing MCP servers list.
-- Agent whitelist — add patterns `home_list_*` and `home_get_state` (covers all three read tools). Do **not** whitelist `home_call_service`.
+- Agent whitelist — add patterns covering all four tools (e.g. `home_*` or each name explicitly). The agent calls them without per-tool approval.
 
 ### One-time setup (documented for the user)
 
