@@ -78,4 +78,45 @@ public class HomeAssistantClientTests : IDisposable
 
         result.ShouldBeNull();
     }
+
+    [Fact]
+    public async Task ListServicesAsync_FlattensNestedDomainShape()
+    {
+        var body = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                domain = "vacuum",
+                services = new Dictionary<string, object>
+                {
+                    ["start"] = new
+                    {
+                        description = "Start cleaning",
+                        fields = new Dictionary<string, object>
+                        {
+                            ["entity_id"] = new
+                            {
+                                description = "Target",
+                                required = true,
+                                example = "vacuum.s8"
+                            }
+                        }
+                    },
+                    ["return_to_base"] = new { description = "Send home", fields = new Dictionary<string, object>() }
+                }
+            }
+        });
+        _server.Given(Request.Create().WithPath("/api/services").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+
+        var result = await _client.ListServicesAsync();
+
+        result.Count.ShouldBe(2);
+        var start = result.Single(s => s.Service == "start");
+        start.Domain.ShouldBe("vacuum");
+        start.Description.ShouldBe("Start cleaning");
+        start.Fields["entity_id"].Required.ShouldBeTrue();
+        start.Fields["entity_id"].Description.ShouldBe("Target");
+        start.Fields["entity_id"].Example!.GetValue<string>().ShouldBe("vacuum.s8");
+    }
 }

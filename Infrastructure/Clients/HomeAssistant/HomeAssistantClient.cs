@@ -45,8 +45,32 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         return dto is null ? null : ToEntity(dto);
     }
 
-    public Task<IReadOnlyList<HaServiceDefinition>> ListServicesAsync(CancellationToken ct = default)
-        => throw new NotImplementedException();
+    public async Task<IReadOnlyList<HaServiceDefinition>> ListServicesAsync(CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, "api/services");
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var domains = await response.Content.ReadFromJsonAsync<HaServiceDomainDto[]>(_json, ct)
+                      ?? throw new HomeAssistantException("Empty services payload.");
+
+        return domains
+            .SelectMany(d => (d.Services ?? new Dictionary<string, HaServiceDto>())
+                .Select(kv => new HaServiceDefinition
+                {
+                    Domain = d.Domain ?? string.Empty,
+                    Service = kv.Key,
+                    Description = kv.Value.Description,
+                    Fields = (kv.Value.Fields ?? new Dictionary<string, HaServiceFieldDto>())
+                        .ToDictionary(f => f.Key, f => new HaServiceField
+                        {
+                            Description = f.Value.Description,
+                            Required = f.Value.Required ?? false,
+                            Example = f.Value.Example
+                        })
+                }))
+            .ToList();
+    }
 
     public Task<HaServiceCallResult> CallServiceAsync(
         string domain, string service, string? entityId,
@@ -107,5 +131,27 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         [JsonPropertyName("attributes")] public Dictionary<string, JsonNode?>? Attributes { get; init; }
         [JsonPropertyName("last_changed")] public DateTimeOffset? LastChanged { get; init; }
         [JsonPropertyName("last_updated")] public DateTimeOffset? LastUpdated { get; init; }
+    }
+
+    [PublicAPI]
+    private record HaServiceDomainDto
+    {
+        [JsonPropertyName("domain")] public string? Domain { get; init; }
+        [JsonPropertyName("services")] public Dictionary<string, HaServiceDto>? Services { get; init; }
+    }
+
+    [PublicAPI]
+    private record HaServiceDto
+    {
+        [JsonPropertyName("description")] public string? Description { get; init; }
+        [JsonPropertyName("fields")] public Dictionary<string, HaServiceFieldDto>? Fields { get; init; }
+    }
+
+    [PublicAPI]
+    private record HaServiceFieldDto
+    {
+        [JsonPropertyName("description")] public string? Description { get; init; }
+        [JsonPropertyName("required")] public bool? Required { get; init; }
+        [JsonPropertyName("example")] public JsonNode? Example { get; init; }
     }
 }
