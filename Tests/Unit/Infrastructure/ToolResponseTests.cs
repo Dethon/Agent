@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Exceptions;
 using Infrastructure.Utils;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -44,5 +45,27 @@ public class ToolResponseTests
         var result = ToolResponse.Create(envelope, "details");
 
         result.IsError.ShouldBe(true);
+    }
+
+    [Fact]
+    public void Create_HomeAssistantNotFoundException_ProducesNotFoundNonRetryable()
+    {
+        var result = ToolResponse.Create(new HomeAssistantNotFoundException("x"));
+
+        var first = result.Content[0].ShouldBeOfType<TextContentBlock>();
+        var parsed = JsonNode.Parse(first.Text)!.AsObject();
+        parsed["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        parsed["retryable"]!.GetValue<bool>().ShouldBe(false);
+    }
+
+    [Fact]
+    public void Create_HomeAssistantUnauthorizedException_ProducesInvalidArgumentNonRetryable()
+    {
+        var result = ToolResponse.Create(new HomeAssistantUnauthorizedException("x"));
+
+        var first = result.Content[0].ShouldBeOfType<TextContentBlock>();
+        var parsed = JsonNode.Parse(first.Text)!.AsObject();
+        parsed["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        parsed["retryable"]!.GetValue<bool>().ShouldBe(false);
     }
 }

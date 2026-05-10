@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Exceptions;
 using Domain.Tools;
 using ModelContextProtocol.Protocol;
 
@@ -91,9 +92,11 @@ public static class ToolResponse
     private static string MapErrorCode(Exception ex) => ex switch
     {
         ArgumentException => ToolError.Codes.InvalidArgument,
+        HomeAssistantNotFoundException => ToolError.Codes.NotFound,
         FileNotFoundException => ToolError.Codes.NotFound,
         DirectoryNotFoundException => ToolError.Codes.NotFound,
         IOException => ToolError.Codes.AlreadyExists,
+        HomeAssistantUnauthorizedException => ToolError.Codes.InvalidArgument,
         UnauthorizedAccessException => ToolError.Codes.InvalidArgument,
         TimeoutException => ToolError.Codes.Timeout,
         OperationCanceledException => ToolError.Codes.Timeout,
@@ -103,9 +106,11 @@ public static class ToolResponse
     private static bool IsRetryable(Exception ex) => ex switch
     {
         ArgumentException => false,
+        HomeAssistantNotFoundException => false,
         FileNotFoundException => false,
         DirectoryNotFoundException => false,
         IOException => false,
+        HomeAssistantUnauthorizedException => false,
         UnauthorizedAccessException => false,
         TimeoutException => true,
         OperationCanceledException => true,
