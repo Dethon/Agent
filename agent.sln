@@ -46,6 +46,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dashboard.Client", "Dashboa
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerSandbox", "McpServerSandbox\McpServerSandbox.csproj", "{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerHomeAssistant", "McpServerHomeAssistant\McpServerHomeAssistant.csproj", "{41BB4884-327D-43DE-8844-F4533E6B627E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -248,6 +250,18 @@ Global
 		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x64.Build.0 = Release|Any CPU
 		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x86.ActiveCfg = Release|Any CPU
 		{B1FCE8DA-09D5-45B4-9CFC-88BA97E00EED}.Release|x86.Build.0 = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|x64.Build.0 = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Debug|x86.Build.0 = Debug|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|x64.ActiveCfg = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|x64.Build.0 = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|x86.ActiveCfg = Release|Any CPU
+		{41BB4884-327D-43DE-8844-F4533E6B627E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
