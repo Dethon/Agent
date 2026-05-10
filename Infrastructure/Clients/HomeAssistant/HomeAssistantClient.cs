@@ -30,8 +30,20 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         return raw.Select(ToEntity).ToList();
     }
 
-    public Task<HaEntityState?> GetStateAsync(string entityId, CancellationToken ct = default)
-        => throw new NotImplementedException();
+    public async Task<HaEntityState?> GetStateAsync(string entityId, CancellationToken ct = default)
+    {
+        using var request = NewRequest(HttpMethod.Get, $"api/states/{entityId}");
+        using var response = await httpClient.SendAsync(request, ct);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+        await EnsureOkAsync(response, ct);
+
+        var dto = await response.Content.ReadFromJsonAsync<HaStateDto>(_json, ct);
+        return dto is null ? null : ToEntity(dto);
+    }
 
     public Task<IReadOnlyList<HaServiceDefinition>> ListServicesAsync(CancellationToken ct = default)
         => throw new NotImplementedException();

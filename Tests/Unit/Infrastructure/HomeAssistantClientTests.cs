@@ -48,4 +48,34 @@ public class HomeAssistantClientTests : IDisposable
         result[0].State.ShouldBe("docked");
         result[0].Attributes["friendly_name"]!.GetValue<string>().ShouldBe("Roborock");
     }
+
+    [Fact]
+    public async Task GetStateAsync_EntityFound_ReturnsState()
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            entity_id = "light.kitchen",
+            state = "on",
+            attributes = new Dictionary<string, object> { ["brightness"] = 200 }
+        });
+        _server.Given(Request.Create().WithPath("/api/states/light.kitchen").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+
+        var result = await _client.GetStateAsync("light.kitchen");
+
+        result.ShouldNotBeNull();
+        result!.EntityId.ShouldBe("light.kitchen");
+        result.State.ShouldBe("on");
+    }
+
+    [Fact]
+    public async Task GetStateAsync_EntityMissing_ReturnsNull()
+    {
+        _server.Given(Request.Create().WithPath("/api/states/light.missing").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(404).WithBody("Entity not found"));
+
+        var result = await _client.GetStateAsync("light.missing");
+
+        result.ShouldBeNull();
+    }
 }
