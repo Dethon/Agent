@@ -158,4 +158,15 @@ public class HomeAssistantClientTests : IDisposable
         var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
         posted.ContainsKey("target").ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task ListStatesAsync_401_ThrowsUnauthorized()
+    {
+        _server.Given(Request.Create().WithPath("/api/states").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(401).WithBody("Unauthorized"));
+
+        var ex = await Should.ThrowAsync<HomeAssistantUnauthorizedException>(
+            () => _client.ListStatesAsync());
+        ex.StatusCode.ShouldBe(401);
+    }
 }
