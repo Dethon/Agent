@@ -72,10 +72,30 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
             .ToList();
     }
 
-    public Task<HaServiceCallResult> CallServiceAsync(
+    public async Task<HaServiceCallResult> CallServiceAsync(
         string domain, string service, string? entityId,
         IReadOnlyDictionary<string, JsonNode?>? data, CancellationToken ct = default)
-        => throw new NotImplementedException();
+    {
+        var body = new JsonObject();
+        if (data is not null)
+        {
+            foreach (var kvp in data)
+                body[kvp.Key] = kvp.Value?.DeepClone();
+        }
+        if (!string.IsNullOrEmpty(entityId))
+        {
+            body["target"] = new JsonObject { ["entity_id"] = entityId };
+        }
+
+        using var request = NewRequest(HttpMethod.Post, $"api/services/{domain}/{service}");
+        request.Content = JsonContent.Create(body);
+
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+
+        var raw = await response.Content.ReadFromJsonAsync<HaStateDto[]>(_json, ct) ?? [];
+        return new HaServiceCallResult { ChangedEntities = raw.Select(ToEntity).ToList() };
+    }
 
     private HttpRequestMessage NewRequest(HttpMethod method, string path)
     {

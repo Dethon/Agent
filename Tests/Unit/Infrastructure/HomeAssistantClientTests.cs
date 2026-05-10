@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Exceptions;
 using Infrastructure.Clients.HomeAssistant;
@@ -118,5 +119,43 @@ public class HomeAssistantClientTests : IDisposable
         start.Fields["entity_id"].Required.ShouldBeTrue();
         start.Fields["entity_id"].Description.ShouldBe("Target");
         start.Fields["entity_id"].Example!.GetValue<string>().ShouldBe("vacuum.s8");
+    }
+
+    [Fact]
+    public async Task CallServiceAsync_HoistsEntityIdIntoTargetAndSendsBody()
+    {
+        var responseBody = JsonSerializer.Serialize(new[]
+        {
+            new { entity_id = "vacuum.s8", state = "cleaning", attributes = new Dictionary<string, object>() }
+        });
+        _server.Given(Request.Create()
+                .WithPath("/api/services/vacuum/start")
+                .WithHeader("Authorization", "Bearer test-token")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(responseBody));
+
+        var data = new Dictionary<string, JsonNode?> { ["mode"] = JsonValue.Create("spot") };
+        var result = await _client.CallServiceAsync("vacuum", "start", "vacuum.s8", data);
+
+        result.ChangedEntities.Count.ShouldBe(1);
+        result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
+        result.ChangedEntities[0].State.ShouldBe("cleaning");
+
+        var calls = _server.LogEntries.ToList();
+        var posted = JsonNode.Parse(calls.Last().RequestMessage.Body!)!.AsObject();
+        posted["target"]!["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
+        posted["mode"]!.GetValue<string>().ShouldBe("spot");
+    }
+
+    [Fact]
+    public async Task CallServiceAsync_NoEntityId_OmitsTarget()
+    {
+        _server.Given(Request.Create().WithPath("/api/services/homeassistant/restart").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
+
+        await _client.CallServiceAsync("homeassistant", "restart", null, null);
+
+        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
+        posted.ContainsKey("target").ShouldBeFalse();
     }
 }
