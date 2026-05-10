@@ -82,9 +82,13 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
             foreach (var kvp in data)
                 body[kvp.Key] = kvp.Value?.DeepClone();
         }
+        // HA's REST /api/services/{domain}/{service} treats the request body as `service_data`
+        // and validates it against the service schema. `target` is only honored on the WebSocket
+        // call_service path; on REST it gets rejected as an unknown key with a 400. Send entity_id
+        // flat so the call works for any entity-targeted service.
         if (!string.IsNullOrEmpty(entityId))
         {
-            body["target"] = new JsonObject { ["entity_id"] = entityId };
+            body["entity_id"] = entityId;
         }
 
         using var request = NewRequest(HttpMethod.Post, $"api/services/{domain}/{service}");

@@ -122,7 +122,7 @@ public class HomeAssistantClientTests : IDisposable
     }
 
     [Fact]
-    public async Task CallServiceAsync_HoistsEntityIdIntoTargetAndSendsBody()
+    public async Task CallServiceAsync_SendsEntityIdFlatInBody()
     {
         var responseBody = JsonSerializer.Serialize(new[]
         {
@@ -141,14 +141,14 @@ public class HomeAssistantClientTests : IDisposable
         result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
         result.ChangedEntities[0].State.ShouldBe("cleaning");
 
-        var calls = _server.LogEntries.ToList();
-        var posted = JsonNode.Parse(calls.Last().RequestMessage.Body!)!.AsObject();
-        posted["target"]!["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
+        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
+        posted["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
         posted["mode"]!.GetValue<string>().ShouldBe("spot");
+        posted.ContainsKey("target").ShouldBeFalse();
     }
 
     [Fact]
-    public async Task CallServiceAsync_NoEntityId_OmitsTarget()
+    public async Task CallServiceAsync_NoEntityId_OmitsEntityIdAndTarget()
     {
         _server.Given(Request.Create().WithPath("/api/services/homeassistant/restart").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
@@ -157,6 +157,7 @@ public class HomeAssistantClientTests : IDisposable
 
         var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
         posted.ContainsKey("target").ShouldBeFalse();
+        posted.ContainsKey("entity_id").ShouldBeFalse();
     }
 
     [Fact]
