@@ -117,10 +117,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox homeassistant
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox homeassistant
 ```
 
 ### Secrets
@@ -134,6 +134,17 @@ Caddy (port 443, Let's Encrypt TLS) is the entry point. It routes `/hubs/*` to t
 ### Accessing the Dashboard
 
 The observability dashboard is available at `https://assistants.herfluffness.com/dashboard/` (via Caddy) or `http://localhost:5003/dashboard/` (direct). It's a PWA that can be installed as a standalone app. The dashboard shows token costs, tool analytics, error rates, schedule history, memory analytics, and live service health. Data flows via Redis Pub/Sub: services emit metric events → the Observability collector aggregates them → the dashboard reads via REST API and receives live updates via SignalR.
+
+### Accessing Home Assistant
+
+Home Assistant runs at `http://<host>:8123` (port published on all interfaces so you can configure it from any LAN machine). On first run:
+
+1. Create the owner account through the browser onboarding flow.
+2. From the user profile menu, open **Security → Long-Lived Access Tokens** and create one.
+3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart the `mcp-homeassistant` container.
+4. To control the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**, log in with the Roborock account; the vacuum appears as `vacuum.<name>` once the integration finishes.
+
+The agent reaches HA inside the compose network at `http://homeassistant:8123` via the `McpServerHomeAssistant` MCP server.
 
 ### Observability Architecture
 
