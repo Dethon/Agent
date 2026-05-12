@@ -128,6 +128,7 @@ public class HomeAssistantClientTests : IDisposable
         {
             new { entity_id = "vacuum.s8", state = "cleaning", attributes = new Dictionary<string, object>() }
         });
+        StubServiceUnsupportedResponse("/api/services/vacuum/start");
         _server.Given(Request.Create()
                 .WithPath("/api/services/vacuum/start")
                 .WithHeader("Authorization", "Bearer test-token")
@@ -140,6 +141,7 @@ public class HomeAssistantClientTests : IDisposable
         result.ChangedEntities.Count.ShouldBe(1);
         result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
         result.ChangedEntities[0].State.ShouldBe("cleaning");
+        result.Response.ShouldBeNull();
 
         var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
         posted["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
@@ -150,6 +152,7 @@ public class HomeAssistantClientTests : IDisposable
     [Fact]
     public async Task CallServiceAsync_NoEntityId_OmitsEntityIdAndTarget()
     {
+        StubServiceUnsupportedResponse("/api/services/homeassistant/restart");
         _server.Given(Request.Create().WithPath("/api/services/homeassistant/restart").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
 
@@ -159,6 +162,101 @@ public class HomeAssistantClientTests : IDisposable
         posted.ContainsKey("target").ShouldBeFalse();
         posted.ContainsKey("entity_id").ShouldBeFalse();
     }
+
+    [Fact]
+    public async Task CallServiceAsync_RequestsResponseByDefault()
+    {
+        // Service supports response: HA returns {changed_states, service_response} with 200.
+        var responseBody = """
+            {
+              "changed_states": [
+                {"entity_id":"script.echo","state":"on","attributes":{}}
+              ],
+              "service_response": {"echoed":"hello"}
+            }
+            """;
+        _server.Given(Request.Create()
+                .WithPath("/api/services/script/echo")
+                .WithParam("return_response", "true")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(responseBody)
+                .WithHeader("Content-Type", "application/json"));
+
+        var data = new Dictionary<string, JsonNode?> { ["value"] = JsonValue.Create("hello") };
+        var result = await _client.CallServiceAsync("script", "echo", null, data);
+
+        result.ChangedEntities.Count.ShouldBe(1);
+        result.ChangedEntities[0].EntityId.ShouldBe("script.echo");
+        result.Response.ShouldNotBeNull();
+        result.Response!["echoed"]!.GetValue<string>().ShouldBe("hello");
+
+        var url = _server.LogEntries.Last().RequestMessage?.AbsoluteUrl;
+        url.ShouldContain("return_response=true");
+    }
+
+    [Fact]
+    public async Task CallServiceAsync_400DoesNotSupportResponses_FallsBackWithoutQuery()
+    {
+        // First call (with return_response=true) → 400 with the canonical HA message.
+        // Second call (no query) → 200 with array shape.
+        _server.Given(Request.Create()
+                .WithPath("/api/services/light/turn_on")
+                .WithParam("return_response", "true")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(400)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody("""{"message":"Service does not support responses. Remove return_response from request."}"""));
+
+        var success = JsonSerializer.Serialize(new[]
+        {
+            new { entity_id = "light.kitchen", state = "on", attributes = new Dictionary<string, object>() }
+        });
+        _server.Given(Request.Create()
+                .WithPath("/api/services/light/turn_on")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(success));
+
+        var result = await _client.CallServiceAsync("light", "turn_on", "light.kitchen", null);
+
+        result.ChangedEntities.Count.ShouldBe(1);
+        result.ChangedEntities[0].EntityId.ShouldBe("light.kitchen");
+        result.Response.ShouldBeNull();
+
+        // Two posts: first with the query, second without.
+        var posts = _server.LogEntries
+            .Where(e => e.RequestMessage?.Method == "POST")
+            .ToList();
+        posts.Count.ShouldBe(2);
+        posts[0].RequestMessage!.AbsoluteUrl.ShouldContain("return_response=true");
+        posts[1].RequestMessage!.AbsoluteUrl.ShouldNotContain("return_response");
+    }
+
+    [Fact]
+    public async Task CallServiceAsync_400OtherReason_PropagatesAndDoesNotRetry()
+    {
+        _server.Given(Request.Create()
+                .WithPath("/api/services/light/turn_on")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(400)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody("""{"message":"Some unrelated validation error"}"""));
+
+        var ex = await Should.ThrowAsync<HomeAssistantException>(
+            () => _client.CallServiceAsync("light", "turn_on", "light.kitchen", null));
+        ex.StatusCode.ShouldBe(400);
+
+        // Exactly one POST — no retry.
+        _server.LogEntries.Count(e => e.RequestMessage?.Method == "POST").ShouldBe(1);
+    }
+
+    private void StubServiceUnsupportedResponse(string path)
+        => _server.Given(Request.Create()
+                .WithPath(path)
+                .WithParam("return_response", "true")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(400)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody("""{"message":"Service does not support responses. Remove return_response from request."}"""));
 
     [Fact]
     public async Task ListStatesAsync_401_ThrowsUnauthorized()

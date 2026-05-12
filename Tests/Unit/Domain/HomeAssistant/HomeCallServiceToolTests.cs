@@ -34,6 +34,35 @@ public class HomeCallServiceToolTests
     }
 
     [Fact]
+    public async Task RunAsync_NoServiceResponse_OmitsResponseField()
+    {
+        var client = new RecordingClient(new HaServiceCallResult { ChangedEntities = [] });
+        var tool = new TestableHomeCallServiceTool(client);
+
+        var result = await tool.RunAsync("light", "turn_on", "light.kitchen", null, CancellationToken.None);
+
+        result.ContainsKey("response").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_WithServiceResponse_SurfacesResponseField()
+    {
+        var responseNode = JsonNode.Parse("""{"echoed":"hello"}""");
+        var client = new RecordingClient(new HaServiceCallResult
+        {
+            ChangedEntities = [],
+            Response = responseNode
+        });
+        var tool = new TestableHomeCallServiceTool(client);
+
+        var result = await tool.RunAsync("script", "echo", null,
+            new JsonObject { ["value"] = "hello" }, CancellationToken.None);
+
+        result.ContainsKey("response").ShouldBeTrue();
+        result["response"]!["echoed"]!.GetValue<string>().ShouldBe("hello");
+    }
+
+    [Fact]
     public async Task RunAsync_ExplicitEntityIdParameterWinsOverDataEntityId()
     {
         var client = new RecordingClient(new HaServiceCallResult { ChangedEntities = [] });

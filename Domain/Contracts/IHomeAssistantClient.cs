@@ -49,4 +49,5 @@ public record HaServiceField
 public record HaServiceCallResult
 {
     public required IReadOnlyList<HaEntityState> ChangedEntities { get; init; }
+    public JsonNode? Response { get; init; }
 }

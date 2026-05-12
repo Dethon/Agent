@@ -132,7 +132,9 @@ public class HomeAssistantFixture : IAsyncLifetime
     {
         Directory.CreateDirectory(Path.Combine(configDir, ".storage"));
 
-        // configuration.yaml: minimal core + a known entity for the call_service test.
+        // configuration.yaml: minimal core + a known entity for the call_service test +
+        // a `script.echo` that returns a response dict so we can exercise the
+        // return_response code path against a real HA.
         File.WriteAllText(Path.Combine(configDir, "configuration.yaml"),
             """
             homeassistant:
@@ -149,6 +151,18 @@ public class HomeAssistantFixture : IAsyncLifetime
               test_switch:
                 name: Test Switch
                 initial: false
+
+            script:
+              echo:
+                sequence:
+                  - variables:
+                      out:
+                        echoed: "{{ value | default('echo-default') }}"
+                  - stop: ""
+                    response_variable: out
+                fields:
+                  value:
+                    required: false
             """);
 
         // Random IDs so each fixture run is independent. HA's auth schema accepts arbitrary hex.

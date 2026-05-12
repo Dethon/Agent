@@ -92,14 +92,63 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
             body["entity_id"] = entityId;
         }
 
-        using var request = NewRequest(HttpMethod.Post, $"api/services/{domain}/{service}");
-        request.Content = JsonContent.Create(body);
+        var path = $"api/services/{domain}/{service}";
 
-        using var response = await httpClient.SendAsync(request, ct);
-        await EnsureOkAsync(response, ct);
+        // First attempt: ask for the service response (HA returns {changed_states, service_response}
+        // for services that support it, e.g. roborock.get_maps, weather.get_forecasts, calendar.get_events).
+        using var firstResp = await PostJsonAsync(path + "?return_response=true", body, ct);
+        if (firstResp.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var errBody = await firstResp.Content.ReadAsStringAsync(ct);
+            // HA returns this exact phrase when return_response is passed against a service
+            // whose handler is registered with SupportsResponse.NONE. The handler hasn't run,
+            // so retrying without the query is safe (no double-execution).
+            if (errBody.Contains("does not support responses", StringComparison.OrdinalIgnoreCase))
+            {
+                using var retryResp = await PostJsonAsync(path, body, ct);
+                await EnsureOkAsync(retryResp, ct);
+                return await ParseCallResultAsync(retryResp, ct);
+            }
+            throw new HomeAssistantException(
+                $"Home Assistant returned 400: {(errBody.Length > 200 ? errBody[..200] + "…" : errBody)}", 400);
+        }
+        await EnsureOkAsync(firstResp, ct);
+        return await ParseCallResultAsync(firstResp, ct);
+    }
 
-        var raw = await response.Content.ReadFromJsonAsync<HaStateDto[]>(_json, ct) ?? [];
-        return new HaServiceCallResult { ChangedEntities = raw.Select(ToEntity).ToList() };
+    private async Task<HttpResponseMessage> PostJsonAsync(string path, JsonObject body, CancellationToken ct)
+    {
+        var request = NewRequest(HttpMethod.Post, path);
+        try
+        {
+            request.Content = JsonContent.Create(body);
+            return await httpClient.SendAsync(request, ct);
+        }
+        catch
+        {
+            request.Dispose();
+            throw;
+        }
+    }
+
+    private async Task<HaServiceCallResult> ParseCallResultAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        var node = await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct);
+        return node switch
+        {
+            JsonArray arr => new HaServiceCallResult
+            {
+                ChangedEntities = (arr.Deserialize<HaStateDto[]>(_json) ?? [])
+                    .Select(ToEntity).ToList()
+            },
+            JsonObject obj => new HaServiceCallResult
+            {
+                ChangedEntities = (obj["changed_states"]?.Deserialize<HaStateDto[]>(_json) ?? [])
+                    .Select(ToEntity).ToList(),
+                Response = obj["service_response"]?.DeepClone()
+            },
+            _ => new HaServiceCallResult { ChangedEntities = [] }
+        };
     }
 
     private HttpRequestMessage NewRequest(HttpMethod method, string path)

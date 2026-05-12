@@ -105,6 +105,26 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     }
 
     [Fact]
+    public async Task CallServiceAsync_ResponseSupportingService_ReturnsServiceResponse()
+    {
+        var client = fixture.CreateClient();
+
+        var data = new Dictionary<string, JsonNode?>
+        {
+            ["value"] = JsonValue.Create("hello-from-test")
+        };
+
+        var result = await client.CallServiceAsync(
+            domain: "script",
+            service: "echo",
+            entityId: null,
+            data: data);
+
+        result.Response.ShouldNotBeNull();
+        result.Response!["echoed"]!.GetValue<string>().ShouldBe("hello-from-test");
+    }
+
+    [Fact]
     public async Task ListStatesAsync_BadToken_ThrowsUnauthorized()
     {
         var http = new HttpClient { BaseAddress = new Uri(fixture.BaseUrl + "/") };

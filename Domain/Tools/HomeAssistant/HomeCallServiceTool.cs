@@ -10,8 +10,10 @@ public class HomeCallServiceTool(IHomeAssistantClient client)
     protected const string Description =
         """
         Calls a Home Assistant service. Pass `domain` and `service` (e.g. 'vacuum'/'start').
-        Use the `entity_id` parameter for the target entity; service-specific options go
-        in `data` as a JSON object. Returns the entities Home Assistant changed.
+        Use the `entity_id` parameter for the target entity; service-specific options go in
+        `data` as a JSON object. Returns the entities Home Assistant changed, plus a
+        `response` field carrying the service's response payload when the service is
+        query-style and returns data (otherwise `response` is absent).
         """;
 
     protected async Task<JsonObject> RunAsync(
@@ -33,10 +35,15 @@ public class HomeCallServiceTool(IHomeAssistantClient client)
             })
             .ToArray();
 
-        return new JsonObject
+        var envelope = new JsonObject
         {
             ["ok"] = true,
             ["changed_entities"] = new JsonArray(changed)
         };
+        if (result.Response is not null)
+        {
+            envelope["response"] = result.Response.DeepClone();
+        }
+        return envelope;
     }
 }
