@@ -98,6 +98,17 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
+  mcp-homeassistant:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
   mcp-channel-signalr:
     build:
       args:
