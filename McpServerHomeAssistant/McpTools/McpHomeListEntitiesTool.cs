@@ -13,8 +13,8 @@ public class McpHomeListEntitiesTool(IHomeAssistantClient client) : HomeListEnti
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
-        [Description("Optional domain filter, e.g. 'vacuum', 'light', 'climate'")] string? domain = null,
-        [Description("Optional substring to match against friendly_name")] string? area = null,
+        [Description("Optional domain filter (e.g. 'vacuum', 'light'). Filtering by the device's class domain hides neighboring sensors/selects/buttons/events that often carry the room, zone, mode, or ID metadata you need to control it — prefer leaving this unset or using `area` until you've seen the full picture.")] string? domain = null,
+        [Description("Optional substring matched case-insensitively against friendly_name. Useful for grouping all entities belonging to one device (e.g. 'Roborock' returns the vacuum and all its sensors/selects).")] string? area = null,
         [Description("Maximum number of entities to return (default 100)")] int? limit = 100,
         CancellationToken ct = default)
     {
