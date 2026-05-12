@@ -25,7 +25,7 @@ public class HomeAssistantFixture : IAsyncLifetime
     private const int HaPort = 8123;
     private const string ContainerImage = "ghcr.io/home-assistant/home-assistant:stable";
 
-    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan _readyTimeout = TimeSpan.FromMinutes(3);
 
     private IContainer _container = null!;
     private string _configDir = null!;
@@ -85,7 +85,7 @@ public class HomeAssistantFixture : IAsyncLifetime
         using var http = new HttpClient { BaseAddress = new Uri(BaseUrl + "/"), Timeout = TimeSpan.FromSeconds(5) };
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token);
 
-        var deadline = DateTime.UtcNow + ReadyTimeout;
+        var deadline = DateTime.UtcNow + _readyTimeout;
         Exception? lastError = null;
         while (DateTime.UtcNow < deadline)
         {
@@ -120,7 +120,7 @@ public class HomeAssistantFixture : IAsyncLifetime
 
         var logs = await _container.GetLogsAsync();
         throw new TimeoutException(
-            $"Home Assistant did not become ready within {ReadyTimeout}. Last error: {lastError?.Message}.\n" +
+            $"Home Assistant did not become ready within {_readyTimeout}. Last error: {lastError?.Message}.\n" +
             $"--- container stdout (tail) ---\n{Tail(logs.Stdout, 4000)}\n" +
             $"--- container stderr (tail) ---\n{Tail(logs.Stderr, 4000)}");
     }

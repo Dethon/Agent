@@ -79,8 +79,9 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         var body = new JsonObject();
         if (data is not null)
         {
-            foreach (var kvp in data)
+            foreach (var kvp in data) {
                 body[kvp.Key] = kvp.Value?.DeepClone();
+            }
         }
         // HA's REST /api/services/{domain}/{service} treats the request body as `service_data`
         // and validates it against the service schema. `target` is only honored on the WebSocket
@@ -110,7 +111,9 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
 
     private static async Task EnsureOkAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        if (response.IsSuccessStatusCode) return;
+        if (response.IsSuccessStatusCode) {
+            return;
+        }
 
         var snippet = await SafeReadAsync(response, ct);
         throw response.StatusCode switch

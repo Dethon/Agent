@@ -141,7 +141,7 @@ public class HomeAssistantClientTests : IDisposable
         result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
         result.ChangedEntities[0].State.ShouldBe("cleaning");
 
-        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
+        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
         posted["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
         posted["mode"]!.GetValue<string>().ShouldBe("spot");
         posted.ContainsKey("target").ShouldBeFalse();
@@ -155,7 +155,7 @@ public class HomeAssistantClientTests : IDisposable
 
         await _client.CallServiceAsync("homeassistant", "restart", null, null);
 
-        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage.Body!)!.AsObject();
+        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
         posted.ContainsKey("target").ShouldBeFalse();
         posted.ContainsKey("entity_id").ShouldBeFalse();
     }
