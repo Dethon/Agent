@@ -11,9 +11,16 @@ public class HomeCallServiceTool(IHomeAssistantClient client)
         """
         Calls a Home Assistant service. Pass `domain` and `service` (e.g. 'vacuum'/'start').
         Use the `entity_id` parameter for the target entity; service-specific options go in
-        `data` as a JSON object. Returns the entities Home Assistant changed, plus a
-        `response` field carrying the service's response payload when the service is
-        query-style and returns data (otherwise `response` is absent).
+        `data` as a JSON object.
+
+        Returns `{ok:true, changed_entities, response?}` on success. `ok:true`
+        is the authoritative signal that the service ran — do not follow up
+        with `home_get_state` to confirm; HA's async state propagation makes
+        that read stale and pointless. `changed_entities` is best-effort and
+        may be empty even when the action succeeded — empty is not failure.
+        `response` carries query-style payloads (forecasts, calendar
+        events, position getters) when the service returns data; absent
+        otherwise.
         """;
 
     protected async Task<JsonObject> RunAsync(
