@@ -3,7 +3,7 @@
     "options": {
         "env": {
             "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -p jackbot",
-            "SERVICES": "agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox",
+            "SERVICES": "agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis camoufox homeassistant",
             "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot",
             "LOCAL_DEPS": "qbittorrent jackett redis camoufox"
         }

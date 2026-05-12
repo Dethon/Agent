@@ -11,6 +11,7 @@
         "Docker: MCP Vault",
         "Docker: MCP WebSearch",
         "Docker: MCP Idealista",
+        "Docker: MCP HomeAssistant",
         "Docker: MCP Sandbox",
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
@@ -29,6 +30,7 @@
         "Local: MCP Vault",
         "Local: MCP WebSearch",
         "Local: MCP Idealista",
+        "Local: MCP HomeAssistant",
         "Local: MCP Sandbox",
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
@@ -137,6 +139,21 @@
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-idealista"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Docker: MCP HomeAssistant",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-homeassistant"],
         "debuggerPath": "/remote_debugger/vsdbg",
         "quoteArgs": false
       },
@@ -268,6 +285,17 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6005"
+      }
+    },
+    {
+      "name": "Local: MCP HomeAssistant",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerHomeAssistant/bin/Debug/net10.0/McpServerHomeAssistant.dll",
+      "cwd": "${workspaceFolder}/McpServerHomeAssistant",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6006"
       }
     },
     {
