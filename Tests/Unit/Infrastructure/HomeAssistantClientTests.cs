@@ -283,7 +283,7 @@ public class HomeAssistantClientTests : IDisposable
         result.Response.ShouldNotBeNull();
         result.Response!["echoed"]!.GetValue<string>().ShouldBe("hello");
 
-        var url = _server.LogEntries.Last().RequestMessage?.AbsoluteUrl;
+        var url = _server.LogEntries.Last().RequestMessage?.AbsoluteUrl!;
         url.ShouldContain("return_response=true");
     }
 
