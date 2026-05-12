@@ -67,7 +67,8 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
                             Description = f.Value.Description,
                             Required = f.Value.Required ?? false,
                             Example = f.Value.Example
-                        })
+                        }),
+                    Target = kv.Value.Target?.DeepClone()
                 }))
             .ToList();
     }
@@ -221,6 +222,7 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
     {
         [JsonPropertyName("description")] public string? Description { get; init; }
         [JsonPropertyName("fields")] public Dictionary<string, HaServiceFieldDto>? Fields { get; init; }
+        [JsonPropertyName("target")] public JsonNode? Target { get; init; }
     }
 
     [PublicAPI]

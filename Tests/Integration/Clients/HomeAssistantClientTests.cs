@@ -62,6 +62,27 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     }
 
     [Fact]
+    public async Task ListServicesAsync_PopulatesTargetForEntityTargetedService()
+    {
+        var client = fixture.CreateClient();
+
+        var services = await client.ListServicesAsync();
+
+        // input_boolean.toggle is entity-targeted — HA exposes `target.entity[*].domain` so
+        // the agent can tell an `entity_id` is required.
+        var toggle = services.Single(s => s.Domain == "input_boolean" && s.Service == "toggle");
+        toggle.Target.ShouldNotBeNull();
+        toggle.Target!["entity"].ShouldNotBeNull();
+
+        // homeassistant.restart is fire-and-forget — no target block in the HA response.
+        var restart = services.SingleOrDefault(s => s.Domain == "homeassistant" && s.Service == "restart");
+        if (restart is not null)
+        {
+            restart.Target.ShouldBeNull();
+        }
+    }
+
+    [Fact]
     public async Task CallServiceAsync_TogglesEntityAndReturnsChangedEntity()
     {
         var client = fixture.CreateClient();

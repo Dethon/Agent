@@ -35,6 +35,11 @@ public record HaServiceDefinition
     public string? Description { get; init; }
     public IReadOnlyDictionary<string, HaServiceField> Fields { get; init; } =
         new Dictionary<string, HaServiceField>();
+
+    // Present when the service is entity-targeted. `{}` means "any entity"; a populated
+    // shape (e.g. `{entity: [{domain: ["vacuum"]}]}`) narrows acceptable entity kinds.
+    // Absent (null) means the service takes no entity target.
+    public JsonNode? Target { get; init; }
 }
 
 [PublicAPI]

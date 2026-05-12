@@ -10,8 +10,10 @@ public class HomeListServicesTool(IHomeAssistantClient client)
     protected const string Description =
         """
         Lists Home Assistant services. Pass `domain` to filter (e.g. 'vacuum', 'light').
-        Each entry includes domain, service, description, and field metadata so the
-        agent can construct valid `data` payloads for `home_call_service`.
+        Each entry includes domain, service, description, field metadata, and a `target`
+        block when the service is entity-targeted (its presence means the call needs an
+        `entity_id`; an empty `target: {}` accepts any entity, a populated shape narrows
+        accepted entity kinds). Services without `target` take no entity target.
         """;
 
     protected async Task<JsonObject> RunAsync(string? domain, CancellationToken ct)
@@ -50,6 +52,10 @@ public class HomeListServicesTool(IHomeAssistantClient client)
                 if (!string.IsNullOrEmpty(s.Description))
                 {
                     item["description"] = s.Description;
+                }
+                if (s.Target is not null)
+                {
+                    item["target"] = s.Target.DeepClone();
                 }
                 return item;
             })

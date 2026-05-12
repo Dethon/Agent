@@ -41,6 +41,34 @@ public class HomeListServicesToolTests
         ((string)arr[0]!["service"]!).ShouldBe("start");
     }
 
+    [Fact]
+    public async Task RunAsync_SurfacesTargetWhenPresentAndOmitsWhenAbsent()
+    {
+        var entityTargeted = new HaServiceDefinition
+        {
+            Domain = "roborock",
+            Service = "get_maps",
+            Target = JsonNode.Parse("""{"entity":[{"integration":"roborock","domain":["vacuum"]}]}""")
+        };
+        var fireAndForget = new HaServiceDefinition
+        {
+            Domain = "homeassistant",
+            Service = "restart"
+        };
+        var client = new ServicesClient(entityTargeted, fireAndForget);
+        var tool = new TestableHomeListServicesTool(client);
+
+        var result = await tool.RunAsync(null, CancellationToken.None);
+
+        var arr = (JsonArray)result["services"]!;
+        var getMaps = arr.Single(s => (string)s!["service"]! == "get_maps")!;
+        getMaps.AsObject().ContainsKey("target").ShouldBeTrue();
+        getMaps["target"]!["entity"]![0]!["domain"]![0]!.GetValue<string>().ShouldBe("vacuum");
+
+        var restart = arr.Single(s => (string)s!["service"]! == "restart")!;
+        restart.AsObject().ContainsKey("target").ShouldBeFalse();
+    }
+
     private sealed class TestableHomeListServicesTool(IHomeAssistantClient client) : HomeListServicesTool(client)
     {
         public new Task<JsonObject> RunAsync(string? domain, CancellationToken ct) => base.RunAsync(domain, ct);

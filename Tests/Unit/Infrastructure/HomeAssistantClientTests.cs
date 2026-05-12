@@ -81,6 +81,58 @@ public class HomeAssistantClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ListServicesAsync_CapturesTargetWhenPresent()
+    {
+        var body = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                domain = "roborock",
+                services = new Dictionary<string, object>
+                {
+                    ["get_maps"] = new
+                    {
+                        description = "Get maps",
+                        fields = new Dictionary<string, object>(),
+                        target = new
+                        {
+                            entity = new[]
+                            {
+                                new { integration = "roborock", domain = new[] { "vacuum" } }
+                            }
+                        }
+                    }
+                }
+            },
+            new
+            {
+                domain = "homeassistant",
+                services = new Dictionary<string, object>
+                {
+                    ["restart"] = new
+                    {
+                        description = "Restart HA",
+                        fields = new Dictionary<string, object>()
+                        // no target key
+                    }
+                }
+            }
+        });
+        _server.Given(Request.Create().WithPath("/api/services").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+
+        var result = await _client.ListServicesAsync();
+
+        var getMaps = result.Single(s => s.Service == "get_maps");
+        getMaps.Target.ShouldNotBeNull();
+        getMaps.Target!["entity"]![0]!["integration"]!.GetValue<string>().ShouldBe("roborock");
+        getMaps.Target["entity"]![0]!["domain"]![0]!.GetValue<string>().ShouldBe("vacuum");
+
+        var restart = result.Single(s => s.Service == "restart");
+        restart.Target.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ListServicesAsync_FlattensNestedDomainShape()
     {
         var body = JsonSerializer.Serialize(new[]
