@@ -133,6 +133,47 @@ public class HomeAssistantClientTests : IDisposable
     }
 
     [Fact]
+    public async Task ListServicesAsync_CapturesSelectorWhenPresent()
+    {
+        // HA exposes field type metadata via `selector` — e.g. {"object":{}} for a free-form
+        // map, {"number":{...}} for a number, {"select":{"multiple":true,...}} for a multi-pick.
+        // The agent needs this to know whether a field takes a scalar, list, or object;
+        // a `required: true` flag alone leaves it guessing.
+        var body = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                domain = "vacuum",
+                services = new Dictionary<string, object>
+                {
+                    ["clean_area"] = new
+                    {
+                        description = "Clean specified areas",
+                        fields = new Dictionary<string, object>
+                        {
+                            ["cleaning_area_id"] = new
+                            {
+                                required = true,
+                                selector = new Dictionary<string, object> { ["object"] = new { } }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        _server.Given(Request.Create().WithPath("/api/services").UsingGet())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+
+        var result = await _client.ListServicesAsync();
+
+        var cleanArea = result.Single(s => s.Service == "clean_area");
+        var field = cleanArea.Fields["cleaning_area_id"];
+        field.Required.ShouldBeTrue();
+        field.Selector.ShouldNotBeNull();
+        field.Selector!["object"].ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task ListServicesAsync_FlattensNestedDomainShape()
     {
         var body = JsonSerializer.Serialize(new[]

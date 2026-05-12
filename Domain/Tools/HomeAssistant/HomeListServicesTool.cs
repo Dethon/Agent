@@ -41,6 +41,10 @@ public class HomeListServicesTool(IHomeAssistantClient client)
                     {
                         f["example"] = field.Example.DeepClone();
                     }
+                    if (field.Selector is not null)
+                    {
+                        f["selector"] = field.Selector.DeepClone();
+                    }
                     fields[name] = f;
                 }
                 var item = new JsonObject

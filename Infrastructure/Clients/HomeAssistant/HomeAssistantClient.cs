@@ -66,7 +66,8 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
                         {
                             Description = f.Value.Description,
                             Required = f.Value.Required ?? false,
-                            Example = f.Value.Example
+                            Example = f.Value.Example,
+                            Selector = f.Value.Selector?.DeepClone()
                         }),
                     Target = kv.Value.Target?.DeepClone()
                 }))
@@ -241,5 +242,6 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         [JsonPropertyName("description")] public string? Description { get; init; }
         [JsonPropertyName("required")] public bool? Required { get; init; }
         [JsonPropertyName("example")] public JsonNode? Example { get; init; }
+        [JsonPropertyName("selector")] public JsonNode? Selector { get; init; }
     }
 }

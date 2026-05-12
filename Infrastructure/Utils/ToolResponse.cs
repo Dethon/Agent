@@ -89,6 +89,8 @@ public static class ToolResponse
 
     // Exception → envelope code mapping. FileNotFoundException/DirectoryNotFoundException
     // derive from IOException, so list them first; the switch matches the most specific arm.
+    // HomeAssistantException's 4xx-with-status arm sits after the NotFound/Unauthorized
+    // subclasses so those keep their more specific codes.
     private static string MapErrorCode(Exception ex) => ex switch
     {
         ArgumentException => ToolError.Codes.InvalidArgument,
@@ -97,6 +99,7 @@ public static class ToolResponse
         DirectoryNotFoundException => ToolError.Codes.NotFound,
         IOException => ToolError.Codes.AlreadyExists,
         HomeAssistantUnauthorizedException => ToolError.Codes.InvalidArgument,
+        HomeAssistantException { StatusCode: >= 400 and < 500 } => ToolError.Codes.InvalidArgument,
         UnauthorizedAccessException => ToolError.Codes.InvalidArgument,
         TimeoutException => ToolError.Codes.Timeout,
         OperationCanceledException => ToolError.Codes.Timeout,
@@ -111,6 +114,7 @@ public static class ToolResponse
         DirectoryNotFoundException => false,
         IOException => false,
         HomeAssistantUnauthorizedException => false,
+        HomeAssistantException { StatusCode: >= 400 and < 500 } => false,
         UnauthorizedAccessException => false,
         TimeoutException => true,
         OperationCanceledException => true,

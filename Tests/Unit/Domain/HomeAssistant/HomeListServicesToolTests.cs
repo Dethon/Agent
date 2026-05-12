@@ -69,6 +69,34 @@ public class HomeListServicesToolTests
         restart.AsObject().ContainsKey("target").ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task RunAsync_SurfacesFieldSelectorWhenPresent()
+    {
+        var def = new HaServiceDefinition
+        {
+            Domain = "vacuum",
+            Service = "clean_area",
+            Fields = new Dictionary<string, HaServiceField>
+            {
+                ["cleaning_area_id"] = new()
+                {
+                    Required = true,
+                    Selector = JsonNode.Parse("""{"object":{}}""")
+                }
+            }
+        };
+        var client = new ServicesClient(def);
+        var tool = new TestableHomeListServicesTool(client);
+
+        var result = await tool.RunAsync(null, CancellationToken.None);
+
+        var arr = (JsonArray)result["services"]!;
+        var cleanArea = arr.Single()!.AsObject();
+        var field = cleanArea["fields"]!["cleaning_area_id"]!.AsObject();
+        field.ContainsKey("selector").ShouldBeTrue();
+        field["selector"]!["object"].ShouldNotBeNull();
+    }
+
     private sealed class TestableHomeListServicesTool(IHomeAssistantClient client) : HomeListServicesTool(client)
     {
         public new Task<JsonObject> RunAsync(string? domain, CancellationToken ct) => base.RunAsync(domain, ct);

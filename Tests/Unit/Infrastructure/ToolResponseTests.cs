@@ -68,4 +68,30 @@ public class ToolResponseTests
         parsed["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
         parsed["retryable"]!.GetValue<bool>().ShouldBe(false);
     }
+
+    // HA's REST validator returns 400 with a voluptuous error message ("expected list for
+    // dictionary value @ data['cleaning_area_id']") when the agent passes the wrong shape.
+    // Surfacing this as `internal_error` + `retryable:true` makes the agent re-try with
+    // shuffled values; `invalid_argument` + `retryable:false` tells it to rethink instead.
+    [Fact]
+    public void Create_HomeAssistantException_400_ProducesInvalidArgumentNonRetryable()
+    {
+        var result = ToolResponse.Create(new HomeAssistantException("HA returned 400: bad input", 400));
+
+        var first = result.Content[0].ShouldBeOfType<TextContentBlock>();
+        var parsed = JsonNode.Parse(first.Text)!.AsObject();
+        parsed["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        parsed["retryable"]!.GetValue<bool>().ShouldBe(false);
+    }
+
+    [Fact]
+    public void Create_HomeAssistantException_500_RemainsInternalErrorRetryable()
+    {
+        var result = ToolResponse.Create(new HomeAssistantException("HA returned 500: integration crashed", 500));
+
+        var first = result.Content[0].ShouldBeOfType<TextContentBlock>();
+        var parsed = JsonNode.Parse(first.Text)!.AsObject();
+        parsed["errorCode"]!.GetValue<string>().ShouldBe("internal_error");
+        parsed["retryable"]!.GetValue<bool>().ShouldBe(true);
+    }
 }

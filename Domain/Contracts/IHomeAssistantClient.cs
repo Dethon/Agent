@@ -54,6 +54,11 @@ public record HaServiceField
     public string? Description { get; init; }
     public bool Required { get; init; }
     public JsonNode? Example { get; init; }
+
+    // HA's UI hint for the field type — e.g. {"object":{}}, {"number":{"min":1,"max":99}},
+    // {"select":{"multiple":true,"options":[...]}}. The only signal in /api/services that
+    // reveals "this field takes a list/object/scalar" when example is absent.
+    public JsonNode? Selector { get; init; }
 }
 
 [PublicAPI]
