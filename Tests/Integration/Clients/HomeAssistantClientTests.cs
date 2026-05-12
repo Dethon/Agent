@@ -146,6 +146,38 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     }
 
     [Fact]
+    public async Task RenderTemplateAsync_ReturnsRenderedString()
+    {
+        var client = fixture.CreateClient();
+
+        // {{ now() }} is a stable HA built-in that returns a non-empty rendered value
+        // regardless of the user's HA config.
+        var rendered = await client.RenderTemplateAsync("{{ now() }}");
+
+        rendered.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task SetupSummary_BuildsAgainstRealHA_IncludesExpectedSections()
+    {
+        var client = fixture.CreateClient();
+        var summary = new global::Domain.Prompts.HomeAssistantSetupSummary(client);
+
+        var rendered = await summary.BuildAsync(CancellationToken.None);
+
+        output.WriteLine(rendered);
+
+        rendered.ShouldContain("## Current Home Assistant setup");
+        rendered.ShouldContain("### Integration service domains");
+        rendered.ShouldContain("### Areas");
+        rendered.ShouldContain("### Entities by class domain");
+        // Both seeded entities — the input_boolean and the script — must appear in the
+        // class-domain section.
+        rendered.ShouldContain(HomeAssistantFixture.TestEntityId);
+        rendered.ShouldContain("script.echo");
+    }
+
+    [Fact]
     public async Task ListStatesAsync_BadToken_ThrowsUnauthorized()
     {
         var http = new HttpClient { BaseAddress = new Uri(fixture.BaseUrl + "/") };

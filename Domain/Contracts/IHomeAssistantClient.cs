@@ -14,6 +14,12 @@ public interface IHomeAssistantClient
         string? entityId,
         IReadOnlyDictionary<string, JsonNode?>? data,
         CancellationToken ct = default);
+
+    // Renders a Jinja template via POST /api/template. Returns the rendered text.
+    // The only REST path into HA's area/device/entity registries — `{{ areas() }}`,
+    // `{{ area_entities(area_id) }}`, `{{ device_id(entity_id) }}`, etc. — so we use
+    // it to enumerate setup information that's otherwise WebSocket-only.
+    Task<string> RenderTemplateAsync(string template, CancellationToken ct = default);
 }
 
 [PublicAPI]

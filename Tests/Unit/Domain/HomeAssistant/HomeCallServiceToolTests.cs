@@ -119,5 +119,8 @@ public class HomeCallServiceToolTests
             LastData = data;
             return Task.FromResult(result);
         }
+
+        public Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
+            => throw new NotImplementedException();
     }
 }

@@ -311,6 +311,22 @@ public class HomeAssistantClientTests : IDisposable
                 .WithBody("""{"message":"Service does not support responses. Remove return_response from request."}"""));
 
     [Fact]
+    public async Task RenderTemplateAsync_PostsBodyAndReturnsRendered()
+    {
+        _server.Given(Request.Create()
+                .WithPath("/api/template")
+                .WithHeader("Authorization", "Bearer test-token")
+                .UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody("Salón,Cocina,Dormitorio"));
+
+        var result = await _client.RenderTemplateAsync("{{ areas() | map('area_name') | join(',') }}");
+
+        result.ShouldBe("Salón,Cocina,Dormitorio");
+        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
+        posted["template"]!.GetValue<string>().ShouldBe("{{ areas() | map('area_name') | join(',') }}");
+    }
+
+    [Fact]
     public async Task ListStatesAsync_401_ThrowsUnauthorized()
     {
         _server.Given(Request.Create().WithPath("/api/states").UsingGet())

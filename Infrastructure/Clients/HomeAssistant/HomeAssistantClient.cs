@@ -132,6 +132,16 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         }
     }
 
+    public async Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
+    {
+        var body = new JsonObject { ["template"] = template };
+        using var request = NewRequest(HttpMethod.Post, "api/template");
+        request.Content = JsonContent.Create(body);
+        using var response = await httpClient.SendAsync(request, ct);
+        await EnsureOkAsync(response, ct);
+        return await response.Content.ReadAsStringAsync(ct);
+    }
+
     private async Task<HaServiceCallResult> ParseCallResultAsync(HttpResponseMessage response, CancellationToken ct)
     {
         var node = await response.Content.ReadFromJsonAsync<JsonNode>(_json, ct);

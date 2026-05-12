@@ -5,9 +5,15 @@ using ModelContextProtocol.Server;
 namespace McpServerHomeAssistant.McpPrompts;
 
 [McpServerPromptType]
-public class McpSystemPrompt
+public class McpSystemPrompt(HomeAssistantSetupSummary summary)
 {
     [McpServerPrompt(Name = HomeAssistantPrompt.Name)]
     [Description(HomeAssistantPrompt.Description)]
-    public static string GetSystemPrompt() => HomeAssistantPrompt.SystemPrompt;
+    public async Task<string> GetSystemPromptAsync(CancellationToken ct)
+    {
+        var setup = await summary.GetAsync(ct);
+        return string.IsNullOrEmpty(setup)
+            ? HomeAssistantPrompt.SystemPrompt
+            : HomeAssistantPrompt.SystemPrompt + "\n\n" + setup;
+    }
 }

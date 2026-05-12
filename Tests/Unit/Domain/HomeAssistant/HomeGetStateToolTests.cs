@@ -67,5 +67,8 @@ public class HomeGetStateToolTests
             string domain, string service, string? entityId,
             IReadOnlyDictionary<string, JsonNode?>? data, CancellationToken ct = default)
             => throw new NotImplementedException();
+
+        public Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)
+            => throw new NotImplementedException();
     }
 }
