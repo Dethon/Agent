@@ -21,7 +21,7 @@ public static class HomeAssistantPrompt
         their assigned entities, and the full entity roster grouped by class.
         That snapshot IS the inventory. Consult it first, don't re-derive it:
 
-        - The user says "the salón" → look up the entities in the **Areas** block.
+        - The user says "the living room" → look up the entities in the **Areas** block.
           Don't call `home_list_entities(area=...)` to find them.
         - The user names a device → find the `entity_id` in **Entities by class
           domain**. Don't enumerate.
