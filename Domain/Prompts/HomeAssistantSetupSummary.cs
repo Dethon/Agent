@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Contracts;
 
@@ -177,14 +178,14 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
             return;
         }
 
-        var allKnown = states.Select(s => s.EntityId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var byId = states.ToDictionary(s => s.EntityId, StringComparer.OrdinalIgnoreCase);
         var assigned = areas.SelectMany(a => a.Entities ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         sb.AppendLine();
         foreach (var area in areas.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
         {
             var entities = (area.Entities ?? [])
-                .Where(e => allKnown.Contains(e))
+                .Where(byId.ContainsKey)
                 .OrderBy(e => e, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             sb.Append("- **").Append(area.Name).Append("** (id: `").Append(area.Id).Append("`)");
@@ -195,11 +196,11 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
             else
             {
                 sb.Append(" — ").Append(entities.Count).AppendLine(" entities");
-                sb.Append("  - ").AppendLine(string.Join(", ", entities));
+                sb.Append("  - ").AppendLine(string.Join(", ", entities.Select(e => FormatEntity(byId[e]))));
             }
         }
 
-        var unassigned = allKnown.Except(assigned, StringComparer.OrdinalIgnoreCase).ToList();
+        var unassigned = byId.Keys.Except(assigned, StringComparer.OrdinalIgnoreCase).ToList();
         if (unassigned.Count > 0)
         {
             sb.Append("- **(unassigned)** — ").Append(unassigned.Count).AppendLine(" entities not placed in any area");
@@ -225,13 +226,27 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
         sb.AppendLine();
         foreach (var group in grouped)
         {
-            var ids = group
-                .Select(e => e.EntityId)
-                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            var formatted = group
+                .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
+                .Select(FormatEntity)
                 .ToList();
-            sb.Append("- **").Append(group.Key).Append("** (").Append(ids.Count).Append("): ");
-            sb.AppendLine(string.Join(", ", ids));
+            sb.Append("- **").Append(group.Key).Append("** (").Append(formatted.Count).Append("): ");
+            sb.AppendLine(string.Join(", ", formatted));
         }
+    }
+
+    // entity_id (Friendly Name) when the friendly_name attribute exists and differs from the
+    // entity_id; bare entity_id otherwise. Users assign HA friendly names because raw IDs
+    // (`light.salon_lamp_2_zigbee_abc`) are hard to map back to the device in conversation.
+    private static string FormatEntity(HaEntityState entity)
+    {
+        if (!entity.Attributes.TryGetValue("friendly_name", out var node) || node is not JsonValue v
+            || !v.TryGetValue<string>(out var name) || string.IsNullOrWhiteSpace(name)
+            || name.Equals(entity.EntityId, StringComparison.OrdinalIgnoreCase))
+        {
+            return entity.EntityId;
+        }
+        return $"{entity.EntityId} ({name})";
     }
 
     private static string EntityDomain(string entityId)

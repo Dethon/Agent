@@ -40,10 +40,10 @@ public class HomeAssistantSetupSummaryTests
         var fake = new FakeClient(
             states:
             [
-                Entity("light.salon_lamp"),
-                Entity("light.cocina_techo"),
-                Entity("sensor.salon_temperature"),
-                Entity("vacuum.roborock_s8")
+                Entity("light.salon_lamp", "Lámpara Salón"),
+                Entity("light.cocina_techo", "Techo Cocina"),
+                Entity("sensor.salon_temperature", "Temperatura Salón"),
+                Entity("vacuum.roborock_s8", "Roborock S8")
             ],
             areasJson: """
                 {"areas":[
@@ -56,11 +56,28 @@ public class HomeAssistantSetupSummaryTests
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
         rendered.ShouldContain("**Salón**");
-        rendered.ShouldContain("light.salon_lamp, sensor.salon_temperature");
+        // Friendly names sit next to the entity_id so the agent can match "the lamp in the salón".
+        rendered.ShouldContain("light.salon_lamp (Lámpara Salón)");
+        rendered.ShouldContain("sensor.salon_temperature (Temperatura Salón)");
         rendered.ShouldContain("**Cocina**");
-        rendered.ShouldContain("light.cocina_techo");
+        rendered.ShouldContain("light.cocina_techo (Techo Cocina)");
         // vacuum.roborock_s8 isn't in any area → flagged as unassigned with a count.
         rendered.ShouldContain("**(unassigned)** — 1 entities");
+    }
+
+    [Fact]
+    public async Task BuildAsync_EntityWithoutFriendlyName_FallsBackToEntityId()
+    {
+        var fake = new FakeClient(
+            states: [Entity("light.kitchen")], // no friendly_name attribute
+            areasJson: """{"areas":[{"id":"k","name":"Kitchen","entities":["light.kitchen"]}]}""");
+        var summary = new HomeAssistantSetupSummary(fake);
+
+        var rendered = await summary.BuildAsync(CancellationToken.None);
+
+        // No "(...)" suffix when friendly_name equals entity_id (i.e. is missing).
+        rendered.ShouldNotContain("light.kitchen (light.kitchen)");
+        rendered.ShouldContain("light.kitchen");
     }
 
     [Fact]
@@ -82,18 +99,19 @@ public class HomeAssistantSetupSummaryTests
         var fake = new FakeClient(
             states:
             [
-                Entity("light.a"), Entity("light.b"), Entity("light.c"),
-                Entity("vacuum.s8"),
-                Entity("sensor.temperature"), Entity("sensor.humidity")
+                Entity("light.a", "Lampara A"), Entity("light.b", "Lampara B"), Entity("light.c"),
+                Entity("vacuum.s8", "Roborock"),
+                Entity("sensor.temperature", "Termo"), Entity("sensor.humidity", "Humedad")
             ]);
         var summary = new HomeAssistantSetupSummary(fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
         rendered.ShouldContain("### Entities by class domain");
-        rendered.ShouldContain("**light** (3): light.a, light.b, light.c");
-        rendered.ShouldContain("**sensor** (2): sensor.humidity, sensor.temperature");
-        rendered.ShouldContain("**vacuum** (1): vacuum.s8");
+        // Each entity shows its friendly_name in parens; light.c has none → bare entity_id.
+        rendered.ShouldContain("**light** (3): light.a (Lampara A), light.b (Lampara B), light.c");
+        rendered.ShouldContain("**sensor** (2): sensor.humidity (Humedad), sensor.temperature (Termo)");
+        rendered.ShouldContain("**vacuum** (1): vacuum.s8 (Roborock)");
     }
 
     [Fact]
@@ -119,8 +137,15 @@ public class HomeAssistantSetupSummaryTests
         result.ShouldBe(string.Empty);
     }
 
-    private static HaEntityState Entity(string id)
-        => new() { EntityId = id, State = "on" };
+    private static HaEntityState Entity(string id, string? friendlyName = null)
+    {
+        var attributes = new Dictionary<string, JsonNode?>();
+        if (friendlyName is not null)
+        {
+            attributes["friendly_name"] = JsonValue.Create(friendlyName);
+        }
+        return new HaEntityState { EntityId = id, State = "on", Attributes = attributes };
+    }
 
     private static HaServiceDefinition Svc(string domain, string service)
         => new() { Domain = domain, Service = service };
