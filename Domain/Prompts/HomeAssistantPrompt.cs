@@ -44,6 +44,31 @@ public static class HomeAssistantPrompt
         (e.g. `` `salon` ``) is what area-scoped fields like `cleaning_area_id`
         accept — pass the slug, not the display name.
 
+        ### Climate and comfort requests
+
+        When the user asks about temperature ("make it warmer/cooler",
+        "I'm cold/hot", or names a target), reason about context before
+        picking an action — don't bump the first setpoint you find.
+
+        - **Find the right device.** Check the snapshot for entities in the
+          climate class domain (thermostats, AC, heat pumps); as fallback,
+          switches if a dumb heater/fan is wired via a smart switch.
+        - **Read the ambient.** Read the room's temperature sensor entity,
+          or the climate entity's current-temperature attribute. This is a
+          legitimate input-gathering read — covered by the exception in
+          "What NOT to do".
+        - **Account for season.** Today's date is in your session context.
+          Infer hemisphere season — northern-hemisphere winter (Nov-Mar)
+          defaults to heating, NH summer (Jun-Sep) to cooling; flip for SH.
+          The user's language and locale hint at hemisphere when ambiguous.
+        - **Match the operating mode to the goal.** A device in cooling mode
+          can't warm a room by raising the setpoint, and vice versa. If the
+          current mode doesn't match the goal, change it first (or alongside
+          the setpoint, when the service schema supports both fields in one
+          call). Discover the right service for mode/setpoint changes the
+          usual way — via the class domain's schema.
+
+
         ### What NOT to do
 
         - **Don't call `home_get_state` BEFORE an action** to "check current
