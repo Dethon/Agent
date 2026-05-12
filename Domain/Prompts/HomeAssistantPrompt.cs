@@ -67,6 +67,15 @@ public static class HomeAssistantPrompt
           the setpoint, when the service schema supports both fields in one
           call). Discover the right service for mode/setpoint changes the
           usual way — via the class domain's schema.
+        - **The setpoint must drive against the ambient to actuate.** A
+          heating device whose target is at or below the current ambient
+          sits idle even in heat mode — the thermostat has nothing to do.
+          Same in reverse for cooling. So "turn on the radiator" / "encender
+          la calefacción" doesn't just mean flipping the mode — it means
+          setting the target ABOVE the current ambient by a meaningful
+          margin (or to the user's stated target, if any). Without that
+          delta, the device produces no heat. Same logic in reverse for
+          cooling: target must sit below ambient.
 
 
         ### What NOT to do
