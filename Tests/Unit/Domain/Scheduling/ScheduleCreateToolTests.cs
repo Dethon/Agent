@@ -54,12 +54,28 @@ public class ScheduleCreateToolTests
     public async Task Run_AgentNotFound_ReturnsError()
     {
         _agentProvider.Setup(p => p.GetById("unknown")).Returns((AgentDefinition?)null);
+        _agentProvider.Setup(p => p.GetAll(It.IsAny<string?>())).Returns([]);
 
         var result = await _tool.TestRun("unknown", "prompt", null, DateTime.UtcNow.AddDays(1), null);
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("not_found");
-        result["message"]!.GetValue<string>().ShouldBe("Agent 'unknown' not found");
+        result["message"]!.GetValue<string>().ShouldContain("Agent 'unknown' not found");
+    }
+
+    [Fact]
+    public async Task Run_AgentNotFound_ErrorMessageListsAvailableAgentIds()
+    {
+        var jack = new AgentDefinition { Id = "jack", Name = "Jack", Model = "test", McpServerEndpoints = [] };
+        var maid = new AgentDefinition { Id = "maid", Name = "Maid", Model = "test", McpServerEndpoints = [] };
+        _agentProvider.Setup(p => p.GetById("ghost")).Returns((AgentDefinition?)null);
+        _agentProvider.Setup(p => p.GetAll("user-1")).Returns([jack, maid]);
+
+        var result = await _tool.TestRun("ghost", "prompt", null, DateTime.UtcNow.AddDays(1), "user-1");
+
+        var message = result["message"]!.GetValue<string>();
+        message.ShouldContain("jack");
+        message.ShouldContain("maid");
     }
 
     [Fact]

@@ -49,9 +49,13 @@ public class ScheduleCreateTool(
         var agentDefinition = agentProvider.GetById(agentId);
         if (agentDefinition is null)
         {
+            var available = agentProvider.GetAll(userId);
+            var availableIds = available.Count == 0
+                ? "none registered"
+                : string.Join(", ", available.Select(a => $"'{a.Id}'"));
             return ToolError.Create(
                 ToolError.Codes.NotFound,
-                $"Agent '{agentId}' not found",
+                $"Agent '{agentId}' not found. Available agents: {availableIds}",
                 retryable: false);
         }
 
