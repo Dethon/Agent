@@ -15,7 +15,9 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
 - **Download Resubscription** - Resume tracking in-progress downloads after restart
 - **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
-- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, and delete
+- **Home Assistant Control** - Drive a Home Assistant instance via generic entity/service tools, with a per-user dynamic setup summary (climate setpoint-vs-ambient rules, friendly names, selector metadata) injected into the system prompt
+- **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
+- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, and delete. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
 - **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
@@ -49,19 +51,19 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │ (MCP Client)  │
               └───────┬───────┘
                       │
-      ┌───────────────┼──────────────┬──────────────┐
-      ▼               ▼              ▼              ▼
-┌────────────┐ ┌────────────┐ ┌─────────────┐ ┌─────────────┐
-│MCP Library │ │ MCP Vault  │ │MCP WebSearch│ │MCP Idealista│
-│filesystem: │ │filesystem: │ │             │ │             │
-│  //media   │ │  //vault   │ │             │ │             │
-└─────┬──────┘ └────────────┘ └──────┬──────┘ └──────┬──────┘
-      │                              │               │
-┌─────┴──────┐                 ┌─────┴──────┐  ┌─────┴──────┐
-│ qBittorrent│                 │  Camoufox  │  │ Idealista  │
-│  Jackett   │                 │ (anti-det  │  │    API     │
-│ FileBrowser│                 │  browser)  │  └────────────┘
-└────────────┘                 └────────────┘
+      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
+      ▼               ▼               ▼               ▼               ▼               ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│
+│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │             │
+│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │             │
+└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+       │                               │               │               │               │
+┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐
+│ qBittorrent │                 │Linux sandbox│ │  Camoufox   │ │  Idealista  │ │HomeAssistant│
+│   Jackett   │                 │bash + python│ │ (anti-det.  │ │     API     │ │ (REST API)  │
+│ FileBrowser │                 │   fs_exec   │ │   browser)  │ └─────────────┘ └─────────────┘
+└─────────────┘                 └─────────────┘ └─────────────┘
 
               ┌───────────────────────────────────┐
               │  Virtual Filesystem (domain)      │
@@ -93,14 +95,32 @@ Each channel MCP server exposes a standard protocol:
 
 New transports can be added by deploying a new channel MCP server — zero agent code changes needed.
 
+### Virtual Filesystem
+
+Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
+
+Because each mount is just an MCP endpoint over HTTP, filesystems can be deployed wherever is convenient:
+
+- **Same container**: trivial — the MCP server reads/writes its local disk.
+- **Different containers on the same host**: the default Docker Compose layout. Each MCP server is its own container with its own volume mount, and the agent reaches them over the compose network (e.g. `http://mcp-vault:8080/mcp`).
+- **Different machines**: point `mcpServerEndpoints` at any reachable URL. A NAS, a remote workstation, or a cloud VM that runs the same MCP server image becomes a first-class mount with no agent code changes — it's just another HTTP endpoint speaking the MCP `fs_*` protocol.
+
+The agent exposes 8 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount.
+
+**Cross-filesystem operations.** `VfsMove` and `VfsCopy` detect when source and destination live on different mounts and fall back to a streaming pipeline: the source MCP server's `fs_blob_read` streams chunks, which are written to the destination via `fs_blob_write`, then the source is removed (for move). This works regardless of where the two backends are deployed — moving a file from a sandbox container on one host to a vault directory on another host is the same operation as moving it between two paths in the same container. Best-effort per-entry results are reported for directory recursion so partial failures are visible.
+
+New filesystems are added by deploying any MCP server that exposes a `filesystem://` resource — no agent code changes needed.
+
 ### MCP Tool Servers
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
 |-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
 | **mcp-library**   | file_search, download_file, download_status, download_cleanup, download_resubscribe, content_recommend, fs_glob, fs_move | `filesystem://media`  | Search and download content via Jackett/qBittorrent, organize media files                |
 | **mcp-vault**     | FsGlob, FsRead, FsSearch, FsCreate, FsEdit, FsMove, FsDelete                                                          | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
+| **mcp-sandbox**   | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_exec | `filesystem://sandbox` | Linux container for arbitrary bash/Python execution with a scratch + persistent home filesystem |
 | **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
 | **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
+| **mcp-homeassistant** | home_list_entities, home_get_state, home_list_services, home_call_service                                          |                       | Control a Home Assistant instance (entities, states, services); injects per-user setup summary into the system prompt |
 
 ### MCP Channel Servers
 
@@ -115,7 +135,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 | Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-websearch, mcp-idealista             | filesystem, scheduling, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation     |
+| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant | filesystem, scheduling, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, and Home Assistant control |
 
 ### Multi-Agent Configuration
 
@@ -144,8 +164,10 @@ Agent routing:
 | `Infrastructure`         | External service clients (MCP, OpenRouter, push notifications)  |
 | `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
 | `McpServerVault`          | MCP server for text/markdown file inspection and editing        |
+| `McpServerSandbox`       | MCP server exposing a Linux sandbox container with `fs_exec`    |
 | `McpServerWebSearch`     | MCP server for web search and browsing via Camoufox             |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
+| `McpServerHomeAssistant` | MCP server for Home Assistant entity/service control            |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
@@ -194,6 +216,7 @@ OPENROUTER__APIURL=https://openrouter.ai/api/v1/
 BRAVE__APIKEY=your_brave_search_api_key
 IDEALISTA__APIKEY=your_idealista_api_key
 IDEALISTA__APISECRET=your_idealista_api_secret
+HOMEASSISTANT__TOKEN=your_home_assistant_long_lived_access_token
 JACKETT__APIKEY=your_jackett_api_key
 QBITTORRENT__USERNAME=admin
 QBITTORRENT__PASSWORD=your_password
@@ -266,7 +289,10 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Library              | 6001 | Library MCP server             |
 | MCP Vault                | 6002 | Document vault MCP server      |
 | MCP WebSearch            | 6003 | Web search MCP server          |
+| MCP Sandbox              | 6004 | Linux sandbox MCP server       |
 | MCP Idealista            | 6005 | Idealista property MCP server  |
+| MCP HomeAssistant        | 6006 | Home Assistant MCP server      |
+| Home Assistant           | 8123 | Home Assistant web UI/API      |
 | MCP Channel SignalR      | 6010 | WebChat channel server         |
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
 | MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
