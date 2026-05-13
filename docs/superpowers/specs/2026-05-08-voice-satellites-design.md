@@ -8,6 +8,8 @@
 
 Add an Alexa-like voice interface to the agent. Small satellite devices in different rooms capture audio after a wake word, send it to a local hub for speech-to-text, dispatch the transcript to the agent through a new MCP channel, then play the agent's spoken reply back through the originating satellite.
 
+The channel is also the single audio-output owner for each satellite. External systems — Home Assistant automations, scripts, the agent itself outside a reply turn — push spoken announcements to a specific satellite, all satellites in a room, or every satellite at once by calling a small HTTP endpoint on the channel. Routing everything through one queue, one TTS pipeline, and one set of session/LED state per device prevents the two-master problem that would arise if HA and the agent each pushed audio to satellites independently.
+
 ## Constraints and choices
 
 - **Satellite hardware**: Raspberry Pi Zero 2 W per room, USB-powered (≤500 mA), USB mic (e.g., ReSpeaker 2-Mic HAT). Approximately 5 satellites at home.
@@ -31,14 +33,15 @@ Pi Zero 2 W (×N)                Hub (Pi 5 / mini-PC)            Agent host
 │  ├ silero-VAD      │           │   ├ ISpeechToText        │MCP│ pipeline │
 │  ├ mic capture     │           │   ├ ITextToSpeech        │HTTP│         │
 │  └ playback        │           │   ├ SatelliteRegistry    │   └──────────┘
-└────────────────────┘           │   └ MCP HTTP transport   │
-                                 ├──────────────────────────┤
+└────────────────────┘           │   ├ AnnounceEndpoint ◀───┼── POST /api/voice/announce
+                                 │   └ MCP HTTP transport   │   (Home Assistant,
+                                 ├──────────────────────────┤    scripts, …)
                                  │  wyoming-faster-whisper  │ (Wyoming over TCP)
                                  │  wyoming-piper           │
                                  └──────────────────────────┘
 ```
 
-The hub and agent host may be the same machine or two boxes on the same LAN. The connection between `McpChannelVoice` and the agent uses the same MCP HTTP transport that `McpChannelTelegram` and `McpChannelSignalR` already use.
+The hub and agent host may be the same machine or two boxes on the same LAN. The connection between `McpChannelVoice` and the agent uses the same MCP HTTP transport that `McpChannelTelegram` and `McpChannelSignalR` already use. The announce endpoint shares the channel's HTTP port; external callers reach it directly from the LAN.
 
 ## Components
 
@@ -70,10 +73,12 @@ McpChannelVoice/
 │   └── VoiceModule.cs
 ├── Services/
 │   ├── WyomingServer.cs              // Wyoming inbound from satellites
-│   ├── SatelliteSession.cs           // one active wake-to-reply session
-│   ├── SatelliteRegistry.cs          // id → identity, room, overrides
+│   ├── SatelliteSession.cs           // one wake-to-reply session, owns playback queue
+│   ├── SatelliteRegistry.cs          // id → identity/room/overrides; reverse room and all-satellites lookups
 │   ├── ApprovalGrammarParser.cs      // yes/no/sí/no parsing
 │   ├── ChannelNotificationEmitter.cs // builds channel/message notifications
+│   ├── AnnounceEndpoint.cs           // POST /api/voice/announce, token auth
+│   ├── AnnouncementService.cs        // resolve target → synthesize → enqueue per satellite
 │   └── VoiceMetricsPublisher.cs      // wraps IMetricsPublisher
 └── Settings/
     └── VoiceSettings.cs
@@ -109,8 +114,8 @@ Initial adapters:
 |-------|---------|------|
 | `WyomingSpeechToText` | `wyoming-faster-whisper` over TCP | Default, all hub sizes |
 | `WyomingTextToSpeech` | `wyoming-piper` over TCP | Default |
-| `OpenAiSpeechToText` | OpenAI `audio/transcriptions` | Slice 5; cloud fallback |
-| `OpenAiTextToSpeech` | OpenAI `audio/speech` | Slice 5; per-satellite quality bump |
+| `OpenAiSpeechToText` | OpenAI `audio/transcriptions` | Slice 6; cloud fallback |
+| `OpenAiTextToSpeech` | OpenAI `audio/speech` | Slice 6; per-satellite quality bump |
 
 DI registration in `McpChannelVoice/Modules/VoiceModule.cs` switches by configuration.
 
@@ -136,6 +141,66 @@ The channel speaks the prompt via TTS, then opens a fresh capture window. STT re
 - Low confidence or unrecognized → re-prompt once. On second failure, **decline by default**.
 - If the satellite has a hardware button (ReSpeaker HAT supports this), `wyoming-satellite` forwards the press as a Wyoming event; the channel maps press = confirm, double-press = decline. Optional, used as fallback in noisy rooms.
 
+### External announcement (push-to-speaker)
+
+`POST /api/voice/announce` lets non-conversational callers play a spoken message on a specific satellite, every satellite in a room, or all satellites at once. The endpoint shares the channel's HTTP port and the same `ITextToSpeech` and satellite-routing path as `send_reply`, so audio ownership stays single-rooted per device.
+
+Request shape:
+
+```
+POST /api/voice/announce
+X-Announce-Token: <shared-secret>
+Content-Type: application/json
+
+{
+  "target":   { "satelliteId": "kitchen-01" },   // or { "room": "Kitchen" }, { "all": true }
+  "text":     "Someone is at the front door.",
+  "voice":    "es_ES-davefx-medium",             // optional override
+  "priority": "Normal"                           // Low | Normal | High
+}
+```
+
+Behaviour:
+
+1. **Resolve.** `SatelliteRegistry` maps the target to a list of satellite ids. Unknown id/room → `404`; empty resolved set → `404`.
+2. **Synthesize.** `ITextToSpeech` produces audio frames using the per-satellite voice (request override wins, else satellite config, else default).
+3. **Queue.** Each satellite's `SatelliteSession` owns a small playback queue. `Normal` waits for any in-flight utterance/reply to finish; `High` preempts current playback (the cancelled reply is logged as `AnnouncePreemptedReply`); `Low` is dropped if anything else is queued.
+4. **Play.** Audio frames stream to the satellite through the same path `send_reply` uses. LED state moves through speaking → idle as usual.
+5. **Acknowledge.** Response is `202 Accepted` with `{ "announcementId": "...", "satellites": [ { "id": "...", "status": "queued" | "playing" | "offline" } ] }`. A `503` is returned if the announce subsystem is disabled, `401` if the token is missing or wrong.
+
+Authentication is a single shared secret in `X-Announce-Token`, configured via the `ANNOUNCE_TOKEN` env var. LAN is trusted, so the bar is "no accidents from other LAN devices", not "withstand attacker". When `Voice.Announce.BindToLoopbackOnly` is `true`, the endpoint binds only to the hub's internal interface; otherwise it listens on the channel's normal interface so HA (running elsewhere on the LAN) can reach it.
+
+Announcements do **not** create a conversation thread, do **not** invoke STT, and are **not** persisted to memory. They appear in observability as their own metric stream (`AnnouncePlayed`, `AnnounceQueued`, `AnnounceError`, `AnnouncePreemptedReply`) tagged with the calling system in a `Source` dimension (`ha`, `script`, `agent`, `manual`).
+
+**Home Assistant integration (reference).** Callers register a `rest_command` and invoke it from an automation:
+
+```yaml
+# configuration.yaml
+rest_command:
+  voice_announce:
+    url: "http://mcp-channel-voice:5010/api/voice/announce"
+    method: POST
+    headers:
+      X-Announce-Token: !secret announce_token
+      content-type: application/json
+    payload: '{{ payload | tojson }}'
+
+# automations.yaml
+- alias: Ring Intercom → common-area announce
+  trigger:
+    platform: event
+    event_type: ring_doorbell_pressed
+  action:
+    service: rest_command.voice_announce
+    data:
+      payload:
+        target:   { room: "Living Room" }
+        text:     "Someone is at the door."
+        priority: "High"
+```
+
+The Ring side itself uses whichever HA Ring integration is installed (e.g., the community `ha-ring-intercom`); that's out of scope for this spec.
+
 ## Configuration
 
 ### `McpChannelVoice/appsettings.json` (skeleton)
@@ -155,6 +220,13 @@ The channel speaks the prompt via TTS, then opens a fresh capture window. STT re
       "OpenAi":  { "Model": "tts-1", "Voice": "alloy" }
     },
     "ConfidenceThreshold": 0.4,
+    "Announce": {
+      "Enabled": true,
+      "Token": "${ANNOUNCE_TOKEN}",
+      "BindToLoopbackOnly": false,
+      "QueueMaxDepth": 8,
+      "DefaultPriority": "Normal"
+    },
     "Satellites": {
       "kitchen-01":     { "Identity": "household", "Room": "Kitchen",     "WakeWord": "hey_jarvis" },
       "living-room-01": { "Identity": "household", "Room": "Living Room", "WakeWord": "hey_jarvis" },
@@ -177,6 +249,7 @@ mcp-channel-voice:
     - ASPNETCORE_URLS=http://+:5010
     - Voice__Stt__Wyoming__Host=wyoming-whisper
     - Voice__Tts__Wyoming__Host=wyoming-piper
+    - Voice__Announce__Token=${ANNOUNCE_TOKEN}
     - OPENAI_API_KEY=${OPENAI_API_KEY}
   ports: [ "10700:10700", "5010:5010" ]
   depends_on: [ wyoming-whisper, wyoming-piper ]
@@ -194,7 +267,7 @@ wyoming-piper:
 
 The agent's `ChannelEndpoints` configuration adds `mcp-channel-voice:5010`.
 
-`OPENAI_API_KEY` is added as a placeholder to `DockerCompose/.env` and surfaces in `appsettings.Development.json` only when an OpenAI provider is selected. Per repo policy, all infrastructure files are updated in the same change.
+`OPENAI_API_KEY` is added as a placeholder to `DockerCompose/.env` and surfaces in `appsettings.Development.json` only when an OpenAI provider is selected. `ANNOUNCE_TOKEN` is added to `DockerCompose/.env` as a placeholder secret in the same change. Per repo policy, all infrastructure files are updated together.
 
 ### Satellite provisioning
 
@@ -222,7 +295,8 @@ Unknown satellite ids are rejected at the Wyoming `info` handshake. Optional Wyo
 public enum VoiceDimension
 {
     SatelliteId, Room, Identity, WakeWord, Language,
-    SttProvider, SttModel, TtsProvider, TtsVoice, Outcome
+    SttProvider, SttModel, TtsProvider, TtsVoice, Outcome,
+    Source, Priority
 }
 
 // Domain/DTOs/Metrics/Enums/VoiceMetric.cs
@@ -230,7 +304,8 @@ public enum VoiceMetric
 {
     WakeTriggered, UtteranceTranscribed, AudioSeconds,
     SttLatencyMs, TtsLatencyMs, WakeToFirstAudioMs,
-    ApprovalResolved, SttError, TtsError
+    ApprovalResolved, SttError, TtsError,
+    AnnouncePlayed, AnnounceQueued, AnnounceError, AnnouncePreemptedReply
 }
 ```
 
@@ -243,7 +318,7 @@ Cloud STT/TTS adapters publish their cost via the existing `TokenMetric` path ta
 Mirrors `Tools.razor`. Default views:
 
 - KPIs: utterances (24h), median wake-to-first-audio (24h), STT errors (24h), TTS errors (24h).
-- Charts (`DynamicChart` + `PillSelector`): utterances by room, wake-to-first-audio latency by satellite, STT errors by provider+model, approval outcomes.
+- Charts (`DynamicChart` + `PillSelector`): utterances by room, wake-to-first-audio latency by satellite, STT errors by provider+model, approval outcomes, announcements by source.
 
 A nav entry is added to the dashboard's main navigation component.
 
@@ -272,6 +347,10 @@ A nav entry is added to the dashboard's main navigation component.
 | Two satellites wake concurrently | Independent Wyoming sessions, independent `channel/message` notifications, independent threads, independent replies. |
 | Same satellite re-wakes during TTS playback (barge-in) | `wyoming-satellite` cuts playback and opens a new capture session. The previous TTS stream is cancelled. |
 | Wyoming backend OOM at boot | Stock services fail fast with clear logs. The channel marks them unhealthy and the dashboard reflects it. |
+| Announce while a reply or utterance is in flight | `Normal` priority queues behind the current audio; `High` preempts (the cancelled reply emits `AnnouncePreemptedReply`); `Low` is dropped if anything is queued. |
+| Announce to an offline satellite | `AnnounceError` metric event; per-satellite status in the response is `offline`. No retry queue — voice stays ephemeral. |
+| Announce queue overflow (`QueueMaxDepth`) | Oldest `Low` items dropped first, then the new request is rejected with `503` and an `AnnounceError` event. |
+| Announce token missing or wrong | `401` immediately; not counted as `AnnounceError`. |
 
 ## Testing
 
@@ -284,12 +363,15 @@ Per repo TDD rules (`.claude/rules/tdd.md`).
 - `WyomingTextToSpeechTests` — same.
 - `ApprovalGrammarParserTests` — yes/no/sí/no, edge cases such as "yes please cancel that".
 - `ConfidenceGateTests` — empty and low-confidence transcripts dropped.
+- `AnnouncementServiceTests` — target resolution (id / room / all), priority queue ordering, `High` preempt behaviour, unknown-target rejection, queue-depth overflow.
+- `AnnounceEndpointAuthTests` — missing or wrong `X-Announce-Token` returns `401`; valid token passes through.
 
 ### Integration tests — `Tests/Integration/Channels/Voice/`
 
 - End-to-end: feed a canned WAV through a fake Wyoming satellite client; assert `channel/message` notification fires with expected text, identity, room. Use a real `wyoming-faster-whisper` `tiny` model in a docker-compose fixture for speed.
 - `send_reply` round-trip: invoke the tool; assert audio frames flow back to the fake satellite client.
 - STT-provider switch: same scenario, swap configuration to `OpenAiSpeechToText` with a stubbed HTTP server, assert identical channel-side behaviour.
+- Announce end-to-end: `POST /api/voice/announce` with a fake satellite client connected; assert TTS audio frames flow to the right target, queue ordering holds under interleaved requests, and `High` priority preempts an in-flight reply.
 
 ### E2E tests — manual, scripted
 
@@ -328,14 +410,25 @@ Each slice ends in a clean commit and a passing test suite.
 
 **Done when**: agent reply is spoken back through the satellite. MVP demo state.
 
-### Slice 4 — Approval over voice
+### Slice 4 — Announce HTTP endpoint
+
+- `POST /api/voice/announce` with shared-secret auth (`X-Announce-Token`).
+- `AnnouncementService` resolves target → synthesises via the existing `ITextToSpeech` → routes through `SatelliteSession` playback queue with `Low` / `Normal` / `High` priority semantics.
+- `SatelliteRegistry` gains reverse lookups (`room` → satellites, all-satellites).
+- Metric events: `AnnouncePlayed`, `AnnounceQueued`, `AnnounceError`, `AnnouncePreemptedReply`. Voice page gains an "Announcements by source" chart.
+- `ANNOUNCE_TOKEN` placeholder wired through `appsettings.json`, `appsettings.Development.json`, `DockerCompose/.env`, and `DockerCompose/docker-compose.yml`.
+- Reference Home Assistant `rest_command` + automation snippet checked into this spec.
+
+**Done when**: posting `{"target":{"satelliteId":"kitchen-01"},"text":"hello"}` plays "hello" on the kitchen satellite, and a Home Assistant automation can trigger the endpoint end-to-end on a Ring Intercom doorbell event.
+
+### Slice 5 — Approval over voice
 
 - `ApprovalGrammarParser`, re-prompt, button-press fallback.
 - `ApprovalResolved` metric event and chart on Voice page.
 
 **Done when**: `request_approval` round-trips successfully on at least Spanish and English yes/no.
 
-### Slice 5 — Cloud STT/TTS adapters
+### Slice 6 — Cloud STT/TTS adapters
 
 - `OpenAiSpeechToText`, `OpenAiTextToSpeech` behind the existing interfaces.
 - Configuration-only switch; default stack unchanged.
