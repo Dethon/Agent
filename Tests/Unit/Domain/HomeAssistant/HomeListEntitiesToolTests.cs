@@ -26,7 +26,7 @@ public class HomeListEntitiesToolTests
             Entity("vacuum.spare", "cleaning"));
         var tool = new TestableHomeListEntitiesTool(client);
 
-        var result = await tool.RunAsync(domain: "vacuum", area: null, limit: 100, ct: CancellationToken.None);
+        var result = await tool.RunAsync(domain: "vacuum", nameContains: null, limit: 100, ct: CancellationToken.None);
 
         var entities = (JsonArray)result["entities"]!;
         entities.Count.ShouldBe(2);
@@ -34,14 +34,14 @@ public class HomeListEntitiesToolTests
     }
 
     [Fact]
-    public async Task RunAsync_FiltersByAreaAgainstFriendlyName()
+    public async Task RunAsync_FiltersByNameContainsAgainstFriendlyName()
     {
         var client = new FakeHaClient(
             Entity("light.kitchen", "on", "Kitchen Ceiling"),
             Entity("light.bedroom", "off", "Bedroom Lamp"));
         var tool = new TestableHomeListEntitiesTool(client);
 
-        var result = await tool.RunAsync(domain: null, area: "kitchen", limit: 100, ct: CancellationToken.None);
+        var result = await tool.RunAsync(domain: null, nameContains: "kitchen", limit: 100, ct: CancellationToken.None);
 
         var entities = (JsonArray)result["entities"]!;
         entities.Count.ShouldBe(1);
@@ -57,7 +57,7 @@ public class HomeListEntitiesToolTests
             Entity("light.c", "on"));
         var tool = new TestableHomeListEntitiesTool(client);
 
-        var result = await tool.RunAsync(domain: null, area: null, limit: 2, ct: CancellationToken.None);
+        var result = await tool.RunAsync(domain: null, nameContains: null, limit: 2, ct: CancellationToken.None);
 
         ((JsonArray)result["entities"]!).Count.ShouldBe(2);
     }
@@ -68,7 +68,7 @@ public class HomeListEntitiesToolTests
         var client = new FakeHaClient(Entity("light.kitchen", "on", "Kitchen"));
         var tool = new TestableHomeListEntitiesTool(client);
 
-        var result = await tool.RunAsync(domain: null, area: null, limit: 10, ct: CancellationToken.None);
+        var result = await tool.RunAsync(domain: null, nameContains: null, limit: 10, ct: CancellationToken.None);
 
         var item = ((JsonArray)result["entities"]!)[0]!;
         ((string)item["entity_id"]!).ShouldBe("light.kitchen");
@@ -80,8 +80,8 @@ public class HomeListEntitiesToolTests
     private sealed class TestableHomeListEntitiesTool(IHomeAssistantClient client)
         : HomeListEntitiesTool(client)
     {
-        public new Task<JsonObject> RunAsync(string? domain, string? area, int? limit, CancellationToken ct)
-            => base.RunAsync(domain, area, limit, ct);
+        public new Task<JsonObject> RunAsync(string? domain, string? nameContains, int? limit, CancellationToken ct)
+            => base.RunAsync(domain, nameContains, limit, ct);
     }
 
     private sealed class FakeHaClient(params HaEntityState[] entities) : IHomeAssistantClient

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Prompts;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.Domain.HomeAssistant;
@@ -19,7 +20,7 @@ public class HomeAssistantSetupSummaryTests
                 Svc("hue", "activate_scene"),
                 Svc("homeassistant", "restart")
             ]);
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
@@ -51,7 +52,7 @@ public class HomeAssistantSetupSummaryTests
                     {"id":"cocina_id","name":"Cocina","entities":["light.cocina_techo"]}
                 ]}
                 """);
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
@@ -71,7 +72,7 @@ public class HomeAssistantSetupSummaryTests
         var fake = new FakeClient(
             states: [Entity("light.kitchen")], // no friendly_name attribute
             areasJson: """{"areas":[{"id":"k","name":"Kitchen","entities":["light.kitchen"]}]}""");
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
@@ -86,7 +87,7 @@ public class HomeAssistantSetupSummaryTests
         var fake = new FakeClient(
             states: [Entity("light.kitchen")],
             areasJson: """{"areas":[]}""");
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
@@ -103,7 +104,7 @@ public class HomeAssistantSetupSummaryTests
                 Entity("vacuum.s8", "Roborock"),
                 Entity("sensor.temperature", "Termo"), Entity("sensor.humidity", "Humedad")
             ]);
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 
@@ -118,7 +119,7 @@ public class HomeAssistantSetupSummaryTests
     public async Task GetAsync_CachesResultBetweenCalls()
     {
         var fake = new FakeClient(states: [Entity("light.kitchen")]);
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         await summary.GetAsync();
         await summary.GetAsync();
@@ -130,11 +131,39 @@ public class HomeAssistantSetupSummaryTests
     public async Task GetAsync_OnError_ReturnsEmptyString()
     {
         var fake = new FakeClient(throwOnStates: true);
-        var summary = new HomeAssistantSetupSummary(fake);
+        var summary = new HomeAssistantSetupSummary(() => fake);
 
         var result = await summary.GetAsync();
 
         result.ShouldBe(string.Empty);
+    }
+
+    [Fact]
+    public async Task GetAsync_AfterFailure_RebuildsOnceFailureTtlElapses()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var fake = new FakeClient(states: [Entity("light.kitchen")]) { ThrowOnStates = true };
+        var summary = new HomeAssistantSetupSummary(() => fake, time);
+
+        (await summary.GetAsync()).ShouldBe(string.Empty);
+        fake.ListStatesCalls.ShouldBe(1);
+
+        // Within the 30-s failure TTL — still cached, no second call.
+        time.Advance(TimeSpan.FromSeconds(15));
+        (await summary.GetAsync()).ShouldBe(string.Empty);
+        fake.ListStatesCalls.ShouldBe(1);
+
+        // Past the failure TTL with HA recovered — a fresh build runs and the
+        // result is now the populated snapshot, not the cached empty.
+        time.Advance(TimeSpan.FromSeconds(30));
+        fake.ThrowOnStates = false;
+        (await summary.GetAsync()).ShouldContain("light.kitchen");
+        fake.ListStatesCalls.ShouldBe(2);
+
+        // The successful result holds for the full 30-min success TTL.
+        time.Advance(TimeSpan.FromMinutes(20));
+        (await summary.GetAsync()).ShouldContain("light.kitchen");
+        fake.ListStatesCalls.ShouldBe(2);
     }
 
     private static HaEntityState Entity(string id, string? friendlyName = null)
@@ -157,11 +186,12 @@ public class HomeAssistantSetupSummaryTests
         bool throwOnStates = false) : IHomeAssistantClient
     {
         public int ListStatesCalls { get; private set; }
+        public bool ThrowOnStates { get; set; } = throwOnStates;
 
         public Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
         {
             ListStatesCalls++;
-            if (throwOnStates)
+            if (ThrowOnStates)
             {
                 throw new InvalidOperationException("HA unreachable");
             }

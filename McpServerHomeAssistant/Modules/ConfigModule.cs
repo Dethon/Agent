@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.Prompts;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
@@ -30,7 +31,7 @@ public static class ConfigModule
             services
                 .AddSingleton(settings)
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
-                .AddSingleton<HomeAssistantSetupSummary>()
+                .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<IHomeAssistantClient>))
                 .AddMcpServer()
                 .WithHttpTransport()
                 .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>

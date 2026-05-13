@@ -32,7 +32,7 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
 
     public async Task<HaEntityState?> GetStateAsync(string entityId, CancellationToken ct = default)
     {
-        using var request = NewRequest(HttpMethod.Get, $"api/states/{entityId}");
+        using var request = NewRequest(HttpMethod.Get, $"api/states/{Uri.EscapeDataString(entityId)}");
         using var response = await httpClient.SendAsync(request, ct);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -94,7 +94,7 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
             body["entity_id"] = entityId;
         }
 
-        var path = $"api/services/{domain}/{service}";
+        var path = $"api/services/{Uri.EscapeDataString(domain)}/{Uri.EscapeDataString(service)}";
 
         // First attempt: ask for the service response (HA returns {changed_states, service_response}
         // for services that support it, e.g. roborock.get_maps, weather.get_forecasts, calendar.get_events).
@@ -120,17 +120,9 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
 
     private async Task<HttpResponseMessage> PostJsonAsync(string path, JsonObject body, CancellationToken ct)
     {
-        var request = NewRequest(HttpMethod.Post, path);
-        try
-        {
-            request.Content = JsonContent.Create(body);
-            return await httpClient.SendAsync(request, ct);
-        }
-        catch
-        {
-            request.Dispose();
-            throw;
-        }
+        using var request = NewRequest(HttpMethod.Post, path);
+        request.Content = JsonContent.Create(body);
+        return await httpClient.SendAsync(request, ct);
     }
 
     public async Task<string> RenderTemplateAsync(string template, CancellationToken ct = default)

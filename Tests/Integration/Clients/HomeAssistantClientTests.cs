@@ -161,7 +161,7 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     public async Task SetupSummary_BuildsAgainstRealHA_IncludesExpectedSections()
     {
         var client = fixture.CreateClient();
-        var summary = new global::Domain.Prompts.HomeAssistantSetupSummary(client);
+        var summary = new global::Domain.Prompts.HomeAssistantSetupSummary(() => client);
 
         var rendered = await summary.BuildAsync(CancellationToken.None);
 

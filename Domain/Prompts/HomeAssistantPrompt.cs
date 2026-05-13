@@ -77,7 +77,6 @@ public static class HomeAssistantPrompt
           delta, the device produces no heat. Same logic in reverse for
           cooling: target must sit below ambient.
 
-
         ### What NOT to do
 
         - **Don't call `home_get_state` BEFORE an action** to "check current

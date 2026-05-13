@@ -22,9 +22,21 @@ namespace Domain.Prompts;
 // Failure mode: if HA is unreachable while building, we return an empty string and
 // the caller falls back to the static prompt alone. We never let a transient HA
 // hiccup break the agent's session.
-public class HomeAssistantSetupSummary(IHomeAssistantClient client)
+//
+// Why a `Func<IHomeAssistantClient>` instead of a direct injection: this class is
+// registered as a singleton (for caching) but `IHomeAssistantClient` is transient
+// behind `IHttpClientFactory`. Holding the client directly would pin one transient
+// instance — and its `HttpMessageHandler` — for the process lifetime, defeating
+// `HandlerLifetime` rotation. The factory resolves a fresh client per build so the
+// HTTP handler stays under `IHttpClientFactory`'s rotation policy.
+public class HomeAssistantSetupSummary(
+    Func<IHomeAssistantClient> clientFactory,
+    TimeProvider? timeProvider = null)
 {
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan _failureCacheTtl = TimeSpan.FromSeconds(30);
+
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     // HA's standard "class" domains — everything an entity sits under, plus the
     // built-ins HA always registers. Service domains NOT in this set are integration-
@@ -48,11 +60,11 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private string _cached = string.Empty;
-    private DateTime _cacheExpiry = DateTime.MinValue;
+    private DateTimeOffset _cacheExpiry = DateTimeOffset.MinValue;
 
     public async Task<string> GetAsync(CancellationToken ct = default)
     {
-        if (DateTime.UtcNow < _cacheExpiry)
+        if (_timeProvider.GetUtcNow() < _cacheExpiry)
         {
             return _cached;
         }
@@ -60,13 +72,15 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
         await _gate.WaitAsync(ct);
         try
         {
-            if (DateTime.UtcNow < _cacheExpiry)
+            if (_timeProvider.GetUtcNow() < _cacheExpiry)
             {
                 return _cached;
             }
 
             _cached = await TryBuildAsync(ct);
-            _cacheExpiry = DateTime.UtcNow + _cacheTtl;
+            // Empty result means BuildAsync threw — keep the negative cache short so a
+            // transient HA outage doesn't blind the agent for the full 30-min window.
+            _cacheExpiry = _timeProvider.GetUtcNow() + (string.IsNullOrEmpty(_cached) ? _failureCacheTtl : _cacheTtl);
             return _cached;
         }
         finally
@@ -90,15 +104,16 @@ public class HomeAssistantSetupSummary(IHomeAssistantClient client)
     // Public for unit-testing — calls all three HA endpoints and renders the block.
     public async Task<string> BuildAsync(CancellationToken ct)
     {
+        var client = clientFactory();
         var statesTask = client.ListStatesAsync(ct);
         var servicesTask = client.ListServicesAsync(ct);
-        var areasTask = LoadAreasAsync(ct);
+        var areasTask = LoadAreasAsync(client, ct);
         await Task.WhenAll(statesTask, servicesTask, areasTask);
 
         return Render(statesTask.Result, servicesTask.Result, areasTask.Result);
     }
 
-    private async Task<IReadOnlyList<AreaInfo>> LoadAreasAsync(CancellationToken ct)
+    private static async Task<IReadOnlyList<AreaInfo>> LoadAreasAsync(IHomeAssistantClient client, CancellationToken ct)
     {
         // Single template render returns one JSON object covering every area and its
         // assigned entities. The REST API has no other path into the area registry.

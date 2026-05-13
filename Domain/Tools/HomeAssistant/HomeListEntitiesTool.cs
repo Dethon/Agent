@@ -10,18 +10,19 @@ public class HomeListEntitiesTool(IHomeAssistantClient client)
     protected const string Description =
         """
         Lists entities from Home Assistant. Filter by `domain` (e.g. 'vacuum', 'light')
-        and/or `area` (substring match against friendly_name). Returns a trimmed
-        projection: entity_id, state, friendly_name, domain, last_changed.
+        and/or `nameContains` (case-insensitive substring match against friendly_name —
+        NOT an HA area filter; areas are surfaced separately in the setup snapshot).
+        Returns a trimmed projection: entity_id, state, friendly_name, domain, last_changed.
         """;
 
-    protected async Task<JsonObject> RunAsync(string? domain, string? area, int? limit, CancellationToken ct)
+    protected async Task<JsonObject> RunAsync(string? domain, string? nameContains, int? limit, CancellationToken ct)
     {
         var states = await client.ListStatesAsync(ct);
         var effectiveLimit = limit is > 0 ? limit.Value : 100;
 
         var filtered = states
             .Where(e => domain is null || EntityDomain(e.EntityId).Equals(domain, StringComparison.OrdinalIgnoreCase))
-            .Where(e => area is null || FriendlyName(e).Contains(area, StringComparison.OrdinalIgnoreCase))
+            .Where(e => nameContains is null || FriendlyName(e).Contains(nameContains, StringComparison.OrdinalIgnoreCase))
             .OrderBy(e => e.EntityId, StringComparer.OrdinalIgnoreCase)
             .Take(effectiveLimit)
             .Select(e =>
