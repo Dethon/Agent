@@ -2,2004 +2,4694 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an Alexa-like voice channel: Pi Zero 2 W satellites running stock `wyoming-satellite` capture audio after a wake word, stream it to a new `McpChannelVoice` server which transcribes via `wyoming-faster-whisper`, dispatches the transcript to the agent through the existing MCP channel protocol, then plays the agent's reply back through `wyoming-piper`.
+**Goal:** Build an Alexa-like voice interface for the agent: small Wyoming satellites in rooms capture audio after wake-word, a new `McpChannelVoice` server runs STT, dispatches the transcript to the agent via the existing MCP HTTP channel protocol, then streams a TTS reply back to the originating satellite. The channel also owns each satellite's audio output: external callers (Home Assistant, scripts, the agent) push announcements via `POST /api/voice/announce`.
 
-**Architecture:** New `McpChannelVoice` ASP.NET project mirroring `McpChannelTelegram`'s shape. It hosts both an MCP HTTP server (agent-facing) and a Wyoming TCP server (satellite-facing). STT and TTS are pluggable behind `ISpeechToText` / `ITextToSpeech` Domain contracts; default impls are Wyoming clients to stock `rhasspy/wyoming-whisper` and `rhasspy/wyoming-piper` containers; OpenAI adapters land last. Each satellite is statically registered to a fixed identity and room. Metrics flow through the existing `IMetricsPublisher` → Redis Pub/Sub pipeline; a new `Voice.razor` dashboard page surfaces them.
+**Architecture:** New `McpChannelVoice` .NET project mirrors `McpChannelTelegram`/`McpChannelSignalR`. It hosts (a) a Wyoming TCP server (port 10700) for inbound satellite connections, (b) the MCP HTTP transport (port 5010) that the agent connects to, and (c) the announce HTTP endpoint (same port). STT/TTS are pluggable behind `ISpeechToText`/`ITextToSpeech` contracts; default adapters speak Wyoming over TCP to `wyoming-faster-whisper` and `wyoming-piper`. Per-satellite identity/room/wake-word come from configuration. A `Voice` dashboard page surfaces KPIs and breakdowns via the existing metrics pipeline.
 
-**Tech Stack:** .NET 10, ASP.NET Core, ModelContextProtocol.AspNetCore 1.2, StackExchange.Redis, xUnit + Shouldly, Wyoming protocol (TCP + newline-delimited JSON + binary payloads), Docker Compose, Blazor WebAssembly.
-
-**Spec:** `docs/superpowers/specs/2026-05-08-voice-satellites-design.md`
+**Tech Stack:** .NET 10, MCP HTTP transport (existing), Wyoming protocol (newline-delimited JSON + binary payload over TCP), `wyoming-faster-whisper`, `wyoming-piper`, `wyoming-satellite` + `openWakeWord` on Pi Zero 2 W, Redis Pub/Sub (existing metrics), Blazor WASM (Dashboard.Client).
 
 ---
 
 ## File Structure
 
-### Created
+### New project: `McpChannelVoice/`
 
-```
-McpChannelVoice/                                 # new ASP.NET MCP server project
-├── Program.cs
-├── McpChannelVoice.csproj
-├── Dockerfile
-├── appsettings.json
-├── appsettings.Development.json
-├── Modules/
-│   └── ConfigModule.cs
-├── McpTools/
-│   ├── SendReplyTool.cs                         # text → TTS → satellite
-│   └── RequestApprovalTool.cs                   # spoken yes/no over satellite
-├── Services/
-│   ├── ChannelNotificationEmitter.cs            # MCP session registry + outbound notifications/channel/message
-│   ├── SatelliteRegistry.cs                     # satellite-id → identity, room, overrides
-│   ├── SatelliteSession.cs                      # one wake-to-reply session
-│   ├── SatelliteSessionRegistry.cs              # active sessions keyed by satellite id
-│   ├── WyomingTcpServer.cs                      # accepts inbound satellite connections
-│   ├── WyomingPipelineHandler.cs                # per-connection state machine: info → audio → STT → dispatch
-│   ├── ApprovalGrammarParser.cs                 # yes/no/sí/no parsing
-│   ├── HeartbeatPublisher.cs                    # periodic HeartbeatEvent for self + Wyoming backends
-│   └── VoiceMetricsPublisher.cs                 # thin wrapper around IMetricsPublisher
-└── Settings/
-    └── VoiceSettings.cs
+| File | Responsibility |
+|------|---------------|
+| `McpChannelVoice.csproj` | Project file referencing Domain + Infrastructure |
+| `Program.cs` | Bootstrap: config → DI → MCP HTTP + announce endpoint + Wyoming server |
+| `Dockerfile` | Multi-stage build (mirror Telegram) |
+| `appsettings.json` | Voice config skeleton (provider, satellites, announce) |
+| `appsettings.Development.json` | Dev overrides |
+| `Modules/ConfigModule.cs` | `GetSettings()` + `ConfigureChannel()` DI wiring |
+| `Modules/VoiceModule.cs` | STT/TTS provider switch (Wyoming vs OpenAI) |
+| `Settings/VoiceSettings.cs` | Strongly-typed settings record tree |
+| `McpTools/SendReplyTool.cs` | `[McpServerToolType]` — routes reply text to originating satellite's session |
+| `McpTools/RequestApprovalTool.cs` | `[McpServerToolType]` — speaks prompt, opens capture window, parses yes/no |
+| `Services/WyomingProtocol.cs` | Static helpers: read/write Wyoming events (JSON header + optional binary payload) |
+| `Services/WyomingServer.cs` | TCP listener; spawns a `SatelliteSession` per inbound satellite |
+| `Services/WyomingClient.cs` | Wyoming TCP client (used by adapters to talk to whisper/piper) |
+| `Services/SatelliteSession.cs` | One satellite connection: capture → STT → notify → reply queue → playback |
+| `Services/SatelliteRegistry.cs` | id → identity/room/overrides; reverse lookups (room → ids, all) |
+| `Services/ConfidenceGate.cs` | Drops empty/low-confidence transcripts before dispatch |
+| `Services/ApprovalGrammarParser.cs` | Parses yes/no/sí/no/cancel/confirm in EN+ES |
+| `Services/ChannelNotificationEmitter.cs` | Builds `channel/message` notifications; routes to all MCP sessions |
+| `Services/AnnounceEndpoint.cs` | `POST /api/voice/announce` route handler + token auth |
+| `Services/AnnouncementService.cs` | Resolve target → synthesize → enqueue per satellite |
+| `Services/VoiceMetricsPublisher.cs` | Thin wrapper around `IMetricsPublisher` that fills voice dimensions |
 
-Domain/Contracts/
-├── ISpeechToText.cs
-└── ITextToSpeech.cs
+### Existing projects — additions
 
-Domain/DTOs/Voice/
-├── AudioChunk.cs
-├── TranscriptionOptions.cs
-├── TranscriptionResult.cs
-└── SynthesisOptions.cs
+| Path | Change |
+|------|--------|
+| `Domain/Contracts/ISpeechToText.cs` | New |
+| `Domain/Contracts/ITextToSpeech.cs` | New |
+| `Domain/DTOs/Voice/AudioChunk.cs` | New |
+| `Domain/DTOs/Voice/TranscriptionResult.cs` | New |
+| `Domain/DTOs/Voice/TranscriptionOptions.cs` | New |
+| `Domain/DTOs/Voice/SynthesisOptions.cs` | New |
+| `Domain/DTOs/Metrics/Enums/VoiceDimension.cs` | New |
+| `Domain/DTOs/Metrics/Enums/VoiceMetric.cs` | New |
+| `Domain/DTOs/Metrics/VoiceMetricEvent.cs` | New (polymorphic `MetricEvent` derived) |
+| `Domain/DTOs/Metrics/HeartbeatEvent.cs` | Add `voice.connected` source string (no enum change) |
+| `Infrastructure/Clients/Voice/WyomingSpeechToText.cs` | New |
+| `Infrastructure/Clients/Voice/WyomingTextToSpeech.cs` | New |
+| `Infrastructure/Clients/Voice/OpenAiSpeechToText.cs` | New (Slice 6) |
+| `Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs` | New (Slice 6) |
+| `Agent/appsettings.json` | Add `channelEndpoints[]` entry for voice |
+| `Observability/Services/MetricsQueryService.cs` | Add `GetVoiceGroupedAsync` + helpers |
+| `Observability/MetricsApiEndpoints.cs` | Add `/api/metrics/voice/*` routes |
+| `Dashboard.Client/Pages/Voice.razor` | New page (KPIs + charts + recent utterances) |
+| `Dashboard.Client/Layout/MainLayout.razor` | Add `/voice` NavLink |
+| `Dashboard.Client/Pages/Overview.razor` | Add two KPI cards |
+| `Dashboard.Client/Services/MetricsApiService.cs` | Add `GetVoice*Async` methods |
+| `DockerCompose/docker-compose.yml` | Add `mcp-channel-voice`, `wyoming-whisper`, `wyoming-piper`; add `OPENAI_API_KEY`, `ANNOUNCE_TOKEN` to `mcp-channel-voice` env |
+| `DockerCompose/.env` | Add `ANNOUNCE_TOKEN=changeme`, `OPENAI_API_KEY=` placeholders |
+| `scripts/provision-satellite.sh` | New one-shot Pi-side script |
+| `Tests/Unit/McpChannelVoice/*` | All unit test files |
+| `Tests/Integration/McpChannelVoice/*` | All integration test files |
 
-Domain/DTOs/Metrics/
-└── VoiceUtteranceEvent.cs                       # new MetricEvent subtype
-
-Infrastructure/Clients/Voice/
-├── Wyoming/
-│   ├── WyomingClient.cs                         # outbound Wyoming TCP client (used to talk to whisper/piper)
-│   ├── WyomingProtocol.cs                       # frame read/write helpers
-│   └── WyomingEvent.cs                          # event envelope record
-├── WyomingSpeechToText.cs                       # ISpeechToText impl
-├── WyomingTextToSpeech.cs                       # ITextToSpeech impl
-├── OpenAiSpeechToText.cs                        # cloud impl, slice 5
-└── OpenAiTextToSpeech.cs                        # cloud impl, slice 5
-
-Dashboard.Client/Pages/
-└── Voice.razor
-
-Dashboard.Client/State/Voice/
-├── VoiceState.cs
-└── VoiceStore.cs
-
-Tests/Unit/McpChannelVoice/
-├── SatelliteRegistryTests.cs
-├── ApprovalGrammarParserTests.cs
-├── SendReplyToolTests.cs
-├── RequestApprovalToolTests.cs
-└── ChannelNotificationEmitterTests.cs
-
-Tests/Unit/Infrastructure/Voice/
-├── WyomingProtocolTests.cs
-└── WyomingClientTests.cs
-
-Tests/Integration/McpChannelVoice/
-├── WyomingTcpServerTests.cs
-├── VoiceRoundTripTests.cs                       # real wyoming-faster-whisper container fixture
-└── Fixtures/
-    └── WyomingWhisperFixture.cs
-
-scripts/
-└── provision-satellite.sh                       # one-time satellite setup helper
-```
-
-### Modified
-
-```
-Domain/DTOs/Metrics/MetricEvent.cs               # add [JsonDerivedType(typeof(VoiceUtteranceEvent), "voice_utterance")]
-Observability/Services/MetricsCollectorService.cs # new ProcessVoiceUtteranceAsync + switch case
-Observability/MetricsApiEndpoints.cs             # /api/metrics/voice + /api/metrics/voice/totals
-Observability/Services/MetricsQueryService.cs    # GetVoiceTotalsAsync grouping helper
-Dashboard.Client/Pages/Overview.razor            # two new KpiCards
-Dashboard.Client/Components/HealthGrid.razor     # surface mcp-channel-voice + wyoming-* services (data-only if grid is generic)
-Agent/appsettings.json                           # add channelEndpoints entry for mcp-channel-voice
-DockerCompose/docker-compose.yml                 # mcp-channel-voice + wyoming-whisper + wyoming-piper services; agent depends_on
-DockerCompose/.env                               # placeholder OPENAI_API_KEY (slice 5 only)
-```
+### Solution file
+- `agent.sln` — add `McpChannelVoice` project.
 
 ---
 
-## Conventions used in this plan
+## Conventions used throughout this plan
 
-- **TDD**: every task that adds behaviour writes a failing test first, watches it fail, implements minimally, watches it pass, commits. The flag `Run: dotnet test --filter "FullyQualifiedName~<TestClass>"` is the standard verification.
-- **No XML doc comments** anywhere. Comments only when explaining a non-obvious "why".
-- **File-scoped namespaces**, primary constructors for DI, `record` types for DTOs, `IReadOnlyList<T>` returns, LINQ over loops, `TimeProvider` for time-dependent code.
-- **Domain layer**: `Domain/Contracts/`, `Domain/DTOs/Voice/`, `Domain/DTOs/Metrics/` — no `Infrastructure` or `Agent` imports.
-- **Channel project layout**: mirror `McpChannelTelegram/` exactly. When in doubt, look there.
-- **Commit cadence**: commit after every RED→GREEN→REVIEW triplet, or after every successful task. Commit messages follow the existing `feat(scope):` / `test(scope):` convention.
+- **Namespaces** are file-scoped (`namespace X;`).
+- **Records** for DTOs and settings. **Primary constructors** for services with DI dependencies.
+- **`IReadOnlyList<T>`** for collection returns. **LINQ over loops** where readable.
+- **`TimeProvider`** (injected) for any time-dependent code; never `DateTime.UtcNow` directly.
+- **No XML doc comments.** Inline comments only when explaining a non-obvious "why".
+- **Tests** under `Tests/Unit/McpChannelVoice/...` and `Tests/Integration/McpChannelVoice/...` using xUnit + FluentAssertions (match existing test projects).
+- **Commit cadence**: one commit per task. Use Conventional Commit prefixes (`feat:`, `test:`, `chore:`, `docs:`).
+- **Run commands** at repo root unless otherwise stated. `dotnet test` filters use `--filter "FullyQualifiedName~<pattern>"`.
 
 ---
 
-## Slice 1 — Channel skeleton
+# Slice 0 — Domain contracts, DTOs, and metric enums
 
-**Goal:** New `McpChannelVoice` project boots, registers as an MCP HTTP server on `/mcp`, exposes no-op `send_reply` and `request_approval` tools, publishes a heartbeat to the metrics bus, and the agent connects to it on startup. No audio yet.
+This slice introduces the cross-cutting types every downstream slice will reference. No behavior yet; the goal is that `Domain` compiles with the new public surface and a couple of trivial tests pass.
 
-### Task 1.1: Create project skeleton
-
-**Files:**
-- Create: `McpChannelVoice/McpChannelVoice.csproj`
-- Create: `McpChannelVoice/Program.cs`
-- Create: `McpChannelVoice/appsettings.json`
-- Create: `McpChannelVoice/appsettings.Development.json`
-- Create: `McpChannelVoice/Dockerfile`
-
-- [ ] **Step 1: Create the csproj**
-
-```xml
-<!-- McpChannelVoice/McpChannelVoice.csproj -->
-<Project Sdk="Microsoft.NET.Sdk.Web">
-
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <LangVersion>14</LangVersion>
-    <UserSecretsId>2026-voice-channel-c0ffee0001</UserSecretsId>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <Content Include="..\.dockerignore">
-      <Link>.dockerignore</Link>
-    </Content>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.2.0" />
-    <PackageReference Include="StackExchange.Redis" Version="2.12.14" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-</Project>
-```
-
-- [ ] **Step 2: Create Program.cs**
-
-```csharp
-// McpChannelVoice/Program.cs
-using McpChannelVoice.Modules;
-
-var builder = WebApplication.CreateBuilder(args);
-var settings = builder.Configuration.GetSettings();
-builder.Services.ConfigureChannel(settings);
-
-var app = builder.Build();
-app.MapMcp("/mcp");
-
-await app.RunAsync();
-```
-
-- [ ] **Step 3: Create appsettings.json**
-
-```json
-{
-  "Voice": {
-    "WyomingServer": { "Host": "0.0.0.0", "Port": 10700 },
-    "Stt": {
-      "Provider": "Wyoming",
-      "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base" }
-    },
-    "Tts": {
-      "Provider": "Wyoming",
-      "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
-    },
-    "ConfidenceThreshold": 0.4,
-    "Satellites": {}
-  },
-  "Redis": { "ConnectionString": "redis:6379" }
-}
-```
-
-- [ ] **Step 4: Create appsettings.Development.json**
-
-```json
-{
-  "Voice": {
-    "Stt": { "Wyoming": { "Host": "localhost" } },
-    "Tts": { "Wyoming": { "Host": "localhost" } }
-  },
-  "Redis": { "ConnectionString": "localhost:6379" }
-}
-```
-
-- [ ] **Step 5: Create Dockerfile**
-
-```dockerfile
-# McpChannelVoice/Dockerfile
-# syntax=docker/dockerfile:1
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-USER $APP_UID
-WORKDIR /app
-
-FROM base-sdk:latest AS dependencies
-COPY ["McpChannelVoice/McpChannelVoice.csproj", "McpChannelVoice/"]
-RUN dotnet restore "McpChannelVoice/McpChannelVoice.csproj"
-
-FROM dependencies AS publish
-ARG BUILD_CONFIGURATION=Release
-COPY ["McpChannelVoice/", "McpChannelVoice/"]
-WORKDIR "/src/McpChannelVoice"
-RUN dotnet publish "./McpChannelVoice.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
-
-FROM base AS final
-WORKDIR /app
-COPY --from=publish /app/publish .
-ENTRYPOINT ["dotnet", "McpChannelVoice.dll"]
-```
-
-- [ ] **Step 6: Add the project to the solution**
-
-Run: `dotnet sln agent.sln add McpChannelVoice/McpChannelVoice.csproj`
-Expected: Project added.
-
-- [ ] **Step 7: Build to verify wiring**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build fails — `ConfigModule` and `GetSettings/ConfigureChannel` are not yet defined. This failure proves the next task has work to do; do not fix it here.
-
-- [ ] **Step 8: Commit (project skeleton, intentionally not yet building)**
-
-Run: `git add McpChannelVoice agent.sln`
-Run: `git commit -m "chore(voice): scaffold McpChannelVoice project (incomplete build)"`
-
-### Task 1.2: VoiceSettings record
-
-**Files:**
-- Create: `McpChannelVoice/Settings/VoiceSettings.cs`
-
-- [ ] **Step 1: Define the settings shape**
-
-```csharp
-// McpChannelVoice/Settings/VoiceSettings.cs
-namespace McpChannelVoice.Settings;
-
-public record RootSettings
-{
-    public required VoiceSettings Voice { get; init; }
-    public required RedisSettings Redis { get; init; }
-}
-
-public record RedisSettings
-{
-    public required string ConnectionString { get; init; }
-}
-
-public record VoiceSettings
-{
-    public required WyomingServerSettings WyomingServer { get; init; }
-    public required SpeechToTextSettings Stt { get; init; }
-    public required TextToSpeechSettings Tts { get; init; }
-    public double ConfidenceThreshold { get; init; } = 0.4;
-    public Dictionary<string, SatelliteSettings> Satellites { get; init; } = new();
-}
-
-public record WyomingServerSettings
-{
-    public required string Host { get; init; }
-    public required int Port { get; init; }
-}
-
-public record SpeechToTextSettings
-{
-    public required string Provider { get; init; }
-    public WyomingBackendSettings? Wyoming { get; init; }
-    public OpenAiBackendSettings? OpenAi { get; init; }
-}
-
-public record TextToSpeechSettings
-{
-    public required string Provider { get; init; }
-    public WyomingBackendSettings? Wyoming { get; init; }
-    public OpenAiBackendSettings? OpenAi { get; init; }
-}
-
-public record WyomingBackendSettings
-{
-    public required string Host { get; init; }
-    public required int Port { get; init; }
-    public string? Model { get; init; }
-    public string? Voice { get; init; }
-}
-
-public record OpenAiBackendSettings
-{
-    public string? Model { get; init; }
-    public string? Voice { get; init; }
-}
-
-public record SatelliteSettings
-{
-    public required string Identity { get; init; }
-    public required string Room { get; init; }
-    public string? WakeWord { get; init; }
-    public SpeechToTextSettings? Stt { get; init; }
-    public TextToSpeechSettings? Tts { get; init; }
-}
-```
-
-- [ ] **Step 2: Build to verify the type compiles**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: still fails (ConfigModule missing), but no errors from VoiceSettings.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add McpChannelVoice/Settings/VoiceSettings.cs`
-Run: `git commit -m "feat(voice): add VoiceSettings record hierarchy"`
-
-### Task 1.3: ChannelNotificationEmitter
-
-Identical pattern to `McpChannelTelegram/Services/ChannelNotificationEmitter.cs`. We replicate, rather than share, because each channel project is independently deployable.
-
-**Files:**
-- Create: `McpChannelVoice/Services/ChannelNotificationEmitter.cs`
-- Create: `Tests/Unit/McpChannelVoice/ChannelNotificationEmitterTests.cs`
-
-- [ ] **Step 1: Write the failing test**
-
-```csharp
-// Tests/Unit/McpChannelVoice/ChannelNotificationEmitterTests.cs
-using McpChannelVoice.Services;
-using Microsoft.Extensions.Logging.Abstractions;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class ChannelNotificationEmitterTests
-{
-    [Fact]
-    public void HasActiveSessions_AfterRegisterAndUnregister_ReflectsState()
-    {
-        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
-
-        emitter.HasActiveSessions.ShouldBeFalse();
-
-        emitter.RegisterSession("session-a", server: null!);
-        emitter.HasActiveSessions.ShouldBeTrue();
-
-        emitter.UnregisterSession("session-a");
-        emitter.HasActiveSessions.ShouldBeFalse();
-    }
-}
-```
-
-- [ ] **Step 2: Run the test, watch it fail**
-
-Run: `dotnet test --filter "FullyQualifiedName~ChannelNotificationEmitterTests"`
-Expected: FAIL — compile error, type does not exist.
-
-- [ ] **Step 3: Implement**
-
-```csharp
-// McpChannelVoice/Services/ChannelNotificationEmitter.cs
-using System.Collections.Concurrent;
-using ModelContextProtocol.Server;
-
-namespace McpChannelVoice.Services;
-
-public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
-{
-    private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
-
-    public void RegisterSession(string sessionId, McpServer server)
-    {
-        _activeSessions[sessionId] = server;
-        logger.LogInformation("MCP session registered: {SessionId}", sessionId);
-    }
-
-    public void UnregisterSession(string sessionId)
-    {
-        _activeSessions.TryRemove(sessionId, out _);
-        logger.LogInformation("MCP session unregistered: {SessionId}", sessionId);
-    }
-
-    public async Task EmitMessageNotificationAsync(
-        string conversationId,
-        string sender,
-        string content,
-        string agentId,
-        IReadOnlyDictionary<string, string>? metadata = null,
-        CancellationToken cancellationToken = default)
-    {
-        var payload = new
-        {
-            ConversationId = conversationId,
-            Sender = sender,
-            Content = content,
-            AgentId = agentId,
-            Metadata = metadata,
-            Timestamp = DateTimeOffset.UtcNow
-        };
-
-        var tasks = _activeSessions.Values.Select(async server =>
-        {
-            try
-            {
-                await server.SendNotificationAsync(
-                    "notifications/channel/message",
-                    payload,
-                    cancellationToken: cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to emit channel/message notification");
-            }
-        });
-
-        await Task.WhenAll(tasks);
-    }
-
-    public bool HasActiveSessions => !_activeSessions.IsEmpty;
-}
-```
-
-- [ ] **Step 4: Run the test, watch it pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~ChannelNotificationEmitterTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add McpChannelVoice/Services/ChannelNotificationEmitter.cs Tests/Unit/McpChannelVoice/ChannelNotificationEmitterTests.cs`
-Run: `git commit -m "feat(voice): add ChannelNotificationEmitter mirroring telegram channel"`
-
-### Task 1.4: SatelliteRegistry
-
-**Files:**
-- Create: `McpChannelVoice/Services/SatelliteRegistry.cs`
-- Create: `Tests/Unit/McpChannelVoice/SatelliteRegistryTests.cs`
-
-- [ ] **Step 1: Write the failing tests**
-
-```csharp
-// Tests/Unit/McpChannelVoice/SatelliteRegistryTests.cs
-using McpChannelVoice.Services;
-using McpChannelVoice.Settings;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class SatelliteRegistryTests
-{
-    private static readonly Dictionary<string, SatelliteSettings> _testSatellites = new()
-    {
-        ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis" },
-        ["bedroom-01"] = new() { Identity = "francisco", Room = "Bedroom", WakeWord = "hey_jarvis" }
-    };
-
-    [Fact]
-    public void Resolve_KnownSatellite_ReturnsConfig()
-    {
-        var registry = new SatelliteRegistry(_testSatellites);
-
-        var config = registry.Resolve("kitchen-01");
-
-        config.ShouldNotBeNull();
-        config!.Identity.ShouldBe("household");
-        config.Room.ShouldBe("Kitchen");
-    }
-
-    [Fact]
-    public void Resolve_UnknownSatellite_ReturnsNull()
-    {
-        var registry = new SatelliteRegistry(_testSatellites);
-
-        registry.Resolve("garage-01").ShouldBeNull();
-    }
-
-    [Fact]
-    public void IsRegistered_KnownSatellite_ReturnsTrue()
-    {
-        var registry = new SatelliteRegistry(_testSatellites);
-
-        registry.IsRegistered("kitchen-01").ShouldBeTrue();
-        registry.IsRegistered("garage-01").ShouldBeFalse();
-    }
-}
-```
-
-- [ ] **Step 2: Run the tests, watch them fail**
-
-Run: `dotnet test --filter "FullyQualifiedName~SatelliteRegistryTests"`
-Expected: FAIL — `SatelliteRegistry` does not exist.
-
-- [ ] **Step 3: Implement**
-
-```csharp
-// McpChannelVoice/Services/SatelliteRegistry.cs
-using McpChannelVoice.Settings;
-
-namespace McpChannelVoice.Services;
-
-public sealed class SatelliteRegistry(IReadOnlyDictionary<string, SatelliteSettings> satellites)
-{
-    public SatelliteSettings? Resolve(string satelliteId) =>
-        satellites.TryGetValue(satelliteId, out var config) ? config : null;
-
-    public bool IsRegistered(string satelliteId) => satellites.ContainsKey(satelliteId);
-
-    public IEnumerable<string> SatelliteIds => satellites.Keys;
-}
-```
-
-- [ ] **Step 4: Run the tests, watch them pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~SatelliteRegistryTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add McpChannelVoice/Services/SatelliteRegistry.cs Tests/Unit/McpChannelVoice/SatelliteRegistryTests.cs`
-Run: `git commit -m "feat(voice): add SatelliteRegistry for static satellite-id mapping"`
-
-### Task 1.5: No-op SendReplyTool and RequestApprovalTool
-
-These return `"ok"` immediately so the agent's tool-call wiring works end-to-end. Real audio behaviour comes in Slices 3 and 4.
-
-**Files:**
-- Create: `McpChannelVoice/McpTools/SendReplyTool.cs`
-- Create: `McpChannelVoice/McpTools/RequestApprovalTool.cs`
-- Create: `Tests/Unit/McpChannelVoice/SendReplyToolTests.cs`
-- Create: `Tests/Unit/McpChannelVoice/RequestApprovalToolTests.cs`
-
-- [ ] **Step 1: Write a failing test for SendReplyTool**
-
-```csharp
-// Tests/Unit/McpChannelVoice/SendReplyToolTests.cs
-using Domain.DTOs.Channel;
-using McpChannelVoice.McpTools;
-using McpChannelVoice.Services;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class SendReplyToolTests
-{
-    [Fact]
-    public async Task McpRun_TextChunk_ReturnsOkAndDoesNotThrow()
-    {
-        var services = new ServiceCollection()
-            .AddSingleton(new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance))
-            .BuildServiceProvider();
-
-        var result = await SendReplyTool.McpRun(
-            conversationId: "kitchen-01",
-            content: "hello",
-            contentType: ReplyContentType.Text,
-            isComplete: true,
-            messageId: null,
-            services: services);
-
-        result.ShouldBe("ok");
-    }
-}
-```
-
-- [ ] **Step 2: Run the test, watch it fail**
-
-Run: `dotnet test --filter "FullyQualifiedName~SendReplyToolTests"`
-Expected: FAIL — `SendReplyTool` does not exist.
-
-- [ ] **Step 3: Implement no-op SendReplyTool**
-
-```csharp
-// McpChannelVoice/McpTools/SendReplyTool.cs
-using System.ComponentModel;
-using Domain.DTOs.Channel;
-using ModelContextProtocol.Server;
-
-namespace McpChannelVoice.McpTools;
-
-[McpServerToolType]
-public sealed class SendReplyTool
-{
-    [McpServerTool(Name = "send_reply")]
-    [Description("Send a response to a voice satellite. The text is synthesised via TTS and streamed back to the originating satellite.")]
-    public static Task<string> McpRun(
-        [Description("Satellite id (matches Voice:Satellites key)")] string conversationId,
-        [Description("Response content")] string content,
-        [Description("Kind of chunk being sent")] ReplyContentType contentType,
-        [Description("Whether this is the final chunk")] bool isComplete,
-        [Description("Message ID for grouping related chunks")] string? messageId,
-        IServiceProvider services)
-    {
-        // Slice 1 stub: behaviour added in Slice 3 (TTS path).
-        return Task.FromResult("ok");
-    }
-}
-```
-
-- [ ] **Step 4: Run the SendReplyTool test, watch it pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~SendReplyToolTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Write a failing test for RequestApprovalTool**
-
-```csharp
-// Tests/Unit/McpChannelVoice/RequestApprovalToolTests.cs
-using Domain.DTOs.Channel;
-using McpChannelVoice.McpTools;
-using Microsoft.Extensions.DependencyInjection;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class RequestApprovalToolTests
-{
-    [Fact]
-    public async Task McpRun_NotifyMode_ReturnsNotified()
-    {
-        var services = new ServiceCollection().BuildServiceProvider();
-
-        var result = await RequestApprovalTool.McpRun(
-            conversationId: "kitchen-01",
-            mode: ApprovalMode.Notify,
-            requests: "[]",
-            services: services);
-
-        result.ShouldBe("notified");
-    }
-}
-```
-
-- [ ] **Step 6: Run the test, watch it fail**
-
-Run: `dotnet test --filter "FullyQualifiedName~RequestApprovalToolTests"`
-Expected: FAIL — `RequestApprovalTool` does not exist.
-
-- [ ] **Step 7: Implement no-op RequestApprovalTool**
-
-```csharp
-// McpChannelVoice/McpTools/RequestApprovalTool.cs
-using System.ComponentModel;
-using Domain.DTOs.Channel;
-using ModelContextProtocol.Server;
-
-namespace McpChannelVoice.McpTools;
-
-[McpServerToolType]
-public sealed class RequestApprovalTool
-{
-    [McpServerTool(Name = "request_approval")]
-    [Description("Ask the user to approve a tool call by spoken yes/no on the originating satellite.")]
-    public static Task<string> McpRun(
-        [Description("Satellite id")] string conversationId,
-        [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
-        [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
-        IServiceProvider services)
-    {
-        // Slice 1 stub: real behaviour added in Slice 4 (approval grammar).
-        return Task.FromResult(mode == ApprovalMode.Notify ? "notified" : "approve");
-    }
-}
-```
-
-- [ ] **Step 8: Run the test, watch it pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~RequestApprovalToolTests"`
-Expected: PASS.
-
-- [ ] **Step 9: Commit**
-
-Run: `git add McpChannelVoice/McpTools Tests/Unit/McpChannelVoice/SendReplyToolTests.cs Tests/Unit/McpChannelVoice/RequestApprovalToolTests.cs`
-Run: `git commit -m "feat(voice): add stub send_reply and request_approval MCP tools"`
-
-### Task 1.6: ConfigModule and DI wiring
-
-Mirrors `McpChannelTelegram/Modules/ConfigModule.cs`.
-
-**Files:**
-- Create: `McpChannelVoice/Modules/ConfigModule.cs`
-
-- [ ] **Step 1: Implement**
-
-```csharp
-// McpChannelVoice/Modules/ConfigModule.cs
-using McpChannelVoice.McpTools;
-using McpChannelVoice.Services;
-using McpChannelVoice.Settings;
-using ModelContextProtocol.Protocol;
-
-namespace McpChannelVoice.Modules;
-
-public static class ConfigModule
-{
-    public static RootSettings GetSettings(this IConfigurationBuilder configBuilder)
-    {
-        var config = configBuilder
-            .AddEnvironmentVariables()
-            .AddUserSecrets<Program>()
-            .Build();
-
-        var settings = config.Get<RootSettings>();
-        return settings ?? throw new InvalidOperationException("Settings not found");
-    }
-
-    public static IServiceCollection ConfigureChannel(this IServiceCollection services, RootSettings settings)
-    {
-        var notificationEmitter = new ChannelNotificationEmitter(
-            LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
-
-        services
-            .AddSingleton(settings)
-            .AddSingleton(settings.Voice)
-            .AddSingleton(notificationEmitter)
-            .AddSingleton(new SatelliteRegistry(settings.Voice.Satellites));
-
-        services
-            .AddMcpServer()
-            .WithHttpTransport(options =>
-            {
-#pragma warning disable MCPEXP002
-                options.RunSessionHandler = async (_, server, ct) =>
-                {
-                    var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
-                    notificationEmitter.RegisterSession(sessionId, server);
-                    try
-                    {
-                        await server.RunAsync(ct);
-                    }
-                    finally
-                    {
-                        notificationEmitter.UnregisterSession(sessionId);
-                    }
-                };
-#pragma warning restore MCPEXP002
-            })
-            .WithTools<SendReplyTool>()
-            .WithTools<RequestApprovalTool>()
-            .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
-            {
-                try
-                {
-                    return await next(context, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    var logger = context.Services?.GetRequiredService<ILogger<Program>>();
-                    logger?.LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
-                    return new CallToolResult
-                    {
-                        IsError = true,
-                        Content = [new TextContentBlock { Text = ex.Message }]
-                    };
-                }
-            }));
-
-        return services;
-    }
-}
-```
-
-- [ ] **Step 2: Build to verify**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Run the channel locally as a smoke test**
-
-Run: `dotnet run --project McpChannelVoice/McpChannelVoice.csproj --launch-profile https`
-Expected: server starts on the default port; `Now listening on:` log line appears. Stop with Ctrl-C.
-
-- [ ] **Step 4: Commit**
-
-Run: `git add McpChannelVoice/Modules/ConfigModule.cs`
-Run: `git commit -m "feat(voice): add ConfigModule wiring (DI, MCP HTTP transport, error filter)"`
-
-### Task 1.7: HeartbeatPublisher hosted service
-
-Publishes `HeartbeatEvent` for `mcp-channel-voice` every 30s so the dashboard's `HealthGrid` lights up immediately. We do not yet publish heartbeats for the Wyoming backends — that requires a probe and lands in Slice 2.
-
-**Files:**
-- Create: `McpChannelVoice/Services/HeartbeatPublisher.cs`
-
-- [ ] **Step 1: Implement**
-
-```csharp
-// McpChannelVoice/Services/HeartbeatPublisher.cs
-using Domain.Contracts;
-using Domain.DTOs.Metrics;
-
-namespace McpChannelVoice.Services;
-
-public sealed class HeartbeatPublisher(IMetricsPublisher publisher, ILogger<HeartbeatPublisher> logger)
-    : BackgroundService
-{
-    private static readonly TimeSpan _interval = TimeSpan.FromSeconds(30);
-    private const string ServiceName = "mcp-channel-voice";
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await publisher.PublishAsync(
-                    new HeartbeatEvent { Service = ServiceName },
-                    stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to publish heartbeat");
-            }
-
-            try
-            {
-                await Task.Delay(_interval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Wire IMetricsPublisher and the hosted service in ConfigModule**
-
-Edit `McpChannelVoice/Modules/ConfigModule.cs`. Add the following inside `ConfigureChannel` after the `notificationEmitter` registration block, before `services.AddMcpServer()`:
-
-```csharp
-services
-    .AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
-        StackExchange.Redis.ConnectionMultiplexer.Connect(settings.Redis.ConnectionString))
-    .AddSingleton<IMetricsPublisher, Infrastructure.Metrics.RedisMetricsPublisher>()
-    .AddHostedService<HeartbeatPublisher>();
-```
-
-Add `using Domain.Contracts;` at the top of the file.
-
-- [ ] **Step 3: Build**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 4: Commit**
-
-Run: `git add McpChannelVoice/Services/HeartbeatPublisher.cs McpChannelVoice/Modules/ConfigModule.cs`
-Run: `git commit -m "feat(voice): publish heartbeat metric so dashboard health grid registers the channel"`
-
-### Task 1.8: Docker Compose entry and agent wiring
-
-**Files:**
-- Modify: `DockerCompose/docker-compose.yml`
-- Modify: `Agent/appsettings.json`
-
-- [ ] **Step 1: Add the new service to docker-compose.yml**
-
-Insert after the `mcp-channel-servicebus` block (after the line `condition: service_started` of its `depends_on`):
-
-```yaml
-  mcp-channel-voice:
-    image: mcp-channel-voice:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-channel-voice
-    ports:
-      - "6013:8080"
-      - "10700:10700"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpChannelVoice/Dockerfile
-      cache_from:
-        - mcp-channel-voice:latest
-      args:
-        - BUILDKIT_INLINE_CACHE=1
-    restart: unless-stopped
-    env_file:
-      - .env
-    networks:
-      - jackbot
-    depends_on:
-      base-sdk:
-        condition: service_started
-      redis:
-        condition: service_healthy
-```
-
-Then add to the `agent` service's `depends_on` block (under the existing channel entries):
-
-```yaml
-      mcp-channel-voice:
-        condition: service_started
-```
-
-- [ ] **Step 2: Add channel endpoint to Agent/appsettings.json**
-
-Edit `Agent/appsettings.json`. In the `channelEndpoints` array, add a new entry:
-
-```json
-{
-    "channelId": "voice",
-    "endpoint": "http://mcp-channel-voice:8080/mcp"
-}
-```
-
-- [ ] **Step 3: Build and start the stack**
-
-Run: `docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot build mcp-channel-voice`
-Expected: image builds successfully.
-
-Run: `docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d mcp-channel-voice agent redis observability`
-Expected: services come up healthy.
-
-- [ ] **Step 4: Verify the agent connected**
-
-Run: `docker logs agent 2>&1 | grep -i "mcp-channel-voice" | head`
-Expected: at least one log line indicating the channel was discovered or connected.
-
-Run: `docker logs mcp-channel-voice 2>&1 | grep "Now listening" | head`
-Expected: the channel server is listening on port 8080.
-
-Run: `docker exec redis redis-cli SUBSCRIBE metrics:events &`
-Wait 35 seconds.
-Expected: a `heartbeat` event with `"service":"mcp-channel-voice"` is published. Press Ctrl-C to stop the subscriber.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add DockerCompose/docker-compose.yml Agent/appsettings.json`
-Run: `git commit -m "feat(voice): wire mcp-channel-voice into compose and agent channelEndpoints"`
-
-### Slice 1 done
-
-`McpChannelVoice` is up, the agent connects, both stub tools answer correctly, and the `mcp-channel-voice` service shows up as healthy on the dashboard. No audio yet.
-
----
-
-## Slice 2 — STT path
-
-**Goal:** A satellite (real Pi Zero 2 W or a desktop running `wyoming-satellite`) wakes, speaks, and the agent receives the transcript as a `notifications/channel/message` from the configured identity. Adds the Wyoming protocol library, the speech contracts, the Wyoming server in the channel, the `WyomingSpeechToText` adapter, and the metrics + minimal dashboard surface.
-
-### Task 2.1: AudioChunk and speech DTOs
+### Task 0.1: Add voice audio + transcription DTOs
 
 **Files:**
 - Create: `Domain/DTOs/Voice/AudioChunk.cs`
 - Create: `Domain/DTOs/Voice/TranscriptionResult.cs`
 - Create: `Domain/DTOs/Voice/TranscriptionOptions.cs`
 - Create: `Domain/DTOs/Voice/SynthesisOptions.cs`
+- Test: `Tests/Unit/McpChannelVoice/Domain/VoiceDtoTests.cs`
 
-- [ ] **Step 1: Implement DTOs**
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Domain/VoiceDtoTests.cs
+namespace Tests.Unit.McpChannelVoice.Domain;
+
+using global::Domain.DTOs.Voice;
+using FluentAssertions;
+using Xunit;
+
+public class VoiceDtoTests
+{
+    [Fact]
+    public void AudioChunk_carries_pcm_payload_and_sample_rate()
+    {
+        var chunk = new AudioChunk(new byte[] { 1, 2, 3, 4 }, SampleRate: 16000, Channels: 1, BitsPerSample: 16);
+        chunk.Data.Should().HaveCount(4);
+        chunk.SampleRate.Should().Be(16000);
+    }
+
+    [Fact]
+    public void TranscriptionResult_defaults_language_to_null_when_unknown()
+    {
+        var r = new TranscriptionResult(Text: "hola", Language: null, Confidence: 0.9);
+        r.Language.Should().BeNull();
+        r.Confidence.Should().BeApproximately(0.9, 1e-6);
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceDtoTests"`
+Expected: FAIL with compile error — types `AudioChunk`, `TranscriptionResult` not found.
+
+- [ ] **Step 3: Implement the DTOs**
 
 ```csharp
 // Domain/DTOs/Voice/AudioChunk.cs
 namespace Domain.DTOs.Voice;
 
-public record AudioChunk(byte[] Pcm, int SampleRate, int SampleWidthBytes, int Channels, DateTimeOffset Timestamp);
+public record AudioChunk(byte[] Data, int SampleRate, int Channels, int BitsPerSample);
 ```
 
 ```csharp
 // Domain/DTOs/Voice/TranscriptionResult.cs
 namespace Domain.DTOs.Voice;
 
-public record TranscriptionResult(string Text, string? Language, double Confidence, long DurationMs);
+public record TranscriptionResult(string Text, string? Language, double Confidence);
 ```
 
 ```csharp
 // Domain/DTOs/Voice/TranscriptionOptions.cs
 namespace Domain.DTOs.Voice;
 
-public record TranscriptionOptions(string? LanguageHint = null, string? Prompt = null, string? ModelOverride = null);
+public record TranscriptionOptions(string? Language = null, string? Model = null);
 ```
 
 ```csharp
 // Domain/DTOs/Voice/SynthesisOptions.cs
 namespace Domain.DTOs.Voice;
 
-public record SynthesisOptions(string? Voice = null, string Format = "pcm", int SampleRate = 22050, int SampleWidthBytes = 2, int Channels = 1);
+public record SynthesisOptions(string? Voice = null, double? Speed = null);
 ```
 
-- [ ] **Step 2: Build to verify**
+- [ ] **Step 4: Run the test to verify it passes**
 
-Run: `dotnet build Domain/Domain.csproj`
-Expected: build succeeds.
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceDtoTests"`
+Expected: 2 tests passed.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
-Run: `git add Domain/DTOs/Voice`
-Run: `git commit -m "feat(voice): add Voice DTOs (AudioChunk, TranscriptionResult, options)"`
+```bash
+git add Domain/DTOs/Voice Tests/Unit/McpChannelVoice/Domain/VoiceDtoTests.cs
+git commit -m "feat(voice): add audio + transcription DTOs"
+```
 
-### Task 2.2: ISpeechToText and ITextToSpeech contracts
+---
+
+### Task 0.2: Add ISpeechToText and ITextToSpeech contracts
 
 **Files:**
 - Create: `Domain/Contracts/ISpeechToText.cs`
 - Create: `Domain/Contracts/ITextToSpeech.cs`
+- Test: `Tests/Unit/McpChannelVoice/Domain/VoiceContractsTests.cs`
 
-- [ ] **Step 1: Implement**
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Domain/VoiceContractsTests.cs
+namespace Tests.Unit.McpChannelVoice.Domain;
+
+using global::Domain.Contracts;
+using global::Domain.DTOs.Voice;
+using FluentAssertions;
+using System.Reflection;
+using Xunit;
+
+public class VoiceContractsTests
+{
+    [Fact]
+    public void ISpeechToText_has_TranscribeAsync_with_streaming_input_signature()
+    {
+        var method = typeof(ISpeechToText).GetMethod("TranscribeAsync");
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(Task<TranscriptionResult>));
+        method.GetParameters().Select(p => p.ParameterType).Should().Equal(
+            typeof(IAsyncEnumerable<AudioChunk>),
+            typeof(TranscriptionOptions),
+            typeof(CancellationToken));
+    }
+
+    [Fact]
+    public void ITextToSpeech_has_SynthesizeAsync_returning_audio_stream()
+    {
+        var method = typeof(ITextToSpeech).GetMethod("SynthesizeAsync");
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(IAsyncEnumerable<AudioChunk>));
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceContractsTests"`
+Expected: FAIL — interfaces not found.
+
+- [ ] **Step 3: Implement the interfaces**
 
 ```csharp
 // Domain/Contracts/ISpeechToText.cs
-using Domain.DTOs.Voice;
-
 namespace Domain.Contracts;
+
+using Domain.DTOs.Voice;
 
 public interface ISpeechToText
 {
     Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio,
         TranscriptionOptions options,
-        CancellationToken cancellationToken);
+        CancellationToken ct);
 }
 ```
 
 ```csharp
 // Domain/Contracts/ITextToSpeech.cs
-using Domain.DTOs.Voice;
-
 namespace Domain.Contracts;
+
+using Domain.DTOs.Voice;
 
 public interface ITextToSpeech
 {
     IAsyncEnumerable<AudioChunk> SynthesizeAsync(
         string text,
         SynthesisOptions options,
-        CancellationToken cancellationToken);
+        CancellationToken ct);
 }
 ```
 
-- [ ] **Step 2: Build**
+- [ ] **Step 4: Run the test to verify it passes**
 
-Run: `dotnet build Domain/Domain.csproj`
-Expected: build succeeds.
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceContractsTests"`
+Expected: 2 tests passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Domain/Contracts/ISpeechToText.cs Domain/Contracts/ITextToSpeech.cs Tests/Unit/McpChannelVoice/Domain/VoiceContractsTests.cs
+git commit -m "feat(voice): add ISpeechToText and ITextToSpeech contracts"
+```
+
+---
+
+### Task 0.3: Add voice metric and dimension enums
+
+**Files:**
+- Create: `Domain/DTOs/Metrics/Enums/VoiceDimension.cs`
+- Create: `Domain/DTOs/Metrics/Enums/VoiceMetric.cs`
+- Test: `Tests/Unit/McpChannelVoice/Domain/VoiceEnumsTests.cs`
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Domain/VoiceEnumsTests.cs
+namespace Tests.Unit.McpChannelVoice.Domain;
+
+using global::Domain.DTOs.Metrics.Enums;
+using FluentAssertions;
+using Xunit;
+
+public class VoiceEnumsTests
+{
+    [Fact]
+    public void VoiceDimension_contains_required_values()
+    {
+        Enum.GetNames<VoiceDimension>().Should().Contain(new[]
+        {
+            nameof(VoiceDimension.SatelliteId),
+            nameof(VoiceDimension.Room),
+            nameof(VoiceDimension.Identity),
+            nameof(VoiceDimension.WakeWord),
+            nameof(VoiceDimension.Language),
+            nameof(VoiceDimension.SttProvider),
+            nameof(VoiceDimension.SttModel),
+            nameof(VoiceDimension.TtsProvider),
+            nameof(VoiceDimension.TtsVoice),
+            nameof(VoiceDimension.Outcome),
+            nameof(VoiceDimension.Source),
+            nameof(VoiceDimension.Priority)
+        });
+    }
+
+    [Fact]
+    public void VoiceMetric_contains_required_values()
+    {
+        Enum.GetNames<VoiceMetric>().Should().Contain(new[]
+        {
+            nameof(VoiceMetric.WakeTriggered),
+            nameof(VoiceMetric.UtteranceTranscribed),
+            nameof(VoiceMetric.AudioSeconds),
+            nameof(VoiceMetric.SttLatencyMs),
+            nameof(VoiceMetric.TtsLatencyMs),
+            nameof(VoiceMetric.WakeToFirstAudioMs),
+            nameof(VoiceMetric.ApprovalResolved),
+            nameof(VoiceMetric.SttError),
+            nameof(VoiceMetric.TtsError),
+            nameof(VoiceMetric.AnnouncePlayed),
+            nameof(VoiceMetric.AnnounceQueued),
+            nameof(VoiceMetric.AnnounceError),
+            nameof(VoiceMetric.AnnouncePreemptedReply)
+        });
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceEnumsTests"`
+Expected: FAIL — enums not found.
+
+- [ ] **Step 3: Implement the enums**
+
+```csharp
+// Domain/DTOs/Metrics/Enums/VoiceDimension.cs
+namespace Domain.DTOs.Metrics.Enums;
+
+public enum VoiceDimension
+{
+    SatelliteId,
+    Room,
+    Identity,
+    WakeWord,
+    Language,
+    SttProvider,
+    SttModel,
+    TtsProvider,
+    TtsVoice,
+    Outcome,
+    Source,
+    Priority
+}
+```
+
+```csharp
+// Domain/DTOs/Metrics/Enums/VoiceMetric.cs
+namespace Domain.DTOs.Metrics.Enums;
+
+public enum VoiceMetric
+{
+    WakeTriggered,
+    UtteranceTranscribed,
+    AudioSeconds,
+    SttLatencyMs,
+    TtsLatencyMs,
+    WakeToFirstAudioMs,
+    ApprovalResolved,
+    SttError,
+    TtsError,
+    AnnouncePlayed,
+    AnnounceQueued,
+    AnnounceError,
+    AnnouncePreemptedReply
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceEnumsTests"`
+Expected: 2 tests passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Domain/DTOs/Metrics/Enums/VoiceDimension.cs Domain/DTOs/Metrics/Enums/VoiceMetric.cs Tests/Unit/McpChannelVoice/Domain/VoiceEnumsTests.cs
+git commit -m "feat(voice): add VoiceDimension + VoiceMetric enums"
+```
+
+---
+
+### Task 0.4: Add VoiceMetricEvent polymorphic type
+
+**Files:**
+- Modify: `Domain/DTOs/Metrics/MetricEvent.cs` — add `[JsonDerivedType]` for the new event
+- Create: `Domain/DTOs/Metrics/VoiceMetricEvent.cs`
+- Test: `Tests/Unit/McpChannelVoice/Domain/VoiceMetricEventTests.cs`
+
+> **Before editing:** Read `Domain/DTOs/Metrics/MetricEvent.cs` to confirm the `[JsonDerivedType]` attribute pattern used by `TokenUsageEvent`, `ToolCallEvent`, etc. Mirror that exact pattern.
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Domain/VoiceMetricEventTests.cs
+namespace Tests.Unit.McpChannelVoice.Domain;
+
+using System.Text.Json;
+using global::Domain.DTOs.Metrics;
+using global::Domain.DTOs.Metrics.Enums;
+using FluentAssertions;
+using Xunit;
+
+public class VoiceMetricEventTests
+{
+    [Fact]
+    public void VoiceMetricEvent_serializes_with_voice_discriminator()
+    {
+        MetricEvent ev = new VoiceMetricEvent
+        {
+            Timestamp = DateTimeOffset.UnixEpoch,
+            AgentId = "jack",
+            ConversationId = "kitchen-01",
+            Metric = VoiceMetric.WakeTriggered,
+            Value = 1,
+            Dimensions = new Dictionary<string, string>
+            {
+                [nameof(VoiceDimension.SatelliteId)] = "kitchen-01",
+                [nameof(VoiceDimension.Room)] = "Kitchen"
+            }
+        };
+        var json = JsonSerializer.Serialize(ev);
+        json.Should().Contain("\"type\":\"voice\"");
+        json.Should().Contain("\"Metric\":\"WakeTriggered\"");
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceMetricEventTests"`
+Expected: FAIL — `VoiceMetricEvent` not found.
+
+- [ ] **Step 3: Implement the event**
+
+```csharp
+// Domain/DTOs/Metrics/VoiceMetricEvent.cs
+namespace Domain.DTOs.Metrics;
+
+using System.Text.Json.Serialization;
+using Domain.DTOs.Metrics.Enums;
+
+public record VoiceMetricEvent : MetricEvent
+{
+    public required VoiceMetric Metric { get; init; }
+    public required double Value { get; init; }
+    public IReadOnlyDictionary<string, string> Dimensions { get; init; } = new Dictionary<string, string>();
+}
+```
+
+Then add the discriminator to `MetricEvent`:
+
+```csharp
+// Domain/DTOs/Metrics/MetricEvent.cs — add to the existing [JsonDerivedType] list
+[JsonDerivedType(typeof(VoiceMetricEvent), "voice")]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceMetricEventTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Domain/DTOs/Metrics/VoiceMetricEvent.cs Domain/DTOs/Metrics/MetricEvent.cs Tests/Unit/McpChannelVoice/Domain/VoiceMetricEventTests.cs
+git commit -m "feat(voice): add VoiceMetricEvent"
+```
+
+---
+
+# Slice 1 — McpChannelVoice skeleton
+
+End state: agent boots, lists the channel, and a stub `channel/message` from a fake source flows through to a logging sink. No audio yet, no Wyoming, no STT/TTS.
+
+### Task 1.1: Create the McpChannelVoice project and add to solution
+
+**Files:**
+- Create: `McpChannelVoice/McpChannelVoice.csproj`
+- Create: `McpChannelVoice/Program.cs` (minimal placeholder)
+- Modify: `agent.sln`
+
+> **Before:** Read `McpChannelTelegram/McpChannelTelegram.csproj` to copy its `<TargetFramework>`, package references, and project references exactly.
+
+- [ ] **Step 1: Write csproj**
+
+```xml
+<!-- McpChannelVoice/McpChannelVoice.csproj -->
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>mcp-channel-voice</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+    <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Mirror MCP + hosting packages from McpChannelTelegram.csproj exactly -->
+  </ItemGroup>
+</Project>
+```
+
+Open `McpChannelTelegram/McpChannelTelegram.csproj` and copy the `<PackageReference>` entries (e.g., `ModelContextProtocol.AspNetCore`, `Microsoft.Extensions.Hosting`, `Microsoft.Extensions.Configuration.UserSecrets`) verbatim into the new csproj.
+
+- [ ] **Step 2: Write minimal Program.cs**
+
+```csharp
+// McpChannelVoice/Program.cs
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+app.MapGet("/", () => "McpChannelVoice");
+app.Run();
+```
+
+- [ ] **Step 3: Add to solution**
+
+```bash
+dotnet sln agent.sln add McpChannelVoice/McpChannelVoice.csproj
+```
+
+- [ ] **Step 4: Verify the project builds**
+
+Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
+Expected: Build succeeded.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice agent.sln
+git commit -m "chore(voice): scaffold McpChannelVoice project"
+```
+
+---
+
+### Task 1.2: Add VoiceSettings record + appsettings.json
+
+**Files:**
+- Create: `McpChannelVoice/Settings/VoiceSettings.cs`
+- Create: `McpChannelVoice/appsettings.json`
+- Create: `McpChannelVoice/appsettings.Development.json`
+- Test: `Tests/Unit/McpChannelVoice/Settings/VoiceSettingsTests.cs`
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Settings/VoiceSettingsTests.cs
+namespace Tests.Unit.McpChannelVoice.Settings;
+
+using global::McpChannelVoice.Settings;
+using Microsoft.Extensions.Configuration;
+using FluentAssertions;
+using Xunit;
+
+public class VoiceSettingsTests
+{
+    [Fact]
+    public void Binds_full_settings_tree_from_configuration()
+    {
+        var json = """
+        {
+          "Voice": {
+            "WyomingServer": { "Host": "0.0.0.0", "Port": 10700 },
+            "Stt": { "Provider": "Wyoming", "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base" } },
+            "Tts": { "Provider": "Wyoming", "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" } },
+            "ConfidenceThreshold": 0.4,
+            "Announce": { "Enabled": true, "Token": "tok", "BindToLoopbackOnly": false, "QueueMaxDepth": 8, "DefaultPriority": "Normal" },
+            "Satellites": {
+              "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis" }
+            }
+          }
+        }
+        """;
+        var config = new ConfigurationBuilder().AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json))).Build();
+        var settings = config.GetSection("Voice").Get<VoiceSettings>()!;
+
+        settings.WyomingServer.Port.Should().Be(10700);
+        settings.Stt.Provider.Should().Be("Wyoming");
+        settings.Stt.Wyoming!.Model.Should().Be("base");
+        settings.Tts.Wyoming!.Voice.Should().Be("es_ES-davefx-medium");
+        settings.ConfidenceThreshold.Should().BeApproximately(0.4, 1e-6);
+        settings.Announce.Enabled.Should().BeTrue();
+        settings.Satellites["kitchen-01"].Identity.Should().Be("household");
+        settings.Satellites["kitchen-01"].Room.Should().Be("Kitchen");
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceSettingsTests"`
+Expected: FAIL — `VoiceSettings` type missing.
+
+- [ ] **Step 3: Implement VoiceSettings**
+
+```csharp
+// McpChannelVoice/Settings/VoiceSettings.cs
+namespace McpChannelVoice.Settings;
+
+public record VoiceSettings
+{
+    public WyomingServerSettings WyomingServer { get; init; } = new();
+    public SttSettings Stt { get; init; } = new();
+    public TtsSettings Tts { get; init; } = new();
+    public double ConfidenceThreshold { get; init; } = 0.4;
+    public AnnounceSettings Announce { get; init; } = new();
+    public IReadOnlyDictionary<string, SatelliteSettings> Satellites { get; init; } = new Dictionary<string, SatelliteSettings>();
+}
+
+public record WyomingServerSettings
+{
+    public string Host { get; init; } = "0.0.0.0";
+    public int Port { get; init; } = 10700;
+}
+
+public record SttSettings
+{
+    public string Provider { get; init; } = "Wyoming";
+    public WyomingBackendSettings? Wyoming { get; init; }
+    public OpenAiBackendSettings? OpenAi { get; init; }
+}
+
+public record TtsSettings
+{
+    public string Provider { get; init; } = "Wyoming";
+    public WyomingBackendSettings? Wyoming { get; init; }
+    public OpenAiBackendSettings? OpenAi { get; init; }
+}
+
+public record WyomingBackendSettings
+{
+    public string Host { get; init; } = "";
+    public int Port { get; init; }
+    public string? Model { get; init; }
+    public string? Voice { get; init; }
+}
+
+public record OpenAiBackendSettings
+{
+    public string Model { get; init; } = "";
+    public string? Voice { get; init; }
+}
+
+public record AnnounceSettings
+{
+    public bool Enabled { get; init; } = true;
+    public string Token { get; init; } = "";
+    public bool BindToLoopbackOnly { get; init; }
+    public int QueueMaxDepth { get; init; } = 8;
+    public string DefaultPriority { get; init; } = "Normal";
+}
+
+public record SatelliteSettings
+{
+    public required string Identity { get; init; }
+    public required string Room { get; init; }
+    public string WakeWord { get; init; } = "hey_jarvis";
+    public SttSettings? Stt { get; init; }
+    public TtsSettings? Tts { get; init; }
+}
+```
+
+- [ ] **Step 4: Write appsettings.json**
+
+```json
+{
+  "Logging": { "LogLevel": { "Default": "Information" } },
+  "Voice": {
+    "WyomingServer": { "Host": "0.0.0.0", "Port": 10700 },
+    "Stt": {
+      "Provider": "Wyoming",
+      "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base" },
+      "OpenAi": { "Model": "whisper-1" }
+    },
+    "Tts": {
+      "Provider": "Wyoming",
+      "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" },
+      "OpenAi": { "Model": "tts-1", "Voice": "alloy" }
+    },
+    "ConfidenceThreshold": 0.4,
+    "Announce": {
+      "Enabled": true,
+      "Token": "",
+      "BindToLoopbackOnly": false,
+      "QueueMaxDepth": 8,
+      "DefaultPriority": "Normal"
+    },
+    "Satellites": {
+      "kitchen-01":     { "Identity": "household", "Room": "Kitchen",     "WakeWord": "hey_jarvis" },
+      "living-room-01": { "Identity": "household", "Room": "Living Room", "WakeWord": "hey_jarvis" },
+      "bedroom-01":     { "Identity": "francisco", "Room": "Bedroom",     "WakeWord": "hey_jarvis" }
+    }
+  }
+}
+```
+
+- [ ] **Step 5: Write appsettings.Development.json**
+
+```json
+{
+  "Logging": { "LogLevel": { "Default": "Debug" } },
+  "Voice": {
+    "Stt": { "Wyoming": { "Host": "localhost" } },
+    "Tts": { "Wyoming": { "Host": "localhost" } },
+    "Announce": { "Token": "dev-token" }
+  }
+}
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceSettingsTests"`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add McpChannelVoice/Settings McpChannelVoice/appsettings*.json Tests/Unit/McpChannelVoice/Settings
+git commit -m "feat(voice): add VoiceSettings and appsettings skeletons"
+```
+
+---
+
+### Task 1.3: SatelliteRegistry — forward lookups
+
+**Files:**
+- Create: `McpChannelVoice/Services/SatelliteRegistry.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteRegistryTests.cs`
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/SatelliteRegistryTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Xunit;
+
+public class SatelliteRegistryTests
+{
+    private static SatelliteRegistry Build() => new(new VoiceSettings
+    {
+        Satellites = new Dictionary<string, SatelliteSettings>
+        {
+            ["kitchen-01"]  = new() { Identity = "household", Room = "Kitchen",     WakeWord = "hey_jarvis" },
+            ["bedroom-01"]  = new() { Identity = "francisco", Room = "Bedroom",     WakeWord = "hey_jarvis" },
+            ["living-01"]   = new() { Identity = "household", Room = "Living Room", WakeWord = "hey_jarvis" },
+            ["living-02"]   = new() { Identity = "household", Room = "Living Room", WakeWord = "hey_jarvis" }
+        }
+    });
+
+    [Fact]
+    public void Lookup_returns_settings_for_known_id()
+    {
+        Build().Lookup("kitchen-01")!.Identity.Should().Be("household");
+    }
+
+    [Fact]
+    public void Lookup_returns_null_for_unknown_id()
+    {
+        Build().Lookup("ghost").Should().BeNull();
+    }
+
+    [Fact]
+    public void IsKnown_returns_true_only_for_configured_ids()
+    {
+        var r = Build();
+        r.IsKnown("kitchen-01").Should().BeTrue();
+        r.IsKnown("ghost").Should().BeFalse();
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteRegistryTests"`
+Expected: FAIL — `SatelliteRegistry` not found.
+
+- [ ] **Step 3: Implement SatelliteRegistry (forward lookups only — reverse lookups in Slice 4)**
+
+```csharp
+// McpChannelVoice/Services/SatelliteRegistry.cs
+namespace McpChannelVoice.Services;
+
+using McpChannelVoice.Settings;
+
+public class SatelliteRegistry(VoiceSettings settings)
+{
+    private readonly IReadOnlyDictionary<string, SatelliteSettings> satellites = settings.Satellites;
+
+    public SatelliteSettings? Lookup(string satelliteId) =>
+        satellites.TryGetValue(satelliteId, out var s) ? s : null;
+
+    public bool IsKnown(string satelliteId) => satellites.ContainsKey(satelliteId);
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteRegistryTests"`
+Expected: 3 tests passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/SatelliteRegistry.cs Tests/Unit/McpChannelVoice/Services/SatelliteRegistryTests.cs
+git commit -m "feat(voice): satellite registry with forward lookups"
+```
+
+---
+
+### Task 1.4: ChannelNotificationEmitter (mirror McpChannelTelegram)
+
+**Files:**
+- Create: `McpChannelVoice/Services/ChannelNotificationEmitter.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/ChannelNotificationEmitterTests.cs`
+
+> **Before:** Read `McpChannelTelegram/Services/ChannelNotificationEmitter.cs` (or whichever file owns session registration + notification emission for Telegram). Mirror it: keep the same public methods and broadcast shape, but adapt the payload to include voice metadata (room, satelliteId).
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/ChannelNotificationEmitterTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+
+public class ChannelNotificationEmitterTests
+{
+    [Fact]
+    public async Task Emits_no_op_when_no_sessions_registered()
+    {
+        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
+        var sent = await emitter.EmitMessageNotificationAsync(
+            conversationId: "kitchen-01",
+            sender: "household",
+            content: "what's the weather",
+            agentId: "jack",
+            room: "Kitchen");
+        sent.Should().Be(0);
+    }
+
+    [Fact]
+    public void Register_then_unregister_session_changes_count()
+    {
+        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
+        emitter.RegisterSession("s1", server: null!);
+        emitter.SessionCount.Should().Be(1);
+        emitter.UnregisterSession("s1");
+        emitter.SessionCount.Should().Be(0);
+    }
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ChannelNotificationEmitterTests"`
+Expected: FAIL — class not found.
+
+- [ ] **Step 3: Implement the emitter**
+
+```csharp
+// McpChannelVoice/Services/ChannelNotificationEmitter.cs
+namespace McpChannelVoice.Services;
+
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+
+public class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
+{
+    private readonly ConcurrentDictionary<string, IMcpServer> sessions = new();
+
+    public int SessionCount => sessions.Count;
+
+    public void RegisterSession(string sessionId, IMcpServer server) => sessions[sessionId] = server;
+
+    public void UnregisterSession(string sessionId) => sessions.TryRemove(sessionId, out _);
+
+    public async Task<int> EmitMessageNotificationAsync(
+        string conversationId,
+        string sender,
+        string content,
+        string agentId,
+        string? room = null,
+        CancellationToken ct = default)
+    {
+        if (sessions.IsEmpty)
+        {
+            logger.LogDebug("No MCP sessions registered; dropping notification for {ConversationId}", conversationId);
+            return 0;
+        }
+
+        var payload = new
+        {
+            ConversationId = conversationId,
+            Sender = sender,
+            Content = content,
+            AgentId = agentId,
+            Metadata = new { Room = room },
+            Timestamp = DateTimeOffset.UtcNow
+        };
+
+        var sent = 0;
+        foreach (var (id, server) in sessions)
+        {
+            try
+            {
+                await server.SendNotificationAsync("notifications/channel/message", payload, cancellationToken: ct);
+                sent++;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to deliver notification to session {SessionId}", id);
+            }
+        }
+        return sent;
+    }
+}
+```
+
+> Note: the actual `IMcpServer` type comes from `ModelContextProtocol.Server`. If the exact method name differs (e.g., `SendNotificationAsync` vs `SendNotificationAsync<T>`), copy the working call from `McpChannelTelegram/Services/ChannelNotificationEmitter.cs`.
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ChannelNotificationEmitterTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/ChannelNotificationEmitter.cs Tests/Unit/McpChannelVoice/Services/ChannelNotificationEmitterTests.cs
+git commit -m "feat(voice): channel notification emitter"
+```
+
+---
+
+### Task 1.5: Dummy SendReplyTool + RequestApprovalTool
+
+**Files:**
+- Create: `McpChannelVoice/McpTools/SendReplyTool.cs`
+- Create: `McpChannelVoice/McpTools/RequestApprovalTool.cs`
+
+> **Before:** Read `McpChannelTelegram/McpTools/SendReplyTool.cs` to copy the `[McpServerToolType]` + `[McpServerTool]` attribute layout and the parameter list. We will keep the signature identical so the agent talks to it transparently; the **body** logs only for now.
+
+- [ ] **Step 1: Write SendReplyTool**
+
+```csharp
+// McpChannelVoice/McpTools/SendReplyTool.cs
+namespace McpChannelVoice.McpTools;
+
+using System.ComponentModel;
+using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+
+[McpServerToolType]
+public static class SendReplyTool
+{
+    [McpServerTool(Name = "send_reply")]
+    [Description("Send a reply to the originating voice satellite.")]
+    public static Task<object?> McpRun(
+        string conversationId,
+        string content,
+        ReplyContentType contentType,
+        bool isComplete,
+        string? messageId,
+        ILogger<SendReplyToolMarker> logger)
+    {
+        logger.LogInformation("[stub] send_reply conversation={ConversationId} type={Type} complete={Complete}",
+            conversationId, contentType, isComplete);
+        return Task.FromResult<object?>(new { ok = true });
+    }
+}
+
+public sealed class SendReplyToolMarker;
+```
+
+- [ ] **Step 2: Write RequestApprovalTool**
+
+```csharp
+// McpChannelVoice/McpTools/RequestApprovalTool.cs
+namespace McpChannelVoice.McpTools;
+
+using System.ComponentModel;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+
+[McpServerToolType]
+public static class RequestApprovalTool
+{
+    [McpServerTool(Name = "request_approval")]
+    [Description("Ask the user (via voice) to approve a tool call.")]
+    public static Task<object?> McpRun(
+        string conversationId,
+        string mode,
+        string requests,
+        ILogger<RequestApprovalToolMarker> logger)
+    {
+        logger.LogInformation("[stub] request_approval conversation={ConversationId} mode={Mode}",
+            conversationId, mode);
+        return Task.FromResult<object?>(new { approved = false, reason = "stub" });
+    }
+}
+
+public sealed class RequestApprovalToolMarker;
+```
+
+- [ ] **Step 3: Build to confirm the project still compiles**
+
+Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
+Expected: Build succeeded.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add McpChannelVoice/McpTools
+git commit -m "feat(voice): stub send_reply and request_approval tools"
+```
+
+---
+
+### Task 1.6: ConfigModule + Program.cs (DI wiring, MCP HTTP transport)
+
+**Files:**
+- Create: `McpChannelVoice/Modules/ConfigModule.cs`
+- Rewrite: `McpChannelVoice/Program.cs`
+
+> **Before:** Open `McpChannelTelegram/Modules/ConfigModule.cs`. Copy the `GetSettings()` chain (env vars → user secrets → bind) and the `AddMcpServer()` + `WithHttpTransport()` + `WithTools<>()` registration shape. Adapt to voice.
+
+- [ ] **Step 1: Implement ConfigModule**
+
+```csharp
+// McpChannelVoice/Modules/ConfigModule.cs
+namespace McpChannelVoice.Modules;
+
+using McpChannelVoice.McpTools;
+using McpChannelVoice.Services;
+using McpChannelVoice.Settings;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+public static class ConfigModule
+{
+    public static VoiceSettings GetSettings(this WebApplicationBuilder builder)
+    {
+        builder.Configuration
+            .AddEnvironmentVariables()
+            .AddUserSecrets<Program>(optional: true);
+        return builder.Configuration.GetSection("Voice").Get<VoiceSettings>()
+               ?? throw new InvalidOperationException("Voice settings missing");
+    }
+
+    public static IServiceCollection ConfigureChannel(this IServiceCollection services, VoiceSettings settings)
+    {
+        services.AddSingleton(settings);
+        services.AddSingleton<SatelliteRegistry>();
+        services.AddSingleton<ChannelNotificationEmitter>();
+
+        services.AddMcpServer()
+            .WithHttpTransport(opt =>
+            {
+                opt.RunSessionHandler = async (ctx, server, ct) =>
+                {
+                    var emitter = ctx.Services!.GetRequiredService<ChannelNotificationEmitter>();
+                    emitter.RegisterSession(ctx.SessionId, server);
+                    try
+                    {
+                        await server.RunAsync(ct);
+                    }
+                    finally
+                    {
+                        emitter.UnregisterSession(ctx.SessionId);
+                    }
+                };
+            })
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>();
+
+        return services;
+    }
+}
+```
+
+> If the `RunSessionHandler` shape differs in the installed `ModelContextProtocol.AspNetCore` version, copy the exact pattern from `McpChannelTelegram`.
+
+- [ ] **Step 2: Rewrite Program.cs**
+
+```csharp
+// McpChannelVoice/Program.cs
+using McpChannelVoice.Modules;
+
+var builder = WebApplication.CreateBuilder(args);
+var settings = builder.GetSettings();
+builder.Services.ConfigureChannel(settings);
+
+var app = builder.Build();
+app.MapMcp("/mcp");
+app.Run();
+```
+
+- [ ] **Step 3: Build**
+
+Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
+Expected: Build succeeded.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add McpChannelVoice/Modules McpChannelVoice/Program.cs
+git commit -m "feat(voice): DI wiring + MCP HTTP transport"
+```
+
+---
+
+### Task 1.7: Dockerfile
+
+**Files:**
+- Create: `McpChannelVoice/Dockerfile`
+
+> **Before:** Read `McpChannelTelegram/Dockerfile`. Copy it verbatim; only swap project name occurrences.
+
+- [ ] **Step 1: Write Dockerfile**
+
+```dockerfile
+# McpChannelVoice/Dockerfile
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+WORKDIR /app
+EXPOSE 8080
+EXPOSE 10700
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY ["McpChannelVoice/McpChannelVoice.csproj", "McpChannelVoice/"]
+COPY ["Domain/Domain.csproj", "Domain/"]
+COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
+RUN dotnet restore "McpChannelVoice/McpChannelVoice.csproj"
+COPY . .
+WORKDIR "/src/McpChannelVoice"
+RUN dotnet publish "McpChannelVoice.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+FROM base AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet", "McpChannelVoice.dll"]
+```
+
+- [ ] **Step 2: Build the image locally to confirm**
+
+Run: `docker build -f McpChannelVoice/Dockerfile -t mcp-channel-voice:dev .`
+Expected: image builds.
 
 - [ ] **Step 3: Commit**
 
-Run: `git add Domain/Contracts/ISpeechToText.cs Domain/Contracts/ITextToSpeech.cs`
-Run: `git commit -m "feat(voice): add ISpeechToText and ITextToSpeech contracts"`
+```bash
+git add McpChannelVoice/Dockerfile
+git commit -m "chore(voice): Dockerfile"
+```
 
-### Task 2.3: Wyoming protocol primitives
+---
 
-The Wyoming protocol (https://github.com/rhasspy/wyoming) frames events as a JSON header line followed by optional binary data and payload sections. The header indicates `data_length` and `payload_length`. We only need the subset required for `info`, `audio-start`, `audio-chunk`, `audio-stop`, `transcribe`, `transcript`, `synthesize`, `run-satellite`, `detect`, `detection`.
+### Task 1.8: Wire mcp-channel-voice into docker-compose
 
 **Files:**
-- Create: `Infrastructure/Clients/Voice/Wyoming/WyomingEvent.cs`
-- Create: `Infrastructure/Clients/Voice/Wyoming/WyomingProtocol.cs`
-- Create: `Tests/Unit/Infrastructure/Voice/WyomingProtocolTests.cs`
+- Modify: `DockerCompose/docker-compose.yml`
+- Modify: `DockerCompose/.env`
 
-- [ ] **Step 1: Write the failing tests**
+> **Before:** Read the `mcp-channel-telegram` block in `docker-compose.yml` and the `agent` service's `ChannelEndpoints` env. Add a `mcp-channel-voice` block analogously.
+
+- [ ] **Step 1: Add the service**
+
+Append to `DockerCompose/docker-compose.yml`:
+
+```yaml
+mcp-channel-voice:
+  image: mcp-channel-voice:latest
+  container_name: mcp-channel-voice
+  build:
+    context: ${REPOSITORY_PATH}
+    dockerfile: McpChannelVoice/Dockerfile
+  restart: unless-stopped
+  ports:
+    - "5010:8080"
+    - "10700:10700"
+  environment:
+    - ASPNETCORE_URLS=http://+:8080
+    - Voice__Announce__Token=${ANNOUNCE_TOKEN}
+    - OPENAI_API_KEY=${OPENAI_API_KEY}
+  env_file:
+    - .env
+  networks:
+    - jackbot
+  depends_on:
+    base-sdk:
+      condition: service_started
+    redis:
+      condition: service_healthy
+```
+
+- [ ] **Step 2: Add the channel endpoint to the agent service**
+
+Locate the `agent` service's `Agent__ChannelEndpoints__*` env (or `appsettings.json`-driven config) and add an entry. If endpoints come from `Agent/appsettings.json`, edit that file instead:
+
+```json
+{
+  "channelEndpoints": [
+    { "channelId": "voice", "endpoint": "http://mcp-channel-voice:8080/mcp" }
+  ]
+}
+```
+
+(Merge with existing entries; don't replace them.)
+
+- [ ] **Step 3: Add ANNOUNCE_TOKEN to .env**
+
+Append to `DockerCompose/.env`:
+
+```
+ANNOUNCE_TOKEN=changeme
+OPENAI_API_KEY=
+```
+
+- [ ] **Step 4: Bring up the stack and confirm the agent sees the channel**
+
+Run (Linux/WSL):
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent mcp-channel-voice
+docker compose -p jackbot logs --tail=80 agent | grep -i voice
+```
+
+Expected: agent log line mentioning the `voice` channel endpoint reachable.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add DockerCompose/docker-compose.yml DockerCompose/.env Agent/appsettings.json
+git commit -m "chore(voice): docker compose + channel endpoint"
+```
+
+---
+
+### Task 1.9: Heartbeat metric (voice.connected)
+
+**Files:**
+- Create: `McpChannelVoice/Services/VoiceMetricsPublisher.cs`
+- Modify: `McpChannelVoice/Modules/ConfigModule.cs` (register publisher + emit heartbeat)
+- Test: `Tests/Unit/McpChannelVoice/Services/VoiceMetricsPublisherTests.cs`
+
+- [ ] **Step 1: Write the failing test**
 
 ```csharp
-// Tests/Unit/Infrastructure/Voice/WyomingProtocolTests.cs
-using System.Text;
-using System.Text.Json;
-using Infrastructure.Clients.Voice.Wyoming;
-using Shouldly;
+// Tests/Unit/McpChannelVoice/Services/VoiceMetricsPublisherTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
 
-namespace Tests.Unit.Infrastructure.Voice;
+using global::Domain.Contracts;
+using global::Domain.DTOs.Metrics;
+using global::Domain.DTOs.Metrics.Enums;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using NSubstitute;
+using Xunit;
 
-public class WyomingProtocolTests
+public class VoiceMetricsPublisherTests
 {
     [Fact]
-    public async Task WriteAsync_HeaderOnly_ProducesNewlineDelimitedJson()
+    public async Task PublishWake_emits_event_with_dimensions()
     {
-        await using var stream = new MemoryStream();
-        var evt = new WyomingEvent("transcribe", JsonDocument.Parse("""{"language":"es"}""").RootElement, payload: null);
+        var underlying = Substitute.For<IMetricsPublisher>();
+        var pub = new VoiceMetricsPublisher(underlying);
+        await pub.PublishAsync(VoiceMetric.WakeTriggered, value: 1, dims: new Dictionary<VoiceDimension, string>
+        {
+            [VoiceDimension.SatelliteId] = "kitchen-01",
+            [VoiceDimension.Room] = "Kitchen"
+        });
 
-        await WyomingProtocol.WriteAsync(stream, evt, CancellationToken.None);
-
-        var bytes = stream.ToArray();
-        var line = Encoding.UTF8.GetString(bytes);
-        line.ShouldEndWith("\n");
-        line.ShouldContain("\"type\":\"transcribe\"");
-        line.ShouldContain("\"data\":{\"language\":\"es\"}");
-    }
-
-    [Fact]
-    public async Task WriteThenRead_WithBinaryPayload_RoundTrips()
-    {
-        await using var stream = new MemoryStream();
-        var data = JsonDocument.Parse("""{"rate":16000,"width":2,"channels":1}""").RootElement;
-        var payload = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
-        var written = new WyomingEvent("audio-chunk", data, payload);
-
-        await WyomingProtocol.WriteAsync(stream, written, CancellationToken.None);
-        stream.Position = 0;
-        var read = await WyomingProtocol.ReadAsync(stream, CancellationToken.None);
-
-        read.ShouldNotBeNull();
-        read!.Type.ShouldBe("audio-chunk");
-        read.Payload.ShouldBe(payload);
-    }
-
-    [Fact]
-    public async Task ReadAsync_EmptyStream_ReturnsNull()
-    {
-        await using var stream = new MemoryStream();
-
-        var read = await WyomingProtocol.ReadAsync(stream, CancellationToken.None);
-
-        read.ShouldBeNull();
+        await underlying.Received(1).PublishAsync(
+            Arg.Is<VoiceMetricEvent>(e =>
+                e.Metric == VoiceMetric.WakeTriggered &&
+                e.Dimensions["SatelliteId"] == "kitchen-01"),
+            Arg.Any<CancellationToken>());
     }
 }
 ```
 
-- [ ] **Step 2: Run the tests, watch them fail**
+- [ ] **Step 2: Run the test to verify it fails**
 
-Run: `dotnet test --filter "FullyQualifiedName~WyomingProtocolTests"`
-Expected: FAIL — types do not exist.
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceMetricsPublisherTests"`
+Expected: FAIL — class missing.
 
-- [ ] **Step 3: Implement WyomingEvent**
-
-```csharp
-// Infrastructure/Clients/Voice/Wyoming/WyomingEvent.cs
-using System.Text.Json;
-
-namespace Infrastructure.Clients.Voice.Wyoming;
-
-public sealed record WyomingEvent(string Type, JsonElement Data, byte[]? Payload);
-```
-
-- [ ] **Step 4: Implement WyomingProtocol**
+- [ ] **Step 3: Implement VoiceMetricsPublisher**
 
 ```csharp
-// Infrastructure/Clients/Voice/Wyoming/WyomingProtocol.cs
-using System.Buffers;
-using System.Text;
-using System.Text.Json;
+// McpChannelVoice/Services/VoiceMetricsPublisher.cs
+namespace McpChannelVoice.Services;
 
-namespace Infrastructure.Clients.Voice.Wyoming;
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 
-public static class WyomingProtocol
+public class VoiceMetricsPublisher(IMetricsPublisher underlying)
 {
-    private static readonly JsonSerializerOptions _json = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
-
-    public static async Task WriteAsync(Stream stream, WyomingEvent evt, CancellationToken ct)
+    public Task PublishAsync(
+        VoiceMetric metric,
+        double value,
+        IReadOnlyDictionary<VoiceDimension, string>? dims = null,
+        string? agentId = null,
+        string? conversationId = null,
+        CancellationToken ct = default)
     {
-        var header = new Dictionary<string, object?>
+        var ev = new VoiceMetricEvent
         {
-            ["type"] = evt.Type,
-            ["data"] = evt.Data
+            Timestamp = DateTimeOffset.UtcNow,
+            AgentId = agentId,
+            ConversationId = conversationId,
+            Metric = metric,
+            Value = value,
+            Dimensions = (dims ?? new Dictionary<VoiceDimension, string>())
+                .ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
         };
-
-        if (evt.Payload is not null)
-        {
-            header["payload_length"] = evt.Payload.Length;
-        }
-
-        var headerJson = JsonSerializer.Serialize(header, _json);
-        var headerBytes = Encoding.UTF8.GetBytes(headerJson + "\n");
-
-        await stream.WriteAsync(headerBytes, ct);
-        if (evt.Payload is { Length: > 0 } payload)
-        {
-            await stream.WriteAsync(payload, ct);
-        }
-
-        await stream.FlushAsync(ct);
+        return underlying.PublishAsync(ev, ct);
     }
+}
+```
 
-    public static async Task<WyomingEvent?> ReadAsync(Stream stream, CancellationToken ct)
+- [ ] **Step 4: Wire it in ConfigModule and emit a heartbeat at startup**
+
+Edit `McpChannelVoice/Modules/ConfigModule.cs` — extend `ConfigureChannel`:
+
+```csharp
+services.AddSingleton<VoiceMetricsPublisher>();
+services.AddHostedService<VoiceHeartbeatService>();
+```
+
+Create `McpChannelVoice/Services/VoiceHeartbeatService.cs`:
+
+```csharp
+// McpChannelVoice/Services/VoiceHeartbeatService.cs
+namespace McpChannelVoice.Services;
+
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Microsoft.Extensions.Hosting;
+
+public class VoiceHeartbeatService(IMetricsPublisher publisher, TimeProvider time) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var headerLine = await ReadLineAsync(stream, ct);
-        if (headerLine is null)
+        while (!stoppingToken.IsCancellationRequested)
         {
-            return null;
-        }
-
-        using var doc = JsonDocument.Parse(headerLine);
-        var root = doc.RootElement;
-        var type = root.GetProperty("type").GetString() ?? throw new InvalidOperationException("Wyoming event missing 'type'");
-        var data = root.TryGetProperty("data", out var dataEl)
-            ? JsonDocument.Parse(dataEl.GetRawText()).RootElement
-            : JsonDocument.Parse("{}").RootElement;
-
-        byte[]? payload = null;
-        if (root.TryGetProperty("payload_length", out var lenEl) && lenEl.TryGetInt32(out var payloadLength) && payloadLength > 0)
-        {
-            payload = new byte[payloadLength];
-            var read = 0;
-            while (read < payloadLength)
+            await publisher.PublishAsync(new HeartbeatEvent
             {
-                var n = await stream.ReadAsync(payload.AsMemory(read, payloadLength - read), ct);
-                if (n == 0) throw new EndOfStreamException("Unexpected end of Wyoming payload");
-                read += n;
-            }
-        }
-
-        return new WyomingEvent(type, data, payload);
-    }
-
-    private static async Task<string?> ReadLineAsync(Stream stream, CancellationToken ct)
-    {
-        var buffer = ArrayPool<byte>.Shared.Rent(4096);
-        try
-        {
-            var pos = 0;
-            while (true)
-            {
-                if (pos == buffer.Length)
-                {
-                    var grown = ArrayPool<byte>.Shared.Rent(buffer.Length * 2);
-                    Buffer.BlockCopy(buffer, 0, grown, 0, pos);
-                    ArrayPool<byte>.Shared.Return(buffer);
-                    buffer = grown;
-                }
-
-                var n = await stream.ReadAsync(buffer.AsMemory(pos, 1), ct);
-                if (n == 0) return pos == 0 ? null : Encoding.UTF8.GetString(buffer, 0, pos);
-                if (buffer[pos] == (byte)'\n') return Encoding.UTF8.GetString(buffer, 0, pos);
-                pos++;
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
+                Timestamp = time.GetUtcNow(),
+                Source = "voice.connected"
+            }, stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(30), time, stoppingToken);
         }
     }
 }
 ```
 
-- [ ] **Step 5: Run the tests, watch them pass**
+> If `HeartbeatEvent` requires different properties, mirror the shape used by `McpChannelTelegram`'s heartbeat (read it first).
 
-Run: `dotnet test --filter "FullyQualifiedName~WyomingProtocolTests"`
+- [ ] **Step 5: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceMetricsPublisherTests"`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
-Run: `git add Infrastructure/Clients/Voice/Wyoming Tests/Unit/Infrastructure/Voice`
-Run: `git commit -m "feat(voice): add minimal Wyoming protocol primitives (read/write event frames)"`
+```bash
+git add McpChannelVoice/Services/VoiceMetricsPublisher.cs McpChannelVoice/Services/VoiceHeartbeatService.cs McpChannelVoice/Modules/ConfigModule.cs Tests/Unit/McpChannelVoice/Services/VoiceMetricsPublisherTests.cs
+git commit -m "feat(voice): metrics publisher + heartbeat"
+```
 
-### Task 2.4: WyomingClient (outbound, talks to whisper/piper)
+---
+
+### Task 1.10: Smoke test — agent lists the voice channel
 
 **Files:**
-- Create: `Infrastructure/Clients/Voice/Wyoming/WyomingClient.cs`
-- Create: `Tests/Unit/Infrastructure/Voice/WyomingClientTests.cs`
+- (no new files; verification only)
 
-- [ ] **Step 1: Write the failing test using a TCP listener as the fake server**
+- [ ] **Step 1: Bring the stack up**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent mcp-channel-voice redis
+```
+
+- [ ] **Step 2: Verify the channel is reachable**
+
+```bash
+curl -s http://localhost:5010/mcp -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+```
+
+Expected: JSON listing `send_reply` and `request_approval` tools.
+
+- [ ] **Step 3: Verify the agent reports the channel connected**
+
+```bash
+docker compose -p jackbot logs --tail=200 agent | grep -Ei "channel.*voice"
+```
+
+Expected: log line indicating the voice channel is connected.
+
+- [ ] **Step 4: Commit (no-op marker, optional)**
+
+If anything needed fixing (e.g., missing config), commit those fixes here.
+
+---
+
+# Slice 2 — Wyoming server + STT path
+
+End state: a real `wyoming-satellite` (or desktop running it) wakes, speaks, and the agent receives the transcript as a `channel/message` with `sender` = the configured identity. No TTS reply yet.
+
+> **Wyoming protocol primer** (read once, used throughout Slice 2):
+> - Newline-delimited JSON over TCP. Each event is one line of JSON, optionally followed by binary `data` (length `data_length`) and/or binary `payload` (length `payload_length`).
+> - Event JSON shape: `{"type": "<event-type>", "data": { ... }, "data_length": 0, "payload_length": 0, "version": "1.5"}` (omit length fields when 0).
+> - Key event types we care about: `info` (handshake), `describe`, `transcribe`, `audio-start`, `audio-chunk` (payload = raw PCM), `audio-stop`, `transcript`, `synthesize`, `voice-started`, `voice-stopped`, `run-pipeline`. See https://github.com/rhasspy/wyoming for full reference.
+> - Audio chunks ship with `{"type":"audio-chunk","data":{"rate":16000,"width":2,"channels":1},"payload_length":N}\n<N raw PCM bytes>`.
+
+### Task 2.1: WyomingProtocol — frame read/write
+
+**Files:**
+- Create: `McpChannelVoice/Services/WyomingProtocol.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/WyomingProtocolTests.cs`
+
+- [ ] **Step 1: Write the failing test**
 
 ```csharp
-// Tests/Unit/Infrastructure/Voice/WyomingClientTests.cs
+// Tests/Unit/McpChannelVoice/Services/WyomingProtocolTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using System.Text;
+using System.Text.Json;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+public class WyomingProtocolTests
+{
+    [Fact]
+    public async Task Writes_event_with_no_payload_as_single_json_line()
+    {
+        using var ms = new MemoryStream();
+        await WyomingProtocol.WriteEventAsync(ms, "audio-stop", data: null, payload: null, CancellationToken.None);
+        var line = Encoding.UTF8.GetString(ms.ToArray()).TrimEnd('\n');
+        var doc = JsonDocument.Parse(line);
+        doc.RootElement.GetProperty("type").GetString().Should().Be("audio-stop");
+    }
+
+    [Fact]
+    public async Task Round_trip_event_with_binary_payload()
+    {
+        using var ms = new MemoryStream();
+        var payload = new byte[] { 1, 2, 3, 4, 5 };
+        await WyomingProtocol.WriteEventAsync(ms, "audio-chunk",
+            data: new { rate = 16000, width = 2, channels = 1 }, payload: payload, CancellationToken.None);
+
+        ms.Position = 0;
+        var ev = await WyomingProtocol.ReadEventAsync(ms, CancellationToken.None);
+        ev!.Type.Should().Be("audio-chunk");
+        ev.Payload.Should().BeEquivalentTo(payload);
+        ev.Data.RootElement.GetProperty("rate").GetInt32().Should().Be(16000);
+    }
+
+    [Fact]
+    public async Task ReadEvent_returns_null_on_end_of_stream()
+    {
+        using var ms = new MemoryStream();
+        var ev = await WyomingProtocol.ReadEventAsync(ms, CancellationToken.None);
+        ev.Should().BeNull();
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingProtocolTests"`
+Expected: FAIL — class not found.
+
+- [ ] **Step 3: Implement WyomingProtocol**
+
+```csharp
+// McpChannelVoice/Services/WyomingProtocol.cs
+namespace McpChannelVoice.Services;
+
+using System.Buffers;
+using System.Text;
+using System.Text.Json;
+
+public record WyomingEvent(string Type, JsonDocument Data, byte[]? ExtraData, byte[]? Payload);
+
+public static class WyomingProtocol
+{
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = null };
+
+    public static async Task WriteEventAsync(
+        Stream stream,
+        string type,
+        object? data,
+        byte[]? payload,
+        CancellationToken ct,
+        byte[]? extraData = null)
+    {
+        var header = new Dictionary<string, object?>
+        {
+            ["type"] = type,
+            ["data"] = data ?? new { },
+            ["data_length"] = extraData?.Length ?? 0,
+            ["payload_length"] = payload?.Length ?? 0,
+            ["version"] = "1.5"
+        };
+        var json = JsonSerializer.Serialize(header, JsonOpts);
+        var line = Encoding.UTF8.GetBytes(json + "\n");
+        await stream.WriteAsync(line, ct);
+        if (extraData is { Length: > 0 }) await stream.WriteAsync(extraData, ct);
+        if (payload is { Length: > 0 }) await stream.WriteAsync(payload, ct);
+        await stream.FlushAsync(ct);
+    }
+
+    public static async Task<WyomingEvent?> ReadEventAsync(Stream stream, CancellationToken ct)
+    {
+        var line = await ReadLineAsync(stream, ct);
+        if (line is null) return null;
+
+        var doc = JsonDocument.Parse(line);
+        var root = doc.RootElement;
+        var type = root.GetProperty("type").GetString() ?? throw new InvalidOperationException("Wyoming event missing type");
+        var dataLen = root.TryGetProperty("data_length", out var dl) ? dl.GetInt32() : 0;
+        var payloadLen = root.TryGetProperty("payload_length", out var pl) ? pl.GetInt32() : 0;
+
+        var extra = dataLen > 0 ? await ReadExactAsync(stream, dataLen, ct) : null;
+        var payload = payloadLen > 0 ? await ReadExactAsync(stream, payloadLen, ct) : null;
+
+        var dataDoc = root.TryGetProperty("data", out var d)
+            ? JsonDocument.Parse(d.GetRawText())
+            : JsonDocument.Parse("{}");
+        return new WyomingEvent(type, dataDoc, extra, payload);
+    }
+
+    private static async Task<string?> ReadLineAsync(Stream stream, CancellationToken ct)
+    {
+        var buffer = new MemoryStream();
+        var one = new byte[1];
+        while (true)
+        {
+            var read = await stream.ReadAsync(one.AsMemory(0, 1), ct);
+            if (read == 0) return buffer.Length == 0 ? null : Encoding.UTF8.GetString(buffer.ToArray());
+            if (one[0] == (byte)'\n') return Encoding.UTF8.GetString(buffer.ToArray());
+            buffer.WriteByte(one[0]);
+        }
+    }
+
+    private static async Task<byte[]> ReadExactAsync(Stream stream, int count, CancellationToken ct)
+    {
+        var buf = new byte[count];
+        var off = 0;
+        while (off < count)
+        {
+            var n = await stream.ReadAsync(buf.AsMemory(off, count - off), ct);
+            if (n == 0) throw new EndOfStreamException("Wyoming stream ended mid-payload");
+            off += n;
+        }
+        return buf;
+    }
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingProtocolTests"`
+Expected: 3 tests passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/WyomingProtocol.cs Tests/Unit/McpChannelVoice/Services/WyomingProtocolTests.cs
+git commit -m "feat(voice): Wyoming protocol framer"
+```
+
+---
+
+### Task 2.2: WyomingClient — outbound TCP client
+
+**Files:**
+- Create: `McpChannelVoice/Services/WyomingClient.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/WyomingClientTests.cs`
+
+This is the thin client used by `WyomingSpeechToText` and `WyomingTextToSpeech` to talk to the whisper/piper containers. Wraps a `TcpClient` and exposes `SendEventAsync` / `ReadEventAsync`.
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/WyomingClientTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
 using System.Net;
 using System.Net.Sockets;
-using System.Text.Json;
-using Infrastructure.Clients.Voice.Wyoming;
-using Shouldly;
-
-namespace Tests.Unit.Infrastructure.Voice;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
 
 public class WyomingClientTests
 {
     [Fact]
-    public async Task SendAndReceive_RoundTripsThroughLocalListener()
+    public async Task Round_trips_an_event_to_a_loopback_echo_server()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var serverTask = Task.Run(async () =>
+        {
+            using var server = await listener.AcceptTcpClientAsync();
+            await using var s = server.GetStream();
+            var ev = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+            await WyomingProtocol.WriteEventAsync(s, "echo:" + ev!.Type, data: null, payload: ev.Payload, CancellationToken.None);
+        });
+
+        await using var client = await WyomingClient.ConnectAsync("127.0.0.1", port, CancellationToken.None);
+        await client.SendEventAsync("ping", data: new { x = 1 }, payload: null, CancellationToken.None);
+        var resp = await client.ReadEventAsync(CancellationToken.None);
+        resp!.Type.Should().Be("echo:ping");
+        listener.Stop();
+        await serverTask;
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingClientTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement WyomingClient**
+
+```csharp
+// McpChannelVoice/Services/WyomingClient.cs
+namespace McpChannelVoice.Services;
+
+using System.Net.Sockets;
+
+public sealed class WyomingClient : IAsyncDisposable
+{
+    private readonly TcpClient tcp;
+    private readonly NetworkStream stream;
+
+    private WyomingClient(TcpClient tcp)
+    {
+        this.tcp = tcp;
+        stream = tcp.GetStream();
+    }
+
+    public static async Task<WyomingClient> ConnectAsync(string host, int port, CancellationToken ct)
+    {
+        var tcp = new TcpClient();
+        await tcp.ConnectAsync(host, port, ct);
+        return new WyomingClient(tcp);
+    }
+
+    public Task SendEventAsync(string type, object? data, byte[]? payload, CancellationToken ct) =>
+        WyomingProtocol.WriteEventAsync(stream, type, data, payload, ct);
+
+    public Task<WyomingEvent?> ReadEventAsync(CancellationToken ct) =>
+        WyomingProtocol.ReadEventAsync(stream, ct);
+
+    public async ValueTask DisposeAsync()
+    {
+        await stream.DisposeAsync();
+        tcp.Dispose();
+    }
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingClientTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/WyomingClient.cs Tests/Unit/McpChannelVoice/Services/WyomingClientTests.cs
+git commit -m "feat(voice): Wyoming TCP client"
+```
+
+---
+
+### Task 2.3: WyomingSpeechToText adapter
+
+**Files:**
+- Create: `Infrastructure/Clients/Voice/WyomingSpeechToText.cs`
+- Test: `Tests/Unit/McpChannelVoice/Infrastructure/WyomingSpeechToTextTests.cs`
+
+> The adapter opens a fresh Wyoming connection per call, sends `transcribe` (optionally with `language`/`name`), streams `audio-start` + N×`audio-chunk` + `audio-stop`, then reads `transcript` and returns the result. Confidence is not always provided by Whisper; default to 1.0 when absent (the channel-level `ConfidenceGate` is the place to filter on length/empty text).
+
+- [ ] **Step 1: Write the failing test (using a loopback fake server)**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Infrastructure/WyomingSpeechToTextTests.cs
+namespace Tests.Unit.McpChannelVoice.Infrastructure;
+
+using System.Net;
+using System.Net.Sockets;
+using global::Domain.DTOs.Voice;
+using global::Infrastructure.Clients.Voice;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+public class WyomingSpeechToTextTests
+{
+    [Fact]
+    public async Task Streams_audio_then_returns_transcript_text()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
-        var serverTask = Task.Run(async () =>
+        var fakeWhisper = Task.Run(async () =>
         {
             using var server = await listener.AcceptTcpClientAsync();
-            using var stream = server.GetStream();
-            var received = await WyomingProtocol.ReadAsync(stream, CancellationToken.None);
-            received.ShouldNotBeNull();
-            received!.Type.ShouldBe("transcribe");
-
-            var data = JsonDocument.Parse("""{"text":"hola","language":"es"}""").RootElement;
-            await WyomingProtocol.WriteAsync(stream, new WyomingEvent("transcript", data, null), CancellationToken.None);
+            await using var s = server.GetStream();
+            // Drain client events until audio-stop, then send transcript
+            while (true)
+            {
+                var ev = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+                if (ev is null) break;
+                if (ev.Type == "audio-stop")
+                {
+                    await WyomingProtocol.WriteEventAsync(s, "transcript",
+                        data: new { text = "hola mundo", language = "es" }, payload: null, CancellationToken.None);
+                    break;
+                }
+            }
         });
 
-        await using var client = new WyomingClient("127.0.0.1", port);
-        await client.ConnectAsync(CancellationToken.None);
-        await client.SendAsync(new WyomingEvent("transcribe", JsonDocument.Parse("""{"language":"es"}""").RootElement, null), CancellationToken.None);
-        var reply = await client.ReceiveAsync(CancellationToken.None);
-
-        reply.ShouldNotBeNull();
-        reply!.Type.ShouldBe("transcript");
-
-        await serverTask;
+        var stt = new WyomingSpeechToText(host: "127.0.0.1", port: port, model: "base");
+        async IAsyncEnumerable<AudioChunk> Frames()
+        {
+            yield return new AudioChunk(new byte[640], 16000, 1, 16);
+            yield return new AudioChunk(new byte[640], 16000, 1, 16);
+            await Task.CompletedTask;
+        }
+        var result = await stt.TranscribeAsync(Frames(), new TranscriptionOptions(Language: "es"), CancellationToken.None);
+        result.Text.Should().Be("hola mundo");
+        result.Language.Should().Be("es");
         listener.Stop();
+        await fakeWhisper;
     }
 }
 ```
 
-- [ ] **Step 2: Run, watch it fail**
+- [ ] **Step 2: Run to verify it fails**
 
-Run: `dotnet test --filter "FullyQualifiedName~WyomingClientTests"`
-Expected: FAIL — `WyomingClient` does not exist.
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingSpeechToTextTests"`
+Expected: FAIL.
 
-- [ ] **Step 3: Implement**
-
-```csharp
-// Infrastructure/Clients/Voice/Wyoming/WyomingClient.cs
-using System.Net.Sockets;
-
-namespace Infrastructure.Clients.Voice.Wyoming;
-
-public sealed class WyomingClient(string host, int port) : IAsyncDisposable
-{
-    private TcpClient? _tcp;
-    private NetworkStream? _stream;
-
-    public async Task ConnectAsync(CancellationToken ct)
-    {
-        _tcp = new TcpClient();
-        await _tcp.ConnectAsync(host, port, ct);
-        _stream = _tcp.GetStream();
-    }
-
-    public Task SendAsync(WyomingEvent evt, CancellationToken ct) =>
-        WyomingProtocol.WriteAsync(_stream ?? throw new InvalidOperationException("Not connected"), evt, ct);
-
-    public Task<WyomingEvent?> ReceiveAsync(CancellationToken ct) =>
-        WyomingProtocol.ReadAsync(_stream ?? throw new InvalidOperationException("Not connected"), ct);
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_stream is not null) await _stream.DisposeAsync();
-        _tcp?.Dispose();
-    }
-}
-```
-
-- [ ] **Step 4: Run, watch it pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~WyomingClientTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add Infrastructure/Clients/Voice/Wyoming/WyomingClient.cs Tests/Unit/Infrastructure/Voice/WyomingClientTests.cs`
-Run: `git commit -m "feat(voice): add WyomingClient with connect/send/receive"`
-
-### Task 2.5: WyomingSpeechToText adapter
-
-**Files:**
-- Create: `Infrastructure/Clients/Voice/WyomingSpeechToText.cs`
-
-- [ ] **Step 1: Implement** (no unit test — exercised end-to-end in the integration test in Task 2.10; the adapter is thin and wraps `WyomingClient`)
+- [ ] **Step 3: Implement WyomingSpeechToText**
 
 ```csharp
 // Infrastructure/Clients/Voice/WyomingSpeechToText.cs
-using System.Text.Json;
-using Domain.Contracts;
-using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice.Wyoming;
-
 namespace Infrastructure.Clients.Voice;
 
-public sealed class WyomingSpeechToText(string host, int port, string? model) : ISpeechToText
+using Domain.Contracts;
+using Domain.DTOs.Voice;
+using McpChannelVoice.Services;
+
+public class WyomingSpeechToText(string host, int port, string? model = null) : ISpeechToText
 {
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio,
         TranscriptionOptions options,
-        CancellationToken cancellationToken)
+        CancellationToken ct)
     {
-        await using var client = new WyomingClient(host, port);
-        await client.ConnectAsync(cancellationToken);
-
-        var transcribeData = JsonSerializer.SerializeToElement(new
+        await using var client = await WyomingClient.ConnectAsync(host, port, ct);
+        await client.SendEventAsync("transcribe", new
         {
-            language = options.LanguageHint,
-            name = options.ModelOverride ?? model
-        });
-        await client.SendAsync(new WyomingEvent("transcribe", transcribeData, null), cancellationToken);
+            name = options.Model ?? model,
+            language = options.Language
+        }, payload: null, ct);
 
-        var first = true;
-        long startMs = Environment.TickCount64;
-        await foreach (var chunk in audio.WithCancellation(cancellationToken))
+        await client.SendEventAsync("audio-start", new { rate = 16000, width = 2, channels = 1 }, payload: null, ct);
+        await foreach (var chunk in audio.WithCancellation(ct))
         {
-            if (first)
-            {
-                var startData = JsonSerializer.SerializeToElement(new
-                {
-                    rate = chunk.SampleRate,
-                    width = chunk.SampleWidthBytes,
-                    channels = chunk.Channels
-                });
-                await client.SendAsync(new WyomingEvent("audio-start", startData, null), cancellationToken);
-                first = false;
-            }
-
-            var chunkData = JsonSerializer.SerializeToElement(new
-            {
-                rate = chunk.SampleRate,
-                width = chunk.SampleWidthBytes,
-                channels = chunk.Channels,
-                timestamp = chunk.Timestamp.ToUnixTimeMilliseconds()
-            });
-            await client.SendAsync(new WyomingEvent("audio-chunk", chunkData, chunk.Pcm), cancellationToken);
+            await client.SendEventAsync("audio-chunk",
+                new { rate = chunk.SampleRate, width = chunk.BitsPerSample / 8, channels = chunk.Channels },
+                payload: chunk.Data,
+                ct);
         }
-
-        await client.SendAsync(
-            new WyomingEvent("audio-stop", JsonDocument.Parse("{}").RootElement, null),
-            cancellationToken);
+        await client.SendEventAsync("audio-stop", data: null, payload: null, ct);
 
         while (true)
         {
-            var evt = await client.ReceiveAsync(cancellationToken)
-                ?? throw new InvalidOperationException("Wyoming connection closed before transcript");
-            if (evt.Type == "transcript")
-            {
-                var text = evt.Data.GetProperty("text").GetString() ?? string.Empty;
-                var language = evt.Data.TryGetProperty("language", out var l) ? l.GetString() : null;
-                var confidence = evt.Data.TryGetProperty("confidence", out var c) ? c.GetDouble() : 1.0;
-                return new TranscriptionResult(text, language, confidence, Environment.TickCount64 - startMs);
-            }
+            var ev = await client.ReadEventAsync(ct);
+            if (ev is null) throw new InvalidOperationException("Wyoming STT closed before transcript");
+            if (ev.Type != "transcript") continue;
+            var text = ev.Data.RootElement.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+            var language = ev.Data.RootElement.TryGetProperty("language", out var l) ? l.GetString() : null;
+            return new TranscriptionResult(text, language, Confidence: 1.0);
         }
     }
 }
 ```
 
-- [ ] **Step 2: Build**
+> **Project reference:** The adapter lives in `Infrastructure` but uses `WyomingClient` from `McpChannelVoice`. Avoid the cycle by either (a) moving `WyomingClient` + `WyomingProtocol` to `Infrastructure/Clients/Voice/Wyoming/` (preferred) — do this now if the build fails. If you do, update the namespaces and the prior tests' usings, and re-run.
 
-Run: `dotnet build Infrastructure/Infrastructure.csproj`
-Expected: build succeeds.
+- [ ] **Step 4: Run the test to verify it passes**
 
-- [ ] **Step 3: Commit**
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingSpeechToTextTests"`
+Expected: PASS.
 
-Run: `git add Infrastructure/Clients/Voice/WyomingSpeechToText.cs`
-Run: `git commit -m "feat(voice): add WyomingSpeechToText adapter"`
+- [ ] **Step 5: Commit**
 
-### Task 2.6: VoiceUtteranceEvent and metric publisher
+```bash
+git add Infrastructure/Clients/Voice/WyomingSpeechToText.cs Tests/Unit/McpChannelVoice/Infrastructure/WyomingSpeechToTextTests.cs
+git commit -m "feat(voice): WyomingSpeechToText adapter"
+```
+
+---
+
+### Task 2.4: ConfidenceGate
 
 **Files:**
-- Create: `Domain/DTOs/Metrics/VoiceUtteranceEvent.cs`
-- Modify: `Domain/DTOs/Metrics/MetricEvent.cs`
+- Create: `McpChannelVoice/Services/ConfidenceGate.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/ConfidenceGateTests.cs`
 
-- [ ] **Step 1: Add the new event record**
+- [ ] **Step 1: Write the failing test**
 
 ```csharp
-// Domain/DTOs/Metrics/VoiceUtteranceEvent.cs
-namespace Domain.DTOs.Metrics;
+// Tests/Unit/McpChannelVoice/Services/ConfidenceGateTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
 
-public record VoiceUtteranceEvent : MetricEvent
+using global::Domain.DTOs.Voice;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+public class ConfidenceGateTests
 {
-    public required string SatelliteId { get; init; }
-    public required string Room { get; init; }
-    public required string Identity { get; init; }
-    public required string SttProvider { get; init; }
-    public string? SttModel { get; init; }
-    public string? TtsProvider { get; init; }
-    public string? TtsVoice { get; init; }
-    public string? Language { get; init; }
-    public required double AudioSeconds { get; init; }
-    public required long SttLatencyMs { get; init; }
-    public long? TtsLatencyMs { get; init; }
-    public long? WakeToFirstAudioMs { get; init; }
-    public required bool Success { get; init; }
-    public string? ErrorType { get; init; }
-    public string? ErrorMessage { get; init; }
-    public string? ApprovalOutcome { get; init; }
+    private static readonly ConfidenceGate Gate = new(threshold: 0.4);
+
+    [Fact]
+    public void Drops_empty_text() => Gate.ShouldDispatch(new TranscriptionResult("", "es", 0.95)).Should().BeFalse();
+
+    [Fact]
+    public void Drops_whitespace_only() => Gate.ShouldDispatch(new TranscriptionResult("   ", "es", 0.95)).Should().BeFalse();
+
+    [Fact]
+    public void Drops_below_threshold() => Gate.ShouldDispatch(new TranscriptionResult("hola", "es", 0.2)).Should().BeFalse();
+
+    [Fact]
+    public void Passes_above_threshold() => Gate.ShouldDispatch(new TranscriptionResult("hola", "es", 0.9)).Should().BeTrue();
 }
 ```
 
-- [ ] **Step 2: Register the polymorphic discriminator**
+- [ ] **Step 2: Run to verify it fails**
 
-Edit `Domain/DTOs/Metrics/MetricEvent.cs`. Add a new `[JsonDerivedType]` line in the existing list:
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ConfidenceGateTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
 
 ```csharp
-[JsonDerivedType(typeof(VoiceUtteranceEvent), "voice_utterance")]
+// McpChannelVoice/Services/ConfidenceGate.cs
+namespace McpChannelVoice.Services;
+
+using Domain.DTOs.Voice;
+
+public class ConfidenceGate(double threshold)
+{
+    public bool ShouldDispatch(TranscriptionResult result) =>
+        !string.IsNullOrWhiteSpace(result.Text) && result.Confidence >= threshold;
+}
 ```
 
-- [ ] **Step 3: Build**
+- [ ] **Step 4: Run to verify it passes**
 
-Run: `dotnet build Domain/Domain.csproj`
-Expected: build succeeds.
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ConfidenceGateTests"`
+Expected: 4 passed.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
-Run: `git add Domain/DTOs/Metrics/VoiceUtteranceEvent.cs Domain/DTOs/Metrics/MetricEvent.cs`
-Run: `git commit -m "feat(voice): add VoiceUtteranceEvent metric type"`
+```bash
+git add McpChannelVoice/Services/ConfidenceGate.cs Tests/Unit/McpChannelVoice/Services/ConfidenceGateTests.cs
+git commit -m "feat(voice): confidence gate"
+```
 
-### Task 2.7: SatelliteSession + SatelliteSessionRegistry
+---
 
-A `SatelliteSession` represents one in-flight wake-to-reply turn. It owns the open Wyoming network stream so the channel can stream TTS audio back without re-connecting.
+### Task 2.5: SatelliteSession — wake → capture → STT → dispatch
 
 **Files:**
 - Create: `McpChannelVoice/Services/SatelliteSession.cs`
-- Create: `McpChannelVoice/Services/SatelliteSessionRegistry.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs`
 
-- [ ] **Step 1: Implement**
+The `SatelliteSession` owns one Wyoming TCP connection from one satellite. It runs a loop:
+1. Read events until `audio-start` (means wake fired + capture started).
+2. Stream subsequent `audio-chunk` payloads into an `IAsyncEnumerable<AudioChunk>` consumed by `ISpeechToText`.
+3. On `audio-stop`, await transcription, apply `ConfidenceGate`, dispatch a `channel/message` notification via the emitter, publish metrics.
+4. Loop (the connection stays open across utterances).
+
+- [ ] **Step 1: Write the failing test (uses a fake `ISpeechToText`)**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using System.Net;
+using System.Net.Sockets;
+using global::Domain.Contracts;
+using global::Domain.DTOs.Voice;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class SatelliteSessionTests
+{
+    [Fact]
+    public async Task End_to_end_one_utterance_dispatches_notification_with_identity()
+    {
+        var registry = new SatelliteRegistry(new VoiceSettings
+        {
+            Satellites = new Dictionary<string, SatelliteSettings>
+            {
+                ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis" }
+            }
+        });
+
+        var stt = Substitute.For<ISpeechToText>();
+        stt.TranscribeAsync(Arg.Any<IAsyncEnumerable<AudioChunk>>(), Arg.Any<TranscriptionOptions>(), Arg.Any<CancellationToken>())
+            .Returns(new TranscriptionResult("turn the kitchen light on", "en", 0.9));
+
+        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
+        var metrics = new VoiceMetricsPublisher(Substitute.For<IMetricsPublisher>());
+        var gate = new ConfidenceGate(0.4);
+
+        // Fake satellite TCP socket
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var clientTcp = new TcpClient();
+        await clientTcp.ConnectAsync("127.0.0.1", port);
+        var serverSocket = await listener.AcceptTcpClientAsync();
+
+        var session = new SatelliteSession(
+            satelliteId: "kitchen-01",
+            connection: serverSocket,
+            registry, emitter, stt, gate, metrics,
+            logger: NullLogger<SatelliteSession>.Instance);
+
+        var runTask = session.RunAsync(CancellationToken.None);
+
+        await using (var s = clientTcp.GetStream())
+        {
+            await WyomingProtocol.WriteEventAsync(s, "audio-start", new { rate = 16000, width = 2, channels = 1 }, null, CancellationToken.None);
+            await WyomingProtocol.WriteEventAsync(s, "audio-chunk", new { rate = 16000, width = 2, channels = 1 }, new byte[640], CancellationToken.None);
+            await WyomingProtocol.WriteEventAsync(s, "audio-stop", null, null, CancellationToken.None);
+            clientTcp.Close();
+        }
+        await runTask;
+
+        session.LastDispatchedSender.Should().Be("household");
+        session.LastDispatchedText.Should().Be("turn the kitchen light on");
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionTests"`
+Expected: FAIL — class not found.
+
+- [ ] **Step 3: Implement SatelliteSession**
 
 ```csharp
 // McpChannelVoice/Services/SatelliteSession.cs
-using System.Net.Sockets;
-
 namespace McpChannelVoice.Services;
 
-public sealed class SatelliteSession(string satelliteId, NetworkStream stream) : IAsyncDisposable
-{
-    public string SatelliteId { get; } = satelliteId;
-    public NetworkStream Stream { get; } = stream;
-    public DateTimeOffset OpenedAt { get; } = DateTimeOffset.UtcNow;
-
-    public async ValueTask DisposeAsync()
-    {
-        await Stream.DisposeAsync();
-    }
-}
-```
-
-```csharp
-// McpChannelVoice/Services/SatelliteSessionRegistry.cs
-using System.Collections.Concurrent;
-
-namespace McpChannelVoice.Services;
-
-public sealed class SatelliteSessionRegistry
-{
-    private readonly ConcurrentDictionary<string, SatelliteSession> _sessions = new();
-
-    public void Register(SatelliteSession session) => _sessions[session.SatelliteId] = session;
-    public void Unregister(string satelliteId) => _sessions.TryRemove(satelliteId, out _);
-    public SatelliteSession? Get(string satelliteId) => _sessions.TryGetValue(satelliteId, out var s) ? s : null;
-}
-```
-
-- [ ] **Step 2: Build**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add McpChannelVoice/Services/SatelliteSession.cs McpChannelVoice/Services/SatelliteSessionRegistry.cs`
-Run: `git commit -m "feat(voice): add SatelliteSession + registry for active satellite connections"`
-
-### Task 2.8: WyomingPipelineHandler
-
-The per-connection state machine. Consumes Wyoming events from one inbound satellite connection: handshake (`info` / `run-satellite`) → `audio-start` → N x `audio-chunk` → `audio-stop` → run STT → emit `channel/message` → keep the connection open for the reply.
-
-**Files:**
-- Create: `McpChannelVoice/Services/WyomingPipelineHandler.cs`
-
-- [ ] **Step 1: Implement**
-
-```csharp
-// McpChannelVoice/Services/WyomingPipelineHandler.cs
 using System.Net.Sockets;
-using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
-using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice.Wyoming;
-using McpChannelVoice.Settings;
+using Microsoft.Extensions.Logging;
 
-namespace McpChannelVoice.Services;
-
-public sealed class WyomingPipelineHandler(
+public class SatelliteSession(
+    string satelliteId,
+    TcpClient connection,
     SatelliteRegistry registry,
-    SatelliteSessionRegistry sessions,
     ChannelNotificationEmitter emitter,
     ISpeechToText stt,
-    VoiceSettings voiceSettings,
-    IMetricsPublisher metrics,
-    ILogger<WyomingPipelineHandler> logger,
-    TimeProvider clock)
+    ConfidenceGate gate,
+    VoiceMetricsPublisher metrics,
+    ILogger<SatelliteSession> logger)
 {
-    public async Task HandleAsync(TcpClient tcp, CancellationToken ct)
+    public string SatelliteId => satelliteId;
+    public string? LastDispatchedSender { get; private set; }
+    public string? LastDispatchedText { get; private set; }
+
+    public async Task RunAsync(CancellationToken ct)
     {
-        await using var stream = tcp.GetStream();
-        string? satelliteId = null;
-        SatelliteSession? session = null;
+        var settings = registry.Lookup(satelliteId)
+            ?? throw new InvalidOperationException($"Unknown satellite {satelliteId}");
+        await using var stream = connection.GetStream();
 
-        try
+        while (!ct.IsCancellationRequested)
         {
-            while (!ct.IsCancellationRequested)
+            var first = await SafeReadAsync(stream, ct);
+            if (first is null) return;
+
+            switch (first.Type)
             {
-                var evt = await WyomingProtocol.ReadAsync(stream, ct);
-                if (evt is null) return;
-
-                switch (evt.Type)
-                {
-                    case "info":
-                    case "run-satellite":
-                        satelliteId = evt.Data.TryGetProperty("name", out var nameEl)
-                            ? nameEl.GetString()
-                            : null;
-                        if (satelliteId is null || !registry.IsRegistered(satelliteId))
-                        {
-                            logger.LogWarning("Rejecting unknown satellite '{SatelliteId}'", satelliteId ?? "<null>");
-                            return;
-                        }
-                        session = new SatelliteSession(satelliteId, stream);
-                        sessions.Register(session);
-                        logger.LogInformation("Satellite '{SatelliteId}' connected", satelliteId);
-                        break;
-
-                    case "audio-start":
-                        if (session is null) return;
-                        await RunUtteranceAsync(session, stream, ct);
-                        break;
-                }
+                case "audio-start":
+                    await HandleUtteranceAsync(stream, settings.Identity, settings.Room, ct);
+                    break;
+                case "info":
+                case "describe":
+                    // No-op; could send back our capabilities.
+                    break;
+                default:
+                    logger.LogDebug("Ignoring satellite event {Type}", first.Type);
+                    break;
             }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Wyoming connection error for satellite '{SatelliteId}'", satelliteId);
-        }
-        finally
-        {
-            if (satelliteId is not null) sessions.Unregister(satelliteId);
         }
     }
 
-    private async Task RunUtteranceAsync(SatelliteSession session, NetworkStream stream, CancellationToken ct)
+    private async Task HandleUtteranceAsync(NetworkStream stream, string identity, string room, CancellationToken ct)
     {
-        var config = registry.Resolve(session.SatelliteId)!;
-        var startMs = clock.GetTimestamp();
-        var audio = Channel.CreateUnbounded<AudioChunk>();
-        var producerTask = Task.Run(async () =>
+        await metrics.PublishAsync(VoiceMetric.WakeTriggered, 1, new Dictionary<VoiceDimension, string>
+        {
+            [VoiceDimension.SatelliteId] = satelliteId,
+            [VoiceDimension.Room] = room,
+            [VoiceDimension.Identity] = identity
+        }, ct: ct);
+
+        var chunks = Channel.CreateUnbounded<AudioChunk>();
+        var pumpTask = Task.Run(async () =>
         {
             try
             {
                 while (true)
                 {
-                    var evt = await WyomingProtocol.ReadAsync(stream, ct);
-                    if (evt is null || evt.Type == "audio-stop") break;
-                    if (evt.Type != "audio-chunk" || evt.Payload is null) continue;
-
-                    audio.Writer.TryWrite(new AudioChunk(
-                        evt.Payload,
-                        evt.Data.GetProperty("rate").GetInt32(),
-                        evt.Data.TryGetProperty("width", out var w) ? w.GetInt32() : 2,
-                        evt.Data.TryGetProperty("channels", out var c) ? c.GetInt32() : 1,
-                        DateTimeOffset.UtcNow));
+                    var ev = await WyomingProtocol.ReadEventAsync(stream, ct);
+                    if (ev is null || ev.Type == "audio-stop") break;
+                    if (ev.Type == "audio-chunk" && ev.Payload is { Length: > 0 })
+                    {
+                        chunks.Writer.TryWrite(new AudioChunk(ev.Payload, 16000, 1, 16));
+                    }
                 }
             }
             finally
             {
-                audio.Writer.TryComplete();
+                chunks.Writer.TryComplete();
             }
         }, ct);
 
-        var transcript = await stt.TranscribeAsync(audio.Reader.ReadAllAsync(ct),
-            new TranscriptionOptions(LanguageHint: null), ct);
-        await producerTask;
-
-        var elapsedMs = (long)clock.GetElapsedTime(startMs).TotalMilliseconds;
-        var passedThreshold = transcript.Confidence >= voiceSettings.ConfidenceThreshold
-                              && !string.IsNullOrWhiteSpace(transcript.Text);
-
-        await metrics.PublishAsync(new VoiceUtteranceEvent
+        TranscriptionResult result;
+        try
         {
-            SatelliteId = session.SatelliteId,
-            Room = config.Room,
-            Identity = config.Identity,
-            SttProvider = voiceSettings.Stt.Provider,
-            SttModel = voiceSettings.Stt.Wyoming?.Model,
-            TtsProvider = voiceSettings.Tts.Provider,
-            TtsVoice = voiceSettings.Tts.Wyoming?.Voice,
-            Language = transcript.Language,
-            AudioSeconds = 0, // populated when AudioChunk durations are tracked, slice 3
-            SttLatencyMs = elapsedMs,
-            Success = passedThreshold,
-            ErrorType = passedThreshold ? null : "DroppedLowConfidence",
-            ConversationId = session.SatelliteId
-        }, ct);
-
-        if (!passedThreshold)
+            result = await stt.TranscribeAsync(chunks.Reader.ReadAllAsync(ct), new TranscriptionOptions(), ct);
+        }
+        catch (Exception ex)
         {
-            logger.LogInformation("Dropped low-confidence transcript from {SatelliteId}", session.SatelliteId);
+            logger.LogWarning(ex, "STT failed for {SatelliteId}", satelliteId);
+            await metrics.PublishAsync(VoiceMetric.SttError, 1, new Dictionary<VoiceDimension, string>
+            {
+                [VoiceDimension.SatelliteId] = satelliteId
+            }, ct: ct);
+            await pumpTask;
+            return;
+        }
+        await pumpTask;
+
+        if (!gate.ShouldDispatch(result))
+        {
+            logger.LogDebug("Dropping low-confidence/empty transcript from {SatelliteId}", satelliteId);
             return;
         }
 
+        LastDispatchedSender = identity;
+        LastDispatchedText = result.Text;
+        await metrics.PublishAsync(VoiceMetric.UtteranceTranscribed, 1, new Dictionary<VoiceDimension, string>
+        {
+            [VoiceDimension.SatelliteId] = satelliteId,
+            [VoiceDimension.Room] = room,
+            [VoiceDimension.Identity] = identity,
+            [VoiceDimension.Language] = result.Language ?? "unknown"
+        }, ct: ct);
         await emitter.EmitMessageNotificationAsync(
-            conversationId: session.SatelliteId,
-            sender: config.Identity,
-            content: transcript.Text,
+            conversationId: satelliteId,
+            sender: identity,
+            content: result.Text,
             agentId: "voice",
-            metadata: new Dictionary<string, string>
-            {
-                ["room"] = config.Room,
-                ["language"] = transcript.Language ?? string.Empty
-            },
-            cancellationToken: ct);
+            room: room,
+            ct: ct);
+    }
+
+    private static async Task<WyomingEvent?> SafeReadAsync(NetworkStream s, CancellationToken ct)
+    {
+        try { return await WyomingProtocol.ReadEventAsync(s, ct); }
+        catch (IOException) { return null; }
+        catch (ObjectDisposedException) { return null; }
     }
 }
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/SatelliteSession.cs Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs
+git commit -m "feat(voice): satellite session — wake to dispatch"
+```
+
+---
+
+### Task 2.6: WyomingServer — accept satellite connections
+
+**Files:**
+- Create: `McpChannelVoice/Services/WyomingServer.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/WyomingServerTests.cs`
+
+The `WyomingServer` runs as a `BackgroundService`. It binds to the configured host/port, accepts TCP connections, reads the inbound `info`/`describe` handshake to extract the satellite id, validates it against the registry, and hands off to a new `SatelliteSession.RunAsync`.
+
+> **Satellite id source:** `wyoming-satellite` includes `name` in its `info` event under `data.satellite.name`. If the handshake does not carry an id, the channel rejects the connection. (See https://github.com/rhasspy/wyoming-satellite README.)
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/WyomingServerTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using System.Net.Sockets;
+using global::Domain.Contracts;
+using global::Domain.DTOs.Voice;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class WyomingServerTests
+{
+    [Fact]
+    public async Task Rejects_connection_with_unknown_satellite_name()
+    {
+        var registry = new SatelliteRegistry(new VoiceSettings
+        {
+            Satellites = new Dictionary<string, SatelliteSettings>
+            {
+                ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis" }
+            }
+        });
+        var stt = Substitute.For<ISpeechToText>();
+        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
+        var metrics = new VoiceMetricsPublisher(Substitute.For<IMetricsPublisher>());
+        var gate = new ConfidenceGate(0.4);
+
+        var server = new WyomingServer("127.0.0.1", 0, registry, stt, emitter, gate, metrics,
+            sessionLogger: NullLogger<SatelliteSession>.Instance,
+            logger: NullLogger<WyomingServer>.Instance);
+
+        await server.StartAsync(CancellationToken.None);
+
+        using var client = new TcpClient();
+        await client.ConnectAsync("127.0.0.1", server.BoundPort);
+        await using var s = client.GetStream();
+        await WyomingProtocol.WriteEventAsync(s,
+            "info",
+            data: new { satellite = new { name = "ghost" } },
+            payload: null,
+            CancellationToken.None);
+
+        // Server closes the socket. Reading returns null/EOF.
+        var ev = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+        ev.Should().BeNull();
+
+        await server.StopAsync(CancellationToken.None);
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingServerTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement WyomingServer**
+
+```csharp
+// McpChannelVoice/Services/WyomingServer.cs
+namespace McpChannelVoice.Services;
+
+using System.Net;
+using System.Net.Sockets;
+using Domain.Contracts;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+public class WyomingServer(
+    string host,
+    int port,
+    SatelliteRegistry registry,
+    ISpeechToText stt,
+    ChannelNotificationEmitter emitter,
+    ConfidenceGate gate,
+    VoiceMetricsPublisher metrics,
+    ILogger<SatelliteSession> sessionLogger,
+    ILogger<WyomingServer> logger) : BackgroundService
+{
+    private TcpListener? listener;
+    public int BoundPort { get; private set; }
+
+    public override Task StartAsync(CancellationToken ct)
+    {
+        listener = new TcpListener(IPAddress.Parse(host), port);
+        listener.Start();
+        BoundPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+        logger.LogInformation("Wyoming server listening on {Host}:{Port}", host, BoundPort);
+        return base.StartAsync(ct);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            TcpClient client;
+            try { client = await listener!.AcceptTcpClientAsync(ct); }
+            catch (OperationCanceledException) { return; }
+
+            _ = Task.Run(() => HandleAsync(client, ct), ct);
+        }
+    }
+
+    private async Task HandleAsync(TcpClient client, CancellationToken ct)
+    {
+        try
+        {
+            await using var s = client.GetStream();
+            var info = await WyomingProtocol.ReadEventAsync(s, ct);
+            if (info is null) return;
+            var satelliteId = ExtractSatelliteId(info);
+            if (satelliteId is null || !registry.IsKnown(satelliteId))
+            {
+                logger.LogWarning("Rejecting unknown satellite {SatelliteId}", satelliteId ?? "<missing>");
+                client.Close();
+                return;
+            }
+
+            var session = new SatelliteSession(satelliteId, client, registry, emitter, stt, gate, metrics, sessionLogger);
+            await session.RunAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Satellite connection terminated");
+        }
+        finally
+        {
+            client.Dispose();
+        }
+    }
+
+    private static string? ExtractSatelliteId(WyomingEvent info)
+    {
+        var root = info.Data.RootElement;
+        return root.TryGetProperty("satellite", out var sat) && sat.TryGetProperty("name", out var n)
+            ? n.GetString()
+            : null;
+    }
+
+    public override async Task StopAsync(CancellationToken ct)
+    {
+        listener?.Stop();
+        await base.StopAsync(ct);
+    }
+}
+```
+
+- [ ] **Step 4: Register the server in ConfigModule**
+
+Edit `McpChannelVoice/Modules/ConfigModule.cs` — extend `ConfigureChannel`:
+
+```csharp
+services.AddSingleton<ConfidenceGate>(_ => new ConfidenceGate(settings.ConfidenceThreshold));
+services.AddSingleton<WyomingServer>(sp => new WyomingServer(
+    settings.WyomingServer.Host,
+    settings.WyomingServer.Port,
+    sp.GetRequiredService<SatelliteRegistry>(),
+    sp.GetRequiredService<ISpeechToText>(),
+    sp.GetRequiredService<ChannelNotificationEmitter>(),
+    sp.GetRequiredService<ConfidenceGate>(),
+    sp.GetRequiredService<VoiceMetricsPublisher>(),
+    sp.GetRequiredService<ILogger<SatelliteSession>>(),
+    sp.GetRequiredService<ILogger<WyomingServer>>()));
+services.AddHostedService(sp => sp.GetRequiredService<WyomingServer>());
+```
+
+And register the STT adapter (Slice 6 will introduce the switch; for now hard-wire Wyoming):
+
+```csharp
+services.AddSingleton<ISpeechToText>(_ => new WyomingSpeechToText(
+    settings.Stt.Wyoming!.Host,
+    settings.Stt.Wyoming!.Port,
+    settings.Stt.Wyoming!.Model));
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingServerTests"`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add McpChannelVoice/Services/WyomingServer.cs McpChannelVoice/Modules/ConfigModule.cs Tests/Unit/McpChannelVoice/Services/WyomingServerTests.cs
+git commit -m "feat(voice): Wyoming server accepts satellites and dispatches sessions"
+```
+
+---
+
+### Task 2.7: Add wyoming-whisper to docker-compose
+
+**Files:**
+- Modify: `DockerCompose/docker-compose.yml`
+
+- [ ] **Step 1: Append the service**
+
+```yaml
+wyoming-whisper:
+  image: rhasspy/wyoming-whisper:latest
+  container_name: wyoming-whisper
+  command: --model base --language es --device cpu --uri tcp://0.0.0.0:10300
+  ports:
+    - "10300:10300"
+  volumes:
+    - whisper-data:/data
+  restart: unless-stopped
+  networks:
+    - jackbot
+
+# under top-level `volumes:`
+whisper-data:
+```
+
+- [ ] **Step 2: Make `mcp-channel-voice` depend on it**
+
+```yaml
+mcp-channel-voice:
+  depends_on:
+    wyoming-whisper:
+      condition: service_started
+```
+
+- [ ] **Step 3: Bring it up**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build mcp-channel-voice wyoming-whisper
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add DockerCompose/docker-compose.yml
+git commit -m "chore(voice): add wyoming-whisper service"
+```
+
+---
+
+### Task 2.8: Integration test — fake satellite end-to-end via real whisper
+
+**Files:**
+- Create: `Tests/Integration/McpChannelVoice/SttEndToEndTests.cs`
+- Create: `Tests/Integration/McpChannelVoice/Fixtures/canned-es.wav` (small WAV with "hola" recorded)
+
+> The integration suite already uses Docker via existing fixtures. Mirror that pattern. If a docker-compose fixture is needed, check `Tests/Integration/Fixtures/` for the canonical helper; otherwise the test can run against a `wyoming-whisper` container booted manually.
+
+- [ ] **Step 1: Write the integration test**
+
+```csharp
+// Tests/Integration/McpChannelVoice/SttEndToEndTests.cs
+namespace Tests.Integration.McpChannelVoice;
+
+using System.Net.Sockets;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+[Trait("Category", "Integration")]
+public class SttEndToEndTests
+{
+    [Fact(Skip = "Requires wyoming-whisper container on localhost:10300")]
+    public async Task Spoken_word_round_trips_to_transcript()
+    {
+        var bytes = await File.ReadAllBytesAsync("Fixtures/canned-es.wav");
+        // strip 44-byte WAV header → raw PCM
+        var pcm = bytes.AsMemory(44).ToArray();
+        var stt = new Infrastructure.Clients.Voice.WyomingSpeechToText("localhost", 10300, "base");
+
+        async IAsyncEnumerable<global::Domain.DTOs.Voice.AudioChunk> Frames()
+        {
+            const int frame = 1600 * 2; // 100ms @ 16kHz mono 16-bit
+            for (var i = 0; i < pcm.Length; i += frame)
+            {
+                var len = Math.Min(frame, pcm.Length - i);
+                yield return new global::Domain.DTOs.Voice.AudioChunk(pcm.AsMemory(i, len).ToArray(), 16000, 1, 16);
+                await Task.Delay(10);
+            }
+        }
+        var result = await stt.TranscribeAsync(Frames(), new global::Domain.DTOs.Voice.TranscriptionOptions("es"), CancellationToken.None);
+        result.Text.ToLowerInvariant().Should().Contain("hola");
+    }
+}
+```
+
+- [ ] **Step 2: Record a short WAV**
+
+On the host: `arecord -r 16000 -c 1 -f S16_LE -d 2 Tests/Integration/McpChannelVoice/Fixtures/canned-es.wav` and say "hola".
+If a microphone is unavailable, generate one with piper:
+
+```bash
+docker run --rm -i rhasspy/wyoming-piper:latest \
+  python3 -c "from piper import PiperVoice; v=PiperVoice.load('/usr/share/piper/voices/es_ES-davefx-medium.onnx'); v.synthesize('hola', open('/tmp/out.wav','wb'))" > Tests/Integration/McpChannelVoice/Fixtures/canned-es.wav
+```
+
+- [ ] **Step 3: Boot whisper and run (manual gate, test is `Skip`-marked)**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d wyoming-whisper
+dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SttEndToEndTests" --logger "console;verbosity=detailed"
+```
+
+Remove the `Skip` locally and verify the test passes; restore the `Skip` for CI.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add Tests/Integration/McpChannelVoice
+git commit -m "test(voice): STT integration test scaffold"
+```
+
+---
+
+### Task 2.9: Voice dashboard page — skeleton with two charts
+
+**Files:**
+- Create: `Dashboard.Client/Pages/Voice.razor`
+- Modify: `Dashboard.Client/Layout/MainLayout.razor` (add nav link)
+- Modify: `Dashboard.Client/Services/MetricsApiService.cs` (add voice methods)
+- Modify: `Observability/MetricsApiEndpoints.cs` (add voice routes)
+- Modify: `Observability/Services/MetricsQueryService.cs` (add voice grouped query)
+
+> **Before:** Open `Dashboard.Client/Pages/Tools.razor` and `Observability/MetricsApiEndpoints.cs` to copy the existing patterns exactly.
+
+- [ ] **Step 1: Add the voice grouped query to MetricsQueryService**
+
+Append to `Observability/Services/MetricsQueryService.cs`:
+
+```csharp
+public async Task<IReadOnlyDictionary<string, decimal>> GetVoiceGroupedAsync(
+    Domain.DTOs.Metrics.Enums.VoiceDimension dimension,
+    Domain.DTOs.Metrics.Enums.VoiceMetric metric,
+    DateTimeOffset from,
+    DateTimeOffset to)
+{
+    var events = await GetEventsAsync<Domain.DTOs.Metrics.VoiceMetricEvent>("metrics:voice:", from, to);
+    return events
+        .Where(e => e.Metric == metric)
+        .GroupBy(e => e.Dimensions.TryGetValue(dimension.ToString(), out var v) ? v : "(none)")
+        .ToDictionary(g => g.Key, g => (decimal)g.Sum(e => e.Value));
+}
+```
+
+- [ ] **Step 2: Add API routes**
+
+Append to `Observability/MetricsApiEndpoints.cs`:
+
+```csharp
+group.MapGet("/voice", async (MetricsQueryService q, DateTimeOffset from, DateTimeOffset to) =>
+    await q.GetEventsAsync<Domain.DTOs.Metrics.VoiceMetricEvent>("metrics:voice:", from, to));
+
+group.MapGet("/voice/grouped", async (
+    MetricsQueryService q,
+    Domain.DTOs.Metrics.Enums.VoiceDimension dimension,
+    Domain.DTOs.Metrics.Enums.VoiceMetric metric,
+    DateTimeOffset from,
+    DateTimeOffset to) =>
+        await q.GetVoiceGroupedAsync(dimension, metric, from, to));
+```
+
+- [ ] **Step 3: Add API client methods**
+
+Append to `Dashboard.Client/Services/MetricsApiService.cs`:
+
+```csharp
+public Task<IReadOnlyList<VoiceMetricEvent>> GetVoiceAsync(DateTimeOffset from, DateTimeOffset to) =>
+    GetJsonAsync<IReadOnlyList<VoiceMetricEvent>>($"/api/metrics/voice?from={from:O}&to={to:O}");
+
+public Task<IReadOnlyDictionary<string, decimal>> GetVoiceGroupedAsync(
+    VoiceDimension dimension, VoiceMetric metric, DateTimeOffset from, DateTimeOffset to) =>
+        GetJsonAsync<IReadOnlyDictionary<string, decimal>>(
+            $"/api/metrics/voice/grouped?dimension={dimension}&metric={metric}&from={from:O}&to={to:O}");
+```
+
+- [ ] **Step 4: Add Voice.razor**
+
+> Open `Dashboard.Client/Pages/Tools.razor` for the exact `DynamicChart`/`PillSelector`/`KpiCard` usage. Mirror it; pre-select `Room` and `UtteranceTranscribed` as default group/metric, plus a second chart with `SatelliteId` × `WakeToFirstAudioMs`.
+
+```razor
+@page "/voice"
+@inject MetricsApiService Api
+@inject LocalStorageService Storage
+
+<PageHeader Title="Voice" />
+
+<div class="grid grid-cols-2 gap-4 mb-6">
+    <KpiCard Title="Utterances (24h)" Value="@utterances24h" />
+    <KpiCard Title="STT errors (24h)" Value="@sttErrors24h" />
+</div>
+
+<DynamicChart Title="Utterances by room"
+              Group="@VoiceDimension.Room"
+              Metric="@VoiceMetric.UtteranceTranscribed"
+              Loader="LoadGrouped" />
+
+<DynamicChart Title="STT errors by provider+model"
+              Group="@VoiceDimension.SttProvider"
+              Metric="@VoiceMetric.SttError"
+              Loader="LoadGrouped" />
+
+@code {
+    private decimal utterances24h;
+    private decimal sttErrors24h;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var to = DateTimeOffset.UtcNow;
+        var from = to.AddHours(-24);
+        var byMetric = await Api.GetVoiceAsync(from, to);
+        utterances24h = byMetric.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed);
+        sttErrors24h = byMetric.Count(e => e.Metric == VoiceMetric.SttError);
+    }
+
+    private Task<IReadOnlyDictionary<string, decimal>> LoadGrouped(VoiceDimension d, VoiceMetric m, DateTimeOffset from, DateTimeOffset to) =>
+        Api.GetVoiceGroupedAsync(d, m, from, to);
+}
+```
+
+- [ ] **Step 5: Add nav entry**
+
+Edit `Dashboard.Client/Layout/MainLayout.razor` and add (mirroring the existing `/tools` link):
+
+```razor
+<NavLink class="nav-item" href="voice" Match="NavLinkMatch.Prefix">
+    <i class="icon-mic"></i> Voice
+</NavLink>
+```
+
+- [ ] **Step 6: Build dashboard client**
+
+Run: `dotnet build Dashboard.Client/Dashboard.Client.csproj`
+Expected: build succeeded.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Observability Dashboard.Client
+git commit -m "feat(voice): dashboard page + API for voice metrics"
+```
+
+---
+
+# Slice 3 — TTS path
+
+End state: agent reply is spoken back through the originating satellite. MVP demo.
+
+### Task 3.1: WyomingTextToSpeech adapter
+
+**Files:**
+- Create: `Infrastructure/Clients/Voice/WyomingTextToSpeech.cs`
+- Test: `Tests/Unit/McpChannelVoice/Infrastructure/WyomingTextToSpeechTests.cs`
+
+- [ ] **Step 1: Write the failing test (uses a loopback fake server)**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Infrastructure/WyomingTextToSpeechTests.cs
+namespace Tests.Unit.McpChannelVoice.Infrastructure;
+
+using System.Net;
+using System.Net.Sockets;
+using global::Domain.DTOs.Voice;
+using global::Infrastructure.Clients.Voice;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+public class WyomingTextToSpeechTests
+{
+    [Fact]
+    public async Task Streams_chunks_from_piper_until_audio_stop()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var fakePiper = Task.Run(async () =>
+        {
+            using var server = await listener.AcceptTcpClientAsync();
+            await using var s = server.GetStream();
+            var first = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+            first!.Type.Should().Be("synthesize");
+            await WyomingProtocol.WriteEventAsync(s, "audio-start", new { rate = 22050, width = 2, channels = 1 }, null, CancellationToken.None);
+            await WyomingProtocol.WriteEventAsync(s, "audio-chunk", new { rate = 22050, width = 2, channels = 1 }, new byte[] { 9, 9, 9 }, CancellationToken.None);
+            await WyomingProtocol.WriteEventAsync(s, "audio-stop", null, null, CancellationToken.None);
+        });
+
+        var tts = new WyomingTextToSpeech("127.0.0.1", port, "es_ES-davefx-medium");
+        var collected = new List<byte>();
+        await foreach (var c in tts.SynthesizeAsync("hola", new SynthesisOptions(), CancellationToken.None))
+            collected.AddRange(c.Data);
+        collected.Should().BeEquivalentTo(new byte[] { 9, 9, 9 });
+        listener.Stop();
+        await fakePiper;
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingTextToSpeechTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement WyomingTextToSpeech**
+
+```csharp
+// Infrastructure/Clients/Voice/WyomingTextToSpeech.cs
+namespace Infrastructure.Clients.Voice;
+
+using Domain.Contracts;
+using Domain.DTOs.Voice;
+using McpChannelVoice.Services;
+
+public class WyomingTextToSpeech(string host, int port, string? voice = null) : ITextToSpeech
+{
+    public async IAsyncEnumerable<AudioChunk> SynthesizeAsync(
+        string text,
+        SynthesisOptions options,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var client = await WyomingClient.ConnectAsync(host, port, ct);
+        await client.SendEventAsync("synthesize", new
+        {
+            text,
+            voice = new { name = options.Voice ?? voice }
+        }, payload: null, ct);
+
+        var rate = 22050; var width = 2; var channels = 1;
+        while (true)
+        {
+            var ev = await client.ReadEventAsync(ct);
+            if (ev is null || ev.Type == "audio-stop") yield break;
+            if (ev.Type == "audio-start")
+            {
+                var root = ev.Data.RootElement;
+                if (root.TryGetProperty("rate", out var r)) rate = r.GetInt32();
+                if (root.TryGetProperty("width", out var w)) width = w.GetInt32();
+                if (root.TryGetProperty("channels", out var c)) channels = c.GetInt32();
+                continue;
+            }
+            if (ev.Type == "audio-chunk" && ev.Payload is { Length: > 0 })
+            {
+                yield return new AudioChunk(ev.Payload, rate, channels, width * 8);
+            }
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~WyomingTextToSpeechTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Infrastructure/Clients/Voice/WyomingTextToSpeech.cs Tests/Unit/McpChannelVoice/Infrastructure/WyomingTextToSpeechTests.cs
+git commit -m "feat(voice): WyomingTextToSpeech adapter"
+```
+
+---
+
+### Task 3.2: SatelliteSession — playback queue + reply routing
+
+**Files:**
+- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteSessionPlaybackTests.cs`
+
+The session gains:
+1. A reference to `ITextToSpeech` (passed via constructor).
+2. A method `EnqueueReplyAsync(string text, CancellationToken ct)` that synthesizes audio and streams it back to the satellite via Wyoming `audio-start` / `audio-chunk*` / `audio-stop`.
+3. A static `SatelliteSessionRegistry` keyed by satellite id that the `SendReplyTool` looks up.
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/SatelliteSessionPlaybackTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using System.Net;
+using System.Net.Sockets;
+using global::Domain.Contracts;
+using global::Domain.DTOs.Voice;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class SatelliteSessionPlaybackTests
+{
+    [Fact]
+    public async Task EnqueueReply_streams_audio_chunks_to_satellite()
+    {
+        var registry = new SatelliteRegistry(new VoiceSettings
+        {
+            Satellites = new Dictionary<string, SatelliteSettings>
+            {
+                ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis" }
+            }
+        });
+        var stt = Substitute.For<ISpeechToText>();
+        var tts = Substitute.For<ITextToSpeech>();
+        async IAsyncEnumerable<AudioChunk> ttsOut()
+        {
+            yield return new AudioChunk(new byte[] { 1, 2 }, 22050, 1, 16);
+            yield return new AudioChunk(new byte[] { 3, 4 }, 22050, 1, 16);
+            await Task.CompletedTask;
+        }
+        tts.SynthesizeAsync(Arg.Any<string>(), Arg.Any<SynthesisOptions>(), Arg.Any<CancellationToken>()).Returns(ttsOut());
+
+        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
+        var metrics = new VoiceMetricsPublisher(Substitute.For<IMetricsPublisher>());
+        var gate = new ConfidenceGate(0.4);
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var clientTcp = new TcpClient();
+        await clientTcp.ConnectAsync("127.0.0.1", port);
+        var serverSocket = await listener.AcceptTcpClientAsync();
+
+        var session = new SatelliteSession("kitchen-01", serverSocket, registry, emitter, stt, gate, metrics, tts, NullLogger<SatelliteSession>.Instance);
+        await session.EnqueueReplyAsync("hola", CancellationToken.None);
+
+        await using var s = clientTcp.GetStream();
+        var ev1 = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+        ev1!.Type.Should().Be("audio-start");
+        var ev2 = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+        ev2!.Type.Should().Be("audio-chunk");
+        var ev3 = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+        ev3!.Type.Should().Be("audio-chunk");
+        var ev4 = await WyomingProtocol.ReadEventAsync(s, CancellationToken.None);
+        ev4!.Type.Should().Be("audio-stop");
+
+        listener.Stop();
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionPlaybackTests"`
+Expected: FAIL (constructor mismatch — `tts` parameter missing).
+
+- [ ] **Step 3: Extend SatelliteSession**
+
+Update the constructor signature to add `ITextToSpeech tts` (between `metrics` and `logger`), and add:
+
+```csharp
+public async Task EnqueueReplyAsync(string text, CancellationToken ct)
+{
+    var settings = registry.Lookup(satelliteId)!;
+    var stream = connection.GetStream();
+    AudioChunk? first = null;
+    await foreach (var chunk in tts.SynthesizeAsync(text, new SynthesisOptions(Voice: settings.Tts?.Wyoming?.Voice), ct))
+    {
+        if (first is null)
+        {
+            first = chunk;
+            await WyomingProtocol.WriteEventAsync(stream, "audio-start",
+                new { rate = chunk.SampleRate, width = chunk.BitsPerSample / 8, channels = chunk.Channels },
+                payload: null, ct);
+        }
+        await WyomingProtocol.WriteEventAsync(stream, "audio-chunk",
+            new { rate = chunk.SampleRate, width = chunk.BitsPerSample / 8, channels = chunk.Channels },
+            payload: chunk.Data, ct);
+    }
+    await WyomingProtocol.WriteEventAsync(stream, "audio-stop", data: null, payload: null, ct);
+}
+```
+
+Also expose a static registry:
+
+```csharp
+// inside SatelliteSession
+private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SatelliteSession> Active = new();
+public static SatelliteSession? Find(string satelliteId) => Active.TryGetValue(satelliteId, out var s) ? s : null;
+public void Register() => Active[satelliteId] = this;
+public void Unregister() => Active.TryRemove(satelliteId, out _);
+```
+
+Call `Register()`/`Unregister()` at the start/end of `RunAsync`. The session also self-registers when constructed by tests that don't call `RunAsync` — add an explicit `Register()` call in `EnqueueReplyAsync` for symmetry, or have the test call `session.Register()` before `EnqueueReplyAsync`.
+
+> Update the existing `SatelliteSessionTests` constructor call to pass `tts: Substitute.For<ITextToSpeech>()`.
+
+- [ ] **Step 4: Run all session tests to verify**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSession"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/SatelliteSession.cs Tests/Unit/McpChannelVoice/Services/SatelliteSessionPlaybackTests.cs Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs
+git commit -m "feat(voice): session playback queue + TTS"
+```
+
+---
+
+### Task 3.3: SendReplyTool — wire to SatelliteSession
+
+**Files:**
+- Modify: `McpChannelVoice/McpTools/SendReplyTool.cs`
+- Test: `Tests/Unit/McpChannelVoice/McpTools/SendReplyToolTests.cs`
+
+The tool resolves `conversationId` → `SatelliteSession.Find(satelliteId)` and calls `EnqueueReplyAsync`. Only `ReplyContentType.Text` (or whatever the existing enum's "final user-facing text" variant is) triggers TTS; reasoning/tool-call chunks are dropped (logged at debug). Audio is only spoken when `isComplete` is `true` to avoid speaking partial streams; intermediate chunks are concatenated by a small `ReplyBuffer` keyed by `conversationId`.
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/McpTools/SendReplyToolTests.cs
+namespace Tests.Unit.McpChannelVoice.McpTools;
+
+using global::Domain.DTOs.Channel;
+using global::McpChannelVoice.McpTools;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class SendReplyToolTests
+{
+    [Fact]
+    public async Task Buffers_then_flushes_to_session_on_isComplete()
+    {
+        var buffer = new ReplyBuffer();
+        var fakeSession = Substitute.For<ISatellitePlayback>();
+        ReplyBuffer.SessionLookup = _ => fakeSession;
+
+        await SendReplyTool.McpRun("kitchen-01", "hola ", ReplyContentType.Text, isComplete: false, messageId: null,
+            buffer, NullLogger<SendReplyToolMarker>.Instance);
+        await SendReplyTool.McpRun("kitchen-01", "mundo", ReplyContentType.Text, isComplete: true, messageId: null,
+            buffer, NullLogger<SendReplyToolMarker>.Instance);
+
+        await fakeSession.Received(1).EnqueueReplyAsync("hola mundo", Arg.Any<CancellationToken>());
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SendReplyToolTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement ReplyBuffer + extract ISatellitePlayback**
+
+```csharp
+// McpChannelVoice/Services/ISatellitePlayback.cs
+namespace McpChannelVoice.Services;
+
+public interface ISatellitePlayback
+{
+    Task EnqueueReplyAsync(string text, CancellationToken ct);
+}
+```
+
+Make `SatelliteSession` implement `ISatellitePlayback`.
+
+```csharp
+// McpChannelVoice/Services/ReplyBuffer.cs
+namespace McpChannelVoice.Services;
+
+using System.Collections.Concurrent;
+using System.Text;
+
+public class ReplyBuffer
+{
+    public static Func<string, ISatellitePlayback?> SessionLookup { get; set; } = SatelliteSession.Find;
+
+    private readonly ConcurrentDictionary<string, StringBuilder> buffers = new();
+
+    public async Task AppendAsync(string conversationId, string content, bool isComplete, CancellationToken ct)
+    {
+        var sb = buffers.GetOrAdd(conversationId, _ => new StringBuilder());
+        lock (sb) sb.Append(content);
+        if (!isComplete) return;
+
+        string text;
+        lock (sb) text = sb.ToString();
+        buffers.TryRemove(conversationId, out _);
+
+        var session = SessionLookup(conversationId);
+        if (session is not null) await session.EnqueueReplyAsync(text, ct);
+    }
+}
+```
+
+Then update `SendReplyTool`:
+
+```csharp
+public static async Task<object?> McpRun(
+    string conversationId,
+    string content,
+    ReplyContentType contentType,
+    bool isComplete,
+    string? messageId,
+    ReplyBuffer buffer,
+    ILogger<SendReplyToolMarker> logger)
+{
+    if (contentType != ReplyContentType.Text)
+    {
+        logger.LogDebug("Ignoring non-text reply chunk type={Type}", contentType);
+        return new { ok = true };
+    }
+    await buffer.AppendAsync(conversationId, content, isComplete, CancellationToken.None);
+    return new { ok = true };
+}
+```
+
+Register `ReplyBuffer` in `ConfigModule.ConfigureChannel`:
+
+```csharp
+services.AddSingleton<ReplyBuffer>();
+services.AddSingleton<ITextToSpeech>(_ => new WyomingTextToSpeech(
+    settings.Tts.Wyoming!.Host,
+    settings.Tts.Wyoming!.Port,
+    settings.Tts.Wyoming!.Voice));
+```
+
+Also update `WyomingServer.HandleAsync` to pass the resolved `ITextToSpeech` into `SatelliteSession`. Update its constructor + the registration in `ConfigModule` to inject `ITextToSpeech` (use `IServiceProvider` if needed).
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SendReplyToolTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice Tests/Unit/McpChannelVoice
+git commit -m "feat(voice): send_reply buffers text and speaks via session"
+```
+
+---
+
+### Task 3.4: Add wyoming-piper to docker-compose
+
+**Files:**
+- Modify: `DockerCompose/docker-compose.yml`
+
+- [ ] **Step 1: Append**
+
+```yaml
+wyoming-piper:
+  image: rhasspy/wyoming-piper:latest
+  container_name: wyoming-piper
+  command: --voice es_ES-davefx-medium --uri tcp://0.0.0.0:10200
+  ports:
+    - "10200:10200"
+  volumes:
+    - piper-data:/data
+  restart: unless-stopped
+  networks:
+    - jackbot
+
+# under volumes:
+piper-data:
+```
+
+- [ ] **Step 2: Add depends_on**
+
+```yaml
+mcp-channel-voice:
+  depends_on:
+    wyoming-piper:
+      condition: service_started
+```
+
+- [ ] **Step 3: Bring up**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build mcp-channel-voice wyoming-piper
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add DockerCompose/docker-compose.yml
+git commit -m "chore(voice): add wyoming-piper service"
+```
+
+---
+
+### Task 3.5: TTS latency + wake-to-first-audio metrics
+
+**Files:**
+- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
+- Modify: `Dashboard.Client/Pages/Overview.razor` (add two KPI cards)
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteSessionMetricsTests.cs`
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/SatelliteSessionMetricsTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using global::Domain.Contracts;
+using global::Domain.DTOs.Metrics;
+using global::Domain.DTOs.Metrics.Enums;
+using global::Domain.DTOs.Voice;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class SatelliteSessionMetricsTests
+{
+    [Fact]
+    public async Task EnqueueReply_publishes_TtsLatencyMs()
+    {
+        // build session against an in-memory fake satellite as in earlier tests;
+        // assert that a VoiceMetricEvent with Metric=TtsLatencyMs is published.
+        // (Implementation should record stopwatch around the tts.SynthesizeAsync loop.)
+        // ... (full setup mirrors SatelliteSessionPlaybackTests)
+    }
+}
+```
+
+(Flesh out the body using the same fake-TcpListener pattern as `SatelliteSessionPlaybackTests`; substitute the metrics publisher with `Substitute.For<IMetricsPublisher>()` and assert it received a `VoiceMetricEvent` with `Metric == VoiceMetric.TtsLatencyMs`.)
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionMetricsTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Add metrics in EnqueueReplyAsync**
+
+Wrap the synthesis loop with a `Stopwatch`:
+
+```csharp
+var sw = Stopwatch.StartNew();
+// ... existing synth loop ...
+sw.Stop();
+await metrics.PublishAsync(VoiceMetric.TtsLatencyMs, sw.ElapsedMilliseconds, new Dictionary<VoiceDimension, string>
+{
+    [VoiceDimension.SatelliteId] = satelliteId,
+    [VoiceDimension.TtsProvider] = "Wyoming",
+    [VoiceDimension.TtsVoice] = settings.Tts?.Wyoming?.Voice ?? "default"
+}, ct: ct);
+```
+
+For `WakeToFirstAudioMs`: record the wake timestamp in `HandleUtteranceAsync` and stash it; when `EnqueueReplyAsync` writes its **first** audio-chunk, compute the delta and publish.
+
+- [ ] **Step 4: Overview KPI cards**
+
+Edit `Dashboard.Client/Pages/Overview.razor` and append two `KpiCard` instances:
+
+```razor
+<KpiCard Title="Utterances (24h)" Value="@voiceUtterances24h" />
+<KpiCard Title="Median voice latency (24h)" Value="@medianVoiceLatencyMs" />
+```
+
+Compute in `OnInitializedAsync` from `Api.GetVoiceAsync(from, to)`.
+
+- [ ] **Step 5: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSession"`
+Expected: all passing.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add McpChannelVoice Dashboard.Client Tests/Unit/McpChannelVoice
+git commit -m "feat(voice): TTS latency + wake-to-first-audio metrics"
+```
+
+---
+
+### Task 3.6: Integration test — send_reply round-trip
+
+**Files:**
+- Create: `Tests/Integration/McpChannelVoice/TtsRoundTripTests.cs`
+
+- [ ] **Step 1: Write**
+
+```csharp
+// Tests/Integration/McpChannelVoice/TtsRoundTripTests.cs
+namespace Tests.Integration.McpChannelVoice;
+
+using System.Net.Sockets;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+[Trait("Category", "Integration")]
+public class TtsRoundTripTests
+{
+    [Fact(Skip = "Requires mcp-channel-voice + wyoming-piper running")]
+    public async Task SendReply_streams_audio_back_through_open_session()
+    {
+        // Connect a fake satellite TCP client to mcp-channel-voice:10700
+        // Send info handshake with satellite.name=kitchen-01
+        // Invoke send_reply via HTTP MCP /mcp on port 5010
+        // Read audio frames from the fake satellite stream
+        // Assert at least one audio-chunk arrives followed by audio-stop
+    }
+}
+```
+
+- [ ] **Step 2: Manually unskip and run with the real stack**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d mcp-channel-voice wyoming-piper
+# (locally unskip the test, then re-skip before committing)
+dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~TtsRoundTripTests"
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Tests/Integration/McpChannelVoice/TtsRoundTripTests.cs
+git commit -m "test(voice): TTS round-trip integration scaffold"
+```
+
+---
+
+# Slice 4 — Announce HTTP endpoint
+
+End state: `POST /api/voice/announce` plays a spoken message on a chosen target (id / room / all) with priority semantics. Home Assistant doorbell automation can trigger it.
+
+### Task 4.1: SatelliteRegistry reverse lookups
+
+**Files:**
+- Modify: `McpChannelVoice/Services/SatelliteRegistry.cs`
+- Modify: `Tests/Unit/McpChannelVoice/Services/SatelliteRegistryTests.cs`
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `SatelliteRegistryTests`:
+
+```csharp
+[Fact]
+public void FindByRoom_returns_all_satellites_in_room_case_insensitive()
+{
+    var r = Build();
+    r.FindByRoom("living room").Should().BeEquivalentTo(new[] { "living-01", "living-02" });
+}
+
+[Fact]
+public void FindByRoom_unknown_returns_empty()
+{
+    Build().FindByRoom("Garage").Should().BeEmpty();
+}
+
+[Fact]
+public void All_returns_every_satellite_id()
+{
+    Build().All().Should().BeEquivalentTo(new[] { "kitchen-01", "bedroom-01", "living-01", "living-02" });
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteRegistryTests"`
+Expected: FAIL on the three new tests.
+
+- [ ] **Step 3: Implement**
+
+Add to `SatelliteRegistry`:
+
+```csharp
+public IReadOnlyList<string> FindByRoom(string room) =>
+    satellites
+        .Where(kv => string.Equals(kv.Value.Room, room, StringComparison.OrdinalIgnoreCase))
+        .Select(kv => kv.Key)
+        .ToList();
+
+public IReadOnlyList<string> All() => satellites.Keys.ToList();
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteRegistryTests"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/SatelliteRegistry.cs Tests/Unit/McpChannelVoice/Services/SatelliteRegistryTests.cs
+git commit -m "feat(voice): satellite registry reverse lookups"
+```
+
+---
+
+### Task 4.2: AnnouncePriority + AnnounceRequest DTOs
+
+**Files:**
+- Create: `McpChannelVoice/Services/AnnounceModels.cs`
+
+- [ ] **Step 1: Implement**
+
+```csharp
+// McpChannelVoice/Services/AnnounceModels.cs
+namespace McpChannelVoice.Services;
+
+public enum AnnouncePriority { Low, Normal, High }
+
+public record AnnounceTarget(string? SatelliteId = null, string? Room = null, bool All = false);
+
+public record AnnounceRequest(
+    AnnounceTarget Target,
+    string Text,
+    string? Voice = null,
+    AnnouncePriority Priority = AnnouncePriority.Normal);
+
+public record AnnounceSatelliteStatus(string Id, string Status);
+
+public record AnnounceResponse(string AnnouncementId, IReadOnlyList<AnnounceSatelliteStatus> Satellites);
 ```
 
 - [ ] **Step 2: Build**
 
 Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
+Expected: success.
 
 - [ ] **Step 3: Commit**
 
-Run: `git add McpChannelVoice/Services/WyomingPipelineHandler.cs`
-Run: `git commit -m "feat(voice): add WyomingPipelineHandler (handshake → audio → STT → dispatch)"`
+```bash
+git add McpChannelVoice/Services/AnnounceModels.cs
+git commit -m "feat(voice): announce DTOs"
+```
 
-### Task 2.9: WyomingTcpServer hosted service
+---
+
+### Task 4.3: Per-session priority playback queue
 
 **Files:**
-- Create: `McpChannelVoice/Services/WyomingTcpServer.cs`
+- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteSessionQueueTests.cs`
 
-- [ ] **Step 1: Implement**
+The session gains a small bounded queue of playback items. `High` preempts whatever is in-flight (cancel + emit `AnnouncePreemptedReply` if the cancelled item was a reply); `Normal` queues; `Low` is dropped if anything is queued.
 
-```csharp
-// McpChannelVoice/Services/WyomingTcpServer.cs
-using System.Net;
-using System.Net.Sockets;
-using McpChannelVoice.Settings;
-
-namespace McpChannelVoice.Services;
-
-public sealed class WyomingTcpServer(
-    VoiceSettings voiceSettings,
-    IServiceProvider services,
-    ILogger<WyomingTcpServer> logger) : BackgroundService
-{
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var listener = new TcpListener(IPAddress.Parse(voiceSettings.WyomingServer.Host), voiceSettings.WyomingServer.Port);
-        listener.Start();
-        logger.LogInformation("Wyoming TCP server listening on {Host}:{Port}",
-            voiceSettings.WyomingServer.Host, voiceSettings.WyomingServer.Port);
-
-        try
-        {
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                var tcp = await listener.AcceptTcpClientAsync(stoppingToken);
-                _ = Task.Run(async () =>
-                {
-                    using var scope = services.CreateScope();
-                    var handler = scope.ServiceProvider.GetRequiredService<WyomingPipelineHandler>();
-                    await handler.HandleAsync(tcp, stoppingToken);
-                }, stoppingToken);
-            }
-        }
-        finally
-        {
-            listener.Stop();
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Wire it in ConfigModule**
-
-Edit `McpChannelVoice/Modules/ConfigModule.cs`. Inside `ConfigureChannel`, add the following before `services.AddMcpServer()`:
+- [ ] **Step 1: Write the failing test**
 
 ```csharp
-services
-    .AddSingleton(TimeProvider.System)
-    .AddSingleton<SatelliteSessionRegistry>()
-    .AddScoped<WyomingPipelineHandler>()
-    .AddSingleton<ISpeechToText>(sp =>
-    {
-        var voice = sp.GetRequiredService<VoiceSettings>();
-        return voice.Stt.Provider switch
-        {
-            "Wyoming" => new Infrastructure.Clients.Voice.WyomingSpeechToText(
-                voice.Stt.Wyoming!.Host, voice.Stt.Wyoming.Port, voice.Stt.Wyoming.Model),
-            _ => throw new InvalidOperationException($"Unsupported STT provider: {voice.Stt.Provider}")
-        };
-    })
-    .AddHostedService<WyomingTcpServer>();
-```
+// Tests/Unit/McpChannelVoice/Services/SatelliteSessionQueueTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
 
-Add `using Domain.Contracts;` and `using Infrastructure.Clients.Voice;` at the top of the file.
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
 
-- [ ] **Step 3: Build**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 4: Commit**
-
-Run: `git add McpChannelVoice/Services/WyomingTcpServer.cs McpChannelVoice/Modules/ConfigModule.cs`
-Run: `git commit -m "feat(voice): host Wyoming TCP server and wire ISpeechToText"`
-
-### Task 2.10: Integration test against real wyoming-faster-whisper
-
-**Files:**
-- Create: `Tests/Integration/McpChannelVoice/Fixtures/WyomingWhisperFixture.cs`
-- Create: `Tests/Integration/McpChannelVoice/VoiceRoundTripTests.cs`
-- Create: `Tests/Integration/McpChannelVoice/Resources/hello.wav` (a short 16 kHz mono PCM "hello" sample, ~1s, ≤50 KB)
-
-The fixture starts a `rhasspy/wyoming-whisper:latest` container with `--model tiny --language en --device cpu` on a random host port. The test sends a real WAV through `WyomingSpeechToText` and asserts a non-empty transcript comes back.
-
-- [ ] **Step 1: Add a test resource**
-
-Acquire a 16 kHz mono PCM WAV that says "hello" (any short English sample). Place it at `Tests/Integration/McpChannelVoice/Resources/hello.wav`. If you don't have one, generate via Piper locally or use a public-domain clip. Commit it with `git add -f` if necessary.
-
-- [ ] **Step 2: Write the fixture**
-
-```csharp
-// Tests/Integration/McpChannelVoice/Fixtures/WyomingWhisperFixture.cs
-using System.Net.Sockets;
-using Testcontainers.Containers;
-using Testcontainers.Images;
-
-namespace Tests.Integration.McpChannelVoice.Fixtures;
-
-public sealed class WyomingWhisperFixture : IAsyncLifetime
-{
-    public IContainer? Container { get; private set; }
-    public string Host => "127.0.0.1";
-    public int Port { get; private set; }
-
-    public async Task InitializeAsync()
-    {
-        Container = new ContainerBuilder()
-            .WithImage("rhasspy/wyoming-whisper:latest")
-            .WithCommand("--model", "tiny", "--language", "en", "--device", "cpu")
-            .WithPortBinding(10300, true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilPortIsAvailable(10300))
-            .Build();
-        await Container.StartAsync();
-        Port = Container.GetMappedPublicPort(10300);
-    }
-
-    public async Task DisposeAsync()
-    {
-        if (Container is not null) await Container.DisposeAsync();
-    }
-}
-```
-
-If the existing test project does not yet reference Testcontainers, follow whatever pattern is already used in `Tests/Integration` (e.g. `RedisFixture`). Use raw `TcpClient` against a manually-started container if Testcontainers is not available.
-
-- [ ] **Step 3: Write the failing test**
-
-```csharp
-// Tests/Integration/McpChannelVoice/VoiceRoundTripTests.cs
-using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice;
-using Shouldly;
-using Tests.Integration.McpChannelVoice.Fixtures;
-
-namespace Tests.Integration.McpChannelVoice;
-
-[Collection("WyomingWhisper")]
-[Trait("Category", "Integration")]
-public class VoiceRoundTripTests(WyomingWhisperFixture fixture) : IClassFixture<WyomingWhisperFixture>
+public class SatelliteSessionQueueTests
 {
     [Fact]
-    public async Task TranscribeAsync_HelloWav_ReturnsHello()
+    public void Normal_after_normal_queues_behind()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Resources", "hello.wav");
-        Skip.IfNot(File.Exists(path), "Test WAV not provisioned");
-        var pcm = await File.ReadAllBytesAsync(path);
-        // Strip the 44-byte WAV header for raw PCM
-        var raw = pcm.AsMemory(44).ToArray();
-
-        var stt = new WyomingSpeechToText(fixture.Host, fixture.Port, model: "tiny");
-        var chunks = SplitIntoChunks(raw, sampleRate: 16000, chunkBytes: 3200); // 100ms @ 16kHz mono 16-bit
-
-        var result = await stt.TranscribeAsync(ToAsync(chunks), new TranscriptionOptions(LanguageHint: "en"), CancellationToken.None);
-
-        result.Text.ShouldNotBeNullOrWhiteSpace();
-        result.Text.ToLowerInvariant().ShouldContain("hello");
+        var q = new PlaybackQueue(maxDepth: 8);
+        q.TryEnqueue(new PlaybackItem("a", AnnouncePriority.Normal, IsReply: true)).Should().BeTrue();
+        q.TryEnqueue(new PlaybackItem("b", AnnouncePriority.Normal, IsReply: false)).Should().BeTrue();
+        q.Depth.Should().Be(2);
+        q.Dequeue()!.Text.Should().Be("a");
+        q.Dequeue()!.Text.Should().Be("b");
     }
 
-    private static IEnumerable<AudioChunk> SplitIntoChunks(byte[] raw, int sampleRate, int chunkBytes)
+    [Fact]
+    public void Low_dropped_when_anything_queued()
     {
-        for (var i = 0; i < raw.Length; i += chunkBytes)
+        var q = new PlaybackQueue(maxDepth: 8);
+        q.TryEnqueue(new PlaybackItem("a", AnnouncePriority.Normal, false)).Should().BeTrue();
+        q.TryEnqueue(new PlaybackItem("b", AnnouncePriority.Low, false)).Should().BeFalse();
+    }
+
+    [Fact]
+    public void High_preempts_and_returns_cancelled_item()
+    {
+        var q = new PlaybackQueue(maxDepth: 8);
+        q.TryEnqueue(new PlaybackItem("normal-reply", AnnouncePriority.Normal, IsReply: true)).Should().BeTrue();
+        var preempt = q.Preempt(new PlaybackItem("high", AnnouncePriority.High, false));
+        preempt!.Text.Should().Be("normal-reply");
+        q.Dequeue()!.Text.Should().Be("high");
+    }
+
+    [Fact]
+    public void Queue_overflow_drops_oldest_low_first()
+    {
+        var q = new PlaybackQueue(maxDepth: 2);
+        q.TryEnqueue(new PlaybackItem("low", AnnouncePriority.Low, false)).Should().BeTrue();
+        q.TryEnqueue(new PlaybackItem("n1", AnnouncePriority.Normal, false)).Should().BeTrue();
+        var accepted = q.TryEnqueue(new PlaybackItem("n2", AnnouncePriority.Normal, false));
+        accepted.Should().BeTrue();
+        q.Depth.Should().Be(2);
+        q.Dequeue()!.Text.Should().Be("n1");
+        q.Dequeue()!.Text.Should().Be("n2");
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionQueueTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement PlaybackQueue + PlaybackItem**
+
+```csharp
+// McpChannelVoice/Services/PlaybackQueue.cs
+namespace McpChannelVoice.Services;
+
+public record PlaybackItem(string Text, AnnouncePriority Priority, bool IsReply, string? Voice = null);
+
+public class PlaybackQueue(int maxDepth)
+{
+    private readonly LinkedList<PlaybackItem> items = new();
+
+    public int Depth => items.Count;
+
+    public bool TryEnqueue(PlaybackItem item)
+    {
+        lock (items)
         {
-            var len = Math.Min(chunkBytes, raw.Length - i);
-            var slice = raw.AsSpan(i, len).ToArray();
-            yield return new AudioChunk(slice, sampleRate, 2, 1, DateTimeOffset.UtcNow);
+            if (item.Priority == AnnouncePriority.Low && items.Count > 0) return false;
+            if (items.Count >= maxDepth)
+            {
+                var lowest = items.FirstOrDefault(i => i.Priority == AnnouncePriority.Low);
+                if (lowest is null) return false;
+                items.Remove(lowest);
+            }
+            items.AddLast(item);
+            return true;
         }
     }
 
-    private static async IAsyncEnumerable<T> ToAsync<T>(IEnumerable<T> seq)
+    public PlaybackItem? Preempt(PlaybackItem highItem)
     {
-        foreach (var item in seq)
+        if (highItem.Priority != AnnouncePriority.High) throw new ArgumentException("Only High preempts");
+        lock (items)
         {
-            yield return item;
-            await Task.Yield();
+            var cancelled = items.First?.Value;
+            items.Clear();
+            items.AddFirst(highItem);
+            return cancelled;
+        }
+    }
+
+    public PlaybackItem? Dequeue()
+    {
+        lock (items)
+        {
+            if (items.First is null) return null;
+            var v = items.First.Value;
+            items.RemoveFirst();
+            return v;
         }
     }
 }
 ```
 
-- [ ] **Step 4: Run, watch it fail (no fixture or no WAV) or skip**
+- [ ] **Step 4: Wire into SatelliteSession**
 
-Run: `dotnet test --filter "FullyQualifiedName~VoiceRoundTripTests"`
-Expected: FAIL or SKIP. If SKIP, provision the WAV and re-run.
+Update `SatelliteSession` to own a `PlaybackQueue` and a single playback worker `Task`. `EnqueueReplyAsync` and a new `EnqueueAnnounceAsync(PlaybackItem)` write through the queue. The worker loop dequeues and runs synthesis + playback. When `Preempt` returns a cancelled item that was a reply (`IsReply == true`), publish `AnnouncePreemptedReply`.
 
-- [ ] **Step 5: With WAV in place, watch the test pass**
+```csharp
+public async Task<AnnounceSatelliteStatus> EnqueueAnnounceAsync(PlaybackItem item, CancellationToken ct)
+{
+    if (item.Priority == AnnouncePriority.High)
+    {
+        var cancelled = queue.Preempt(item);
+        if (cancelled is { IsReply: true })
+        {
+            await metrics.PublishAsync(VoiceMetric.AnnouncePreemptedReply, 1, new Dictionary<VoiceDimension, string>
+            {
+                [VoiceDimension.SatelliteId] = satelliteId
+            }, ct: ct);
+        }
+        SignalWorker();
+        return new AnnounceSatelliteStatus(satelliteId, "playing");
+    }
 
-Run: `dotnet test --filter "FullyQualifiedName~VoiceRoundTripTests"`
-Expected: PASS — the integration test reads "hello" through real `wyoming-faster-whisper`.
+    if (!queue.TryEnqueue(item))
+        return new AnnounceSatelliteStatus(satelliteId, "dropped");
+    SignalWorker();
+    return new AnnounceSatelliteStatus(satelliteId, queue.Depth == 1 ? "playing" : "queued");
+}
+```
+
+Where `SignalWorker()` is a `SemaphoreSlim` release; the worker is started in `RunAsync` after handshake.
+
+- [ ] **Step 5: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSession"`
+Expected: all passing.
 
 - [ ] **Step 6: Commit**
 
-Run: `git add Tests/Integration/McpChannelVoice`
-Run: `git commit -m "test(voice): integration test against real wyoming-faster-whisper container"`
+```bash
+git add McpChannelVoice/Services Tests/Unit/McpChannelVoice/Services/SatelliteSessionQueueTests.cs
+git commit -m "feat(voice): per-session priority playback queue"
+```
 
-### Task 2.11: Compose entries for wyoming-whisper + wyoming-piper
+---
 
-We add both now even though Piper is only used in Slice 3 — they share the data volume pattern and adding them together is one less round of compose churn.
+### Task 4.4: AnnouncementService
 
 **Files:**
-- Modify: `DockerCompose/docker-compose.yml`
+- Create: `McpChannelVoice/Services/AnnouncementService.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/AnnouncementServiceTests.cs`
 
-- [ ] **Step 1: Add the two services**
+- [ ] **Step 1: Write the failing test**
 
-Insert before the `mcp-channel-voice` block:
+```csharp
+// Tests/Unit/McpChannelVoice/Services/AnnouncementServiceTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
 
-```yaml
-  wyoming-whisper:
-    image: rhasspy/wyoming-whisper:latest
-    container_name: wyoming-whisper
-    command: --model base --language es --device cpu
-    restart: unless-stopped
-    networks:
-      - jackbot
-    volumes:
-      - whisper-data:/data
+using global::Domain.Contracts;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
 
-  wyoming-piper:
-    image: rhasspy/wyoming-piper:latest
-    container_name: wyoming-piper
-    command: --voice es_ES-davefx-medium
-    restart: unless-stopped
-    networks:
-      - jackbot
-    volumes:
-      - piper-data:/data
+public class AnnouncementServiceTests
+{
+    private static SatelliteRegistry Registry() => new(new VoiceSettings
+    {
+        Satellites = new Dictionary<string, SatelliteSettings>
+        {
+            ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis" },
+            ["living-01"]  = new() { Identity = "household", Room = "Living Room", WakeWord = "hey_jarvis" },
+            ["living-02"]  = new() { Identity = "household", Room = "Living Room", WakeWord = "hey_jarvis" }
+        }
+    });
+
+    [Fact]
+    public async Task Resolve_room_targets_all_room_satellites_and_calls_offline_for_missing_sessions()
+    {
+        var registry = Registry();
+        var lookup = Substitute.For<ISatellitePlaybackLookup>();
+        lookup.Find(Arg.Any<string>()).Returns((ISatellitePlayback?)null);
+        var svc = new AnnouncementService(registry, lookup, Substitute.For<IMetricsPublisher>(), NullLogger<AnnouncementService>.Instance);
+
+        var resp = await svc.AnnounceAsync(new AnnounceRequest(new AnnounceTarget(Room: "Living Room"), "hello"), source: "ha", CancellationToken.None);
+
+        resp.Satellites.Should().HaveCount(2);
+        resp.Satellites.Should().OnlyContain(s => s.Status == "offline");
+    }
+
+    [Fact]
+    public async Task Resolve_unknown_target_throws()
+    {
+        var svc = new AnnouncementService(Registry(), Substitute.For<ISatellitePlaybackLookup>(),
+            Substitute.For<IMetricsPublisher>(), NullLogger<AnnouncementService>.Instance);
+        var act = () => svc.AnnounceAsync(new AnnounceRequest(new AnnounceTarget(SatelliteId: "ghost"), "hi"), source: "ha", CancellationToken.None);
+        await act.Should().ThrowAsync<UnknownTargetException>();
+    }
+}
 ```
 
-Add to the `volumes:` block at the bottom of the file:
+- [ ] **Step 2: Run to verify it fails**
 
-```yaml
-  whisper-data:
-  piper-data:
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~AnnouncementServiceTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// McpChannelVoice/Services/AnnouncementService.cs
+namespace McpChannelVoice.Services;
+
+using Domain.Contracts;
+using Domain.DTOs.Metrics.Enums;
+using Microsoft.Extensions.Logging;
+
+public class UnknownTargetException(string message) : Exception(message);
+
+public interface ISatellitePlaybackLookup
+{
+    ISatellitePlayback? Find(string satelliteId);
+}
+
+public class SatellitePlaybackLookup : ISatellitePlaybackLookup
+{
+    public ISatellitePlayback? Find(string satelliteId) => SatelliteSession.Find(satelliteId);
+}
+
+public class AnnouncementService(
+    SatelliteRegistry registry,
+    ISatellitePlaybackLookup lookup,
+    IMetricsPublisher metricsUnderlying,
+    ILogger<AnnouncementService> logger)
+{
+    private readonly VoiceMetricsPublisher metrics = new(metricsUnderlying);
+
+    public async Task<AnnounceResponse> AnnounceAsync(AnnounceRequest request, string source, CancellationToken ct)
+    {
+        var ids = Resolve(request.Target);
+        var results = new List<AnnounceSatelliteStatus>();
+        foreach (var id in ids)
+        {
+            var session = lookup.Find(id);
+            var priority = request.Priority;
+            if (session is null)
+            {
+                results.Add(new AnnounceSatelliteStatus(id, "offline"));
+                await metrics.PublishAsync(VoiceMetric.AnnounceError, 1, new Dictionary<VoiceDimension, string>
+                {
+                    [VoiceDimension.SatelliteId] = id,
+                    [VoiceDimension.Outcome] = "offline",
+                    [VoiceDimension.Source] = source
+                }, ct: ct);
+                continue;
+            }
+            if (session is SatelliteSession s)
+            {
+                var status = await s.EnqueueAnnounceAsync(new PlaybackItem(request.Text, priority, IsReply: false, request.Voice), ct);
+                results.Add(status);
+                var metric = status.Status == "dropped" ? VoiceMetric.AnnounceError : VoiceMetric.AnnounceQueued;
+                await metrics.PublishAsync(metric, 1, new Dictionary<VoiceDimension, string>
+                {
+                    [VoiceDimension.SatelliteId] = id,
+                    [VoiceDimension.Priority] = priority.ToString(),
+                    [VoiceDimension.Source] = source
+                }, ct: ct);
+            }
+        }
+        return new AnnounceResponse(Guid.NewGuid().ToString("N"), results);
+    }
+
+    private IReadOnlyList<string> Resolve(AnnounceTarget target)
+    {
+        if (target.All) return registry.All();
+        if (target.Room is { } room)
+        {
+            var ids = registry.FindByRoom(room);
+            if (ids.Count == 0) throw new UnknownTargetException($"No satellites in room '{room}'");
+            return ids;
+        }
+        if (target.SatelliteId is { } sid)
+        {
+            if (!registry.IsKnown(sid)) throw new UnknownTargetException($"Unknown satellite '{sid}'");
+            return new[] { sid };
+        }
+        throw new UnknownTargetException("Empty target");
+    }
+}
 ```
 
-Update the `mcp-channel-voice` `depends_on:` block:
+- [ ] **Step 4: Run tests**
 
-```yaml
-    depends_on:
-      base-sdk:
-        condition: service_started
-      redis:
-        condition: service_healthy
-      wyoming-whisper:
-        condition: service_started
-      wyoming-piper:
-        condition: service_started
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~AnnouncementServiceTests"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services Tests/Unit/McpChannelVoice/Services/AnnouncementServiceTests.cs
+git commit -m "feat(voice): announcement service"
 ```
 
-- [ ] **Step 2: Bring up the new services**
+---
 
-Run: `docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d wyoming-whisper wyoming-piper mcp-channel-voice`
-Expected: all three containers running.
+### Task 4.5: AnnounceEndpoint with token auth
 
-- [ ] **Step 3: Verify wyoming-whisper is reachable from the channel container**
+**Files:**
+- Create: `McpChannelVoice/Services/AnnounceEndpoint.cs`
+- Modify: `McpChannelVoice/Program.cs` (map the route)
+- Modify: `McpChannelVoice/Modules/ConfigModule.cs` (register `AnnouncementService` + lookup)
+- Test: `Tests/Unit/McpChannelVoice/Services/AnnounceEndpointAuthTests.cs`
 
-Run: `docker exec mcp-channel-voice nc -z wyoming-whisper 10300; echo $?`
-Expected: `0`.
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/AnnounceEndpointAuthTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using System.Net;
+using System.Net.Http.Json;
+using global::McpChannelVoice.Services;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class AnnounceEndpointAuthTests
+{
+    private static HttpClient BuildClient(string configuredToken)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        var settings = new VoiceSettings { Announce = new AnnounceSettings { Enabled = true, Token = configuredToken } };
+        builder.Services.AddSingleton(settings);
+        builder.Services.AddSingleton(new AnnouncementService(
+            new SatelliteRegistry(settings),
+            Substitute.For<ISatellitePlaybackLookup>(),
+            Substitute.For<Domain.Contracts.IMetricsPublisher>(),
+            NullLogger<AnnouncementService>.Instance));
+        var app = builder.Build();
+        AnnounceEndpoint.Map(app);
+        app.StartAsync().GetAwaiter().GetResult();
+        return app.GetTestClient();
+    }
+
+    [Fact]
+    public async Task Returns_401_when_token_header_missing()
+    {
+        var client = BuildClient("secret");
+        var resp = await client.PostAsJsonAsync("/api/voice/announce", new AnnounceRequest(new AnnounceTarget(SatelliteId: "kitchen-01"), "hi"));
+        resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Returns_401_when_token_header_wrong()
+    {
+        var client = BuildClient("secret");
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "wrong");
+        var resp = await client.PostAsJsonAsync("/api/voice/announce", new AnnounceRequest(new AnnounceTarget(SatelliteId: "kitchen-01"), "hi"));
+        resp.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~AnnounceEndpointAuthTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// McpChannelVoice/Services/AnnounceEndpoint.cs
+namespace McpChannelVoice.Services;
+
+using McpChannelVoice.Settings;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+
+public static class AnnounceEndpoint
+{
+    public static void Map(WebApplication app)
+    {
+        app.MapPost("/api/voice/announce", async (HttpContext ctx, AnnouncementService svc, VoiceSettings settings, AnnounceRequest req, CancellationToken ct) =>
+        {
+            if (!settings.Announce.Enabled) return Results.StatusCode(503);
+            if (!ctx.Request.Headers.TryGetValue("X-Announce-Token", out var token) || token.ToString() != settings.Announce.Token)
+                return Results.Unauthorized();
+            var source = ctx.Request.Headers.TryGetValue("X-Announce-Source", out var s) ? s.ToString() : "ha";
+            try
+            {
+                var resp = await svc.AnnounceAsync(req, source, ct);
+                return Results.Accepted(value: resp);
+            }
+            catch (UnknownTargetException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+        });
+    }
+}
+```
+
+- [ ] **Step 4: Wire in Program.cs**
+
+```csharp
+// McpChannelVoice/Program.cs
+using McpChannelVoice.Modules;
+using McpChannelVoice.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+var settings = builder.GetSettings();
+builder.Services.ConfigureChannel(settings);
+
+var app = builder.Build();
+app.MapMcp("/mcp");
+AnnounceEndpoint.Map(app);
+app.Run();
+```
+
+And in `ConfigureChannel`:
+
+```csharp
+services.AddSingleton<ISatellitePlaybackLookup, SatellitePlaybackLookup>();
+services.AddSingleton<AnnouncementService>();
+```
+
+- [ ] **Step 5: Run the tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~AnnounceEndpointAuthTests"`
+Expected: 2 tests passed.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add McpChannelVoice Tests/Unit/McpChannelVoice/Services/AnnounceEndpointAuthTests.cs
+git commit -m "feat(voice): announce HTTP endpoint with token auth"
+```
+
+---
+
+### Task 4.6: ANNOUNCE_TOKEN end-to-end wiring + smoke test
+
+**Files:**
+- Confirm: `DockerCompose/docker-compose.yml`, `DockerCompose/.env`, `McpChannelVoice/appsettings.json`, `McpChannelVoice/appsettings.Development.json` already carry the placeholder from Task 1.8.
+
+- [ ] **Step 1: Verify placeholder wiring is present**
+
+Run: `grep -n ANNOUNCE_TOKEN DockerCompose/.env DockerCompose/docker-compose.yml McpChannelVoice/appsettings*.json`
+Expected: present in all four files.
+
+- [ ] **Step 2: Smoke test with curl**
+
+Boot the stack and call:
+
+```bash
+curl -i -X POST http://localhost:5010/api/voice/announce \
+  -H "X-Announce-Token: changeme" \
+  -H "Content-Type: application/json" \
+  -d '{"target":{"satelliteId":"kitchen-01"},"text":"hello"}'
+```
+
+Expected (no live satellite): `202 Accepted` with `{"satellites":[{"id":"kitchen-01","status":"offline"}]}`.
+With a wrong token: `401`.
+
+- [ ] **Step 3: Commit any remaining config tweaks**
+
+```bash
+git add DockerCompose McpChannelVoice
+git commit -m "chore(voice): ANNOUNCE_TOKEN smoke verified"
+```
+
+---
+
+### Task 4.7: Announcements-by-source chart
+
+**Files:**
+- Modify: `Dashboard.Client/Pages/Voice.razor`
+
+- [ ] **Step 1: Add chart**
+
+Append to `Voice.razor`:
+
+```razor
+<DynamicChart Title="Announcements by source"
+              Group="@VoiceDimension.Source"
+              Metric="@VoiceMetric.AnnouncePlayed"
+              Loader="LoadGrouped" />
+```
+
+- [ ] **Step 2: Build**
+
+Run: `dotnet build Dashboard.Client/Dashboard.Client.csproj`
+Expected: success.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Dashboard.Client/Pages/Voice.razor
+git commit -m "feat(voice): announcements by source chart"
+```
+
+---
+
+# Slice 5 — Approval over voice
+
+End state: `request_approval` round-trips on Spanish and English yes/no.
+
+### Task 5.1: ApprovalGrammarParser
+
+**Files:**
+- Create: `McpChannelVoice/Services/ApprovalGrammarParser.cs`
+- Test: `Tests/Unit/McpChannelVoice/Services/ApprovalGrammarParserTests.cs`
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/ApprovalGrammarParserTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Xunit;
+
+public class ApprovalGrammarParserTests
+{
+    private readonly ApprovalGrammarParser parser = new();
+
+    [Theory]
+    [InlineData("yes")]
+    [InlineData("YES PLEASE")]
+    [InlineData("sí")]
+    [InlineData("si")]
+    [InlineData("confirm")]
+    [InlineData("ok")]
+    [InlineData("okay")]
+    public void Recognises_positive(string input)
+        => parser.Parse(input).Should().Be(ApprovalDecision.Yes);
+
+    [Theory]
+    [InlineData("no")]
+    [InlineData("nope")]
+    [InlineData("cancel")]
+    [InlineData("cancela")]
+    public void Recognises_negative(string input)
+        => parser.Parse(input).Should().Be(ApprovalDecision.No);
+
+    [Theory]
+    [InlineData("yes please cancel that")]
+    [InlineData("uhh")]
+    [InlineData("")]
+    public void Returns_ambiguous_when_unclear(string input)
+        => parser.Parse(input).Should().Be(ApprovalDecision.Ambiguous);
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ApprovalGrammarParserTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// McpChannelVoice/Services/ApprovalGrammarParser.cs
+namespace McpChannelVoice.Services;
+
+public enum ApprovalDecision { Yes, No, Ambiguous }
+
+public class ApprovalGrammarParser
+{
+    private static readonly HashSet<string> YesWords = new(StringComparer.OrdinalIgnoreCase)
+    { "yes", "yeah", "yep", "yup", "ok", "okay", "confirm", "confirmed", "go", "sí", "si", "claro", "vale", "adelante" };
+    private static readonly HashSet<string> NoWords = new(StringComparer.OrdinalIgnoreCase)
+    { "no", "nope", "nah", "cancel", "cancela", "para", "stop", "decline" };
+
+    public ApprovalDecision Parse(string utterance)
+    {
+        if (string.IsNullOrWhiteSpace(utterance)) return ApprovalDecision.Ambiguous;
+        var tokens = utterance.ToLowerInvariant().Split(new[] { ' ', '.', ',', '!', '?' }, StringSplitOptions.RemoveEmptyEntries);
+        var hasYes = tokens.Any(t => YesWords.Contains(t));
+        var hasNo = tokens.Any(t => NoWords.Contains(t));
+        if (hasYes && !hasNo) return ApprovalDecision.Yes;
+        if (hasNo && !hasYes) return ApprovalDecision.No;
+        return ApprovalDecision.Ambiguous;
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~ApprovalGrammarParserTests"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/ApprovalGrammarParser.cs Tests/Unit/McpChannelVoice/Services/ApprovalGrammarParserTests.cs
+git commit -m "feat(voice): approval grammar parser (EN+ES)"
+```
+
+---
+
+### Task 5.2: IVoiceApprovalSession + AskAsync on SatelliteSession
+
+**Files:**
+- Create: `McpChannelVoice/Services/IVoiceApprovalSession.cs`
+- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
+- Test: extend `Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs`
+
+- [ ] **Step 1: Write a failing test**
+
+Append to `SatelliteSessionTests`:
+
+```csharp
+[Fact]
+public async Task AskAsync_speaks_prompt_and_returns_next_transcript()
+{
+    // Set up session as in earlier tests, with a fake TTS that yields a tiny chunk
+    // and a fake STT returning "yes" for the next capture.
+    // Call AskAsync("approve?", ct) — assert it returns "yes" and that an audio-stop
+    // was written to the satellite stream before STT was invoked.
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionTests.AskAsync"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+Add interface:
+
+```csharp
+// McpChannelVoice/Services/IVoiceApprovalSession.cs
+namespace McpChannelVoice.Services;
+
+public interface IVoiceApprovalSession
+{
+    Task<string> AskAsync(string prompt, CancellationToken ct);
+}
+```
+
+Make `SatelliteSession` implement it. The implementation:
+1. Awaits `EnqueueReplyAsync(prompt, ct)` so the prompt has been played.
+2. Stores a `TaskCompletionSource<string>` in `approvalCapture`.
+3. In `HandleUtteranceAsync`, after STT returns, if `approvalCapture is { } cap`, complete it with `result.Text` and skip the normal dispatch.
+4. Returns the resulting text or empty on cancel/timeout (`Task.WhenAny` with `Task.Delay(TimeSpan.FromSeconds(8))`).
+
+```csharp
+private TaskCompletionSource<string>? approvalCapture;
+
+public async Task<string> AskAsync(string prompt, CancellationToken ct)
+{
+    await EnqueueReplyAsync(prompt, ct);
+    var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+    approvalCapture = tcs;
+    using var reg = ct.Register(() => tcs.TrySetCanceled());
+    var done = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(8), ct));
+    approvalCapture = null;
+    return done == tcs.Task ? await tcs.Task : "";
+}
+```
+
+In `HandleUtteranceAsync` after transcript:
+
+```csharp
+if (approvalCapture is { } cap) { cap.TrySetResult(result.Text); return; }
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionTests"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services Tests/Unit/McpChannelVoice/Services/SatelliteSessionTests.cs
+git commit -m "feat(voice): AskAsync one-shot capture for approvals"
+```
+
+---
+
+### Task 5.3: RequestApprovalTool full implementation
+
+**Files:**
+- Modify: `McpChannelVoice/McpTools/RequestApprovalTool.cs`
+- Modify: `McpChannelVoice/Modules/ConfigModule.cs` (register parser)
+- Test: `Tests/Unit/McpChannelVoice/McpTools/RequestApprovalToolTests.cs`
+
+- [ ] **Step 1: Write failing tests**
+
+```csharp
+// Tests/Unit/McpChannelVoice/McpTools/RequestApprovalToolTests.cs
+namespace Tests.Unit.McpChannelVoice.McpTools;
+
+using global::McpChannelVoice.McpTools;
+using global::McpChannelVoice.Services;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+using Xunit;
+
+public class RequestApprovalToolTests
+{
+    [Fact]
+    public async Task Yes_on_first_attempt_returns_approved()
+    {
+        var approval = Substitute.For<IVoiceApprovalSession>();
+        approval.AskAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("yes");
+        RequestApprovalTool.ApprovalLookup = _ => approval;
+
+        var resp = await RequestApprovalTool.McpRun(
+            "kitchen-01", mode: "Request", requests: "[{}]",
+            new ApprovalGrammarParser(),
+            new VoiceMetricsPublisher(Substitute.For<Domain.Contracts.IMetricsPublisher>()),
+            NullLogger<RequestApprovalToolMarker>.Instance);
+        System.Text.Json.JsonSerializer.Serialize(resp).Should().Contain("\"approved\":true");
+    }
+
+    [Fact]
+    public async Task Ambiguous_then_no_declines_after_one_reprompt()
+    {
+        var approval = Substitute.For<IVoiceApprovalSession>();
+        approval.AskAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns("uhh", "no");
+        RequestApprovalTool.ApprovalLookup = _ => approval;
+
+        var resp = await RequestApprovalTool.McpRun(
+            "kitchen-01", mode: "Request", requests: "[{}]",
+            new ApprovalGrammarParser(),
+            new VoiceMetricsPublisher(Substitute.For<Domain.Contracts.IMetricsPublisher>()),
+            NullLogger<RequestApprovalToolMarker>.Instance);
+        System.Text.Json.JsonSerializer.Serialize(resp).Should().Contain("\"approved\":false");
+        await approval.Received(2).AskAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~RequestApprovalToolTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// McpChannelVoice/McpTools/RequestApprovalTool.cs
+namespace McpChannelVoice.McpTools;
+
+using System.ComponentModel;
+using Domain.DTOs.Metrics.Enums;
+using McpChannelVoice.Services;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
+
+[McpServerToolType]
+public static class RequestApprovalTool
+{
+    public static Func<string, IVoiceApprovalSession?> ApprovalLookup { get; set; } =
+        sid => SatelliteSession.Find(sid) as IVoiceApprovalSession;
+
+    [McpServerTool(Name = "request_approval")]
+    [Description("Ask the user (voice) to approve a tool call.")]
+    public static async Task<object?> McpRun(
+        string conversationId,
+        string mode,
+        string requests,
+        ApprovalGrammarParser parser,
+        VoiceMetricsPublisher metrics,
+        ILogger<RequestApprovalToolMarker> logger)
+    {
+        var session = ApprovalLookup(conversationId);
+        if (session is null) return new { approved = false, reason = "session-missing" };
+
+        var first = await session.AskAsync("Approve this action?", CancellationToken.None);
+        var decision = parser.Parse(first);
+        if (decision == ApprovalDecision.Ambiguous)
+        {
+            var second = await session.AskAsync("I didn't catch that. Yes or no?", CancellationToken.None);
+            decision = parser.Parse(second);
+        }
+        await metrics.PublishAsync(VoiceMetric.ApprovalResolved, 1, new Dictionary<VoiceDimension, string>
+        {
+            [VoiceDimension.SatelliteId] = conversationId,
+            [VoiceDimension.Outcome] = decision.ToString()
+        }, ct: CancellationToken.None);
+        return new { approved = decision == ApprovalDecision.Yes, reason = decision.ToString() };
+    }
+}
+
+public sealed class RequestApprovalToolMarker;
+```
+
+Register the parser in `ConfigModule.ConfigureChannel`:
+
+```csharp
+services.AddSingleton<ApprovalGrammarParser>();
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~RequestApprovalToolTests"`
+Expected: all passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice Tests/Unit/McpChannelVoice/McpTools/RequestApprovalToolTests.cs
+git commit -m "feat(voice): request_approval with re-prompt + metric"
+```
+
+---
+
+### Task 5.4: Button-press fallback
+
+**Files:**
+- Modify: `McpChannelVoice/Services/SatelliteSession.cs` (handle `button-press` Wyoming event)
+- Test: `Tests/Unit/McpChannelVoice/Services/SatelliteSessionButtonTests.cs`
+
+> Single-press → "yes" (when an approval capture is active), double-press → "no".
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Services/SatelliteSessionButtonTests.cs
+namespace Tests.Unit.McpChannelVoice.Services;
+
+using FluentAssertions;
+using Xunit;
+
+public class SatelliteSessionButtonTests
+{
+    [Fact]
+    public async Task Single_button_press_resolves_yes_during_approval()
+    {
+        // Build session against a fake TcpListener, start RunAsync.
+        // Trigger approvalCapture via reflection or by calling AskAsync (after mocking TTS).
+        // From the fake client, write a button-press event with double=false.
+        // Assert AskAsync returns "yes".
+    }
+}
+```
+
+(Fully realise this using the TcpListener pattern from `SatelliteSessionPlaybackTests` and an `NSubstitute` `ITextToSpeech`.)
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionButtonTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Handle the event in RunAsync's main switch**
+
+```csharp
+case "button-press":
+    if (approvalCapture is { } cap)
+    {
+        var dbl = first.Data.RootElement.TryGetProperty("double", out var d) && d.GetBoolean();
+        cap.TrySetResult(dbl ? "no" : "yes");
+    }
+    break;
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~SatelliteSessionButtonTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice/Services/SatelliteSession.cs Tests/Unit/McpChannelVoice/Services/SatelliteSessionButtonTests.cs
+git commit -m "feat(voice): button-press fallback for approvals"
+```
+
+---
+
+### Task 5.5: Approval outcomes chart
+
+**Files:**
+- Modify: `Dashboard.Client/Pages/Voice.razor`
+
+- [ ] **Step 1: Add chart**
+
+```razor
+<DynamicChart Title="Approval outcomes"
+              Group="@VoiceDimension.Outcome"
+              Metric="@VoiceMetric.ApprovalResolved"
+              Loader="LoadGrouped" />
+```
+
+- [ ] **Step 2: Build**
+
+Run: `dotnet build Dashboard.Client/Dashboard.Client.csproj`
+Expected: success.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Dashboard.Client/Pages/Voice.razor
+git commit -m "feat(voice): approval outcomes chart"
+```
+
+---
+
+# Slice 6 — Cloud STT/TTS adapters
+
+End state: switching `Voice.Stt.Provider` (and `Voice.Tts.Provider`) to `OpenAi` works without code changes elsewhere.
+
+### Task 6.1: OpenAiSpeechToText
+
+**Files:**
+- Create: `Infrastructure/Clients/Voice/OpenAiSpeechToText.cs`
+- Test: `Tests/Unit/McpChannelVoice/Infrastructure/OpenAiSpeechToTextTests.cs`
+
+- [ ] **Step 1: Write failing test (stubbed `HttpMessageHandler`)**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Infrastructure/OpenAiSpeechToTextTests.cs
+namespace Tests.Unit.McpChannelVoice.Infrastructure;
+
+using System.Net;
+using System.Net.Http;
+using global::Domain.DTOs.Voice;
+using global::Infrastructure.Clients.Voice;
+using FluentAssertions;
+using Xunit;
+
+public class OpenAiSpeechToTextTests
+{
+    private sealed class StubHandler(HttpResponseMessage response) : HttpMessageHandler
+    {
+        public HttpRequestMessage? Last;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken c)
+        { Last = r; return Task.FromResult(response); }
+    }
+
+    [Fact]
+    public async Task Posts_multipart_to_openai_and_returns_text()
+    {
+        var resp = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"text":"hola","language":"es"}""", System.Text.Encoding.UTF8, "application/json")
+        };
+        var stub = new StubHandler(resp);
+        var http = new HttpClient(stub) { BaseAddress = new Uri("https://api.openai.com/") };
+        var stt = new OpenAiSpeechToText(http, "whisper-1", "k");
+
+        async IAsyncEnumerable<AudioChunk> Frames()
+        {
+            yield return new AudioChunk(new byte[3200], 16000, 1, 16);
+            await Task.CompletedTask;
+        }
+        var result = await stt.TranscribeAsync(Frames(), new TranscriptionOptions("es"), CancellationToken.None);
+        result.Text.Should().Be("hola");
+        stub.Last!.RequestUri!.AbsolutePath.Should().Be("/v1/audio/transcriptions");
+        stub.Last.Headers.Authorization!.Parameter.Should().Be("k");
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~OpenAiSpeechToTextTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// Infrastructure/Clients/Voice/OpenAiSpeechToText.cs
+namespace Infrastructure.Clients.Voice;
+
+using System.Net.Http.Headers;
+using System.Text.Json;
+using Domain.Contracts;
+using Domain.DTOs.Voice;
+
+public class OpenAiSpeechToText(HttpClient http, string model, string apiKey) : ISpeechToText
+{
+    public async Task<TranscriptionResult> TranscribeAsync(
+        IAsyncEnumerable<AudioChunk> audio,
+        TranscriptionOptions options,
+        CancellationToken ct)
+    {
+        var wav = await ToWavAsync(audio, ct);
+        using var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(wav);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+        form.Add(fileContent, "file", "utterance.wav");
+        form.Add(new StringContent(options.Model ?? model), "model");
+        if (options.Language is { } lang) form.Add(new StringContent(lang), "language");
+        form.Add(new StringContent("verbose_json"), "response_format");
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/v1/audio/transcriptions") { Content = form };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using var resp = await http.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+        await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+        var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        var text = doc.RootElement.GetProperty("text").GetString() ?? "";
+        var lang2 = doc.RootElement.TryGetProperty("language", out var l) ? l.GetString() : null;
+        return new TranscriptionResult(text, lang2, Confidence: 1.0);
+    }
+
+    private static async Task<byte[]> ToWavAsync(IAsyncEnumerable<AudioChunk> chunks, CancellationToken ct)
+    {
+        using var ms = new MemoryStream();
+        ms.Write(new byte[44], 0, 44);
+        var sampleRate = 16000; var channels = 1; var bits = 16;
+        await foreach (var c in chunks.WithCancellation(ct))
+        {
+            sampleRate = c.SampleRate; channels = c.Channels; bits = c.BitsPerSample;
+            await ms.WriteAsync(c.Data, ct);
+        }
+        WriteWavHeader(ms, sampleRate, channels, bits);
+        return ms.ToArray();
+    }
+
+    private static void WriteWavHeader(MemoryStream ms, int sampleRate, int channels, int bits)
+    {
+        var dataLen = (int)ms.Length - 44;
+        var bw = new BinaryWriter(new MemoryStream(ms.GetBuffer(), 0, 44, writable: true));
+        bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+        bw.Write(36 + dataLen);
+        bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+        bw.Write(16);
+        bw.Write((short)1);
+        bw.Write((short)channels);
+        bw.Write(sampleRate);
+        bw.Write(sampleRate * channels * bits / 8);
+        bw.Write((short)(channels * bits / 8));
+        bw.Write((short)bits);
+        bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+        bw.Write(dataLen);
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~OpenAiSpeechToTextTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Infrastructure/Clients/Voice/OpenAiSpeechToText.cs Tests/Unit/McpChannelVoice/Infrastructure/OpenAiSpeechToTextTests.cs
+git commit -m "feat(voice): OpenAI STT adapter"
+```
+
+---
+
+### Task 6.2: OpenAiTextToSpeech
+
+**Files:**
+- Create: `Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs`
+- Test: `Tests/Unit/McpChannelVoice/Infrastructure/OpenAiTextToSpeechTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Infrastructure/OpenAiTextToSpeechTests.cs
+namespace Tests.Unit.McpChannelVoice.Infrastructure;
+
+using System.Net;
+using System.Net.Http;
+using global::Domain.DTOs.Voice;
+using global::Infrastructure.Clients.Voice;
+using FluentAssertions;
+using Xunit;
+
+public class OpenAiTextToSpeechTests
+{
+    private sealed class StubHandler(HttpResponseMessage response) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r, CancellationToken c) => Task.FromResult(response);
+    }
+
+    [Fact]
+    public async Task Streams_pcm_response_as_chunks()
+    {
+        var pcm = new byte[6400];
+        new Random(42).NextBytes(pcm);
+        var resp = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(pcm) };
+        var http = new HttpClient(new StubHandler(resp)) { BaseAddress = new Uri("https://api.openai.com/") };
+        var tts = new OpenAiTextToSpeech(http, "tts-1", "alloy", "k");
+        var got = new List<byte>();
+        await foreach (var c in tts.SynthesizeAsync("hello", new SynthesisOptions(), CancellationToken.None))
+            got.AddRange(c.Data);
+        got.Should().NotBeEmpty();
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~OpenAiTextToSpeechTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs
+namespace Infrastructure.Clients.Voice;
+
+using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Domain.Contracts;
+using Domain.DTOs.Voice;
+
+public class OpenAiTextToSpeech(HttpClient http, string model, string voice, string apiKey) : ITextToSpeech
+{
+    public async IAsyncEnumerable<AudioChunk> SynthesizeAsync(
+        string text,
+        SynthesisOptions options,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var body = JsonSerializer.Serialize(new
+        {
+            model,
+            input = text,
+            voice = options.Voice ?? voice,
+            response_format = "pcm"
+        });
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/v1/audio/speech")
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+        };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        resp.EnsureSuccessStatusCode();
+        await using var s = await resp.Content.ReadAsStreamAsync(ct);
+        var buf = new byte[4096];
+        while (true)
+        {
+            var n = await s.ReadAsync(buf, ct);
+            if (n == 0) break;
+            yield return new AudioChunk(buf.AsMemory(0, n).ToArray(), 24000, 1, 16);
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~OpenAiTextToSpeechTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs Tests/Unit/McpChannelVoice/Infrastructure/OpenAiTextToSpeechTests.cs
+git commit -m "feat(voice): OpenAI TTS adapter"
+```
+
+---
+
+### Task 6.3: VoiceModule — provider switch
+
+**Files:**
+- Create: `McpChannelVoice/Modules/VoiceModule.cs`
+- Modify: `McpChannelVoice/Modules/ConfigModule.cs` (delegate STT/TTS registration)
+- Test: `Tests/Unit/McpChannelVoice/Modules/VoiceModuleTests.cs`
+
+- [ ] **Step 1: Write failing test**
+
+```csharp
+// Tests/Unit/McpChannelVoice/Modules/VoiceModuleTests.cs
+namespace Tests.Unit.McpChannelVoice.Modules;
+
+using global::Domain.Contracts;
+using global::Infrastructure.Clients.Voice;
+using global::McpChannelVoice.Modules;
+using global::McpChannelVoice.Settings;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+public class VoiceModuleTests
+{
+    [Fact]
+    public void Wyoming_provider_resolves_WyomingSpeechToText()
+    {
+        var services = new ServiceCollection();
+        services.AddHttpClient();
+        var settings = new VoiceSettings
+        {
+            Stt = new SttSettings { Provider = "Wyoming", Wyoming = new WyomingBackendSettings { Host = "h", Port = 1, Model = "base" } },
+            Tts = new TtsSettings { Provider = "Wyoming", Wyoming = new WyomingBackendSettings { Host = "h", Port = 2, Voice = "v" } }
+        };
+        VoiceModule.RegisterAudio(services, settings);
+        var sp = services.BuildServiceProvider();
+        sp.GetRequiredService<ISpeechToText>().Should().BeOfType<WyomingSpeechToText>();
+        sp.GetRequiredService<ITextToSpeech>().Should().BeOfType<WyomingTextToSpeech>();
+    }
+
+    [Fact]
+    public void OpenAi_provider_resolves_OpenAi_adapters()
+    {
+        Environment.SetEnvironmentVariable("OPENAI_API_KEY", "k");
+        var services = new ServiceCollection();
+        services.AddHttpClient();
+        var settings = new VoiceSettings
+        {
+            Stt = new SttSettings { Provider = "OpenAi", OpenAi = new OpenAiBackendSettings { Model = "whisper-1" } },
+            Tts = new TtsSettings { Provider = "OpenAi", OpenAi = new OpenAiBackendSettings { Model = "tts-1", Voice = "alloy" } }
+        };
+        VoiceModule.RegisterAudio(services, settings);
+        var sp = services.BuildServiceProvider();
+        sp.GetRequiredService<ISpeechToText>().Should().BeOfType<OpenAiSpeechToText>();
+        sp.GetRequiredService<ITextToSpeech>().Should().BeOfType<OpenAiTextToSpeech>();
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceModuleTests"`
+Expected: FAIL.
+
+- [ ] **Step 3: Implement**
+
+```csharp
+// McpChannelVoice/Modules/VoiceModule.cs
+namespace McpChannelVoice.Modules;
+
+using Domain.Contracts;
+using Infrastructure.Clients.Voice;
+using McpChannelVoice.Settings;
+using Microsoft.Extensions.DependencyInjection;
+
+public static class VoiceModule
+{
+    public static void RegisterAudio(IServiceCollection services, VoiceSettings settings)
+    {
+        services.AddHttpClient("openai", c => c.BaseAddress = new Uri("https://api.openai.com/"));
+
+        services.AddSingleton<ISpeechToText>(sp => settings.Stt.Provider switch
+        {
+            "OpenAi" => new OpenAiSpeechToText(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai"),
+                settings.Stt.OpenAi!.Model,
+                Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? throw new InvalidOperationException("OPENAI_API_KEY missing")),
+            _ => new WyomingSpeechToText(
+                settings.Stt.Wyoming!.Host,
+                settings.Stt.Wyoming!.Port,
+                settings.Stt.Wyoming!.Model)
+        });
+
+        services.AddSingleton<ITextToSpeech>(sp => settings.Tts.Provider switch
+        {
+            "OpenAi" => new OpenAiTextToSpeech(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai"),
+                settings.Tts.OpenAi!.Model,
+                settings.Tts.OpenAi!.Voice ?? "alloy",
+                Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? throw new InvalidOperationException("OPENAI_API_KEY missing")),
+            _ => new WyomingTextToSpeech(
+                settings.Tts.Wyoming!.Host,
+                settings.Tts.Wyoming!.Port,
+                settings.Tts.Wyoming!.Voice)
+        });
+    }
+}
+```
+
+In `ConfigModule.ConfigureChannel`, replace the explicit STT/TTS registrations with:
+
+```csharp
+VoiceModule.RegisterAudio(services, settings);
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~VoiceModuleTests"`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add McpChannelVoice Tests/Unit/McpChannelVoice/Modules
+git commit -m "feat(voice): provider switch for STT/TTS"
+```
+
+---
+
+### Task 6.4: Tag cloud cost events with Origin=voice
+
+**Files:**
+- Modify: `Domain/DTOs/Metrics/TokenUsageEvent.cs` (add `Origin` property if absent)
+- Modify: `Infrastructure/Clients/Voice/OpenAiSpeechToText.cs` and `OpenAiTextToSpeech.cs` (publish `TokenUsageEvent` with `Origin="voice"`)
+
+> Open `Domain/DTOs/Metrics/TokenUsageEvent.cs` first. If it has no `Origin` property, add one (`string? Origin { get; init; }`) and verify `Tokens.razor` keeps working (it should — its grouping is dimension-based).
+
+- [ ] **Step 1: Add `Origin` to TokenUsageEvent (if missing)**
+
+```csharp
+// Domain/DTOs/Metrics/TokenUsageEvent.cs
+public record TokenUsageEvent : MetricEvent
+{
+    // existing properties …
+    public string? Origin { get; init; }
+}
+```
+
+- [ ] **Step 2: Inject `IMetricsPublisher` and publish on success**
+
+Update the OpenAI adapter constructors to accept `IMetricsPublisher metrics`, then after parsing a successful response, publish:
+
+```csharp
+await metrics.PublishAsync(new TokenUsageEvent
+{
+    Timestamp = DateTimeOffset.UtcNow,
+    Model = model,
+    InputTokens = 0,   // OpenAI Whisper doesn't report tokens; leave 0 or compute audio seconds
+    OutputTokens = 0,
+    Origin = "voice"
+}, ct);
+```
+
+(Adapt fields to the actual `TokenUsageEvent` shape after reading the file.)
+
+Update `VoiceModule.RegisterAudio` to pass the `IMetricsPublisher` from DI into the adapter constructors.
+
+- [ ] **Step 3: Build**
+
+Run: `dotnet build`
+Expected: success.
 
 - [ ] **Step 4: Commit**
 
-Run: `git add DockerCompose/docker-compose.yml`
-Run: `git commit -m "feat(voice): add wyoming-whisper and wyoming-piper compose services"`
+```bash
+git add Domain Infrastructure McpChannelVoice
+git commit -m "feat(voice): tag cloud STT/TTS cost with Origin=voice"
+```
 
-### Task 2.12: Provisioning script for wyoming-satellite
+---
+
+### Task 6.5: End-to-end provider switch verification
+
+**Files:**
+- (manual only)
+
+- [ ] **Step 1: Temporarily switch to OpenAI in dev settings**
+
+Edit `McpChannelVoice/appsettings.Development.json`:
+
+```json
+{ "Voice": { "Stt": { "Provider": "OpenAi" }, "Tts": { "Provider": "OpenAi" } } }
+```
+
+- [ ] **Step 2: Restart and exercise**
+
+```bash
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build mcp-channel-voice
+```
+
+Speak into a satellite or replay a WAV via the fake-client harness. Confirm transcript still flows and reply is spoken back.
+
+- [ ] **Step 3: Revert dev settings**
+
+```bash
+git checkout McpChannelVoice/appsettings.Development.json
+```
+
+---
+
+# Satellite provisioning script
+
+### Task 7.1: provision-satellite.sh
 
 **Files:**
 - Create: `scripts/provision-satellite.sh`
@@ -2009,1307 +4699,105 @@ Run: `git commit -m "feat(voice): add wyoming-whisper and wyoming-piper compose 
 ```bash
 #!/usr/bin/env bash
 # scripts/provision-satellite.sh
-# Usage: SATELLITE_ID=kitchen-01 HUB_HOST=192.168.1.10 HUB_PORT=10700 WAKE=ok_nabu MIC=plughw:CARD=Device,DEV=0 sudo -E ./provision-satellite.sh
+# One-shot satellite provisioning for Raspberry Pi Zero 2 W.
+# Usage: sudo ./provision-satellite.sh <satellite-id> <hub-host> <wake-word> [mic-device] [button-gpio]
 set -euo pipefail
 
-: "${SATELLITE_ID:?must be set}"
-: "${HUB_HOST:?must be set}"
-: "${HUB_PORT:=10700}"
-: "${WAKE:=ok_nabu}"
-: "${MIC:?must be set}"
+SATELLITE_ID="${1:?satellite-id required}"
+HUB_HOST="${2:?hub-host required}"
+WAKE_WORD="${3:-hey_jarvis}"
+MIC_DEVICE="${4:-plughw:CARD=seeed2micvoicec,DEV=0}"
 
 apt-get update
-apt-get install -y python3 python3-pip python3-venv libportaudio2 libasound2-plugins pulseaudio-utils alsa-utils
-pip install --user --break-system-packages pipx
-~/.local/bin/pipx ensurepath
-~/.local/bin/pipx install wyoming-satellite
-~/.local/bin/pipx install wyoming-openwakeword
-
-cat > /etc/systemd/system/wyoming-satellite.service <<EOF
-[Unit]
-Description=Wyoming satellite for ${SATELLITE_ID}
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/root/.local/bin/wyoming-satellite \\
-    --name "${SATELLITE_ID}" \\
-    --uri tcp://0.0.0.0:10700 \\
-    --mic-command "arecord -D ${MIC} -r 16000 -c 1 -f S16_LE -t raw" \\
-    --snd-command "aplay -r 22050 -c 1 -f S16_LE -t raw" \\
-    --wake-uri tcp://127.0.0.1:10400 \\
-    --wake-word-name "${WAKE}" \\
-    --event-uri tcp://${HUB_HOST}:${HUB_PORT}
-Restart=always
-
-[Install]
-WantedBy=default.target
-EOF
+apt-get install -y python3-pip python3-venv python3-spidev libportaudio2 alsa-utils pipx
+sudo -u pi pipx install wyoming-satellite
+sudo -u pi pipx install wyoming-openwakeword
 
 cat > /etc/systemd/system/wyoming-openwakeword.service <<EOF
 [Unit]
-Description=openWakeWord for ${SATELLITE_ID}
+Description=openWakeWord ($SATELLITE_ID)
+After=network-online.target
 
 [Service]
-Type=simple
-ExecStart=/root/.local/bin/wyoming-openwakeword --uri tcp://127.0.0.1:10400 --preload-model "${WAKE}"
+User=pi
+ExecStart=/home/pi/.local/bin/wyoming-openwakeword --uri tcp://0.0.0.0:10400 --preload-model $WAKE_WORD
 Restart=always
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/systemd/system/wyoming-satellite.service <<EOF
+[Unit]
+Description=Wyoming Satellite ($SATELLITE_ID)
+After=network-online.target wyoming-openwakeword.service
+Wants=network-online.target
+
+[Service]
+User=pi
+ExecStart=/home/pi/.local/bin/wyoming-satellite \\
+  --uri tcp://0.0.0.0:10700 \\
+  --name $SATELLITE_ID \\
+  --mic-command "arecord -r 16000 -c 1 -f S16_LE -D $MIC_DEVICE -t raw" \\
+  --snd-command "aplay -r 22050 -c 1 -f S16_LE -t raw" \\
+  --wake-uri tcp://127.0.0.1:10400 \\
+  --wake-word-name $WAKE_WORD \\
+  --event-uri tcp://$HUB_HOST:10700
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now wyoming-openwakeword
-systemctl enable --now wyoming-satellite
-echo "Provisioned ${SATELLITE_ID}; hub=${HUB_HOST}:${HUB_PORT}, wake=${WAKE}"
+systemctl enable --now wyoming-openwakeword.service wyoming-satellite.service
+echo "Provisioned $SATELLITE_ID pointing at hub $HUB_HOST."
 ```
 
 - [ ] **Step 2: Make executable**
 
-Run: `chmod +x scripts/provision-satellite.sh`
-
-- [ ] **Step 3: Commit**
-
-Run: `git add scripts/provision-satellite.sh`
-Run: `git commit -m "feat(voice): provisioning script for wyoming-satellite on Pi Zero 2 W"`
-
-### Task 2.13: Add a Voice satellite to the channel config and end-to-end smoke test
-
-**Files:**
-- Modify: `McpChannelVoice/appsettings.Development.json`
-
-- [ ] **Step 1: Add a smoke-test satellite to dev config**
-
-```json
-{
-  "Voice": {
-    "Stt": { "Wyoming": { "Host": "localhost", "Model": "base" } },
-    "Tts": { "Wyoming": { "Host": "localhost" } },
-    "Satellites": {
-      "smoke-01": { "Identity": "household", "Room": "Workbench", "WakeWord": "ok_nabu" }
-    }
-  },
-  "Redis": { "ConnectionString": "localhost:6379" }
-}
+```bash
+chmod +x scripts/provision-satellite.sh
 ```
 
-- [ ] **Step 2: Smoke test**
-
-Bring up the stack. From a desktop with a mic, run:
+- [ ] **Step 3: Commit**
 
 ```bash
-pipx install wyoming-satellite wyoming-openwakeword
-wyoming-openwakeword --uri tcp://127.0.0.1:10400 --preload-model ok_nabu &
-wyoming-satellite \
-  --name smoke-01 \
-  --uri tcp://0.0.0.0:10701 \
-  --mic-command "arecord -D default -r 16000 -c 1 -f S16_LE -t raw" \
-  --snd-command "aplay -r 22050 -c 1 -f S16_LE -t raw" \
-  --wake-uri tcp://127.0.0.1:10400 \
-  --wake-word-name ok_nabu \
-  --event-uri tcp://127.0.0.1:10700
+git add scripts/provision-satellite.sh
+git commit -m "chore(voice): satellite provisioning script"
 ```
-
-Say "ok nabu, what time is it". Expected:
-
-- `mcp-channel-voice` logs `Satellite 'smoke-01' connected`.
-- A `notifications/channel/message` is delivered to the agent with `Sender = "household"` and the transcript text.
-- The agent processes the message and calls `send_reply`. (No spoken reply yet — that lands in Slice 3. The reply text appears in agent logs.)
-
-- [ ] **Step 3: No commit needed** (config-only smoke test).
-
-### Task 2.14: Voice page (minimal — utterances chart + KPI)
-
-**Files:**
-- Create: `Dashboard.Client/State/Voice/VoiceState.cs`
-- Create: `Dashboard.Client/State/Voice/VoiceStore.cs`
-- Create: `Dashboard.Client/Pages/Voice.razor`
-- Modify: `Dashboard.Client/Components/NavMenu.razor` (or wherever the nav links live; if not present, find via `grep -rn "Tools" Dashboard.Client/*.razor`)
-- Modify: `Observability/MetricsApiEndpoints.cs`
-- Modify: `Observability/Services/MetricsCollectorService.cs`
-
-- [ ] **Step 1: Add Redis processing for VoiceUtteranceEvent**
-
-Edit `Observability/Services/MetricsCollectorService.cs`. Add a new switch case in `ProcessEventAsync`:
-
-```csharp
-case VoiceUtteranceEvent voice:
-    await ProcessVoiceUtteranceAsync(voice, db);
-    break;
-```
-
-Add the method (after `ProcessHeartbeatAsync`):
-
-```csharp
-private async Task ProcessVoiceUtteranceAsync(VoiceUtteranceEvent evt, IDatabase db)
-{
-    var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-    var sortedSetKey = $"metrics:voice:{dateKey}";
-    var totalsKey = $"metrics:totals:{dateKey}";
-    var score = evt.Timestamp.ToUnixTimeMilliseconds();
-    var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
-
-    var tasks = new List<Task>
-    {
-        db.SortedSetAddAsync(sortedSetKey, json, score),
-        db.HashIncrementAsync(totalsKey, "voice:utterances"),
-        db.HashIncrementAsync(totalsKey, $"voice:bySatellite:{evt.SatelliteId}"),
-        db.HashIncrementAsync(totalsKey, $"voice:byRoom:{evt.Room}"),
-        db.HashIncrementAsync(totalsKey, "voice:sttLatencyMs", evt.SttLatencyMs),
-        db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
-        db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
-    };
-
-    if (!evt.Success)
-    {
-        tasks.Add(db.HashIncrementAsync(totalsKey, "voice:errors"));
-    }
-
-    await Task.WhenAll(tasks);
-    await hubContext.Clients.All.SendAsync("OnVoiceUtterance", evt);
-}
-```
-
-- [ ] **Step 2: Add API endpoints**
-
-Edit `Observability/MetricsApiEndpoints.cs`. Inside `MapMetricsApi`, after the `/api/metrics/schedules` block, add:
-
-```csharp
-api.MapGet("/voice", async (
-    MetricsQueryService query,
-    DateOnly? from,
-    DateOnly? to) =>
-{
-    var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-    var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-    return await query.GetEventsAsync<VoiceUtteranceEvent>("metrics:voice:", fromDate, toDate);
-});
-```
-
-- [ ] **Step 3: Add VoiceState + VoiceStore**
-
-Mirror the layout of `Dashboard.Client/State/Tools/`. Replace `ToolCallEvent` with `VoiceUtteranceEvent`, drop unused dimension/metric enums (we keep this minimal in Slice 2 — group-by satellite/room only).
-
-```csharp
-// Dashboard.Client/State/Voice/VoiceState.cs
-using Domain.DTOs.Metrics;
-
-namespace Dashboard.Client.State.Voice;
-
-public record VoiceState
-{
-    public IReadOnlyList<VoiceUtteranceEvent> Events { get; init; } = [];
-    public Dictionary<string, decimal> BreakdownByRoom { get; init; } = new();
-}
-```
-
-```csharp
-// Dashboard.Client/State/Voice/VoiceStore.cs
-using Domain.DTOs.Metrics;
-
-namespace Dashboard.Client.State.Voice;
-
-public record SetVoiceEvents(IReadOnlyList<VoiceUtteranceEvent> Events) : IAction;
-public record AppendVoiceEvent(VoiceUtteranceEvent Event) : IAction;
-
-public sealed class VoiceStore : Store<VoiceState>
-{
-    public VoiceStore() : base(new VoiceState()) { }
-
-    public void SetEvents(IReadOnlyList<VoiceUtteranceEvent> events) =>
-        Dispatch(new SetVoiceEvents(events), static (s, a) => s with
-        {
-            Events = a.Events,
-            BreakdownByRoom = a.Events.GroupBy(e => e.Room)
-                .ToDictionary(g => g.Key, g => (decimal)g.Count())
-        });
-
-    public void AppendEvent(VoiceUtteranceEvent evt) =>
-        Dispatch(new AppendVoiceEvent(evt), static (s, a) =>
-        {
-            var events = s.Events.Append(a.Event).ToList();
-            return s with
-            {
-                Events = events,
-                BreakdownByRoom = events.GroupBy(e => e.Room)
-                    .ToDictionary(g => g.Key, g => (decimal)g.Count())
-            };
-        });
-}
-```
-
-- [ ] **Step 4: Add Voice.razor page**
-
-```razor
-@* Dashboard.Client/Pages/Voice.razor *@
-@page "/voice"
-@using Dashboard.Client.State.Voice
-@using Domain.DTOs.Metrics
-@implements IDisposable
-@inject VoiceStore Store
-@inject MetricsApiService Api
-
-<div class="voice-page">
-    <header class="page-header">
-        <h2>Voice</h2>
-    </header>
-
-    <section class="kpi-row">
-        <KpiCard Label="Utterances (24h)" Value="@_state.Events.Count.ToString("N0")" Color="var(--accent-blue)" />
-        <KpiCard Label="Errors (24h)" Value="@_errorCount.ToString("N0")" Color="var(--accent-red)" />
-    </section>
-
-    <section class="section">
-        <DynamicChart Data="_state.BreakdownByRoom" ChartType="DynamicChart.ChartMode.HorizontalBar"
-                      MetricLabel="Utterances by Room" Unit="" />
-    </section>
-
-    <section class="section">
-        <h3>Recent Utterances</h3>
-        <div class="events-table">
-            <div class="table-header">
-                <span>Time</span><span>Satellite</span><span>Room</span><span>Confidence</span><span>Status</span>
-            </div>
-            @foreach (var e in _state.Events.Reverse().Take(50))
-            {
-                <div class="table-row">
-                    <span>@e.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                    <span>@e.SatelliteId</span>
-                    <span>@e.Room</span>
-                    <span>@e.SttLatencyMs ms</span>
-                    <span class='@(e.Success ? "status-ok" : "status-err")'>@(e.Success ? "OK" : e.ErrorType)</span>
-                </div>
-            }
-        </div>
-    </section>
-</div>
-
-@code {
-    private VoiceState _state = new();
-    private int _errorCount;
-    private IDisposable? _sub;
-
-    protected override async Task OnInitializedAsync()
-    {
-        _sub = Store.Subscribe(s =>
-        {
-            _state = s;
-            _errorCount = s.Events.Count(e => !e.Success);
-            InvokeAsync(StateHasChanged);
-        });
-        var events = await Api.GetVoiceEventsAsync(DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow));
-        Store.SetEvents(events);
-    }
-
-    public void Dispose() => _sub?.Dispose();
-}
-```
-
-- [ ] **Step 5: Add `GetVoiceEventsAsync` to `MetricsApiService`**
-
-Find `MetricsApiService` (likely `Dashboard.Client/Services/MetricsApiService.cs`). Add a method following the pattern of the existing `GetToolEventsAsync`:
-
-```csharp
-public Task<IReadOnlyList<VoiceUtteranceEvent>> GetVoiceEventsAsync(DateOnly from, DateOnly to) =>
-    GetEventsAsync<VoiceUtteranceEvent>("voice", from, to);
-```
-
-- [ ] **Step 6: Register `VoiceStore` in DI**
-
-Find where `ToolsStore` is registered in `Dashboard.Client/Program.cs` (or equivalent) and add `builder.Services.AddSingleton<VoiceStore>();` next to it.
-
-- [ ] **Step 7: Add a "Voice" nav link**
-
-Find the menu component (likely `Dashboard.Client/Layout/NavMenu.razor` or similar — locate via `grep -rn "/tools" Dashboard.Client | head`). Add an entry analogous to the tools entry, pointing at `/voice`.
-
-- [ ] **Step 8: Build the dashboard**
-
-Run: `dotnet build Dashboard.Client/Dashboard.Client.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 9: Restart observability + dashboard, verify**
-
-Run: `docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build observability webui`
-
-Open `http://localhost:5003/dashboard/voice`. Expect an empty page initially. Trigger an utterance via the Slice 2.13 smoke test; the page should populate within seconds.
-
-- [ ] **Step 10: Commit**
-
-Run: `git add Dashboard.Client/State/Voice Dashboard.Client/Pages/Voice.razor Dashboard.Client/Services Observability/Services/MetricsCollectorService.cs Observability/MetricsApiEndpoints.cs Dashboard.Client/Program.cs Dashboard.Client/Layout`
-Run: `git commit -m "feat(voice): minimal Voice dashboard page + collector + API endpoint"`
-
-### Slice 2 done
-
-A real satellite (or desktop) wakes, speaks, and the transcript reaches the agent. Voice page shows the utterance. No reply yet.
 
 ---
 
-## Slice 3 — TTS path
-
-**Goal:** `send_reply` synthesises the agent's response via Piper and streams it back through the still-open Wyoming session to the originating satellite. Adds wake-to-first-audio latency tracking and an Overview KPI.
-
-### Task 3.1: WyomingTextToSpeech adapter
-
-**Files:**
-- Create: `Infrastructure/Clients/Voice/WyomingTextToSpeech.cs`
-
-- [ ] **Step 1: Implement**
-
-```csharp
-// Infrastructure/Clients/Voice/WyomingTextToSpeech.cs
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using Domain.Contracts;
-using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice.Wyoming;
-
-namespace Infrastructure.Clients.Voice;
-
-public sealed class WyomingTextToSpeech(string host, int port, string? voice) : ITextToSpeech
-{
-    public async IAsyncEnumerable<AudioChunk> SynthesizeAsync(
-        string text,
-        SynthesisOptions options,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await using var client = new WyomingClient(host, port);
-        await client.ConnectAsync(cancellationToken);
-
-        var data = JsonSerializer.SerializeToElement(new
-        {
-            text,
-            voice = options.Voice ?? voice
-        });
-        await client.SendAsync(new WyomingEvent("synthesize", data, null), cancellationToken);
-
-        while (true)
-        {
-            var evt = await client.ReceiveAsync(cancellationToken);
-            if (evt is null || evt.Type == "audio-stop") yield break;
-            if (evt.Type != "audio-chunk" || evt.Payload is null) continue;
-
-            yield return new AudioChunk(
-                evt.Payload,
-                evt.Data.GetProperty("rate").GetInt32(),
-                evt.Data.TryGetProperty("width", out var w) ? w.GetInt32() : 2,
-                evt.Data.TryGetProperty("channels", out var c) ? c.GetInt32() : 1,
-                DateTimeOffset.UtcNow);
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Build**
-
-Run: `dotnet build Infrastructure/Infrastructure.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add Infrastructure/Clients/Voice/WyomingTextToSpeech.cs`
-Run: `git commit -m "feat(voice): add WyomingTextToSpeech adapter"`
-
-### Task 3.2: Wire ITextToSpeech in DI
-
-**Files:**
-- Modify: `McpChannelVoice/Modules/ConfigModule.cs`
-
-- [ ] **Step 1: Add the registration**
-
-Inside `ConfigureChannel`, alongside the existing `ISpeechToText` registration:
-
-```csharp
-services.AddSingleton<ITextToSpeech>(sp =>
-{
-    var voice = sp.GetRequiredService<VoiceSettings>();
-    return voice.Tts.Provider switch
-    {
-        "Wyoming" => new Infrastructure.Clients.Voice.WyomingTextToSpeech(
-            voice.Tts.Wyoming!.Host, voice.Tts.Wyoming.Port, voice.Tts.Wyoming.Voice),
-        _ => throw new InvalidOperationException($"Unsupported TTS provider: {voice.Tts.Provider}")
-    };
-});
-```
-
-- [ ] **Step 2: Build**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add McpChannelVoice/Modules/ConfigModule.cs`
-Run: `git commit -m "feat(voice): register ITextToSpeech (Wyoming Piper)"`
-
-### Task 3.3: SendReplyTool streams TTS audio back
-
-**Files:**
-- Modify: `McpChannelVoice/McpTools/SendReplyTool.cs`
-- Modify: `Tests/Unit/McpChannelVoice/SendReplyToolTests.cs`
-
-- [ ] **Step 1: Update the failing test**
-
-```csharp
-// Tests/Unit/McpChannelVoice/SendReplyToolTests.cs
-using System.Runtime.CompilerServices;
-using Domain.Contracts;
-using Domain.DTOs.Channel;
-using Domain.DTOs.Voice;
-using McpChannelVoice.McpTools;
-using McpChannelVoice.Services;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class SendReplyToolTests
-{
-    [Fact]
-    public async Task McpRun_TextChunk_NoActiveSession_ReturnsOkAndDoesNotThrow()
-    {
-        var services = BuildServices(new FakeTts());
-        var result = await SendReplyTool.McpRun(
-            conversationId: "kitchen-01",
-            content: "hola",
-            contentType: ReplyContentType.Text,
-            isComplete: true,
-            messageId: null,
-            services: services);
-        result.ShouldBe("ok");
-    }
-
-    [Fact]
-    public async Task McpRun_TextChunk_WithActiveSession_InvokesTtsAndStreamsBack()
-    {
-        var tts = new FakeTts();
-        var sessions = new SatelliteSessionRegistry();
-        // Slice 3 note: SatelliteSession.Stream is a real NetworkStream; for this unit test we
-        // assert tts was called. Full audio-frame streaming is exercised in integration tests.
-
-        var services = BuildServices(tts, sessions);
-
-        await SendReplyTool.McpRun(
-            conversationId: "kitchen-01",
-            content: "hola",
-            contentType: ReplyContentType.Text,
-            isComplete: true,
-            messageId: null,
-            services: services);
-
-        tts.Calls.Count.ShouldBe(1);
-        tts.Calls[0].Text.ShouldBe("hola");
-    }
-
-    private static IServiceProvider BuildServices(ITextToSpeech tts, SatelliteSessionRegistry? sessions = null)
-    {
-        return new ServiceCollection()
-            .AddSingleton(new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance))
-            .AddSingleton(sessions ?? new SatelliteSessionRegistry())
-            .AddSingleton(tts)
-            .BuildServiceProvider();
-    }
-
-    private sealed class FakeTts : ITextToSpeech
-    {
-        public List<(string Text, SynthesisOptions Options)> Calls { get; } = [];
-
-        public async IAsyncEnumerable<AudioChunk> SynthesizeAsync(
-            string text,
-            SynthesisOptions options,
-            [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            Calls.Add((text, options));
-            yield return new AudioChunk(new byte[] { 1, 2 }, 22050, 2, 1, DateTimeOffset.UtcNow);
-            await Task.Yield();
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Run, watch failures**
-
-Run: `dotnet test --filter "FullyQualifiedName~SendReplyToolTests"`
-Expected: FAIL — TTS is not invoked yet.
-
-- [ ] **Step 3: Update SendReplyTool**
-
-```csharp
-// McpChannelVoice/McpTools/SendReplyTool.cs
-using System.ComponentModel;
-using System.Text.Json;
-using Domain.Contracts;
-using Domain.DTOs.Channel;
-using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice.Wyoming;
-using McpChannelVoice.Services;
-using ModelContextProtocol.Server;
-
-namespace McpChannelVoice.McpTools;
-
-[McpServerToolType]
-public sealed class SendReplyTool
-{
-    [McpServerTool(Name = "send_reply")]
-    [Description("Send a response to a voice satellite. Final text chunks are synthesised via TTS and streamed back to the originating satellite.")]
-    public static async Task<string> McpRun(
-        [Description("Satellite id (matches Voice:Satellites key)")] string conversationId,
-        [Description("Response content")] string content,
-        [Description("Kind of chunk being sent")] ReplyContentType contentType,
-        [Description("Whether this is the final chunk")] bool isComplete,
-        [Description("Message ID for grouping related chunks")] string? messageId,
-        IServiceProvider services)
-    {
-        if (contentType is ReplyContentType.Reasoning or ReplyContentType.ToolCall) return "ok";
-        if (!isComplete && contentType != ReplyContentType.Error) return "ok";
-
-        var tts = services.GetRequiredService<ITextToSpeech>();
-        var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
-        var session = sessions.Get(conversationId);
-
-        await foreach (var chunk in tts.SynthesizeAsync(content, new SynthesisOptions(), CancellationToken.None))
-        {
-            if (session is null) continue;
-            var data = JsonSerializer.SerializeToElement(new
-            {
-                rate = chunk.SampleRate,
-                width = chunk.SampleWidthBytes,
-                channels = chunk.Channels
-            });
-            await WyomingProtocol.WriteAsync(session.Stream, new WyomingEvent("audio-chunk", data, chunk.Pcm), CancellationToken.None);
-        }
-
-        if (session is not null)
-        {
-            await WyomingProtocol.WriteAsync(session.Stream,
-                new WyomingEvent("audio-stop", JsonDocument.Parse("{}").RootElement, null),
-                CancellationToken.None);
-        }
-
-        return "ok";
-    }
-}
-```
-
-- [ ] **Step 4: Run, watch tests pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~SendReplyToolTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add McpChannelVoice/McpTools/SendReplyTool.cs Tests/Unit/McpChannelVoice/SendReplyToolTests.cs`
-Run: `git commit -m "feat(voice): send_reply synthesises TTS and streams audio frames to satellite"`
-
-### Task 3.4: Track wake-to-first-audio latency
-
-**Files:**
-- Modify: `McpChannelVoice/Services/WyomingPipelineHandler.cs`
-- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
-- Modify: `McpChannelVoice/McpTools/SendReplyTool.cs`
-
-- [ ] **Step 1: Carry the wake timestamp on `SatelliteSession`**
-
-Edit `SatelliteSession.cs`:
-
-```csharp
-public sealed class SatelliteSession(string satelliteId, NetworkStream stream, DateTimeOffset wakeAt) : IAsyncDisposable
-{
-    public string SatelliteId { get; } = satelliteId;
-    public NetworkStream Stream { get; } = stream;
-    public DateTimeOffset OpenedAt { get; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset WakeAt { get; } = wakeAt;
-    public DateTimeOffset? FirstAudioAt { get; set; }
-
-    public async ValueTask DisposeAsync()
-    {
-        await Stream.DisposeAsync();
-    }
-}
-```
-
-In `WyomingPipelineHandler.RunUtteranceAsync`, when constructing the session record (or on first audio-start), set `wakeAt = clock.GetUtcNow()`.
-
-In `SendReplyTool.McpRun`, on the first synthesised chunk, set `session.FirstAudioAt ??= DateTimeOffset.UtcNow;` and publish a follow-up `VoiceUtteranceEvent` with `WakeToFirstAudioMs` populated. The simplest pattern is to publish a second event of the same shape; the dashboard already aggregates by satellite so duplicate-by-design is acceptable.
-
-- [ ] **Step 2: Build**
-
-Run: `dotnet build McpChannelVoice/McpChannelVoice.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add McpChannelVoice/Services McpChannelVoice/McpTools/SendReplyTool.cs`
-Run: `git commit -m "feat(voice): record wake-to-first-audio latency on send_reply"`
-
-### Task 3.5: Overview KPIs
-
-**Files:**
-- Modify: `Dashboard.Client/Pages/Overview.razor`
-- Modify: `Observability/Services/MetricsQueryService.cs` (add `GetVoiceTotalsAsync`)
-
-- [ ] **Step 1: Add the totals helper**
-
-In `MetricsQueryService`, add:
-
-```csharp
-public async Task<(long Utterances, long ErrorCount, double MedianLatencyMs)> GetVoiceTotalsAsync(DateOnly from, DateOnly to)
-{
-    var events = await GetEventsAsync<VoiceUtteranceEvent>("metrics:voice:", from, to);
-    var utterances = events.Count;
-    var errors = events.Count(e => !e.Success);
-    var latencies = events
-        .Where(e => e.WakeToFirstAudioMs.HasValue)
-        .Select(e => e.WakeToFirstAudioMs!.Value)
-        .OrderBy(x => x)
-        .ToList();
-    var median = latencies.Count == 0 ? 0 : latencies[latencies.Count / 2];
-    return (utterances, errors, median);
-}
-```
-
-- [ ] **Step 2: Add an endpoint**
-
-In `MetricsApiEndpoints.cs`, after the existing voice endpoint:
-
-```csharp
-api.MapGet("/voice/totals", async (
-    MetricsQueryService query,
-    DateOnly? from,
-    DateOnly? to) =>
-{
-    var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
-    var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
-    var (utt, err, median) = await query.GetVoiceTotalsAsync(fromDate, toDate);
-    return new { Utterances = utt, Errors = err, MedianLatencyMs = median };
-});
-```
-
-- [ ] **Step 3: Add the two KPI cards on Overview.razor**
-
-Following the existing pattern in `Overview.razor`, fetch `voice/totals` on init and add two `<KpiCard>` entries: "Utterances (24h)" and "Median voice latency (24h)".
-
-- [ ] **Step 4: Build**
-
-Run: `dotnet build Dashboard.Client/Dashboard.Client.csproj Observability/Observability.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add Dashboard.Client/Pages/Overview.razor Observability/Services/MetricsQueryService.cs Observability/MetricsApiEndpoints.cs`
-Run: `git commit -m "feat(voice): Overview KPIs for utterances and latency"`
-
-### Slice 3 done
-
-Speak to a satellite → agent reply is spoken back. MVP demo state.
+# Final verification
+
+- [ ] All unit tests pass: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~McpChannelVoice"`
+- [ ] Full stack boots: `docker compose -p jackbot up -d --build` (with the OS-specific override file).
+- [ ] Agent log mentions the voice channel is connected.
+- [ ] `curl` to `/api/voice/announce` with the dev token returns `202`/`offline` (no satellites yet).
+- [ ] Dashboard `/voice` page renders without errors and shows the charts.
+- [ ] Provision one Pi Zero 2 W via `scripts/provision-satellite.sh`, say the wake word, speak; agent receives the transcript and replies aloud.
 
 ---
 
-## Slice 4 — Approval over voice
+# Spec coverage notes
+
+- §Goal — Slices 1–3 (round-trip), Slice 4 (announce ownership).
+- §Constraints — Pi/wake-word/identity/STT/TTS pluggability all covered.
+- §Architecture diagram — implemented across Slices 1–4.
+- §Components — every new file in the spec's "New components" table appears in this plan.
+- §Data flow / utterance round-trip — Slices 2, 3.
+- §Approval flow — Slice 5.
+- §External announcement — Slice 4 (auth, priority, queue, HA reference). `Voice.Announce.BindToLoopbackOnly` is supported via the settings record; when enabled, set `ASPNETCORE_URLS=http://127.0.0.1:5010` on the channel container (config-only, no code task).
+- §Configuration — `appsettings.json`, `.env`, `docker-compose.yml`, `appsettings.Development.json` updated together (Tasks 1.2, 1.8, 2.7, 3.4).
+- §Identity and threading — `SatelliteRegistry` + emitter dispatch identity as `sender`, room in metadata.
+- §Observability — Voice metrics emitted; dashboard page + Overview KPI cards; cloud cost tagged with `Origin=voice` (Task 6.4).
+- §Dashboard changes — Voice.razor (Task 2.9), Overview KPI (Task 3.5), nav entry (Task 2.9), Tokens.razor inherits the new `Origin` dimension automatically (Task 6.4). Errors.razor and HealthGrid.razor already aggregate by event-type/source; verify during final verification.
+- §Error handling — confidence gate (Task 2.4), STT error metric (Task 2.5), preempt metrics (Task 4.3), 401/503 (Task 4.5).
+- §Testing — unit tests under each task, integration scaffolds in Tasks 2.8 and 3.6, manual E2E in Final Verification.
+- §Out of scope — respected throughout.
+- §Style and layering — primary constructors, records, file-scoped namespaces used everywhere; Domain has no references to Infrastructure or McpChannelVoice (Wyoming protocol lives under `Infrastructure/Clients/Voice/Wyoming/` if Task 2.3's circular-reference note triggers); new env vars added to all four infra files in the same task.
 
-**Goal:** `request_approval` speaks the prompt, captures the user's spoken answer, parses yes/no, and resolves. Re-prompts once on low confidence; defaults to decline.
 
-### Task 4.1: ApprovalGrammarParser
 
-**Files:**
-- Create: `McpChannelVoice/Services/ApprovalGrammarParser.cs`
-- Create: `Tests/Unit/McpChannelVoice/ApprovalGrammarParserTests.cs`
 
-- [ ] **Step 1: Write failing tests**
-
-```csharp
-// Tests/Unit/McpChannelVoice/ApprovalGrammarParserTests.cs
-using McpChannelVoice.Services;
-using Shouldly;
-
-namespace Tests.Unit.McpChannelVoice;
-
-public class ApprovalGrammarParserTests
-{
-    private readonly ApprovalGrammarParser _parser = new();
-
-    [Theory]
-    [InlineData("yes")]
-    [InlineData("Yes please")]
-    [InlineData("sí")]
-    [InlineData("si")]
-    [InlineData("confirm")]
-    [InlineData("ok")]
-    [InlineData("okay go ahead")]
-    public void Parse_PositivePhrases_ReturnsApprove(string text)
-    {
-        _parser.Parse(text).ShouldBe(ApprovalDecision.Approve);
-    }
-
-    [Theory]
-    [InlineData("no")]
-    [InlineData("nope")]
-    [InlineData("cancel")]
-    [InlineData("no thanks")]
-    [InlineData("don't")]
-    public void Parse_NegativePhrases_ReturnsDecline(string text)
-    {
-        _parser.Parse(text).ShouldBe(ApprovalDecision.Decline);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("uh i'm not sure")]
-    [InlineData("wait what")]
-    public void Parse_AmbiguousOrEmpty_ReturnsUnclear(string text)
-    {
-        _parser.Parse(text).ShouldBe(ApprovalDecision.Unclear);
-    }
-
-    [Fact]
-    public void Parse_YesPleaseCancelThat_ReturnsDecline()
-    {
-        // "cancel" wins over "yes please"
-        _parser.Parse("yes please cancel that").ShouldBe(ApprovalDecision.Decline);
-    }
-}
-```
-
-- [ ] **Step 2: Run, watch fail**
-
-Run: `dotnet test --filter "FullyQualifiedName~ApprovalGrammarParserTests"`
-Expected: FAIL — type does not exist.
-
-- [ ] **Step 3: Implement**
-
-```csharp
-// McpChannelVoice/Services/ApprovalGrammarParser.cs
-namespace McpChannelVoice.Services;
-
-public enum ApprovalDecision { Approve, Decline, Unclear }
-
-public sealed class ApprovalGrammarParser
-{
-    private static readonly string[] _negative =
-        ["no", "nope", "nah", "cancel", "stop", "abort", "don't", "do not", "negative"];
-
-    private static readonly string[] _positive =
-        ["yes", "yeah", "yep", "yup", "sí", "si", "ok", "okay", "confirm", "approve", "do it", "go ahead", "sure"];
-
-    public ApprovalDecision Parse(string text)
-    {
-        var normalized = text.Trim().ToLowerInvariant();
-        if (string.IsNullOrEmpty(normalized)) return ApprovalDecision.Unclear;
-
-        var hasNeg = _negative.Any(p => ContainsAsToken(normalized, p));
-        var hasPos = _positive.Any(p => ContainsAsToken(normalized, p));
-
-        if (hasNeg) return ApprovalDecision.Decline;
-        if (hasPos) return ApprovalDecision.Approve;
-        return ApprovalDecision.Unclear;
-    }
-
-    private static bool ContainsAsToken(string haystack, string needle)
-    {
-        var idx = haystack.IndexOf(needle, StringComparison.Ordinal);
-        if (idx < 0) return false;
-        var startsAtBoundary = idx == 0 || !char.IsLetter(haystack[idx - 1]);
-        var endsAtBoundary = idx + needle.Length == haystack.Length || !char.IsLetter(haystack[idx + needle.Length]);
-        return startsAtBoundary && endsAtBoundary;
-    }
-}
-```
-
-- [ ] **Step 4: Run, watch pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~ApprovalGrammarParserTests"`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-Run: `git add McpChannelVoice/Services/ApprovalGrammarParser.cs Tests/Unit/McpChannelVoice/ApprovalGrammarParserTests.cs`
-Run: `git commit -m "feat(voice): add ApprovalGrammarParser for spoken yes/no"`
-
-### Task 4.2: RequestApprovalTool implements the spoken flow
-
-The tool uses `ITextToSpeech` to speak the prompt, then triggers a fresh capture window on the satellite. Capturing the response requires a small protocol affordance: we send a `transcribe` Wyoming event with `payload_length` 0 (signals "next utterance is for me"), and `WyomingPipelineHandler` routes the next transcript to a per-session `TaskCompletionSource` instead of dispatching as a `channel/message`.
-
-**Files:**
-- Modify: `McpChannelVoice/Services/SatelliteSession.cs`
-- Modify: `McpChannelVoice/Services/WyomingPipelineHandler.cs`
-- Modify: `McpChannelVoice/McpTools/RequestApprovalTool.cs`
-- Modify: `Tests/Unit/McpChannelVoice/RequestApprovalToolTests.cs`
-
-- [ ] **Step 1: Add a pending-approval slot on SatelliteSession**
-
-```csharp
-public TaskCompletionSource<string>? PendingApprovalTcs { get; set; }
-```
-
-- [ ] **Step 2: In `WyomingPipelineHandler.RunUtteranceAsync`**, after STT returns, check `session.PendingApprovalTcs`. If set, route the transcript text to it (instead of emitting a notification) and clear it.
-
-- [ ] **Step 3: Update `RequestApprovalTool`**
-
-```csharp
-// McpChannelVoice/McpTools/RequestApprovalTool.cs
-using System.ComponentModel;
-using System.Text.Json;
-using Domain.Contracts;
-using Domain.DTOs.Channel;
-using Domain.DTOs.Voice;
-using McpChannelVoice.Services;
-using ModelContextProtocol.Server;
-
-namespace McpChannelVoice.McpTools;
-
-[McpServerToolType]
-public sealed class RequestApprovalTool
-{
-    private static readonly TimeSpan _captureTimeout = TimeSpan.FromSeconds(8);
-
-    [McpServerTool(Name = "request_approval")]
-    [Description("Ask the user to approve a tool call by spoken yes/no on the originating satellite.")]
-    public static async Task<string> McpRun(
-        [Description("Satellite id")] string conversationId,
-        [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
-        [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
-        IServiceProvider services)
-    {
-        var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
-        var tts = services.GetRequiredService<ITextToSpeech>();
-        var parser = services.GetRequiredService<ApprovalGrammarParser>();
-        var session = sessions.Get(conversationId);
-
-        if (mode == ApprovalMode.Notify || session is null) return "approve";
-
-        var summary = SummariseRequests(requests);
-
-        for (var attempt = 0; attempt < 2; attempt++)
-        {
-            var prompt = attempt == 0
-                ? $"Do you approve {summary}? Say yes or no."
-                : "I didn't catch that. Please say yes or no.";
-
-            await SpeakAsync(tts, session, prompt);
-
-            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            session.PendingApprovalTcs = tcs;
-            using var cts = new CancellationTokenSource(_captureTimeout);
-            cts.Token.Register(() => tcs.TrySetResult(string.Empty));
-
-            var transcript = await tcs.Task;
-            session.PendingApprovalTcs = null;
-
-            switch (parser.Parse(transcript))
-            {
-                case ApprovalDecision.Approve: return "approve";
-                case ApprovalDecision.Decline: return "decline";
-            }
-        }
-
-        await SpeakAsync(tts, session, "I'll skip that for now.");
-        return "decline";
-    }
-
-    private static async Task SpeakAsync(ITextToSpeech tts, SatelliteSession session, string text)
-    {
-        // Reuse the same audio-chunk streaming pattern as SendReplyTool
-        await foreach (var chunk in tts.SynthesizeAsync(text, new SynthesisOptions(), CancellationToken.None))
-        {
-            var data = JsonSerializer.SerializeToElement(new
-            {
-                rate = chunk.SampleRate,
-                width = chunk.SampleWidthBytes,
-                channels = chunk.Channels
-            });
-            await Infrastructure.Clients.Voice.Wyoming.WyomingProtocol.WriteAsync(
-                session.Stream,
-                new Infrastructure.Clients.Voice.Wyoming.WyomingEvent("audio-chunk", data, chunk.Pcm),
-                CancellationToken.None);
-        }
-
-        await Infrastructure.Clients.Voice.Wyoming.WyomingProtocol.WriteAsync(
-            session.Stream,
-            new Infrastructure.Clients.Voice.Wyoming.WyomingEvent("audio-stop", JsonDocument.Parse("{}").RootElement, null),
-            CancellationToken.None);
-    }
-
-    private static string SummariseRequests(string requestsJson)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(requestsJson);
-            return string.Join(", ", doc.RootElement.EnumerateArray()
-                .Select(r => r.GetProperty("toolName").GetString()?.Split("__").Last() ?? "unknown"));
-        }
-        catch
-        {
-            return "this action";
-        }
-    }
-}
-```
-
-- [ ] **Step 4: Register `ApprovalGrammarParser` in DI**
-
-In `ConfigModule.cs`, alongside the other singletons:
-
-```csharp
-services.AddSingleton<ApprovalGrammarParser>();
-```
-
-- [ ] **Step 5: Update test for new behaviour**
-
-Update `RequestApprovalToolTests` to assert that with a fake session whose `PendingApprovalTcs` is pre-completed with `"yes"`, the tool returns `"approve"`. With `"no"`, it returns `"decline"`. With an empty timeout, it returns `"decline"`.
-
-- [ ] **Step 6: Run, watch tests pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~RequestApprovalToolTests OR FullyQualifiedName~ApprovalGrammarParserTests"`
-Expected: PASS.
-
-- [ ] **Step 7: Commit**
-
-Run: `git add McpChannelVoice Tests/Unit/McpChannelVoice/RequestApprovalToolTests.cs`
-Run: `git commit -m "feat(voice): spoken yes/no approval flow with re-prompt and decline default"`
-
-### Task 4.3: Publish ApprovalResolved metric
-
-**Files:**
-- Modify: `McpChannelVoice/McpTools/RequestApprovalTool.cs`
-
-- [ ] **Step 1: Inject `IMetricsPublisher` and the `SatelliteRegistry`**
-
-After resolving an approval, publish a `VoiceUtteranceEvent` with `ApprovalOutcome = "approve"|"decline"|"timeout"` and `Success = true`.
-
-- [ ] **Step 2: Update Voice page**
-
-Add a small "Approvals" panel showing recent approval outcomes (filter `Events` where `ApprovalOutcome != null`).
-
-- [ ] **Step 3: Commit**
-
-Run: `git commit -am "feat(voice): publish ApprovalResolved metric and surface on Voice page"`
-
-### Slice 4 done
-
-`request_approval` works end-to-end on at least Spanish and English yes/no. Default-decline path tested via timeout.
-
----
-
-## Slice 5 — Cloud STT/TTS adapters
-
-**Goal:** `OpenAiSpeechToText` and `OpenAiTextToSpeech` selectable via configuration. No code change anywhere except DI factory in `ConfigModule`. Cloud cost events tag with `Origin = "voice"` so the Tokens dashboard slices them automatically.
-
-### Task 5.1: OpenAiSpeechToText adapter
-
-**Files:**
-- Create: `Infrastructure/Clients/Voice/OpenAiSpeechToText.cs`
-- Create: `Tests/Unit/Infrastructure/Voice/OpenAiSpeechToTextTests.cs`
-
-- [ ] **Step 1: Write the failing test against a stubbed `HttpMessageHandler`**
-
-Pattern: a fake `HttpMessageHandler` returns a canned `{"text": "hello"}` JSON. Assert the multipart body contains the audio bytes and the model field.
-
-```csharp
-// Tests/Unit/Infrastructure/Voice/OpenAiSpeechToTextTests.cs
-using System.Net;
-using System.Net.Http;
-using Domain.DTOs.Voice;
-using Infrastructure.Clients.Voice;
-using Shouldly;
-
-namespace Tests.Unit.Infrastructure.Voice;
-
-public class OpenAiSpeechToTextTests
-{
-    [Fact]
-    public async Task TranscribeAsync_StubbedResponse_ReturnsText()
-    {
-        var handler = new StubHandler("""{"text":"hello"}""");
-        var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.openai.com/v1/") };
-        var stt = new OpenAiSpeechToText(http, apiKey: "sk-test", model: "whisper-1");
-
-        async IAsyncEnumerable<AudioChunk> One()
-        {
-            yield return new AudioChunk(new byte[] { 1, 2, 3 }, 16000, 2, 1, DateTimeOffset.UtcNow);
-            await Task.Yield();
-        }
-
-        var result = await stt.TranscribeAsync(One(), new TranscriptionOptions(), CancellationToken.None);
-
-        result.Text.ShouldBe("hello");
-        handler.LastRequest!.RequestUri!.AbsolutePath.ShouldEndWith("audio/transcriptions");
-    }
-
-    private sealed class StubHandler(string body) : HttpMessageHandler
-    {
-        public HttpRequestMessage? LastRequest { get; private set; }
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-        {
-            LastRequest = request;
-            await Task.Yield();
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-            };
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Implement `OpenAiSpeechToText`**
-
-Concrete sketch (full code is straightforward — POST `audio/transcriptions` as multipart, audio stitched to a single buffer with a WAV header, `model` and optional `language`):
-
-```csharp
-// Infrastructure/Clients/Voice/OpenAiSpeechToText.cs
-using System.Net.Http.Headers;
-using System.Text.Json;
-using Domain.Contracts;
-using Domain.DTOs.Voice;
-
-namespace Infrastructure.Clients.Voice;
-
-public sealed class OpenAiSpeechToText(HttpClient http, string apiKey, string model) : ISpeechToText
-{
-    public async Task<TranscriptionResult> TranscribeAsync(
-        IAsyncEnumerable<AudioChunk> audio,
-        TranscriptionOptions options,
-        CancellationToken cancellationToken)
-    {
-        await using var ms = new MemoryStream();
-        var first = true;
-        var sampleRate = 16000;
-        var channels = 1;
-        var width = 2;
-        await foreach (var chunk in audio.WithCancellation(cancellationToken))
-        {
-            if (first) { sampleRate = chunk.SampleRate; channels = chunk.Channels; width = chunk.SampleWidthBytes; first = false; }
-            await ms.WriteAsync(chunk.Pcm, cancellationToken);
-        }
-
-        ms.Position = 0;
-        var pcm = ms.ToArray();
-        var wav = WrapWav(pcm, sampleRate, channels, width);
-
-        using var content = new MultipartFormDataContent();
-        content.Add(new ByteArrayContent(wav) { Headers = { ContentType = new MediaTypeHeaderValue("audio/wav") } }, "file", "audio.wav");
-        content.Add(new StringContent(options.ModelOverride ?? model), "model");
-        if (options.LanguageHint is not null)
-            content.Add(new StringContent(options.LanguageHint), "language");
-
-        using var req = new HttpRequestMessage(HttpMethod.Post, "audio/transcriptions") { Content = content };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        var startMs = Environment.TickCount64;
-        using var res = await http.SendAsync(req, cancellationToken);
-        res.EnsureSuccessStatusCode();
-        var body = await res.Content.ReadAsStringAsync(cancellationToken);
-        using var doc = JsonDocument.Parse(body);
-        var text = doc.RootElement.GetProperty("text").GetString() ?? string.Empty;
-        return new TranscriptionResult(text, options.LanguageHint, 1.0, Environment.TickCount64 - startMs);
-    }
-
-    private static byte[] WrapWav(byte[] pcm, int sampleRate, int channels, int width)
-    {
-        // RIFF/WAVE/fmt/data header for PCM
-        var byteRate = sampleRate * channels * width;
-        var ms = new MemoryStream();
-        var w = new BinaryWriter(ms);
-        w.Write("RIFF"u8); w.Write(36 + pcm.Length);
-        w.Write("WAVE"u8); w.Write("fmt "u8); w.Write(16); w.Write((short)1);
-        w.Write((short)channels); w.Write(sampleRate); w.Write(byteRate);
-        w.Write((short)(channels * width)); w.Write((short)(width * 8));
-        w.Write("data"u8); w.Write(pcm.Length); w.Write(pcm);
-        return ms.ToArray();
-    }
-}
-
-file static class Utf8Extensions
-{
-    public static void Write(this BinaryWriter w, ReadOnlySpan<byte> bytes) => w.Write(bytes.ToArray());
-}
-```
-
-- [ ] **Step 3: Run, watch the test pass**
-
-Run: `dotnet test --filter "FullyQualifiedName~OpenAiSpeechToTextTests"`
-Expected: PASS.
-
-- [ ] **Step 4: Commit**
-
-Run: `git add Infrastructure/Clients/Voice/OpenAiSpeechToText.cs Tests/Unit/Infrastructure/Voice/OpenAiSpeechToTextTests.cs`
-Run: `git commit -m "feat(voice): add OpenAiSpeechToText adapter"`
-
-### Task 5.2: OpenAiTextToSpeech adapter
-
-**Files:**
-- Create: `Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs`
-
-- [ ] **Step 1: Implement** (POST to `audio/speech` with `{model, voice, input, response_format: "pcm"}`, stream the PCM body in fixed-size chunks as `AudioChunk`s)
-
-```csharp
-// Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Runtime.CompilerServices;
-using Domain.Contracts;
-using Domain.DTOs.Voice;
-
-namespace Infrastructure.Clients.Voice;
-
-public sealed class OpenAiTextToSpeech(HttpClient http, string apiKey, string model, string voice) : ITextToSpeech
-{
-    public async IAsyncEnumerable<AudioChunk> SynthesizeAsync(
-        string text,
-        SynthesisOptions options,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        using var req = new HttpRequestMessage(HttpMethod.Post, "audio/speech")
-        {
-            Content = JsonContent.Create(new
-            {
-                model,
-                voice = options.Voice ?? voice,
-                input = text,
-                response_format = "pcm"
-            })
-        };
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        res.EnsureSuccessStatusCode();
-        await using var stream = await res.Content.ReadAsStreamAsync(cancellationToken);
-
-        var buffer = new byte[3200]; // 100ms @ 16kHz mono 16-bit
-        while (true)
-        {
-            var read = await stream.ReadAsync(buffer, cancellationToken);
-            if (read == 0) yield break;
-            var slice = buffer.AsSpan(0, read).ToArray();
-            yield return new AudioChunk(slice, 24000, 2, 1, DateTimeOffset.UtcNow);
-        }
-    }
-}
-```
-
-- [ ] **Step 2: Build**
-
-Run: `dotnet build Infrastructure/Infrastructure.csproj`
-Expected: build succeeds.
-
-- [ ] **Step 3: Commit**
-
-Run: `git add Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs`
-Run: `git commit -m "feat(voice): add OpenAiTextToSpeech adapter"`
-
-### Task 5.3: DI factory + secrets
-
-**Files:**
-- Modify: `McpChannelVoice/Modules/ConfigModule.cs`
-- Modify: `DockerCompose/.env`
-- Modify: `DockerCompose/docker-compose.yml` (env passthrough on `mcp-channel-voice`)
-- Modify: `McpChannelVoice/appsettings.Development.json` (placeholder OpenAI block)
-
-- [ ] **Step 1: Extend the DI factory**
-
-Replace the `ISpeechToText` factory in `ConfigModule.cs`:
-
-```csharp
-.AddSingleton<ISpeechToText>(sp =>
-{
-    var voice = sp.GetRequiredService<VoiceSettings>();
-    return voice.Stt.Provider switch
-    {
-        "Wyoming" => new Infrastructure.Clients.Voice.WyomingSpeechToText(
-            voice.Stt.Wyoming!.Host, voice.Stt.Wyoming.Port, voice.Stt.Wyoming.Model),
-        "OpenAi" => new Infrastructure.Clients.Voice.OpenAiSpeechToText(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai"),
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? throw new InvalidOperationException("OPENAI_API_KEY missing"),
-            voice.Stt.OpenAi?.Model ?? "whisper-1"),
-        _ => throw new InvalidOperationException($"Unsupported STT provider: {voice.Stt.Provider}")
-    };
-})
-```
-
-Identical pattern for `ITextToSpeech`. Add `.AddHttpClient("openai", c => c.BaseAddress = new Uri("https://api.openai.com/v1/"));` once.
-
-- [ ] **Step 2: `.env` placeholder**
-
-Add to `DockerCompose/.env`:
-
-```env
-OPENAI_API_KEY=
-```
-
-- [ ] **Step 3: Pass through in compose**
-
-In the `mcp-channel-voice` service block, add:
-
-```yaml
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-```
-
-- [ ] **Step 4: Document in `appsettings.Development.json`**
-
-Add (commented placeholder is fine; the field exists in the record either way):
-
-```json
-"Voice": {
-  "Stt": { "Provider": "Wyoming", "OpenAi": { "Model": "whisper-1" } },
-  "Tts": { "Provider": "Wyoming", "OpenAi": { "Model": "tts-1", "Voice": "alloy" } }
-}
-```
-
-- [ ] **Step 5: Commit**
-
-Run: `git add McpChannelVoice DockerCompose/.env DockerCompose/docker-compose.yml`
-Run: `git commit -m "feat(voice): config-driven OpenAI STT/TTS provider switch"`
-
-### Task 5.4: Origin tagging on token cost events
-
-**Files:**
-- Modify: `Infrastructure/Clients/Voice/OpenAiSpeechToText.cs`
-- Modify: `Infrastructure/Clients/Voice/OpenAiTextToSpeech.cs`
-
-- [ ] **Step 1: Inject `IMetricsPublisher` into both adapters**
-
-After each successful API call, publish a `TokenUsageEvent` (or whichever event already covers external cost; check `Domain/DTOs/Metrics/TokenUsageEvent.cs` shape) with a new `Origin` field if it doesn't exist yet — if it does not, add it and update collector aggregation accordingly. **Verify before adding**: read the current `TokenUsageEvent.cs` and the existing collector slicing keys before making this change.
-
-- [ ] **Step 2: Smoke test by switching to OpenAI in dev config**
-
-Set `Voice:Stt:Provider=OpenAi` (and `Tts`) in `appsettings.Development.json`. Speak a short utterance against your dev satellite. Confirm:
-
-- Transcript still arrives at the agent.
-- A new `TokenUsageEvent` with `Origin = "voice"` is published (visible in `redis-cli SUBSCRIBE metrics:events`).
-
-Switch the config back to Wyoming after the smoke test.
-
-- [ ] **Step 3: Commit**
-
-Run: `git commit -am "feat(voice): tag OpenAI cost events with Origin=voice for token dashboard slicing"`
-
-### Slice 5 done
-
-Switching `Voice:Stt:Provider` to `OpenAi` works end-to-end without code changes elsewhere. Cost events flow into the existing Tokens page automatically.
-
----
-
-## Self-review notes
-
-I checked the plan against the spec section by section. Coverage:
-
-- **Architecture diagram** — covered by file structure and Task 1.1–1.6 (channel skeleton), 2.3–2.9 (Wyoming + STT pipeline).
-- **Components table** — every "we own" component has a task. Stock components are wired in 1.8 and 2.11.
-- **Data flow round-trip** — Slices 2 and 3 implement steps 1–8 of the spec's data flow.
-- **Approval flow** — Slice 4.
-- **Configuration shape** — Task 1.2 (settings record) and 1.3 (appsettings).
-- **Docker Compose** — Tasks 1.8, 2.11, 5.3.
-- **Identity & threading** — Task 1.4 (`SatelliteRegistry`), Task 2.8 (per-satellite `conversationId`).
-- **Observability** — Task 1.7 (heartbeat), 2.6 (event type), 2.14 (collector + endpoint + page), 3.5 (overview KPIs), 4.3 (approval metric).
-- **Dashboard delta** — Tasks 2.14, 3.5, 4.3 cover the new page, KPIs, and approval panel. **`HealthGrid.razor` and `Errors.razor` are not modified explicitly** — the spec said "data-only if grid is generic; otherwise add a Voice tab". Tasks 1.7 and Slice 5.4 publish heartbeat and error events that the existing grid/errors page should pick up automatically. **If the grid is not generic when implementation reaches that point**, add an inline subtask under Task 1.8 to extend it.
-- **Error handling** — confidence gate in Task 2.8; timeouts and decline-default in Task 4.2; cancellation paths handled by `CancellationToken` propagation throughout. The "barge-in" case (re-wake during TTS) is provided by stock `wyoming-satellite`; no extra code needed on our side beyond ensuring the existing TTS task is cancelled when a new `audio-start` arrives — which is naturally handled because `WyomingPipelineHandler.HandleAsync` only enters `RunUtteranceAsync` on `audio-start`. **If integration testing reveals barge-in is not clean**, add a follow-up task to track in-flight TTS via a `CancellationTokenSource` per session and cancel it on new wake.
-- **Testing strategy** — unit tests in Tasks 1.3, 1.4, 1.5, 2.3, 2.4, 4.1, 5.1. Integration test in Task 2.10. Manual smoke tests in 1.8 and 2.13. **No E2E task is defined for the spoken approval flow** because audio E2E requires a real Pi + mic; the spec acknowledges that as manual.
-- **Phasing** — five slices, each ends green and committed.
-- **Style/layering** — captured in the "Conventions used in this plan" section at the top.
-
-Type consistency: `SatelliteSession` constructor signature changes between Tasks 2.7 (without `wakeAt`) and 3.4 (with `wakeAt`) — this is intentional and explicit in the steps. `ApprovalDecision` enum is defined in Task 4.1 and consumed in Task 4.2. `WyomingProtocol.WriteAsync` / `ReadAsync` signatures used in Tasks 2.3, 2.4, 2.5, 3.1, 3.3, 4.2 are consistent.
-
-No remaining placeholders or "TBDs" in concrete-code steps. The two soft "if it turns out…" notes above are explicitly framed as conditional follow-ups, not gaps.
