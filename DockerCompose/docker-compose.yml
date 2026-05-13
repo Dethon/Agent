@@ -51,6 +51,23 @@ services:
     networks:
       - jackbot
 
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: homeassistant
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./volumes/homeassistant_config:/config
+    environment:
+      - TZ=Europe/Madrid
+    restart: unless-stopped
+    networks:
+      - jackbot
+
   filebrowser:
     image: filebrowser/filebrowser:v2
     logging:
@@ -307,6 +324,33 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-homeassistant:
+    image: mcp-homeassistant:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-homeassistant
+    ports:
+      - "6006:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerHomeAssistant/Dockerfile
+      cache_from:
+        - mcp-homeassistant:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      homeassistant:
+        condition: service_started
+
   mcp-channel-signalr:
     image: mcp-channel-signalr:latest
     logging:
@@ -417,6 +461,8 @@ services:
       mcp-websearch:
         condition: service_started
       mcp-idealista:
+        condition: service_started
+      mcp-homeassistant:
         condition: service_started
       mcp-channel-signalr:
         condition: service_started

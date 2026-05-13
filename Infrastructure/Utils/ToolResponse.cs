@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Exceptions;
 using Domain.Tools;
 using ModelContextProtocol.Protocol;
 
@@ -32,15 +33,9 @@ public static class ToolResponse
     // downstream consumer that branches on IsError) without a separate signal channel.
     public static CallToolResult Create(JsonNode json)
     {
-        var isError = json is JsonObject obj
-                      && obj.TryGetPropertyValue("ok", out var ok)
-                      && ok is JsonValue v
-                      && v.TryGetValue<bool>(out var okValue)
-                      && !okValue;
-
         return new CallToolResult
         {
-            IsError = isError,
+            IsError = IsErrorEnvelope(json),
             Content =
             [
                 new TextContentBlock
@@ -53,12 +48,6 @@ public static class ToolResponse
 
     public static CallToolResult Create(JsonNode envelope, params string?[] bodies)
     {
-        var isError = envelope is JsonObject obj
-                      && obj.TryGetPropertyValue("ok", out var ok)
-                      && ok is JsonValue v
-                      && v.TryGetValue<bool>(out var okValue)
-                      && !okValue;
-
         var content = new List<ContentBlock> { new TextContentBlock { Text = envelope.ToJsonString() } };
         content.AddRange(bodies
             .Where(b => b is not null)
@@ -66,7 +55,7 @@ public static class ToolResponse
 
         return new CallToolResult
         {
-            IsError = isError,
+            IsError = IsErrorEnvelope(envelope),
             Content = content
         };
     }
@@ -86,14 +75,26 @@ public static class ToolResponse
         };
     }
 
+    private static bool IsErrorEnvelope(JsonNode json)
+        => json is JsonObject obj
+           && obj.TryGetPropertyValue("ok", out var ok)
+           && ok is JsonValue v
+           && v.TryGetValue<bool>(out var okValue)
+           && !okValue;
+
     // Exception → envelope code mapping. FileNotFoundException/DirectoryNotFoundException
     // derive from IOException, so list them first; the switch matches the most specific arm.
+    // HomeAssistantException's 4xx-with-status arm sits after the NotFound/Unauthorized
+    // subclasses so those keep their more specific codes.
     private static string MapErrorCode(Exception ex) => ex switch
     {
         ArgumentException => ToolError.Codes.InvalidArgument,
+        HomeAssistantNotFoundException => ToolError.Codes.NotFound,
         FileNotFoundException => ToolError.Codes.NotFound,
         DirectoryNotFoundException => ToolError.Codes.NotFound,
         IOException => ToolError.Codes.AlreadyExists,
+        HomeAssistantUnauthorizedException => ToolError.Codes.InvalidArgument,
+        HomeAssistantException { StatusCode: >= 400 and < 500 } => ToolError.Codes.InvalidArgument,
         UnauthorizedAccessException => ToolError.Codes.InvalidArgument,
         TimeoutException => ToolError.Codes.Timeout,
         OperationCanceledException => ToolError.Codes.Timeout,
@@ -103,9 +104,12 @@ public static class ToolResponse
     private static bool IsRetryable(Exception ex) => ex switch
     {
         ArgumentException => false,
+        HomeAssistantNotFoundException => false,
         FileNotFoundException => false,
         DirectoryNotFoundException => false,
         IOException => false,
+        HomeAssistantUnauthorizedException => false,
+        HomeAssistantException { StatusCode: >= 400 and < 500 } => false,
         UnauthorizedAccessException => false,
         TimeoutException => true,
         OperationCanceledException => true,
