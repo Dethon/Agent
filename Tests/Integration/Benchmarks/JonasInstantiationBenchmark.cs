@@ -1,11 +1,15 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Agent.Modules;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents;
-using Infrastructure.StateManagers;
+using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
@@ -31,59 +35,102 @@ public class JonasInstantiationBenchmark(
     [Fact]
     public async Task CreateJonasAgent_FiveMeasuredIterations_CompletesUnderTimeout()
     {
-        var jonas = LoadJonasDefinition();
-        var endpoints = mcpStackFixture.Endpoints.ToArray();
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
-        var userId = $"benchmark-user-{Guid.NewGuid()}";
-
-        // Warmup — absorbs JIT, HttpClient pool init, TLS handshakes, Redis warm-up.
-        for (var i = 0; i < WarmupIterations; i++)
+        var (provider, factory) = BuildFactory();
+        try
         {
-            await RunOneIterationAsync(jonas, endpoints, stateStore, userId);
-        }
+            var approvalHandler = new AutoApproveHandler();
+            var userId = $"benchmark-user-{Guid.NewGuid()}";
 
-        var measured = new List<long>(MeasuredIterations);
-        var stopwatch = new Stopwatch();
-        for (var i = 0; i < MeasuredIterations; i++)
+            // Warmup — absorbs JIT, HttpClient pool init, TLS handshakes, Redis warm-up.
+            for (var i = 0; i < WarmupIterations; i++)
+            {
+                await RunOneIterationAsync(factory, approvalHandler, userId);
+            }
+
+            var measured = new List<long>(MeasuredIterations);
+            var stopwatch = new Stopwatch();
+            for (var i = 0; i < MeasuredIterations; i++)
+            {
+                stopwatch.Restart();
+                await RunOneIterationAsync(factory, approvalHandler, userId);
+                stopwatch.Stop();
+                measured.Add(stopwatch.ElapsedMilliseconds);
+                output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
+            }
+
+            var min = measured.Min();
+            var max = measured.Max();
+            var mean = (long)measured.Average();
+            output.WriteLine(
+                $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
+
+            measured.Count.ShouldBe(MeasuredIterations);
+            measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
+        }
+        finally
         {
-            stopwatch.Restart();
-            await RunOneIterationAsync(jonas, endpoints, stateStore, userId);
-            stopwatch.Stop();
-            measured.Add(stopwatch.ElapsedMilliseconds);
-            output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
+            await provider.DisposeAsync();
         }
+    }
 
-        var min = measured.Min();
-        var max = measured.Max();
-        var mean = (long)measured.Average();
-        output.WriteLine(
-            $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
+    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory()
+    {
+        var settings = _configuration.Get<Agent.Settings.AgentSettings>()
+            ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
 
-        measured.Count.ShouldBe(MeasuredIterations);
-        measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
+        // Replace jonas's docker-internal MCP endpoints with the test-managed container URLs
+        // so the agent connects to the JonasMcpStackFixture stack rather than the production
+        // compose network.
+        var stackEndpoints = mcpStackFixture.Endpoints.ToArray();
+        settings = settings with
+        {
+            Redis = settings.Redis with { ConnectionString = redisFixture.ConnectionString },
+            Agents = settings.Agents
+                .Select(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase)
+                    ? a with { McpServerEndpoints = stackEndpoints }
+                    : a)
+                .ToArray()
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(_configuration);
+        services.AddLogging();
+        services
+            .AddAgent(settings)
+            .AddScheduling()
+            .AddSubAgents(settings.SubAgents)
+            .AddMemory(_configuration);
+
+        var provider = services.BuildServiceProvider();
+
+        var openRouterConfig = new OpenRouterConfig
+        {
+            ApiUrl = settings.OpenRouter.ApiUrl,
+            ApiKey = settings.OpenRouter.ApiKey,
+            MaxContextTokens = settings.OpenRouter.MaxContextTokens
+        };
+
+        // Replace MultiAgentFactory's OpenRouter chat client with a stub so we don't make real
+        // LLM calls during the benchmark. Everything else — definition lookup, tool resolution,
+        // ToolApprovalChatClient wrapping, McpAgent construction, MCP discovery — is real.
+        var factory = new MultiAgentFactory(
+            provider,
+            provider.GetRequiredService<IAgentDefinitionProvider>(),
+            openRouterConfig,
+            provider.GetRequiredService<IDomainToolRegistry>(),
+            metricsPublisher: provider.GetService<IMetricsPublisher>(),
+            loggerFactory: provider.GetService<ILoggerFactory>(),
+            chatClientFactory: (_, _, _) => new StubChatClient());
+
+        return (provider, factory);
     }
 
     private static async Task RunOneIterationAsync(
-        AgentDefinition jonas,
-        string[] endpoints,
-        IThreadStateStore stateStore,
-        string userId)
+        IAgentFactory factory, IToolApprovalHandler approvalHandler, string userId)
     {
         using var cts = new CancellationTokenSource(_iterationTimeout);
-        var conversationId = $"benchmark:{Guid.NewGuid()}";
-
-        using var chatClient = new StubChatClient();
-
-        var agent = new McpAgent(
-            endpoints,
-            chatClient,
-            $"{jonas.Name}-{conversationId}",
-            jonas.Description ?? "",
-            stateStore,
-            userId,
-            jonas.CustomInstructions,
-            reasoningEffort: jonas.ReasoningEffort);
-
+        var agentKey = new AgentKey($"benchmark:{Guid.NewGuid()}", AgentId);
+        var agent = factory.Create(agentKey, userId, AgentId, approvalHandler);
         try
         {
             var thread = await agent.CreateSessionAsync(cts.Token);
@@ -96,15 +143,6 @@ public class JonasInstantiationBenchmark(
         {
             await agent.DisposeAsync();
         }
-    }
-
-    private static AgentDefinition LoadJonasDefinition()
-    {
-        var settings = _configuration.Get<Agent.Settings.AgentSettings>()
-            ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
-
-        return settings.Agents.FirstOrDefault(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"agent '{AgentId}' not found in appsettings.json");
     }
 
     private static string LocateAgentAppSettings()
@@ -149,4 +187,15 @@ file sealed class StubChatClient : IChatClient
     public void Dispose() { }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
+}
+
+file sealed class AutoApproveHandler : IToolApprovalHandler
+{
+    public Task<ToolApprovalResult> RequestApprovalAsync(
+        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        => Task.FromResult(ToolApprovalResult.Approved);
+
+    public Task NotifyAutoApprovedAsync(
+        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
