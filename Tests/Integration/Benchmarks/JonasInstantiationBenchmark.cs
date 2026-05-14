@@ -21,6 +21,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
     private const int WarmupIterations = 1;
     private const int MeasuredIterations = 5;
     private static readonly TimeSpan IterationTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan ReachabilityProbeTimeout = TimeSpan.FromMilliseconds(500);
 
     private static readonly IConfigurationRoot _configuration = new ConfigurationBuilder()
         .AddJsonFile(LocateAgentAppSettings(), optional: false)
@@ -29,7 +30,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         .Build();
 
     [SkippableFact]
-    public async Task Create_Jonas_Benchmark()
+    public async Task CreateJonasAgent_FiveMeasuredIterations_CompletesUnderTimeout()
     {
         Skip.If(string.IsNullOrEmpty(_configuration["openRouter:apiKey"]),
             "openRouter:apiKey not set in user secrets");
@@ -42,7 +43,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             .Get<string[]>()
             ?? throw new InvalidOperationException($"agent '{AgentId}' has no mcpServerEndpoints");
 
-        Skip.IfNot(await AllEndpointsReachable(endpoints, TimeSpan.FromMilliseconds(500)),
+        Skip.IfNot(await AllEndpointsReachable(endpoints, ReachabilityProbeTimeout),
             $"One or more jonas MCP endpoints unreachable: {string.Join(", ", endpoints)}");
 
         var (provider, factory) = BuildFactory();
@@ -51,6 +52,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             var approvalHandler = new AutoApproveHandler();
             var userId = $"benchmark-user-{Guid.NewGuid()}";
 
+            // Warmup — absorbs JIT, HttpClient pool init, TLS handshakes, Redis warm-up.
             for (var i = 0; i < WarmupIterations; i++)
             {
                 await RunOneIterationAsync(factory, approvalHandler, userId);
@@ -111,7 +113,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         IAgentFactory factory, IToolApprovalHandler approvalHandler, string userId)
     {
         using var cts = new CancellationTokenSource(IterationTimeout);
-        var agentKey = new AgentKey($"benchmark:{Guid.NewGuid()}");
+        var agentKey = new AgentKey($"benchmark:{Guid.NewGuid()}", AgentId);
         var agent = factory.Create(agentKey, userId, AgentId, approvalHandler);
         try
         {
@@ -156,7 +158,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             await client.ConnectAsync(uri.Host, uri.Port, cts.Token);
             return client.Connected;
         }
-        catch
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException)
         {
             return false;
         }
