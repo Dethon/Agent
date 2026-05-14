@@ -6,9 +6,12 @@ using Agent.Modules;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.WebChat;
 using Domain.Monitor;
 using Infrastructure.Agents;
+using Infrastructure.Clients.Channels;
 using Infrastructure.Metrics;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -94,6 +97,56 @@ public class JonasInstantiationBenchmark(
             {
                 stopwatch.Restart();
                 await ProcessOneMessageAsync(stub, userId);
+                stopwatch.Stop();
+                measured.Add(stopwatch.ElapsedMilliseconds);
+                output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
+            }
+
+            ReportSummary(measured);
+        }
+        finally
+        {
+            await monitorCts.CancelAsync();
+            await monitorTask;
+            await provider.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task ProcessJonasMessageViaSignalR_FiveMeasuredIterations_CompletesUnderTimeout()
+    {
+        using var setupCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        // Agent-side connection: receives notifications/channel/message from the channel container.
+        await using var channelConnection = new McpChannelConnection("signalr");
+        await channelConnection.ConnectAsync(mcpStackFixture.SignalRChannelMcpEndpoint, setupCts.Token);
+
+        var (provider, _, monitor) = BuildServices(channelConnection);
+        using var monitorCts = new CancellationTokenSource();
+        var monitorTask = monitor!.Monitor(monitorCts.Token);
+
+        try
+        {
+            var userId = $"benchmark-user-{Guid.NewGuid()}";
+
+            // Browser-side connection: drives the round-trip via the SignalR hub.
+            await using var hub = new HubConnectionBuilder()
+                .WithUrl(mcpStackFixture.SignalRHubUrl)
+                .Build();
+            await hub.StartAsync(setupCts.Token);
+            await hub.InvokeAsync("RegisterUser", userId, setupCts.Token);
+
+            for (var i = 0; i < WarmupIterations; i++)
+            {
+                await ProcessOneSignalRMessageAsync(hub);
+            }
+
+            var measured = new List<long>(MeasuredIterations);
+            var stopwatch = new Stopwatch();
+            for (var i = 0; i < MeasuredIterations; i++)
+            {
+                stopwatch.Restart();
+                await ProcessOneSignalRMessageAsync(hub);
                 stopwatch.Stop();
                 measured.Add(stopwatch.ElapsedMilliseconds);
                 output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
@@ -211,6 +264,29 @@ public class JonasInstantiationBenchmark(
         });
 
         await completion.WaitAsync(cts.Token);
+    }
+
+    private static async Task ProcessOneSignalRMessageAsync(HubConnection hub)
+    {
+        using var cts = new CancellationTokenSource(_iterationTimeout);
+
+        // Unique topic + chat/thread ids per iteration so each round-trip targets a fresh
+        // AgentKey, exercising MultiAgentFactory.Create end-to-end.
+        var topicId = $"benchmark-topic-{Guid.NewGuid()}";
+        var chatId = Random.Shared.NextInt64();
+        var threadId = Random.Shared.NextInt64();
+
+        var sessionStarted = await hub.InvokeAsync<bool>(
+            "StartSession", AgentId, topicId, chatId, threadId, null, cts.Token);
+        sessionStarted.ShouldBeTrue();
+
+        var stream = hub.StreamAsync<ChatStreamMessage>(
+            "SendMessage", topicId, "hi", null, cts.Token);
+
+        await foreach (var _ in stream.WithCancellation(cts.Token))
+        {
+            // consume until the broadcast channel completes
+        }
     }
 
     private void ReportSummary(IReadOnlyList<long> measured)
