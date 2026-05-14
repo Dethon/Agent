@@ -285,7 +285,9 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         {
             CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference),
             CreateMemory("mem_2", "User can program", MemoryCategory.Skill),
-            CreateMemory("mem_3", "User has lots of experience", MemoryCategory.Skill)
+            CreateMemory("mem_3", "User has lots of professional experience", MemoryCategory.Fact),
+            CreateMemory("mem_4", "User studied CS", MemoryCategory.Skill),
+            CreateMemory("mem_5", "User works as an engineer", MemoryCategory.Fact)
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
