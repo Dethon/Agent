@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using Agent.Modules;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Metrics;
 using Microsoft.Extensions.AI;
@@ -35,7 +38,7 @@ public class JonasInstantiationBenchmark(
     [Fact]
     public async Task CreateJonasAgent_FiveMeasuredIterations_CompletesUnderTimeout()
     {
-        var (provider, factory) = BuildFactory();
+        var (provider, factory, _) = BuildServices(stubChannel: null);
         try
         {
             var approvalHandler = new AutoApproveHandler();
@@ -58,14 +61,7 @@ public class JonasInstantiationBenchmark(
                 output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
             }
 
-            var min = measured.Min();
-            var max = measured.Max();
-            var mean = (long)measured.Average();
-            output.WriteLine(
-                $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
-
-            measured.Count.ShouldBe(MeasuredIterations);
-            measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
+            ReportSummary(measured);
         }
         finally
         {
@@ -73,7 +69,48 @@ public class JonasInstantiationBenchmark(
         }
     }
 
-    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory()
+    [Fact]
+    public async Task ProcessJonasMessageViaChatMonitor_FiveMeasuredIterations_CompletesUnderTimeout()
+    {
+        var stub = new StubChannelConnection();
+        var (provider, _, monitor) = BuildServices(stub);
+        using var monitorCts = new CancellationTokenSource();
+        // ChatMonitor.Monitor is a long-running loop; let it run in the background while
+        // we push messages into the stub channel and time the round-trip.
+        var monitorTask = monitor!.Monitor(monitorCts.Token);
+
+        try
+        {
+            var userId = $"benchmark-user-{Guid.NewGuid()}";
+
+            for (var i = 0; i < WarmupIterations; i++)
+            {
+                await ProcessOneMessageAsync(stub, userId);
+            }
+
+            var measured = new List<long>(MeasuredIterations);
+            var stopwatch = new Stopwatch();
+            for (var i = 0; i < MeasuredIterations; i++)
+            {
+                stopwatch.Restart();
+                await ProcessOneMessageAsync(stub, userId);
+                stopwatch.Stop();
+                measured.Add(stopwatch.ElapsedMilliseconds);
+                output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
+            }
+
+            ReportSummary(measured);
+        }
+        finally
+        {
+            await monitorCts.CancelAsync();
+            await monitorTask;
+            await provider.DisposeAsync();
+        }
+    }
+
+    private (ServiceProvider Provider, IAgentFactory Factory, ChatMonitor? Monitor) BuildServices(
+        IChannelConnection? stubChannel)
     {
         var settings = _configuration.Get<Agent.Settings.AgentSettings>()
             ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
@@ -122,7 +159,20 @@ public class JonasInstantiationBenchmark(
             loggerFactory: provider.GetService<ILoggerFactory>(),
             chatClientFactory: (_, _, _) => new StubChatClient());
 
-        return (provider, factory);
+        ChatMonitor? monitor = null;
+        if (stubChannel is not null)
+        {
+            monitor = new ChatMonitor(
+                [stubChannel],
+                factory,
+                approvalHandlerFactory: (_, _) => new AutoApproveHandler(),
+                provider.GetRequiredService<ChatThreadResolver>(),
+                provider.GetRequiredService<IMetricsPublisher>(),
+                memoryRecallHook: null,
+                provider.GetRequiredService<ILogger<ChatMonitor>>());
+        }
+
+        return (provider, factory, monitor);
     }
 
     private static async Task RunOneIterationAsync(
@@ -143,6 +193,36 @@ public class JonasInstantiationBenchmark(
         {
             await agent.DisposeAsync();
         }
+    }
+
+    private static async Task ProcessOneMessageAsync(StubChannelConnection stub, string userId)
+    {
+        using var cts = new CancellationTokenSource(_iterationTimeout);
+        var conversationId = $"benchmark:{Guid.NewGuid()}";
+        var completion = stub.AwaitCompletion(conversationId);
+
+        stub.PushMessage(new ChannelMessage
+        {
+            ConversationId = conversationId,
+            Content = "hi",
+            Sender = userId,
+            ChannelId = stub.ChannelId,
+            AgentId = AgentId
+        });
+
+        await completion.WaitAsync(cts.Token);
+    }
+
+    private void ReportSummary(IReadOnlyList<long> measured)
+    {
+        var min = measured.Min();
+        var max = measured.Max();
+        var mean = (long)measured.Average();
+        output.WriteLine(
+            $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
+
+        measured.Count.ShouldBe(MeasuredIterations);
+        measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
     }
 
     private static string LocateAgentAppSettings()
@@ -198,4 +278,47 @@ file sealed class AutoApproveHandler : IToolApprovalHandler
     public Task NotifyAutoApprovedAsync(
         IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
         => Task.CompletedTask;
+}
+
+internal sealed class StubChannelConnection : IChannelConnection
+{
+    private readonly Channel<ChannelMessage> _messages = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _completions = new();
+
+    public string ChannelId => "stub";
+
+    public IAsyncEnumerable<ChannelMessage> Messages => _messages.Reader.ReadAllAsync();
+
+    public void PushMessage(ChannelMessage message) => _messages.Writer.TryWrite(message);
+
+    public Task AwaitCompletion(string conversationId)
+        => GetOrAddCompletion(conversationId).Task;
+
+    public Task SendReplyAsync(
+        string conversationId, string content, ReplyContentType contentType,
+        bool isComplete, string? messageId, CancellationToken ct)
+    {
+        if (isComplete)
+        {
+            GetOrAddCompletion(conversationId).TrySetResult();
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task<ToolApprovalResult> RequestApprovalAsync(
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => Task.FromResult(ToolApprovalResult.Approved);
+
+    public Task NotifyAutoApprovedAsync(
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+        => Task.CompletedTask;
+
+    public Task<string?> CreateConversationAsync(
+        string agentId, string topicName, string sender, CancellationToken ct)
+        => Task.FromResult<string?>(null);
+
+    private TaskCompletionSource GetOrAddCompletion(string conversationId)
+        => _completions.GetOrAdd(
+            conversationId,
+            _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
 }
