@@ -1,72 +1,101 @@
-using System.ComponentModel;
-using System.Net;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using ModelContextProtocol.Server;
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Networks;
+using Tests.E2E.Fixtures;
 
 namespace Tests.Integration.Fixtures;
 
-// Five minimal in-process MCP servers, one per jonas MCP endpoint. Lets the
-// benchmark exercise the real MultiAgentFactory + session-creation path
-// (which makes one HTTP/MCP handshake per server) without needing the
-// Docker Compose stack — and without the sandbox container's GPU device
-// requirement that fails on WSL2.
+// Brings up the five MCP servers jonas connects to (mcp-vault, mcp-sandbox, mcp-websearch,
+// mcp-idealista, mcp-homeassistant) as real Docker containers, so the benchmark times the
+// actual MCP handshake + tool/resource discovery surface area. Images are rebuilt only when
+// source under the watched directories has changed (see TestHelpers.EnsureImageAsync).
 public class JonasMcpStackFixture : IAsyncLifetime
 {
-    private const int ServerCount = 5;
+    private static readonly TimeSpan _startupTimeout = TimeSpan.FromMinutes(10);
 
-    private readonly List<IHost> _hosts = [];
+    private INetwork? _network;
+    private IContainer? _mcpVault;
+    private IContainer? _mcpSandbox;
+    private IContainer? _mcpWebsearch;
+    private IContainer? _mcpIdealista;
+    private IContainer? _mcpHomeassistant;
 
     public IReadOnlyList<string> Endpoints { get; private set; } = [];
 
     public async Task InitializeAsync()
     {
-        var endpoints = new List<string>(ServerCount);
-        for (var i = 0; i < ServerCount; i++)
-        {
-            var port = TestPort.GetAvailable();
-            var builder = WebApplication.CreateBuilder();
-            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        using var cts = new CancellationTokenSource(_startupTimeout);
+        var ct = cts.Token;
 
-            builder.Services
-                .AddMcpServer()
-                .WithHttpTransport()
-                .WithTools<StubTool>();
+        var solutionRoot = TestHelpers.FindSolutionRoot();
 
-            var app = builder.Build();
-            app.MapMcp("/mcp");
+        // Build (or reuse) each image. EnsureImageAsync skips the rebuild when source under
+        // the watched dirs hasn't changed since the existing image was created.
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot, "McpServerVault/Dockerfile", "mcp-vault:latest",
+            ["Domain", "Infrastructure", "McpServerVault"], ct);
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot, "McpServerSandbox/Dockerfile", "mcp-sandbox:latest",
+            ["Domain", "Infrastructure", "McpServerSandbox"], ct);
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot, "McpServerWebSearch/Dockerfile", "mcp-websearch:latest",
+            ["Domain", "Infrastructure", "McpServerWebSearch"], ct);
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot, "McpServerIdealista/Dockerfile", "mcp-idealista:latest",
+            ["Domain", "Infrastructure", "McpServerIdealista"], ct);
+        await TestHelpers.EnsureImageAsync(
+            solutionRoot, "McpServerHomeAssistant/Dockerfile", "mcp-homeassistant:latest",
+            ["Domain", "Infrastructure", "McpServerHomeAssistant"], ct);
 
-            await app.StartAsync();
+        _network = new NetworkBuilder()
+            .WithName($"benchmark-{Guid.NewGuid():N}")
+            .Build();
+        await _network.CreateAsync(ct);
 
-            _hosts.Add(app);
-            endpoints.Add($"http://localhost:{port}/mcp");
-        }
-        Endpoints = endpoints;
+        _mcpVault = await StartContainer("mcp-vault:latest", "mcp-vault", ct);
+        _mcpSandbox = await StartContainer("mcp-sandbox:latest", "mcp-sandbox", ct);
+        _mcpWebsearch = await StartContainer("mcp-websearch:latest", "mcp-websearch", ct);
+        _mcpIdealista = await StartContainer("mcp-idealista:latest", "mcp-idealista", ct);
+        _mcpHomeassistant = await StartContainer("mcp-homeassistant:latest", "mcp-homeassistant", ct);
+
+        Endpoints =
+        [
+            EndpointFor(_mcpVault),
+            EndpointFor(_mcpSandbox),
+            EndpointFor(_mcpWebsearch),
+            EndpointFor(_mcpIdealista),
+            EndpointFor(_mcpHomeassistant),
+        ];
     }
+
+    private async Task<IContainer> StartContainer(string image, string alias, CancellationToken ct)
+    {
+        var container = new ContainerBuilder(image)
+            .WithName($"{alias}-bench-{Guid.NewGuid():N}")
+            .WithNetwork(_network!)
+            .WithNetworkAliases(alias)
+            .WithPortBinding(8080, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
+            .Build();
+        await container.StartAsync(ct);
+        return container;
+    }
+
+    private static string EndpointFor(IContainer container)
+        => $"http://{container.Hostname}:{container.GetMappedPublicPort(8080)}/mcp";
 
     public async Task DisposeAsync()
     {
-        foreach (var host in _hosts)
+        foreach (var container in new[] { _mcpHomeassistant, _mcpIdealista, _mcpWebsearch, _mcpSandbox, _mcpVault })
         {
-            try
+            if (container is not null)
             {
-                await host.StopAsync();
-                host.Dispose();
-            }
-            catch
-            {
-                // ignore shutdown errors
+                await container.DisposeAsync();
             }
         }
+        if (_network is not null)
+        {
+            await _network.DeleteAsync();
+        }
     }
-}
-
-[McpServerToolType]
-public class StubTool
-{
-    [McpServerTool(Name = "stub_ping")]
-    [Description("Stub tool that the agent will discover via tools/list but never invokes during the benchmark.")]
-    public static string Ping() => "pong";
 }
