@@ -285,7 +285,9 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         {
             CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference),
             CreateMemory("mem_2", "User can program", MemoryCategory.Skill),
-            CreateMemory("mem_3", "User has lots of experience", MemoryCategory.Skill)
+            CreateMemory("mem_3", "User has lots of professional experience", MemoryCategory.Fact),
+            CreateMemory("mem_4", "User studied CS", MemoryCategory.Skill),
+            CreateMemory("mem_5", "User works as an engineer", MemoryCategory.Fact)
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -293,7 +295,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 
         result.UserId.ShouldBe("test_user");
-        result.BasedOnMemoryCount.ShouldBe(3);
+        result.BasedOnMemoryCount.ShouldBe(5);
         result.Summary.ShouldNotBeNullOrWhiteSpace("Even minimal input should produce a summary");
         result.Confidence.ShouldBeInRange(0.0001, 1.0);
     }

@@ -5,6 +5,7 @@ using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +17,8 @@ public sealed class MultiAgentFactory(
     OpenRouterConfig openRouterConfig,
     IDomainToolRegistry domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null,
-    ILoggerFactory? loggerFactory = null) : IAgentFactory, IScheduleAgentFactory
+    ILoggerFactory? loggerFactory = null,
+    Func<string, int?, IMetricsPublisher?, IChatClient>? chatClientFactory = null) : IAgentFactory, IScheduleAgentFactory
 {
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
@@ -145,14 +147,22 @@ public sealed class MultiAgentFactory(
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private OpenRouterChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null)
+    private IChatClient CreateChatClient(string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null)
     {
+        var effectivePublisher = publisher ?? metricsPublisher;
+        var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
+
+        if (chatClientFactory is not null)
+        {
+            return chatClientFactory(model, effectiveContext, effectivePublisher);
+        }
+
         return new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             openRouterConfig.ApiKey,
             model,
-            maxContextTokens ?? openRouterConfig.MaxContextTokens,
-            publisher ?? metricsPublisher);
+            effectiveContext,
+            effectivePublisher);
     }
 }
 

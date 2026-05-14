@@ -86,7 +86,13 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
             .WithEnvironment("AGENTS__0__ID", "test-agent")
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
+            // POST negotiate succeeds only after Kestrel has fully bound routes; TCP-only
+            // checks return before the app is actually serving requests.
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r
+                    .ForPort(8080)
+                    .ForPath("/hubs/chat/negotiate")
+                    .WithMethod(HttpMethod.Post)))
             .Build();
         await _mcpChannelSignalR.StartAsync(ct);
 
@@ -127,6 +133,11 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
             .WithResourceMapping(e2EAppSettings, "/app/appsettings.json")
+            // Wait until Kestrel + hosted services (ChatMonitoring) are running. The agent
+            // container has no published host port, so an HTTP probe isn't possible; the
+            // log line is the cheapest reliable signal.
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilMessageIsLogged("Application started"))
             .Build();
         await _agent.StartAsync(ct);
 
