@@ -13,6 +13,8 @@ RUN apt-get update \
         git \
         jq \
         unzip \
+        gzip \
+        ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

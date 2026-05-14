@@ -242,6 +242,15 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     user: ${PUID:-1654}:${PGID:-1654}
+    devices:
+      - /dev/dri:/dev/dri
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     volumes:
       - ${SANDBOX_HOME_PATH:-./volumes/sandbox}:/home/sandbox_user
     restart: unless-stopped
