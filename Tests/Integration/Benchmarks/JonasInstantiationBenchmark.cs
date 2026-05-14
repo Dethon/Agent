@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Net.Sockets;
 using Agent.Modules;
 using Domain.Agents;
 using Domain.Contracts;
@@ -14,29 +13,16 @@ using Xunit.Abstractions;
 namespace Tests.Integration.Benchmarks;
 
 [Trait("Category", "Benchmark")]
-public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputHelper output)
-    : IClassFixture<RedisFixture>
+public class JonasInstantiationBenchmark(
+    RedisFixture redisFixture,
+    JonasMcpStackFixture mcpStackFixture,
+    ITestOutputHelper output)
+    : IClassFixture<RedisFixture>, IClassFixture<JonasMcpStackFixture>
 {
     private const string AgentId = "jonas";
     private const int WarmupIterations = 1;
     private const int MeasuredIterations = 5;
     private static readonly TimeSpan _iterationTimeout = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan _reachabilityProbeTimeout = TimeSpan.FromMilliseconds(500);
-
-    private static readonly bool _runningInsideContainer = File.Exists("/.dockerenv");
-
-    // Mapping from compose service name to host-published port (from DockerCompose/docker-compose.yml).
-    // Lets the test run from a developer shell with the compose stack up, without bringing up
-    // a container on the compose network.
-    private static readonly IReadOnlyDictionary<string, int> _hostPortMapping =
-        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["mcp-vault"] = 6002,
-            ["mcp-websearch"] = 6003,
-            ["mcp-sandbox"] = 6004,
-            ["mcp-idealista"] = 6005,
-            ["mcp-homeassistant"] = 6006,
-        };
 
     private static readonly IConfigurationRoot _configuration = new ConfigurationBuilder()
         .AddJsonFile(LocateAgentAppSettings(), optional: false)
@@ -50,20 +36,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         Skip.If(string.IsNullOrEmpty(_configuration["openRouter:apiKey"]),
             "openRouter:apiKey not set in user secrets");
 
-        var configuredEndpoints = _configuration
-            .GetSection("agents")
-            .GetChildren()
-            .First(c => c["id"] == AgentId)
-            .GetSection("mcpServerEndpoints")
-            .Get<string[]>()
-            ?? throw new InvalidOperationException($"agent '{AgentId}' has no mcpServerEndpoints");
-
-        var endpoints = ResolveEffectiveEndpoints(configuredEndpoints);
-
-        Skip.IfNot(await AllEndpointsReachable(endpoints, _reachabilityProbeTimeout),
-            $"One or more jonas MCP endpoints unreachable: {string.Join(", ", endpoints)}");
-
-        var (provider, factory) = BuildFactory(endpoints);
+        var (provider, factory) = BuildFactory();
         try
         {
             var approvalHandler = new AutoApproveHandler();
@@ -101,17 +74,22 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         }
     }
 
-    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory(string[] jonasEndpoints)
+    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory()
     {
         var settings = _configuration.Get<Agent.Settings.AgentSettings>()
             ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
 
+        var stubEndpoints = mcpStackFixture.Endpoints.ToArray();
+
+        // Replace jonas's docker-internal MCP endpoints with the in-process stub stack so the
+        // benchmark is self-contained. Model, features, and the rest of the definition are
+        // preserved.
         settings = settings with
         {
             Redis = settings.Redis with { ConnectionString = redisFixture.ConnectionString },
             Agents = settings.Agents
                 .Select(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase)
-                    ? a with { McpServerEndpoints = jonasEndpoints }
+                    ? a with { McpServerEndpoints = stubEndpoints }
                     : a)
                 .ToArray()
         };
@@ -140,35 +118,15 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         try
         {
             var session = await agent.CreateSessionAsync(cts.Token);
+            // WarmupSessionAsync is the step that actually opens the MCP connections —
+            // CreateSessionAsync alone only allocates a placeholder thread.
+            await agent.WarmupSessionAsync(session, cts.Token);
             await agent.DisposeThreadSessionAsync(session);
         }
         finally
         {
             await agent.DisposeAsync();
         }
-    }
-
-    private static string[] ResolveEffectiveEndpoints(string[] configured)
-    {
-        // Inside the compose network the configured hostnames resolve directly; outside it
-        // (the typical developer shell) they don't, so rewrite to the host-published port.
-        if (_runningInsideContainer)
-        {
-            return configured;
-        }
-
-        return configured.Select(RemapToLocalhostIfKnown).ToArray();
-    }
-
-    private static string RemapToLocalhostIfKnown(string endpoint)
-    {
-        var uri = new Uri(endpoint);
-        if (!_hostPortMapping.TryGetValue(uri.Host, out var hostPort))
-        {
-            return endpoint;
-        }
-
-        return new UriBuilder(uri) { Host = "localhost", Port = hostPort }.Uri.ToString();
     }
 
     private static string LocateAgentAppSettings()
@@ -184,29 +142,6 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             dir = dir.Parent;
         }
         throw new FileNotFoundException("Could not locate Agent/appsettings.json by walking up from test bin directory");
-    }
-
-    private static async Task<bool> AllEndpointsReachable(string[] endpoints, TimeSpan timeout)
-    {
-        var probes = endpoints.Select(ep => IsReachable(ep, timeout));
-        var results = await Task.WhenAll(probes);
-        return results.All(r => r);
-    }
-
-    private static async Task<bool> IsReachable(string endpoint, TimeSpan timeout)
-    {
-        try
-        {
-            var uri = new Uri(endpoint);
-            using var client = new TcpClient();
-            using var cts = new CancellationTokenSource(timeout);
-            await client.ConnectAsync(uri.Host, uri.Port, cts.Token);
-            return client.Connected;
-        }
-        catch (Exception ex) when (ex is SocketException or OperationCanceledException)
-        {
-            return false;
-        }
     }
 }
 
