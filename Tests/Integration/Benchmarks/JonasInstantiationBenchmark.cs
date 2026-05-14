@@ -18,11 +18,25 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
     : IClassFixture<RedisFixture>
 {
     private const string AgentId = "jonas";
-    private const string EndpointsOverrideEnvVar = "BENCHMARK_MCP_ENDPOINTS";
     private const int WarmupIterations = 1;
     private const int MeasuredIterations = 5;
     private static readonly TimeSpan _iterationTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan _reachabilityProbeTimeout = TimeSpan.FromMilliseconds(500);
+
+    private static readonly bool _runningInsideContainer = File.Exists("/.dockerenv");
+
+    // Mapping from compose service name to host-published port (from DockerCompose/docker-compose.yml).
+    // Lets the test run from a developer shell with the compose stack up, without bringing up
+    // a container on the compose network.
+    private static readonly IReadOnlyDictionary<string, int> _hostPortMapping =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["mcp-vault"] = 6002,
+            ["mcp-websearch"] = 6003,
+            ["mcp-sandbox"] = 6004,
+            ["mcp-idealista"] = 6005,
+            ["mcp-homeassistant"] = 6006,
+        };
 
     private static readonly IConfigurationRoot _configuration = new ConfigurationBuilder()
         .AddJsonFile(LocateAgentAppSettings(), optional: false)
@@ -44,8 +58,6 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             .Get<string[]>()
             ?? throw new InvalidOperationException($"agent '{AgentId}' has no mcpServerEndpoints");
 
-        // The appsettings entries use docker-internal hostnames; running outside the compose
-        // network requires overriding with reachable URLs (e.g., host-mapped localhost ports).
         var endpoints = ResolveEffectiveEndpoints(configuredEndpoints);
 
         Skip.IfNot(await AllEndpointsReachable(endpoints, _reachabilityProbeTimeout),
@@ -138,23 +150,25 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
 
     private static string[] ResolveEffectiveEndpoints(string[] configured)
     {
-        var overrideValue = Environment.GetEnvironmentVariable(EndpointsOverrideEnvVar);
-        if (string.IsNullOrWhiteSpace(overrideValue))
+        // Inside the compose network the configured hostnames resolve directly; outside it
+        // (the typical developer shell) they don't, so rewrite to the host-published port.
+        if (_runningInsideContainer)
         {
             return configured;
         }
 
-        var parsed = overrideValue
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return configured.Select(RemapToLocalhostIfKnown).ToArray();
+    }
 
-        if (parsed.Length != configured.Length)
+    private static string RemapToLocalhostIfKnown(string endpoint)
+    {
+        var uri = new Uri(endpoint);
+        if (!_hostPortMapping.TryGetValue(uri.Host, out var hostPort))
         {
-            throw new InvalidOperationException(
-                $"{EndpointsOverrideEnvVar} has {parsed.Length} entries but jonas is configured with " +
-                $"{configured.Length} MCP servers; the override must list one URL per configured server.");
+            return endpoint;
         }
 
-        return parsed;
+        return new UriBuilder(uri) { Host = "localhost", Port = hostPort }.Uri.ToString();
     }
 
     private static string LocateAgentAppSettings()
