@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using Agent.Modules;
-using Domain.Agents;
+using System.Runtime.CompilerServices;
 using Domain.Contracts;
 using Domain.DTOs;
+using Infrastructure.Agents;
+using Infrastructure.StateManagers;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Xunit.Abstractions;
@@ -26,107 +26,85 @@ public class JonasInstantiationBenchmark(
 
     private static readonly IConfigurationRoot _configuration = new ConfigurationBuilder()
         .AddJsonFile(LocateAgentAppSettings(), optional: false)
-        .AddUserSecrets<JonasInstantiationBenchmark>()
-        .AddEnvironmentVariables()
         .Build();
 
-    [SkippableFact]
+    [Fact]
     public async Task CreateJonasAgent_FiveMeasuredIterations_CompletesUnderTimeout()
     {
-        Skip.If(string.IsNullOrEmpty(_configuration["openRouter:apiKey"]),
-            "openRouter:apiKey not set in user secrets");
+        var jonas = LoadJonasDefinition();
+        var endpoints = mcpStackFixture.Endpoints.ToArray();
+        var stateStore = new RedisThreadStateStore(redisFixture.Connection, TimeSpan.FromMinutes(10));
+        var userId = $"benchmark-user-{Guid.NewGuid()}";
 
-        var (provider, factory) = BuildFactory();
-        try
+        // Warmup — absorbs JIT, HttpClient pool init, TLS handshakes, Redis warm-up.
+        for (var i = 0; i < WarmupIterations; i++)
         {
-            var approvalHandler = new AutoApproveHandler();
-            var userId = $"benchmark-user-{Guid.NewGuid()}";
-
-            // Warmup — absorbs JIT, HttpClient pool init, TLS handshakes, Redis warm-up.
-            for (var i = 0; i < WarmupIterations; i++)
-            {
-                await RunOneIterationAsync(factory, approvalHandler, userId);
-            }
-
-            var measured = new List<long>(MeasuredIterations);
-            var stopwatch = new Stopwatch();
-            for (var i = 0; i < MeasuredIterations; i++)
-            {
-                stopwatch.Restart();
-                await RunOneIterationAsync(factory, approvalHandler, userId);
-                stopwatch.Stop();
-                measured.Add(stopwatch.ElapsedMilliseconds);
-                output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
-            }
-
-            var min = measured.Min();
-            var max = measured.Max();
-            var mean = (long)measured.Average();
-            output.WriteLine(
-                $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
-
-            measured.Count.ShouldBe(MeasuredIterations);
-            measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
+            await RunOneIterationAsync(jonas, endpoints, stateStore, userId);
         }
-        finally
+
+        var measured = new List<long>(MeasuredIterations);
+        var stopwatch = new Stopwatch();
+        for (var i = 0; i < MeasuredIterations; i++)
         {
-            await provider.DisposeAsync();
+            stopwatch.Restart();
+            await RunOneIterationAsync(jonas, endpoints, stateStore, userId);
+            stopwatch.Stop();
+            measured.Add(stopwatch.ElapsedMilliseconds);
+            output.WriteLine($"[iteration {i + 1}] {stopwatch.ElapsedMilliseconds} ms");
         }
-    }
 
-    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory()
-    {
-        var settings = _configuration.Get<Agent.Settings.AgentSettings>()
-            ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
+        var min = measured.Min();
+        var max = measured.Max();
+        var mean = (long)measured.Average();
+        output.WriteLine(
+            $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
 
-        var stubEndpoints = mcpStackFixture.Endpoints.ToArray();
-
-        // Replace jonas's docker-internal MCP endpoints with the in-process stub stack so the
-        // benchmark is self-contained. Model, features, and the rest of the definition are
-        // preserved.
-        settings = settings with
-        {
-            Redis = settings.Redis with { ConnectionString = redisFixture.ConnectionString },
-            Agents = settings.Agents
-                .Select(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase)
-                    ? a with { McpServerEndpoints = stubEndpoints }
-                    : a)
-                .ToArray()
-        };
-
-        var services = new ServiceCollection();
-        services.AddSingleton<IConfiguration>(_configuration);
-        services.AddLogging();
-
-        services
-            .AddAgent(settings)
-            .AddScheduling()
-            .AddSubAgents(settings.SubAgents)
-            .AddMemory(_configuration);
-
-        var provider = services.BuildServiceProvider();
-        var factory = provider.GetRequiredService<IAgentFactory>();
-        return (provider, factory);
+        measured.Count.ShouldBe(MeasuredIterations);
+        measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
     }
 
     private static async Task RunOneIterationAsync(
-        IAgentFactory factory, IToolApprovalHandler approvalHandler, string userId)
+        AgentDefinition jonas,
+        string[] endpoints,
+        IThreadStateStore stateStore,
+        string userId)
     {
         using var cts = new CancellationTokenSource(_iterationTimeout);
-        var agentKey = new AgentKey($"benchmark:{Guid.NewGuid()}", AgentId);
-        var agent = factory.Create(agentKey, userId, AgentId, approvalHandler);
+        var conversationId = $"benchmark:{Guid.NewGuid()}";
+
+        using var chatClient = new StubChatClient();
+
+        var agent = new McpAgent(
+            endpoints,
+            chatClient,
+            $"{jonas.Name}-{conversationId}",
+            jonas.Description ?? "",
+            stateStore,
+            userId,
+            jonas.CustomInstructions,
+            reasoningEffort: jonas.ReasoningEffort);
+
         try
         {
-            var session = await agent.CreateSessionAsync(cts.Token);
-            // WarmupSessionAsync is the step that actually opens the MCP connections —
-            // CreateSessionAsync alone only allocates a placeholder thread.
-            await agent.WarmupSessionAsync(session, cts.Token);
-            await agent.DisposeThreadSessionAsync(session);
+            var thread = await agent.CreateSessionAsync(cts.Token);
+            await foreach (var _ in agent.RunStreamingAsync("hi", thread, cancellationToken: cts.Token))
+            {
+                // consume the streamed updates so the agent reaches the natural end of run
+            }
         }
         finally
         {
             await agent.DisposeAsync();
         }
+    }
+
+    private static AgentDefinition LoadJonasDefinition()
+    {
+        var settings = _configuration.Get<Agent.Settings.AgentSettings>()
+            ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
+
+        return settings.Agents.FirstOrDefault(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"agent '{AgentId}' not found in appsettings.json");
     }
 
     private static string LocateAgentAppSettings()
@@ -145,13 +123,30 @@ public class JonasInstantiationBenchmark(
     }
 }
 
-file sealed class AutoApproveHandler : IToolApprovalHandler
+file sealed class StubChatClient : IChatClient
 {
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
-        => Task.FromResult(ToolApprovalResult.Approved);
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(new ChatResponse(new ChatMessage(ChatRole.Assistant, ""))
+        {
+            FinishReason = ChatFinishReason.Stop
+        });
 
-    public Task NotifyAutoApprovedAsync(
-        IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
-        => Task.CompletedTask;
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await Task.CompletedTask;
+        yield return new ChatResponseUpdate(ChatRole.Assistant, "")
+        {
+            FinishReason = ChatFinishReason.Stop
+        };
+    }
+
+    public void Dispose() { }
+
+    public object? GetService(Type serviceType, object? serviceKey = null) => null;
 }
