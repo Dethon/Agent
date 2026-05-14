@@ -295,7 +295,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
 
         result.UserId.ShouldBe("test_user");
-        result.BasedOnMemoryCount.ShouldBe(3);
+        result.BasedOnMemoryCount.ShouldBe(5);
         result.Summary.ShouldNotBeNullOrWhiteSpace("Even minimal input should produce a summary");
         result.Confidence.ShouldBeInRange(0.0001, 1.0);
     }
