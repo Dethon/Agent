@@ -18,10 +18,11 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
     : IClassFixture<RedisFixture>
 {
     private const string AgentId = "jonas";
+    private const string EndpointsOverrideEnvVar = "BENCHMARK_MCP_ENDPOINTS";
     private const int WarmupIterations = 1;
     private const int MeasuredIterations = 5;
-    private static readonly TimeSpan IterationTimeout = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan ReachabilityProbeTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _iterationTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan _reachabilityProbeTimeout = TimeSpan.FromMilliseconds(500);
 
     private static readonly IConfigurationRoot _configuration = new ConfigurationBuilder()
         .AddJsonFile(LocateAgentAppSettings(), optional: false)
@@ -35,7 +36,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         Skip.If(string.IsNullOrEmpty(_configuration["openRouter:apiKey"]),
             "openRouter:apiKey not set in user secrets");
 
-        var endpoints = _configuration
+        var configuredEndpoints = _configuration
             .GetSection("agents")
             .GetChildren()
             .First(c => c["id"] == AgentId)
@@ -43,10 +44,14 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
             .Get<string[]>()
             ?? throw new InvalidOperationException($"agent '{AgentId}' has no mcpServerEndpoints");
 
-        Skip.IfNot(await AllEndpointsReachable(endpoints, ReachabilityProbeTimeout),
+        // The appsettings entries use docker-internal hostnames; running outside the compose
+        // network requires overriding with reachable URLs (e.g., host-mapped localhost ports).
+        var endpoints = ResolveEffectiveEndpoints(configuredEndpoints);
+
+        Skip.IfNot(await AllEndpointsReachable(endpoints, _reachabilityProbeTimeout),
             $"One or more jonas MCP endpoints unreachable: {string.Join(", ", endpoints)}");
 
-        var (provider, factory) = BuildFactory();
+        var (provider, factory) = BuildFactory(endpoints);
         try
         {
             var approvalHandler = new AutoApproveHandler();
@@ -76,7 +81,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
                 $"[summary] iterations={MeasuredIterations} min={min} ms mean={mean} ms max={max} ms");
 
             measured.Count.ShouldBe(MeasuredIterations);
-            measured.ShouldAllBe(t => t < IterationTimeout.TotalMilliseconds);
+            measured.ShouldAllBe(t => t < _iterationTimeout.TotalMilliseconds);
         }
         finally
         {
@@ -84,14 +89,19 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         }
     }
 
-    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory()
+    private (ServiceProvider Provider, IAgentFactory Factory) BuildFactory(string[] jonasEndpoints)
     {
         var settings = _configuration.Get<Agent.Settings.AgentSettings>()
             ?? throw new InvalidOperationException("Failed to bind AgentSettings from configuration");
 
         settings = settings with
         {
-            Redis = settings.Redis with { ConnectionString = redisFixture.ConnectionString }
+            Redis = settings.Redis with { ConnectionString = redisFixture.ConnectionString },
+            Agents = settings.Agents
+                .Select(a => a.Id.Equals(AgentId, StringComparison.OrdinalIgnoreCase)
+                    ? a with { McpServerEndpoints = jonasEndpoints }
+                    : a)
+                .ToArray()
         };
 
         var services = new ServiceCollection();
@@ -112,7 +122,7 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
     private static async Task RunOneIterationAsync(
         IAgentFactory factory, IToolApprovalHandler approvalHandler, string userId)
     {
-        using var cts = new CancellationTokenSource(IterationTimeout);
+        using var cts = new CancellationTokenSource(_iterationTimeout);
         var agentKey = new AgentKey($"benchmark:{Guid.NewGuid()}", AgentId);
         var agent = factory.Create(agentKey, userId, AgentId, approvalHandler);
         try
@@ -124,6 +134,27 @@ public class JonasInstantiationBenchmark(RedisFixture redisFixture, ITestOutputH
         {
             await agent.DisposeAsync();
         }
+    }
+
+    private static string[] ResolveEffectiveEndpoints(string[] configured)
+    {
+        var overrideValue = Environment.GetEnvironmentVariable(EndpointsOverrideEnvVar);
+        if (string.IsNullOrWhiteSpace(overrideValue))
+        {
+            return configured;
+        }
+
+        var parsed = overrideValue
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (parsed.Length != configured.Length)
+        {
+            throw new InvalidOperationException(
+                $"{EndpointsOverrideEnvVar} has {parsed.Length} entries but jonas is configured with " +
+                $"{configured.Length} MCP servers; the override must list one URL per configured server.");
+        }
+
+        return parsed;
     }
 
     private static string LocateAgentAppSettings()
