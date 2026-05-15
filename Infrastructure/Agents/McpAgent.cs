@@ -98,6 +98,15 @@ public sealed class McpAgent : DisposableAgent
         return _innerAgent.CreateSessionAsync(cancellationToken);
     }
 
+    public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+        // Pre-create the ThreadSession (MCP connections + tool discovery) so this
+        // cost overlaps with first-message handling. The _syncLock in
+        // GetOrCreateSessionAsync makes the subsequent RunStreaming reuse it.
+        await GetOrCreateSessionAsync(thread, ct);
+    }
+
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);

@@ -66,6 +66,12 @@ public class ChatMonitor(
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
+        // Warm up the session (MCP connections + tool discovery) concurrently so it
+        // overlaps with command parsing and memory recall instead of blocking the
+        // first LLM turn. Failures here are non-fatal — the real run re-resolves the
+        // session under lock and will surface any error.
+        WarmupSessionInBackground(agent, thread, linkedCt);
+
         var aiResponses = group.Prepend(first)
             .Select(async (x, _, _) =>
             {
@@ -153,6 +159,23 @@ public class ChatMonitor(
                 yield return value;
             }
         }
+    }
+
+    private static void WarmupSessionInBackground(
+        DisposableAgent agent, AgentSession thread, CancellationToken ct)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await agent.WarmupSessionAsync(thread, ct);
+            }
+            catch
+            {
+                // Optimization only — the first turn re-resolves the session and
+                // will surface any genuine failure.
+            }
+        }, ct);
     }
 
     private static ValueTask<AgentSession> GetOrRestoreThread(
