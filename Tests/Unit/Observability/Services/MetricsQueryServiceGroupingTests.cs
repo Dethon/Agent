@@ -449,4 +449,56 @@ public class MetricsQueryServiceGroupingTests
 
         result.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task GetLatencyTrendAsync_ShortRange_BucketsHourlyPerStage()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:latency:2026-03-15",
+        [
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100,
+                Timestamp = new DateTimeOffset(2026, 3, 15, 10, 5, 0, TimeSpan.Zero) },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300,
+                Timestamp = new DateTimeOffset(2026, 3, 15, 10, 50, 0, TimeSpan.Zero) },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 999,
+                Timestamp = new DateTimeOffset(2026, 3, 15, 11, 1, 0, TimeSpan.Zero) },
+        ]);
+
+        var result = await _sut.GetLatencyTrendAsync(LatencyMetric.Avg, date, date);
+
+        var series = result.Single(s => s.Stage == "LlmTotal");
+        series.Points.Count.ShouldBe(2);
+        series.Points[0].Bucket.ShouldBe(new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero));
+        series.Points[0].Value.ShouldBe(200m);   // avg(100,300)
+        series.Points[1].Bucket.ShouldBe(new DateTimeOffset(2026, 3, 15, 11, 0, 0, TimeSpan.Zero));
+        series.Points[1].Value.ShouldBe(999m);
+    }
+
+    [Fact]
+    public async Task GetLatencyTrendAsync_LongRange_BucketsDailyPerStage()
+    {
+        var from = new DateOnly(2026, 3, 15);
+        var to = new DateOnly(2026, 3, 20);
+        SetupSortedSet("metrics:latency:2026-03-15",
+        [
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100,
+                Timestamp = new DateTimeOffset(2026, 3, 15, 9, 5, 0, TimeSpan.Zero) },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300,
+                Timestamp = new DateTimeOffset(2026, 3, 15, 22, 50, 0, TimeSpan.Zero) },
+        ]);
+        SetupSortedSet("metrics:latency:2026-03-18",
+        [
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 999,
+                Timestamp = new DateTimeOffset(2026, 3, 18, 3, 1, 0, TimeSpan.Zero) },
+        ]);
+
+        var result = await _sut.GetLatencyTrendAsync(LatencyMetric.Avg, from, to);
+
+        var series = result.Single(s => s.Stage == "LlmTotal");
+        series.Points.Count.ShouldBe(2);
+        series.Points[0].Bucket.ShouldBe(new DateTimeOffset(2026, 3, 15, 0, 0, 0, TimeSpan.Zero));
+        series.Points[0].Value.ShouldBe(200m);   // avg(100,300)
+        series.Points[1].Bucket.ShouldBe(new DateTimeOffset(2026, 3, 18, 0, 0, 0, TimeSpan.Zero));
+        series.Points[1].Value.ShouldBe(999m);
+    }
 }

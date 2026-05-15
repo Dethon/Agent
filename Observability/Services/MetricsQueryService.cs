@@ -366,6 +366,35 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 g => AggregateLatency(g.Select(e => (decimal)e.DurationMs), metric));
     }
 
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetLatencyTrendAsync(
+        LatencyMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<LatencyEvent>("metrics:latency:", from, to);
+        var hourly = to.DayNumber - from.DayNumber <= 2;
+
+        return events
+            .GroupBy(e => e.Stage)
+            .OrderBy(g => g.Key)
+            .Select(stageGroup => new LatencyTrendSeries(
+                stageGroup.Key.ToString(),
+                stageGroup
+                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
+                    .OrderBy(b => b.Key)
+                    .Select(b => new LatencyTrendPoint(
+                        b.Key,
+                        AggregateLatency(b.Select(e => (decimal)e.DurationMs), metric)))
+                    .ToList()))
+            .ToList();
+    }
+
+    private static DateTimeOffset BucketTimestamp(DateTimeOffset ts, bool hourly)
+    {
+        var u = ts.UtcDateTime;
+        return hourly
+            ? new DateTimeOffset(u.Year, u.Month, u.Day, u.Hour, 0, 0, TimeSpan.Zero)
+            : new DateTimeOffset(u.Year, u.Month, u.Day, 0, 0, 0, TimeSpan.Zero);
+    }
+
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
         ScheduleDimension dimension, DateOnly from, DateOnly to)
     {
