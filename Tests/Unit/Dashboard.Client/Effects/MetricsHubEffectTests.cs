@@ -3,12 +3,14 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Shouldly;
 
 namespace Tests.Unit.Dashboard.Client.Effects;
@@ -25,6 +27,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
     private readonly HealthStore _healthStore = new();
     private readonly ConnectionStore _connectionStore = new();
     private readonly MemoryStore _memoryStore = new();
+    private readonly LatencyStore _latencyStore = new();
     private readonly MetricsHubEffect _effect;
 
     public MetricsHubEffectTests()
@@ -34,7 +37,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _effect = new MetricsHubEffect(
             _hub, api, _metricsStore, _healthStore,
             _tokensStore, _toolsStore, _errorsStore,
-            _schedulesStore, _connectionStore, _memoryStore);
+            _schedulesStore, _connectionStore, _memoryStore, _latencyStore);
     }
 
     public async ValueTask DisposeAsync()
@@ -48,6 +51,7 @@ public class MetricsHubEffectTests : IAsyncDisposable
         _healthStore.Dispose();
         _connectionStore.Dispose();
         _memoryStore.Dispose();
+        _latencyStore.Dispose();
     }
 
     private static readonly
@@ -120,6 +124,18 @@ public class MetricsHubEffectTests : IAsyncDisposable
 
         getBreakdown(this).ShouldBe(freshData);
     }
+
+    [Fact]
+    public async Task OnLatency_AppendsEventToLatencyStore()
+    {
+        _handler.EnqueueResponse(new Dictionary<string, decimal>(), delay: TimeSpan.Zero);
+        _handler.EnqueueResponse(new List<LatencyTrendSeries>(), delay: TimeSpan.Zero);
+        await _effect.StartAsync();
+
+        await _hub.FireLatency(new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5 });
+
+        _latencyStore.State.Events.ShouldContain(e => e.Stage == LatencyStage.LlmTotal);
+    }
 }
 
 public sealed class FakeMetricsHub : MetricsHubService
@@ -134,6 +150,7 @@ public sealed class FakeMetricsHub : MetricsHubService
     private readonly List<Func<MemoryExtractionEvent, Task>> _extractionHandlers = [];
     private readonly List<Func<MemoryDreamingEvent, Task>> _dreamingHandlers = [];
     private readonly List<Func<ContextTruncationEvent, Task>> _truncationHandlers = [];
+    private readonly List<Func<LatencyEvent, Task>> _latencyHandlers = [];
 
     public override IDisposable OnTokenUsage(Func<TokenUsageEvent, Task> handler)
     {
@@ -189,6 +206,12 @@ public sealed class FakeMetricsHub : MetricsHubService
         return new ActionDisposable(() => _truncationHandlers.Remove(handler));
     }
 
+    public override IDisposable OnLatency(Func<LatencyEvent, Task> handler)
+    {
+        _latencyHandlers.Add(handler);
+        return new ActionDisposable(() => _latencyHandlers.Remove(handler));
+    }
+
     public override void OnReconnected(Func<string?, Task> handler) { }
     public override void OnClosed(Func<Exception?, Task> handler) { }
     public override void OnReconnecting(Func<Exception?, Task> handler) { }
@@ -219,6 +242,9 @@ public sealed class FakeMetricsHub : MetricsHubService
 
     public Task FireContextTruncation(ContextTruncationEvent evt) =>
         Task.WhenAll(_truncationHandlers.Select(h => h(evt)));
+
+    public Task FireLatency(LatencyEvent evt) =>
+        Task.WhenAll(_latencyHandlers.Select(h => h(evt)));
 
     private sealed class ActionDisposable(Action action) : IDisposable
     {

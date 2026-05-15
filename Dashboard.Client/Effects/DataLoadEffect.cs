@@ -2,6 +2,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
@@ -19,7 +20,8 @@ public sealed class DataLoadEffect(
     ErrorsStore errorsStore,
     SchedulesStore schedulesStore,
     ConnectionStore connectionStore,
-    MemoryStore memoryStore)
+    MemoryStore memoryStore,
+    LatencyStore latencyStore)
 {
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
@@ -30,6 +32,7 @@ public sealed class DataLoadEffect(
             errorsStore.SetDateRange(from, to);
             schedulesStore.SetDateRange(from, to);
             memoryStore.SetDateRange(from, to);
+            latencyStore.SetDateRange(from, to);
 
             var summaryTask = api.GetSummaryAsync(from, to);
             var tokensTask = api.GetTokensAsync(from, to);
@@ -52,10 +55,16 @@ public sealed class DataLoadEffect(
             var memoryBreakdownTask = api.GetMemoryGroupedAsync(
                 memoryStore.State.GroupBy, memoryStore.State.Metric, from, to);
 
+            var latencyTask = api.GetLatencyAsync(from, to);
+            var latencyBreakdownTask = api.GetLatencyGroupedAsync(
+                latencyStore.State.GroupBy, latencyStore.State.Metric, from, to);
+            var latencyTrendTask = api.GetLatencyTrendAsync(latencyStore.State.Metric, from, to);
+
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
                 schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
                 errorBreakdownTask, scheduleBreakdownTask,
-                memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask);
+                memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask,
+                latencyTask, latencyBreakdownTask, latencyTrendTask);
 
             var summary = await summaryTask;
             if (summary is not null)
@@ -90,6 +99,10 @@ public sealed class DataLoadEffect(
             memoryStore.SetExtractionEvents(await memoryExtractionTask ?? []);
             memoryStore.SetDreamingEvents(await memoryDreamingTask ?? []);
             memoryStore.SetBreakdown(await memoryBreakdownTask ?? []);
+
+            latencyStore.SetEvents(await latencyTask ?? []);
+            latencyStore.SetBreakdown(await latencyBreakdownTask ?? []);
+            latencyStore.SetTrend(await latencyTrendTask ?? []);
 
             var health = await healthTask;
             if (health is not null)
