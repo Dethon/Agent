@@ -110,6 +110,7 @@ Follow Red-Green-Refactor for all features and bug fixes. Write a failing test f
 | `DockerCompose/docker-compose.yml`                  | Main service definitions |
 | `DockerCompose/docker-compose.override.windows.yml` | Windows user secrets mount (`%APPDATA%/Microsoft/UserSecrets`) |
 | `DockerCompose/docker-compose.override.linux.yml`   | Linux user secrets mount (`$HOME/.microsoft/usersecrets`) |
+| `DockerCompose/docker-compose.override.no-dri.yml`  | Strips the `/dev/dri` device from `plex`/`mcp-sandbox` on hosts without a DRI render node (e.g. NVIDIA-only WSL2) |
 
 ### Launching
 
@@ -122,6 +123,8 @@ docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compo
 # Windows
 docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus qbittorrent jackett redis caddy camoufox homeassistant
 ```
+
+The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` for GPU hardware acceleration. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device. (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
 
 ### Secrets
 

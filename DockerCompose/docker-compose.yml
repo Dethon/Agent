@@ -141,7 +141,7 @@ services:
     container_name: plex
     network_mode: host
     devices:
-      - dev/dri:/dev/dri
+      - /dev/dri:/dev/dri
     volumes:
       - ./volumes/plex_config:/config
       - ${DATA_PATH:-./volumes/data}:/media

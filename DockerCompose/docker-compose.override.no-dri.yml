@@ -1,0 +1,25 @@
+# Use on hosts WITHOUT a /dev/dri render node (e.g. NVIDIA-only WSL2).
+#
+# NVIDIA GPUs under WSL2 expose /dev/dxg + the NVIDIA Container Toolkit, never a
+# DRI render node, so the `devices: - /dev/dri:/dev/dri` mappings in the base
+# compose file fail with:
+#   error gathering device information while adding custom device "/dev/dri"
+#
+# This override uses the Compose `!reset` merge tag (Compose 2.24.4+) to strip
+# those device lists after merge. Apply it as an extra `-f` *after* the base and
+# OS override files, e.g.:
+#
+#   docker compose \
+#     -f DockerCompose/docker-compose.yml \
+#     -f DockerCompose/docker-compose.override.linux.yml \
+#     -f DockerCompose/docker-compose.override.no-dri.yml \
+#     -p jackbot up -d --build ...
+#
+# Hosts that DO have /dev/dri simply omit this file and run the documented command.
+
+services:
+  plex:
+    devices: !reset []
+
+  mcp-sandbox:
+    devices: !reset []
