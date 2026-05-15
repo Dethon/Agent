@@ -11,6 +11,8 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task SetMessagesAsync(string key, ChatMessage[] messages) => Task.CompletedTask;
 
+    public Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages) => Task.CompletedTask;
+
     public Task DeleteAsync(AgentKey key) => Task.CompletedTask;
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);

@@ -63,9 +63,9 @@ public class RedisChatMessageStoreTests
         var mockStore = new Mock<IThreadStateStore>();
         mockStore.Setup(s => s.GetMessagesAsync(It.IsAny<string>())).ReturnsAsync((ChatMessage[]?)null);
 
-        ChatMessage[]? savedMessages = null;
-        mockStore.Setup(s => s.SetMessagesAsync(It.IsAny<string>(), It.IsAny<ChatMessage[]>()))
-            .Callback<string, ChatMessage[]>((_, msgs) => savedMessages = msgs)
+        IReadOnlyList<ChatMessage>? savedMessages = null;
+        mockStore.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback<string, IReadOnlyList<ChatMessage>>((_, msgs) => savedMessages = msgs)
             .Returns(Task.CompletedTask);
 
         var session = CreateSessionWithKey("test-key");
@@ -86,8 +86,11 @@ public class RedisChatMessageStoreTests
 
         // Assert
         savedMessages.ShouldNotBeNull();
+        savedMessages.Select(m => m.Text).ShouldBe(["Hi", "Hello from agent"]);
         var assistantMsg = savedMessages.First(m => m.Role == ChatRole.Assistant);
         assistantMsg.GetTimestamp().ShouldNotBeNull();
+        // Append model: persistence must not re-read history (no O(n) get-concat-set).
+        mockStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

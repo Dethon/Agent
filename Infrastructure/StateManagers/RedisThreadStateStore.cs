@@ -20,17 +20,56 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
 
     public async Task<ChatMessage[]?> GetMessagesAsync(string key)
     {
-        var value = await _db.StringGetAsync(key);
-        return value.HasValue
-            ? JsonSerializer.Deserialize<StoreState>(value.ToString())?.Messages
-            : null;
+        var type = await _db.KeyTypeAsync(key);
+        return type switch
+        {
+            RedisType.List => (await _db.ListRangeAsync(key))
+                .Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)
+                .ToArray(),
+            // Legacy format: a single JSON String holding StoreState.Messages.
+            RedisType.String => JsonSerializer.Deserialize<StoreState>(
+                (await _db.StringGetAsync(key)).ToString())?.Messages,
+            _ => null
+        };
     }
 
     public async Task SetMessagesAsync(string key, ChatMessage[] messages)
     {
-        var json = JsonSerializer.Serialize(new StoreState { Messages = messages });
-        await _db.StringSetAsync(key, json, expiration);
+        await _db.KeyDeleteAsync(key);
+        if (messages.Length == 0)
+        {
+            return;
+        }
+
+        await _db.ListRightPushAsync(key, Serialize(messages));
+        await _db.KeyExpireAsync(key, expiration);
     }
+
+    public async Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
+        // One-time migration: legacy String keys must become a List before RPUSH.
+        if (await _db.KeyTypeAsync(key) == RedisType.String)
+        {
+            var legacy = JsonSerializer.Deserialize<StoreState>(
+                (await _db.StringGetAsync(key)).ToString())?.Messages ?? [];
+            await _db.KeyDeleteAsync(key);
+            if (legacy.Length > 0)
+            {
+                await _db.ListRightPushAsync(key, Serialize(legacy));
+            }
+        }
+
+        await _db.ListRightPushAsync(key, Serialize(messages));
+        await _db.KeyExpireAsync(key, expiration);
+    }
+
+    private static RedisValue[] Serialize(IReadOnlyList<ChatMessage> messages) =>
+        messages.Select(m => (RedisValue)JsonSerializer.Serialize(m)).ToArray();
 
     public async Task<IReadOnlyList<TopicMetadata>> GetAllTopicsAsync(string agentId, string? spaceSlug = null)
     {
