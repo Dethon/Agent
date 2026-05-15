@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
@@ -89,6 +90,18 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     Success = !isError,
                     Error = errorMessage
                 }, cancellationToken);
+                try
+                {
+                    await _metricsPublisher.PublishAsync(new LatencyEvent
+                    {
+                        Stage = LatencyStage.ToolExec,
+                        DurationMs = sw.ElapsedMilliseconds
+                    }, cancellationToken);
+                }
+                catch
+                {
+                    // Best-effort latency emission; never fail a tool call.
+                }
             }
             return result;
         }
@@ -104,6 +117,18 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     Success = false,
                     Error = ex.Message
                 }, cancellationToken);
+                try
+                {
+                    await _metricsPublisher.PublishAsync(new LatencyEvent
+                    {
+                        Stage = LatencyStage.ToolExec,
+                        DurationMs = sw.ElapsedMilliseconds
+                    }, cancellationToken);
+                }
+                catch
+                {
+                    // Best-effort latency emission; never fail a tool call.
+                }
             }
             throw;
         }

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Moq;
@@ -28,7 +29,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -59,7 +60,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(
@@ -93,7 +94,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         // IncludeDetailedErrors is true by default, so the exception is caught by the base class
@@ -175,7 +176,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -214,7 +215,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -251,7 +252,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -285,7 +286,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -313,7 +314,7 @@ public class ToolApprovalChatClientMetricsTests
         ToolCallEvent? captured = null;
         publisher
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as ToolCallEvent)
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
             .Returns(Task.CompletedTask);
 
         var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
@@ -326,6 +327,31 @@ public class ToolApprovalChatClientMetricsTests
         captured.ShouldNotBeNull();
         captured.ToolName.ShouldBe("mcp__server__TestTool");
         captured.Success.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task InvokeFunctionAsync_ApprovedTool_PublishesToolExecLatencyEvent()
+    {
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+
+        LatencyEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is LatencyEvent l) { captured = l; } })
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        captured.ShouldNotBeNull();
+        captured.Stage.ShouldBe(LatencyStage.ToolExec);
+        captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
 }
