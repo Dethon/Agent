@@ -76,7 +76,7 @@ New/changed client files:
 - `DataLoadEffect` — parallel `GetLatencyAsync`, `GetLatencyGroupedAsync`, `GetLatencyTrendAsync`.
 - `MetricsHubEffect` — `hub.OnLatency(...)` → append event + refresh breakdown/trend.
 - `MetricsApiService` — the three new client methods.
-- `Dashboard.Client/Components/LatencyTrendChart.razor` — **the one genuinely new UI component**: a lightweight multi-series line chart (per stage, p-metric over time buckets). Existing `DynamicChart` (donut/bar) is reused for the per-stage bars.
+- `Dashboard.Client/Components/LatencyTrendChart.razor` — **the one genuinely new UI component**: a multi-series line chart (per stage, p-metric over time buckets) built on the **existing Blazor-ApexCharts dependency** (the same `ApexChart`/`ApexPointSeries` primitives `DynamicChart` uses), `SeriesType.Line`. Existing `DynamicChart` (donut/bar) is reused for the per-stage bars.
 - Nav entry for the page.
 
 Page composition:
@@ -112,5 +112,5 @@ Red → Green for every unit:
 
 - **Duplicate duration for recall/tool:** intentional; tiny extra event volume, keeps the Latency query single-source and pages decoupled.
 - **In-query percentiles:** O(events in range); fine at current volume, flagged for revisit.
-- **New trend chart:** the only net-new UI primitive; keep it minimal (SVG polylines, no charting dependency) consistent with the dashboard's lightweight components.
+- **New trend chart:** the only net-new UI component; built on the dashboard's existing Blazor-ApexCharts dependency (`ApexChart` + `ApexPointSeries`, `SeriesType.Line`, dark theme), mirroring `DynamicChart.razor`'s house style rather than introducing a hand-rolled SVG primitive. (Earlier spec text assumed no charting dependency existed; that was incorrect — ApexCharts is already used dashboard-wide.)
 - **Best-effort emission:** instrumentation must be wrapped so publish errors/cancellation are swallowed and never alter turn behavior or latency.
