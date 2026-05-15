@@ -118,6 +118,9 @@ public sealed class MetricsCollectorService(
             case ContextTruncationEvent truncation:
                 await ProcessContextTruncationAsync(truncation, db);
                 break;
+            case LatencyEvent latency:
+                await ProcessLatencyAsync(latency, db);
+                break;
         }
     }
 
@@ -226,6 +229,24 @@ public sealed class MetricsCollectorService(
 
         await hubContext.Clients.All.SendAsync("OnHealthUpdate",
             new ServiceHealthUpdate(evt.Service, true, evt.Timestamp));
+    }
+
+    private async Task ProcessLatencyAsync(LatencyEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:latency:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, $"latency:{evt.Stage}:count"),
+            db.HashIncrementAsync(totalsKey, $"latency:{evt.Stage}:totalMs", evt.DurationMs),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+
+        await hubContext.Clients.All.SendAsync("OnLatency", evt);
     }
 
     private async Task ProcessMemoryRecallAsync(MemoryRecallEvent evt, IDatabase db)
