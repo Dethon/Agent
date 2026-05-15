@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -20,12 +21,19 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public int WarmupCalls;
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public TimeSpan WarmupDelay { get; init; }
+    public ConcurrentQueue<string> Events { get; } = new();
 
-    public override Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
+    public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
         Interlocked.Increment(ref WarmupCalls);
+        if (WarmupDelay > TimeSpan.Zero)
+        {
+            await Task.Delay(WarmupDelay, ct);
+        }
+
+        Events.Enqueue("warmup");
         WarmupSignaled.TrySetResult();
-        return Task.CompletedTask;
     }
 
     protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)
@@ -65,6 +73,7 @@ internal sealed class FakeAiAgent : DisposableAgent
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await Task.CompletedTask;
+        Events.Enqueue("run");
         if (ExceptionToThrow is not null)
         {
             throw ExceptionToThrow;
@@ -241,6 +250,32 @@ public class ChatMonitorTests
         // Assert - the session is warmed up exactly once for the conversation
         done.ShouldBe(fakeAgent.WarmupSignaled.Task);
         fakeAgent.WarmupCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Monitor_AwaitsWarmupBeforeStreaming_Deterministically()
+    {
+        // Arrange - slow warmup; if it were fire-and-forget, streaming would start first
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var message = MonitorTestMocks.CreateChannelMessage();
+        var channel = MonitorTestMocks.CreateChannel(messages: message);
+        var fakeAgent = new FakeAiAgent { WarmupDelay = TimeSpan.FromMilliseconds(150) };
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+
+        var monitor = new ChatMonitor(
+            [channel],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        // Act
+        await monitor.Monitor(CancellationToken.None);
+
+        // Assert - warmup completes before the first streaming turn starts
+        fakeAgent.Events.ToArray().ShouldBe(["warmup", "run"]);
     }
 
     [Fact]
