@@ -1,11 +1,9 @@
-using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs.WebChat;
 using Infrastructure.StateManagers;
 using McpChannelSignalR.Services;
 using Microsoft.Extensions.AI;
 using Shouldly;
-using StackExchange.Redis;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpChannelSignalR;
@@ -47,28 +45,5 @@ public class RedisStateServiceTests(RedisFixture redis) : IClassFixture<RedisFix
         var history = await _sut.GetHistoryAsync(agentId, chatId, threadId);
 
         history.Select(h => h.Content).ShouldBe(["hello there", "hi, how can I help?"]);
-    }
-
-    [Fact]
-    public async Task GetHistoryAsync_StillReadsLegacyStringFormat()
-    {
-        const string agentId = "agent-legacy";
-        const long chatId = 901;
-        const long threadId = 0;
-        var key = new AgentKey($"{chatId}:{threadId}", agentId).ToString();
-
-        var legacyJson = JsonSerializer.Serialize(new
-        {
-            Messages = new[]
-            {
-                new ChatMessage(ChatRole.User, "legacy question"),
-                new ChatMessage(ChatRole.Assistant, "legacy answer")
-            }
-        });
-        await redis.Connection.GetDatabase().StringSetAsync(key, legacyJson);
-
-        var history = await _sut.GetHistoryAsync(agentId, chatId, threadId);
-
-        history.Select(h => h.Content).ShouldBe(["legacy question", "legacy answer"]);
     }
 }

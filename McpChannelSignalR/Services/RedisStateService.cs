@@ -60,26 +60,16 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
     {
         var key = new AgentKey($"{chatId}:{threadId}", agentId).ToString();
 
-        // History is stored as a Redis List (one JSON ChatMessage per element);
-        // legacy keys are a single String holding StoreState. Mirror
-        // RedisThreadStateStore.GetMessagesAsync so both formats render.
-        var type = await _db.KeyTypeAsync(key);
-        ChatMessage[] messages = type switch
-        {
-            RedisType.List => (await _db.ListRangeAsync(key))
-                .Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)
-                .ToArray(),
-            RedisType.String => JsonSerializer.Deserialize<StoreState>(
-                (await _db.StringGetAsync(key)).ToString())?.Messages ?? [],
-            _ => []
-        };
-
-        if (messages.Length == 0)
+        // History is stored as a Redis List (one JSON ChatMessage per element),
+        // matching RedisThreadStateStore.
+        var values = await _db.ListRangeAsync(key);
+        if (values.Length == 0)
         {
             return [];
         }
 
-        return messages
+        return values
+            .Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)
             .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
             .Select(m => new ChatHistoryMessage(
                 m.MessageId,
@@ -94,10 +84,5 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
     private static string TopicKey(string agentId, long chatId, string topicId)
     {
         return $"topic:{agentId}:{chatId}:{topicId}";
-    }
-
-    private sealed class StoreState
-    {
-        public ChatMessage[] Messages { get; init; } = [];
     }
 }

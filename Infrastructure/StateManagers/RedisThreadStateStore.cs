@@ -20,17 +20,10 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
 
     public async Task<ChatMessage[]?> GetMessagesAsync(string key)
     {
-        var type = await _db.KeyTypeAsync(key);
-        return type switch
-        {
-            RedisType.List => (await _db.ListRangeAsync(key))
-                .Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)
-                .ToArray(),
-            // Legacy format: a single JSON String holding StoreState.Messages.
-            RedisType.String => JsonSerializer.Deserialize<StoreState>(
-                (await _db.StringGetAsync(key)).ToString())?.Messages,
-            _ => null
-        };
+        var values = await _db.ListRangeAsync(key);
+        return values.Length == 0
+            ? null
+            : values.Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!).ToArray();
     }
 
     public async Task SetMessagesAsync(string key, ChatMessage[] messages)
@@ -50,18 +43,6 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
         if (messages.Count == 0)
         {
             return;
-        }
-
-        // One-time migration: legacy String keys must become a List before RPUSH.
-        if (await _db.KeyTypeAsync(key) == RedisType.String)
-        {
-            var legacy = JsonSerializer.Deserialize<StoreState>(
-                (await _db.StringGetAsync(key)).ToString())?.Messages ?? [];
-            await _db.KeyDeleteAsync(key);
-            if (legacy.Length > 0)
-            {
-                await _db.ListRightPushAsync(key, Serialize(legacy));
-            }
         }
 
         await _db.ListRightPushAsync(key, Serialize(messages));
@@ -123,10 +104,5 @@ public sealed class RedisThreadStateStore(IConnectionMultiplexer redis, TimeSpan
     private static string TopicKey(string agentId, long chatId, string topicId)
     {
         return $"topic:{agentId}:{chatId}:{topicId}";
-    }
-
-    private sealed class StoreState
-    {
-        public ChatMessage[] Messages { get; init; } = [];
     }
 }
