@@ -5,6 +5,7 @@ obj/
 riderModule.iml
 /_ReSharper.Caches/
 *.DotSettings.user
+*.csproj.lscache
 DockerCompose/volumes
 .idea
 .playwright-mcp
