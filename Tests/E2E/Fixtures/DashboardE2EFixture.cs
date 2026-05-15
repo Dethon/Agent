@@ -36,7 +36,7 @@ public class DashboardE2EFixture : E2EFixtureBase
         await _redis.StartAsync(ct);
 
         // 3. Build Observability image
-        const string observabilityImageName = "observability-e2e:latest";
+        const string observabilityImageName = "observability:latest";
         await TestHelpers.EnsureImageAsync(
             solutionRoot,
             "Observability/Dockerfile",

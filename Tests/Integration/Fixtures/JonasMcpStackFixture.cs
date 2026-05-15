@@ -39,6 +39,11 @@ public class JonasMcpStackFixture : IAsyncLifetime
 
         // Build (or reuse) each image. EnsureImageAsync skips the rebuild when source under
         // the watched dirs hasn't changed since the existing image was created.
+        // base-sdk must come first: every leaf Dockerfile does FROM base-sdk:latest and
+        // publishes with BuildProjectReferences=false, so Domain/Infrastructure code is
+        // frozen into base-sdk. Without this, leaf images silently carry stale Domain/
+        // Infrastructure whenever those change.
+        await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
         await TestHelpers.EnsureImageAsync(
             solutionRoot, "McpServerVault/Dockerfile", "mcp-vault:latest",
             ["Domain", "Infrastructure", "McpServerVault"], ct);

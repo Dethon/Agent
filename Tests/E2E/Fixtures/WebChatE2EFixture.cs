@@ -53,7 +53,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _redis.StartAsync(ct);
 
         // 3. Build and start mcp-vault
-        const string mcpVaultImageName = "mcp-vault-e2e:latest";
+        const string mcpVaultImageName = "mcp-vault:latest";
         await TestHelpers.EnsureImageAsync(
             solutionRoot,
             "McpServerVault/Dockerfile",
@@ -71,7 +71,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _mcpVault.StartAsync(ct);
 
         // 4. Build and start mcp-channel-signalr
-        const string signalRImageName = "mcp-channel-signalr-e2e:latest";
+        const string signalRImageName = "mcp-channel-signalr:latest";
         await TestHelpers.EnsureImageAsync(
             solutionRoot,
             "McpChannelSignalR/Dockerfile",
@@ -97,7 +97,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _mcpChannelSignalR.StartAsync(ct);
 
         // 5. Build and start Agent
-        const string agentImageName = "agent-e2e:latest";
+        const string agentImageName = "agent:latest";
         await TestHelpers.EnsureImageAsync(
             solutionRoot,
             "Agent/Dockerfile",
@@ -142,7 +142,7 @@ public class WebChatE2EFixture : E2EFixtureBase
         await _agent.StartAsync(ct);
 
         // 6. Build and start WebUI
-        const string webuiImageName = "webui-e2e:latest";
+        const string webuiImageName = "webui:latest";
         await TestHelpers.EnsureImageAsync(
             solutionRoot,
             "WebChat/Dockerfile",
