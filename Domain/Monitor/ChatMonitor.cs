@@ -100,15 +100,8 @@ public class ChatMonitor(
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
                         }
-                        try
-                        {
-                            await warmup;
-                        }
-                        catch
-                        {
-                            // Best-effort: RunStreamingAsync re-resolves the session under
-                            // lock and surfaces any genuine failure via WithErrorHandling.
-                        }
+
+                        await warmup;
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
