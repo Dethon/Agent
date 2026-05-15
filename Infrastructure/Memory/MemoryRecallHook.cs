@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Memory;
 using Infrastructure.Agents.ChatClients;
@@ -109,6 +110,20 @@ public class MemoryRecallHook(
                 ConversationId = conversationId,
                 AgentId = agentId is not null ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId : null
             }, ct);
+            try
+            {
+                await metricsPublisher.PublishAsync(new LatencyEvent
+                {
+                    Stage = LatencyStage.MemoryRecall,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    ConversationId = conversationId,
+                    AgentId = agentId is not null ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId : null
+                }, ct);
+            }
+            catch
+            {
+                // Latency emission is best-effort and must never fail or slow a recall.
+            }
         }
         catch (Exception ex)
         {
