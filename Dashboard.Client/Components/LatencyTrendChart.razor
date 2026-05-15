@@ -1,0 +1,86 @@
+@using Domain.DTOs.Metrics
+<div class="@(HasData ? "chart-container" : "")">
+@if (!HasData)
+{
+    <p class="no-data">No data available</p>
+}
+else
+{
+    @* Recreation-only via @key: trend data is low-frequency and fully refetched, so no UpdateSeriesAsync path is needed. *@
+    <ApexChart @key="_structureKey" TItem="TrendDatum" Options="_options">
+        @foreach (var series in _series)
+        {
+            <ApexPointSeries TItem="TrendDatum"
+                             Items="series.Points"
+                             Name="@series.Stage"
+                             SeriesType="SeriesType.Line"
+                             XValue="d => d.X"
+                             YValue="d => (decimal)d.Y" />
+        }
+    </ApexChart>
+}
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<LatencyTrendSeries> Series { get; set; } = [];
+
+    private int _structureKey;
+    private string _prevKey = "";
+    private List<(string Stage, List<TrendDatum> Points)> _series = [];
+
+    private bool HasData => _series.Any(s => s.Points.Count > 0);
+
+    private static readonly List<string> Palette =
+        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
+
+    private readonly ApexChartOptions<TrendDatum> _options = new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0b0",
+            Height = "260",
+            Animations = new Animations
+            {
+                Enabled = true,
+                AnimateGradually = new AnimateGradually { Enabled = false }
+            }
+        },
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
+        Colors = Palette,
+        Theme = new Theme { Mode = Mode.Dark },
+        Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } },
+        Grid = new Grid
+        {
+            BorderColor = "#2a2a3e",
+            Padding = new Padding { Left = 0 }
+        },
+        Xaxis = new XAxis
+        {
+            Labels = new XAxisLabels { Formatter = "function(val) { return new Date(val).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}); }" }
+        }
+    };
+
+    protected override void OnParametersSet()
+    {
+        _series = Series
+            .Select(s => (s.Stage,
+                s.Points.Select(p => new TrendDatum(p.Bucket.UtcDateTime, (double)p.Value, s.Stage)).ToList()))
+            .ToList();
+
+        var key = string.Join('|', Series.Select(s =>
+            $"{s.Stage}:" + string.Join(',', s.Points.Select(p => $"{p.Bucket.Ticks}={p.Value}"))));
+        if (key != _prevKey)
+        {
+            _prevKey = key;
+            _structureKey++;
+        }
+    }
+
+    public sealed record TrendDatum(DateTime X, double Y, string Stage);
+}
+
+<style>
+    .chart-container { min-height: 260px; }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
+</style>
