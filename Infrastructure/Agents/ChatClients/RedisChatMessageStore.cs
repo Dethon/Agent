@@ -1,11 +1,16 @@
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
 namespace Infrastructure.Agents.ChatClients;
 
-public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistoryProvider
+public sealed class RedisChatMessageStore(
+    IThreadStateStore store,
+    IMetricsPublisher? metricsPublisher = null,
+    string? conversationId = null) : ChatHistoryProvider
 {
     internal const string StateKey = "ChatHistoryProviderState";
 
@@ -67,6 +72,7 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
 
         // The lock serializes concurrent same-conversation turns through the one-time
         // legacy migration in AppendMessagesAsync and preserves per-turn message ordering.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await _lock.WaitAsync(cancellationToken);
         try
         {
@@ -75,6 +81,24 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
         finally
         {
             _lock.Release();
+        }
+        sw.Stop();
+
+        if (metricsPublisher is not null)
+        {
+            try
+            {
+                await metricsPublisher.PublishAsync(new LatencyEvent
+                {
+                    Stage = LatencyStage.HistoryStore,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    ConversationId = conversationId
+                }, cancellationToken);
+            }
+            catch
+            {
+                // Best-effort; persistence already succeeded.
+            }
         }
     }
 }
