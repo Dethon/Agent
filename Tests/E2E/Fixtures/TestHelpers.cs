@@ -47,6 +47,13 @@ internal static class TestHelpers
         await gate.WaitAsync(ct);
         try
         {
+            // The semaphore above only serialises threads within this process. Separate
+            // processes (E2E vs benchmark as distinct `dotnet test` jobs, or a concurrent
+            // `docker compose build`) would otherwise race the destructive
+            // WithDeleteIfExists(true) + build on the same tag — including deleting
+            // base-sdk:latest out from under another process's `FROM base-sdk:latest`.
+            await using var fileLock = await AcquireImageFileLockAsync(imageName, ct);
+
             var imageCreatedAt = await GetDockerImageCreatedAtAsync(imageName, ct);
             if (imageCreatedAt.HasValue)
             {
@@ -69,6 +76,27 @@ internal static class TestHelpers
         finally
         {
             gate.Release();
+        }
+    }
+
+    // A cross-process exclusive lock keyed by image name. An OS file handle opened with
+    // FileShare.None is released automatically if the process dies, so no stale-lock
+    // cleanup is needed. Bounded by the caller's CancellationToken (the fixture timeout).
+    private static async Task<FileStream> AcquireImageFileLockAsync(string imageName, CancellationToken ct)
+    {
+        var safeName = string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+        var lockPath = Path.Combine(Path.GetTempPath(), $"agent-tests-image-{safeName}.lock");
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (IOException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            }
         }
     }
 
