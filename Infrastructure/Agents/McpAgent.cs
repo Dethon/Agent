@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -28,6 +29,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly bool _enableResourceSubscriptions;
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private readonly TimeProvider _timeProvider;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
@@ -48,7 +50,8 @@ public sealed class McpAgent : DisposableAgent
         bool enableResourceSubscriptions = true,
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
         ILoggerFactory? loggerFactory = null,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null,
+        TimeProvider? timeProvider = null)
     {
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
@@ -61,6 +64,7 @@ public sealed class McpAgent : DisposableAgent
         _domainPrompts = domainPrompts ?? [];
         _enableResourceSubscriptions = enableResourceSubscriptions;
         _reasoningEffort = ParseEffort(reasoningEffort);
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
@@ -214,24 +218,41 @@ public sealed class McpAgent : DisposableAgent
 
     private ChatClientAgentRunOptions CreateRunOptions(ThreadSession session)
     {
-        var prompts = _domainPrompts
-            .Concat(session.FileSystemPrompts)
-            .Concat(session.ClientManager.Prompts)
-            .Prepend(BasePrompt.Instructions);
-
-        if (!string.IsNullOrEmpty(_customInstructions))
-        {
-            prompts = prompts.Prepend(_customInstructions);
-        }
-
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             Tools = [.. session.Tools],
-            Instructions = string.Join("\n\n", prompts),
+            Instructions = BuildInstructions(
+                _customInstructions,
+                _domainPrompts,
+                session.FileSystemPrompts,
+                session.ClientManager.Prompts,
+                _timeProvider.GetLocalNow()),
             Reasoning = _reasoningEffort is null
                 ? null
                 : new ReasoningOptions { Effort = _reasoningEffort.Value }
         });
+    }
+
+    internal static string BuildInstructions(
+        string? customInstructions,
+        IEnumerable<string> domainPrompts,
+        IEnumerable<string> fileSystemPrompts,
+        IEnumerable<string> clientPrompts,
+        DateTimeOffset now)
+    {
+        var datePrompt = $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
+        var prompts = domainPrompts
+            .Concat(fileSystemPrompts)
+            .Concat(clientPrompts)
+            .Prepend(BasePrompt.Instructions)
+            .Prepend(datePrompt);
+
+        if (!string.IsNullOrEmpty(customInstructions))
+        {
+            prompts = prompts.Prepend(customInstructions);
+        }
+
+        return string.Join("\n\n", prompts);
     }
 
     internal static ReasoningEffort? ParseEffort(string? value)
