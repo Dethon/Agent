@@ -53,15 +53,25 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             timedOut = true;
-            try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
+            try
+            { process.Kill(entireProcessTree: true); }
+            catch { /* already exited */ }
             await process.WaitForExitAsync(CancellationToken.None);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            try { process.Kill(entireProcessTree: true); } catch { /* already exited */ }
-            try { await process.WaitForExitAsync(CancellationToken.None); } catch { /* best-effort */ }
-            try { await stdoutTask; } catch { /* drain reader before process disposal */ }
-            try { await stderrTask; } catch { /* drain reader before process disposal */ }
+            try
+            { process.Kill(entireProcessTree: true); }
+            catch { /* already exited */ }
+            try
+            { await process.WaitForExitAsync(CancellationToken.None); }
+            catch { /* best-effort */ }
+            try
+            { await stdoutTask; }
+            catch { /* drain reader before process disposal */ }
+            try
+            { await stderrTask; }
+            catch { /* drain reader before process disposal */ }
             throw;
         }
 

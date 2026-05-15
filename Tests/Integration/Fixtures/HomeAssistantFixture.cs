@@ -71,7 +71,8 @@ public class HomeAssistantFixture : IAsyncLifetime
         {
             if (_configDir is not null && Directory.Exists(_configDir))
             {
-                try { Directory.Delete(_configDir, recursive: true); }
+                try
+                { Directory.Delete(_configDir, recursive: true); }
                 catch { /* best effort — container may still hold handles momentarily */ }
             }
         }

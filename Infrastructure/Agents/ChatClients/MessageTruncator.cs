@@ -78,7 +78,8 @@ internal static class MessageTruncator
 
         foreach (var group in groups)
         {
-            if (currentTokens <= threshold) {
+            if (currentTokens <= threshold)
+            {
                 break;
             }
 
@@ -104,7 +105,8 @@ internal static class MessageTruncator
 
         for (var i = 0; i < messages.Count; i++)
         {
-            if (pinned.Contains(i)) {
+            if (pinned.Contains(i))
+            {
                 continue;
             }
 

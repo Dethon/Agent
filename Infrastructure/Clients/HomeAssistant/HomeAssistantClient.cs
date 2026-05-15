@@ -81,7 +81,8 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
         var body = new JsonObject();
         if (data is not null)
         {
-            foreach (var kvp in data) {
+            foreach (var kvp in data)
+            {
                 body[kvp.Key] = kvp.Value?.DeepClone();
             }
         }
@@ -164,7 +165,8 @@ public class HomeAssistantClient(HttpClient httpClient, string token) : IHomeAss
 
     private static async Task EnsureOkAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        if (response.IsSuccessStatusCode) {
+        if (response.IsSuccessStatusCode)
+        {
             return;
         }
 

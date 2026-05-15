@@ -21,8 +21,8 @@ public class OpenRouterChatClientTruncationTests
             metricsPublisher: _publisher.Object);
 
         var sys = new ChatMessage(ChatRole.System, "sys");
-        var u1  = new ChatMessage(ChatRole.User,   new string('a', 4000));
-        var u2  = new ChatMessage(ChatRole.User,   "hi");
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 4000));
+        var u2 = new ChatMessage(ChatRole.User, "hi");
         u2.SetSenderId("alice");
 
         IEnumerable<ChatMessage>? captured = null;
@@ -35,7 +35,8 @@ public class OpenRouterChatClientTruncationTests
                 (msgs, _, _) => captured = msgs.ToList())
             .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
 
-        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2])) { }
+        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2]))
+        { }
 
         captured!.Count().ShouldBe(3);
     }
@@ -48,8 +49,8 @@ public class OpenRouterChatClientTruncationTests
             metricsPublisher: _publisher.Object);
 
         var sys = new ChatMessage(ChatRole.System, new string('s', 4));
-        var u1  = new ChatMessage(ChatRole.User,   new string('a', 400));
-        var u2  = new ChatMessage(ChatRole.User,   "hi");
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 400));
+        var u2 = new ChatMessage(ChatRole.User, "hi");
         u2.SetSenderId("alice");
 
         IEnumerable<ChatMessage>? captured = null;
@@ -67,13 +68,15 @@ public class OpenRouterChatClientTruncationTests
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .Callback<MetricEvent, CancellationToken>((e, _) =>
             {
-                if (e is ContextTruncationEvent t) {
+                if (e is ContextTruncationEvent t)
+                {
                     publishedEvent = t;
                 }
             })
             .Returns(Task.CompletedTask);
 
-        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2])) { }
+        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2]))
+        { }
 
         captured!.Count().ShouldBeLessThan(3); // u1 dropped
         publishedEvent.ShouldNotBeNull();
@@ -93,8 +96,8 @@ public class OpenRouterChatClientTruncationTests
             metricsPublisher: _publisher.Object);
 
         var sys = new ChatMessage(ChatRole.System, "s");
-        var u1  = new ChatMessage(ChatRole.User,   new string('a', 80)); // 24 tokens
-        var u2  = new ChatMessage(ChatRole.User,   "hi");
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 80)); // 24 tokens
+        var u2 = new ChatMessage(ChatRole.User, "hi");
         u2.SetSenderId("alice");
 
         // 80*4=320 chars → 80 tokens of instructions, dwarfing the 80-token budget.
@@ -115,13 +118,15 @@ public class OpenRouterChatClientTruncationTests
             .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
             .Callback<MetricEvent, CancellationToken>((e, _) =>
             {
-                if (e is ContextTruncationEvent t) {
+                if (e is ContextTruncationEvent t)
+                {
                     publishedEvent = t;
                 }
             })
             .Returns(Task.CompletedTask);
 
-        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2], options)) { }
+        await foreach (var _ in sut.GetStreamingResponseAsync([sys, u1, u2], options))
+        { }
 
         publishedEvent.ShouldNotBeNull();
         publishedEvent!.DroppedMessages.ShouldBeGreaterThanOrEqualTo(1);
@@ -145,7 +150,8 @@ public class OpenRouterChatClientTruncationTests
                 It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
 
-        await foreach (var _ in sut.GetStreamingResponseAsync([u])) { }
+        await foreach (var _ in sut.GetStreamingResponseAsync([u]))
+        { }
 
         _publisher.Verify(
             p => p.PublishAsync(It.IsAny<ContextTruncationEvent>(), It.IsAny<CancellationToken>()),

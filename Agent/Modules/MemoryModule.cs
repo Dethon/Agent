@@ -1,12 +1,12 @@
+using System.ClientModel;
 using System.Net.Http.Headers;
 using Domain.Contracts;
 using Domain.Memory;
 using Domain.Tools.Memory;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Memory;
-using OpenAI;
-using System.ClientModel;
 using Microsoft.Extensions.AI;
+using OpenAI;
 
 namespace Agent.Modules;
 

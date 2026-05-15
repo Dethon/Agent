@@ -1,11 +1,11 @@
 using System.Net;
 using Agent.Modules;
-using Microsoft.Extensions.Configuration;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Monitor;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;

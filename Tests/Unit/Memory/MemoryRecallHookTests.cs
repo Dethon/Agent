@@ -4,12 +4,12 @@ using Domain.Extensions;
 using Domain.Memory;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Memory;
-using MetricsDTOs = Domain.DTOs.Metrics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
+using MetricsDTOs = Domain.DTOs.Metrics;
 
 namespace Tests.Unit.Memory;
 

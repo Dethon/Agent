@@ -114,10 +114,10 @@ public class MessageTruncatorTests
     {
         // Build 4 messages so per-message text dominates.
         // Each "x" * 80 -> 20 tokens + 4 overhead = 24 tokens per message.
-        var sys  = new ChatMessage(ChatRole.System,    new string('s', 80));
-        var u1   = new ChatMessage(ChatRole.User,      new string('a', 80));
-        var a1   = new ChatMessage(ChatRole.Assistant, new string('b', 80));
-        var u2   = new ChatMessage(ChatRole.User,      new string('c', 80)); // last user (pinned)
+        var sys = new ChatMessage(ChatRole.System, new string('s', 80));
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 80));
+        var a1 = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2 = new ChatMessage(ChatRole.User, new string('c', 80)); // last user (pinned)
         var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
 
         // total = 96. Threshold at 95% of 80 = 76. Need to drop until <= 76.
@@ -139,7 +139,7 @@ public class MessageTruncatorTests
     {
         var sys1 = new ChatMessage(ChatRole.System, new string('a', 400));
         var sys2 = new ChatMessage(ChatRole.System, new string('b', 400));
-        var u1   = new ChatMessage(ChatRole.User,   new string('c', 80));
+        var u1 = new ChatMessage(ChatRole.User, new string('c', 80));
         var msgs = new List<ChatMessage> { sys1, sys2, u1 };
 
         var result = MessageTruncator.Truncate(
@@ -154,10 +154,10 @@ public class MessageTruncatorTests
     [Fact]
     public void Truncate_StopsDroppingOnceUnderThreshold()
     {
-        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
-        var u1  = new ChatMessage(ChatRole.User,      new string('a', 80));
-        var a1  = new ChatMessage(ChatRole.Assistant, new string('b', 80));
-        var u2  = new ChatMessage(ChatRole.User,      new string('c', 4));
+        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 80));
+        var a1 = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2 = new ChatMessage(ChatRole.User, new string('c', 4));
         var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
 
         // Totals: sys=5, u1=24, a1=24, u2=5 → 58. Threshold floor(40*0.95)=38.
@@ -174,7 +174,7 @@ public class MessageTruncatorTests
     [Fact]
     public void Truncate_DropsToolCallAssistantTogetherWithMatchingToolResult()
     {
-        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
+        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
         var assistantWithCall = new ChatMessage(
             ChatRole.Assistant,
             [new FunctionCallContent("call-1", "doStuff",
@@ -250,10 +250,10 @@ public class MessageTruncatorTests
     {
         // Messages alone: sys=5, u1=24, a1=24, u2=5 → 58 (well under 95% of 80 = 76).
         // With 30 tokens of fixed overhead → 88, over threshold. u1 dropped → 64 ≤ 76.
-        var sys = new ChatMessage(ChatRole.System,    new string('s', 4));
-        var u1  = new ChatMessage(ChatRole.User,      new string('a', 80));
-        var a1  = new ChatMessage(ChatRole.Assistant, new string('b', 80));
-        var u2  = new ChatMessage(ChatRole.User,      new string('c', 4));
+        var sys = new ChatMessage(ChatRole.System, new string('s', 4));
+        var u1 = new ChatMessage(ChatRole.User, new string('a', 80));
+        var a1 = new ChatMessage(ChatRole.Assistant, new string('b', 80));
+        var u2 = new ChatMessage(ChatRole.User, new string('c', 4));
         var msgs = new List<ChatMessage> { sys, u1, a1, u2 };
 
         var result = MessageTruncator.Truncate(
