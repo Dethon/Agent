@@ -374,4 +374,79 @@ public class MetricsQueryServiceGroupingTests
 
         result.ShouldBeEmpty();
     }
+
+    // =====================================================================
+    // Latency Grouped Aggregation
+    // =====================================================================
+
+    [Theory]
+    [InlineData(50, 30)]
+    [InlineData(95, 100)]
+    [InlineData(99, 100)]
+    public void ComputePercentile_NearestRank_ReturnsExpected(int q, int expected)
+    {
+        decimal[] values = [10, 20, 30, 40, 100];
+        MetricsQueryService.ComputePercentile(values, q).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ComputePercentile_EmptyCollection_ReturnsZero()
+    {
+        MetricsQueryService.ComputePercentile([], 95).ShouldBe(0m);
+    }
+
+    [Fact]
+    public void ComputePercentile_SingleElement_ReturnsElement()
+    {
+        MetricsQueryService.ComputePercentile([7m], 95).ShouldBe(7m);
+    }
+
+    [Fact]
+    public async Task GetLatencyGroupedAsync_ByStage_P95_PercentilePerStage()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:latency:2026-03-15",
+        [
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100 },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 200 },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5000 },
+            new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 40 },
+        ]);
+
+        var result = await _sut.GetLatencyGroupedAsync(
+            LatencyDimension.Stage, LatencyMetric.P95, date, date);
+
+        result["LlmTotal"].ShouldBe(5000m);
+        result["MemoryRecall"].ShouldBe(40m);
+    }
+
+    [Fact]
+    public async Task GetLatencyGroupedAsync_ByModel_Avg_GroupsByModel()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:latency:2026-03-15",
+        [
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100, Model = "m1" },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300, Model = "m1" },
+            new LatencyEvent { Stage = LatencyStage.SessionWarmup, DurationMs = 50 },
+        ]);
+
+        var result = await _sut.GetLatencyGroupedAsync(
+            LatencyDimension.Model, LatencyMetric.Avg, date, date);
+
+        result["m1"].ShouldBe(200m);
+        result["unknown"].ShouldBe(50m);
+    }
+
+    [Fact]
+    public async Task GetLatencyGroupedAsync_EmptyData_ReturnsEmptyDictionary()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:latency:2026-03-15", []);
+
+        var result = await _sut.GetLatencyGroupedAsync(
+            LatencyDimension.Stage, LatencyMetric.P95, date, date);
+
+        result.ShouldBeEmpty();
+    }
 }
