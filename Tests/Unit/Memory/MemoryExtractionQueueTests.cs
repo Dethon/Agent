@@ -50,41 +50,4 @@ public class MemoryExtractionQueueTests
         items[0].ThreadStateKey.ShouldBe("state-first");
         items[1].ThreadStateKey.ShouldBe("state-second");
     }
-
-    [Fact]
-    public async Task EnqueueAsync_WhenCapacityExceeded_DropsOldest()
-    {
-        var queue = new MemoryExtractionQueue(capacity: 2);
-
-        await queue.EnqueueAsync(new MemoryExtractionRequest("u1", null, 0, null, null), CancellationToken.None);
-        await queue.EnqueueAsync(new MemoryExtractionRequest("u2", null, 0, null, null), CancellationToken.None);
-        await queue.EnqueueAsync(new MemoryExtractionRequest("u3", null, 0, null, null), CancellationToken.None);
-        queue.Complete();
-
-        var drained = new List<string>();
-        await foreach (var r in queue.ReadAllAsync(CancellationToken.None))
-        {
-            drained.Add(r.UserId);
-        }
-
-        drained.ShouldBe(["u2", "u3"]);
-    }
-
-    [Fact]
-    public async Task EnqueueAsync_WhenFull_DoesNotBlock()
-    {
-        var queue = new MemoryExtractionQueue(capacity: 1);
-
-        var enqueueAll = Task.Run(async () =>
-        {
-            for (var i = 0; i < 50; i++)
-            {
-                await queue.EnqueueAsync(new MemoryExtractionRequest($"u{i}", null, 0, null, null), CancellationToken.None);
-            }
-        });
-
-        var winner = await Task.WhenAny(enqueueAll, Task.Delay(TimeSpan.FromSeconds(2)));
-        winner.ShouldBe(enqueueAll);
-        enqueueAll.IsCompletedSuccessfully.ShouldBeTrue();
-    }
 }

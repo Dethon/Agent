@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -16,7 +15,6 @@ public record MemoryExtractionOptions
     public int MaxCandidatesPerMessage { get; init; } = 5;
     public int MaxRetries { get; init; } = 2;
     public int WindowMixedTurns { get; init; } = 6;
-    public int LaneCount { get; init; } = 4;
 }
 
 public class MemoryExtractionWorker(
@@ -32,42 +30,15 @@ public class MemoryExtractionWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var laneCount = Math.Max(1, options.LaneCount);
-        var lanes = Enumerable.Range(0, laneCount)
-            .Select(_ => Channel.CreateUnbounded<MemoryExtractionRequest>(
-                new UnboundedChannelOptions { SingleReader = true, SingleWriter = true }))
-            .ToArray();
-
-        // Each lane drains sequentially (per-user ordering, one extraction at a time);
-        // lanes run in parallel so a chatty user can't starve others.
-        var consumers = lanes
-            .Select(lane => Task.Run(async () =>
-            {
-                await foreach (var request in lane.Reader.ReadAllAsync(ct))
-                {
-                    await ProcessRequestAsync(request, ct);
-                }
-            }, ct))
-            .ToArray();
-
         try
         {
             await foreach (var request in queue.ReadAllAsync(ct))
             {
-                var lane = MemoryLaneRouter.LaneFor(request.UserId, laneCount);
-                await lanes[lane].Writer.WriteAsync(request, ct);
-            }
-        }
-        catch (OperationCanceledException) { }
-        finally
-        {
-            foreach (var lane in lanes)
-            {
-                lane.Writer.TryComplete();
+                await ProcessRequestAsync(request, ct);
             }
 
-            await Task.WhenAll(consumers);
         }
+        catch (OperationCanceledException) { }
     }
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)

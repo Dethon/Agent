@@ -18,9 +18,8 @@ public static class MemoryModule
         {
             var memoryConfig = config.GetSection("Memory");
 
-            // Extraction queue — bounded, DropOldest so enqueue never blocks the agent turn
-            var queueCapacity = memoryConfig.GetValue("Extraction:QueueCapacity", 512);
-            services.AddSingleton(new MemoryExtractionQueue(queueCapacity));
+            // Extraction queue
+            services.AddSingleton<MemoryExtractionQueue>();
 
             // Infrastructure — store and embeddings
             services.AddSingleton<IMemoryStore, RedisStackMemoryStore>();
@@ -81,8 +80,7 @@ public static class MemoryModule
             {
                 SimilarityThreshold = memoryConfig.GetValue("Extraction:SimilarityThreshold", 0.85),
                 MaxCandidatesPerMessage = memoryConfig.GetValue("Extraction:MaxCandidatesPerMessage", 5),
-                WindowMixedTurns = memoryConfig.GetValue("Extraction:WindowMixedTurns", 6),
-                LaneCount = memoryConfig.GetValue("Extraction:LaneCount", 4)
+                WindowMixedTurns = memoryConfig.GetValue("Extraction:WindowMixedTurns", 6)
             };
             services.AddSingleton(extractionOptions);
 
