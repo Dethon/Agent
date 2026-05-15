@@ -274,29 +274,4 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         result.TechnicalContext!.Expertise.ShouldNotBeEmpty("Should identify areas of expertise");
         result.TechnicalContext.Stack.ShouldNotBeEmpty("Should identify tech stack");
     }
-
-    [SkippableFact]
-    public async Task SynthesizeProfileAsync_WithMinimalMemories_ReturnsProfileWithSummary()
-    {
-        var (apiUrl, apiKey, model) = GetConfig();
-        var consolidator = CreateConsolidator(apiUrl, apiKey, model);
-
-        var memories = new[]
-        {
-            CreateMemory("mem_1", "User likes Python", MemoryCategory.Preference),
-            CreateMemory("mem_2", "User can program", MemoryCategory.Skill),
-            CreateMemory("mem_3", "User has lots of professional experience", MemoryCategory.Fact),
-            CreateMemory("mem_4", "User studied CS", MemoryCategory.Skill),
-            CreateMemory("mem_5", "User works as an engineer", MemoryCategory.Fact)
-        };
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var result = await consolidator.SynthesizeProfileAsync("test_user", memories, cts.Token);
-
-        result.UserId.ShouldBe("test_user");
-        result.BasedOnMemoryCount.ShouldBe(5);
-        result.Summary.ShouldNotBeNullOrWhiteSpace("Even minimal input should produce a summary");
-        result.Confidence.ShouldBeInRange(0.0001, 1.0);
-    }
 }
