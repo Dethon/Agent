@@ -58,21 +58,28 @@ public sealed class RedisStateService(IConnectionMultiplexer redis)
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
-        var agentKey = new AgentKey($"{chatId}:{threadId}", agentId);
-        var value = await _db.StringGetAsync(agentKey.ToString());
+        var key = new AgentKey($"{chatId}:{threadId}", agentId).ToString();
 
-        if (!value.HasValue)
+        // History is stored as a Redis List (one JSON ChatMessage per element);
+        // legacy keys are a single String holding StoreState. Mirror
+        // RedisThreadStateStore.GetMessagesAsync so both formats render.
+        var type = await _db.KeyTypeAsync(key);
+        ChatMessage[] messages = type switch
+        {
+            RedisType.List => (await _db.ListRangeAsync(key))
+                .Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)
+                .ToArray(),
+            RedisType.String => JsonSerializer.Deserialize<StoreState>(
+                (await _db.StringGetAsync(key)).ToString())?.Messages ?? [],
+            _ => []
+        };
+
+        if (messages.Length == 0)
         {
             return [];
         }
 
-        var state = JsonSerializer.Deserialize<StoreState>(value.ToString());
-        if (state?.Messages is null)
-        {
-            return [];
-        }
-
-        return state.Messages
+        return messages
             .Where(m => m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
             .Select(m => new ChatHistoryMessage(
                 m.MessageId,
