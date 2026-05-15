@@ -74,40 +74,34 @@ public sealed class InitializationEffect : IDisposable
 
     private async Task HandleInitializeAsync()
     {
-        // [DEBUG-TIMING] Temporary instrumentation to attribute init stall — remove after diagnosis
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        void mark(string step) => Console.WriteLine($"[INIT-TIMING] {step}: {sw.ElapsedMilliseconds} ms");
-
         // Connect to SignalR
         await _connectionService.ConnectAsync();
-        mark("ConnectAsync done");
         _eventSubscriber.Subscribe();
 
         // Register user after initial connection
         await RegisterUserAsync();
-        mark("RegisterUserAsync done");
 
         // Validate and join space (must happen before push subscribe so space context is set)
         var spaceSlug = _spaceStore.State.CurrentSlug;
         var space = await _configService.GetSpaceAsync(spaceSlug);
-        mark("GetSpaceAsync done");
         if (space is null)
         {
             _dispatcher.Dispatch(new InvalidSpace());
             spaceSlug = _spaceStore.State.CurrentSlug;
             space = await _configService.GetSpaceAsync(spaceSlug);
-            mark("GetSpaceAsync retry done");
         }
 
         if (space is not null)
         {
             await _topicService.JoinSpaceAsync(spaceSlug);
-            mark("JoinSpaceAsync done");
             _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
         }
 
-        await SubscribePushAsync();
-        mark("SubscribePushAsync done");
+        // Best-effort, network/browser-dependent — must not gate the rest of init
+        // (agent list, topics). Push subscription still runs after space join so the
+        // server can associate it with the space context. A slow pushManager.subscribe()
+        // previously stalled the agent list ~30s by being awaited here.
+        _ = SubscribePushAsync();
 
         // Re-register user on reconnection (after initial subscribe to avoid race)
         _connectionService.OnReconnected += () =>
@@ -126,7 +120,6 @@ public sealed class InitializationEffect : IDisposable
 
         // Load agents
         var agents = await _agentService.GetAgentsAsync();
-        mark($"GetAgentsAsync done (count={agents.Count})");
         _dispatcher.Dispatch(new SetAgents(agents));
 
         if (agents.Count == 0)
