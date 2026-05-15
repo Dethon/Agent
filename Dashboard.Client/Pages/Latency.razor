@@ -1,0 +1,201 @@
+@page "/latency"
+@using Dashboard.Client.State.Latency
+@using Domain.DTOs.Metrics
+@using Domain.DTOs.Metrics.Enums
+@using static Dashboard.Client.Components.PillSelector
+@implements IDisposable
+@inject LatencyStore Store
+@inject DataLoadEffect DataLoad
+@inject MetricsApiService Api
+@inject LocalStorageService Storage
+
+<div class="tokens-page">
+    <header class="page-header">
+        <h2>Latency</h2>
+        <div class="controls">
+            <PillSelector Label="Group by" Options="DimensionOptions" Value="@_state.GroupBy.ToString()"
+                          OnChanged="OnDimensionChanged" />
+            <PillSelector Label="Metric" Options="MetricOptions" Value="@_state.Metric.ToString()"
+                          OnChanged="OnMetricChanged" />
+            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
+                          OnChanged="OnTimeChanged" />
+        </div>
+    </header>
+
+    <section class="kpi-row">
+        <KpiCard Label="p50 (all stages)" Value="@($"{_p50:N0} ms")" Color="var(--accent-green)" />
+        <KpiCard Label="p95 (all stages)" Value="@($"{_p95:N0} ms")" Color="var(--accent-yellow)" />
+        <KpiCard Label="p99 (all stages)" Value="@($"{_p99:N0} ms")" Color="var(--accent-purple)" />
+        <KpiCard Label="Slowest stage (p95)" Value="@_slowestStage" Color="var(--accent-blue)" />
+    </section>
+
+    <section class="section">
+        <DynamicChart Data="_state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                      MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label ?? "")"
+                      Unit="ms" UseFullLabels="true" />
+    </section>
+
+    <section class="section">
+        <h3>@(MetricOptions.FirstOrDefault(o => o.Value == _state.Metric.ToString())?.Label) trend</h3>
+        <LatencyTrendChart Series="_state.Trend" />
+    </section>
+
+    <section class="section">
+        <h3>Recent Slow Turns</h3>
+        <div class="events-table">
+            <div class="table-header">
+                <span>Time</span>
+                <span>Stage</span>
+                <span>Duration</span>
+                <span>Agent</span>
+                <span>Conversation</span>
+            </div>
+            @foreach (var evt in GetSlowest())
+            {
+                <div class="table-row">
+                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                    <span>@evt.Stage</span>
+                    <span>@evt.DurationMs.ToString("N0") ms</span>
+                    <span>@(evt.AgentId ?? "-")</span>
+                    <span>@(evt.ConversationId ?? "-")</span>
+                </div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private LatencyState _state = new();
+    private int _selectedDays = 1;
+    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
+    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
+    private decimal _p50, _p95, _p99;
+    private string _slowestStage = "-";
+    private IDisposable? _sub;
+
+    private static readonly IReadOnlyList<PillOption> DimensionOptions =
+    [
+        new("Stage", nameof(LatencyDimension.Stage)),
+        new("Agent", nameof(LatencyDimension.Agent)),
+        new("Model", nameof(LatencyDimension.Model)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> MetricOptions =
+    [
+        new("Avg", nameof(LatencyMetric.Avg)),
+        new("P50", nameof(LatencyMetric.P50)),
+        new("P95", nameof(LatencyMetric.P95)),
+        new("P99", nameof(LatencyMetric.P99)),
+    ];
+
+    private static readonly IReadOnlyList<PillOption> TimeOptions =
+    [
+        new("Today", "1"),
+        new("7d", "7"),
+        new("30d", "30"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var savedGroupBy = await Storage.GetAsync<LatencyDimension>("latency.groupBy");
+        var savedMetric = await Storage.GetAsync<LatencyMetric>("latency.metric");
+        var savedDays = await Storage.GetIntAsync("latency.days");
+
+        if (savedGroupBy.HasValue) Store.SetGroupBy(savedGroupBy.Value);
+        if (savedMetric.HasValue) Store.SetMetric(savedMetric.Value);
+        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+
+        _sub = Store.StateObservable.Subscribe(s =>
+        {
+            _state = s;
+            RecomputeKpis(s);
+            InvokeAsync(StateHasChanged);
+        });
+
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private void RecomputeKpis(LatencyState s)
+    {
+        var all = s.Events.Select(e => (decimal)e.DurationMs).ToArray();
+        _p50 = Percentile(all, 50);
+        _p95 = Percentile(all, 95);
+        _p99 = Percentile(all, 99);
+        _slowestStage = s.Events
+            .GroupBy(e => e.Stage)
+            .Select(g => (Stage: g.Key, P95: Percentile(g.Select(e => (decimal)e.DurationMs).ToArray(), 95)))
+            .OrderByDescending(x => x.P95)
+            .Select(x => x.Stage.ToString())
+            .FirstOrDefault() ?? "-";
+    }
+
+    private static decimal Percentile(decimal[] values, int q)
+    {
+        if (values.Length == 0) return 0m;
+        var sorted = values.OrderBy(v => v).ToArray();
+        var rank = (int)Math.Ceiling((double)q / 100.0 * sorted.Length);
+        return sorted[Math.Clamp(rank - 1, 0, sorted.Length - 1)];
+    }
+
+    private IEnumerable<LatencyEvent> GetSlowest() =>
+        _state.Events.OrderByDescending(e => e.DurationMs).Take(50);
+
+    private async Task OnDimensionChanged(string value)
+    {
+        Store.SetGroupBy(Enum.Parse<LatencyDimension>(value));
+        await Storage.SetAsync("latency.groupBy", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnMetricChanged(string value)
+    {
+        Store.SetMetric(Enum.Parse<LatencyMetric>(value));
+        await Storage.SetAsync("latency.metric", value);
+        await ReloadBreakdown();
+    }
+
+    private async Task OnTimeChanged(string value)
+    {
+        _selectedDays = int.Parse(value);
+        _to = DateOnly.FromDateTime(DateTime.UtcNow);
+        _from = _to.AddDays(-(_selectedDays - 1));
+        Store.SetDateRange(_from, _to);
+        await Storage.SetAsync("latency.days", value);
+        await DataLoad.LoadAsync(_from, _to);
+    }
+
+    private async Task ReloadBreakdown()
+    {
+        var breakdown = await Api.GetLatencyGroupedAsync(Store.State.GroupBy, Store.State.Metric, _from, _to);
+        Store.SetBreakdown(breakdown ?? []);
+        var trend = await Api.GetLatencyTrendAsync(Store.State.Metric, _from, _to);
+        Store.SetTrend(trend ?? []);
+    }
+
+    public void Dispose() => _sub?.Dispose();
+}
+
+<style>
+    .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
+    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 1fr) 120px minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+
+    @@media (max-width: 768px) {
+        .page-header { flex-direction: column; }
+        .page-header h2 { font-size: 1.1rem; }
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) 90px minmax(0, 1fr) minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 525px; }
+        .table-row span { word-break: break-word; }
+    }
+</style>
