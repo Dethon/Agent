@@ -1,4 +1,5 @@
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Infrastructure.Metrics;
 using Moq;
 using StackExchange.Redis;
@@ -33,6 +34,16 @@ public class RedisMetricsPublisherTests
                 Cost = 0.01m
             },
             "\"type\":\"token_usage\""
+        },
+        {
+            new LatencyEvent
+            {
+                Stage = LatencyStage.LlmTotal,
+                DurationMs = 1234,
+                Model = "anthropic/claude",
+                ConversationId = "conv1"
+            },
+            "\"type\":\"latency\""
         }
     };
 
