@@ -12,3 +12,5 @@ DockerCompose/volumes
 temp
 .worktrees
 .superpowers
+# Superpowers brainstorming visual companion
+.superpowers/
