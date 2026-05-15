@@ -121,7 +121,10 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             filesystemEnabledTools: filesystemEnabledTools,
             loggerFactory: loggerFactory,
-            reasoningEffort: definition.ReasoningEffort);
+            reasoningEffort: definition.ReasoningEffort,
+            metricsPublisher: agentPublisher,
+            model: definition.Model,
+            conversationId: agentKey.ConversationId);
     }
 
     private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
