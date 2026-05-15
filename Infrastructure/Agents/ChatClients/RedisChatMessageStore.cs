@@ -61,15 +61,16 @@ public sealed class RedisChatMessageStore(IThreadStateStore store) : ChatHistory
             message.SetTimestamp(now);
         }
 
-        var existingMessages = await store.GetMessagesAsync(redisKey) ?? [];
-        var allMessages = existingMessages
-            .Concat(context.RequestMessages)
+        var newMessages = context.RequestMessages
             .Concat(context.ResponseMessages ?? [])
             .ToArray();
+
+        // The lock serializes concurrent same-conversation turns through the one-time
+        // legacy migration in AppendMessagesAsync and preserves per-turn message ordering.
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            await store.SetMessagesAsync(redisKey, allMessages);
+            await store.AppendMessagesAsync(redisKey, newMessages);
         }
         finally
         {

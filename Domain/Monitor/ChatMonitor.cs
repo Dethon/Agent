@@ -66,6 +66,12 @@ public class ChatMonitor(
         using var linkedCts = context.GetLinkedTokenSource(ct);
         var linkedCt = linkedCts.Token;
 
+        // Start session warmup (MCP connections + tool discovery) without awaiting it
+        // yet, so it overlaps with command parsing and memory recall. It is awaited
+        // deterministically just before the first RunStreamingAsync below, so it never
+        // outlives the agent and the order of operations is well-defined.
+        var warmup = agent.WarmupSessionAsync(thread, linkedCt);
+
         var aiResponses = group.Prepend(first)
             .Select(async (x, _, _) =>
             {
@@ -94,6 +100,8 @@ public class ChatMonitor(
                         {
                             await memoryRecallHook.EnrichAsync(userMessage, x.Message.Sender, x.Message.ConversationId, x.Message.AgentId, thread, linkedCt);
                         }
+
+                        await warmup;
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
