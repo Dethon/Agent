@@ -141,7 +141,8 @@
     }
 
     private IEnumerable<LatencyEvent> GetSlowest() =>
-        _state.Events.OrderByDescending(e => e.DurationMs).Take(50);
+        _state.Events.OrderByDescending(e => e.DurationMs).Take(50)
+            .OrderByDescending(e => e.Timestamp);
 
     private async Task OnDimensionChanged(string value)
     {
