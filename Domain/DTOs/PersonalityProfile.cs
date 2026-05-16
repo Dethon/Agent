@@ -24,5 +24,4 @@ public record TechnicalContext
 {
     public IReadOnlyList<string> Expertise { get; init; } = [];
     public IReadOnlyList<string> Learning { get; init; } = [];
-    public IReadOnlyList<string> Stack { get; init; } = [];
 }

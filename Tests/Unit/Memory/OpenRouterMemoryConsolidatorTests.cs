@@ -79,8 +79,7 @@ public class OpenRouterMemoryConsolidatorTests
               },
               "technicalContext": {
                 "expertise": [".NET", "C#", "Azure"],
-                "learning": ["Rust", "WebAssembly"],
-                "stack": [".NET 10", "Redis", "Docker"]
+                "learning": ["Rust", "WebAssembly"]
               },
               "interactionGuidelines": ["Be direct", "Prefer code over prose"],
               "activeProjects": ["Agent AI assistant", "Idealista scraper"]
@@ -112,7 +111,6 @@ public class OpenRouterMemoryConsolidatorTests
         result.TechnicalContext.ShouldNotBeNull();
         result.TechnicalContext!.Expertise.ShouldBe(new[] { ".NET", "C#", "Azure" });
         result.TechnicalContext.Learning.ShouldBe(new[] { "Rust", "WebAssembly" });
-        result.TechnicalContext.Stack.ShouldBe(new[] { ".NET 10", "Redis", "Docker" });
 
         result.InteractionGuidelines.ShouldBe(new[] { "Be direct", "Prefer code over prose" });
         result.ActiveProjects.ShouldBe(new[] { "Agent AI assistant", "Idealista scraper" });

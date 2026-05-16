@@ -231,8 +231,7 @@ public class OpenRouterMemoryConsolidator(
                 TechnicalContext = dto.TechnicalContext is null ? null : new TechnicalContext
                 {
                     Expertise = dto.TechnicalContext.Expertise ?? [],
-                    Learning = dto.TechnicalContext.Learning ?? [],
-                    Stack = dto.TechnicalContext.Stack ?? []
+                    Learning = dto.TechnicalContext.Learning ?? []
                 },
                 InteractionGuidelines = dto.InteractionGuidelines ?? [],
                 ActiveProjects = dto.ActiveProjects ?? [],
@@ -309,6 +308,5 @@ public class OpenRouterMemoryConsolidator(
     {
         public IReadOnlyList<string>? Expertise { get; init; }
         public IReadOnlyList<string>? Learning { get; init; }
-        public IReadOnlyList<string>? Stack { get; init; }
     }
 }

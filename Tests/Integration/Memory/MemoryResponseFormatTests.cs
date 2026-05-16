@@ -272,6 +272,5 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
         result.TechnicalContext.ShouldNotBeNull("Profile should include technical context");
         result.TechnicalContext!.Expertise.ShouldNotBeEmpty("Should identify areas of expertise");
-        result.TechnicalContext.Stack.ShouldNotBeEmpty("Should identify tech stack");
     }
 }
