@@ -46,6 +46,7 @@
             <div class="table-header">
                 <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
                 <span class='sortable @SortClass("Stage")' @onclick='() => SortBy("Stage")'>Stage @SortIndicator("Stage")</span>
+                <span class='sortable @SortClass("Model")' @onclick='() => SortBy("Model")'>Model @SortIndicator("Model")</span>
                 <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
                 <span class='sortable @SortClass("Agent")' @onclick='() => SortBy("Agent")'>Agent @SortIndicator("Agent")</span>
                 <span class='sortable @SortClass("Conversation")' @onclick='() => SortBy("Conversation")'>Conversation @SortIndicator("Conversation")</span>
@@ -55,6 +56,7 @@
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
                     <span>@evt.Stage</span>
+                    <span>@(evt.Model ?? "-")</span>
                     <span>@evt.DurationMs.ToString("N0") ms</span>
                     <span>@(evt.AgentId ?? "-")</span>
                     <span>@(evt.ConversationId ?? "-")</span>
@@ -155,6 +157,7 @@
         Func<LatencyEvent, object> keySelector = _sortColumn switch
         {
             "Stage" => e => e.Stage,
+            "Model" => e => e.Model ?? "",
             "Duration" => e => e.DurationMs,
             "Agent" => e => e.AgentId ?? "",
             "Conversation" => e => e.ConversationId ?? "",
@@ -209,7 +212,7 @@
     .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
     .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 1fr) 120px minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
+    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
     .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .table-row:hover { background: rgba(255,255,255,0.03); }
@@ -218,7 +221,7 @@
         .page-header { flex-direction: column; }
         .page-header h2 { font-size: 1.1rem; }
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) 90px minmax(0, 1fr) minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 525px; }
+        .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 90px minmax(0, 1fr) minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 660px; }
         .table-row span { word-break: break-word; }
     }
 </style>
