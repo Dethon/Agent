@@ -45,6 +45,9 @@ public class MetricsHubService : IAsyncDisposable
     public virtual IDisposable OnContextTruncation(Func<ContextTruncationEvent, Task> handler) =>
         _connection!.On("OnContextTruncation", handler);
 
+    public virtual IDisposable OnLatency(Func<LatencyEvent, Task> handler) =>
+        _connection!.On("OnLatency", handler);
+
     public virtual IDisposable OnHealthUpdate(Func<ServiceHealthUpdate, Task> handler) =>
         _connection!.On("OnHealthUpdate", handler);
 

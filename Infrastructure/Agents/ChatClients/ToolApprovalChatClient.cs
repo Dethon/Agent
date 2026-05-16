@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 
@@ -14,12 +15,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly ToolPatternMatcher _patternMatcher;
     private readonly HashSet<string> _dynamicallyApproved;
     private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly string? _conversationId;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        string? conversationId = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
@@ -27,6 +30,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
         _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         _metricsPublisher = metricsPublisher;
+        _conversationId = conversationId;
 
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
@@ -89,6 +93,19 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     Success = !isError,
                     Error = errorMessage
                 }, cancellationToken);
+                try
+                {
+                    await _metricsPublisher.PublishAsync(new LatencyEvent
+                    {
+                        Stage = LatencyStage.ToolExec,
+                        DurationMs = sw.ElapsedMilliseconds,
+                        ConversationId = _conversationId
+                    }, cancellationToken);
+                }
+                catch
+                {
+                    // Best-effort latency emission; never fail a tool call.
+                }
             }
             return result;
         }
@@ -104,6 +121,19 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     Success = false,
                     Error = ex.Message
                 }, cancellationToken);
+                try
+                {
+                    await _metricsPublisher.PublishAsync(new LatencyEvent
+                    {
+                        Stage = LatencyStage.ToolExec,
+                        DurationMs = sw.ElapsedMilliseconds,
+                        ConversationId = _conversationId
+                    }, cancellationToken);
+                }
+                catch
+                {
+                    // Best-effort latency emission; never fail a tool call.
+                }
             }
             throw;
         }

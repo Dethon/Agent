@@ -78,4 +78,19 @@ public sealed class MetricsApiService(HttpClient http)
         CancellationToken ct = default) =>
         http.GetFromJsonAsync<Dictionary<string, decimal>>(
             $"api/metrics/memory/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+
+    public Task<List<LatencyEvent>?> GetLatencyAsync(DateOnly from, DateOnly to) =>
+        http.GetFromJsonAsync<List<LatencyEvent>>($"api/metrics/latency?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+
+    public Task<Dictionary<string, decimal>?> GetLatencyGroupedAsync(
+        LatencyDimension dimension, LatencyMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
+        http.GetFromJsonAsync<Dictionary<string, decimal>>(
+            $"api/metrics/latency/by/{dimension}?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
+
+    public Task<List<LatencyTrendSeries>?> GetLatencyTrendAsync(
+        LatencyMetric metric, DateOnly from, DateOnly to,
+        CancellationToken ct = default) =>
+        http.GetFromJsonAsync<List<LatencyTrendSeries>>(
+            $"api/metrics/latency/trend?metric={metric}&from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}", ct);
 }

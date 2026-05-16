@@ -1,4 +1,5 @@
 using Dashboard.Client.State.Errors;
+using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
@@ -15,6 +16,7 @@ public class DashboardStoreTests
             { "Schedules", () => new SchedulesStore(), (s, f, t) => ((SchedulesStore)s).SetDateRange(f, t), s => ((SchedulesStore)s).State.From, s => ((SchedulesStore)s).State.To },
             { "Tokens", () => new TokensStore(), (s, f, t) => ((TokensStore)s).SetDateRange(f, t), s => ((TokensStore)s).State.From, s => ((TokensStore)s).State.To },
             { "Tools", () => new ToolsStore(), (s, f, t) => ((ToolsStore)s).SetDateRange(f, t), s => ((ToolsStore)s).State.From, s => ((ToolsStore)s).State.To },
+            { "Latency", () => new LatencyStore(), (s, f, t) => ((LatencyStore)s).SetDateRange(f, t), s => ((LatencyStore)s).State.From, s => ((LatencyStore)s).State.To },
         };
 
     [Theory]

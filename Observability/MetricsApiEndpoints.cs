@@ -178,5 +178,38 @@ public static class MetricsApiEndpoints
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
             return await query.GetMemoryGroupedAsync(dimension, metric, fromDate, toDate);
         });
+
+        api.MapGet("/latency", async (
+            MetricsQueryService query,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetEventsAsync<LatencyEvent>("metrics:latency:", fromDate, toDate);
+        });
+
+        api.MapGet("/latency/by/{dimension}", async (
+            MetricsQueryService query,
+            LatencyDimension dimension,
+            LatencyMetric metric,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetLatencyGroupedAsync(dimension, metric, fromDate, toDate);
+        });
+
+        api.MapGet("/latency/trend", async (
+            MetricsQueryService query,
+            LatencyMetric metric,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetLatencyTrendAsync(metric, fromDate, toDate);
+        });
     }
 }

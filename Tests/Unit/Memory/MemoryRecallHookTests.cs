@@ -1,5 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Memory;
 using Infrastructure.Agents.ChatClients;
@@ -359,5 +361,31 @@ public class MemoryRecallHookTests
             item.FallbackContent.ShouldBe("hello");
             break;
         }
+    }
+
+    [Fact]
+    public async Task EnrichAsync_AlsoPublishesLatencyEvent_WithMemoryRecallStage()
+    {
+        var message = new ChatMessage(ChatRole.User, "Hello");
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
+            .ReturnsAsync((ChatMessage[]?)null);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemorySearchResult>());
+
+        LatencyEvent? captured = null;
+        _metricsPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<LatencyEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as LatencyEvent)
+            .Returns(Task.CompletedTask);
+
+        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
+
+        captured.ShouldNotBeNull();
+        captured.Stage.ShouldBe(LatencyStage.MemoryRecall);
+        captured.ConversationId.ShouldBe("conv1");
+        captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 }

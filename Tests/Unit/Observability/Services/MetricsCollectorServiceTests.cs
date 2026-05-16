@@ -1,4 +1,5 @@
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -486,6 +487,59 @@ public class MetricsCollectorServiceTests
 
         _clientProxy.Verify(c => c.SendCoreAsync(
             "OnMemoryDreaming",
+            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_Latency_IncrementsDailyTotals()
+    {
+        var evt = new LatencyEvent
+        {
+            Stage = LatencyStage.LlmTotal,
+            DurationMs = 1500,
+            Model = "anthropic/claude",
+            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+        };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _db.Verify(d => d.HashIncrementAsync(
+            "metrics:totals:2026-03-15", "latency:LlmTotal:count", 1, It.IsAny<CommandFlags>()), Times.Once);
+        _db.Verify(d => d.HashIncrementAsync(
+            "metrics:totals:2026-03-15", "latency:LlmTotal:totalMs", 1500, It.IsAny<CommandFlags>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_Latency_AddsSortedSetEntry()
+    {
+        var evt = new LatencyEvent
+        {
+            Stage = LatencyStage.LlmTotal,
+            DurationMs = 1500,
+            Model = "anthropic/claude",
+            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+        };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _db.Verify(d => d.SortedSetAddAsync(
+            "metrics:latency:2026-03-15",
+            It.Is<RedisValue>(v => v.ToString().Contains("\"type\":\"latency\"")),
+            evt.Timestamp.ToUnixTimeMilliseconds(),
+            It.IsAny<SortedSetWhen>(),
+            It.IsAny<CommandFlags>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_Latency_ForwardsToSignalR()
+    {
+        var evt = new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 42 };
+
+        await _sut.ProcessEventAsync(evt, _db.Object);
+
+        _clientProxy.Verify(c => c.SendCoreAsync(
+            "OnLatency",
             It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
             It.IsAny<CancellationToken>()), Times.Once);
     }

@@ -316,6 +316,85 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                 });
     }
 
+    public static decimal ComputePercentile(IEnumerable<decimal> values, decimal q)
+    {
+        var sorted = values.OrderBy(v => v).ToArray();
+        if (sorted.Length == 0)
+        {
+            return 0m;
+        }
+
+        var rank = (int)Math.Ceiling((double)q / 100.0 * sorted.Length);
+        var index = Math.Clamp(rank - 1, 0, sorted.Length - 1);
+        return sorted[index];
+    }
+
+    internal static decimal AggregateLatency(IEnumerable<decimal> values, LatencyMetric metric)
+    {
+        var list = values.ToArray();
+        if (list.Length == 0)
+        {
+            return 0m;
+        }
+
+        return metric switch
+        {
+            LatencyMetric.Avg => Math.Round(list.Average(), 2),
+            LatencyMetric.P50 => ComputePercentile(list, 50),
+            LatencyMetric.P95 => ComputePercentile(list, 95),
+            LatencyMetric.P99 => ComputePercentile(list, 99),
+            LatencyMetric.Count => list.Length,
+            LatencyMetric.Max => list.Max(),
+            _ => throw new ArgumentOutOfRangeException(nameof(metric))
+        };
+    }
+
+    public async Task<Dictionary<string, decimal>> GetLatencyGroupedAsync(
+        LatencyDimension dimension, LatencyMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<LatencyEvent>("metrics:latency:", from, to);
+        return events
+            .GroupBy(e => dimension switch
+            {
+                LatencyDimension.Stage => e.Stage.ToString(),
+                LatencyDimension.Agent => e.AgentId ?? "unknown",
+                LatencyDimension.Model => e.Model ?? "unknown",
+                _ => throw new ArgumentOutOfRangeException(nameof(dimension))
+            })
+            .ToDictionary(
+                g => g.Key,
+                g => AggregateLatency(g.Select(e => (decimal)e.DurationMs), metric));
+    }
+
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetLatencyTrendAsync(
+        LatencyMetric metric, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<LatencyEvent>("metrics:latency:", from, to);
+        var hourly = to.DayNumber - from.DayNumber <= 2;
+
+        return events
+            .GroupBy(e => e.Stage)
+            .OrderBy(g => g.Key)
+            .Select(stageGroup => new LatencyTrendSeries(
+                stageGroup.Key.ToString(),
+                stageGroup
+                    .GroupBy(e => BucketTimestamp(e.Timestamp, hourly))
+                    .OrderBy(b => b.Key)
+                    .Select(b => new LatencyTrendPoint(
+                        b.Key,
+                        AggregateLatency(b.Select(e => (decimal)e.DurationMs), metric)))
+                    .ToList()))
+            .ToList();
+    }
+
+    private static DateTimeOffset BucketTimestamp(DateTimeOffset ts, bool hourly)
+    {
+        var u = ts.UtcDateTime;
+        return hourly
+            ? new DateTimeOffset(u.Year, u.Month, u.Day, u.Hour, 0, 0, TimeSpan.Zero)
+            : new DateTimeOffset(u.Year, u.Month, u.Day, 0, 0, 0, TimeSpan.Zero);
+    }
+
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
         ScheduleDimension dimension, DateOnly from, DateOnly to)
     {

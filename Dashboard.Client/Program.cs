@@ -4,6 +4,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
@@ -28,6 +29,7 @@ builder.Services.AddSingleton<ErrorsStore>();
 builder.Services.AddSingleton<SchedulesStore>();
 builder.Services.AddSingleton<ConnectionStore>();
 builder.Services.AddSingleton<MemoryStore>();
+builder.Services.AddSingleton<LatencyStore>();
 
 // Services
 builder.Services.AddScoped<MetricsApiService>();

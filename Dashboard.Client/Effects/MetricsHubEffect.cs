@@ -2,6 +2,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
@@ -20,7 +21,8 @@ public sealed class MetricsHubEffect(
     ErrorsStore errorsStore,
     SchedulesStore schedulesStore,
     ConnectionStore connectionStore,
-    MemoryStore memoryStore) : IAsyncDisposable
+    MemoryStore memoryStore,
+    LatencyStore latencyStore) : IAsyncDisposable
 {
     private readonly List<IDisposable> _subscriptions = [];
 
@@ -29,6 +31,7 @@ public sealed class MetricsHubEffect(
     private CancellationTokenSource _errorBreakdownCts = new();
     private CancellationTokenSource _scheduleBreakdownCts = new();
     private CancellationTokenSource _memoryBreakdownCts = new();
+    private CancellationTokenSource _latencyBreakdownCts = new();
 
     private CancellationToken ResetCts(ref CancellationTokenSource cts)
     {
@@ -98,6 +101,22 @@ public sealed class MetricsHubEffect(
             var result = await api.GetMemoryGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
             ct.ThrowIfCancellationRequested();
             memoryStore.SetBreakdown(result ?? []);
+        }
+        catch (OperationCanceledException) { }
+        catch { /* Breakdown stays at last known value */ }
+    }
+
+    private async Task RefreshLatencyBreakdownAsync(CancellationToken ct)
+    {
+        try
+        {
+            var s = latencyStore.State;
+            var breakdown = await api.GetLatencyGroupedAsync(s.GroupBy, s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
+            var trend = await api.GetLatencyTrendAsync(s.Metric, s.From, s.To, ct);
+            ct.ThrowIfCancellationRequested();
+            latencyStore.SetBreakdown(breakdown ?? []);
+            latencyStore.SetTrend(trend ?? []);
         }
         catch (OperationCanceledException) { }
         catch { /* Breakdown stays at last known value */ }
@@ -175,6 +194,13 @@ public sealed class MetricsHubEffect(
             await RefreshScheduleBreakdownAsync(ct);
         }));
 
+        _subscriptions.Add(hub.OnLatency(async evt =>
+        {
+            latencyStore.AppendEvent(evt);
+            var ct = ResetCts(ref _latencyBreakdownCts);
+            await RefreshLatencyBreakdownAsync(ct);
+        }));
+
         _subscriptions.Add(hub.OnHealthUpdate(evt =>
         {
             var current = healthStore.State.Services.ToList();
@@ -225,6 +251,7 @@ public sealed class MetricsHubEffect(
         _errorBreakdownCts.Dispose();
         _scheduleBreakdownCts.Dispose();
         _memoryBreakdownCts.Dispose();
+        _latencyBreakdownCts.Dispose();
         await hub.DisposeAsync();
     }
 }

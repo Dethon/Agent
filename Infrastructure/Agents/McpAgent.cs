@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Prompts;
 using Infrastructure.Agents.ChatClients;
@@ -30,6 +32,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly ReasoningEffort? _reasoningEffort;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
+    private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly string? _model;
+    private readonly string? _conversationId;
 
     private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
     private int _isDisposed;
@@ -51,7 +56,10 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlySet<string>? filesystemEnabledTools = null, // null treated as empty (disabled)
         ILoggerFactory? loggerFactory = null,
         string? reasoningEffort = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IMetricsPublisher? metricsPublisher = null,
+        string? model = null,
+        string? conversationId = null)
     {
         _endpoints = endpoints;
         _filesystemEnabledTools = filesystemEnabledTools ?? new HashSet<string>();
@@ -65,11 +73,14 @@ public sealed class McpAgent : DisposableAgent
         _enableResourceSubscriptions = enableResourceSubscriptions;
         _reasoningEffort = ParseEffort(reasoningEffort);
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _metricsPublisher = metricsPublisher;
+        _model = model;
+        _conversationId = conversationId;
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = name,
             Description = description,
-            ChatHistoryProvider = new RedisChatMessageStore(stateStore)
+            ChatHistoryProvider = new RedisChatMessageStore(stateStore, metricsPublisher, conversationId)
         });
     }
 
@@ -104,7 +115,33 @@ public sealed class McpAgent : DisposableAgent
         // Pre-create the ThreadSession (MCP connections + tool discovery) so this
         // cost overlaps with first-message handling. The _syncLock in
         // GetOrCreateSessionAsync makes the subsequent RunStreaming reuse it.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         await GetOrCreateSessionAsync(thread, ct);
+        sw.Stop();
+        await SafePublishLatencyAsync(LatencyStage.SessionWarmup, sw.ElapsedMilliseconds);
+    }
+
+    private async Task SafePublishLatencyAsync(LatencyStage stage, long durationMs)
+    {
+        if (_metricsPublisher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _metricsPublisher.PublishAsync(new LatencyEvent
+            {
+                Stage = stage,
+                DurationMs = durationMs,
+                Model = stage is LatencyStage.LlmFirstToken or LatencyStage.LlmTotal ? _model : null,
+                ConversationId = _conversationId
+            });
+        }
+        catch
+        {
+            // Latency emission is best-effort and must never affect a turn.
+        }
     }
 
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
@@ -164,7 +201,41 @@ public sealed class McpAgent : DisposableAgent
         return (await response.ToArrayAsync(cancellationToken)).ToAgentResponse();
     }
 
-    protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
+    protected override IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? thread = null,
+        AgentRunOptions? options = null,
+        CancellationToken cancellationToken = default)
+        => WithLlmLatencyAsync(
+            RunCoreStreamingInnerAsync(messages, thread, options, cancellationToken),
+            cancellationToken);
+
+    private async IAsyncEnumerable<AgentResponseUpdate> WithLlmLatencyAsync(
+        IAsyncEnumerable<AgentResponseUpdate> source,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var firstEmitted = false;
+        try
+        {
+            await foreach (var update in source.WithCancellation(ct))
+            {
+                if (!firstEmitted)
+                {
+                    firstEmitted = true;
+                    await SafePublishLatencyAsync(LatencyStage.LlmFirstToken, sw.ElapsedMilliseconds);
+                }
+                yield return update;
+            }
+        }
+        finally
+        {
+            sw.Stop();
+            await SafePublishLatencyAsync(LatencyStage.LlmTotal, sw.ElapsedMilliseconds);
+        }
+    }
+
+    private async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingInnerAsync(
         IEnumerable<ChatMessage> messages,
         AgentSession? thread = null,
         AgentRunOptions? options = null,
