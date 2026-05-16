@@ -44,24 +44,30 @@ public class JonasMcpStackFixture : IAsyncLifetime
         // frozen into base-sdk. Without this, leaf images silently carry stale Domain/
         // Infrastructure whenever those change.
         await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpServerVault/Dockerfile", "mcp-vault:latest",
-            ["Domain", "Infrastructure", "McpServerVault"], ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpServerSandbox/Dockerfile", "mcp-sandbox:latest",
-            ["Domain", "Infrastructure", "McpServerSandbox"], ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpServerWebSearch/Dockerfile", "mcp-websearch:latest",
-            ["Domain", "Infrastructure", "McpServerWebSearch"], ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpServerIdealista/Dockerfile", "mcp-idealista:latest",
-            ["Domain", "Infrastructure", "McpServerIdealista"], ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpServerHomeAssistant/Dockerfile", "mcp-homeassistant:latest",
-            ["Domain", "Infrastructure", "McpServerHomeAssistant"], ct);
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot, "McpChannelSignalR/Dockerfile", "mcp-channel-signalr:latest",
-            ["Domain", "Infrastructure", "McpChannelSignalR"], ct);
+
+        // Leaf images are mutually independent (each is FROM base-sdk:latest with
+        // BuildProjectReferences=false), so build them concurrently once base-sdk exists.
+        // EnsureImageAsync already serialises per-tag via its own semaphore + file lock,
+        // so distinct tags building in parallel is safe by construction.
+        await Task.WhenAll(
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerVault/Dockerfile", "mcp-vault:latest",
+                ["Domain", "Infrastructure", "McpServerVault"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerSandbox/Dockerfile", "mcp-sandbox:latest",
+                ["Domain", "Infrastructure", "McpServerSandbox"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerWebSearch/Dockerfile", "mcp-websearch:latest",
+                ["Domain", "Infrastructure", "McpServerWebSearch"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerIdealista/Dockerfile", "mcp-idealista:latest",
+                ["Domain", "Infrastructure", "McpServerIdealista"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerHomeAssistant/Dockerfile", "mcp-homeassistant:latest",
+                ["Domain", "Infrastructure", "McpServerHomeAssistant"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpChannelSignalR/Dockerfile", "mcp-channel-signalr:latest",
+                ["Domain", "Infrastructure", "McpChannelSignalR"], ct));
 
         _network = new NetworkBuilder()
             .WithName($"benchmark-{Guid.NewGuid():N}")

@@ -39,10 +39,18 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
-        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions)
+        // 1. Build base-sdk image (shared; serialised via TestHelpers to avoid race conditions).
+        //    Every leaf image is FROM base-sdk:latest, so this must complete first.
         await TestHelpers.EnsureBaseSdkImageAsync(solutionRoot, ct);
 
-        // 2. Start Redis
+        // 2. Build all leaf images in parallel and start Redis (no build) concurrently.
+        //    Leaf images are mutually independent; EnsureImageAsync serialises per-tag
+        //    internally, so distinct tags building at once is safe.
+        const string mcpVaultImageName = "mcp-vault:latest";
+        const string signalRImageName = "mcp-channel-signalr:latest";
+        const string agentImageName = "agent:latest";
+        const string webuiImageName = "webui:latest";
+
         _redis = new ContainerBuilder("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
@@ -50,17 +58,23 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithPortBinding(6379, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
-        await _redis.StartAsync(ct);
 
-        // 3. Build and start mcp-vault
-        const string mcpVaultImageName = "mcp-vault:latest";
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot,
-            "McpServerVault/Dockerfile",
-            mcpVaultImageName,
-            ["Domain", "Infrastructure", "McpServerVault"],
-            ct);
+        await Task.WhenAll(
+            _redis.StartAsync(ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpServerVault/Dockerfile", mcpVaultImageName,
+                ["Domain", "Infrastructure", "McpServerVault"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "McpChannelSignalR/Dockerfile", signalRImageName,
+                ["Domain", "Infrastructure", "McpChannelSignalR"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "Agent/Dockerfile", agentImageName,
+                ["Domain", "Infrastructure", "Agent"], ct),
+            TestHelpers.EnsureImageAsync(
+                solutionRoot, "WebChat/Dockerfile", webuiImageName,
+                ["Domain", "WebChat", "WebChat.Client"], ct));
 
+        // 3. Start containers in dependency order (images already built).
         _mcpVault = new ContainerBuilder(mcpVaultImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
@@ -69,15 +83,6 @@ public class WebChatE2EFixture : E2EFixtureBase
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
         await _mcpVault.StartAsync(ct);
-
-        // 4. Build and start mcp-channel-signalr
-        const string signalRImageName = "mcp-channel-signalr:latest";
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot,
-            "McpChannelSignalR/Dockerfile",
-            signalRImageName,
-            ["Domain", "Infrastructure", "McpChannelSignalR"],
-            ct);
 
         _mcpChannelSignalR = new ContainerBuilder(signalRImageName)
             .WithNetwork(_network)
@@ -95,15 +100,6 @@ public class WebChatE2EFixture : E2EFixtureBase
                     .WithMethod(HttpMethod.Post)))
             .Build();
         await _mcpChannelSignalR.StartAsync(ct);
-
-        // 5. Build and start Agent
-        const string agentImageName = "agent:latest";
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot,
-            "Agent/Dockerfile",
-            agentImageName,
-            ["Domain", "Infrastructure", "Agent"],
-            ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Without this, the default appsettings.json baked into the image also registers
@@ -141,15 +137,6 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _agent.StartAsync(ct);
 
-        // 6. Build and start WebUI
-        const string webuiImageName = "webui:latest";
-        await TestHelpers.EnsureImageAsync(
-            solutionRoot,
-            "WebChat/Dockerfile",
-            webuiImageName,
-            ["Domain", "WebChat", "WebChat.Client"],
-            ct);
-
         _webui = new ContainerBuilder(webuiImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
@@ -181,7 +168,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             .Build();
         await _webui.StartAsync(ct);
 
-        // 7. Start Caddy with test-specific Caddyfile
+        // 4. Start Caddy with test-specific Caddyfile
         var testCaddyfile =
             ":80 {\n" +
             "    handle /hubs/* {\n" +
