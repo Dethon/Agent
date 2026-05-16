@@ -114,6 +114,86 @@ public class MergeTests
     }
 
     [Fact]
+    public async Task Merge_OneInnerStreamCancels_SiblingStreamsContinue()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        var siblingFirstEmitted = new TaskCompletionSource();
+
+        // Act
+        var merged = await sources().Merge(cts.Token).ToListAsync(CancellationToken.None);
+
+        // Assert: the sibling's post-failure item must survive a peer's cancellation
+        merged.ShouldContain(1);
+        merged.ShouldContain(2);
+        return;
+
+        async IAsyncEnumerable<int> failing()
+        {
+            await siblingFirstEmitted.Task;
+            throw new OperationCanceledException();
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+
+        async IAsyncEnumerable<int> sibling([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return 1;
+            siblingFirstEmitted.TrySetResult();
+            await Task.Delay(100, ct);
+            yield return 2;
+        }
+
+        async IAsyncEnumerable<IAsyncEnumerable<int>> sources()
+        {
+            yield return failing();
+            await Task.Yield();
+            yield return sibling();
+        }
+    }
+
+    [Fact]
+    public async Task Merge_OneInnerStreamThrows_SiblingStreamsContinue()
+    {
+        // Arrange
+        using var cts = new CancellationTokenSource();
+        var siblingFirstEmitted = new TaskCompletionSource();
+
+        // Act
+        var merged = await sources().Merge(cts.Token).ToListAsync(CancellationToken.None);
+
+        // Assert: a peer's genuine fault must not tear down the sibling stream
+        merged.ShouldContain(1);
+        merged.ShouldContain(2);
+        return;
+
+        async IAsyncEnumerable<int> failing()
+        {
+            await siblingFirstEmitted.Task;
+            throw new InvalidOperationException("boom");
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
+        }
+
+        async IAsyncEnumerable<int> sibling([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield return 1;
+            siblingFirstEmitted.TrySetResult();
+            await Task.Delay(100, ct);
+            yield return 2;
+        }
+
+        async IAsyncEnumerable<IAsyncEnumerable<int>> sources()
+        {
+            yield return failing();
+            await Task.Yield();
+            yield return sibling();
+        }
+    }
+
+    [Fact]
     public async Task Merge_AsyncEnumerableOfAsyncEnumerables_Works()
     {
         // Act
