@@ -41,16 +41,16 @@
     </section>
 
     <section class="section">
-        <h3>Recent Slow Turns</h3>
+        <h3>Recent Turns</h3>
         <div class="events-table">
             <div class="table-header">
-                <span>Time</span>
-                <span>Stage</span>
-                <span>Duration</span>
-                <span>Agent</span>
-                <span>Conversation</span>
+                <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time @SortIndicator("Time")</span>
+                <span class='sortable @SortClass("Stage")' @onclick='() => SortBy("Stage")'>Stage @SortIndicator("Stage")</span>
+                <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration @SortIndicator("Duration")</span>
+                <span class='sortable @SortClass("Agent")' @onclick='() => SortBy("Agent")'>Agent @SortIndicator("Agent")</span>
+                <span class='sortable @SortClass("Conversation")' @onclick='() => SortBy("Conversation")'>Conversation @SortIndicator("Conversation")</span>
             </div>
-            @foreach (var evt in GetSlowest())
+            @foreach (var evt in GetSortedEvents())
             {
                 <div class="table-row">
                     <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
@@ -140,9 +140,31 @@
         return sorted[Math.Clamp(rank - 1, 0, sorted.Length - 1)];
     }
 
-    private IEnumerable<LatencyEvent> GetSlowest() =>
-        _state.Events.OrderByDescending(e => e.DurationMs).Take(50)
-            .OrderByDescending(e => e.Timestamp);
+    private string _sortColumn = "Time";
+    private bool _sortAsc;
+
+    private void SortBy(string column)
+    {
+        if (_sortColumn == column) _sortAsc = !_sortAsc;
+        else { _sortColumn = column; _sortAsc = false; }
+    }
+
+    private IEnumerable<LatencyEvent> GetSortedEvents()
+    {
+        var events = _state.Events.TakeLast(50).AsEnumerable();
+        Func<LatencyEvent, object> keySelector = _sortColumn switch
+        {
+            "Stage" => e => e.Stage,
+            "Duration" => e => e.DurationMs,
+            "Agent" => e => e.AgentId ?? "",
+            "Conversation" => e => e.ConversationId ?? "",
+            _ => e => e.Timestamp
+        };
+        return _sortAsc ? events.OrderBy(keySelector) : events.OrderByDescending(keySelector);
+    }
+
+    private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
+    private string SortIndicator(string column) => _sortColumn != column ? "" : _sortAsc ? "\u25b2" : "\u25bc";
 
     private async Task OnDimensionChanged(string value)
     {
