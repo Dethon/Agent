@@ -160,7 +160,7 @@ public static class IAsyncEnumerableExtensions
             {
                 await foreach (var stream in sources.WithCancellation(linkedCts.Token))
                 {
-                    tasks.Add(ConsumeStream(stream, writer, linkedCts));
+                    tasks.Add(ConsumeStream(stream, writer, linkedCts.Token));
                 }
 
                 await Task.WhenAll(tasks);
@@ -180,19 +180,21 @@ public static class IAsyncEnumerableExtensions
     private static async Task ConsumeStream<T>(
         IAsyncEnumerable<T> stream,
         ChannelWriter<T> writer,
-        CancellationTokenSource cts)
+        CancellationToken ct)
     {
         try
         {
-            await foreach (var item in stream.WithCancellation(cts.Token))
+            await foreach (var item in stream.WithCancellation(ct))
             {
-                await writer.WriteAsync(item, cts.Token);
+                await writer.WriteAsync(item, ct);
             }
         }
-        catch when (!cts.Token.IsCancellationRequested)
+        catch (Exception)
         {
-            await cts.CancelAsync();
-            throw;
+            // Fully isolate inner streams: a single stream's cancellation or fault
+            // must never cancel siblings or tear down the shared merge channel.
+            // Per-stream error reporting is the responsibility of the stream itself
+            // (e.g. WithErrorHandling), not the merge.
         }
     }
 
