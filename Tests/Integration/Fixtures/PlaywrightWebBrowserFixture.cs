@@ -1,3 +1,5 @@
+using Docker.DotNet;
+using Docker.DotNet.Models;
 using Domain.Contracts;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -8,6 +10,8 @@ namespace Tests.Integration.Fixtures;
 
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
+    private const string CamoufoxImageName = "camoufox:latest";
+
     private IContainer? _container;
     private string? _initializationError;
 
@@ -72,26 +76,61 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
 
     private static string FindSolutionRoot() => E2E.Fixtures.TestHelpers.FindSolutionRoot();
 
+    private static async Task<bool> CamoufoxImageExistsAsync()
+    {
+        try
+        {
+            using var client = new DockerClientConfiguration().CreateClient();
+            var images = await client.Images.ListImagesAsync(new ImagesListParameters
+            {
+                Filters = new Dictionary<string, IDictionary<string, bool>>
+                {
+                    ["reference"] = new Dictionary<string, bool> { [CamoufoxImageName] = true }
+                }
+            });
+
+            return images.Count > 0;
+        }
+        catch
+        {
+            // If the image cannot be queried, fall back to building it.
+            return false;
+        }
+    }
+
     private async Task<bool> TryInitializeContainerAsync()
     {
         try
         {
-            var solutionRoot = FindSolutionRoot();
-            var dockerfileDir = Path.Combine(solutionRoot, "DockerCompose", "camoufox");
+            ContainerBuilder containerBuilder;
+            if (await CamoufoxImageExistsAsync())
+            {
+                // Reuse the existing image. Rebuilding via ImageFromDockerfileBuilder
+                // would inject a fresh org.testcontainers.session-id label, producing
+                // a new image id every run and orphaning the prior 7GB image as a
+                // dangling layer even though the build is a full cache hit.
+                containerBuilder = new ContainerBuilder(CamoufoxImageName);
+            }
+            else
+            {
+                var solutionRoot = FindSolutionRoot();
+                var dockerfileDir = Path.Combine(solutionRoot, "DockerCompose", "camoufox");
 
-            // Build Camoufox image from the project's Dockerfile
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(dockerfileDir)
-                .WithDockerfile("Dockerfile")
-                .WithName("camoufox-test")
-                .WithDeleteIfExists(false)
-                .WithCleanUp(false)
-                .Build();
+                var image = new ImageFromDockerfileBuilder()
+                    .WithDockerfileDirectory(dockerfileDir)
+                    .WithDockerfile("Dockerfile")
+                    .WithName(CamoufoxImageName)
+                    .WithDeleteIfExists(false)
+                    .WithCleanUp(false)
+                    .Build();
 
-            using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            await image.CreateAsync(buildCts.Token);
+                using var buildCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                await image.CreateAsync(buildCts.Token);
 
-            _container = new ContainerBuilder(image)
+                containerBuilder = new ContainerBuilder(image);
+            }
+
+            _container = containerBuilder
                 .WithPortBinding(9377, true)
                 .WithWaitStrategy(Wait.ForUnixContainer()
                     .UntilHttpRequestIsSucceeded(r => r.ForPort(9377).ForPath("/json")))

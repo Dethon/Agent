@@ -265,7 +265,9 @@ services:
       - base-sdk
 
   camoufox:
-    build: ./camoufox
+    image: camoufox:latest
+    build:
+      context: ./camoufox
     logging:
       options:
         max-size: "5m"

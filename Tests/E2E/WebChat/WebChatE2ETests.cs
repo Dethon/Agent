@@ -107,10 +107,23 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         }
 
         // Start a fresh topic so previous test messages don't pollute context.
+        // The approval overlay is pushed by StreamResumeService via a fire-and-forget
+        // SignalR chain (InitializationEffect → LoadTopicHistoryAsync → TryResumeStreamAsync),
+        // so it can arrive at any point — including the window between the user-select
+        // retry above and this click. Guard the click with the same dismiss-and-retry
+        // pattern used for the user-dropdown click.
         var newTopicBtn = page.Locator(".new-topic-btn");
         if (await newTopicBtn.IsVisibleAsync())
         {
-            await newTopicBtn.ClickAsync();
+            try
+            {
+                await newTopicBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            }
+            catch (TimeoutException)
+            {
+                await DismissApprovalOverlayAsync(page);
+                await newTopicBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+            }
         }
     }
 
@@ -126,6 +139,57 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
 
             await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
+        }
+    }
+
+    // Drives the conversation to a fully quiesced state before the test exits.
+    //
+    // Pending approvals live in ApprovalService._pendingApprovals — an in-memory,
+    // per-container dictionary keyed by topic that survives across pages for the whole
+    // suite run. It is cleared ONLY by an explicit approve/reject (RespondToApprovalAsync)
+    // or DeleteTopic; the Cancel button (ChatHub.CancelTopic) does NOT clear it. If a test
+    // exits while the agent has issued a (possibly follow-up) request_approval, that entry
+    // leaks and StreamResumeService re-raises the overlay on every later test's page.
+    //
+    // Rejecting calls RespondToApprovalAsync server-side, removing the entry. The agent may
+    // then issue another tool call, so loop until no overlay reappears and nothing is
+    // streaming — guaranteeing no server-side approval is left behind, deterministically,
+    // instead of relying on the next test to dismiss a stale overlay.
+    internal static async Task DrainPendingApprovalsAsync(IPage page)
+    {
+        var overlay = page.Locator(".approval-modal-overlay");
+        var rejectBtn = page.Locator(".btn-reject");
+        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await overlay.IsVisibleAsync())
+            {
+                if (await rejectBtn.IsVisibleAsync())
+                {
+                    await rejectBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+
+                await Assertions.Expect(overlay)
+                    .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+                continue;
+            }
+
+            // No modal. While the stream is still active the agent may still emit another
+            // approval, so keep polling. Once nothing is streaming and no modal reappears
+            // within a stable window, the conversation is quiesced server-side.
+            if (await cancelButton.IsVisibleAsync())
+            {
+                await page.WaitForTimeoutAsync(1_000);
+                continue;
+            }
+
+            await page.WaitForTimeoutAsync(2_000);
+            if (!await overlay.IsVisibleAsync() && !await cancelButton.IsVisibleAsync())
+            {
+                return;
+            }
         }
     }
 
@@ -218,33 +282,42 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        // Send a message that triggers a tool call.
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-        await chatInput.PressAsync("Enter");
+        try
+        {
+            // Send a message that triggers a tool call.
+            var chatInput = page.Locator("textarea.chat-input");
+            await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
+            await chatInput.PressAsync("Enter");
 
-        // Wait for approval modal to appear
-        var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+            // Wait for approval modal to appear
+            var approvalModal = page.Locator(".approval-modal");
+            await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
-        // Verify tool name is shown
-        var toolName = page.Locator(".tool-name");
-        (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
+            // Verify tool name is shown
+            var toolName = page.Locator(".tool-name");
+            (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
 
-        // Click Approve
-        await page.Locator(".btn-approve").ClickAsync();
+            // Click Approve
+            await page.Locator(".btn-approve").ClickAsync();
 
-        // Modal should dismiss
-        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+            // Modal should dismiss
+            await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
-        // Wait for streaming to finish — the Cancel button is only visible while streaming.
-        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
-        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
+            // Wait for streaming to finish — the Cancel button is only visible while streaming.
+            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
 
-        // Agent should have responded with persisted content.
-        var assistantMessage = page.Locator(".chat-message.assistant .message-content").First;
-        await Assertions.Expect(assistantMessage)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
+            // Agent should have responded with persisted content.
+            var assistantMessage = page.Locator(".chat-message.assistant .message-content").First;
+            await Assertions.Expect(assistantMessage)
+                .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
+        }
+        finally
+        {
+            // Resolve any follow-up approval the agent issued so no server-side
+            // pending approval leaks into later tests (see DrainPendingApprovalsAsync).
+            await DrainPendingApprovalsAsync(page);
+        }
     }
 
     [SkippableFact]
@@ -257,24 +330,33 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
         await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
 
-        // Send a message that triggers a tool call.
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT write any text, just call the tool.");
-        await chatInput.PressAsync("Enter");
+        try
+        {
+            // Send a message that triggers a tool call.
+            var chatInput = page.Locator("textarea.chat-input");
+            await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT write any text, just call the tool.");
+            await chatInput.PressAsync("Enter");
 
-        // Wait for approval modal
-        var approvalModal = page.Locator(".approval-modal");
-        await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+            // Wait for approval modal
+            var approvalModal = page.Locator(".approval-modal");
+            await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
-        // Click Reject
-        await page.Locator(".btn-reject").ClickAsync();
+            // Click Reject
+            await page.Locator(".btn-reject").ClickAsync();
 
-        // Modal should dismiss
-        await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+            // Modal should dismiss
+            await Assertions.Expect(approvalModal).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
 
-        // Stream should stop — Cancel button disappears (only visible while streaming)
-        var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
-        await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 30_000 });
+            // Stream should stop — Cancel button disappears (only visible while streaming)
+            var cancelButton = page.Locator("button.btn-secondary", new PageLocatorOptions { HasText = "Cancel" });
+            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 30_000 });
+        }
+        finally
+        {
+            // The agent often retries the rejected tool, leaving a fresh server-side
+            // pending approval. Drain it so it can't pollute later tests' pages.
+            await DrainPendingApprovalsAsync(page);
+        }
     }
 
     [SkippableFact]
