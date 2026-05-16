@@ -355,6 +355,32 @@ public class ToolApprovalChatClientMetricsTests
     }
 
     [Fact]
+    public async Task InvokeFunctionAsync_ApprovedTool_ToolExecLatencyEvent_HasConversationId()
+    {
+        var publisher = new Mock<IMetricsPublisher>();
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+
+        LatencyEvent? captured = null;
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is LatencyEvent l) { captured = l; } })
+            .Returns(Task.CompletedTask);
+
+        var client = new ToolApprovalChatClient(
+            fakeClient, handler, metricsPublisher: publisher.Object, conversationId: "conv1");
+        var options = new ChatOptions { Tools = [function] };
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
+
+        captured.ShouldNotBeNull();
+        captured.Stage.ShouldBe(LatencyStage.ToolExec);
+        captured.ConversationId.ShouldBe("conv1");
+    }
+
+    [Fact]
     public async Task InvokeFunctionAsync_ApprovedTool_PublisherThrows_DoesNotFailToolCall()
     {
         // Characterization test: locks in the best-effort latency-emission invariant.

@@ -95,7 +95,7 @@ public sealed class MultiAgentFactory(
         var stateStore = serviceProvider.GetRequiredService<IThreadStateStore>();
 
         var name = $"{definition.Name}-{agentKey.ConversationId}";
-        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher);
+        var effectiveClient = new ToolApprovalChatClient(chatClient, approvalHandler, definition.WhitelistPatterns, agentPublisher, agentKey.ConversationId);
 
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => CreateSubAgent(def, approvalHandler, definition.WhitelistPatterns, userId),

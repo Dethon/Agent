@@ -15,12 +15,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly ToolPatternMatcher _patternMatcher;
     private readonly HashSet<string> _dynamicallyApproved;
     private readonly IMetricsPublisher? _metricsPublisher;
+    private readonly string? _conversationId;
 
     public ToolApprovalChatClient(
         IChatClient innerClient,
         IToolApprovalHandler approvalHandler,
         IEnumerable<string>? whitelistPatterns = null,
-        IMetricsPublisher? metricsPublisher = null)
+        IMetricsPublisher? metricsPublisher = null,
+        string? conversationId = null)
         : base(innerClient)
     {
         ArgumentNullException.ThrowIfNull(approvalHandler);
@@ -28,6 +30,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         _patternMatcher = new ToolPatternMatcher(whitelistPatterns);
         _dynamicallyApproved = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         _metricsPublisher = metricsPublisher;
+        _conversationId = conversationId;
 
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
@@ -95,7 +98,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     await _metricsPublisher.PublishAsync(new LatencyEvent
                     {
                         Stage = LatencyStage.ToolExec,
-                        DurationMs = sw.ElapsedMilliseconds
+                        DurationMs = sw.ElapsedMilliseconds,
+                        ConversationId = _conversationId
                     }, cancellationToken);
                 }
                 catch
@@ -122,7 +126,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                     await _metricsPublisher.PublishAsync(new LatencyEvent
                     {
                         Stage = LatencyStage.ToolExec,
-                        DurationMs = sw.ElapsedMilliseconds
+                        DurationMs = sw.ElapsedMilliseconds,
+                        ConversationId = _conversationId
                     }, cancellationToken);
                 }
                 catch
