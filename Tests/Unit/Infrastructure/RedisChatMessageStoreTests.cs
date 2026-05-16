@@ -164,6 +164,33 @@ public class RedisChatMessageStoreTests
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
+    [Fact]
+    public async Task StoreChatHistoryAsync_PublisherThrows_DoesNotFailPersistence()
+    {
+        // Characterization test: locks in the best-effort latency-emission invariant.
+        // The production try/catch already swallows publisher exceptions, so this test
+        // passes immediately by design — it is a regression guard, not new behavior.
+        var stateStore = new Mock<IThreadStateStore>();
+        stateStore.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Returns(Task.CompletedTask);
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        var session = CreateSessionWithKey("test-key");
+        var store = new RedisChatMessageStore(stateStore.Object, publisher.Object, "conv1");
+
+        var invokedContext = new ChatHistoryProvider.InvokedContext(
+            new Mock<AIAgent>().Object,
+            session,
+            [new ChatMessage(ChatRole.User, "Hi")],
+            [new ChatMessage(ChatRole.Assistant, "Hello")]);
+
+        await Should.NotThrowAsync(async () => await store.InvokedAsync(invokedContext, CancellationToken.None));
+        stateStore.Verify(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()), Times.Once);
+    }
+
     private static AgentSession CreateSessionWithKey(string key)
     {
         var session = new Mock<AgentSession>().Object;

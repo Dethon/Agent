@@ -354,4 +354,25 @@ public class ToolApprovalChatClientMetricsTests
         captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
+    [Fact]
+    public async Task InvokeFunctionAsync_ApprovedTool_PublisherThrows_DoesNotFailToolCall()
+    {
+        // Characterization test: locks in the best-effort latency-emission invariant.
+        // The production try/catch already swallows publisher exceptions, so this test
+        // passes immediately by design — it is a regression guard, not new behavior.
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher
+            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
+        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
+        var options = new ChatOptions { Tools = [function] };
+
+        await Should.NotThrowAsync(async () =>
+            await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options));
+    }
+
 }
