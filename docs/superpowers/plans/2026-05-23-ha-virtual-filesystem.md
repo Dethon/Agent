@@ -2287,6 +2287,7 @@ git commit -m "test(ha-vfs): end-to-end navigation + control journey"
 **Files:**
 - Modify: `Domain/Prompts/HomeAssistantSetupSummary.cs`
 - Modify: `Tests/Unit/Domain/HomeAssistant/HomeAssistantSetupSummaryTests.cs`
+- Modify: `Tests/Integration/Clients/HomeAssistantClientTests.cs` — the old summary had a second `BuildAsync` method used only here; it is removed, so update this test to construct via `new HaCatalogProvider(() => client)` + `GetAsync`, and assert the new sections (`### Rooms`, `### Device classes`, class-domain names like `input_boolean`/`script`) instead of the old per-entity dump.
 
 Repoint the summary at `HaCatalogProvider` and render a compact orientation index (mount root + areas with counts + class domains + total entity count) instead of the full per-entity dump.
 
@@ -2297,6 +2298,7 @@ using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using Tests.Unit.Domain.HomeAssistant.Vfs;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
 
 namespace Tests.Unit.Domain.HomeAssistant;
