@@ -9,7 +9,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func<IHomeAssistantClient> clientFactory)
 {
     private const int FileResultCap = 200;
-    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _regexMatchTimeout = TimeSpan.FromSeconds(1);
 
     public async Task<JsonNode> GlobAsync(string basePath, string pattern, GlobMode mode, CancellationToken ct)
     {
@@ -66,7 +66,7 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
         Regex matcher;
         try
         {
-            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, RegexMatchTimeout);
+            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, _regexMatchTimeout);
         }
         catch (ArgumentException ex)
         {
