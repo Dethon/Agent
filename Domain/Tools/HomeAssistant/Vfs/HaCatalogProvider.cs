@@ -4,10 +4,12 @@ using Domain.Contracts;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// Cached source of truth for both the VFS engine and the slim index prompt. Caches a successful
-// build for `_cacheTtl` (even when HA legitimately has no entities); only an HA *failure* falls back
-// to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the agent for the
-// full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
+// Cached source of truth for both the VFS engine and the slim index prompt. Registered as a
+// singleton, so the cache is process-wide and shared across every agent session connected to this
+// MCP server — correct because HA models one physical home, not per-session state. Caches a
+// successful build for `_cacheTtl` (even when HA legitimately has no entities); only an HA *failure*
+// falls back to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the
+// agent for the full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
 // IHttpClientFactory-managed client from being pinned for the singleton's lifetime — same rationale
 // as HomeAssistantSetupSummary.
 public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)

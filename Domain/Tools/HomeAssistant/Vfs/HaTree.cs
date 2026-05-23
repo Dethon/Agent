@@ -85,6 +85,8 @@ public static class HaTree
             }
         }
         sb.Append('$');
-        return new Regex(sb.ToString(), RegexOptions.Compiled, _globMatchTimeout);
+        // Glob regexes are compiled fresh per call and matched once over a small pool, so the
+        // interpreter is cheaper than RegexOptions.Compiled's JIT cost (matches the search path).
+        return new Regex(sb.ToString(), RegexOptions.None, _globMatchTimeout);
     }
 }

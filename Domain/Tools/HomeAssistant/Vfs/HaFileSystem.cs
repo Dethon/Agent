@@ -8,24 +8,14 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func<IHomeAssistantClient> clientFactory)
 {
-    private const int FileResultCap = 200;
     private static readonly TimeSpan _regexMatchTimeout = TimeSpan.FromSeconds(1);
 
+    // Glob is uncapped for both modes: the result set is bounded by the home's entity count, and
+    // capping only one mode (files) while leaving the other (directories) unbounded was inconsistent.
     public async Task<JsonNode> GlobAsync(string basePath, string pattern, GlobMode mode, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var hits = HaTree.Glob(catalog, basePath, pattern, mode == GlobMode.Directories);
-
-        if (mode == GlobMode.Files && hits.Count > FileResultCap)
-        {
-            return new JsonObject
-            {
-                ["files"] = new JsonArray(hits.Take(FileResultCap).Select(h => (JsonNode?)h).ToArray()),
-                ["truncated"] = true,
-                ["total"] = hits.Count,
-                ["message"] = $"Showing {FileResultCap} of {hits.Count} matches. Use a more specific pattern."
-            };
-        }
         return new JsonArray(hits.Select(h => (JsonNode?)h).ToArray());
     }
 
