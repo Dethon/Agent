@@ -1,0 +1,22 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "contentBase64": {
+      "type": "string"
+    },
+    "eof": {
+      "type": "boolean"
+    },
+    "totalBytes": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "contentBase64",
+    "eof",
+    "totalBytes"
+  ]
+}

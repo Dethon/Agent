@@ -1,0 +1,122 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "regex": {
+      "type": "boolean"
+    },
+    "path": {
+      "type": "string"
+    },
+    "filesSearched": {
+      "type": "integer"
+    },
+    "filesWithMatches": {
+      "type": "integer"
+    },
+    "totalMatches": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "matchCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "matches": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "line": {
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "context": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "before": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "after": {
+                      "type": "array",
+                      "items": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "before",
+                    "after"
+                  ]
+                }
+              },
+              "required": [
+                "line",
+                "text"
+              ]
+            }
+          }
+        },
+        "required": [
+          "file"
+        ]
+      }
+    }
+  },
+  "required": [
+    "query",
+    "regex",
+    "path",
+    "filesSearched",
+    "filesWithMatches",
+    "totalMatches",
+    "truncated",
+    "results"
+  ]
+}

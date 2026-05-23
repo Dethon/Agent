@@ -1,0 +1,36 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "exists": {
+      "type": "boolean"
+    },
+    "path": {
+      "type": "string"
+    },
+    "isDirectory": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "size": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "lastModified": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "exists",
+    "path"
+  ]
+}
