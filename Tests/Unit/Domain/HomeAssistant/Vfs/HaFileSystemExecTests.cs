@@ -136,7 +136,7 @@ public class HaFileSystemExecTests
         var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", 1, CancellationToken.None);
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
-        result["exitCode"]!.GetValue<int>().ShouldBe(-1);
+        result["exitCode"]!.GetValue<int>().ShouldBe(124); // GNU `timeout` convention
         FsResultContract.TryValidate("fs_exec", result, out _).ShouldBeTrue();
     }
 

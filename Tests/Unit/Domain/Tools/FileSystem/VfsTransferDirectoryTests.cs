@@ -214,6 +214,38 @@ public class VfsTransferDirectoryTests
     }
 
     [Fact]
+    public async Task TransferDirectoryAsync_TruncatedGlob_FailsWithoutSilentDrop()
+    {
+        // A capped (file-backed) source glob can't enumerate the whole tree. Copying the partial
+        // listing would silently drop files while reporting success, so the transfer must abort.
+        var src = new Mock<IFileSystemBackend>();
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JsonObject
+            {
+                ["entries"] = new JsonArray("src/a.md"),
+                ["truncated"] = true,
+                ["total"] = 500
+            });
+
+        var dst = new Mock<IFileSystemBackend>();
+        var srcRes = new FileSystemResolution(src.Object, "src");
+        var dstRes = new FileSystemResolution(dst.Object, "dst");
+
+        var result = await VfsCopyTool.TransferDirectoryAsync(
+            srcRes, dstRes, "/vault/src", "/sandbox/dst",
+            overwrite: false, createDirectories: true, deleteSource: true, CancellationToken.None);
+
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain("500");
+
+        dst.Verify(b => b.WriteChunksAsync(It.IsAny<string>(),
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task TransferDirectoryAsync_SkipsDirectoryEntries()
     {
         var src = new Mock<IFileSystemBackend>();

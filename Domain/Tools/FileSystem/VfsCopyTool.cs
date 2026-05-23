@@ -108,6 +108,18 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         }
 
         var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
+        // A capped backend (e.g. a file mount truncating at 200) can't enumerate the whole tree.
+        // Transferring the partial listing would silently drop files while reporting success, so abort.
+        if (glob["truncated"]?.GetValue<bool>() == true)
+        {
+            var total = glob["total"]?.GetValue<int>() ?? 0;
+            return ToolError.Create(
+                ToolError.Codes.InvalidArgument,
+                $"Source directory '{srcVirtual}' has {total} entries, more than a single listing can " +
+                "enumerate; copying it would silently drop files.",
+                retryable: false,
+                hint: "Copy smaller subdirectories individually.");
+        }
         var entries = glob["entries"] as JsonArray ?? new JsonArray();
 
         var perEntry = new JsonArray();

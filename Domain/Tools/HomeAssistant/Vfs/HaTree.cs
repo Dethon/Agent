@@ -72,9 +72,11 @@ public static class HaTree
         return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
     }
 
-    // GlobToRegex only emits literals plus '.*'/'[^/]*'/'[^/]' — .NET's regex reductions collapse
-    // consecutive '.*', so a glob pattern can't catastrophically backtrack. The match timeout below is
-    // belt-and-suspenders only; unlike the caller-supplied search regex, glob needs no timeout envelope.
+    // GlobToRegex emits only literals, '[^/]*'/'[^/]', and the recursive-wildcard forms below. The
+    // '`**/` -> (?:[^/]+/)*' construct matches zero or more whole path segments, so `**/X` also matches
+    // X at the base level — matching the Local file matcher rather than requiring a leading '/'. The
+    // segment separator inside the group can't overlap '[^/]+', so the pattern can't catastrophically
+    // backtrack; the match timeout below is belt-and-suspenders only.
     private static Regex GlobToRegex(string glob)
     {
         var sb = new System.Text.StringBuilder("^");
@@ -83,8 +85,17 @@ public static class HaTree
             var c = glob[i];
             if (c == '*' && i + 1 < glob.Length && glob[i + 1] == '*')
             {
-                sb.Append(".*");
-                i++;
+                // `**/` matches zero or more whole segments (incl. none); bare `**` matches anything.
+                if (i + 2 < glob.Length && glob[i + 2] == '/')
+                {
+                    sb.Append("(?:[^/]+/)*");
+                    i += 2;
+                }
+                else
+                {
+                    sb.Append(".*");
+                    i++;
+                }
             }
             else
             {

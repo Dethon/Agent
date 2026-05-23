@@ -63,6 +63,26 @@ public class HaTreeTests
     }
 
     [Fact]
+    public void Glob_DoubleStar_MatchesZeroLeadingSegments()
+    {
+        // `**/X` must match X at the base level (zero leading segments), matching the Local file
+        // matcher. The old `** -> .*` translation required a leading '/', so `**/entities` missed
+        // the base-level `entities` directory.
+        var hits = HaTree.Glob(Cat(), "", "**/entities");
+
+        hits.ShouldContain("entities/");
+    }
+
+    [Fact]
+    public void Glob_DoubleStar_StillRecursesIntoSubdirectories()
+    {
+        var hits = HaTree.Glob(Cat(), "", "**/state.json");
+
+        hits.ShouldContain("entities/light/kitchen/state.json");
+        hits.ShouldContain("entities/sensor/salon_temp/state.json");
+    }
+
+    [Fact]
     public void Directories_UseCompositeNameWhenFriendlyNamePresent()
     {
         var cat = new HaCatalog(

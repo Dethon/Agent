@@ -105,6 +105,31 @@ public class HaFileSystemSearchTests
     }
 
     [Fact]
+    public async Task SearchAsync_MatchesExactlyMaxResults_NotTruncated()
+    {
+        // "entity_id" appears once per state file → exactly 3 matches across 3 entities. Hitting the
+        // cap exactly, with nothing left unsearched, is NOT truncation.
+        var result = await Build().SearchAsync(
+            "entity_id", false, null, null, null, 3, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(3);
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SearchAsync_StopsAtMaxResults_ReportsOnlyFilesActuallySearched()
+    {
+        // maxResults=1 fills on the first entity; the remaining two are never scanned, so filesSearched
+        // must reflect what was actually read (1), not the full scope (3), and truncated must be true.
+        var result = await Build().SearchAsync(
+            "entity_id", false, null, null, null, 1, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
+
+        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
+        result["truncated"]!.GetValue<bool>().ShouldBeTrue();
+        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
     public async Task SearchAsync_UsesLiveState_NotCachedCatalog()
     {
         // Swapping the whole client (rather than mutating States in place) models the real client,

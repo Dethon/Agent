@@ -90,7 +90,8 @@ public sealed partial class HaFileSystem
         }
         catch (OperationCanceledException) when (timeoutCts is { IsCancellationRequested: true } && !ct.IsCancellationRequested)
         {
-            return done(-1, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
+            // 124 is the GNU `timeout` convention; the prompt documents it alongside the other codes.
+            return done(124, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
         }
         catch (HomeAssistantException ex)
         {

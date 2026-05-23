@@ -53,6 +53,8 @@ public static class HomeAssistantPrompt
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
         - `exitCode` 1 = HA rejected the call; `stderr` has the reason.
+        - `exitCode` 124 = the action timed out (`timedOut:true`); HA may or may not
+          have applied it — re-check the relevant `state.json` before retrying.
         - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
           listed `*.sh` files run. `stderr` lists the available actions.
 

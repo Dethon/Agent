@@ -96,6 +96,8 @@ public sealed partial class HaFileSystem(
         var results = new List<FsSearchFileResult>();
         var totalMatches = 0;
         var filesWithMatches = 0;
+        var filesSearched = 0;
+        var truncated = false;
 
         // The matcher is bounded by _regexMatchTimeout; a pathological caller-supplied pattern trips
         // it during IsMatch (not construction), so catch it here and return a hinted envelope rather
@@ -106,10 +108,14 @@ public sealed partial class HaFileSystem(
             {
                 if (totalMatches >= maxResults)
                 {
+                    // Cap reached with entities still unscanned — the result set is genuinely incomplete.
+                    truncated = true;
                     break;
                 }
+                filesSearched++;
                 var lines = HaStateRenderer.ToJson(entity).Split('\n');
-                var matches = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+                var (matches, more) = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+                truncated |= more;
                 if (matches.Count == 0)
                 {
                     continue;
@@ -133,10 +139,10 @@ public sealed partial class HaFileSystem(
             Query = query,
             Regex = regex,
             Path = path ?? directoryPath ?? string.Empty,
-            FilesSearched = scoped.Count,
+            FilesSearched = filesSearched,
             FilesWithMatches = filesWithMatches,
             TotalMatches = totalMatches,
-            Truncated = totalMatches >= maxResults,
+            Truncated = truncated,
             Results = results
         });
     }
@@ -168,13 +174,20 @@ public sealed partial class HaFileSystem(
         };
     }
 
-    private static List<FsSearchMatch> FindMatches(string[] lines, Regex matcher, int contextLines, int limit) =>
-        lines
+    // Returns up to `limit` matches and whether the file held more than that (per-file truncation).
+    private static (List<FsSearchMatch> Matches, bool More) FindMatches(
+        string[] lines, Regex matcher, int contextLines, int limit)
+    {
+        var hits = lines
             .Select((text, index) => (text, index))
             .Where(l => matcher.IsMatch(l.text))
+            .ToList();
+        var taken = hits
             .Take(limit)
             .Select(l => BuildMatch(lines, l.index, contextLines))
             .ToList();
+        return (taken, hits.Count > limit);
+    }
 
     private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
     {
