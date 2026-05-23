@@ -77,4 +77,29 @@ public class HaVfsPathTests
     [InlineData("areas/salon/light.salon/x/y")]
     public void Parse_Unknown(string path) =>
         HaVfsPath.Parse(path).Kind.ShouldBe(HaVfsKind.Unknown);
+
+    [Fact]
+    public void Parse_CompositeEntityDir_StripsNiceName()
+    {
+        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
+        n.Kind.ShouldBe(HaVfsKind.EntityDir);
+        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+    }
+
+    [Fact]
+    public void Parse_CompositeStateFile_StripsNiceName()
+    {
+        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.yaml");
+        n.Kind.ShouldBe(HaVfsKind.StateFile);
+        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+    }
+
+    [Fact]
+    public void Parse_CompositeActionFile_UnderArea_StripsNiceName()
+    {
+        var n = HaVfsPath.Parse("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)/turn_off.sh");
+        n.Kind.ShouldBe(HaVfsKind.ActionFile);
+        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+        n.Service.ShouldBe("turn_off");
+    }
 }

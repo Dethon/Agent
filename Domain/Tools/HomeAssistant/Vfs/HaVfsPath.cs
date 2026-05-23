@@ -38,8 +38,8 @@ public static class HaVfsPath
     {
         1 => new HaVfsNode(HaVfsKind.EntitiesRoot),
         2 => new HaVfsNode(HaVfsKind.ClassDir, ClassDomain: s[1]),
-        3 => new HaVfsNode(HaVfsKind.EntityDir, ClassDomain: s[1], EntityId: $"{s[1]}.{s[2]}"),
-        4 => Leaf(s[3], $"{s[1]}.{s[2]}", area: null),
+        3 => new HaVfsNode(HaVfsKind.EntityDir, ClassDomain: s[1], EntityId: $"{s[1]}.{HaSlug.StripNice(s[2])}"),
+        4 => Leaf(s[3], $"{s[1]}.{HaSlug.StripNice(s[2])}", area: null),
         _ => new HaVfsNode(HaVfsKind.Unknown)
     };
 
@@ -47,8 +47,8 @@ public static class HaVfsPath
     {
         1 => new HaVfsNode(HaVfsKind.AreasRoot),
         2 => new HaVfsNode(HaVfsKind.AreaDir, Area: s[1]),
-        3 => new HaVfsNode(HaVfsKind.EntityDir, Area: s[1], EntityId: s[2]),
-        4 => Leaf(s[3], s[2], area: s[1]),
+        3 => new HaVfsNode(HaVfsKind.EntityDir, Area: s[1], EntityId: HaSlug.StripNice(s[2])),
+        4 => Leaf(s[3], HaSlug.StripNice(s[2]), area: s[1]),
         _ => new HaVfsNode(HaVfsKind.Unknown)
     };
 
