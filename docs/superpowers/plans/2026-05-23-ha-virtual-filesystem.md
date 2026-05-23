@@ -1160,13 +1160,26 @@ public static class HaArgParser
         {
             // JsonNode.Parse yields a JsonElement-backed value whose GetValue<int>()/GetValue<double>()
             // both work; JsonValue.Create(long/double) does NOT convert across numeric types on .NET 10.
-            return double.TryParse(raw, CultureInfo.InvariantCulture, out _)
-                ? JsonNode.Parse(raw)
-                : throw new ArgumentException($"--{name} expects a number, got '{raw}'.");
+            // double.TryParse accepts NaN/Infinity/".5" which JsonNode.Parse rejects, so guard both so a
+            // malformed value surfaces as ArgumentException (exec -> exit 2), not an uncaught JsonException.
+            if (!double.TryParse(raw, CultureInfo.InvariantCulture, out _))
+            {
+                throw new ArgumentException($"--{name} expects a number, got '{raw}'.");
+            }
+            try
+            {
+                return JsonNode.Parse(raw);
+            }
+            catch (JsonException)
+            {
+                throw new ArgumentException($"--{name} expects a number, got '{raw}'.");
+            }
         }
         if (selector?["boolean"] is not null)
         {
-            return JsonValue.Create(bool.Parse(raw));
+            return bool.TryParse(raw, out var b)
+                ? JsonValue.Create(b)
+                : throw new ArgumentException($"--{name} expects true or false, got '{raw}'.");
         }
         if (IsMultiSelect(selector))
         {

@@ -120,7 +120,7 @@ New filesystems are added by deploying any MCP server that exposes a `filesystem
 | **mcp-sandbox**   | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_exec | `filesystem://sandbox` | Linux container for arbitrary bash/Python execution with a scratch + persistent home filesystem |
 | **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
 | **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
-| **mcp-homeassistant** | home_list_entities, home_get_state, home_list_services, home_call_service                                          |                       | Control a Home Assistant instance (entities, states, services); injects per-user setup summary into the system prompt |
+| **mcp-homeassistant** | fs_glob, fs_read, fs_info, fs_search, fs_exec                                                                          | `filesystem://ha`     | Control a Home Assistant instance as a virtual filesystem (entities, areas, `.sh` action files); injects a slim setup index into the system prompt |
 
 ### MCP Channel Servers
 
