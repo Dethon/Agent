@@ -42,13 +42,23 @@ Drift this has already caused / currently exists:
 - A **runtime guard** (conformance tests) that fails if any backend's output
   stops matching the typed shape — including re-introduced hand-rolled JSON that
   bypasses the records.
-- Future backends inherit the contract for free.
+- A **strict runtime boundary guard** at the agent's single MCP-client chokepoint
+  (`McpFileSystemBackend`) that validates every backend's `fs_*` success payload
+  against its DTO and converts a nonconforming payload to a `ToolError` envelope —
+  the only mechanism that binds backends written outside this repo, in another
+  language, or not yet enrolled in the conformance harness.
+- A **published JSON Schema**, generated from the DTOs, as the language-neutral
+  contract a non-.NET backend author can validate against.
+- Future in-repo backends inherit the contract for free; foreign backends are
+  caught at the boundary.
 
 ## Non-goals
 
-- No change to the error-envelope contract (`ToolError` / `ToolResponse`).
-- No refactor of the agent-side `Vfs*Tool` consumers — they remain pass-through
-  (the "consumer" of the shape is the LLM plus the conformance tests).
+- No change to the error-envelope contract (`ToolError` / `ToolResponse`); the
+  strict boundary guard *reuses* it, it does not redefine it.
+- No refactor of the agent-side `Vfs*Tool` consumers — they remain pass-through.
+  Enforcement is added one layer below them, in `McpFileSystemBackend` (see
+  Approach (c)); the `Vfs*Tool` layer still forwards the (now-validated) node.
 - No redesign of payload semantics. Typing **preserves the current wire shape**
   for every op, with exactly one deliberate exception (the `fs_glob` unification
   noted below).
@@ -75,6 +85,44 @@ invariants is also asserted (e.g. `truncated ⇒ entries capped`,
 `matchCount == matches.Count`). Error envelopes (returned on failure) are
 distinguished by the `ok:false` field and are validated against the existing
 `ToolError` shape, not the result record.
+
+### (c) Strict runtime boundary guard
+
+The compile-time and conformance mechanisms bind only in-repo .NET producers that
+choose to use the records, and only backends enrolled in the harness. The single
+place that sees **every** `fs_*` response from **every** backend — regardless of
+implementation language or repo — is `McpFileSystemBackend.CallToolAsync`
+(`Infrastructure/Agents/Mcp/`), the agent's MCP-client adapter. That is where the
+contract is enforced at runtime.
+
+A static `toolName → result Type` map (`fs_read → FsReadResult`, …,
+`fs_blob_write → FsBlobWriteResult`) is added. After the existing error-envelope
+handling (success only — `ok:false` envelopes and the client-side "tool missing"
+envelope are passed through untouched), the success payload is strict-deserialized
+into the op's record using the shared options with
+`UnmappedMemberHandling = Disallow` and required members. On a `JsonException`:
+
+1. Log a warning identifying the backend, op, and offending member.
+2. Emit a drift `MetricEvent` via `IMetricsPublisher` *if one is wired into the
+   backend* (Observability dashboard visibility); otherwise the log line stands.
+3. Return a `ToolError` envelope (`internal_error`, `retryable:false`, with a hint
+   naming the malformed op) so the LLM never sees a malformed shape (**strict**).
+
+The `Vfs*Tool` consumers above this layer remain pure pass-through. The blob loop
+methods (`ReadChunksAsync`/`WriteChunksAsync`) already branch on an `ok:false`
+envelope, so a validation failure surfaced as an envelope flows through their
+existing error path unchanged.
+
+### (d) JSON Schema as the published, language-neutral contract
+
+A test generates JSON Schema for each DTO via System.Text.Json's built-in
+`JsonSerializerOptions.GetJsonSchemaAsNode(type)` (`System.Text.Json.Schema`,
+.NET 9+, available on our .NET 10 target — no extra package) and asserts the
+committed `docs/contracts/fs/<op>.schema.json` files match (golden-file test, with
+a documented regenerate switch). The DTOs are the source of truth; the schema is a
+generated artifact the test keeps in lockstep (a DTO change without regeneration
+fails CI); the committed files are the spec a non-.NET backend author validates
+against.
 
 ## DTO catalog (`Domain/DTOs/FileSystem/`)
 
@@ -164,7 +212,12 @@ type and a single serialization path.
 3. Refactor `HaFileSystem` + `HaFileSystem.Exec` to build the same records.
 4. `Tests/Unit/Domain/Tools/FileSystem/FileSystemContractTests.cs` — the
    cross-backend conformance harness.
-5. Prompt/description touch-ups for the glob shape change.
+5. `McpFileSystemBackend` strict boundary guard: `toolName → Type` map +
+   strict-deserialize-or-envelope, optional drift `MetricEvent`.
+6. JSON Schema artifacts: committed `docs/contracts/fs/*.schema.json` + a
+   golden-file test (`FsContractSchemaTests`) that regenerates from the DTOs and
+   compares.
+7. Prompt/description touch-ups for the glob shape change.
 
 ## TDD outline
 
@@ -177,14 +230,26 @@ Per `.claude/rules/tdd.md`, RED → GREEN → REVIEW per unit, commit per triple
 3. **Per-producer refactor (GREEN, one op at a time):** read → info → glob →
    search → exec → create/edit/move/remove/copy/blob. Each op: adjust its unit
    tests to the typed shape (only glob changes), refactor producer, green.
-4. **Prompt/description updates** for glob.
-5. **REVIEW** after each triplet; commit referencing the op.
+4. **Strict boundary guard (RED→GREEN).** Test: a fake `McpClient` returning a
+   malformed success payload yields a `ToolError` envelope from
+   `McpFileSystemBackend`; a conforming payload passes through unchanged. Then add
+   the map + validation.
+5. **JSON Schema (RED→GREEN).** Golden-file test generates schema from each DTO
+   and compares to committed files; first run writes them.
+6. **Prompt/description updates** for glob.
+7. **REVIEW** after each triplet; commit referencing the op.
 
 ## Resolved decisions
 
 - **Scope:** all `fs_*` ops (not just the HA-overlapping read-family).
 - **Glob shape:** always `{entries,truncated,total}`.
-- **Contract location:** producer-side only; agent consumers stay pass-through.
+- **Enforcement:** producers build the DTOs (compile-time) **plus** a strict
+  runtime guard at the `McpFileSystemBackend` boundary; `Vfs*Tool` consumers stay
+  pass-through.
+- **Boundary mode:** strict — a nonconforming success payload becomes a
+  `ToolError` envelope (the LLM never sees malformed output).
+- **JSON Schema:** published, generated from the DTOs, kept in sync by a
+  golden-file test; committed under `docs/contracts/fs/`.
 - **DTO home:** `Domain/DTOs/FileSystem/` (matches the documented DTO convention;
   `FileSystemMount.cs` already lives in `Domain/DTOs/`).
 
@@ -193,3 +258,10 @@ Per `.claude/rules/tdd.md`, RED → GREEN → REVIEW per unit, commit per triple
 - Confirm `Domain/Tools/Bash/ExecTool.cs` emits exactly
   `{stdout,stderr,exitCode,truncated}` (HA mirrors it; grep was inconclusive on
   the build site — read the full file before writing `FsExecResult`).
+- Confirm how `McpFileSystemBackend` is constructed (`McpFileSystemDiscovery`) and
+  whether an `IMetricsPublisher` is reachable there; if not trivially injectable,
+  the drift signal degrades to a structured log line (the strict envelope is
+  unaffected).
+- Confirm `JsonSerializerOptions.GetJsonSchemaAsNode` output is stable enough for a
+  golden-file comparison (pin the generating options; normalize formatting before
+  compare).
