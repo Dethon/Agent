@@ -97,6 +97,7 @@ public class HaFileSystemReadTests
         result["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
         result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
         result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen_(kitchen)");
+        FsResultContract.TryValidate("fs_search", result, out var searchErr).ShouldBeTrue(searchErr);
     }
 
     [Fact]

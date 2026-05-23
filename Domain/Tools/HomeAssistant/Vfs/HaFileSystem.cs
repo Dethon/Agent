@@ -85,7 +85,7 @@ public sealed partial class HaFileSystem(
             ? ScopeEntities(catalog, path, directoryPath)
             : [];
 
-        var results = new JsonArray();
+        var results = new List<FsSearchFileResult>();
         var totalMatches = 0;
         var filesWithMatches = 0;
 
@@ -120,17 +120,17 @@ public sealed partial class HaFileSystem(
                 hint: "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string.");
         }
 
-        return new JsonObject
+        return FsResultContract.ToNode(new FsSearchResult
         {
-            ["query"] = query,
-            ["regex"] = regex,
-            ["path"] = path ?? directoryPath ?? string.Empty,
-            ["filesSearched"] = scoped.Count,
-            ["filesWithMatches"] = filesWithMatches,
-            ["totalMatches"] = totalMatches,
-            ["truncated"] = totalMatches >= maxResults,
-            ["results"] = results
-        };
+            Query = query,
+            Regex = regex,
+            Path = path ?? directoryPath ?? string.Empty,
+            FilesSearched = scoped.Count,
+            FilesWithMatches = filesWithMatches,
+            TotalMatches = totalMatches,
+            Truncated = totalMatches >= maxResults,
+            Results = results
+        });
     }
 
     // Restricts the searched entity set to the requested scope: `path` (a single state file) or
@@ -160,7 +160,7 @@ public sealed partial class HaFileSystem(
         };
     }
 
-    private static List<JsonNode> FindMatches(string[] lines, Regex matcher, int contextLines, int limit) =>
+    private static List<FsSearchMatch> FindMatches(string[] lines, Regex matcher, int contextLines, int limit) =>
         lines
             .Select((text, index) => (text, index))
             .Where(l => matcher.IsMatch(l.text))
@@ -168,30 +168,27 @@ public sealed partial class HaFileSystem(
             .Select(l => BuildMatch(lines, l.index, contextLines))
             .ToList();
 
-    private static JsonNode BuildMatch(string[] lines, int index, int contextLines)
+    private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
     {
-        var match = new JsonObject { ["line"] = index + 1, ["text"] = lines[index] };
         if (contextLines <= 0)
         {
-            return match;
+            return new FsSearchMatch { Line = index + 1, Text = lines[index] };
         }
         var before = lines.Take(index).TakeLast(contextLines).ToList();
         var after = lines.Skip(index + 1).Take(contextLines).ToList();
-        if (before.Count > 0 || after.Count > 0)
+        var hasContext = before.Count > 0 || after.Count > 0;
+        return new FsSearchMatch
         {
-            match["context"] = new JsonObject
-            {
-                ["before"] = new JsonArray(before.Select(l => (JsonNode?)l).ToArray()),
-                ["after"] = new JsonArray(after.Select(l => (JsonNode?)l).ToArray())
-            };
-        }
-        return match;
+            Line = index + 1,
+            Text = lines[index],
+            Context = hasContext ? new FsSearchContext { Before = before, After = after } : null
+        };
     }
 
-    private static JsonNode BuildFileResult(string file, IReadOnlyList<JsonNode> matches, VfsTextSearchOutputMode outputMode) =>
+    private static FsSearchFileResult BuildFileResult(string file, IReadOnlyList<FsSearchMatch> matches, VfsTextSearchOutputMode outputMode) =>
         outputMode == VfsTextSearchOutputMode.FilesOnly
-            ? new JsonObject { ["file"] = file, ["matchCount"] = matches.Count }
-            : new JsonObject { ["file"] = file, ["matches"] = new JsonArray(matches.ToArray()) };
+            ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
+            : new FsSearchFileResult { File = file, Matches = matches };
 
     private static string CanonicalStatePath(HaEntityState entity) =>
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
