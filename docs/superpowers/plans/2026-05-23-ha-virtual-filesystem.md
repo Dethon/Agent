@@ -2405,7 +2405,7 @@ git commit -m "feat(ha-vfs): slim setup index backed by catalog provider"
 **Files:**
 - Modify: `Domain/Prompts/HomeAssistantPrompt.cs`
 
-- [ ] **Step 1: Replace `SystemPrompt`** (keep `Name` and `Description` constants unchanged) with the filesystem-idiom workflow:
+- [ ] **Step 1: Replace `SystemPrompt`** (keep `Name` unchanged; UPDATE `Description` — the old value referenced the now-removed `home_*` tools, so set it to `"Guide for controlling Home Assistant devices via the /ha virtual filesystem"`) with the filesystem-idiom workflow:
 
 ```csharp
     public const string SystemPrompt =
