@@ -78,9 +78,29 @@ public static class HaArgParser
                 throw new ArgumentException($"--{name} expects a JSON value, got '{raw}'.");
             }
         }
+        if (TryGetSelectOptions(selector, out var options) && !options.Contains(raw, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"--{name} expects one of [{string.Join(", ", options)}], got '{raw}'.");
+        }
         return JsonValue.Create(raw);
     }
 
     private static bool IsMultiSelect(JsonNode? selector) =>
         selector?["select"]?["multiple"]?.GetValue<bool>() == true;
+
+    // Single-select options (multi-select is coerced earlier). Options may be bare strings or
+    // {value,label} objects, mirroring HaServiceHelpRenderer.TypeOf.
+    private static bool TryGetSelectOptions(JsonNode? selector, out IReadOnlyList<string> options)
+    {
+        if (selector?["select"]?["options"] is JsonArray arr)
+        {
+            options = arr
+                .Select(o => o is JsonObject obj ? obj["value"]?.ToString() : o?.ToString())
+                .OfType<string>()
+                .ToList();
+            return options.Count > 0;
+        }
+        options = [];
+        return false;
+    }
 }

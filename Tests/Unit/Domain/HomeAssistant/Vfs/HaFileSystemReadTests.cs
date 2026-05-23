@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.Tools.Files;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -64,10 +65,28 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
+    public async Task InfoAsync_ActionFileForMissingEntity_ExistsFalse()
+    {
+        var fs = Build(out _);
+        var info = await fs.InfoAsync("entities/light/ghost/turn_on.sh", CancellationToken.None);
+        info["exists"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ReadAsync_ActionFileForMissingEntity_ReturnsNotFound()
+    {
+        var fs = Build(out _);
+        var read = await fs.ReadAsync("entities/light/ghost/turn_on.sh", null, null, CancellationToken.None);
+        read["ok"]!.GetValue<bool>().ShouldBeFalse();
+        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+    }
+
+    [Fact]
     public async Task SearchAsync_FindsEntityByState()
     {
         var fs = Build(out _);
-        var result = await fs.SearchAsync("off", false, null, null, null, 50, 1, CancellationToken.None);
+        var result = await fs.SearchAsync(
+            "off", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
         result["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
         result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
         result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen_(kitchen)");

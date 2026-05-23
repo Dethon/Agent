@@ -15,6 +15,7 @@ public class HaArgParserTests
         ("brightness_pct", Field(JsonNode.Parse("""{"number":{"min":1,"max":100}}"""))),
         ("on", Field(JsonNode.Parse("""{"boolean":{}}"""))),
         ("modes", Field(JsonNode.Parse("""{"select":{"multiple":true,"options":["a","b"]}}"""))),
+        ("flash", Field(JsonNode.Parse("""{"select":{"options":[{"value":"short"},{"value":"long"}]}}"""))),
         ("advanced", Field(JsonNode.Parse("""{"object":{}}"""))),
         ("name", Field(JsonNode.Parse("""{"text":{}}"""))));
 
@@ -57,5 +58,18 @@ public class HaArgParserTests
     public void Parse_Empty_ReturnsEmptyObject()
     {
         HaArgParser.Parse([], Svc()).Count.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Parse_SingleSelectValidOption_Passes()
+    {
+        HaArgParser.Parse(["--flash", "short"], Svc())["flash"]!.GetValue<string>().ShouldBe("short");
+    }
+
+    [Fact]
+    public void Parse_SingleSelectInvalidOption_Throws()
+    {
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--flash", "bogus"], Svc()))
+            .Message.ShouldContain("flash");
     }
 }
