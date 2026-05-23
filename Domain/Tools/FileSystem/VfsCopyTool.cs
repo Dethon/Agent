@@ -109,9 +109,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         }
 
         var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", VfsGlobMode.Files, ct);
-        var entries = glob is JsonArray arr
-            ? arr
-            : (glob["entries"] as JsonArray ?? glob["files"] as JsonArray ?? new JsonArray());
+        var entries = glob["entries"] as JsonArray ?? new JsonArray();
 
         var perEntry = new JsonArray();
         var transferred = 0;

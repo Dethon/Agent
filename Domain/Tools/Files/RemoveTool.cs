@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 
 namespace Domain.Tools.Files;
@@ -21,13 +22,13 @@ public class RemoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         path = ResolveAndValidatePath(path);
 
         var trashPath = await client.MoveToTrash(path, cancellationToken);
-        return new JsonObject
+        return FsResultContract.ToNode(new FsRemoveResult
         {
-            ["status"] = "success",
-            ["message"] = "Moved to trash",
-            ["originalPath"] = path,
-            ["trashPath"] = trashPath
-        };
+            Status = "success",
+            Message = "Moved to trash",
+            OriginalPath = path,
+            TrashPath = trashPath
+        });
     }
 
     private string ResolveAndValidatePath(string path)

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -55,13 +56,13 @@ public class CopyTool(string rootPath)
             bytes = CopyDirectoryRecursive(src, dst, overwrite);
         }
 
-        return new JsonObject
+        return FsResultContract.ToNode(new FsCopyResult
         {
-            ["status"] = "copied",
-            ["source"] = sourcePath,
-            ["destination"] = destinationPath,
-            ["bytes"] = bytes
-        };
+            Status = "copied",
+            Source = sourcePath,
+            Destination = destinationPath,
+            Bytes = bytes
+        });
     }
 
     private static long CopyDirectoryRecursive(string source, string destination, bool overwrite)

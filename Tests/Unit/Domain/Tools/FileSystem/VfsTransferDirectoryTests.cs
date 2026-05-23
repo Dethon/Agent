@@ -15,10 +15,15 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonArray
+            .ReturnsAsync(new JsonObject
             {
-                new JsonObject { ["path"] = "src/a.md" },
-                new JsonObject { ["path"] = "src/sub/b.md" }
+                ["entries"] = new JsonArray
+                {
+                    new JsonObject { ["path"] = "src/a.md" },
+                    new JsonObject { ["path"] = "src/sub/b.md" }
+                },
+                ["truncated"] = false,
+                ["total"] = 2
             });
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
@@ -55,10 +60,15 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonArray
+            .ReturnsAsync(new JsonObject
             {
-                new JsonObject { ["path"] = "src/a.md" },
-                new JsonObject { ["path"] = "src/b.md" }
+                ["entries"] = new JsonArray
+                {
+                    new JsonObject { ["path"] = "src/a.md" },
+                    new JsonObject { ["path"] = "src/b.md" }
+                },
+                ["truncated"] = false,
+                ["total"] = 2
             });
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
@@ -88,10 +98,15 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonArray
+            .ReturnsAsync(new JsonObject
             {
-                new JsonObject { ["path"] = "src/a.md" },
-                new JsonObject { ["path"] = "elsewhere/secret.md" }
+                ["entries"] = new JsonArray
+                {
+                    new JsonObject { ["path"] = "src/a.md" },
+                    new JsonObject { ["path"] = "elsewhere/secret.md" }
+                },
+                ["truncated"] = false,
+                ["total"] = 2
             });
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
@@ -131,10 +146,15 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonArray
+            .ReturnsAsync(new JsonObject
             {
-                new JsonObject { ["path"] = "src/a.md" },
-                new JsonObject { ["path"] = "src/sub/b.md" }
+                ["entries"] = new JsonArray
+                {
+                    new JsonObject { ["path"] = "src/a.md" },
+                    new JsonObject { ["path"] = "src/sub/b.md" }
+                },
+                ["truncated"] = false,
+                ["total"] = 2
             });
         src.Setup(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("X")));
@@ -162,10 +182,15 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonArray
+            .ReturnsAsync(new JsonObject
             {
-                new JsonObject { ["path"] = "src/a.md" },
-                new JsonObject { ["path"] = "src/b.md" }
+                ["entries"] = new JsonArray
+                {
+                    new JsonObject { ["path"] = "src/a.md" },
+                    new JsonObject { ["path"] = "src/b.md" }
+                },
+                ["truncated"] = false,
+                ["total"] = 2
             });
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
