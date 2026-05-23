@@ -1117,6 +1117,7 @@ Expected: FAIL — `HaArgParser` undefined.
 - [ ] **Step 3: Write minimal implementation**
 
 ```csharp
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
@@ -1157,8 +1158,10 @@ public static class HaArgParser
     {
         if (selector?["number"] is not null)
         {
-            return double.TryParse(raw, out var d)
-                ? JsonValue.Create(d % 1 == 0 ? (object)(long)d : d)
+            // JsonNode.Parse yields a JsonElement-backed value whose GetValue<int>()/GetValue<double>()
+            // both work; JsonValue.Create(long/double) does NOT convert across numeric types on .NET 10.
+            return double.TryParse(raw, CultureInfo.InvariantCulture, out _)
+                ? JsonNode.Parse(raw)
                 : throw new ArgumentException($"--{name} expects a number, got '{raw}'.");
         }
         if (selector?["boolean"] is not null)
