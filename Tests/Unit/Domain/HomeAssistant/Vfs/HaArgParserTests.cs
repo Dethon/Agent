@@ -99,4 +99,20 @@ public class HaArgParserTests
         data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
         data["on"]!.GetValue<bool>().ShouldBeTrue();
     }
+
+    [Fact]
+    public void Parse_SpaceFormValueLooksLikeFlag_Throws()
+    {
+        // A bare `--flag` whose space-form value is itself a `--flag` must not be silently swallowed;
+        // the value is missing. Use --name=<value> when the value legitimately begins with '--'.
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--name", "--on"], Svc()))
+            .Message.ShouldContain("name");
+    }
+
+    [Fact]
+    public void Parse_SpaceFormSingleDashValue_IsAccepted()
+    {
+        // Only '--' starts a flag; a single '-' (e.g. a negative number) is a valid value.
+        HaArgParser.Parse(["--brightness_pct", "-5"], Svc())["brightness_pct"]!.GetValue<int>().ShouldBe(-5);
+    }
 }

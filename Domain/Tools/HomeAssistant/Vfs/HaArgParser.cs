@@ -34,13 +34,16 @@ public static class HaArgParser
             {
                 raw = body[(eq + 1)..];
             }
-            else if (i + 1 < tokens.Count)
+            else if (i + 1 < tokens.Count && !tokens[i + 1].StartsWith("--", StringComparison.Ordinal))
             {
                 raw = tokens[++i];
             }
             else
             {
-                throw new ArgumentException($"Missing value for '--{name}'.");
+                // The next token is another flag (or there is none): the space-form value is missing.
+                // Don't silently swallow the following flag as this one's value.
+                throw new ArgumentException(
+                    $"Missing value for '--{name}'. Use --{name}=<value> if the value begins with '--'.");
             }
 
             data[name] = Coerce(name, raw, field.Selector);

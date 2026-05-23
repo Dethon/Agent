@@ -10,8 +10,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // successful build for `_cacheTtl` (even when HA legitimately has no entities); only an HA *failure*
 // falls back to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the
 // agent for the full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
-// IHttpClientFactory-managed client from being pinned for the singleton's lifetime — same rationale
-// as HomeAssistantSetupSummary.
+// IHttpClientFactory-managed client from being pinned for this singleton's lifetime.
 public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)
 {
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
