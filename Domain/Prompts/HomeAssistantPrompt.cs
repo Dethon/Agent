@@ -18,7 +18,7 @@ public static class HomeAssistantPrompt
         ### Layout
 
         - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
-          `/ha/entities/light/kitchen/`). Contains `state.json` (live state +
+          `/ha/entities/light/kitchen_(kitchen)/`). Contains `state.json` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room; `<room>` is
           the area `id` slug (e.g. `salon`), the same value shown in parentheses beside each
@@ -40,7 +40,7 @@ public static class HomeAssistantPrompt
         3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
            action stubs, not scripts — don't `text_read` them; `--help` prints the field list.
         4. Act: `exec` from the entity directory, e.g.
-           `exec(path="/ha/entities/light/kitchen", command="turn_on.sh --brightness_pct 60")`.
+           `exec(path="/ha/entities/light/kitchen_(kitchen)", command="turn_on.sh --brightness_pct 60")`.
 
         ### Reading results
 

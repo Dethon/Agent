@@ -184,4 +184,15 @@ public class HaFileSystemReadTests
         var read = await fs.ReadAsync("entities/light/porch/state.json", null, null, CancellationToken.None);
         read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.porch\"");
     }
+
+    [Fact]
+    public async Task ReadAsync_SpuriousSuffixOnEntityWithoutFriendlyName_NotFoundWithHint()
+    {
+        var client = new FakeHaClient { States = { Entity("light.porch", "off") } };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+        var read = await fs.ReadAsync("entities/light/porch_(garbage)/state.json", null, null, CancellationToken.None);
+        read["ok"]!.GetValue<bool>().ShouldBeFalse();
+        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        read["hint"]!.GetValue<string>().ShouldContain("porch");
+    }
 }
