@@ -32,7 +32,8 @@ public static class HomeAssistantPrompt
         ### Workflow
 
         1. Find the entity: `glob_files` under `/ha/entities/<class>` or
-           `/ha/areas/<room>`, or read the setup index.
+           `/ha/areas/<room>`, or read the setup index. To list an entity's available
+           actions, `glob_files` `<entity-dir>/*.sh`.
         2. Inspect when you need an attribute as input: `text_read`
            `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
