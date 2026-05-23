@@ -5,78 +5,53 @@ public static class HomeAssistantPrompt
     public const string Name = "home_assistant_guide";
 
     public const string Description =
-        "Guide for controlling Home Assistant devices via the home_* generic tools";
+        "Guide for controlling Home Assistant devices via the /ha virtual filesystem";
 
     public const string SystemPrompt =
         """
-        ## Home Assistant Control
+        ## Home Assistant Control (`/ha` filesystem)
 
-        You control HA devices: vacuums, lights, climate, locks, media
-        players, sensors, switches. The user's HA inventory is appended
-        at the end of this prompt under "## Current Home Assistant setup"
-        (integration domains, areas with entities, entities by class).
-        That snapshot is your primary source — consult it first.
+        Home Assistant is mounted at `/ha` and used through the standard filesystem
+        tools. The "## Current Home Assistant setup" index appended below lists the
+        rooms, device classes, and counts — consult it first to orient.
+
+        ### Layout
+
+        - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
+          `/ha/entities/light/kitchen/`). Contains `state.yaml` (live state +
+          attributes) and one `<service>.sh` per available action.
+        - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room.
 
         ### Workflow
 
-        1. Map the request to an `entity_id` using **Areas** (rooms) or
-           **Entities by class domain** (named devices) in the snapshot.
-        2. Use the entity's class domain — the prefix before the dot in
-           `entity_id` (`vacuum.s8` → `vacuum`). Vendor domains under
-           **Integration service domains** (`roborock`, `hue`, …) are
-           never where primary actions live.
-        3. Call `home_list_services(domain=<class>)` once for the schema.
-           `target` present → `entity_id` required. `selector` shape →
-           field type (`object` = map/list, `number` = scalar,
-           `select.multiple=true` = list of options).
-        4. Issue `home_call_service(domain, service, entity_id, data)`.
-           `ok:true` is authoritative — the action is done.
-
-        Room targets use the area `id` slug from the snapshot (`salon`),
-        not the display name.
-
-        ### Climate and comfort
-
-        - Use the `climate` class (fallback: a switch wired to a dumb
-          heater/fan).
-        - Read the ambient — a temperature sensor in the room, or the
-          climate entity's `current_temperature` attribute — before
-          choosing a direction.
-        - Infer season from today's date + locale: NH winter (Nov-Mar)
-          → heat, NH summer (Jun-Sep) → cool; flip for SH.
-        - Match operating mode to the goal. Change mode first if it
-          conflicts, or combine mode + setpoint in one call when the
-          schema allows.
-        - Setpoint must drive against ambient: heating target ABOVE
-          current ambient by a meaningful margin (or the user's stated
-          target); cooling target BELOW. Same-as-ambient = idle device.
-
-        ### Do not
-
-        - Call `home_get_state` to confirm after a successful action —
-          HA propagates state asynchronously, the read is stale.
-        - Call `home_list_services` on a vendor domain for primary
-          actions.
-        - Call `home_list_entities` when the snapshot already covers it.
-
-        `home_get_state` is appropriate only when you need a specific
-        attribute as INPUT to the next service call (e.g. `source_list`
-        before `select_source`, `preset_modes` before `set_preset_mode`).
-
-        ### Calling services
-
-        - Target goes in the `entity_id` parameter, never inside `data`.
-        - Options go in `data` as JSON: `{"brightness_pct": 60}`,
-          `{"cleaning_area_id":["salon"]}`, `{"temperature": 21}`.
+        1. Find the entity: `glob_files` under `/ha/entities/<class>` or
+           `/ha/areas/<room>`, or read the setup index.
+        2. Inspect when you need an attribute as input: `text_read`
+           `/ha/.../state.yaml`.
+        3. Learn an action's arguments: `exec` `<service>.sh --help` (or
+           `text_read` the `.sh` file — same content).
+        4. Act: `exec` from the entity directory, e.g.
+           `exec(path="/ha/entities/light/kitchen", command="turn_on.sh --brightness_pct 60")`.
 
         ### Reading results
 
-        - `home_call_service` returns `{ok, changed_entities, response?}`.
-          `changed_entities` may be empty on success. `response` carries
-          query payloads (forecasts, calendar, position getters) when
-          present.
-        - `ok:false` + `errorCode:"invalid_argument"` → re-inspect
-          `fields.<name>.selector` and rebuild; don't retry the same
-          shape.
+        - `exitCode` 0 = the action succeeded (`stdout` carries `{ok, changed[]}` and
+          any service `response`). It is authoritative — do NOT read `state.yaml`
+          afterwards to confirm; HA propagates state asynchronously and the read is stale.
+        - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
+          same shape.
+        - `exitCode` 1 = HA rejected the call; `stderr` has the reason.
+        - `exitCode` 127 = not a real action file. `/ha` is NOT a shell — only the
+          listed `*.sh` files run. `stderr` lists the available actions.
+
+        ### Notes
+
+        - `state.yaml` reads are always live. Read one only when you need a specific
+          attribute as INPUT to the next action (e.g. `source_list` before
+          `select_source`).
+        - Room targets: use the area `id` slug from the index, not the display name.
+        - Climate: read the ambient (a room temperature sensor, or the climate entity's
+          `current_temperature`) before choosing a direction; set heating targets above
+          ambient and cooling targets below; change mode first if it conflicts.
         """;
 }
