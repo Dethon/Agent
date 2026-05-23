@@ -1219,6 +1219,7 @@ Builds the catalog from three HA calls (states, services, area template render) 
 - [ ] **Step 1: Write the failing test**
 
 ```csharp
+using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -1268,7 +1269,7 @@ public class HaCatalogProviderTests
     private sealed class CountingClient : FakeHaClient
     {
         public int StateCalls { get; private set; }
-        public new Task<IReadOnlyList<Domain.Contracts.HaEntityState>> ListStatesAsync(CancellationToken ct = default)
+        public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
         {
             StateCalls++;
             return base.ListStatesAsync(ct);
@@ -1277,17 +1278,15 @@ public class HaCatalogProviderTests
 
     private sealed class ThrowingClient : FakeHaClient
     {
-        public new Task<IReadOnlyList<Domain.Contracts.HaEntityState>> ListStatesAsync(CancellationToken ct = default)
+        public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
             => throw new InvalidOperationException("HA down");
     }
 }
 ```
 
-> Note: `FakeHaClient`'s interface methods are not `virtual`; the `new`-shadowing subclasses above only take effect when the variable's static type is the subclass. Because `HaCatalogProvider` calls through the `IHomeAssistantClient` interface, the `CountingClient`/`ThrowingClient` shadows will NOT be invoked. **Fix:** in Task 1, mark `FakeHaClient`'s methods `public virtual` so subclasses can `override`. Update the two subclasses here to use `override`. (Do this now before implementing.)
+> Note: this requires `FakeHaClient` to be non-`sealed` with `public virtual` interface methods so the subclasses can `override` them (and so the override is invoked when `HaCatalogProvider` calls through the `IHomeAssistantClient` interface). This is already done in Task 1 — `FakeHaClient` is declared `public class` with `public virtual` methods. The subclasses use `override`, and the test references `HaEntityState` unqualified via `using Domain.Contracts;` (a fully-qualified `Domain.Contracts.HaEntityState` would mis-resolve against the enclosing `Tests.Unit.Domain` namespace).
 
-- [ ] **Step 2: Make `FakeHaClient` overridable**
-
-Edit `Tests/Unit/Domain/HomeAssistant/Vfs/FakeHaClient.cs`: change each interface method signature from `public Task<...>` to `public virtual Task<...>`. Change the two subclasses in the test above from `new` to `override`. Run:
+- [ ] **Step 2: Run test to verify it fails**
 
 Run: `dotnet test Tests/Tests.csproj --filter "FullyQualifiedName~HaCatalogProviderTests"`
 Expected: FAIL — `HaCatalogProvider` undefined.
