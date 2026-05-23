@@ -11,14 +11,14 @@ public sealed partial class HaFileSystem
     public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        JsonNode Done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
+        JsonNode done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
             ExecResult(exitCode, stdout, stderr, timedOut, sw.ElapsedMilliseconds, path);
 
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
         if (node.Kind != HaVfsKind.EntityDir)
         {
-            return Done(127, "", $"Not an entity directory: {path}. cd into /ha/entities/<class>/<id> first.");
+            return done(127, "", $"Not an entity directory: {path}. cd into /ha/entities/<class>/<id> first.");
         }
 
         var resolution = ResolveEntity(catalog, node);
@@ -27,7 +27,7 @@ public sealed partial class HaFileSystem
             var didYouMean = resolution.Hint is null
                 ? ""
                 : $" Did you mean '{resolution.Hint}'? Copy the exact name a listing returns.";
-            return Done(127, "", $"No such entity directory: {path}.{didYouMean}");
+            return done(127, "", $"No such entity directory: {path}.{didYouMean}");
         }
 
         var tokens = ShellTokenize(command);
@@ -37,26 +37,26 @@ public sealed partial class HaFileSystem
 
         if (tokens.Count == 0)
         {
-            return Done(127, "", $"No command. Available actions: {available}");
+            return done(127, "", $"No command. Available actions: {available}");
         }
 
         var script = tokens[0].StartsWith("./", StringComparison.Ordinal) ? tokens[0][2..] : tokens[0];
         if (!script.EndsWith(".sh", StringComparison.Ordinal))
         {
-            return Done(127, "", $"command not found: {tokens[0]}. This filesystem only runs action files. Available actions: {available}");
+            return done(127, "", $"command not found: {tokens[0]}. This filesystem only runs action files. Available actions: {available}");
         }
 
         var serviceName = script[..^3];
         var svc = actions.FirstOrDefault(a => a.Service.Equals(serviceName, StringComparison.Ordinal));
         if (svc is null)
         {
-            return Done(127, "", $"command not found: {script}. Available actions: {available}");
+            return done(127, "", $"command not found: {script}. Available actions: {available}");
         }
 
         var args = tokens.Skip(1).ToList();
         if (args.Contains("--help") || args.Contains("-h"))
         {
-            return Done(0, HaServiceHelpRenderer.Render(entityId, svc), "");
+            return done(0, HaServiceHelpRenderer.Render(entityId, svc), "");
         }
 
         JsonObject data;
@@ -66,7 +66,7 @@ public sealed partial class HaFileSystem
         }
         catch (ArgumentException ex)
         {
-            return Done(2, "", ex.Message);
+            return done(2, "", ex.Message);
         }
 
         using var timeoutCts = timeoutSeconds is > 0
@@ -86,15 +86,15 @@ public sealed partial class HaFileSystem
             {
                 stdout["response"] = result.Response.DeepClone();
             }
-            return Done(0, stdout.ToJsonString(), "");
+            return done(0, stdout.ToJsonString(), "");
         }
         catch (OperationCanceledException) when (timeoutCts is { IsCancellationRequested: true } && !ct.IsCancellationRequested)
         {
-            return Done(-1, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
+            return done(-1, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
         }
         catch (HomeAssistantException ex)
         {
-            return Done(1, "",
+            return done(1, "",
                 $"{ex.Message}\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.");
         }
     }

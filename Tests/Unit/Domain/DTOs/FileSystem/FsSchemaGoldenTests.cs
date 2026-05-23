@@ -9,13 +9,13 @@ namespace Tests.Unit.Domain.DTOs.FileSystem;
 public class FsSchemaGoldenTests
 {
     // Set FS_SCHEMA_UPDATE=1 to (re)write the committed schema files.
-    private static readonly string SchemaDir =
+    private static readonly string _schemaDir =
         Path.Combine(FindRepoRoot(), "docs", "contracts", "fs");
 
     // GetJsonSchemaAsNode requires a TypeInfoResolver on the options instance.
     // We derive a schema-only copy from FsResultContract.SerializerOptions so
     // that camelCase naming policy is preserved in the generated schema.
-    private static readonly JsonSerializerOptions SchemaOptions =
+    private static readonly JsonSerializerOptions _schemaOptions =
         new(FsResultContract.SerializerOptions)
         {
             TypeInfoResolver = new DefaultJsonTypeInfoResolver()
@@ -35,15 +35,15 @@ public class FsSchemaGoldenTests
     [MemberData(nameof(Schemas))]
     public void CommittedSchema_MatchesGeneratedFromDto(string toolName, Type dtoType)
     {
-        var generated = SchemaOptions
+        var generated = _schemaOptions
             .GetJsonSchemaAsNode(dtoType)
             .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
-        var file = Path.Combine(SchemaDir, $"{toolName}.schema.json");
+        var file = Path.Combine(_schemaDir, $"{toolName}.schema.json");
 
         if (Environment.GetEnvironmentVariable("FS_SCHEMA_UPDATE") == "1")
         {
-            Directory.CreateDirectory(SchemaDir);
+            Directory.CreateDirectory(_schemaDir);
             File.WriteAllText(file, generated);
             return;
         }
