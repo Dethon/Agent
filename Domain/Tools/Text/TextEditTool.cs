@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Text;
 
@@ -37,7 +38,7 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         var fullPath = ValidateAndResolvePath(filePath);
         var content = File.ReadAllText(fullPath);
 
-        var perEditResults = new JsonArray();
+        var perEditResults = new List<FsEditDetail>();
         var totalReplaced = 0;
 
         foreach (var edit in edits)
@@ -72,14 +73,10 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
 
             var (startLine, endLine) = ComputeAffectedLines(content, firstPosition, edit.NewString.Length);
 
-            perEditResults.Add(new JsonObject
+            perEditResults.Add(new FsEditDetail
             {
-                ["occurrencesReplaced"] = replacedCount,
-                ["affectedLines"] = new JsonObject
-                {
-                    ["start"] = startLine,
-                    ["end"] = endLine
-                }
+                OccurrencesReplaced = replacedCount,
+                AffectedLines = new FsLineRange { Start = startLine, End = endLine }
             });
         }
 
@@ -87,13 +84,13 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         File.WriteAllText(tempPath, content);
         File.Move(tempPath, fullPath, overwrite: true);
 
-        return new JsonObject
+        return FsResultContract.ToNode(new FsEditResult
         {
-            ["status"] = "success",
-            ["filePath"] = fullPath,
-            ["totalOccurrencesReplaced"] = totalReplaced,
-            ["edits"] = perEditResults
-        };
+            Status = "success",
+            FilePath = fullPath,
+            TotalOccurrencesReplaced = totalReplaced,
+            Edits = perEditResults
+        });
     }
 
     private static string ReplaceFirst(string content, string oldString, string newString, int position)
