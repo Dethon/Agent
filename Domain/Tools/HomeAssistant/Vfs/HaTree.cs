@@ -10,12 +10,13 @@ public static class HaTree
 
         dirs.AddRange(catalog.ClassDomains().Select(c => $"entities/{c}"));
         dirs.AddRange(catalog.Entities.Select(e =>
-            $"entities/{HaCatalog.ClassOf(e.EntityId)}/{HaCatalog.ObjectOf(e.EntityId)}"));
+            $"entities/{HaCatalog.ClassOf(e.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(e.EntityId), HaCatalog.FriendlyName(e))}"));
 
         foreach (var area in catalog.AreaSlugs())
         {
             dirs.Add($"areas/{area}");
-            dirs.AddRange(catalog.EntityIdsInArea(area).Select(id => $"areas/{area}/{id}"));
+            dirs.AddRange(catalog.EntityIdsInArea(area).Select(id =>
+                $"areas/{area}/{HaSlug.Compose(id, HaCatalog.FriendlyName(catalog.EntityById(id)))}"));
         }
 
         return dirs.OrderBy(d => d, StringComparer.Ordinal).ToList();
@@ -27,7 +28,7 @@ public static class HaTree
 
         foreach (var e in catalog.Entities)
         {
-            var entDir = $"entities/{HaCatalog.ClassOf(e.EntityId)}/{HaCatalog.ObjectOf(e.EntityId)}";
+            var entDir = $"entities/{HaCatalog.ClassOf(e.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(e.EntityId), HaCatalog.FriendlyName(e))}";
             files.AddRange(LeafFiles(entDir, e.EntityId, catalog));
         }
 
@@ -35,7 +36,8 @@ public static class HaTree
         {
             foreach (var id in catalog.EntityIdsInArea(area))
             {
-                files.AddRange(LeafFiles($"areas/{area}/{id}", id, catalog));
+                var entDir = $"areas/{area}/{HaSlug.Compose(id, HaCatalog.FriendlyName(catalog.EntityById(id)))}";
+                files.AddRange(LeafFiles(entDir, id, catalog));
             }
         }
 

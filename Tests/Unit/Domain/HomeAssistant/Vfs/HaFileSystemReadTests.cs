@@ -27,7 +27,7 @@ public class HaFileSystemReadTests
     {
         var fs = Build(out _);
         var result = (JsonArray)await fs.GlobAsync("entities/light", "*", GlobMode.Directories, CancellationToken.None);
-        result.Select(n => n!.GetValue<string>()).ShouldContain("entities/light/kitchen");
+        result.Select(n => n!.GetValue<string>()).ShouldContain("entities/light/kitchen_(kitchen)");
     }
 
     [Fact]

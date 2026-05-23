@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Tools.HomeAssistant.Vfs;
 using Shouldly;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
@@ -46,5 +47,33 @@ public class HaTreeTests
     {
         var hits = HaTree.Glob(Cat(), "entities", "**/*.sh", directories: false);
         hits.ShouldBe(["entities/light/kitchen/turn_on.sh"]);
+    }
+
+    [Fact]
+    public void Directories_UseCompositeNameWhenFriendlyNamePresent()
+    {
+        var cat = new HaCatalog(
+            [Entity("climate.0x00158d00abcd", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón")))],
+            [],
+            [new HaAreaEntities("salon", "Salón", ["climate.0x00158d00abcd"])]);
+
+        var dirs = HaTree.Directories(cat);
+
+        dirs.ShouldContain("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
+        dirs.ShouldContain("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)");
+    }
+
+    [Fact]
+    public void Files_UseCompositeDir()
+    {
+        var cat = new HaCatalog(
+            [Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen Light")))],
+            [Service("light", "turn_on", AnyEntityTarget())],
+            []);
+
+        var files = HaTree.Files(cat);
+
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.yaml");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
     }
 }
