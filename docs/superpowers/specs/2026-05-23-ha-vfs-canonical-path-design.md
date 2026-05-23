@@ -139,3 +139,7 @@ asserting the hint.
 - **More verbose flow.** The agent must list before acting and carry the exact name; it can no longer
   shortcut with the bare id. This is the intended discipline ("copy what a call returned verbatim")
   and the direct fix for the motivating guess-the-path failure. Accepted.
+
+## Status
+
+Implemented 2026-05-23 — see plan `docs/superpowers/plans/2026-05-23-ha-vfs-canonical-path.md`.
