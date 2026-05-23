@@ -61,5 +61,23 @@ public class FsResultContractTests
         FsResultContract.TryValidate("fs_not_a_tool", node, out _).ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("fs_read")]
+    [InlineData("fs_info")]
+    [InlineData("fs_glob")]
+    [InlineData("fs_search")]
+    [InlineData("fs_exec")]
+    [InlineData("fs_create")]
+    [InlineData("fs_edit")]
+    [InlineData("fs_move")]
+    [InlineData("fs_delete")]
+    [InlineData("fs_copy")]
+    [InlineData("fs_blob_read")]
+    [InlineData("fs_blob_write")]
+    public void ResultTypes_CoversEveryFsTool(string toolName)
+    {
+        FsResultContract.ResultTypes.ShouldContainKey(toolName);
+    }
+
     private static JsonNode JsonNodeWith(string json) => JsonNode.Parse(json)!;
 }

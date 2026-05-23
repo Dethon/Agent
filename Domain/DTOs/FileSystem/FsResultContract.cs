@@ -25,7 +25,18 @@ public static class FsResultContract
     public static readonly IReadOnlyDictionary<string, Type> ResultTypes =
         new Dictionary<string, Type>(StringComparer.Ordinal)
         {
-            ["fs_read"] = typeof(FsReadResult)
+            ["fs_read"] = typeof(FsReadResult),
+            ["fs_info"] = typeof(FsInfoResult),
+            ["fs_glob"] = typeof(FsGlobResult),
+            ["fs_search"] = typeof(FsSearchResult),
+            ["fs_exec"] = typeof(FsExecResult),
+            ["fs_create"] = typeof(FsCreateResult),
+            ["fs_edit"] = typeof(FsEditResult),
+            ["fs_move"] = typeof(FsMoveResult),
+            ["fs_delete"] = typeof(FsRemoveResult),
+            ["fs_copy"] = typeof(FsCopyResult),
+            ["fs_blob_read"] = typeof(FsBlobReadResult),
+            ["fs_blob_write"] = typeof(FsBlobWriteResult)
         };
 
     public static JsonNode ToNode<T>(T value) =>
