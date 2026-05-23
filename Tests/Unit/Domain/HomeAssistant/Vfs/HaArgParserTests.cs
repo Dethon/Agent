@@ -40,6 +40,20 @@ public class HaArgParserTests
     }
 
     [Fact]
+    public void Parse_BadBoolean_Throws()
+    {
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--on", "yes"], Svc()))
+            .Message.ShouldContain("on");
+    }
+
+    [Fact]
+    public void Parse_BadNumber_Throws()
+    {
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--brightness_pct", "NaN"], Svc()))
+            .Message.ShouldContain("brightness_pct");
+    }
+
+    [Fact]
     public void Parse_Empty_ReturnsEmptyObject()
     {
         HaArgParser.Parse([], Svc()).Count.ShouldBe(0);

@@ -76,6 +76,14 @@ public class HaFileSystemExecTests
     }
 
     [Fact]
+    public async Task Exec_BadScalarValue_Returns2()
+    {
+        var fs = Build(out _);
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct NaN", null, CancellationToken.None);
+        result["exitCode"]!.GetValue<int>().ShouldBe(2);
+    }
+
+    [Fact]
     public async Task Exec_NotAnEntityDir_Returns127()
     {
         var fs = Build(out _);
