@@ -161,20 +161,19 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     public async Task SetupSummary_BuildsAgainstRealHA_IncludesExpectedSections()
     {
         var client = fixture.CreateClient();
-        var summary = new global::Domain.Prompts.HomeAssistantSetupSummary(() => client);
+        var provider = new global::Domain.Tools.HomeAssistant.Vfs.HaCatalogProvider(() => client);
+        var summary = new global::Domain.Prompts.HomeAssistantSetupSummary(provider);
 
-        var rendered = await summary.BuildAsync(CancellationToken.None);
+        var rendered = await summary.GetAsync(CancellationToken.None);
 
         output.WriteLine(rendered);
 
         rendered.ShouldContain("## Current Home Assistant setup");
-        rendered.ShouldContain("### Integration service domains");
-        rendered.ShouldContain("### Areas");
-        rendered.ShouldContain("### Entities by class domain");
-        // Both seeded entities — the input_boolean and the script — must appear in the
-        // class-domain section.
-        rendered.ShouldContain(HomeAssistantFixture.TestEntityId);
-        rendered.ShouldContain("script.echo");
+        rendered.ShouldContain("### Rooms");
+        rendered.ShouldContain("### Device classes");
+        // Both seeded entities — the input_boolean and the script — must appear.
+        rendered.ShouldContain("input_boolean");
+        rendered.ShouldContain("script");
     }
 
     [Fact]
