@@ -39,6 +39,12 @@ public class HaFileSystemJourneyTests
         act["exitCode"]!.GetValue<int>().ShouldBe(0);
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<int>().ShouldBe(60);
 
+        // 4b. the same action via the composite directory name resolves to the same entity
+        var actByName = await fs.ExecAsync(
+            "entities/light/kitchen_(kitchen)", "turn_on.sh --brightness_pct 30", null, CancellationToken.None);
+        actByName["exitCode"]!.GetValue<int>().ShouldBe(0);
+        client.LastCall!.Value.EntityId.ShouldBe("light.kitchen");
+
         // 5. area view resolves to the same entity
         var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.yaml", null, null, CancellationToken.None);
         areaState["content"]!.GetValue<string>().ShouldContain("entity_id: light.kitchen");

@@ -21,6 +21,10 @@ public static class HomeAssistantPrompt
           `/ha/entities/light/kitchen/`). Contains `state.yaml` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room.
+        - Directory names read `<id>_(<friendly-name>)` (e.g.
+          `climate.0x00158d00abcd_(aire-acondicionado-salon)`) so `glob` alone identifies a
+          device — pick by the name. You may address a path by the full segment or by the bare
+          `<id>`; both resolve.
 
         ### Workflow
 
