@@ -1,7 +1,7 @@
 # Design: Shared typed `fs_*` result contract
 
 **Date:** 2026-05-23
-**Status:** Approved (design)
+**Status:** Implemented
 **Branch context:** `filesystem-migration` (PR #42 — HA virtual filesystem)
 
 ## Problem
