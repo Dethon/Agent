@@ -94,7 +94,8 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
             ["filesSearched"] = catalog.Entities.Count,
             ["filesWithMatches"] = filesWithMatches,
             ["totalMatches"] = totalMatches,
-            ["truncated"] = filesWithMatches > maxResults
+            ["truncated"] = filesWithMatches > maxResults,
+            ["results"] = results
         };
     }
 
