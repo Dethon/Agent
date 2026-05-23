@@ -1,8 +1,10 @@
 using Domain.Contracts;
 using Domain.Prompts;
+using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using McpServerHomeAssistant.McpPrompts;
+using McpServerHomeAssistant.McpResources;
 using McpServerHomeAssistant.McpTools;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.Configuration;
@@ -31,7 +33,11 @@ public static class ConfigModule
             services
                 .AddSingleton(settings)
                 .AddHomeAssistantClient(settings.HomeAssistant.BaseUrl, settings.HomeAssistant.Token)
-                .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<IHomeAssistantClient>))
+                .AddSingleton(sp => new HaCatalogProvider(sp.GetRequiredService<IHomeAssistantClient>))
+                .AddSingleton(sp => new HaFileSystem(
+                    sp.GetRequiredService<HaCatalogProvider>(),
+                    sp.GetRequiredService<IHomeAssistantClient>))
+                .AddSingleton(sp => new HomeAssistantSetupSummary(sp.GetRequiredService<HaCatalogProvider>()))
                 .AddMcpServer()
                 .WithHttpTransport()
                 .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
@@ -47,10 +53,12 @@ public static class ConfigModule
                         return ToolResponse.Create(ex);
                     }
                 }))
-                .WithTools<McpHomeListEntitiesTool>()
-                .WithTools<McpHomeGetStateTool>()
-                .WithTools<McpHomeListServicesTool>()
-                .WithTools<McpHomeCallServiceTool>()
+                .WithTools<FsGlobTool>()
+                .WithTools<FsInfoTool>()
+                .WithTools<FsReadTool>()
+                .WithTools<FsSearchTool>()
+                .WithTools<FsExecTool>()
+                .WithResources<FileSystemResource>()
                 .WithPrompts<McpSystemPrompt>();
 
             return services;
