@@ -15,34 +15,29 @@ public class LocalFileSystemClient : IFileSystemClient
             : Task.FromResult(GetLibraryPaths(path));
     }
 
-    public Task<string[]> GlobFiles(string basePath, string pattern, CancellationToken cancellationToken = default)
+    public Task<string[]> Glob(string basePath, string pattern, CancellationToken cancellationToken = default)
     {
-        var matcher = new Matcher();
-        matcher.AddInclude(pattern);
-        var result = matcher.GetResultsInFullPath(basePath);
-        return Task.FromResult(result.ToArray());
-    }
+        var dirsOnly = pattern.EndsWith('/');
+        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
 
-    public Task<string[]> GlobDirectories(string basePath, string pattern, CancellationToken cancellationToken = default)
-    {
         var matcher = new Matcher();
-        matcher.AddInclude(pattern);
-
-        var dirsFromFiles = matcher.GetResultsInFullPath(basePath)
-            .Select(f => Path.GetDirectoryName(f)!);
+        matcher.AddInclude(effectivePattern);
 
         var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", SearchOption.AllDirectories)
             .Select(d => Path.GetRelativePath(basePath, d));
-        var dirsFromDirectories = matcher.Match(basePath, dirRelativePaths)
+        var matchedDirs = matcher.Match(basePath, dirRelativePaths)
             .Files
-            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)));
-
-        var result = dirsFromFiles
-            .Concat(dirsFromDirectories)
+            .Select(f => Path.GetFullPath(Path.Combine(basePath, f.Path)))
             .Where(d => d != basePath)
-            .Distinct()
-            .Order()
-            .ToArray();
+            .Select(d => d + "/");
+
+        if (dirsOnly)
+        {
+            return Task.FromResult(matchedDirs.Distinct().Order(StringComparer.Ordinal).ToArray());
+        }
+
+        var matchedFiles = matcher.GetResultsInFullPath(basePath);
+        var result = matchedFiles.Concat(matchedDirs).Distinct().Order(StringComparer.Ordinal).ToArray();
         return Task.FromResult(result);
     }
 

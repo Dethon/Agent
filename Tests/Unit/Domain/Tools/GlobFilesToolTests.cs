@@ -20,20 +20,41 @@ public class GlobFilesToolTests
     }
 
     [Fact]
-    public async Task Run_WithValidPattern_ReturnsGlobResult()
+    public async Task Run_WithMatchingEntries_ReturnsEntryList()
     {
-        // Arrange
-        _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/book.pdf", "/library/sub/doc.pdf"]);
+        _mockClient.Setup(c => c.Glob(BasePath, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/book.pdf", "/library/sub/"]);
 
-        // Act
-        var result = await _tool.TestRun("**/*.pdf", CancellationToken.None);
+        var result = await _tool.TestRun("**/*", CancellationToken.None);
 
-        // Assert
-        result.ShouldNotBeNull();
         var array = result["entries"]!.AsArray();
         array.Count.ShouldBe(2);
+        array.ShouldContain(n => n!.GetValue<string>() == "/library/sub/");
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
         FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
+    }
+
+    [Fact]
+    public async Task Run_WithAbsolutePathUnderBasePath_StripsBaseAndUsesRelative()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, "docs/**/*.pdf", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/docs/book.pdf"]);
+
+        var result = await _tool.TestRun("/library/docs/**/*.pdf", CancellationToken.None);
+
+        result["entries"]!.AsArray().Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Run_WithAbsoluteTrailingSlashPattern_PreservesDirsOnly()
+    {
+        _mockClient.Setup(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(["/library/movies/"]);
+
+        var result = await _tool.TestRun("/library/movies/", CancellationToken.None);
+
+        result["entries"]!.AsArray()[0]!.GetValue<string>().ShouldBe("/library/movies/");
+        _mockClient.Verify(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -42,7 +63,6 @@ public class GlobFilesToolTests
     [InlineData(null)]
     public async Task Run_WithEmptyPattern_ThrowsArgumentException(string? pattern)
     {
-        // Act & Assert
         await Should.ThrowAsync<ArgumentException>(
             () => _tool.TestRun(pattern!, CancellationToken.None));
     }
@@ -53,78 +73,26 @@ public class GlobFilesToolTests
     [InlineData("..")]
     public async Task Run_WithDotDotPattern_ThrowsArgumentException(string pattern)
     {
-        // Act & Assert
         await Should.ThrowAsync<ArgumentException>(
             () => _tool.TestRun(pattern, CancellationToken.None));
     }
 
     [Fact]
-    public async Task Run_WithAbsolutePathUnderBasePath_StripsBaseAndUsesRelative()
-    {
-        // Arrange
-        _mockClient.Setup(c => c.GlobFiles(BasePath, "docs/**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/docs/book.pdf"]);
-
-        // Act
-        var result = await _tool.TestRun("/library/docs/**/*.pdf", GlobMode.Files, CancellationToken.None);
-
-        // Assert
-        result["entries"]!.AsArray().Count.ShouldBe(1);
-    }
-
-    [Fact]
     public async Task Run_WithAbsolutePathOutsideBasePath_ThrowsArgumentException()
     {
-        // Act & Assert
         await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun("/other/path/**/*.pdf", GlobMode.Files, CancellationToken.None));
+            () => _tool.TestRun("/other/path/**/*.pdf", CancellationToken.None));
     }
 
     [Fact]
-    public async Task Run_DirectoriesMode_CallsGlobDirectoriesAndReturnsArray()
+    public async Task Run_OverCap_ReturnsTruncatedObject()
     {
-        // Arrange
-        _mockClient.Setup(c => c.GlobDirectories(BasePath, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/movies", "/library/books"]);
+        var entries = Enumerable.Range(1, 250).Select(i => $"/library/file{i}.pdf").ToArray();
+        _mockClient.Setup(c => c.Glob(BasePath, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(entries);
 
-        // Act
-        var result = await _tool.TestRun("**/*", GlobMode.Directories, CancellationToken.None);
+        var result = await _tool.TestRun("**/*", CancellationToken.None);
 
-        // Assert
-        var array = result["entries"]!.AsArray();
-        array.Count.ShouldBe(2);
-        array[0]!.GetValue<string>().ShouldBe("/library/movies");
-        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
-    }
-
-    [Fact]
-    public async Task Run_FilesMode_UnderCap_ReturnsPlainArray()
-    {
-        // Arrange
-        _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(["/library/a.pdf", "/library/b.pdf"]);
-
-        // Act
-        var result = await _tool.TestRun("**/*.pdf", GlobMode.Files, CancellationToken.None);
-
-        // Assert
-        var array = result["entries"]!.AsArray();
-        array.Count.ShouldBe(2);
-        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
-    }
-
-    [Fact]
-    public async Task Run_FilesMode_OverCap_ReturnsTruncatedObject()
-    {
-        // Arrange
-        var files = Enumerable.Range(1, 250).Select(i => $"/library/file{i}.pdf").ToArray();
-        _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(files);
-
-        // Act
-        var result = await _tool.TestRun("**/*.pdf", GlobMode.Files, CancellationToken.None);
-
-        // Assert
         var obj = result.AsObject();
         obj["truncated"]!.GetValue<bool>().ShouldBeTrue();
         obj["total"]!.GetValue<int>().ShouldBe(250);
@@ -133,29 +101,16 @@ public class GlobFilesToolTests
     }
 
     [Fact]
-    public async Task Run_WithBasePath_FilesMode_UsesJoinedRootAndUnchangedPattern()
-    {
-        var expectedRoot = Path.Combine(BasePath, "home/sandbox_user/xfs_tree");
-        _mockClient.Setup(c => c.GlobFiles(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
-
-        var result = await _tool.TestRun("**/*", GlobMode.Files, "home/sandbox_user/xfs_tree", CancellationToken.None);
-
-        result["entries"]!.AsArray().Count.ShouldBe(1);
-        _mockClient.Verify(c => c.GlobFiles(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Run_WithBasePath_DirectoriesMode_UsesJoinedRootAndUnchangedPattern()
+    public async Task Run_WithBasePath_UsesJoinedRoot()
     {
         var expectedRoot = Path.Combine(BasePath, "docs");
-        _mockClient.Setup(c => c.GlobDirectories(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync([Path.Combine(expectedRoot, "sub")]);
+        _mockClient.Setup(c => c.Glob(expectedRoot, "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([Path.Combine(expectedRoot, "a.txt")]);
 
-        var result = await _tool.TestRun("**/*", GlobMode.Directories, "docs", CancellationToken.None);
+        var result = await _tool.TestRun("**/*", "docs", CancellationToken.None);
 
         result["entries"]!.AsArray().Count.ShouldBe(1);
-        _mockClient.Verify(c => c.GlobDirectories(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _mockClient.Verify(c => c.Glob(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Theory]
@@ -164,19 +119,16 @@ public class GlobFilesToolTests
     public async Task Run_WithBasePathContainingDotDot_ThrowsArgumentException(string basePath)
     {
         await Should.ThrowAsync<ArgumentException>(
-            () => _tool.TestRun("**/*", GlobMode.Files, basePath, CancellationToken.None));
+            () => _tool.TestRun("**/*", basePath, CancellationToken.None));
     }
 
     private class TestableGlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         : GlobFilesTool(client, libraryPath)
     {
         public Task<JsonNode> TestRun(string pattern, CancellationToken cancellationToken)
-            => Run(pattern, GlobMode.Files, cancellationToken);
+            => Run(pattern, cancellationToken);
 
-        public Task<JsonNode> TestRun(string pattern, GlobMode mode, CancellationToken cancellationToken)
-            => Run(pattern, mode, cancellationToken);
-
-        public Task<JsonNode> TestRun(string pattern, GlobMode mode, string basePath, CancellationToken cancellationToken)
-            => Run(pattern, mode, cancellationToken, basePath);
+        public Task<JsonNode> TestRun(string pattern, string basePath, CancellationToken cancellationToken)
+            => Run(pattern, cancellationToken, basePath);
     }
 }

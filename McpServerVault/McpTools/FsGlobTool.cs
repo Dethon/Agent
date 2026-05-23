@@ -17,14 +17,9 @@ public class FsGlobTool(
     [Description(Description)]
     public async Task<CallToolResult> McpRun(
         string pattern,
-        string mode = "directories",
         string basePath = "",
         CancellationToken cancellationToken = default)
     {
-        var globMode = mode.Equals("files", StringComparison.OrdinalIgnoreCase)
-            ? GlobMode.Files
-            : GlobMode.Directories;
-
-        return ToolResponse.Create(await Run(pattern, globMode, cancellationToken, basePath));
+        return ToolResponse.Create(await Run(pattern, cancellationToken, basePath));
     }
 }
