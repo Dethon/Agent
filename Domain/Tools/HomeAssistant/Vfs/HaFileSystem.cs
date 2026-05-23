@@ -42,12 +42,22 @@ public sealed partial class HaFileSystem(
     public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
-        return node.Kind switch
+        if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
         {
-            HaVfsKind.StateFile => await ReadStateAsync(path, node.EntityId!, offset, limit, ct),
-            HaVfsKind.ActionFile => await ReadActionAsync(path, node, ct),
-            _ => NotFound(path)
-        };
+            return NotFound(path);
+        }
+
+        var catalog = await catalogProvider.GetAsync(ct);
+        var resolution = ResolveEntity(catalog, node);
+        if (resolution.Entity is null)
+        {
+            return NotFound(path, resolution.Hint);
+        }
+
+        var entityId = resolution.Entity.EntityId;
+        return node.Kind == HaVfsKind.StateFile
+            ? await ReadStateAsync(path, entityId, offset, limit, ct)
+            : ReadAction(path, entityId, node.Service!, catalog);
     }
 
     public async Task<JsonNode> SearchAsync(
@@ -155,7 +165,7 @@ public sealed partial class HaFileSystem(
                 .OfType<HaEntityState>()
                 .ToList(),
             HaVfsKind.EntityDir or HaVfsKind.StateFile =>
-                catalog.EntityById(node.EntityId!) is { } entity ? [entity] : [],
+                ResolveEntity(catalog, node).Entity is { } entity ? [entity] : [],
             _ => []
         };
     }
@@ -190,6 +200,8 @@ public sealed partial class HaFileSystem(
             ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
             : new FsSearchFileResult { File = file, Matches = matches };
 
+    // Composes the entities-root form only — search hits are always reported under entities/, never
+    // the area form, so callers get one canonical path per entity regardless of area membership.
     private static string CanonicalStatePath(HaEntityState entity) =>
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
 
@@ -211,18 +223,41 @@ public sealed partial class HaFileSystem(
         return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
     }
 
-    private async Task<JsonNode> ReadActionAsync(string path, HaVfsNode node, CancellationToken ct)
+    private static JsonNode ReadAction(string path, string entityId, string service, HaCatalog catalog)
     {
-        var catalog = await catalogProvider.GetAsync(ct);
-        if (catalog.EntityById(node.EntityId!) is null)
-        {
-            return NotFound(path);
-        }
-        var svc = HaActionResolver.ServicesFor(node.EntityId!, catalog.Services)
-            .FirstOrDefault(s => s.Service.Equals(node.Service, StringComparison.Ordinal));
+        var svc = HaActionResolver.ServicesFor(entityId, catalog.Services)
+            .FirstOrDefault(s => s.Service.Equals(service, StringComparison.Ordinal));
         return svc is null
             ? NotFound(path)
-            : BuildReadResult(path, HaServiceHelpRenderer.Render(node.EntityId!, svc), null, null);
+            : BuildReadResult(path, HaServiceHelpRenderer.Render(entityId, svc), null, null);
+    }
+
+    private readonly record struct EntityResolution(HaEntityState? Entity, string? Hint);
+
+    // Strict canonical resolution: a segment resolves only if it equals the entity's composed
+    // directory name (HaSlug.Compose). A recognizable object-id with a non-canonical segment yields
+    // a hint naming the correct directory; an unknown object-id yields no hint. Keeps read/exec/info/
+    // search in lockstep with glob, which composes the same names.
+    private static EntityResolution ResolveEntity(HaCatalog catalog, HaVfsNode node)
+    {
+        var segment = node.EntitySegment!;
+        var candidateId = node.Area is not null
+            ? HaSlug.StripNice(segment)
+            : $"{node.ClassDomain}.{HaSlug.StripNice(segment)}";
+
+        var entity = catalog.EntityById(candidateId);
+        if (entity is null)
+        {
+            return new EntityResolution(null, null);
+        }
+
+        var canonical = node.Area is not null
+            ? HaSlug.Compose(entity.EntityId, HaCatalog.FriendlyName(entity))
+            : HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity));
+
+        return segment == canonical
+            ? new EntityResolution(entity, null)
+            : new EntityResolution(null, canonical);
     }
 
     private static (bool Exists, bool IsDir) Resolve(HaVfsNode node, HaCatalog catalog) => node.Kind switch
@@ -230,10 +265,12 @@ public sealed partial class HaFileSystem(
         HaVfsKind.Root or HaVfsKind.EntitiesRoot or HaVfsKind.AreasRoot => (true, true),
         HaVfsKind.ClassDir => (catalog.ClassDomains().Contains(node.ClassDomain), true),
         HaVfsKind.AreaDir => (catalog.AreaSlugs().Contains(node.Area), true),
-        HaVfsKind.EntityDir => (catalog.EntityById(node.EntityId!) is not null, true),
-        HaVfsKind.StateFile => (catalog.EntityById(node.EntityId!) is not null, false),
-        HaVfsKind.ActionFile => (catalog.EntityById(node.EntityId!) is not null
-            && HaActionResolver.ServicesFor(node.EntityId!, catalog.Services).Any(s => s.Service == node.Service), false),
+        HaVfsKind.EntityDir => (ResolveEntity(catalog, node).Entity is not null, true),
+        HaVfsKind.StateFile => (ResolveEntity(catalog, node).Entity is not null, false),
+        HaVfsKind.ActionFile => ResolveEntity(catalog, node).Entity is { } e
+            && HaActionResolver.ServicesFor(e.EntityId, catalog.Services).Any(s => s.Service == node.Service)
+            ? (true, false)
+            : (false, false),
         _ => (false, false)
     };
 
@@ -257,6 +294,11 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    private static JsonObject NotFound(string path) =>
-        Domain.Tools.ToolError.Create(Domain.Tools.ToolError.Codes.NotFound, $"No such path: {path}");
+    private static JsonObject NotFound(string path, string? canonicalName = null) =>
+        Domain.Tools.ToolError.Create(
+            Domain.Tools.ToolError.Codes.NotFound,
+            $"No such path: {path}",
+            hint: canonicalName is null
+                ? null
+                : $"Use the exact directory name a listing returns: '{canonicalName}'.");
 }

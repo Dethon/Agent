@@ -28,27 +28,26 @@ public class HaFileSystemJourneyTests
         globResult["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("entities/light");
         FsResultContract.TryValidate("fs_glob", globResult, out var err).ShouldBeTrue(err);
 
-        // 2. inspect state
-        var state = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        // 2. inspect state (the exact directory name a listing returns)
+        var state = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
         state["content"]!.GetValue<string>().ShouldContain("\"state\": \"off\"");
 
         // 3. learn the action
-        var help = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --help", null, CancellationToken.None);
+        var help = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --help", null, CancellationToken.None);
         help["stdout"]!.GetValue<string>().ShouldContain("--brightness_pct");
 
         // 4. act
-        var act = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
+        var act = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
         act["exitCode"]!.GetValue<int>().ShouldBe(0);
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<int>().ShouldBe(60);
 
-        // 4b. the same action via the composite directory name resolves to the same entity
-        var actByName = await fs.ExecAsync(
-            "entities/light/kitchen_(kitchen)", "turn_on.sh --brightness_pct 30", null, CancellationToken.None);
-        actByName["exitCode"]!.GetValue<int>().ShouldBe(0);
-        client.LastCall!.Value.EntityId.ShouldBe("light.kitchen");
+        // 4b. a bare id (when a friendly name exists) is rejected with a hint
+        var nearMiss = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+        nearMiss["exitCode"]!.GetValue<int>().ShouldBe(127);
+        nearMiss["stderr"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
 
-        // 5. area view resolves to the same entity
-        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.json", null, null, CancellationToken.None);
+        // 5. area view resolves to the same entity via its canonical name
+        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
         areaState["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
     }
 }

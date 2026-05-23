@@ -114,11 +114,11 @@ public class HaFileSystemExecTests
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", null, CancellationToken.None);
 
         result["exitCode"]!.GetValue<int>().ShouldBe(0);
         result["timedOut"]!.GetValue<bool>().ShouldBeFalse();
-        result["cwd"]!.GetValue<string>().ShouldBe("entities/light/kitchen");
+        result["cwd"]!.GetValue<string>().ShouldBe("entities/light/kitchen_(kitchen)");
         result["durationMs"]!.GetValue<long>().ShouldBeGreaterThanOrEqualTo(0);
         FsResultContract.TryValidate("fs_exec", result, out var err).ShouldBeTrue(err);
     }
@@ -133,11 +133,20 @@ public class HaFileSystemExecTests
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
-        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", 1, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", 1, CancellationToken.None);
 
         result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
         result["exitCode"]!.GetValue<int>().ShouldBe(-1);
         FsResultContract.TryValidate("fs_exec", result, out _).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ExecAsync_UnknownEntity_127_NoHint()
+    {
+        var fs = Build(out _);
+        var result = await fs.ExecAsync("entities/light/ghost", "turn_on.sh", null, CancellationToken.None);
+        result["exitCode"]!.GetValue<int>().ShouldBe(127);
+        result["stderr"]!.GetValue<string>().ShouldNotContain("Did you mean");
     }
 
     private sealed class BlockingHaClient : FakeHaClient

@@ -37,7 +37,7 @@ public class HaFileSystemReadTests
     public async Task InfoAsync_EntityDir_Exists()
     {
         var fs = Build(out _);
-        var info = await fs.InfoAsync("entities/light/kitchen", CancellationToken.None);
+        var info = await fs.InfoAsync("entities/light/kitchen_(kitchen)", CancellationToken.None);
         info["exists"]!.GetValue<bool>().ShouldBeTrue();
         info["isDirectory"]!.GetValue<bool>().ShouldBeTrue();
         FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
@@ -56,7 +56,7 @@ public class HaFileSystemReadTests
     public async Task ReadAsync_StateFile_RendersFreshJson()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
         read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
         read["content"]!.GetValue<string>().ShouldContain("1: ");
         FsResultContract.TryValidate("fs_read", read, out var err).ShouldBeTrue(err);
@@ -66,7 +66,7 @@ public class HaFileSystemReadTests
     public async Task ReadAsync_ActionFile_RendersHelp()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen/turn_on.sh", null, null, CancellationToken.None);
+        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/turn_on.sh", null, null, CancellationToken.None);
         read["content"]!.GetValue<string>().ShouldContain("call light.turn_on on light.kitchen");
     }
 
@@ -138,5 +138,50 @@ public class HaFileSystemReadTests
 
         result["exitCode"]!.GetValue<int>().ShouldBe(0);
         client.LastCall!.Value.EntityId.ShouldBe("climate.0x01");
+    }
+
+    [Fact]
+    public async Task ReadAsync_BareId_WhenFriendlyNameExists_NotFoundWithHint()
+    {
+        var fs = Build(out _);
+        var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        read["ok"]!.GetValue<bool>().ShouldBeFalse();
+        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        read["hint"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+    }
+
+    [Fact]
+    public async Task ReadAsync_WrongSuffix_NotFoundWithHint()
+    {
+        var fs = Build(out _);
+        var read = await fs.ReadAsync("entities/light/kitchen_(wrong)/state.json", null, null, CancellationToken.None);
+        read["ok"]!.GetValue<bool>().ShouldBeFalse();
+        read["hint"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+    }
+
+    [Fact]
+    public async Task ReadAsync_CompositeName_Resolves()
+    {
+        var fs = Build(out _);
+        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
+        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
+    }
+
+    [Fact]
+    public async Task ExecAsync_BareId_WhenFriendlyNameExists_127WithHint()
+    {
+        var fs = Build(out _);
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+        result["exitCode"]!.GetValue<int>().ShouldBe(127);
+        result["stderr"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+    }
+
+    [Fact]
+    public async Task ReadAsync_EntityWithoutFriendlyName_ResolvesByBareId()
+    {
+        var client = new FakeHaClient { States = { Entity("light.porch", "off") } };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+        var read = await fs.ReadAsync("entities/light/porch/state.json", null, null, CancellationToken.None);
+        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.porch\"");
     }
 }

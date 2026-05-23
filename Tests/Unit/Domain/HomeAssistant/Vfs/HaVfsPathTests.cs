@@ -25,7 +25,8 @@ public class HaVfsPathTests
     {
         var n = HaVfsPath.Parse("entities/light/kitchen");
         n.Kind.ShouldBe(HaVfsKind.EntityDir);
-        n.EntityId.ShouldBe("light.kitchen");
+        n.ClassDomain.ShouldBe("light");
+        n.EntitySegment.ShouldBe("kitchen");
     }
 
     [Fact]
@@ -41,8 +42,8 @@ public class HaVfsPathTests
     {
         var n = HaVfsPath.Parse("areas/salon/light.salon");
         n.Kind.ShouldBe(HaVfsKind.EntityDir);
-        n.EntityId.ShouldBe("light.salon");
         n.Area.ShouldBe("salon");
+        n.EntitySegment.ShouldBe("light.salon");
     }
 
     [Fact]
@@ -50,7 +51,8 @@ public class HaVfsPathTests
     {
         var n = HaVfsPath.Parse("entities/light/kitchen/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
-        n.EntityId.ShouldBe("light.kitchen");
+        n.ClassDomain.ShouldBe("light");
+        n.EntitySegment.ShouldBe("kitchen");
     }
 
     [Fact]
@@ -58,7 +60,8 @@ public class HaVfsPathTests
     {
         var n = HaVfsPath.Parse("entities/light/kitchen/turn_on.sh");
         n.Kind.ShouldBe(HaVfsKind.ActionFile);
-        n.EntityId.ShouldBe("light.kitchen");
+        n.ClassDomain.ShouldBe("light");
+        n.EntitySegment.ShouldBe("kitchen");
         n.Service.ShouldBe("turn_on");
     }
 
@@ -67,7 +70,8 @@ public class HaVfsPathTests
     {
         var n = HaVfsPath.Parse("areas/salon/light.salon/toggle.sh");
         n.Kind.ShouldBe(HaVfsKind.ActionFile);
-        n.EntityId.ShouldBe("light.salon");
+        n.Area.ShouldBe("salon");
+        n.EntitySegment.ShouldBe("light.salon");
         n.Service.ShouldBe("toggle");
     }
 
@@ -79,27 +83,30 @@ public class HaVfsPathTests
         HaVfsPath.Parse(path).Kind.ShouldBe(HaVfsKind.Unknown);
 
     [Fact]
-    public void Parse_CompositeEntityDir_StripsNiceName()
+    public void Parse_CompositeEntityDir_KeepsRawSegment()
     {
         var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
         n.Kind.ShouldBe(HaVfsKind.EntityDir);
-        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+        n.ClassDomain.ShouldBe("climate");
+        n.EntitySegment.ShouldBe("0x00158d00abcd_(aire-acondicionado-salon)");
     }
 
     [Fact]
-    public void Parse_CompositeStateFile_StripsNiceName()
+    public void Parse_CompositeStateFile_KeepsRawSegment()
     {
         var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
-        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+        n.ClassDomain.ShouldBe("climate");
+        n.EntitySegment.ShouldBe("0x00158d00abcd_(aire-acondicionado-salon)");
     }
 
     [Fact]
-    public void Parse_CompositeActionFile_UnderArea_StripsNiceName()
+    public void Parse_CompositeActionFile_UnderArea_KeepsRawSegment()
     {
         var n = HaVfsPath.Parse("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)/turn_off.sh");
         n.Kind.ShouldBe(HaVfsKind.ActionFile);
-        n.EntityId.ShouldBe("climate.0x00158d00abcd");
+        n.Area.ShouldBe("salon");
+        n.EntitySegment.ShouldBe("climate.0x00158d00abcd_(aire-acondicionado-salon)");
         n.Service.ShouldBe("turn_off");
     }
 }

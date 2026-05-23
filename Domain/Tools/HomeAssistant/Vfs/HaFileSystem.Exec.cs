@@ -16,13 +16,22 @@ public sealed partial class HaFileSystem
 
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
-        if (node.Kind != HaVfsKind.EntityDir || catalog.EntityById(node.EntityId!) is null)
+        if (node.Kind != HaVfsKind.EntityDir)
         {
             return Done(127, "", $"Not an entity directory: {path}. cd into /ha/entities/<class>/<id> first.");
         }
 
+        var resolution = ResolveEntity(catalog, node);
+        if (resolution.Entity is null)
+        {
+            var didYouMean = resolution.Hint is null
+                ? ""
+                : $" Did you mean '{resolution.Hint}'? Copy the exact name a listing returns.";
+            return Done(127, "", $"No such entity directory: {path}.{didYouMean}");
+        }
+
         var tokens = ShellTokenize(command);
-        var entityId = node.EntityId!;
+        var entityId = resolution.Entity.EntityId;
         var actions = HaActionResolver.ServicesFor(entityId, catalog.Services);
         var available = string.Join(", ", actions.Select(a => $"{a.Service}.sh"));
 
