@@ -32,4 +32,14 @@ public class HaStateRendererTests
         HaStateRenderer.ToYaml(Entity("sun.sun", "above_horizon"))
             .ShouldContain("attributes: {}");
     }
+
+    [Fact]
+    public void ToYaml_UnsafeAttributeKey_IsQuotedForValidYaml()
+    {
+        var yaml = HaStateRenderer.ToYaml(
+            Entity("light.kitchen", "off", ("weird: key", JsonValue.Create("x"))));
+
+        // A bare "weird: key:" would be ambiguous YAML; the key is JSON-quoted instead.
+        yaml.ShouldContain("\"weird: key\": \"x\"");
+    }
 }

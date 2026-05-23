@@ -45,6 +45,40 @@ public class HaCatalogProviderTests
         (await provider.GetAsync(CancellationToken.None)).Entities.ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task GetAsync_SuccessfulButEmpty_CachesForFullTtl()
+    {
+        var client = new CountingClient(); // no states, but the call succeeds (not a failure)
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+
+        await provider.GetAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(60)); // past the 30s failure TTL
+        await provider.GetAsync(CancellationToken.None);
+
+        client.StateCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task GetAsync_AfterFailure_RepollsOnceFailureTtlElapses()
+    {
+        var client = new FlakyClient { States = { Entity("light.kitchen", "off") } };
+        var time = new FakeTimeProvider();
+        var provider = new HaCatalogProvider(() => client, time);
+
+        (await provider.GetAsync(CancellationToken.None)).Entities.ShouldBeEmpty();
+        client.StateCalls.ShouldBe(1);
+
+        time.Advance(TimeSpan.FromSeconds(15)); // within the failure TTL — still cached
+        await provider.GetAsync(CancellationToken.None);
+        client.StateCalls.ShouldBe(1);
+
+        time.Advance(TimeSpan.FromSeconds(30)); // past the failure TTL — re-polls, now recovered
+        client.Throw = false;
+        (await provider.GetAsync(CancellationToken.None)).Entities.Count.ShouldBe(1);
+        client.StateCalls.ShouldBe(2);
+    }
+
     private sealed class CountingClient : FakeHaClient
     {
         public int StateCalls { get; private set; }
@@ -59,5 +93,17 @@ public class HaCatalogProviderTests
     {
         public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
             => throw new InvalidOperationException("HA down");
+    }
+
+    private sealed class FlakyClient : FakeHaClient
+    {
+        public int StateCalls { get; private set; }
+        public bool Throw { get; set; } = true;
+
+        public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
+        {
+            StateCalls++;
+            return Throw ? throw new InvalidOperationException("HA down") : base.ListStatesAsync(ct);
+        }
     }
 }

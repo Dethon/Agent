@@ -4,11 +4,12 @@ using Domain.Contracts;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// Cached source of truth for both the VFS engine and the slim index prompt. Caches the catalog
-// for `CacheTtl`; on any HA failure returns HaCatalog.Empty with a short negative TTL so a
-// transient outage doesn't blind the agent for the full window. Func<IHomeAssistantClient> (not a
-// direct injection) keeps the transient, IHttpClientFactory-managed client from being pinned for
-// the singleton's lifetime — same rationale as HomeAssistantSetupSummary.
+// Cached source of truth for both the VFS engine and the slim index prompt. Caches a successful
+// build for `_cacheTtl` (even when HA legitimately has no entities); only an HA *failure* falls back
+// to HaCatalog.Empty with a short negative TTL, so a transient outage doesn't blind the agent for the
+// full window. Func<IHomeAssistantClient> (not a direct injection) keeps the transient,
+// IHttpClientFactory-managed client from being pinned for the singleton's lifetime — same rationale
+// as HomeAssistantSetupSummary.
 public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)
 {
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
@@ -39,8 +40,9 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
                 return _cached;
             }
 
-            _cached = await TryBuildAsync(ct);
-            _expiry = _time.GetUtcNow() + (_cached.Entities.Count == 0 ? _failureCacheTtl : _cacheTtl);
+            var (catalog, succeeded) = await TryBuildAsync(ct);
+            _cached = catalog;
+            _expiry = _time.GetUtcNow() + (succeeded ? _cacheTtl : _failureCacheTtl);
             return _cached;
         }
         finally
@@ -49,7 +51,7 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
         }
     }
 
-    private async Task<HaCatalog> TryBuildAsync(CancellationToken ct)
+    private async Task<(HaCatalog Catalog, bool Succeeded)> TryBuildAsync(CancellationToken ct)
     {
         try
         {
@@ -58,11 +60,11 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
             var services = client.ListServicesAsync(ct);
             var areas = LoadAreasAsync(client, ct);
             await Task.WhenAll(states, services, areas);
-            return new HaCatalog(states.Result, services.Result, areas.Result);
+            return (new HaCatalog(states.Result, services.Result, areas.Result), true);
         }
         catch
         {
-            return HaCatalog.Empty;
+            return (HaCatalog.Empty, false);
         }
     }
 

@@ -1,11 +1,16 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaStateRenderer
 {
+    // Attribute keys that are safe as bare YAML plain scalars. HA keys are normally snake_case
+    // identifiers; anything else (spaces, colons, …) is JSON-quoted so the document stays valid YAML.
+    private static readonly Regex _safePlainKey = new("^[A-Za-z0-9_][A-Za-z0-9_.-]*$", RegexOptions.Compiled);
+
     public static string ToYaml(HaEntityState entity)
     {
         var sb = new StringBuilder();
@@ -29,8 +34,13 @@ public static class HaStateRenderer
         sb.Append("attributes:");
         foreach (var (key, value) in entity.Attributes.OrderBy(a => a.Key, StringComparer.Ordinal))
         {
-            sb.Append("\n  ").Append(key).Append(": ").Append(value?.ToJsonString() ?? "null");
+            sb.Append("\n  ").Append(YamlKey(key)).Append(": ").Append(value?.ToJsonString() ?? "null");
         }
         return sb.ToString();
     }
+
+    // JSON strings are valid YAML flow scalars, so values are already YAML-safe via ToJsonString();
+    // only bare keys can break the document — quote the unsafe ones the same way.
+    private static string YamlKey(string key) =>
+        _safePlainKey.IsMatch(key) ? key : JsonValue.Create(key)!.ToJsonString();
 }
