@@ -9,7 +9,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 
 public class HaFileSystemSearchTests
 {
-    private const string KitchenStateFile = "entities/light/kitchen_(kitchen)/state.yaml";
+    private const string KitchenStateFile = "entities/light/kitchen_(kitchen)/state.json";
 
     private static HaFileSystem Build()
     {

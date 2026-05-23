@@ -60,7 +60,7 @@ public class HaFileSystemExecTests
     public async Task Exec_UnknownCommand_Returns127_WithAvailableActions()
     {
         var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "cat state.yaml", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "cat state.json", null, CancellationToken.None);
 
         result["exitCode"]!.GetValue<int>().ShouldBe(127);
         result["stderr"]!.GetValue<string>().ShouldContain("turn_on.sh");

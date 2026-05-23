@@ -18,7 +18,7 @@ public static class HomeAssistantPrompt
         ### Layout
 
         - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
-          `/ha/entities/light/kitchen/`). Contains `state.yaml` (live state +
+          `/ha/entities/light/kitchen/`). Contains `state.json` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room.
         - Each entity directory's name carries its friendly name as `..._(<friendly-name>)`
@@ -32,7 +32,7 @@ public static class HomeAssistantPrompt
         1. Find the entity: `glob_files` under `/ha/entities/<class>` or
            `/ha/areas/<room>`, or read the setup index.
         2. Inspect when you need an attribute as input: `text_read`
-           `/ha/.../state.yaml`.
+           `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help` (or
            `text_read` the `.sh` file — same content).
         4. Act: `exec` from the entity directory, e.g.
@@ -41,7 +41,7 @@ public static class HomeAssistantPrompt
         ### Reading results
 
         - `exitCode` 0 = the action succeeded (`stdout` carries `{ok, changed[]}` and
-          any service `response`). It is authoritative — do NOT read `state.yaml`
+          any service `response`). It is authoritative — do NOT read `state.json`
           afterwards to confirm; HA propagates state asynchronously and the read is stale.
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
@@ -51,7 +51,7 @@ public static class HomeAssistantPrompt
 
         ### Notes
 
-        - `state.yaml` reads are always live. Read one only when you need a specific
+        - `state.json` reads are always live. Read one only when you need a specific
           attribute as INPUT to the next action (e.g. `source_list` before
           `select_source`).
         - Room targets: use the area `id` slug from the index, not the display name.

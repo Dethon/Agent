@@ -61,15 +61,15 @@ Agent (FileSystemToolFeature, unchanged)
   entities/                          # canonical, 1:1 with entity_id
     light/
       kitchen/
-        state.yaml                   # live state + attributes (read)
+        state.json                   # live state + attributes (read)
         turn_on.sh  turn_off.sh  toggle.sh   # applicable actions (exec)
     vacuum/
       roborock_s8/
-        state.yaml
+        state.json
         start.sh  pause.sh  return_to_base.sh  clean_segment.sh
     sensor/
       salon_temp/
-        state.yaml                   # read-only entity: no .sh files
+        state.json                   # read-only entity: no .sh files
   areas/                             # room view, template-rendered (a VIEW, not a copy)
     salon/
       light.salon/        → resolves to entities/light/salon/
@@ -95,33 +95,40 @@ An entity's action files are the **class-domain services whose `target` accepts 
 services in the entity's own class domain (the `entity_id` prefix) whose `target` matches it
 (`{}` or no entity constraint = any; a `domain`-narrowed constraint must include the entity's
 class). `null` target = not entity-targeted → not surfaced. Read-only entities (most `sensor`,
-`binary_sensor`) match no services and therefore expose only `state.yaml`. Filenames are the bare
+`binary_sensor`) match no services and therefore expose only `state.json`. Filenames are the bare
 `<service>.sh`; collisions cannot occur because all action files for an entity come from one domain.
 
 ## Read surface
 
 - `glob /ha/entities/light/*` → entity directories under the `light` domain.
 - `glob /ha/entities/**` (and `/ha/areas/**`) → recursive listing.
-- `read .../state.yaml` → current state, attributes, and `last_changed`, **always fetched fresh**
+- `read .../state.json` → current state, attributes, and `last_changed`, **always fetched fresh**
   from `GetStateAsync` at read time.
 - `read .../turn_on.sh` (cat, no exec) → the same usage text `--help` produces. Idiomatic:
   cat to inspect, exec to run.
 - `search` (`fs_search`) → grep over entity ids, friendly names, and rendered state (e.g. find
   every entity currently `on`). Backed by `ListStatesAsync` plus in-memory filtering.
 
-### `state.yaml` rendering
+### `state.json` rendering
 
-One file per entity carrying state + attributes + `last_changed`, rendered as YAML for compact,
-readable output:
+One file per entity carrying state + attributes + `last_changed`, rendered as indented JSON via
+`System.Text.Json` (no hand-rolled formatting), so arbitrary nested attributes are escaped
+correctly by construction:
 
-```yaml
-entity_id: light.kitchen
-state: "off"
-attributes:
-  friendly_name: Kitchen
-  supported_color_modes: [color_temp, xy]
-  brightness: null
-last_changed: 2026-05-23T09:14:02Z
+```json
+{
+  "entity_id": "light.kitchen",
+  "state": "off",
+  "last_changed": "2026-05-23T09:14:02Z",
+  "attributes": {
+    "brightness": null,
+    "friendly_name": "Kitchen",
+    "supported_color_modes": [
+      "color_temp",
+      "xy"
+    ]
+  }
+}
 ```
 
 ## Action surface (the `.sh` model)
@@ -168,18 +175,18 @@ independently testable units:
 3. **Help renderer** — `HaServiceDefinition` → usage text (also returned by `read` on a `.sh`).
 4. **Argument parser** — GNU flags → `service_data` `JsonObject`, typed by each field's selector
    (scalar / list / object), with clear errors for unknown flags.
-5. **State renderer** — `HaEntityState` → `state.yaml`.
+5. **State renderer** — `HaEntityState` → `state.json`.
 6. **Area view** — `RenderTemplateAsync` → `area_slug → [entity_id]` map, cached per session.
 7. **MCP `fs_*` tool wiring** — `fs_glob`, `fs_read`, `fs_info`, `fs_search`, `fs_exec` tools
    that drive units 1–6, plus the `filesystem://ha` resource and the prompt changes below.
 
 **Caching:** the service catalogue (`ListServicesAsync`) and area map are read once and cached
-for the session; entity **state is always read fresh** so `state.yaml` never goes stale.
+for the session; entity **state is always read fresh** so `state.json` never goes stale.
 
 ## Data flow
 
 - **Discover an entity:** `glob /ha/areas/salon/*` → area view → entity ids → resolve to nodes.
-- **Inspect:** `read /ha/entities/light/kitchen/state.yaml` → `GetStateAsync` → YAML.
+- **Inspect:** `read /ha/entities/light/kitchen/state.json` → `GetStateAsync` → JSON.
 - **Learn an action:** `read .../turn_on.sh` or `exec ".../turn_on.sh --help"` → help renderer
   over the cached service schema.
 - **Act:** `exec ".../turn_on.sh --brightness_pct 60"` → arg parser → `CallServiceAsync(light,
@@ -223,7 +230,7 @@ TDD throughout — RED test before each unit (per project rules). Tests run agai
   read-only entity → no actions).
 - Help renderer: field types from each selector shape; required vs optional; examples.
 - Arg parser: scalars, comma lists, JSON objects, unknown flag → error.
-- State renderer: state + attributes + `last_changed` → YAML.
+- State renderer: state + attributes + `last_changed` → JSON.
 - Area view: template output → area map; `unassigned` bucket.
 - `fs_exec`: action-file → `CallServiceAsync` mapping; `--help` path; `127` guard; HA-error
   mapping to non-zero exit.
@@ -236,7 +243,7 @@ TDD throughout — RED test before each unit (per project rules). Tests run agai
 
 1. **Backend skeleton + resource** — `filesystem://ha`, path model, `fs_info`/`fs_glob` over
    `entities/`; mounts and lists. (RED→GREEN per unit.)
-2. **Read surface** — `state.yaml` rendering via `fs_read`; `fs_search`.
+2. **Read surface** — `state.json` rendering via `fs_read`; `fs_search`.
 3. **Action surface** — `.sh` enumeration (action resolver), `--help`/`cat`, `fs_exec`
    service-call mapping, arg parser, `127` guard, error mapping.
 4. **Areas view** — template-rendered `areas/` root resolving to the same nodes.

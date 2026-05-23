@@ -48,7 +48,7 @@ public class HaVfsPathTests
     [Fact]
     public void Parse_StateFile()
     {
-        var n = HaVfsPath.Parse("entities/light/kitchen/state.yaml");
+        var n = HaVfsPath.Parse("entities/light/kitchen/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
         n.EntityId.ShouldBe("light.kitchen");
     }
@@ -89,7 +89,7 @@ public class HaVfsPathTests
     [Fact]
     public void Parse_CompositeStateFile_StripsNiceName()
     {
-        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.yaml");
+        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
         n.EntityId.ShouldBe("climate.0x00158d00abcd");
     }

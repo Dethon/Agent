@@ -18,7 +18,7 @@ public class FileSystemResource
         {
             name = "ha",
             mountPoint = "/ha",
-            description = "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or `/ha/areas/<room>/<entity_id>/`. `read state.yaml` for live state; `read <service>.sh` (or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag value'` to control a device. NOT a shell — exec only runs the listed *.sh action files (anything else returns exit 127). No create/edit/delete."
+            description = "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or `/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `read <service>.sh` (or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag value'` to control a device. NOT a shell — exec only runs the listed *.sh action files (anything else returns exit 127). No create/edit/delete."
         });
     }
 }

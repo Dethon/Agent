@@ -48,11 +48,11 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_StateFile_RendersFreshYaml()
+    public async Task ReadAsync_StateFile_RendersFreshJson()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen/state.yaml", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("entity_id: light.kitchen");
+        var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
         read["content"]!.GetValue<string>().ShouldContain("1: ");
     }
 

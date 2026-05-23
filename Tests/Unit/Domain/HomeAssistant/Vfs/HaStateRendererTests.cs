@@ -8,38 +8,41 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 public class HaStateRendererTests
 {
     [Fact]
-    public void ToYaml_RendersScalarsAndAttributes()
+    public void ToJson_RendersScalarsAndAttributes_AsIndentedJson()
     {
         var entity = Entity("light.kitchen", "off",
             ("friendly_name", JsonValue.Create("Kitchen")),
             ("brightness", JsonValue.Create((int?)null)),
             ("modes", JsonNode.Parse("""["color_temp","xy"]""")));
 
-        var yaml = HaStateRenderer.ToYaml(entity);
+        var json = HaStateRenderer.ToJson(entity);
 
-        yaml.ShouldContain("entity_id: light.kitchen");
-        yaml.ShouldContain("state: \"off\"");
-        yaml.ShouldContain("last_changed: 2026-05-23T09:14:02");
-        yaml.ShouldContain("attributes:");
-        yaml.ShouldContain("  brightness: null");
-        yaml.ShouldContain("  friendly_name: \"Kitchen\"");
-        yaml.ShouldContain("""  modes: ["color_temp","xy"]""");
+        json.ShouldContain("\"entity_id\": \"light.kitchen\"");
+        json.ShouldContain("\"state\": \"off\"");
+        json.ShouldContain("\"last_changed\": \"2026-05-23T09:14:02");
+        json.ShouldContain("\"attributes\": {");
+        json.ShouldContain("\"brightness\": null");
+        json.ShouldContain("\"friendly_name\": \"Kitchen\"");
+        json.ShouldContain("\"color_temp\"");
+        // Indented (2-space) pretty-print, not a single compact line.
+        json.ShouldContain("\n  \"entity_id\"");
     }
 
     [Fact]
-    public void ToYaml_NoAttributes_EmitsEmptyMap()
+    public void ToJson_NoAttributes_EmitsEmptyObject()
     {
-        HaStateRenderer.ToYaml(Entity("sun.sun", "above_horizon"))
-            .ShouldContain("attributes: {}");
+        HaStateRenderer.ToJson(Entity("sun.sun", "above_horizon"))
+            .ShouldContain("\"attributes\": {}");
     }
 
     [Fact]
-    public void ToYaml_UnsafeAttributeKey_IsQuotedForValidYaml()
+    public void ToJson_WholeDocumentParsesAsJson_EvenForOddKeys()
     {
-        var yaml = HaStateRenderer.ToYaml(
+        var json = HaStateRenderer.ToJson(
             Entity("light.kitchen", "off", ("weird: key", JsonValue.Create("x"))));
 
-        // A bare "weird: key:" would be ambiguous YAML; the key is JSON-quoted instead.
-        yaml.ShouldContain("\"weird: key\": \"x\"");
+        var parsed = JsonNode.Parse(json)!;
+        parsed["entity_id"]!.GetValue<string>().ShouldBe("light.kitchen");
+        parsed["attributes"]!["weird: key"]!.GetValue<string>().ShouldBe("x");
     }
 }

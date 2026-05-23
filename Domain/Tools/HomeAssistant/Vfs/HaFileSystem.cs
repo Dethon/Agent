@@ -76,7 +76,7 @@ public sealed partial class HaFileSystem(
                 hint: "Fix the regex, or set regex=false to match a literal string.");
         }
 
-        // state.yaml is the only searchable file per entity, so a filePattern either includes it
+        // state.json is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).
         var scoped = MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
             ? ScopeEntities(catalog, path, directoryPath)
@@ -97,7 +97,7 @@ public sealed partial class HaFileSystem(
                 {
                     break;
                 }
-                var lines = HaStateRenderer.ToYaml(entity).Split('\n');
+                var lines = HaStateRenderer.ToJson(entity).Split('\n');
                 var matches = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
                 if (matches.Count == 0)
                 {
@@ -194,7 +194,7 @@ public sealed partial class HaFileSystem(
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
 
     // Matches a bare file name against a simple glob (* and ?). Used to gate whether the searchable
-    // state.yaml is included by a caller-supplied filePattern.
+    // state.json is included by a caller-supplied filePattern.
     private static bool MatchesFilePattern(string? filePattern, string fileName)
     {
         if (string.IsNullOrEmpty(filePattern))
@@ -208,7 +208,7 @@ public sealed partial class HaFileSystem(
     private async Task<JsonNode> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
-        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToYaml(entity), offset, limit);
+        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
     }
 
     private async Task<JsonNode> ReadActionAsync(string path, HaVfsNode node, CancellationToken ct)

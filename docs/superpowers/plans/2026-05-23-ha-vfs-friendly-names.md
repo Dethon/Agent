@@ -254,7 +254,7 @@ git commit -m "feat(ha-vfs): HaCatalog.FriendlyName accessor"
     [Fact]
     public void Parse_CompositeStateFile_StripsNiceName()
     {
-        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.yaml");
+        var n = HaVfsPath.Parse("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
         n.EntityId.ShouldBe("climate.0x00158d00abcd");
     }
@@ -346,7 +346,7 @@ git commit -m "feat(ha-vfs): parse composite entity-dir segments to id"
 
         var files = HaTree.Files(cat);
 
-        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.yaml");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.json");
         files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
     }
 ```
@@ -564,7 +564,7 @@ Against the live stack (per `CLAUDE.md` → Launching, incl. `mcp-homeassistant`
 - Generation from cached `friendly_name` → Tasks 2, 4. ✓
 - Resolution unchanged in `HaFileSystem`; composite + bare both resolve for read/info/exec → Task 5 (+ Task 3 backward-compat). ✓
 - Area directories unchanged (area slug) → Tasks 4 tests assert `areas/salon/<composite>` but the `salon` area dir itself stays the slug. ✓
-- `state.yaml`, `.sh` model, search semantics, DI/wiring unchanged → not touched. ✓
+- `state.json`, `.sh` model, search semantics, DI/wiring unchanged → not touched. ✓
 - Optional workflow-prompt line → Task 6. ✓
 
 **Placeholder scan:** none — every code/test step contains complete code and exact commands.

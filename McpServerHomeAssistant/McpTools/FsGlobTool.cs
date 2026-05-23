@@ -11,7 +11,7 @@ namespace McpServerHomeAssistant.McpTools;
 public class FsGlobTool(HaFileSystem fs)
 {
     [McpServerTool(Name = "fs_glob")]
-    [Description("Lists Home Assistant entities, areas, and action files matching a glob pattern. Use mode 'directories' to explore (domains, entities, areas), 'files' to find state.yaml and *.sh action files.")]
+    [Description("Lists Home Assistant entities, areas, and action files matching a glob pattern. Use mode 'directories' to explore (domains, entities, areas), 'files' to find state.json and *.sh action files.")]
     public async Task<CallToolResult> McpRun(
         string pattern,
         string mode = "directories",

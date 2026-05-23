@@ -12,7 +12,7 @@ Cryptic ids are ambiguous to the agent.
 
 User: "turn off the AC in the living room." The agent ran `glob /ha/areas/living_room`, found **two**
 `climate` entities with cryptic ids, could not tell which was the AC, and turned **both** off. The
-distinguishing information (the friendly name) lived only inside each `state.yaml`, so `glob` was not
+distinguishing information (the friendly name) lived only inside each `state.json`, so `glob` was not
 enough to choose correctly.
 
 ## Approach
@@ -78,11 +78,11 @@ contains an entity-directory segment, strip the `_(...)` suffix to recover the i
 - `StripNice(segment)` = `segment` up to the first `_(`, or the whole `segment` if `_(` is absent.
 - Under `entities/<class>/<seg>` → `object_id = StripNice(seg)`, `entity_id = "<class>.<object_id>"`.
 - Under `areas/<room>/<seg>` → `entity_id = StripNice(seg)`.
-- Leaf files (`state.yaml`, `<service>.sh`) hang under the entity-dir segment as before; the same
+- Leaf files (`state.json`, `<service>.sh`) hang under the entity-dir segment as before; the same
   strip applies to that segment.
 
 Consequences:
-- **Backward compatible:** `entities/light/kitchen/state.yaml` (no suffix) still resolves, as does
+- **Backward compatible:** `entities/light/kitchen/state.json` (no suffix) still resolves, as does
   the composite form. The agent may use either.
 - **Drift-proof:** if a device is renamed mid-session (after the 5-min catalog cache refreshes), a
   previously-globbed composite path still resolves, because resolution only depends on the id prefix.
@@ -110,7 +110,7 @@ segments.
   parents) in both roots.
 - **`HaCatalog`** — small helper to fetch an entity's `friendly_name` (from `Attributes`), used by
   `HaTree`.
-- **`HaFileSystem`** — no logic change; exercised with composite inputs. (`state.yaml` rendering,
+- **`HaFileSystem`** — no logic change; exercised with composite inputs. (`state.json` rendering,
   the `.sh` model, search, and all JSON output shapes are untouched.)
 
 No changes to: the MCP `fs_*` wrappers, the `filesystem://ha` resource, DI/wiring, or the slim index
@@ -152,7 +152,7 @@ read `<id>_(<name>)` and that either the composite or the bare id is accepted.
 - Renaming the **area** directories to include the area display name (kept as the area slug).
 - Annotating `glob` output shape (rejected — would break uniformity with the Sandbox/Vault backends).
 - Listing per-entity names in the slim index prompt (rejected — prompt bloat; `glob` now suffices).
-- Any change to `state.yaml`, the `.sh` action model, search semantics, or DI/wiring.
+- Any change to `state.json`, the `.sh` action model, search semantics, or DI/wiring.
 
 ## Risks
 

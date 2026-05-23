@@ -14,7 +14,7 @@ public sealed record HaVfsNode(
 
 public static class HaVfsPath
 {
-    public const string StateFileName = "state.yaml";
+    public const string StateFileName = "state.json";
 
     public static HaVfsNode Parse(string relativePath)
     {

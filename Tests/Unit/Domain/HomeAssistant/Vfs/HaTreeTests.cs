@@ -29,9 +29,9 @@ public class HaTreeTests
     public void Files_IncludeStateAndApplicableActions()
     {
         var files = HaTree.Files(Cat());
-        files.ShouldContain("entities/light/kitchen/state.yaml");
+        files.ShouldContain("entities/light/kitchen/state.json");
         files.ShouldContain("entities/light/kitchen/turn_on.sh");
-        files.ShouldContain("entities/sensor/salon_temp/state.yaml");
+        files.ShouldContain("entities/sensor/salon_temp/state.json");
         files.ShouldNotContain("entities/sensor/salon_temp/turn_on.sh"); // no actions for sensor
     }
 
@@ -73,7 +73,7 @@ public class HaTreeTests
 
         var files = HaTree.Files(cat);
 
-        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.yaml");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.json");
         files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
     }
 }

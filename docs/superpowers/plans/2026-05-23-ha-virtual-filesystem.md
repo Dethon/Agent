@@ -43,7 +43,7 @@
 - `Domain/Tools/HomeAssistant/Vfs/HaActionResolver.cs` — class-domain services whose `target` accepts an entity.
 - `Domain/Tools/HomeAssistant/Vfs/HaServiceHelpRenderer.cs` — `HaServiceDefinition` → `--help` text.
 - `Domain/Tools/HomeAssistant/Vfs/HaArgParser.cs` — GNU flags → `service_data` `JsonObject`.
-- `Domain/Tools/HomeAssistant/Vfs/HaStateRenderer.cs` — `HaEntityState` → YAML.
+- `Domain/Tools/HomeAssistant/Vfs/HaStateRenderer.cs` — `HaEntityState` → indented JSON.
 - `Domain/Tools/HomeAssistant/Vfs/HaCatalogProvider.cs` — cached catalog builder (TTL, `Func<IHomeAssistantClient>`, `TimeProvider`).
 - `Domain/Tools/HomeAssistant/Vfs/HaFileSystem.cs` — the engine: `GlobAsync`/`InfoAsync`/`ReadAsync`/`SearchAsync`/`ExecAsync` → `JsonNode`.
 
@@ -371,7 +371,7 @@ public class HaVfsPathTests
     [Fact]
     public void Parse_StateFile()
     {
-        var n = HaVfsPath.Parse("entities/light/kitchen/state.yaml");
+        var n = HaVfsPath.Parse("entities/light/kitchen/state.json");
         n.Kind.ShouldBe(HaVfsKind.StateFile);
         n.EntityId.ShouldBe("light.kitchen");
     }
@@ -427,7 +427,7 @@ public sealed record HaVfsNode(
 
 public static class HaVfsPath
 {
-    public const string StateFileName = "state.yaml";
+    public const string StateFileName = "state.json";
 
     public static HaVfsNode Parse(string relativePath)
     {
@@ -663,9 +663,9 @@ public class HaTreeTests
     public void Files_IncludeStateAndApplicableActions()
     {
         var files = HaTree.Files(Cat());
-        files.ShouldContain("entities/light/kitchen/state.yaml");
+        files.ShouldContain("entities/light/kitchen/state.json");
         files.ShouldContain("entities/light/kitchen/turn_on.sh");
-        files.ShouldContain("entities/sensor/salon_temp/state.yaml");
+        files.ShouldContain("entities/sensor/salon_temp/state.json");
         files.ShouldNotContain("entities/sensor/salon_temp/turn_on.sh"); // no actions for sensor
     }
 
@@ -803,7 +803,7 @@ git commit -m "feat(ha-vfs): virtual tree enumeration and glob"
 - Create: `Domain/Tools/HomeAssistant/Vfs/HaStateRenderer.cs`
 - Test: `Tests/Unit/Domain/HomeAssistant/Vfs/HaStateRendererTests.cs`
 
-Renders an entity as YAML. Every value is emitted as compact JSON (a valid YAML subset), so arbitrary nested attributes are safe.
+Renders an entity as indented JSON via `System.Text.Json` (build a `JsonObject`, then `ToJsonString(WriteIndented)`). No hand-rolled formatting, so arbitrary nested attributes are escaped correctly by construction.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -818,29 +818,42 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 public class HaStateRendererTests
 {
     [Fact]
-    public void ToYaml_RendersScalarsAndAttributes()
+    public void ToJson_RendersScalarsAndAttributes_AsIndentedJson()
     {
         var entity = Entity("light.kitchen", "off",
             ("friendly_name", JsonValue.Create("Kitchen")),
             ("brightness", JsonValue.Create((int?)null)),
             ("modes", JsonNode.Parse("""["color_temp","xy"]""")));
 
-        var yaml = HaStateRenderer.ToYaml(entity);
+        var json = HaStateRenderer.ToJson(entity);
 
-        yaml.ShouldContain("entity_id: light.kitchen");
-        yaml.ShouldContain("state: \"off\"");
-        yaml.ShouldContain("last_changed: 2026-05-23T09:14:02");
-        yaml.ShouldContain("attributes:");
-        yaml.ShouldContain("  brightness: null");
-        yaml.ShouldContain("  friendly_name: \"Kitchen\"");
-        yaml.ShouldContain("""  modes: ["color_temp","xy"]""");
+        json.ShouldContain("\"entity_id\": \"light.kitchen\"");
+        json.ShouldContain("\"state\": \"off\"");
+        json.ShouldContain("\"last_changed\": \"2026-05-23T09:14:02");
+        json.ShouldContain("\"attributes\": {");
+        json.ShouldContain("\"brightness\": null");
+        json.ShouldContain("\"friendly_name\": \"Kitchen\"");
+        json.ShouldContain("\"color_temp\"");
+        // Indented (2-space) pretty-print, not a single compact line.
+        json.ShouldContain("\n  \"entity_id\"");
     }
 
     [Fact]
-    public void ToYaml_NoAttributes_EmitsEmptyMap()
+    public void ToJson_NoAttributes_EmitsEmptyObject()
     {
-        HaStateRenderer.ToYaml(Entity("sun.sun", "above_horizon"))
-            .ShouldContain("attributes: {}");
+        HaStateRenderer.ToJson(Entity("sun.sun", "above_horizon"))
+            .ShouldContain("\"attributes\": {}");
+    }
+
+    [Fact]
+    public void ToJson_WholeDocumentParsesAsJson_EvenForOddKeys()
+    {
+        var json = HaStateRenderer.ToJson(
+            Entity("light.kitchen", "off", ("weird: key", JsonValue.Create("x"))));
+
+        var parsed = JsonNode.Parse(json)!;
+        parsed["entity_id"]!.GetValue<string>().ShouldBe("light.kitchen");
+        parsed["attributes"]!["weird: key"]!.GetValue<string>().ShouldBe("x");
     }
 }
 ```
@@ -853,7 +866,7 @@ Expected: FAIL — `HaStateRenderer` undefined.
 - [ ] **Step 3: Write minimal implementation**
 
 ```csharp
-using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 
@@ -861,32 +874,31 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaStateRenderer
 {
-    public static string ToYaml(HaEntityState entity)
+    private static readonly JsonSerializerOptions _indented = new() { WriteIndented = true };
+
+    public static string ToJson(HaEntityState entity)
     {
-        var sb = new StringBuilder();
-        sb.Append("entity_id: ").Append(entity.EntityId).Append('\n');
-        sb.Append("state: ").Append(JsonValue.Create(entity.State).ToJsonString()).Append('\n');
+        var attributes = new JsonObject(
+            entity.Attributes
+                .OrderBy(a => a.Key, StringComparer.Ordinal)
+                .Select(a => new KeyValuePair<string, JsonNode?>(a.Key, a.Value?.DeepClone())));
+
+        var root = new JsonObject
+        {
+            ["entity_id"] = entity.EntityId,
+            ["state"] = entity.State
+        };
         if (entity.LastChanged is { } changed)
         {
-            sb.Append("last_changed: ").Append(changed.ToString("O")).Append('\n');
+            root["last_changed"] = changed.ToString("O");
         }
         if (entity.LastUpdated is { } updated)
         {
-            sb.Append("last_updated: ").Append(updated.ToString("O")).Append('\n');
+            root["last_updated"] = updated.ToString("O");
         }
+        root["attributes"] = attributes;
 
-        if (entity.Attributes.Count == 0)
-        {
-            sb.Append("attributes: {}");
-            return sb.ToString();
-        }
-
-        sb.Append("attributes:");
-        foreach (var (key, value) in entity.Attributes.OrderBy(a => a.Key, StringComparer.Ordinal))
-        {
-            sb.Append("\n  ").Append(key).Append(": ").Append(value?.ToJsonString() ?? "null");
-        }
-        return sb.ToString();
+        return root.ToJsonString(_indented);
     }
 }
 ```
@@ -900,7 +912,7 @@ Expected: PASS.
 
 ```bash
 git add Domain/Tools/HomeAssistant/Vfs/HaStateRenderer.cs Tests/Unit/Domain/HomeAssistant/Vfs/HaStateRendererTests.cs
-git commit -m "feat(ha-vfs): YAML state renderer"
+git commit -m "feat(ha-vfs): JSON state renderer"
 ```
 
 ---
@@ -1429,7 +1441,7 @@ git commit -m "feat(ha-vfs): cached catalog provider"
 - Create: `Domain/Tools/HomeAssistant/Vfs/HaFileSystem.cs`
 - Test: `Tests/Unit/Domain/HomeAssistant/Vfs/HaFileSystemReadTests.cs`
 
-The engine produces the agent-facing JSON shapes. This task covers everything except `exec` (Task 11). Reads of `state.yaml` go to `GetStateAsync` (always fresh); reads of `.sh` render help from the cached catalog.
+The engine produces the agent-facing JSON shapes. This task covers everything except `exec` (Task 11). Reads of `state.json` go to `GetStateAsync` (always fresh); reads of `.sh` render help from the cached catalog.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1483,11 +1495,11 @@ public class HaFileSystemReadTests
     }
 
     [Fact]
-    public async Task ReadAsync_StateFile_RendersFreshYaml()
+    public async Task ReadAsync_StateFile_RendersFreshJson()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen/state.yaml", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("entity_id: light.kitchen");
+        var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
         read["content"]!.GetValue<string>().ShouldContain("1: ");
     }
 
@@ -1589,7 +1601,7 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
         foreach (var entity in catalog.Entities)
         {
             var file = $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaCatalog.ObjectOf(entity.EntityId)}/{HaVfsPath.StateFileName}";
-            var lines = HaStateRenderer.ToYaml(entity).Split('\n');
+            var lines = HaStateRenderer.ToJson(entity).Split('\n');
             var matches = lines
                 .Select((text, i) => (text, line: i + 1))
                 .Where(l => matcher.IsMatch(l.text))
@@ -1623,7 +1635,7 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
     private async Task<JsonNode> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
-        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToYaml(entity), offset, limit);
+        return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
     }
 
     private async Task<JsonNode> ReadActionAsync(string path, HaVfsNode node, CancellationToken ct)
@@ -1763,7 +1775,7 @@ public class HaFileSystemExecTests
     public async Task Exec_UnknownCommand_Returns127_WithAvailableActions()
     {
         var fs = Build(out _);
-        var result = await fs.ExecAsync("entities/light/kitchen", "cat state.yaml", null, CancellationToken.None);
+        var result = await fs.ExecAsync("entities/light/kitchen", "cat state.json", null, CancellationToken.None);
 
         result["exitCode"]!.GetValue<int>().ShouldBe(127);
         result["stderr"]!.GetValue<string>().ShouldContain("turn_on.sh");
@@ -1970,7 +1982,7 @@ namespace McpServerHomeAssistant.McpTools;
 public class FsGlobTool(HaFileSystem fs)
 {
     [McpServerTool(Name = "fs_glob")]
-    [Description("Lists Home Assistant entities, areas, and action files matching a glob pattern. Use mode 'directories' to explore (domains, entities, areas), 'files' to find state.yaml and *.sh action files.")]
+    [Description("Lists Home Assistant entities, areas, and action files matching a glob pattern. Use mode 'directories' to explore (domains, entities, areas), 'files' to find state.json and *.sh action files.")]
     public async Task<CallToolResult> McpRun(
         string pattern,
         string mode = "directories",
@@ -2021,7 +2033,7 @@ namespace McpServerHomeAssistant.McpTools;
 public class FsReadTool(HaFileSystem fs)
 {
     [McpServerTool(Name = "fs_read")]
-    [Description("Reads a Home Assistant virtual file: state.yaml returns the entity's live state + attributes; a *.sh file returns its usage (same as --help).")]
+    [Description("Reads a Home Assistant virtual file: state.json returns the entity's live state + attributes; a *.sh file returns its usage (same as --help).")]
     public async Task<CallToolResult> McpRun(
         string path,
         int? offset = null,
@@ -2134,7 +2146,7 @@ public class FileSystemResource
         {
             name = "ha",
             mountPoint = "/ha",
-            description = "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or `/ha/areas/<room>/<entity_id>/`. `read state.yaml` for live state; `read <service>.sh` (or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag value'` to control a device. NOT a shell — exec only runs the listed *.sh action files (anything else returns exit 127). No create/edit/delete."
+            description = "Home Assistant as a filesystem. Browse `/ha/entities/<class>/<id>/` or `/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `read <service>.sh` (or `exec '<service>.sh --help'`) for an action's arguments; `exec '<service>.sh --flag value'` to control a device. NOT a shell — exec only runs the listed *.sh action files (anything else returns exit 127). No create/edit/delete."
         });
     }
 }
@@ -2265,8 +2277,8 @@ public class HaFileSystemJourneyTests
         classes.Select(n => n!.GetValue<string>()).ShouldContain("entities/light");
 
         // 2. inspect state
-        var state = await fs.ReadAsync("entities/light/kitchen/state.yaml", null, null, CancellationToken.None);
-        state["content"]!.GetValue<string>().ShouldContain("state: \"off\"");
+        var state = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        state["content"]!.GetValue<string>().ShouldContain("\"state\": \"off\"");
 
         // 3. learn the action
         var help = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --help", null, CancellationToken.None);
@@ -2278,8 +2290,8 @@ public class HaFileSystemJourneyTests
         client.LastCall!.Value.Data!["brightness_pct"]!.GetValue<int>().ShouldBe(60);
 
         // 5. area view resolves to the same entity
-        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.yaml", null, null, CancellationToken.None);
-        areaState["content"]!.GetValue<string>().ShouldContain("entity_id: light.kitchen");
+        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.json", null, null, CancellationToken.None);
+        areaState["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
     }
 }
 ```
@@ -2432,7 +2444,7 @@ git commit -m "feat(ha-vfs): slim setup index backed by catalog provider"
         ### Layout
 
         - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
-          `/ha/entities/light/kitchen/`). Contains `state.yaml` (live state +
+          `/ha/entities/light/kitchen/`). Contains `state.json` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room.
 
@@ -2441,7 +2453,7 @@ git commit -m "feat(ha-vfs): slim setup index backed by catalog provider"
         1. Find the entity: `glob_files` under `/ha/entities/<class>` or
            `/ha/areas/<room>`, or read the setup index.
         2. Inspect when you need an attribute as input: `text_read`
-           `/ha/.../state.yaml`.
+           `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help` (or
            `text_read` the `.sh` file — same content).
         4. Act: `exec` from the entity directory, e.g.
@@ -2450,7 +2462,7 @@ git commit -m "feat(ha-vfs): slim setup index backed by catalog provider"
         ### Reading results
 
         - `exitCode` 0 = the action succeeded (`stdout` carries `{ok, changed[]}` and
-          any service `response`). It is authoritative — do NOT read `state.yaml`
+          any service `response`). It is authoritative — do NOT read `state.json`
           afterwards to confirm; HA propagates state asynchronously and the read is stale.
         - `exitCode` 2 = bad argument: re-run `--help` and rebuild; don't repeat the
           same shape.
@@ -2460,7 +2472,7 @@ git commit -m "feat(ha-vfs): slim setup index backed by catalog provider"
 
         ### Notes
 
-        - `state.yaml` reads are always live. Read one only when you need a specific
+        - `state.json` reads are always live. Read one only when you need a specific
           attribute as INPUT to the next action (e.g. `source_list` before
           `select_source`).
         - Room targets: use the area `id` slug from the index, not the display name.
@@ -2530,7 +2542,7 @@ Not automated (requires the live stack). The discovery/mount path is the existin
 
 1. Launch with the Linux override (see `CLAUDE.md` → Launching), including `mcp-homeassistant`.
 2. In WebChat, ask the agent to `glob_files /ha/entities` → expect class-domain directories.
-3. Ask it to read `/ha/entities/<class>/<id>/state.yaml` → expect live YAML.
+3. Ask it to read `/ha/entities/<class>/<id>/state.json` → expect live JSON.
 4. Ask it to turn something on → expect an `exec` of `<service>.sh` with `exitCode: 0`.
 5. Confirm the four `home_*` tools no longer appear in the agent's tool list and `/ha` shows in the mount list.
 
@@ -2542,12 +2554,12 @@ Not automated (requires the live stack). The discovery/mount path is the existin
 - Namespace (entities/ + areas/ view) → Tasks 3, 5, 10, 15. ✓
 - `.sh` model + exec + `--help` + 127 guard → Tasks 4, 7, 8, 11. ✓
 - GNU-flag args (scalars/lists/objects) → Task 8. ✓
-- Read surface (state.yaml fresh, cat .sh, search) → Task 10. ✓
+- Read surface (state.json fresh, cat .sh, search) → Task 10. ✓
 - Slim index + removed home_* + rewritten prompt → Tasks 14, 16, 17, 18. ✓
 - Backend components (path/resolver/help/args/state/area/engine + wrappers + resource) → Tasks 2–13. ✓
 - Caching (catalog cached, state fresh) → Tasks 9, 10. ✓
 - Error handling (not-found, unsupported via absent tools, bad-arg, 127) → Tasks 10, 11; create/edit/delete are simply not implemented so the registry returns `unsupported_operation` automatically. ✓
 
-**Type consistency:** `HaCatalog`, `HaAreaEntities`, `HaVfsNode`/`HaVfsKind`, `HaActionResolver.ServicesFor`, `HaServiceHelpRenderer.Render`, `HaArgParser.Parse`, `HaStateRenderer.ToYaml`, `HaCatalogProvider.GetAsync`, `HaFileSystem.{Glob,Info,Read,Search,Exec}Async`, `GlobMode` (reused from `Domain.Tools.Files`) — names used consistently across tasks. `HaFileSystem` is `partial` (Tasks 10 + 11).
+**Type consistency:** `HaCatalog`, `HaAreaEntities`, `HaVfsNode`/`HaVfsKind`, `HaActionResolver.ServicesFor`, `HaServiceHelpRenderer.Render`, `HaArgParser.Parse`, `HaStateRenderer.ToJson`, `HaCatalogProvider.GetAsync`, `HaFileSystem.{Glob,Info,Read,Search,Exec}Async`, `GlobMode` (reused from `Domain.Tools.Files`) — names used consistently across tasks. `HaFileSystem` is `partial` (Tasks 10 + 11).
 
 **Known sequencing note:** Task 14 leaves the server temporarily non-compiling (depends on the Task 16 `HomeAssistantSetupSummary` constructor change); the full build is green by Task 18. Each Domain/Test task (1–11, 15, 16) compiles and passes independently. If executing strictly task-by-task with a build gate, run Tasks 14, 16, 17, 18 as one group before the final full build.

@@ -27,8 +27,8 @@ public class HaFileSystemJourneyTests
         classes.Select(n => n!.GetValue<string>()).ShouldContain("entities/light");
 
         // 2. inspect state
-        var state = await fs.ReadAsync("entities/light/kitchen/state.yaml", null, null, CancellationToken.None);
-        state["content"]!.GetValue<string>().ShouldContain("state: \"off\"");
+        var state = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        state["content"]!.GetValue<string>().ShouldContain("\"state\": \"off\"");
 
         // 3. learn the action
         var help = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --help", null, CancellationToken.None);
@@ -46,7 +46,7 @@ public class HaFileSystemJourneyTests
         client.LastCall!.Value.EntityId.ShouldBe("light.kitchen");
 
         // 5. area view resolves to the same entity
-        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.yaml", null, null, CancellationToken.None);
-        areaState["content"]!.GetValue<string>().ShouldContain("entity_id: light.kitchen");
+        var areaState = await fs.ReadAsync("areas/kitchen/light.kitchen/state.json", null, null, CancellationToken.None);
+        areaState["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
     }
 }
