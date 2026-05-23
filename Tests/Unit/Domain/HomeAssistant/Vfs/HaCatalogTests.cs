@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Tools.HomeAssistant.Vfs;
 using Shouldly;
 using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
@@ -42,5 +43,15 @@ public class HaCatalogTests
     {
         Sample().EntityIdsInArea("salon").ShouldBe(["light.salon", "sensor.salon_temp"]);
         Sample().EntityIdsInArea("unassigned").ShouldBe(["light.kitchen"]);
+    }
+
+    [Fact]
+    public void FriendlyName_ReadsAttribute_OrNull()
+    {
+        var withName = Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen")));
+        var without = Entity("light.hall", "off");
+        HaCatalog.FriendlyName(withName).ShouldBe("Kitchen");
+        HaCatalog.FriendlyName(without).ShouldBeNull();
+        HaCatalog.FriendlyName(null).ShouldBeNull();
     }
 }

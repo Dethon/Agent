@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -78,4 +79,12 @@ public sealed record HaCatalog(
         var dot = entityId.IndexOf('.');
         return dot < 0 ? entityId : entityId[(dot + 1)..];
     }
+
+    public static string? FriendlyName(HaEntityState? entity) =>
+        entity is not null
+        && entity.Attributes.TryGetValue("friendly_name", out var value)
+        && value is JsonValue jv
+        && jv.TryGetValue<string>(out var name)
+            ? name
+            : null;
 }
