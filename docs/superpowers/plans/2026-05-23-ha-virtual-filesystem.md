@@ -1492,6 +1492,8 @@ public class HaFileSystemReadTests
         var fs = Build(out _);
         var result = await fs.SearchAsync("off", false, null, null, null, 50, 1, CancellationToken.None);
         result["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
+        result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
+        result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen");
     }
 }
 ```
@@ -1600,7 +1602,8 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
             ["filesSearched"] = catalog.Entities.Count,
             ["filesWithMatches"] = filesWithMatches,
             ["totalMatches"] = totalMatches,
-            ["truncated"] = filesWithMatches > maxResults
+            ["truncated"] = filesWithMatches > maxResults,
+            ["results"] = results
         };
     }
 
