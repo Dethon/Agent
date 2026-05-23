@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
 
 namespace Domain.Tools.FileSystem;
 
@@ -108,7 +107,7 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             };
         }
 
-        var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", VfsGlobMode.Files, ct);
+        var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
         var entries = glob["entries"] as JsonArray ?? new JsonArray();
 
         var perEntry = new JsonArray();
@@ -122,6 +121,13 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
             var srcRel = entry is JsonValue jv
                 ? jv.GetValue<string>()
                 : entry!["path"]!.GetValue<string>();
+            // Pure glob returns directory marker entries (trailing '/') alongside files.
+            // Directories carry no content and are recreated implicitly when their files are
+            // written (createDirectories), so they are not transfer candidates.
+            if (srcRel.EndsWith('/'))
+            {
+                continue;
+            }
             var tail = ExtractTail(srcRel, src.RelativePath);
             if (tail is null)
             {

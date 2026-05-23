@@ -35,7 +35,7 @@ public class FileSystemToolFeatureTests
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_read");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_create");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_edit");
-        tools.Select(t => t.Name).ShouldContain("domain__filesystem__glob_files");
+        tools.Select(t => t.Name).ShouldContain("domain__filesystem__glob");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__text_search");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__copy");

@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -14,7 +13,7 @@ public class VfsTransferDirectoryTests
     public async Task TransferDirectoryAsync_CrossFsCopy_RecordsPerEntryResults()
     {
         var src = new Mock<IFileSystemBackend>();
-        src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
             {
                 ["entries"] = new JsonArray
@@ -59,7 +58,7 @@ public class VfsTransferDirectoryTests
     public async Task TransferDirectoryAsync_PartialFailure_StatusIsPartial()
     {
         var src = new Mock<IFileSystemBackend>();
-        src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
             {
                 ["entries"] = new JsonArray
@@ -97,7 +96,7 @@ public class VfsTransferDirectoryTests
     public async Task TransferDirectoryAsync_GlobEntryNotUnderSourceDir_RecordsFailedAndDoesNotWrite()
     {
         var src = new Mock<IFileSystemBackend>();
-        src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
             {
                 ["entries"] = new JsonArray
@@ -145,7 +144,7 @@ public class VfsTransferDirectoryTests
     public async Task TransferDirectoryAsync_CrossFsMoveAllSucceed_DeletesSourceRootNotPerFile()
     {
         var src = new Mock<IFileSystemBackend>();
-        src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
             {
                 ["entries"] = new JsonArray
@@ -181,7 +180,7 @@ public class VfsTransferDirectoryTests
     public async Task TransferDirectoryAsync_CrossFsMovePartialFailure_DoesNotDeleteAnySource()
     {
         var src = new Mock<IFileSystemBackend>();
-        src.Setup(b => b.GlobAsync("src", "**/*", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new JsonObject
             {
                 ["entries"] = new JsonArray
@@ -212,5 +211,42 @@ public class VfsTransferDirectoryTests
 
         result["status"]!.GetValue<string>().ShouldBe("partial");
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TransferDirectoryAsync_SkipsDirectoryEntries()
+    {
+        var src = new Mock<IFileSystemBackend>();
+        src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new JsonObject
+            {
+                ["entries"] = new JsonArray("src/sub/", "src/sub/a.md"),
+                ["truncated"] = false,
+                ["total"] = 2
+            });
+        src.Setup(b => b.ReadChunksAsync("src/sub/a.md", It.IsAny<CancellationToken>()))
+            .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
+
+        var dst = new Mock<IFileSystemBackend>();
+        dst.Setup(b => b.WriteChunksAsync(
+                It.IsAny<string>(), It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+                false, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(1L);
+
+        var srcRes = new FileSystemResolution(src.Object, "src");
+        var dstRes = new FileSystemResolution(dst.Object, "dst");
+
+        var result = await VfsCopyTool.TransferDirectoryAsync(
+            srcRes, dstRes, "/vault/src", "/sandbox/dst",
+            overwrite: false, createDirectories: true, deleteSource: false, CancellationToken.None);
+
+        result["summary"]!["transferred"]!.GetValue<int>().ShouldBe(1);
+        result["summary"]!["failed"]!.GetValue<int>().ShouldBe(0);
+        dst.Verify(b => b.WriteChunksAsync("dst/sub/a.md",
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            false, true, It.IsAny<CancellationToken>()), Times.Once);
+        dst.Verify(b => b.WriteChunksAsync(It.Is<string>(p => p.EndsWith("/")),
+            It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
+            It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

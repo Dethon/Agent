@@ -49,13 +49,12 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName, ILo
         }, ct);
     }
 
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, VfsGlobMode mode, CancellationToken ct)
+    public async Task<JsonNode> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         return await CallToolAsync("fs_glob", new Dictionary<string, object?>
         {
             ["basePath"] = basePath,
-            ["pattern"] = pattern,
-            ["mode"] = mode.ToString()
+            ["pattern"] = pattern
         }, ct);
     }
 
