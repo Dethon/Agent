@@ -26,15 +26,15 @@ public static class HomeAssistantPrompt
         - Each entity directory's name carries its friendly name as `..._(<friendly-name>)`
           (e.g. `0x00158d00abcd_(aire-acondicionado-salon)` under `entities/climate/`, or the
           full `climate.0x00158d00abcd_(aire-acondicionado-salon)` under `areas/<room>/`) so
-          `glob_files` alone identifies a device — pick by the name. Use that exact directory
+          `glob` alone identifies a device — pick by the name. Use that exact directory
           name verbatim in later calls; a bare id or a guessed `_(...)` suffix will NOT resolve
           (a near-miss returns a "did you mean" hint with the correct name).
 
         ### Workflow
 
-        1. Find the entity: `glob_files` under `/ha/entities/<class>` or
+        1. Find the entity: `glob` under `/ha/entities/<class>` or
            `/ha/areas/<room>`, or read the setup index. To list an entity's available
-           actions, `glob_files` `<entity-dir>/*.sh`.
+           actions, `glob` `<entity-dir>/*.sh`.
         2. Inspect when you need an attribute as input: `text_read`
            `/ha/.../state.json`.
         3. Learn an action's arguments: `exec` `<service>.sh --help`. The `.sh` files are
@@ -68,7 +68,7 @@ public static class HomeAssistantPrompt
           So the id is NOT something you can reliably derive yourself from the display name —
           accents, spaces, and past renames make a guess wrong. Read the real value, which
           appears verbatim in two places: the parentheses beside each room in the setup index,
-          and the `<room>` segment under `/ha/areas/` (`glob_files /ha/areas/*` lists them).
+          and the `<room>` segment under `/ha/areas/` (`glob /ha/areas/*/` lists them).
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
           typed `AREA_ID (slug)`.

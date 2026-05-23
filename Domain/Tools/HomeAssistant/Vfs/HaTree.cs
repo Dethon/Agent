@@ -55,12 +55,21 @@ public static class HaTree
         }
     }
 
-    public static IReadOnlyList<string> Glob(HaCatalog catalog, string basePath, string pattern, bool directories)
+    public static IReadOnlyList<string> Glob(HaCatalog catalog, string basePath, string pattern)
     {
-        var pool = directories ? Directories(catalog) : Files(catalog);
+        var dirsOnly = pattern.EndsWith('/');
+        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
         var prefix = string.IsNullOrEmpty(basePath) ? string.Empty : basePath.Trim('/') + "/";
-        var regex = GlobToRegex(prefix + pattern);
-        return pool.Where(p => regex.IsMatch(p)).ToList();
+        var regex = GlobToRegex(prefix + effectivePattern);
+
+        var dirs = Directories(catalog).Where(p => regex.IsMatch(p)).Select(p => p + "/");
+        if (dirsOnly)
+        {
+            return dirs.OrderBy(p => p, StringComparer.Ordinal).ToList();
+        }
+
+        var files = Files(catalog).Where(p => regex.IsMatch(p));
+        return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
     }
 
     // GlobToRegex only emits literals plus '.*'/'[^/]*'/'[^/]' — .NET's regex reductions collapse

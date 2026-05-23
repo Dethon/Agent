@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
-using Domain.Tools.Files;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -24,8 +23,8 @@ public class HaFileSystemJourneyTests
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
         // 1. discover
-        var globResult = await fs.GlobAsync("entities", "*", GlobMode.Directories, CancellationToken.None);
-        globResult["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("entities/light");
+        var globResult = await fs.GlobAsync("entities", "*/", CancellationToken.None);
+        globResult["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("entities/light/");
         FsResultContract.TryValidate("fs_glob", globResult, out var err).ShouldBeTrue(err);
 
         // 2. inspect state (the exact directory name a listing returns)

@@ -3,7 +3,6 @@ using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
-using Domain.Tools.Files;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
@@ -14,12 +13,11 @@ public sealed partial class HaFileSystem(
 {
     private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
 
-    // Glob is uncapped for both modes: the result set is bounded by the home's entity count, and
-    // capping only one mode (files) while leaving the other (directories) unbounded was inconsistent.
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, GlobMode mode, CancellationToken ct)
+    // Glob is uncapped: the result set is bounded by the home's entity count.
+    public async Task<JsonNode> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
-        var hits = HaTree.Glob(catalog, basePath, pattern, mode == GlobMode.Directories);
+        var hits = HaTree.Glob(catalog, basePath, pattern);
         var entries = hits.ToList();
         return FsResultContract.ToNode(new FsGlobResult
         {

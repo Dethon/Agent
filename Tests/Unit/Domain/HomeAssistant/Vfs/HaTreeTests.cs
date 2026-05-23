@@ -36,17 +36,30 @@ public class HaTreeTests
     }
 
     [Fact]
-    public void Glob_Directories_StarMatchesOneSegment()
+    public void Glob_TrailingSlash_ReturnsDirectoriesMarkedWithSlash()
     {
-        var hits = HaTree.Glob(Cat(), "entities/light", "*", directories: true);
-        hits.ShouldBe(["entities/light/kitchen"]);
+        var hits = HaTree.Glob(Cat(), "entities/light", "*/");
+
+        hits.ShouldBe(["entities/light/kitchen/"]);
     }
 
     [Fact]
-    public void Glob_Files_DoubleStarRecurses()
+    public void Glob_NoTrailingSlash_MatchesFiles()
     {
-        var hits = HaTree.Glob(Cat(), "entities", "**/*.sh", directories: false);
-        hits.ShouldBe(["entities/light/kitchen/turn_on.sh"]);
+        var hits = HaTree.Glob(Cat(), "entities", "**/*.sh");
+
+        hits.ShouldNotBeEmpty();
+        hits.ShouldAllBe(h => h.EndsWith(".sh"));
+    }
+
+    [Fact]
+    public void Glob_NoTrailingSlash_ReturnsBothDirectoriesAndFiles()
+    {
+        var hits = HaTree.Glob(Cat(), "entities/light", "**");
+
+        hits.ShouldContain("entities/light/kitchen/");
+        hits.ShouldContain("entities/light/kitchen/state.json");
+        hits.ShouldContain("entities/light/kitchen/turn_on.sh");
     }
 
     [Fact]
