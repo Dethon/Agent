@@ -91,10 +91,12 @@ Agent (FileSystemToolFeature, unchanged)
 
 ### What `.sh` files an entity has
 
-An entity's action files are exactly the **services whose `target` accepts that entity**:
-`HaServiceDefinition.Target` matched against the entity's class domain (`{}` = any entity-targeted
-service; `null` target = not entity-targeted, so it is not surfaced on an entity). Read-only
-entities (most `sensor`, `binary_sensor`) match no services and therefore expose only `state.yaml`.
+An entity's action files are the **class-domain services whose `target` accepts that entity** —
+services in the entity's own class domain (the `entity_id` prefix) whose `target` matches it
+(`{}` or no entity constraint = any; a `domain`-narrowed constraint must include the entity's
+class). `null` target = not entity-targeted → not surfaced. Read-only entities (most `sensor`,
+`binary_sensor`) match no services and therefore expose only `state.yaml`. Filenames are the bare
+`<service>.sh`; collisions cannot occur because all action files for an entity come from one domain.
 
 ## Read surface
 
@@ -246,8 +248,10 @@ Auto-commit after each completed RED→GREEN→REVIEW triplet (project rule).
 
 - Filtering an entity's `.sh` set by `supported_features` (show only currently-capable args).
   Default is all class-domain services that target the entity; refine later if noisy.
-- Vendor/integration-domain services that are not entity-targeted (the existing prompt already
-  steers primary actions to the class domain).
+- Vendor/integration-domain services (entity-targeted or not). v1 action files cover the entity's
+  own class domain only — matching the existing prompt's guidance that primary actions live there.
+  Surfacing vendor entity-targeted services (with disambiguated `<domain>.<service>.sh` filenames)
+  is a later refinement.
 - Write-style state setting (`fs_create`/`edit`) — deliberately unsupported.
 - Real-time push / event subscription; reads are pull-only and always fresh.
 
