@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -36,33 +37,29 @@ public class FileInfoTool(string rootPath)
 
         if (!fileExists && !dirExists)
         {
-            return new JsonObject
-            {
-                ["exists"] = false,
-                ["path"] = fullPath
-            };
+            return FsResultContract.ToNode(new FsInfoResult { Exists = false, Path = fullPath });
         }
 
         if (dirExists)
         {
             var dirInfo = new DirectoryInfo(fullPath);
-            return new JsonObject
+            return FsResultContract.ToNode(new FsInfoResult
             {
-                ["exists"] = true,
-                ["isDirectory"] = true,
-                ["path"] = fullPath,
-                ["lastModified"] = dirInfo.LastWriteTimeUtc.ToString("O")
-            };
+                Exists = true,
+                Path = fullPath,
+                IsDirectory = true,
+                LastModified = dirInfo.LastWriteTimeUtc.ToString("O")
+            });
         }
 
         var info = new FileInfo(fullPath);
-        return new JsonObject
+        return FsResultContract.ToNode(new FsInfoResult
         {
-            ["exists"] = true,
-            ["isDirectory"] = false,
-            ["path"] = fullPath,
-            ["size"] = info.Length,
-            ["lastModified"] = info.LastWriteTimeUtc.ToString("O")
-        };
+            Exists = true,
+            Path = fullPath,
+            IsDirectory = false,
+            Size = info.Length,
+            LastModified = info.LastWriteTimeUtc.ToString("O")
+        });
     }
 }

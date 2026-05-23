@@ -39,13 +39,16 @@ public class HaFileSystemReadTests
         var info = await fs.InfoAsync("entities/light/kitchen", CancellationToken.None);
         info["exists"]!.GetValue<bool>().ShouldBeTrue();
         info["isDirectory"]!.GetValue<bool>().ShouldBeTrue();
+        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
     public async Task InfoAsync_MissingEntity_ExistsFalse()
     {
         var fs = Build(out _);
-        (await fs.InfoAsync("entities/light/ghost", CancellationToken.None))["exists"]!.GetValue<bool>().ShouldBeFalse();
+        var info = await fs.InfoAsync("entities/light/ghost", CancellationToken.None);
+        info["exists"]!.GetValue<bool>().ShouldBeFalse();
+        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -72,6 +75,7 @@ public class HaFileSystemReadTests
         var fs = Build(out _);
         var info = await fs.InfoAsync("entities/light/ghost/turn_on.sh", CancellationToken.None);
         info["exists"]!.GetValue<bool>().ShouldBeFalse();
+        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
     }
 
     [Fact]

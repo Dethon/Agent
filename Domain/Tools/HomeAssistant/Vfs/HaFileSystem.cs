@@ -29,12 +29,8 @@ public sealed partial class HaFileSystem(
         var node = HaVfsPath.Parse(path);
         var (exists, isDir) = Resolve(node, catalog);
 
-        var result = new JsonObject { ["exists"] = exists, ["path"] = path };
-        if (exists)
-        {
-            result["isDirectory"] = isDir;
-        }
-        return result;
+        var result = new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null };
+        return FsResultContract.ToNode(result);
     }
 
     public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
