@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Files;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -54,6 +55,7 @@ public class HaFileSystemReadTests
         var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
         read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
         read["content"]!.GetValue<string>().ShouldContain("1: ");
+        FsResultContract.TryValidate("fs_read", read, out var err).ShouldBeTrue(err);
     }
 
     [Fact]

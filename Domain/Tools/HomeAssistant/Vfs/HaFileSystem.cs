@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Files;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -245,19 +246,16 @@ public sealed partial class HaFileSystem(
         var remaining = allLines.Skip(start).ToArray();
         var take = Math.Min(limit ?? remaining.Length, remaining.Length);
         var content = string.Join("\n", remaining.Take(take).Select((l, i) => $"{start + i + 1}: {l}"));
+        var truncated = take < remaining.Length;
 
-        var result = new JsonObject
+        return FsResultContract.ToNode(new FsReadResult
         {
-            ["filePath"] = filePath,
-            ["content"] = content,
-            ["totalLines"] = allLines.Length,
-            ["truncated"] = take < remaining.Length
-        };
-        if (take < remaining.Length)
-        {
-            result["suggestion"] = $"Use offset={start + take + 1} to continue reading.";
-        }
-        return result;
+            FilePath = filePath,
+            Content = content,
+            TotalLines = allLines.Length,
+            Truncated = truncated,
+            Suggestion = truncated ? $"Use offset={start + take + 1} to continue reading." : null
+        });
     }
 
     private static JsonObject NotFound(string path) =>
