@@ -2,13 +2,15 @@ using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal class McpFileSystemBackend(McpClient client, string filesystemName) : IFileSystemBackend
+internal class McpFileSystemBackend(McpClient client, string filesystemName, ILogger? logger = null) : IFileSystemBackend
 {
     public string FilesystemName => filesystemName;
 
@@ -243,7 +245,23 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
                     retryable: false);
         }
 
-        return parsed
+        var node = parsed
             ?? throw new InvalidOperationException($"Failed to parse response from {toolName}");
+
+        if (!FsResultContract.TryValidate(toolName, node, out var validationError))
+        {
+            logger?.LogWarning(
+                "Filesystem '{Filesystem}' returned a malformed '{Tool}' payload: {Error}",
+                filesystemName, toolName, validationError);
+
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                $"The '{filesystemName}' filesystem returned a malformed '{toolName}' payload " +
+                "that does not match the expected schema.",
+                retryable: false,
+                hint: "This is a backend bug; the payload was rejected to protect the conversation.");
+        }
+
+        return node;
     }
 }
