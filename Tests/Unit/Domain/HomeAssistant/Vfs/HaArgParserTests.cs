@@ -1,0 +1,47 @@
+using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Domain.Tools.HomeAssistant.Vfs;
+using Shouldly;
+using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
+
+namespace Tests.Unit.Domain.HomeAssistant.Vfs;
+
+public class HaArgParserTests
+{
+    private static HaServiceField Field(JsonNode? selector) =>
+        new() { Selector = selector };
+
+    private static HaServiceDefinition Svc() => Service("light", "turn_on", AnyEntityTarget(),
+        ("brightness_pct", Field(JsonNode.Parse("""{"number":{"min":1,"max":100}}"""))),
+        ("on", Field(JsonNode.Parse("""{"boolean":{}}"""))),
+        ("modes", Field(JsonNode.Parse("""{"select":{"multiple":true,"options":["a","b"]}}"""))),
+        ("advanced", Field(JsonNode.Parse("""{"object":{}}"""))),
+        ("name", Field(JsonNode.Parse("""{"text":{}}"""))));
+
+    [Fact]
+    public void Parse_CoercesBySelectorType()
+    {
+        var data = HaArgParser.Parse(
+            ["--brightness_pct", "60", "--on", "true", "--modes", "a,b", "--advanced", """{"eco":true}""", "--name", "Lamp"],
+            Svc());
+
+        data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
+        data["on"]!.GetValue<bool>().ShouldBeTrue();
+        ((JsonArray)data["modes"]!).Count.ShouldBe(2);
+        data["advanced"]!["eco"]!.GetValue<bool>().ShouldBeTrue();
+        data["name"]!.GetValue<string>().ShouldBe("Lamp");
+    }
+
+    [Fact]
+    public void Parse_UnknownFlag_Throws()
+    {
+        Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--nope", "1"], Svc()))
+            .Message.ShouldContain("nope");
+    }
+
+    [Fact]
+    public void Parse_Empty_ReturnsEmptyObject()
+    {
+        HaArgParser.Parse([], Svc()).Count.ShouldBe(0);
+    }
+}
