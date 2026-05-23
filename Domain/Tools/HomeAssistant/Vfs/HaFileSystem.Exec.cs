@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
@@ -8,40 +10,44 @@ public sealed partial class HaFileSystem
 {
     public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
+        JsonNode Done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
+            ExecResult(exitCode, stdout, stderr, timedOut, sw.ElapsedMilliseconds, path);
+
         var catalog = await catalogProvider.GetAsync(ct);
-        var cwd = HaVfsPath.Parse(path);
-        if (cwd.Kind != HaVfsKind.EntityDir || catalog.EntityById(cwd.EntityId!) is null)
+        var node = HaVfsPath.Parse(path);
+        if (node.Kind != HaVfsKind.EntityDir || catalog.EntityById(node.EntityId!) is null)
         {
-            return ExecResult(127, "", $"Not an entity directory: {path}. cd into /ha/entities/<class>/<id> first.");
+            return Done(127, "", $"Not an entity directory: {path}. cd into /ha/entities/<class>/<id> first.");
         }
 
         var tokens = ShellTokenize(command);
-        var entityId = cwd.EntityId!;
+        var entityId = node.EntityId!;
         var actions = HaActionResolver.ServicesFor(entityId, catalog.Services);
         var available = string.Join(", ", actions.Select(a => $"{a.Service}.sh"));
 
         if (tokens.Count == 0)
         {
-            return ExecResult(127, "", $"No command. Available actions: {available}");
+            return Done(127, "", $"No command. Available actions: {available}");
         }
 
         var script = tokens[0].StartsWith("./", StringComparison.Ordinal) ? tokens[0][2..] : tokens[0];
         if (!script.EndsWith(".sh", StringComparison.Ordinal))
         {
-            return ExecResult(127, "", $"command not found: {tokens[0]}. This filesystem only runs action files. Available actions: {available}");
+            return Done(127, "", $"command not found: {tokens[0]}. This filesystem only runs action files. Available actions: {available}");
         }
 
         var serviceName = script[..^3];
         var svc = actions.FirstOrDefault(a => a.Service.Equals(serviceName, StringComparison.Ordinal));
         if (svc is null)
         {
-            return ExecResult(127, "", $"command not found: {script}. Available actions: {available}");
+            return Done(127, "", $"command not found: {script}. Available actions: {available}");
         }
 
         var args = tokens.Skip(1).ToList();
         if (args.Contains("--help") || args.Contains("-h"))
         {
-            return ExecResult(0, HaServiceHelpRenderer.Render(entityId, svc), "");
+            return Done(0, HaServiceHelpRenderer.Render(entityId, svc), "");
         }
 
         JsonObject data;
@@ -51,13 +57,19 @@ public sealed partial class HaFileSystem
         }
         catch (ArgumentException ex)
         {
-            return ExecResult(2, "", ex.Message);
+            return Done(2, "", ex.Message);
         }
+
+        using var timeoutCts = timeoutSeconds is > 0
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : null;
+        timeoutCts?.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds!.Value));
+        var effectiveCt = timeoutCts?.Token ?? ct;
 
         try
         {
             IReadOnlyDictionary<string, JsonNode?> payload = data.ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
-            var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, ct);
+            var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, effectiveCt);
             var changed = new JsonArray(result.ChangedEntities
                 .Select(e => (JsonNode?)$"{e.EntityId} → {e.State}").ToArray());
             var stdout = new JsonObject { ["ok"] = true, ["changed"] = changed };
@@ -65,22 +77,30 @@ public sealed partial class HaFileSystem
             {
                 stdout["response"] = result.Response.DeepClone();
             }
-            return ExecResult(0, stdout.ToJsonString(), "");
+            return Done(0, stdout.ToJsonString(), "");
+        }
+        catch (OperationCanceledException) when (timeoutCts is { IsCancellationRequested: true } && !ct.IsCancellationRequested)
+        {
+            return Done(-1, "", $"Action '{serviceName}.sh' timed out after {timeoutSeconds}s.", timedOut: true);
         }
         catch (HomeAssistantException ex)
         {
-            return ExecResult(1, "",
+            return Done(1, "",
                 $"{ex.Message}\nRe-check the field types with `{serviceName}.sh --help`; don't retry the same shape.");
         }
     }
 
-    private static JsonObject ExecResult(int exitCode, string stdout, string stderr) => new()
-    {
-        ["stdout"] = stdout,
-        ["stderr"] = stderr,
-        ["exitCode"] = exitCode,
-        ["truncated"] = false
-    };
+    private static JsonNode ExecResult(int exitCode, string stdout, string stderr, bool timedOut, long durationMs, string cwd) =>
+        FsResultContract.ToNode(new FsExecResult
+        {
+            Stdout = stdout,
+            Stderr = stderr,
+            ExitCode = exitCode,
+            Truncated = false,
+            TimedOut = timedOut,
+            DurationMs = durationMs,
+            Cwd = cwd
+        });
 
     // Minimal shell tokeniser: whitespace-split, honouring single and double quotes so JSON
     // object values like --advanced '{"eco":true}' survive as one token.

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools;
 
 namespace Infrastructure.Clients.Bash;
@@ -78,16 +79,16 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
         var stdoutResult = await stdoutTask;
         var stderrResult = await stderrTask;
 
-        return new JsonObject
+        return FsResultContract.ToNode(new FsExecResult
         {
-            ["stdout"] = stdoutResult.Text,
-            ["stderr"] = stderrResult.Text,
-            ["exitCode"] = timedOut ? -1 : process.ExitCode,
-            ["timedOut"] = timedOut,
-            ["truncated"] = stdoutResult.Truncated || stderrResult.Truncated,
-            ["durationMs"] = sw.ElapsedMilliseconds,
-            ["cwd"] = cwd
-        };
+            Stdout = stdoutResult.Text,
+            Stderr = stderrResult.Text,
+            ExitCode = timedOut ? -1 : process.ExitCode,
+            TimedOut = timedOut,
+            Truncated = stdoutResult.Truncated || stderrResult.Truncated,
+            DurationMs = sw.ElapsedMilliseconds,
+            Cwd = cwd
+        });
     }
 
     private string ResolveCwd(string path)

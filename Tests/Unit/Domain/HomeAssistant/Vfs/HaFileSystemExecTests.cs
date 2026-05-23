@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
@@ -101,5 +102,52 @@ public class HaFileSystemExecTests
         result["exitCode"]!.GetValue<int>().ShouldBe(1);
         result["stderr"]!.GetValue<string>().ShouldContain("400 bad field");
         result["stderr"]!.GetValue<string>().ShouldContain("--help");
+    }
+
+    [Fact]
+    public async Task ExecAsync_Success_ReportsCwdAndDuration()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen"))) },
+            Services = { Service("light", "turn_on", AnyEntityTarget()) }
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
+
+        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        result["timedOut"]!.GetValue<bool>().ShouldBeFalse();
+        result["cwd"]!.GetValue<string>().ShouldBe("entities/light/kitchen");
+        result["durationMs"]!.GetValue<long>().ShouldBeGreaterThanOrEqualTo(0);
+        FsResultContract.TryValidate("fs_exec", result, out var err).ShouldBeTrue(err);
+    }
+
+    [Fact]
+    public async Task ExecAsync_HonorsTimeout_ReturnsTimedOut()
+    {
+        var client = new BlockingHaClient
+        {
+            States = { Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen"))) },
+            Services = { Service("light", "turn_on", AnyEntityTarget()) }
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", 1, CancellationToken.None);
+
+        result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
+        result["exitCode"]!.GetValue<int>().ShouldBe(-1);
+        FsResultContract.TryValidate("fs_exec", result, out _).ShouldBeTrue();
+    }
+
+    private sealed class BlockingHaClient : FakeHaClient
+    {
+        public override async Task<HaServiceCallResult> CallServiceAsync(
+            string domain, string service, string? entityId,
+            IReadOnlyDictionary<string, JsonNode?>? data, CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return new HaServiceCallResult { ChangedEntities = [] };
+        }
     }
 }
