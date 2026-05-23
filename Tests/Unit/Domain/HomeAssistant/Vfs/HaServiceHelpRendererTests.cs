@@ -33,4 +33,17 @@ public class HaServiceHelpRendererTests
         HaServiceHelpRenderer.Render("light.kitchen", Service("light", "toggle", AnyEntityTarget()))
             .ShouldContain("(no arguments)");
     }
+
+    [Fact]
+    public void Render_AreaSelector_FlagsSlugType()
+    {
+        var svc = Service("vacuum", "clean_segment", AnyEntityTarget(),
+            ("cleaning_area_id", Field("Area to clean", true, JsonNode.Parse("""{"area":{}}"""))));
+
+        var help = HaServiceHelpRenderer.Render("vacuum.roborock", svc);
+
+        help.ShouldContain("--cleaning_area_id");
+        help.ShouldContain("AREA_ID");
+        help.ShouldContain("slug");
+    }
 }

@@ -66,6 +66,13 @@ public static class HaServiceHelpRenderer
         {
             return "JSON";
         }
+        // HA's `area` selector means the field wants an area_id — the lowercase registry slug
+        // (e.g. `salon`), shown in the setup-index parens and as the /ha/areas/<room> segment,
+        // NOT the display name. Flag it so the agent passes the slug rather than guessing.
+        if (selector["area"] is not null)
+        {
+            return "AREA_ID (slug)";
+        }
         return "TEXT";
     }
 }
