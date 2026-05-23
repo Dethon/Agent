@@ -60,8 +60,9 @@ Drift this has already caused / currently exists:
   Enforcement is added one layer below them, in `McpFileSystemBackend` (see
   Approach (c)); the `Vfs*Tool` layer still forwards the (now-validated) node.
 - No redesign of payload semantics. Typing **preserves the current wire shape**
-  for every op, with exactly one deliberate exception (the `fs_glob` unification
-  noted below).
+  for every op, with two deliberate exceptions noted below: the `fs_glob`
+  unification, and HA `fs_exec` gaining `timedOut`/`durationMs`/`cwd` (HA exec is
+  improved to populate them, matching BashRunner, instead of making them optional).
 
 ## Approach
 
@@ -150,8 +151,17 @@ FsSearchResult      (TextSearchTool, HaFileSystem)
   # FilesOnly output mode → MatchCount set, Matches null. Content mode → vice-versa.
   # HA never sets Section (entities have no sections) → null → omitted.
 
-FsExecResult        (ExecTool, HaFileSystem)
-  { string Stdout, string Stderr, int ExitCode, bool Truncated }
+FsExecResult        (BashRunner [Infrastructure], HaFileSystem)
+  { string Stdout, string Stderr, int ExitCode, bool Truncated,
+    bool TimedOut, long DurationMs, string Cwd }   # all required
+  # Pre-existing drift: BashRunner emitted all 7 keys; HA emitted only the first 4.
+  # Rather than make the extras optional, HA exec is IMPROVED to populate them:
+  #   - Cwd        = the entity-directory path the action runs in (the exec `path` arg)
+  #   - DurationMs = measured elapsed time of the service call (Stopwatch)
+  #   - TimedOut   = HA now HONORS the `timeoutSeconds` arg (previously ignored) via a
+  #                  linked CancellationTokenSource; on expiry exitCode=-1, timedOut=true
+  # exec JSON is built in Infrastructure's BashRunner (ICommandRunner) and Domain's
+  # HaFileSystem.Exec, not Domain's ExecTool wrapper.
 
 FsCreateResult      (TextCreateTool)
   { string Status, string FilePath, string Size, int Lines }   # Size is the formatted string today
@@ -191,15 +201,19 @@ calls instead of `new JsonObject { ... }`.
 
 ## Wire-shape changes & ripple
 
-Only **one** payload changes on the wire: `fs_glob` becomes
-`{entries,truncated,total}` always (was a bare array, or a
-`{files,truncated,total,message}` object when capped). Ripple:
+Two payloads change on the wire:
 
-- `VfsGlobFilesTool` description and any filesystem prompt text that shows glob
-  output (`HomeAssistantPrompt`, Vault/Sandbox filesystem prompts) — one-line
-  updates to reflect `entries`.
-- Existing glob tests under `Tests/Unit/Domain/Tools/FileSystem` and
-  `Tests/Integration/Domain/Tools/FileSystem` — update to the new shape (TDD).
+1. **`fs_glob`** becomes `{entries,truncated,total}` always (was a bare array, or a
+   `{files,truncated,total,message}` object when capped). Ripple:
+   - `VfsGlobFilesTool` description and any filesystem prompt text that shows glob
+     output (`HomeAssistantPrompt`, Vault/Sandbox filesystem prompts) — one-line
+     updates to reflect `entries`.
+   - Existing glob tests (`Tests/Unit/Domain/Tools/GlobFilesToolTests.cs`, HA glob
+     assertions, integration assertions) — update to the new shape (TDD).
+2. **HA `fs_exec`** gains `timedOut`/`durationMs`/`cwd` (additive). This is a
+   genuine HA improvement — duration measurement, cwd reporting, and honoring the
+   `timeoutSeconds` argument that HA previously ignored. BashRunner already emits
+   these, so its wire is unchanged.
 
 All other ops keep their exact current wire shape; the records merely give them a
 type and a single serialization path.
@@ -255,13 +269,16 @@ Per `.claude/rules/tdd.md`, RED → GREEN → REVIEW per unit, commit per triple
 
 ## Verification to do during planning (not blocking design)
 
-- Confirm `Domain/Tools/Bash/ExecTool.cs` emits exactly
-  `{stdout,stderr,exitCode,truncated}` (HA mirrors it; grep was inconclusive on
-  the build site — read the full file before writing `FsExecResult`).
-- Confirm how `McpFileSystemBackend` is constructed (`McpFileSystemDiscovery`) and
-  whether an `IMetricsPublisher` is reachable there; if not trivially injectable,
-  the drift signal degrades to a structured log line (the strict envelope is
-  unaffected).
+- RESOLVED: exec JSON is built in `Infrastructure/Clients/Bash/BashRunner.cs`
+  (`{stdout,stderr,exitCode,timedOut,truncated,durationMs,cwd}`), not in Domain's
+  `ExecTool`. HA emitted the 4-key subset. `FsExecResult` requires all 7 keys; HA
+  exec is improved to populate `timedOut`/`durationMs`/`cwd` and to honor
+  `timeoutSeconds` (previously ignored).
+- RESOLVED: `McpFileSystemDiscovery.DiscoverAndMountAsync` already has an
+  `ILogger`, passed to the backend for the drift warning. `IMetricsPublisher` is
+  not reachable there without bootstrap churn, so the drift signal is the log line
+  (per the spec's "otherwise the log line stands"); metric emission is a later
+  enhancement, not in this plan.
 - Confirm `JsonSerializerOptions.GetJsonSchemaAsNode` output is stable enough for a
   golden-file comparison (pin the generating options; normalize formatting before
   compare).
