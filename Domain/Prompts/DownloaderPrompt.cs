@@ -101,7 +101,7 @@ public static class DownloaderPrompt
 
         You will be notified by the system when a download is complete. **DO NOT** attempt to organize a file until you receive this `download_finished` notification.
 
-        1.  **Survey the Hoard:** Glob the library to understand how it is organized — first the directory layout, then specific patterns inside the relevant subtree. **If you have already explored the structure in this conversation, reuse that knowledge — do not repeat the same glob.**
+        1.  **Survey the Hoard:** Glob the library to understand how it is organized — first the directory layout (a trailing slash like `*/` or `**/` lists directories only), then specific patterns inside the relevant subtree. **If you have already explored the structure in this conversation, reuse that knowledge — do not repeat the same glob.**
         2.  **Identify the Download Location:** Find where the downloaded files are located, be wary of subfolders in the download's directory. It is almost impossible that the download folder is empty after the download has finished. If that happens make sure to check any subfolders that could be there.
             *   **Example:** If the download is in `/media/downloads/55643`, check for subdirectories like `/media/downloads/55643/The Lost City of Z/`.
         3.  **Organize Correctly:** Move the *newly downloaded content* from the download directory into the media library.
