@@ -39,20 +39,11 @@ public static class ToolError
         string message,
         bool retryable = false,
         string? hint = null)
-    {
-        var obj = new JsonObject
+        => new ToolErrorResult
         {
-            ["ok"] = false,
-            ["errorCode"] = errorCode,
-            ["message"] = message,
-            ["retryable"] = retryable
-        };
-
-        if (!string.IsNullOrWhiteSpace(hint))
-        {
-            obj["hint"] = hint;
-        }
-
-        return obj;
-    }
+            ErrorCode = errorCode,
+            Message = message,
+            Retryable = retryable,
+            Hint = hint
+        }.ToNode();
 }
