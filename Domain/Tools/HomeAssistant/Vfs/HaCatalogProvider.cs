@@ -64,7 +64,10 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
             await Task.WhenAll(states, services, areas);
             return (new HaCatalog(states.Result, services.Result, areas.Result), true);
         }
-        catch
+        // Let cancellation propagate without writing the cache — otherwise a cancelled request would
+        // poison the (process-wide) cache with an empty catalog for the negative TTL, blinding
+        // subsequent, non-cancelled callers. Only genuine HA failures fall back to Empty.
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return (HaCatalog.Empty, false);
         }

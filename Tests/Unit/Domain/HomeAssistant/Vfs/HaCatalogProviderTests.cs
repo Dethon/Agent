@@ -79,6 +79,20 @@ public class HaCatalogProviderTests
         client.StateCalls.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task GetAsync_Cancelled_PropagatesAndDoesNotPoisonCache()
+    {
+        var client = new CancellingClient { States = { Entity("light.kitchen", "off") } };
+        var provider = new HaCatalogProvider(() => client, new FakeTimeProvider());
+
+        // Cancellation must propagate, not be swallowed into an empty catalog cached for the failure TTL.
+        await Should.ThrowAsync<OperationCanceledException>(() => provider.GetAsync(CancellationToken.None));
+
+        // Cache wasn't poisoned: the next call rebuilds and yields the real catalog (no blind window).
+        (await provider.GetAsync(CancellationToken.None)).Entities.Count.ShouldBe(1);
+        client.StateCalls.ShouldBe(2);
+    }
+
     private sealed class CountingClient : FakeHaClient
     {
         public int StateCalls { get; private set; }
@@ -104,6 +118,23 @@ public class HaCatalogProviderTests
         {
             StateCalls++;
             return Throw ? throw new InvalidOperationException("HA down") : base.ListStatesAsync(ct);
+        }
+    }
+
+    private sealed class CancellingClient : FakeHaClient
+    {
+        public int StateCalls { get; private set; }
+        private bool _cancel = true;
+
+        public override Task<IReadOnlyList<HaEntityState>> ListStatesAsync(CancellationToken ct = default)
+        {
+            StateCalls++;
+            if (!_cancel)
+            {
+                return base.ListStatesAsync(ct);
+            }
+            _cancel = false;
+            throw new OperationCanceledException();
         }
     }
 }
