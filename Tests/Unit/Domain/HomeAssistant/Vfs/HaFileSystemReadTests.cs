@@ -72,4 +72,43 @@ public class HaFileSystemReadTests
         result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
         result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen_(kitchen)");
     }
+
+    [Fact]
+    public async Task GlobAsync_TwoSameClassEntities_AreDistinguishableByName()
+    {
+        var client = new FakeHaClient
+        {
+            States =
+            {
+                Entity("climate.0x01", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón"))),
+                Entity("climate.0x02", "heat", ("friendly_name", JsonValue.Create("Calefacción Salón")))
+            },
+            AreaTemplateJson = """{"areas":[{"id":"salon","name":"Salón","entities":["climate.0x01","climate.0x02"]}]}"""
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var hits = ((JsonArray)await fs.GlobAsync("areas/salon", "*", GlobMode.Directories, CancellationToken.None))
+            .Select(n => n!.GetValue<string>()).ToList();
+
+        hits.ShouldContain("areas/salon/climate.0x01_(aire-acondicionado-salon)");
+        hits.ShouldContain("areas/salon/climate.0x02_(calefaccion-salon)");
+    }
+
+    [Fact]
+    public async Task ExecAsync_ResolvesViaCompositePath()
+    {
+        var client = new FakeHaClient
+        {
+            States = { Entity("climate.0x01", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón"))) },
+            Services = { Service("climate", "turn_off", AnyEntityTarget()) },
+            AreaTemplateJson = """{"areas":[{"id":"salon","name":"Salón","entities":["climate.0x01"]}]}"""
+        };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        var result = await fs.ExecAsync(
+            "areas/salon/climate.0x01_(aire-acondicionado-salon)", "turn_off.sh", null, CancellationToken.None);
+
+        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        client.LastCall!.Value.EntityId.ShouldBe("climate.0x01");
+    }
 }
