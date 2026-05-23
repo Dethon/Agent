@@ -9,6 +9,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func<IHomeAssistantClient> clientFactory)
 {
     private const int FileResultCap = 200;
+    private static readonly TimeSpan RegexMatchTimeout = TimeSpan.FromSeconds(1);
 
     public async Task<JsonNode> GlobAsync(string basePath, string pattern, GlobMode mode, CancellationToken ct)
     {
@@ -58,9 +59,23 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
         int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
-        var matcher = regex
-            ? new Regex(query, RegexOptions.IgnoreCase)
-            : new Regex(Regex.Escape(query), RegexOptions.IgnoreCase);
+
+        // A caller-supplied regex can be malformed or pathological; compile with a bounded match
+        // timeout (ReDoS insurance over small state strings) and surface a parse failure as a
+        // hinted envelope instead of a bare exception.
+        Regex matcher;
+        try
+        {
+            matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase, RegexMatchTimeout);
+        }
+        catch (ArgumentException ex)
+        {
+            return Domain.Tools.ToolError.Create(
+                Domain.Tools.ToolError.Codes.InvalidArgument,
+                $"Invalid search pattern '{query}': {ex.Message}",
+                retryable: false,
+                hint: "Fix the regex, or set regex=false to match a literal string.");
+        }
 
         // state.yaml is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).

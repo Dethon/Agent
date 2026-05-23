@@ -62,7 +62,7 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Virtual filesystem registry | `Infrastructure/Agents/VirtualFileSystemRegistry.cs` |
 | MCP filesystem backend | `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs`, `McpFileSystemDiscovery.cs` |
 | Local filesystem client | `Infrastructure/Clients/LocalFileSystemClient.cs` |
-| Filesystem MCP resources | `McpServer{Vault,Library}/McpResources/FileSystemResource.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library,HomeAssistant}/McpResources/FileSystemResource.cs` |
 | Web browsing tools | `Domain/Tools/Web/*.cs` |
 | Web browsing prompt | `Domain/Prompts/WebBrowsingPrompt.cs` |
 | Web browser contracts | `Domain/Contracts/IWebBrowser.cs` |

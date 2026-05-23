@@ -4,6 +4,8 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaTree
 {
+    private static readonly TimeSpan GlobMatchTimeout = TimeSpan.FromSeconds(1);
+
     public static IReadOnlyList<string> Directories(HaCatalog catalog)
     {
         var dirs = new List<string> { "entities", "areas" };
@@ -83,6 +85,6 @@ public static class HaTree
             }
         }
         sb.Append('$');
-        return new Regex(sb.ToString(), RegexOptions.Compiled);
+        return new Regex(sb.ToString(), RegexOptions.Compiled, GlobMatchTimeout);
     }
 }

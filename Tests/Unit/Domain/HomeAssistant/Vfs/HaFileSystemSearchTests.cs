@@ -93,4 +93,14 @@ public class HaFileSystemSearchTests
         result["totalMatches"]!.GetValue<int>().ShouldBe(0);
         result["results"]!.AsArray().Count.ShouldBe(0);
     }
+
+    [Fact]
+    public async Task SearchAsync_InvalidRegex_ReturnsInvalidArgumentWithHint()
+    {
+        var result = await Build().SearchAsync(
+            "(unclosed", true, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
+        result["ok"]!.GetValue<bool>().ShouldBeFalse();
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["hint"]!.GetValue<string>().ShouldContain("regex=false");
+    }
 }
