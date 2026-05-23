@@ -103,4 +103,25 @@ public class HaFileSystemSearchTests
         result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
         result["hint"]!.GetValue<string>().ShouldContain("regex=false");
     }
+
+    [Fact]
+    public async Task SearchAsync_UsesLiveState_NotCachedCatalog()
+    {
+        // Swapping the whole client (rather than mutating States in place) models the real client,
+        // which returns a fresh snapshot per call — so the cached catalog keeps the stale snapshot.
+        var client = new FakeHaClient { States = { Entity("light.kitchen", "stalestate") } };
+        var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
+
+        // Warm the structure cache with the original state.
+        var before = await fs.SearchAsync(
+            "stalestate", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
+        before["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
+
+        // State changes within the same agent loop (the cache TTL has NOT elapsed) — search must see it.
+        client = new FakeHaClient { States = { Entity("light.kitchen", "freshstate") } };
+
+        var after = await fs.SearchAsync(
+            "freshstate", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
+        after["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
+    }
 }

@@ -51,7 +51,13 @@ public sealed partial class HaFileSystem(
         string query, bool regex, string? path, string? directoryPath, string? filePattern,
         int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        var catalog = await catalogProvider.GetAsync(ct);
+        // Search must reflect live state — values change within a single agent loop. Fetch fresh
+        // states (one bulk GET /api/states) and overlay them on the cached structure (areas/services
+        // rarely change). glob/info keep the cached catalog; read is already a live per-entity GET.
+        var catalog = (await catalogProvider.GetAsync(ct)) with
+        {
+            Entities = await clientFactory().ListStatesAsync(ct)
+        };
 
         // A caller-supplied regex can be malformed or pathological; compile with a bounded match
         // timeout (ReDoS insurance over small state strings) and surface a parse failure as a
