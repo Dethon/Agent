@@ -70,6 +70,6 @@ public class HaFileSystemReadTests
         var result = await fs.SearchAsync("off", false, null, null, null, 50, 1, CancellationToken.None);
         result["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
         result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
-        result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen");
+        result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen_(kitchen)");
     }
 }

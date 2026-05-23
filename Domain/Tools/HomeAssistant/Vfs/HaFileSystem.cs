@@ -67,7 +67,7 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
 
         foreach (var entity in catalog.Entities)
         {
-            var file = $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaCatalog.ObjectOf(entity.EntityId)}/{HaVfsPath.StateFileName}";
+            var file = $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
             var lines = HaStateRenderer.ToYaml(entity).Split('\n');
             var matches = lines
                 .Select((text, i) => (text, line: i + 1))
