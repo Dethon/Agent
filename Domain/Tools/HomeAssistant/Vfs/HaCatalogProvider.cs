@@ -11,8 +11,8 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 // the singleton's lifetime — same rationale as HomeAssistantSetupSummary.
 public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, TimeProvider? timeProvider = null)
 {
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan FailureCacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _cacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan _failureCacheTtl = TimeSpan.FromSeconds(30);
 
     // Single template render returns one JSON object covering every area and its entities —
     // the REST API has no other path into the area registry.
@@ -40,7 +40,7 @@ public sealed class HaCatalogProvider(Func<IHomeAssistantClient> clientFactory, 
             }
 
             _cached = await TryBuildAsync(ct);
-            _expiry = _time.GetUtcNow() + (_cached.Entities.Count == 0 ? FailureCacheTtl : CacheTtl);
+            _expiry = _time.GetUtcNow() + (_cached.Entities.Count == 0 ? _failureCacheTtl : _cacheTtl);
             return _cached;
         }
         finally

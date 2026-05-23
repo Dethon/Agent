@@ -7,7 +7,7 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 
 public class HaActionResolverTests
 {
-    private static readonly List<HaServiceDefinition> Services =
+    private static readonly List<HaServiceDefinition> _services =
     [
         Service("light", "turn_on", AnyEntityTarget()),
         Service("light", "toggle", DomainTarget("light")),
@@ -19,7 +19,7 @@ public class HaActionResolverTests
     [Fact]
     public void ServicesFor_ReturnsClassDomainTargetedServices_Sorted()
     {
-        var result = HaActionResolver.ServicesFor("light.kitchen", Services)
+        var result = HaActionResolver.ServicesFor("light.kitchen", _services)
             .Select(s => s.Service).ToList();
         result.ShouldBe(["toggle", "turn_on"]);
     }
@@ -27,7 +27,7 @@ public class HaActionResolverTests
     [Fact]
     public void ServicesFor_DomainNarrowedToOtherClass_Excluded()
     {
-        HaActionResolver.ServicesFor("light.kitchen", Services)
+        HaActionResolver.ServicesFor("light.kitchen", _services)
             .ShouldNotContain(s => s.Service == "start");
     }
 
@@ -35,6 +35,6 @@ public class HaActionResolverTests
     public void ServicesFor_ReadOnlyEntity_ReturnsEmpty()
     {
         // sensor has no class-domain entity-targeted services here.
-        HaActionResolver.ServicesFor("sensor.salon_temp", Services).ShouldBeEmpty();
+        HaActionResolver.ServicesFor("sensor.salon_temp", _services).ShouldBeEmpty();
     }
 }
