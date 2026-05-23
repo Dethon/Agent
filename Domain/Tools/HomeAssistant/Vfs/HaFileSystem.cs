@@ -6,9 +6,12 @@ using Domain.Tools.Files;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func<IHomeAssistantClient> clientFactory)
+public sealed partial class HaFileSystem(
+    HaCatalogProvider catalogProvider,
+    Func<IHomeAssistantClient> clientFactory,
+    TimeSpan? regexMatchTimeout = null)
 {
-    private static readonly TimeSpan _regexMatchTimeout = TimeSpan.FromSeconds(1);
+    private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
 
     // Glob is uncapped for both modes: the result set is bounded by the home's entity count, and
     // capping only one mode (files) while leaving the other (directories) unbounded was inconsistent.
@@ -77,21 +80,35 @@ public sealed partial class HaFileSystem(HaCatalogProvider catalogProvider, Func
         var totalMatches = 0;
         var filesWithMatches = 0;
 
-        foreach (var entity in scoped)
+        // The matcher is bounded by _regexMatchTimeout; a pathological caller-supplied pattern trips
+        // it during IsMatch (not construction), so catch it here and return a hinted envelope rather
+        // than letting RegexMatchTimeoutException leak to the generic MCP boundary wrapper.
+        try
         {
-            if (totalMatches >= maxResults)
+            foreach (var entity in scoped)
             {
-                break;
+                if (totalMatches >= maxResults)
+                {
+                    break;
+                }
+                var lines = HaStateRenderer.ToYaml(entity).Split('\n');
+                var matches = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+                if (matches.Count == 0)
+                {
+                    continue;
+                }
+                filesWithMatches++;
+                totalMatches += matches.Count;
+                results.Add(BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
             }
-            var lines = HaStateRenderer.ToYaml(entity).Split('\n');
-            var matches = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
-            if (matches.Count == 0)
-            {
-                continue;
-            }
-            filesWithMatches++;
-            totalMatches += matches.Count;
-            results.Add(BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return Domain.Tools.ToolError.Create(
+                Domain.Tools.ToolError.Codes.Timeout,
+                $"Search pattern '{query}' timed out while matching.",
+                retryable: false,
+                hint: "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string.");
         }
 
         return new JsonObject

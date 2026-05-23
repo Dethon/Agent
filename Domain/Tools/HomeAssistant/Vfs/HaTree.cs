@@ -63,6 +63,9 @@ public static class HaTree
         return pool.Where(p => regex.IsMatch(p)).ToList();
     }
 
+    // GlobToRegex only emits literals plus '.*'/'[^/]*'/'[^/]' — .NET's regex reductions collapse
+    // consecutive '.*', so a glob pattern can't catastrophically backtrack. The match timeout below is
+    // belt-and-suspenders only; unlike the caller-supplied search regex, glob needs no timeout envelope.
     private static Regex GlobToRegex(string glob)
     {
         var sb = new System.Text.StringBuilder("^");
