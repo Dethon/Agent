@@ -20,7 +20,13 @@ public sealed partial class HaFileSystem(
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var hits = HaTree.Glob(catalog, basePath, pattern, mode == GlobMode.Directories);
-        return new JsonArray(hits.Select(h => (JsonNode?)h).ToArray());
+        var entries = hits.ToList();
+        return FsResultContract.ToNode(new FsGlobResult
+        {
+            Entries = entries,
+            Truncated = false,
+            Total = entries.Count
+        });
     }
 
     public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)

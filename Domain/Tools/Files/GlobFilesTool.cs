@@ -1,6 +1,6 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 
 namespace Domain.Tools.Files;
@@ -11,7 +11,7 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
                                          Searches for files or directories matching a glob pattern relative to the library root.
                                          Supports * (single segment), ** (recursive), and ? (single char).
                                          Use mode 'directories' (default) to explore the library structure first, then 'files' with specific patterns to find content.
-                                         In files mode, results are capped at 200—use more specific patterns if truncated.
+                                         In files mode, results are capped at 200; the response is `{entries, truncated, total}`—use more specific patterns if truncated.
                                          """;
 
     private const int FileResultCap = 200;
@@ -73,27 +73,23 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
     private async Task<JsonNode> RunDirectories(string root, string pattern, CancellationToken cancellationToken)
     {
         var result = await client.GlobDirectories(root, pattern, cancellationToken);
-        return JsonSerializer.SerializeToNode(result)
-               ?? throw new InvalidOperationException("Failed to serialize GlobDirectories result");
+        return FsResultContract.ToNode(new FsGlobResult
+        {
+            Entries = result,
+            Truncated = false,
+            Total = result.Length
+        });
     }
 
     private async Task<JsonNode> RunFiles(string root, string pattern, CancellationToken cancellationToken)
     {
         var result = await client.GlobFiles(root, pattern, cancellationToken);
-
-        if (result.Length <= FileResultCap)
+        var capped = result.Length > FileResultCap;
+        return FsResultContract.ToNode(new FsGlobResult
         {
-            return JsonSerializer.SerializeToNode(result)
-                   ?? throw new InvalidOperationException("Failed to serialize GlobFiles result");
-        }
-
-        var truncated = new JsonObject
-        {
-            ["files"] = JsonSerializer.SerializeToNode(result.Take(FileResultCap).ToArray()),
-            ["truncated"] = true,
-            ["total"] = result.Length,
-            ["message"] = $"Showing {FileResultCap} of {result.Length} matches. Use a more specific pattern to narrow results."
-        };
-        return truncated;
+            Entries = capped ? result.Take(FileResultCap).ToArray() : result,
+            Truncated = capped,
+            Total = result.Length
+        });
     }
 }

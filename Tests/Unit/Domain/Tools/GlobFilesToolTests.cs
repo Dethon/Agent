@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Moq;
@@ -19,7 +20,7 @@ public class GlobFilesToolTests
     }
 
     [Fact]
-    public async Task Run_WithValidPattern_ReturnsJsonArray()
+    public async Task Run_WithValidPattern_ReturnsGlobResult()
     {
         // Arrange
         _mockClient.Setup(c => c.GlobFiles(BasePath, "**/*.pdf", It.IsAny<CancellationToken>()))
@@ -30,8 +31,9 @@ public class GlobFilesToolTests
 
         // Assert
         result.ShouldNotBeNull();
-        var array = result.AsArray();
+        var array = result["entries"]!.AsArray();
         array.Count.ShouldBe(2);
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Theory]
@@ -67,7 +69,7 @@ public class GlobFilesToolTests
         var result = await _tool.TestRun("/library/docs/**/*.pdf", GlobMode.Files, CancellationToken.None);
 
         // Assert
-        result.AsArray().Count.ShouldBe(1);
+        result["entries"]!.AsArray().Count.ShouldBe(1);
     }
 
     [Fact]
@@ -89,9 +91,10 @@ public class GlobFilesToolTests
         var result = await _tool.TestRun("**/*", GlobMode.Directories, CancellationToken.None);
 
         // Assert
-        var array = result.AsArray();
+        var array = result["entries"]!.AsArray();
         array.Count.ShouldBe(2);
         array[0]!.GetValue<string>().ShouldBe("/library/movies");
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -105,8 +108,9 @@ public class GlobFilesToolTests
         var result = await _tool.TestRun("**/*.pdf", GlobMode.Files, CancellationToken.None);
 
         // Assert
-        var array = result.AsArray();
+        var array = result["entries"]!.AsArray();
         array.Count.ShouldBe(2);
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -124,9 +128,8 @@ public class GlobFilesToolTests
         var obj = result.AsObject();
         obj["truncated"]!.GetValue<bool>().ShouldBeTrue();
         obj["total"]!.GetValue<int>().ShouldBe(250);
-        obj["files"]!.AsArray().Count.ShouldBe(200);
-        obj["message"]!.GetValue<string>().ShouldContain("200");
-        obj["message"]!.GetValue<string>().ShouldContain("250");
+        obj["entries"]!.AsArray().Count.ShouldBe(200);
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -138,7 +141,7 @@ public class GlobFilesToolTests
 
         var result = await _tool.TestRun("**/*", GlobMode.Files, "home/sandbox_user/xfs_tree", CancellationToken.None);
 
-        result.AsArray().Count.ShouldBe(1);
+        result["entries"]!.AsArray().Count.ShouldBe(1);
         _mockClient.Verify(c => c.GlobFiles(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -151,7 +154,7 @@ public class GlobFilesToolTests
 
         var result = await _tool.TestRun("**/*", GlobMode.Directories, "docs", CancellationToken.None);
 
-        result.AsArray().Count.ShouldBe(1);
+        result["entries"]!.AsArray().Count.ShouldBe(1);
         _mockClient.Verify(c => c.GlobDirectories(BasePath, It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

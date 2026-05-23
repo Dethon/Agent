@@ -28,8 +28,9 @@ public class HaFileSystemReadTests
     public async Task GlobAsync_Directories_ListsEntities()
     {
         var fs = Build(out _);
-        var result = (JsonArray)await fs.GlobAsync("entities/light", "*", GlobMode.Directories, CancellationToken.None);
-        result.Select(n => n!.GetValue<string>()).ShouldContain("entities/light/kitchen_(kitchen)");
+        var result = await fs.GlobAsync("entities/light", "*", GlobMode.Directories, CancellationToken.None);
+        result["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("entities/light/kitchen_(kitchen)");
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -112,11 +113,12 @@ public class HaFileSystemReadTests
         };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
-        var hits = ((JsonArray)await fs.GlobAsync("areas/salon", "*", GlobMode.Directories, CancellationToken.None))
-            .Select(n => n!.GetValue<string>()).ToList();
+        var result = await fs.GlobAsync("areas/salon", "*", GlobMode.Directories, CancellationToken.None);
+        var hits = result["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
 
         hits.ShouldContain("areas/salon/climate.0x01_(aire-acondicionado-salon)");
         hits.ShouldContain("areas/salon/climate.0x02_(calefaccion-salon)");
+        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]

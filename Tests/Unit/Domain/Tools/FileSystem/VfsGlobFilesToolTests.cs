@@ -21,7 +21,7 @@ public class GlobFilesToolTests
     [Fact]
     public async Task RunAsync_ResolvesBasePathAndCallsBackend()
     {
-        var expected = new JsonObject { ["files"] = new JsonArray("a.md", "b.md") };
+        var expected = new JsonObject { ["entries"] = new JsonArray("a.md", "b.md"), ["truncated"] = false, ["total"] = 2 };
         _registry.Setup(r => r.Resolve("/library"))
             .Returns(new FileSystemResolution(_backend.Object, ""));
         _backend.Setup(b => b.GlobAsync("", "**/*.md", VfsGlobMode.Files, It.IsAny<CancellationToken>()))

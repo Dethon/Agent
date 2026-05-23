@@ -14,7 +14,7 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         Searches for files or directories matching a glob pattern.
         Supports * (single segment), ** (recursive), and ? (single char).
         Use mode 'directories' to explore structure first, then 'files' with specific patterns.
-        In files mode, results are capped at 200.
+        In files mode, results are capped at 200; the response is `{entries, truncated, total}`.
         """;
 
     [Description(ToolDescription)]
