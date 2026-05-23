@@ -1686,6 +1686,8 @@ Exec semantics: CWD must be an entity dir; command's first token names an existi
 
 ```csharp
 using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -1701,7 +1703,7 @@ public class HaFileSystemExecTests
         {
             States = { Entity("light.kitchen", "off") },
             Services = { Service("light", "turn_on", AnyEntityTarget(),
-                ("brightness_pct", new Domain.Contracts.HaServiceField { Selector = JsonNode.Parse("""{"number":{"min":1,"max":100}}""") })) }
+                ("brightness_pct", new HaServiceField { Selector = JsonNode.Parse("""{"number":{"min":1,"max":100}}""") })) }
         };
         var local = client;
         var provider = new HaCatalogProvider(() => local, new FakeTimeProvider());
@@ -1772,7 +1774,7 @@ public class HaFileSystemExecTests
     public async Task Exec_HaFailure_Returns1_WithHint()
     {
         var fs = Build(out var client);
-        client.CallHandler = (_, _, _, _) => throw new Domain.Exceptions.HomeAssistantException("400 bad field", 400);
+        client.CallHandler = (_, _, _, _) => throw new HomeAssistantException("400 bad field", 400);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
 
         result["exitCode"]!.GetValue<int>().ShouldBe(1);
@@ -1848,7 +1850,10 @@ public sealed partial class HaFileSystem
 
         try
         {
-            var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, data, ct);
+            // JsonObject does not satisfy IReadOnlyDictionary<string, JsonNode?> on .NET 10; materialize a
+            // detached dictionary first (same pattern as the former HomeCallServiceTool).
+            IReadOnlyDictionary<string, JsonNode?> payload = data.ToDictionary(kvp => kvp.Key, kvp => kvp.Value?.DeepClone());
+            var result = await clientFactory().CallServiceAsync(svc.Domain, svc.Service, entityId, payload, ct);
             var changed = new JsonArray(result.ChangedEntities
                 .Select(e => (JsonNode?)$"{e.EntityId} → {e.State}").ToArray());
             var stdout = new JsonObject { ["ok"] = true, ["changed"] = changed };
