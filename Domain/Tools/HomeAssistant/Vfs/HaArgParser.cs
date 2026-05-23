@@ -18,19 +18,32 @@ public static class HaArgParser
                 throw new ArgumentException($"Expected a --flag but found '{token}'.");
             }
 
-            var name = token[2..];
+            // Accept both GNU long-option forms: `--flag value` and `--flag=value`. Split on the
+            // first '=' only, so a value may itself contain '='.
+            var body = token[2..];
+            var eq = body.IndexOf('=');
+            var name = eq < 0 ? body : body[..eq];
             if (!svc.Fields.TryGetValue(name, out var field))
             {
                 throw new ArgumentException(
                     $"Unknown argument '--{name}'. Run `{svc.Service}.sh --help` for the field list.");
             }
 
-            if (i + 1 >= tokens.Count)
+            string raw;
+            if (eq >= 0)
+            {
+                raw = body[(eq + 1)..];
+            }
+            else if (i + 1 < tokens.Count)
+            {
+                raw = tokens[++i];
+            }
+            else
             {
                 throw new ArgumentException($"Missing value for '--{name}'.");
             }
 
-            data[name] = Coerce(name, tokens[++i], field.Selector);
+            data[name] = Coerce(name, raw, field.Selector);
         }
         return data;
     }

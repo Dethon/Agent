@@ -72,4 +72,31 @@ public class HaArgParserTests
         Should.Throw<ArgumentException>(() => HaArgParser.Parse(["--flash", "bogus"], Svc()))
             .Message.ShouldContain("flash");
     }
+
+    [Fact]
+    public void Parse_EqualsSyntax_CoercesBySelectorType()
+    {
+        var data = HaArgParser.Parse(
+            ["--brightness_pct=60", "--name=Lamp", """--advanced={"eco":true}"""],
+            Svc());
+
+        data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
+        data["name"]!.GetValue<string>().ShouldBe("Lamp");
+        data["advanced"]!["eco"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Parse_EqualsSyntax_SplitsOnFirstEqualsOnly()
+    {
+        HaArgParser.Parse(["--name=a=b"], Svc())["name"]!.GetValue<string>().ShouldBe("a=b");
+    }
+
+    [Fact]
+    public void Parse_MixedEqualsAndSpaceForms_BothWork()
+    {
+        var data = HaArgParser.Parse(["--brightness_pct=60", "--on", "true"], Svc());
+
+        data["brightness_pct"]!.GetValue<int>().ShouldBe(60);
+        data["on"]!.GetValue<bool>().ShouldBeTrue();
+    }
 }
