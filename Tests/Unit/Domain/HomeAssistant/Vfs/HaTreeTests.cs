@@ -1,0 +1,50 @@
+using Domain.Tools.HomeAssistant.Vfs;
+using Shouldly;
+using static Tests.Unit.Domain.HomeAssistant.Vfs.FakeHaClient;
+
+namespace Tests.Unit.Domain.HomeAssistant.Vfs;
+
+public class HaTreeTests
+{
+    private static HaCatalog Cat() => new(
+        [Entity("light.kitchen", "off"), Entity("sensor.salon_temp", "21")],
+        [Service("light", "turn_on", AnyEntityTarget())],
+        [new HaAreaEntities("salon", "Salón", ["sensor.salon_temp"])]);
+
+    [Fact]
+    public void Directories_IncludeRootsClassesEntitiesAndAreas()
+    {
+        var dirs = HaTree.Directories(Cat());
+        dirs.ShouldContain("entities");
+        dirs.ShouldContain("entities/light");
+        dirs.ShouldContain("entities/light/kitchen");
+        dirs.ShouldContain("areas");
+        dirs.ShouldContain("areas/salon");
+        dirs.ShouldContain("areas/salon/sensor.salon_temp");
+        dirs.ShouldContain("areas/unassigned/light.kitchen");
+    }
+
+    [Fact]
+    public void Files_IncludeStateAndApplicableActions()
+    {
+        var files = HaTree.Files(Cat());
+        files.ShouldContain("entities/light/kitchen/state.yaml");
+        files.ShouldContain("entities/light/kitchen/turn_on.sh");
+        files.ShouldContain("entities/sensor/salon_temp/state.yaml");
+        files.ShouldNotContain("entities/sensor/salon_temp/turn_on.sh"); // no actions for sensor
+    }
+
+    [Fact]
+    public void Glob_Directories_StarMatchesOneSegment()
+    {
+        var hits = HaTree.Glob(Cat(), "entities/light", "*", directories: true);
+        hits.ShouldBe(["entities/light/kitchen"]);
+    }
+
+    [Fact]
+    public void Glob_Files_DoubleStarRecurses()
+    {
+        var hits = HaTree.Glob(Cat(), "entities", "**/*.sh", directories: false);
+        hits.ShouldBe(["entities/light/kitchen/turn_on.sh"]);
+    }
+}
