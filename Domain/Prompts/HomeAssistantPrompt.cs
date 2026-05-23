@@ -26,8 +26,9 @@ public static class HomeAssistantPrompt
         - Each entity directory's name carries its friendly name as `..._(<friendly-name>)`
           (e.g. `0x00158d00abcd_(aire-acondicionado-salon)` under `entities/climate/`, or the
           full `climate.0x00158d00abcd_(aire-acondicionado-salon)` under `areas/<room>/`) so
-          `glob_files` alone identifies a device — pick by the name. You may address a path by
-          the full segment or by the bare id; both resolve.
+          `glob_files` alone identifies a device — pick by the name. Use that exact directory
+          name verbatim in later calls; a bare id or a guessed `_(...)` suffix will NOT resolve
+          (a near-miss returns a "did you mean" hint with the correct name).
 
         ### Workflow
 
