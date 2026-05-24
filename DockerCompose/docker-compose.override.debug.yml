@@ -142,6 +142,17 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
+  mcp-scheduling:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
   vsdbg-install:
     image: mcr.microsoft.com/dotnet/sdk:10.0
     volumes:

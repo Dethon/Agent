@@ -462,8 +462,10 @@ services:
     networks:
       - jackbot
     depends_on:
-      - base-sdk
-      - redis
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   agent:
     image: agent:latest
