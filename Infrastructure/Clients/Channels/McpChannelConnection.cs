@@ -3,16 +3,16 @@ using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId) : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
+public sealed class McpChannelConnection(string channelId, ILogger<McpChannelConnection>? logger = null)
+    : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
-    private const string ChannelMessageNotification = "notifications/channel/message";
-    private const string ChannelCancelNotification = "notifications/channel/cancel";
     private const string CancelCommandContent = "/cancel";
     private const string SystemSender = "system";
 
@@ -38,7 +38,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             cancellationToken: ct);
 
         _client.RegisterNotificationHandler(
-            ChannelMessageNotification,
+            ChannelProtocol.MessageNotification,
             (notification, _) =>
             {
                 if (notification.Params is { } paramsNode)
@@ -51,7 +51,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             });
 
         _client.RegisterNotificationHandler(
-            ChannelCancelNotification,
+            ChannelProtocol.CancelNotification,
             (notification, _) =>
             {
                 if (notification.Params is { } paramsNode)
@@ -66,42 +66,31 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
     public void HandleChannelMessageNotification(JsonElement payload)
     {
-        var conversationId = payload.GetProperty("conversationId").GetString()!;
-        var content = payload.GetProperty("content").GetString()!;
-        var sender = payload.GetProperty("sender").GetString()!;
-        var agentId = payload.TryGetProperty("agentId", out var agentIdProp)
-            ? agentIdProp.GetString()
-            : null;
+        ChannelMessageNotification? notification;
+        try
+        {
+            notification = ChannelProtocol.Deserialize<ChannelMessageNotification>(payload);
+        }
+        catch (JsonException ex)
+        {
+            logger?.LogWarning(ex, "Discarding malformed channel/message notification on {ChannelId}", ChannelId);
+            return;
+        }
 
-        var replyTo = payload.TryGetProperty("replyTo", out var replyToProp)
-                      && replyToProp.ValueKind == JsonValueKind.Array
-            ? replyToProp.EnumerateArray()
-                .Select(t => new ReplyTarget(
-                    t.GetProperty("channelId").GetString()!,
-                    t.TryGetProperty("conversationId", out var cid) && cid.ValueKind == JsonValueKind.String
-                        ? cid.GetString()
-                        : null))
-                .ToList()
-            : null;
-
-        var origin = payload.TryGetProperty("origin", out var originProp)
-                     && originProp.ValueKind == JsonValueKind.Object
-            ? new MessageOrigin(
-                originProp.GetProperty("kind").GetString()!,
-                originProp.TryGetProperty("scheduleId", out var sid) && sid.ValueKind == JsonValueKind.String
-                    ? sid.GetString()
-                    : null)
-            : null;
+        if (notification is null)
+        {
+            return;
+        }
 
         var message = new ChannelMessage
         {
-            ConversationId = conversationId,
-            Content = content,
-            Sender = sender,
+            ConversationId = notification.ConversationId,
+            Content = notification.Content,
+            Sender = notification.Sender,
             ChannelId = ChannelId,
-            AgentId = agentId,
-            ReplyTo = replyTo,
-            Origin = origin
+            AgentId = notification.AgentId,
+            ReplyTo = notification.ReplyTo,
+            Origin = notification.Origin
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -109,18 +98,29 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
     public void HandleChannelCancelNotification(JsonElement payload)
     {
-        var conversationId = payload.GetProperty("conversationId").GetString()!;
-        var agentId = payload.TryGetProperty("agentId", out var agentIdProp)
-            ? agentIdProp.GetString()
-            : null;
+        ChannelCancelNotification? notification;
+        try
+        {
+            notification = ChannelProtocol.Deserialize<ChannelCancelNotification>(payload);
+        }
+        catch (JsonException ex)
+        {
+            logger?.LogWarning(ex, "Discarding malformed channel/cancel notification on {ChannelId}", ChannelId);
+            return;
+        }
+
+        if (notification is null)
+        {
+            return;
+        }
 
         var message = new ChannelMessage
         {
-            ConversationId = conversationId,
+            ConversationId = notification.ConversationId,
             Content = CancelCommandContent,
             Sender = SystemSender,
             ChannelId = ChannelId,
-            AgentId = agentId
+            AgentId = notification.AgentId
         };
 
         _messageChannel.Writer.TryWrite(message);

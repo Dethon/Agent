@@ -54,4 +54,22 @@ public class McpChannelConnectionParsingTests
             break;
         }
     }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithMalformedPayload_WritesNothing()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""{"sender":"user"}"""));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var read = async () =>
+        {
+            await foreach (var _ in conn.Messages.WithCancellation(cts.Token))
+            {
+                return;
+            }
+        };
+
+        await Should.ThrowAsync<OperationCanceledException>(read);
+    }
 }

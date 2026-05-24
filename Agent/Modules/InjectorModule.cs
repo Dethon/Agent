@@ -50,13 +50,11 @@ public static class InjectorModule
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var channelConnections = settings.ChannelEndpoints
-                .Select(ep => new McpChannelConnection(ep.ChannelId))
-                .ToList();
-
-            foreach (var conn in channelConnections)
+            foreach (var endpoint in settings.ChannelEndpoints)
             {
-                services = services.AddSingleton<IChannelConnection>(conn);
+                var channelId = endpoint.ChannelId;
+                services = services.AddSingleton<IChannelConnection>(sp =>
+                    new McpChannelConnection(channelId, sp.GetService<ILogger<McpChannelConnection>>()));
             }
 
             return services
