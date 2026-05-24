@@ -80,7 +80,7 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     {
         try
         {
-            using var client = new DockerClientConfiguration().CreateClient();
+            using var client = new DockerClientBuilder().Build();
             var images = await client.Images.ListImagesAsync(new ImagesListParameters
             {
                 Filters = new Dictionary<string, IDictionary<string, bool>>
