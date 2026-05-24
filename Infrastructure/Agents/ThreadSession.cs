@@ -83,6 +83,14 @@ internal sealed class ThreadSessionBuilder(
         "fs_copy", "fs_info", "fs_blob_read", "fs_blob_write"
     ];
 
+    // Channel-protocol tools are invoked directly by the channel connection layer, never by the LLM.
+    // A dual-role server (e.g. mcp-scheduling, which is both a channel and a filesystem tool server)
+    // exposes them on the same /mcp endpoint, so they leak into the agent-visible tool list unless stripped.
+    private static readonly HashSet<string> _channelProtocolToolNames =
+    [
+        "send_reply", "request_approval", "register_agents"
+    ];
+
     private IReadOnlyList<AITool> _tools = [];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct, bool enableResourceSubscriptions = true)
@@ -123,12 +131,10 @@ internal sealed class ThreadSessionBuilder(
             }
         }
 
-        // Step 4: Combine MCP tools with domain tools and filesystem tools
-        // When filesystem domain tools are active, filter out the raw MCP fs_* tools
-        // they wrap to avoid exposing duplicate functionality to the LLM
-        var mcpTools = fileSystemTools.Count > 0
-            ? clientManager.Tools.Where(t => !_fileSystemMcpToolNames.Any(n => t.Name.EndsWith($"__{n}")))
-            : clientManager.Tools;
+        // Step 4: Combine MCP tools with domain tools and filesystem tools.
+        // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
+        // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
+        var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
         _tools = mcpTools.Concat(domainTools).Concat(fileSystemTools).ToList();
 
         // Step 5: Setup resource management with user context prepended (skipped for subagents)
@@ -137,6 +143,19 @@ internal sealed class ThreadSessionBuilder(
             : null;
 
         return new ThreadSessionData(clientManager, resourceManager, _tools, registry, fileSystemPrompts);
+    }
+
+    internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)
+    {
+        return mcpTools
+            .Where(t => !HasReservedSuffix(t.Name, _channelProtocolToolNames))
+            .Where(t => !filesystemToolsActive || !HasReservedSuffix(t.Name, _fileSystemMcpToolNames))
+            .ToList();
+    }
+
+    private static bool HasReservedSuffix(string toolName, HashSet<string> reserved)
+    {
+        return reserved.Any(n => toolName.EndsWith($"__{n}", StringComparison.Ordinal));
     }
 
     private async Task<McpResourceManager> CreateResourceManagerAsync(
