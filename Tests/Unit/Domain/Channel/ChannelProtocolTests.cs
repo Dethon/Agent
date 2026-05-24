@@ -51,4 +51,28 @@ public class ChannelProtocolTests
         ChannelProtocol.CreateConversationTool.ShouldBe("create_conversation");
         ChannelProtocol.RegisterAgentsTool.ShouldBe("register_agents");
     }
+
+    [Fact]
+    public void ToArgumentsThenDeserialize_RoundTripsSendReplyParams()
+    {
+        var original = new SendReplyParams
+        {
+            ConversationId = "c1",
+            Content = "hi",
+            ContentType = ReplyContentType.ToolCall,
+            IsComplete = true,
+            MessageId = "m1"
+        };
+
+        var args = ChannelProtocol.ToArguments(original);
+        var element = JsonSerializer.SerializeToElement(args, ChannelProtocol.SerializerOptions);
+        var roundTripped = ChannelProtocol.Deserialize<SendReplyParams>(element);
+
+        roundTripped.ShouldNotBeNull();
+        roundTripped!.ConversationId.ShouldBe("c1");
+        roundTripped.Content.ShouldBe("hi");
+        roundTripped.ContentType.ShouldBe(ReplyContentType.ToolCall);
+        roundTripped.IsComplete.ShouldBeTrue();
+        roundTripped.MessageId.ShouldBe("m1");
+    }
 }
