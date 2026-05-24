@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs;
@@ -10,4 +11,6 @@ public record ChannelMessage
     public required string Sender { get; init; }
     public required string ChannelId { get; init; }
     public string? AgentId { get; init; }
+    public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
+    public MessageOrigin? Origin { get; init; }
 }
