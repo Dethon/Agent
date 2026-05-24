@@ -1,5 +1,5 @@
 using Domain.DTOs;
-using Domain.Tools;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
 using Shouldly;
@@ -20,9 +20,9 @@ public class ScheduleFileSystemWriteTests
         var store = new FakeScheduleStore();
         var fs = Build(store);
 
-        var node = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        var result = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
         var saved = store.Items["morning-news"];
         saved.AgentId.ShouldBe("jonas");
         saved.CronExpression.ShouldBe("0 8 * * *");
@@ -33,8 +33,8 @@ public class ScheduleFileSystemWriteTests
     public async Task Create_UnknownAgent_IsRejected()
     {
         var fs = Build(new FakeScheduleStore());
-        var node = await fs.CreateAsync("/ghost/x/schedule.json", ValidSpec, false, true, CancellationToken.None);
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        var result = await fs.CreateAsync("/ghost/x/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
     }
 
     [Fact]
@@ -44,8 +44,8 @@ public class ScheduleFileSystemWriteTests
         await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        var result = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public class ScheduleFileSystemWriteTests
     {
         var fs = Build(new FakeScheduleStore());
         var spec = """{"prompt":"p","cron":"0 8 * * *","runAt":"2999-01-01T00:00:00Z"}""";
-        var node = await fs.CreateAsync("/jonas/x/schedule.json", spec, false, true, CancellationToken.None);
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        var result = await fs.CreateAsync("/jonas/x/schedule.json", spec, false, true, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
     }
 
     [Fact]
@@ -64,10 +64,10 @@ public class ScheduleFileSystemWriteTests
         await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "summarize news", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.EditAsync("/jonas/morning-news/schedule.json",
+        var result = await fs.EditAsync("/jonas/morning-news/schedule.json",
             [new TextEdit("summarize news", "summarize sports")], CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        result.ShouldBeOfType<FsResult<FsEditResult>.Ok>();
         store.Items["morning-news"].Prompt.ShouldBe("summarize sports");
     }
 
@@ -80,9 +80,9 @@ public class ScheduleFileSystemWriteTests
             new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "J", null), new ScheduleAgentInfo("home", "Home", null)]),
             new CronValidator());
 
-        var node = await fs.MoveAsync("/jonas/morning-news", "/home/morning-news", CancellationToken.None);
+        var result = await fs.MoveAsync("/jonas/morning-news", "/home/morning-news", CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        result.ShouldBeOfType<FsResult<FsMoveResult>.Ok>();
         store.Items["morning-news"].AgentId.ShouldBe("home");
     }
 
@@ -93,9 +93,9 @@ public class ScheduleFileSystemWriteTests
         await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.DeleteAsync("/jonas/morning-news", CancellationToken.None);
+        var result = await fs.DeleteAsync("/jonas/morning-news", CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        result.ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
         store.Items.ContainsKey("morning-news").ShouldBeFalse();
     }
 
@@ -107,10 +107,10 @@ public class ScheduleFileSystemWriteTests
         var fs = Build(store);
 
         // blank out the prompt value -> ValidateSpec must reject
-        var node = await fs.EditAsync("/jonas/morning-news/schedule.json",
+        var result = await fs.EditAsync("/jonas/morning-news/schedule.json",
             [new TextEdit("\"prompt\": \"summarize news\"", "\"prompt\": \"\"")], CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        result.ShouldBeOfType<FsResult<FsEditResult>.Err>();
     }
 
     [Fact]
@@ -121,16 +121,16 @@ public class ScheduleFileSystemWriteTests
         await store.CreateAsync(new Schedule { Id = "evening-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 20 * * *", CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
+        var result = await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
 
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        result.ShouldBeOfType<FsResult<FsMoveResult>.Err>();
     }
 
     [Fact]
     public async Task Delete_NonExistent_IsRejected()
     {
         var fs = Build(new FakeScheduleStore());
-        var node = await fs.DeleteAsync("/jonas/ghost-schedule", CancellationToken.None);
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        var result = await fs.DeleteAsync("/jonas/ghost-schedule", CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsRemoveResult>.Err>();
     }
 }

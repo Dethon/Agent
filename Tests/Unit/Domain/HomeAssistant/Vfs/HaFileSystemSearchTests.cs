@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -31,7 +32,7 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["filesSearched"]!.GetValue<int>().ShouldBe(3);
+        result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.FilesSearched.ShouldBe(3);
     }
 
     [Fact]
@@ -39,9 +40,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, null, "entities/sensor", null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
-        result["results"]!.AsArray().Select(r => r!["file"]!.GetValue<string>()).ToList()
-            .ShouldAllBe(f => f.Contains("/sensor/"));
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.FilesSearched.ShouldBe(1);
+        search.Results.Select(r => r.File).ShouldAllBe(f => f.Contains("/sensor/"));
     }
 
     [Fact]
@@ -49,9 +50,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, null, "areas/salon", null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["filesSearched"]!.GetValue<int>().ShouldBe(2);
-        result["results"]!.AsArray().Select(r => r!["file"]!.GetValue<string>()).ToList()
-            .ShouldNotContain(f => f.Contains("kitchen"));
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.FilesSearched.ShouldBe(2);
+        search.Results.Select(r => r.File).ShouldNotContain(f => f.Contains("kitchen"));
     }
 
     [Fact]
@@ -59,8 +60,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, KitchenStateFile, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
-        result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("kitchen");
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.FilesSearched.ShouldBe(1);
+        search.Results[0].File.ShouldContain("kitchen");
     }
 
     [Fact]
@@ -68,9 +70,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, null, null, null, 50, 1, VfsTextSearchOutputMode.FilesOnly, CancellationToken.None);
-        var first = result["results"]![0]!.AsObject();
-        first.ContainsKey("matchCount").ShouldBeTrue();
-        first.ContainsKey("matches").ShouldBeFalse();
+        var first = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.Results[0];
+        first.MatchCount.ShouldNotBeNull();
+        first.Matches.ShouldBeNull();
     }
 
     [Fact]
@@ -78,10 +80,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "attributes", false, KitchenStateFile, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        var match = result["results"]![0]!["matches"]![0]!;
-        match["context"].ShouldNotBeNull();
-        match["context"]!["after"]!.AsArray().Select(l => l!.GetValue<string>()).ToList()
-            .ShouldContain(l => l.Contains("friendly_name"));
+        var match = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.Results[0].Matches![0];
+        match.Context.ShouldNotBeNull();
+        match.Context!.After.ShouldContain(l => l.Contains("friendly_name"));
     }
 
     [Fact]
@@ -89,9 +90,10 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "state", false, null, null, "*.sh", 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["filesSearched"]!.GetValue<int>().ShouldBe(0);
-        result["totalMatches"]!.GetValue<int>().ShouldBe(0);
-        result["results"]!.AsArray().Count.ShouldBe(0);
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.FilesSearched.ShouldBe(0);
+        search.TotalMatches.ShouldBe(0);
+        search.Results.Count.ShouldBe(0);
     }
 
     [Fact]
@@ -99,9 +101,9 @@ public class HaFileSystemSearchTests
     {
         var result = await Build().SearchAsync(
             "(unclosed", true, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
-        result["hint"]!.GetValue<string>().ShouldContain("regex=false");
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe("invalid_argument");
+        error.Hint.ShouldNotBeNull().ShouldContain("regex=false");
     }
 
     [Fact]
@@ -112,8 +114,9 @@ public class HaFileSystemSearchTests
         var result = await Build().SearchAsync(
             "entity_id", false, null, null, null, 3, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
 
-        result["totalMatches"]!.GetValue<int>().ShouldBe(3);
-        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.TotalMatches.ShouldBe(3);
+        search.Truncated.ShouldBeFalse();
     }
 
     [Fact]
@@ -124,9 +127,10 @@ public class HaFileSystemSearchTests
         var result = await Build().SearchAsync(
             "entity_id", false, null, null, null, 1, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
 
-        result["totalMatches"]!.GetValue<int>().ShouldBe(1);
-        result["truncated"]!.GetValue<bool>().ShouldBeTrue();
-        result["filesSearched"]!.GetValue<int>().ShouldBe(1);
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.TotalMatches.ShouldBe(1);
+        search.Truncated.ShouldBeTrue();
+        search.FilesSearched.ShouldBe(1);
     }
 
     [Fact]
@@ -140,13 +144,13 @@ public class HaFileSystemSearchTests
         // Warm the structure cache with the original state.
         var before = await fs.SearchAsync(
             "stalestate", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        before["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
+        before.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.TotalMatches.ShouldBeGreaterThan(0);
 
         // State changes within the same agent loop (the cache TTL has NOT elapsed) — search must see it.
         client = new FakeHaClient { States = { Entity("light.kitchen", "freshstate") } };
 
         var after = await fs.SearchAsync(
             "freshstate", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        after["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
+        after.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.TotalMatches.ShouldBeGreaterThan(0);
     }
 }

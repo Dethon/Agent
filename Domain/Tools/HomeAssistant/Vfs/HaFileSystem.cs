@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -14,12 +13,12 @@ public sealed partial class HaFileSystem(
     private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var hits = HaTree.Glob(catalog, basePath, pattern);
         var entries = hits.ToList();
-        return FsResultContract.ToNode(new FsGlobResult
+        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = entries,
             Truncated = false,
@@ -27,17 +26,16 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
+    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
         var (exists, isDir) = Resolve(node, catalog);
 
-        var result = new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null };
-        return FsResultContract.ToNode(result);
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
     }
 
-    public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
         if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
@@ -58,7 +56,7 @@ public sealed partial class HaFileSystem(
             : ReadAction(path, entityId, node.Service!, catalog);
     }
 
-    public async Task<JsonNode> SearchAsync(
+    public async Task<FsResult<FsSearchResult>> SearchAsync(
         string query, bool regex, string? path, string? directoryPath, string? filePattern,
         int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
@@ -80,11 +78,13 @@ public sealed partial class HaFileSystem(
         }
         catch (ArgumentException ex)
         {
-            return Domain.Tools.ToolError.Create(
-                Domain.Tools.ToolError.Codes.InvalidArgument,
-                $"Invalid search pattern '{query}': {ex.Message}",
-                retryable: false,
-                hint: "Fix the regex, or set regex=false to match a literal string.");
+            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.InvalidArgument,
+                Message = $"Invalid search pattern '{query}': {ex.Message}",
+                Retryable = false,
+                Hint = "Fix the regex, or set regex=false to match a literal string."
+            });
         }
 
         // state.json is the only searchable file per entity, so a filePattern either includes it
@@ -127,14 +127,16 @@ public sealed partial class HaFileSystem(
         }
         catch (RegexMatchTimeoutException)
         {
-            return Domain.Tools.ToolError.Create(
-                Domain.Tools.ToolError.Codes.Timeout,
-                $"Search pattern '{query}' timed out while matching.",
-                retryable: false,
-                hint: "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string.");
+            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.Timeout,
+                Message = $"Search pattern '{query}' timed out while matching.",
+                Retryable = false,
+                Hint = "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string."
+            });
         }
 
-        return FsResultContract.ToNode(new FsSearchResult
+        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = query,
             Regex = regex,
@@ -228,13 +230,13 @@ public sealed partial class HaFileSystem(
         return Regex.IsMatch(fileName, pattern, RegexOptions.IgnoreCase);
     }
 
-    private async Task<JsonNode> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
+    private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
         return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
     }
 
-    private static JsonNode ReadAction(string path, string entityId, string service, HaCatalog catalog)
+    private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)
     {
         var svc = HaActionResolver.ServicesFor(entityId, catalog.Services)
             .FirstOrDefault(s => s.Service.Equals(service, StringComparison.Ordinal));
@@ -286,7 +288,7 @@ public sealed partial class HaFileSystem(
     };
 
     // Line-numbered read result matching the Sandbox/Vault text_read shape.
-    private static JsonNode BuildReadResult(string filePath, string text, int? offset, int? limit)
+    private static FsResult<FsReadResult> BuildReadResult(string filePath, string text, int? offset, int? limit)
     {
         var allLines = text.Split('\n');
         var start = Math.Clamp((offset ?? 1) - 1, 0, allLines.Length);
@@ -295,7 +297,7 @@ public sealed partial class HaFileSystem(
         var content = string.Join("\n", remaining.Take(take).Select((l, i) => $"{start + i + 1}: {l}"));
         var truncated = take < remaining.Length;
 
-        return FsResultContract.ToNode(new FsReadResult
+        return new FsResult<FsReadResult>.Ok(new FsReadResult
         {
             FilePath = filePath,
             Content = content,
@@ -305,11 +307,14 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    private static JsonObject NotFound(string path, string? canonicalName = null) =>
-        Domain.Tools.ToolError.Create(
-            Domain.Tools.ToolError.Codes.NotFound,
-            $"No such path: {path}",
-            hint: canonicalName is null
+    private static FsResult<FsReadResult> NotFound(string path, string? canonicalName = null) =>
+        new FsResult<FsReadResult>.Err(new ToolErrorResult
+        {
+            ErrorCode = ToolError.Codes.NotFound,
+            Message = $"No such path: {path}",
+            Retryable = false,
+            Hint = canonicalName is null
                 ? null
-                : $"Use the exact directory name a listing returns: '{canonicalName}'.");
+                : $"Use the exact directory name a listing returns: '{canonicalName}'."
+        });
 }

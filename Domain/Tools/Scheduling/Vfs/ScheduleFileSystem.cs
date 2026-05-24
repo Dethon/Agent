@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
@@ -20,7 +19,7 @@ public sealed class ScheduleFileSystem(
 
     private static readonly JsonSerializerOptions _parseOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var node = SchedulePath.Parse(basePath);
         // pattern is unused: the schedule tree is shallow (agent/schedule) and entries are returned unfiltered.
@@ -39,16 +38,16 @@ public sealed class ScheduleFileSystem(
                     return Glob(entries);
                 }
             default:
-                return NotFound(basePath);
+                return NotFound<FsGlobResult>(basePath);
         }
     }
 
-    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
+    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         var exists = await NodeExistsAsync(node, ct);
         var isDir = node.Kind is ScheduleNodeKind.Root or ScheduleNodeKind.AgentDir or ScheduleNodeKind.ScheduleDir;
-        return FsResultContract.ToNode(new FsInfoResult
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
             Exists = exists,
             Path = path,
@@ -56,7 +55,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         // offset/limit are unused: schedule files are small JSON blobs, always returned whole (Truncated = false).
@@ -76,10 +75,10 @@ public sealed class ScheduleFileSystem(
                 content = "# Run this schedule now:\n#   exec run_now.sh\n";
                 break;
             default:
-                return NotFound(path);
+                return NotFound<FsReadResult>(path);
         }
 
-        return FsResultContract.ToNode(new FsReadResult
+        return new FsResult<FsReadResult>.Ok(new FsReadResult
         {
             FilePath = path,
             Content = content,
@@ -88,7 +87,7 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<JsonNode> SearchAsync(string query, CancellationToken ct)
+    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, CancellationToken ct)
     {
         var all = await store.ListAsync(ct);
         var hits = all.Where(s =>
@@ -96,7 +95,7 @@ public sealed class ScheduleFileSystem(
             s.Prompt.Contains(query, StringComparison.OrdinalIgnoreCase) ||
             s.AgentId.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        return FsResultContract.ToNode(new FsSearchResult
+        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = query,
             Regex = false,
@@ -145,42 +144,42 @@ public sealed class ScheduleFileSystem(
         _ => false
     };
 
-    private static JsonNode Glob(IReadOnlyList<string> entries) => FsResultContract.ToNode(new FsGlobResult
+    private static FsResult<FsGlobResult> Glob(IReadOnlyList<string> entries) => new FsResult<FsGlobResult>.Ok(new FsGlobResult
     {
         Entries = entries,
         Truncated = false,
         Total = entries.Count
     });
 
-    public async Task<JsonNode> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+    public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleFile || node.AgentId is null || node.ScheduleId is null)
         {
-            return Invalid($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
+            return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
         }
 
         if (!agents.Exists(node.AgentId))
         {
-            return ToolError.Create(ToolError.Codes.NotFound, $"Unknown agent '{node.AgentId}'", retryable: false);
+            return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{node.AgentId}'"));
         }
 
         // Schedules use a unique-id model: create always rejects an existing id regardless of `overwrite`. Use fs_edit to modify an existing schedule.
         if (await store.GetAsync(node.ScheduleId, ct) is not null)
         {
-            return ToolError.Create(ToolError.Codes.AlreadyExists, $"Schedule '{node.ScheduleId}' already exists", retryable: false);
+            return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{node.ScheduleId}' already exists"));
         }
 
         var spec = ParseSpec(content, out var specError);
         if (specError is not null)
         {
-            return specError;
+            return new FsResult<FsCreateResult>.Err(specError);
         }
 
         var validation = ValidateSpec(spec!);
         if (validation is not null)
         {
-            return validation;
+            return new FsResult<FsCreateResult>.Err(validation);
         }
 
         var schedule = new Schedule
@@ -197,18 +196,18 @@ public sealed class ScheduleFileSystem(
         };
 
         await store.CreateAsync(schedule, ct);
-        return FsResultContract.ToNode(new FsCreateResult
+        return new FsResult<FsCreateResult>.Ok(new FsCreateResult
         {
             Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length
         });
     }
 
-    public async Task<JsonNode> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
+    public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleFile || await GetScheduleAsync(node, ct) is not { } existing)
         {
-            return NotFound(path);
+            return NotFound<FsEditResult>(path);
         }
 
         var current = RenderSpec(existing);
@@ -219,13 +218,13 @@ public sealed class ScheduleFileSystem(
         var spec = ParseSpec(updatedText, out var specError);
         if (specError is not null)
         {
-            return specError;
+            return new FsResult<FsEditResult>.Err(specError);
         }
 
         var validation = ValidateSpec(spec!);
         if (validation is not null)
         {
-            return validation;
+            return new FsResult<FsEditResult>.Err(validation);
         }
 
         var updated = existing with
@@ -239,35 +238,35 @@ public sealed class ScheduleFileSystem(
         };
 
         await store.CreateAsync(updated, ct);
-        return FsResultContract.ToNode(new FsEditResult
+        return new FsResult<FsEditResult>.Ok(new FsEditResult
         {
             Status = "edited", FilePath = path, TotalOccurrencesReplaced = edits.Count,
             Edits = edits.Select(_ => new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }).ToList()
         });
     }
 
-    public async Task<JsonNode> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
+    public async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
     {
         var src = SchedulePath.Parse(sourcePath);
         var dst = SchedulePath.Parse(destinationPath);
         if (src.Kind != ScheduleNodeKind.ScheduleDir || dst.Kind != ScheduleNodeKind.ScheduleDir)
         {
-            return Invalid("Move a schedule dir to /<agentId>/<scheduleId>");
+            return Invalid<FsMoveResult>("Move a schedule dir to /<agentId>/<scheduleId>");
         }
 
         if (await GetScheduleAsync(src, ct) is not { } existing)
         {
-            return NotFound(sourcePath);
+            return NotFound<FsMoveResult>(sourcePath);
         }
 
         if (!agents.Exists(dst.AgentId!))
         {
-            return ToolError.Create(ToolError.Codes.NotFound, $"Unknown agent '{dst.AgentId}'", retryable: false);
+            return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{dst.AgentId}'"));
         }
 
         if (dst.ScheduleId != src.ScheduleId && await store.GetAsync(dst.ScheduleId!, ct) is not null)
         {
-            return ToolError.Create(ToolError.Codes.AlreadyExists, $"Schedule '{dst.ScheduleId}' already exists", retryable: false);
+            return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{dst.ScheduleId}' already exists"));
         }
 
         if (dst.ScheduleId != src.ScheduleId)
@@ -276,33 +275,33 @@ public sealed class ScheduleFileSystem(
         }
 
         await store.CreateAsync(existing with { Id = dst.ScheduleId!, AgentId = dst.AgentId! }, ct);
-        return FsResultContract.ToNode(new FsMoveResult
+        return new FsResult<FsMoveResult>.Ok(new FsMoveResult
         {
             Status = "moved", Message = "reassigned", Source = sourcePath, Destination = destinationPath
         });
     }
 
-    public async Task<JsonNode> DeleteAsync(string path, CancellationToken ct)
+    public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleDir || await GetScheduleAsync(node, ct) is null)
         {
-            return NotFound(path);
+            return NotFound<FsRemoveResult>(path);
         }
 
         await store.DeleteAsync(node.ScheduleId!, ct);
-        return FsResultContract.ToNode(new FsRemoveResult
+        return new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
         {
             Status = "deleted", Message = "removed", OriginalPath = path, TrashPath = ""
         });
     }
 
-    public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
         if (node.Kind != ScheduleNodeKind.ScheduleDir || await GetScheduleAsync(node, ct) is not { } schedule)
         {
-            return NotFound(path);
+            return NotFound<FsExecResult>(path);
         }
 
         var trimmed = command.Trim();
@@ -316,8 +315,8 @@ public sealed class ScheduleFileSystem(
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 
-    private static JsonNode Exec(string stdout, string stderr, int exitCode, string cwd) =>
-        FsResultContract.ToNode(new FsExecResult
+    private static FsResult<FsExecResult> Exec(string stdout, string stderr, int exitCode, string cwd) =>
+        new FsResult<FsExecResult>.Ok(new FsExecResult
         {
             Stdout = stdout, Stderr = stderr, ExitCode = exitCode,
             Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
@@ -332,7 +331,7 @@ public sealed class ScheduleFileSystem(
         public IReadOnlyList<string>? DeliverTo { get; init; }
     }
 
-    private static SpecDto? ParseSpec(string content, out JsonNode? error)
+    private static SpecDto? ParseSpec(string content, out ToolErrorResult? error)
     {
         error = null;
         try
@@ -340,43 +339,43 @@ public sealed class ScheduleFileSystem(
             var spec = JsonSerializer.Deserialize<SpecDto>(content, _parseOptions);
             if (spec is null)
             {
-                error = Invalid("schedule.json is empty");
+                error = Error(ToolError.Codes.InvalidArgument, "schedule.json is empty");
             }
 
             return spec;
         }
         catch (JsonException ex)
         {
-            error = Invalid($"Invalid schedule.json: {ex.Message}");
+            error = Error(ToolError.Codes.InvalidArgument, $"Invalid schedule.json: {ex.Message}");
             return null;
         }
     }
 
-    private JsonNode? ValidateSpec(SpecDto spec)
+    private ToolErrorResult? ValidateSpec(SpecDto spec)
     {
         if (string.IsNullOrWhiteSpace(spec.Prompt))
         {
-            return Invalid("prompt is required");
+            return Error(ToolError.Codes.InvalidArgument, "prompt is required");
         }
 
         if (spec.Cron is null && spec.RunAt is null)
         {
-            return Invalid("Provide either cron or runAt");
+            return Error(ToolError.Codes.InvalidArgument, "Provide either cron or runAt");
         }
 
         if (spec.Cron is not null && spec.RunAt is not null)
         {
-            return Invalid("Provide only cron OR runAt, not both");
+            return Error(ToolError.Codes.InvalidArgument, "Provide only cron OR runAt, not both");
         }
 
         if (spec.Cron is not null && !cronValidator.IsValid(spec.Cron))
         {
-            return Invalid($"Invalid cron expression: {spec.Cron}");
+            return Error(ToolError.Codes.InvalidArgument, $"Invalid cron expression: {spec.Cron}");
         }
 
         if (spec.RunAt is not null && spec.RunAt <= DateTime.UtcNow)
         {
-            return Invalid("runAt must be in the future");
+            return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
         }
 
         return null;
@@ -391,9 +390,12 @@ public sealed class ScheduleFileSystem(
         return i < 0 ? text : text[..i] + newValue + text[(i + oldValue.Length)..];
     }
 
-    private static JsonNode Invalid(string message) =>
-        ToolError.Create(ToolError.Codes.InvalidArgument, message, retryable: false);
+    private static FsResult<T> Invalid<T>(string message) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.InvalidArgument, message));
 
-    private static JsonNode NotFound(string path) =>
-        ToolError.Create(ToolError.Codes.NotFound, $"Path not found: {path}", retryable: false);
+    private static FsResult<T> NotFound<T>(string path) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
+
+    private static ToolErrorResult Error(string code, string message) =>
+        new() { ErrorCode = code, Message = message, Retryable = false };
 }

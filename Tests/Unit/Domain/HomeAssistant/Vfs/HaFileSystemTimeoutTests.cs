@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -23,8 +24,8 @@ public class HaFileSystemTimeoutTests
         var result = await fs.SearchAsync(
             "(a+)+b", regex: true, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
 
-        result["ok"]!.GetValue<bool>().ShouldBeFalse();
-        result["errorCode"]!.GetValue<string>().ShouldBe("timeout");
-        result["hint"]!.GetValue<string>().ShouldContain("regex=false");
+        var error = result.ShouldBeOfType<FsResult<FsSearchResult>.Err>().Error;
+        error.ErrorCode.ShouldBe("timeout");
+        error.Hint.ShouldNotBeNull().ShouldContain("regex=false");
     }
 }

@@ -1,7 +1,5 @@
-using System.Text.Json;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
-using Domain.Tools;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
 using Shouldly;
@@ -21,10 +19,10 @@ public class ScheduleFileSystemExecTests
         await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", NextRunAt = DateTime.UtcNow.AddDays(1), CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+        var result = await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
 
-        var result = node.Deserialize<FsExecResult>(FsResultContract.ValidationOptions)!;
-        result.ExitCode.ShouldBe(0);
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
         (store.Items["n"].NextRunAt <= DateTime.UtcNow).ShouldBeTrue();
     }
 
@@ -35,18 +33,18 @@ public class ScheduleFileSystemExecTests
         await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
         var fs = Build(store);
 
-        var node = await fs.ExecAsync("/jonas/n", "ls -la", null, CancellationToken.None);
+        var result = await fs.ExecAsync("/jonas/n", "ls -la", null, CancellationToken.None);
 
-        var result = node.Deserialize<FsExecResult>(FsResultContract.ValidationOptions)!;
-        result.ExitCode.ShouldBe(127);
-        result.Stderr.ShouldContain("run_now.sh");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(127);
+        exec.Stderr.ShouldContain("run_now.sh");
     }
 
     [Fact]
     public async Task Exec_UnknownSchedule_ReturnsNotFound()
     {
         var fs = Build(new FakeScheduleStore());
-        var node = await fs.ExecAsync("/jonas/ghost", "run_now.sh", null, CancellationToken.None);
-        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+        var result = await fs.ExecAsync("/jonas/ghost", "run_now.sh", null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Err>();
     }
 }
