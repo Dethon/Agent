@@ -3,7 +3,7 @@ using Domain.DTOs.Channel;
 
 namespace McpServerScheduling.Services;
 
-public sealed record FirePlan(SchedulePayload Payload, DateTime? NextRunAt, bool DeleteAfterFire);
+public sealed record FirePlan(ChannelMessageNotification Payload, DateTime? NextRunAt, bool DeleteAfterFire);
 
 public static class ScheduleFirePlanner
 {

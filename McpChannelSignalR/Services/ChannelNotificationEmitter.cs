@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Server;
 
 namespace McpChannelSignalR.Services;
@@ -26,7 +27,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var payload = new
+        var payload = new ChannelMessageNotification
         {
             ConversationId = conversationId,
             Sender = sender,
@@ -41,7 +42,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
             try
             {
                 await server.SendNotificationAsync(
-                    "notifications/channel/message",
+                    ChannelProtocol.MessageNotification,
                     payload,
                     cancellationToken: cancellationToken);
             }
@@ -59,7 +60,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var payload = new
+        var payload = new ChannelCancelNotification
         {
             ConversationId = conversationId,
             AgentId = agentId,
@@ -71,7 +72,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
             try
             {
                 await server.SendNotificationAsync(
-                    "notifications/channel/cancel",
+                    ChannelProtocol.CancelNotification,
                     payload,
                     cancellationToken: cancellationToken);
             }

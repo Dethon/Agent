@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Server;
 
 namespace McpChannelTelegram.Services;
@@ -26,7 +27,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
         string agentId,
         CancellationToken cancellationToken = default)
     {
-        var payload = new
+        var payload = new ChannelMessageNotification
         {
             ConversationId = conversationId,
             Sender = sender,
@@ -40,7 +41,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
             try
             {
                 await server.SendNotificationAsync(
-                    "notifications/channel/message",
+                    ChannelProtocol.MessageNotification,
                     payload,
                     cancellationToken: cancellationToken);
             }
