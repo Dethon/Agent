@@ -84,6 +84,55 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
+    public async Task McpServer_ListTools_IncludesRegisterAgents()
+    {
+        var client = await ConnectAsync();
+
+        var toolNames = (await client.ListToolsAsync()).Select(t => t.Name).ToList();
+
+        toolNames.ShouldContain("register_agents");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RegisterAgents_ThenCreateForNewAgent_PassesValidation()
+    {
+        var client = await ConnectAsync();
+
+        var register = await client.CallToolAsync(
+            "register_agents",
+            new Dictionary<string, object?>
+            {
+                ["agents"] =
+                    """[{"id":"jonas","name":"Jonas","description":"general"},{"id":"jack","name":"Jack","description":"downloads"}]"""
+            },
+            cancellationToken: CancellationToken.None);
+
+        (register.IsError ?? false).ShouldBeFalse();
+
+        var create = await client.CallToolAsync(
+            "fs_create",
+            new Dictionary<string, object?>
+            {
+                ["path"] = "/jack/itest-register/schedule.json",
+                ["content"] = """{"prompt":"do the thing","cron":"0 7 * * *"}"""
+            },
+            cancellationToken: CancellationToken.None);
+
+        (create.IsError ?? false).ShouldBeFalse();
+
+        var info = await client.CallToolAsync(
+            "fs_read",
+            new Dictionary<string, object?> { ["path"] = "/jack/agent_info.json" },
+            cancellationToken: CancellationToken.None);
+
+        info.Content.OfType<TextContentBlock>().First().Text.ShouldContain("Jack");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
     public async Task CreateGlobRead_RoundTrip_PersistsAndReadsSchedule()
     {
         var client = await ConnectAsync();

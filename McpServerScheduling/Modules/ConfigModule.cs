@@ -68,6 +68,7 @@ public static class ConfigModule
             })
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<RegisterAgentsTool>()
             .WithTools<FsGlobTool>()
             .WithTools<FsInfoTool>()
             .WithTools<FsReadTool>()
