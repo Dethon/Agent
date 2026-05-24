@@ -9,9 +9,9 @@ public class RequestApprovalToolTests
 {
     [Fact]
     public void McpRun_RequestMode_AutoApproves()
-        => RequestApprovalTool.McpRun("c1", ApprovalMode.Request, "[]").ShouldBe("approved");
+        => RequestApprovalTool.McpRun("c1", ApprovalMode.Request, []).ShouldBe("approved");
 
     [Fact]
     public void McpRun_NotifyMode_ReturnsNotified()
-        => RequestApprovalTool.McpRun("c1", ApprovalMode.Notify, "[]").ShouldBe("notified");
+        => RequestApprovalTool.McpRun("c1", ApprovalMode.Notify, []).ShouldBe("notified");
 }

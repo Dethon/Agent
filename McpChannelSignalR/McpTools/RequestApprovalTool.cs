@@ -9,12 +9,12 @@ namespace McpChannelSignalR.McpTools;
 [McpServerToolType]
 public sealed class RequestApprovalTool
 {
-    [McpServerTool(Name = "request_approval")]
+    [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request tool approval from user or notify about auto-approved tools")]
     public static async Task<string> McpRun(
         [Description("Conversation ID")] string conversationId,
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
-        [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
+        [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         IServiceProvider services)
     {
         var p = new RequestApprovalParams

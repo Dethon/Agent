@@ -20,7 +20,7 @@ public sealed class ApprovalService(
     public async Task<string> RequestApprovalAsync(RequestApprovalParams p)
     {
         var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
-        var requests = DeserializeRequests(p.Requests);
+        var requests = p.Requests;
         var approvalId = Guid.NewGuid().ToString("N")[..8];
 
         var context = new ApprovalContext
@@ -66,7 +66,7 @@ public sealed class ApprovalService(
     public async Task NotifyAutoApprovedAsync(RequestApprovalParams p)
     {
         var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId) ?? p.ConversationId;
-        var requests = DeserializeRequests(p.Requests);
+        var requests = p.Requests;
 
         var messages = requests
             .GroupBy(x => x.MessageId)
@@ -172,12 +172,6 @@ public sealed class ApprovalService(
         {
             await hubNotificationSender.SendAsync(methodName, notification);
         }
-    }
-
-    private static IReadOnlyList<ToolApprovalRequest> DeserializeRequests(string requestsJson)
-    {
-        return JsonSerializer.Deserialize<List<ToolApprovalRequest>>(requestsJson,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
     }
 
     private static string FormatToolCalls(IReadOnlyList<ToolApprovalRequest> requests)

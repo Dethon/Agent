@@ -8,12 +8,12 @@ namespace McpChannelServiceBus.McpTools;
 [McpServerToolType]
 public sealed class RequestApprovalTool
 {
-    [McpServerTool(Name = "request_approval")]
+    [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request tool approval — ServiceBus auto-approves all tools")]
     public static string McpRun(
         [Description("Conversation ID (correlationId)")] string conversationId,
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
-        [Description("JSON array of tool requests [{toolName, arguments}]")] string requests)
+        [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests)
     {
         _ = new RequestApprovalParams
         {

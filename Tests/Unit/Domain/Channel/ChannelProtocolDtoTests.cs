@@ -80,4 +80,23 @@ public class ChannelProtocolDtoTests
 
         args.Keys.OrderBy(k => k).ShouldBe(["agentId", "sender", "topicName"]);
     }
+
+    [Fact]
+    public void ToArguments_WithRequestApprovalParams_SerializesRequestsAsArrayPreservingMessageId()
+    {
+        var p = new RequestApprovalParams
+        {
+            ConversationId = "c1",
+            Mode = ApprovalMode.Request,
+            Requests = [new ToolApprovalRequest("m1", "mcp__x__do", new Dictionary<string, object?> { ["k"] = "v" })]
+        };
+
+        var args = ChannelProtocol.ToArguments(p);
+        var requests = (JsonElement)args["requests"]!;
+
+        requests.ValueKind.ShouldBe(JsonValueKind.Array);
+        requests[0].GetProperty("messageId").GetString().ShouldBe("m1");
+        requests[0].GetProperty("toolName").GetString().ShouldBe("mcp__x__do");
+        JsonSerializer.Serialize(args["mode"]).ShouldBe("\"Request\"");
+    }
 }

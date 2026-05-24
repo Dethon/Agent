@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Text;
-using System.Text.Json;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
@@ -15,12 +14,12 @@ public sealed class RequestApprovalTool
 {
     private static readonly TimeSpan _approvalTimeout = TimeSpan.FromMinutes(2);
 
-    [McpServerTool(Name = "request_approval")]
+    [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request tool approval from user or notify about auto-approved tools")]
     public static async Task<string> McpRun(
         [Description("Conversation ID in format chatId:threadId")] string conversationId,
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
-        [Description("JSON array of tool requests [{toolName, arguments}]")] string requests,
+        [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         IServiceProvider services)
     {
         var p = new RequestApprovalParams
@@ -36,13 +35,10 @@ public sealed class RequestApprovalTool
         var botClient = registry.GetBotForChat(chatId)
                         ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
-        var toolRequests = JsonSerializer.Deserialize<List<ToolRequest>>(p.Requests,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-
         if (p.Mode == ApprovalMode.Notify)
         {
-            var toolNames = toolRequests.Select(r => r.ToolName.Split("__").Last());
-            var message = $"\u2705 Auto-approved: {string.Join(", ", toolNames)}";
+            var toolNames = p.Requests.Select(r => r.ToolName.Split("__").Last());
+            var message = $"✅ Auto-approved: {string.Join(", ", toolNames)}";
 
             await botClient.SendMessage(
                 chatId,
@@ -53,11 +49,10 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        // Interactive approval mode
         var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, CancellationToken.None);
         var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
 
-        var approvalMessage = FormatApprovalMessage(toolRequests);
+        var approvalMessage = FormatApprovalMessage(p.Requests);
 
         await botClient.SendMessage(
             chatId,
@@ -70,15 +65,15 @@ public sealed class RequestApprovalTool
         return await resultTask;
     }
 
-    private static string FormatApprovalMessage(List<ToolRequest> requests)
+    private static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
         var sb = new StringBuilder();
         var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
-        sb.AppendLine($"<b>\ud83d\udd27 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
+        sb.AppendLine($"<b>🔧 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
 
         foreach (var request in requests)
         {
-            if (request.Arguments is null || request.Arguments.Count == 0)
+            if (request.Arguments.Count == 0)
             {
                 continue;
             }
@@ -119,8 +114,4 @@ public sealed class RequestApprovalTool
             ? (chatId, null)
             : (chatId, Convert.ToInt32(threadIdVal));
     }
-
-    private sealed record ToolRequest(
-        string ToolName,
-        Dictionary<string, object?>? Arguments);
 }

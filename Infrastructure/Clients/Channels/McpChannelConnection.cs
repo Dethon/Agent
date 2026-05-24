@@ -155,13 +155,13 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
     {
         EnsureConnected();
         var result = await _client!.CallToolAsync(
-            "request_approval",
-            new Dictionary<string, object?>
+            ChannelProtocol.RequestApprovalTool,
+            ChannelProtocol.ToArguments(new RequestApprovalParams
             {
-                ["conversationId"] = conversationId,
-                ["mode"] = nameof(ApprovalMode.Request),
-                ["requests"] = JsonSerializer.Serialize(requests)
-            },
+                ConversationId = conversationId,
+                Mode = ApprovalMode.Request,
+                Requests = requests
+            }),
             cancellationToken: ct);
 
         var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
@@ -177,13 +177,13 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
     {
         EnsureConnected();
         await _client!.CallToolAsync(
-            "request_approval",
-            new Dictionary<string, object?>
+            ChannelProtocol.RequestApprovalTool,
+            ChannelProtocol.ToArguments(new RequestApprovalParams
             {
-                ["conversationId"] = conversationId,
-                ["mode"] = nameof(ApprovalMode.Notify),
-                ["requests"] = JsonSerializer.Serialize(requests)
-            },
+                ConversationId = conversationId,
+                Mode = ApprovalMode.Notify,
+                Requests = requests
+            }),
             cancellationToken: ct);
     }
 
