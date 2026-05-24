@@ -232,17 +232,14 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
         }
 
         var tools = await _client.ListToolsAsync(cancellationToken: ct);
-        if (tools.All(t => t.Name != "register_agents"))
+        if (tools.All(t => t.Name != ChannelProtocol.RegisterAgentsTool))
         {
             return;
         }
 
         await _client.CallToolAsync(
-            "register_agents",
-            new Dictionary<string, object?>
-            {
-                ["agents"] = JsonSerializer.Serialize(agents)
-            },
+            ChannelProtocol.RegisterAgentsTool,
+            ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
             cancellationToken: ct);
     }
 

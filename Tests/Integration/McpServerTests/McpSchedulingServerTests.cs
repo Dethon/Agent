@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -101,12 +102,11 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         var client = await ConnectAsync();
 
         var register = await client.CallToolAsync(
-            "register_agents",
-            new Dictionary<string, object?>
+            ChannelProtocol.RegisterAgentsTool,
+            ChannelProtocol.ToArguments(new RegisterAgentsParams
             {
-                ["agents"] =
-                    """[{"id":"jonas","name":"Jonas","description":"general"},{"id":"jack","name":"Jack","description":"downloads"}]"""
-            },
+                Agents = [new AgentCatalogEntry("jonas", "Jonas", "general"), new AgentCatalogEntry("jack", "Jack", "downloads")]
+            }),
             cancellationToken: CancellationToken.None);
 
         (register.IsError ?? false).ShouldBeFalse();
