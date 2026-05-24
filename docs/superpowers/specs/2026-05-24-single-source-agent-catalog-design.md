@@ -49,7 +49,9 @@ Settled during brainstorming; these drive the rest of the spec:
    and ServiceBus adopt the same contract later with zero Agent changes.
 5. **SignalR broadcasts catalog updates.** WebChat connects to the SignalR server, not the Agent,
    so it would not otherwise see a re-registration. On `register_agents`, SignalR emits an
-   `AgentsUpdated` hub event; WebChat re-fetches and refreshes its selector.
+   `OnAgentsUpdated` hub event **carrying the updated catalog**; WebChat dispatches `SetAgents`
+   with that payload and refreshes its selector directly (no extra round-trip). Initial load still
+   uses `GetAgents` on connect.
 6. **One canonical catalog DTO.** The two near-twin DTOs (`ScheduleAgentInfo`,
    `Domain.DTOs.WebChat.AgentInfo`) collapse into a single `AgentCatalogEntry`.
 7. **Empty catalog before registration / when the Agent is down is acceptable** — in both states
@@ -83,7 +85,8 @@ McpChannelConnection.RegisterAgentsAsync ─┘
    tears down a channel).
 3. The server's `RegisterAgentsTool` deserializes the payload and calls
    `MutableAgentCatalog.Replace(entries)`.
-4. SignalR additionally broadcasts `AgentsUpdated`; WebChat re-fetches `GetAgents`.
+4. SignalR additionally broadcasts `OnAgentsUpdated` carrying the catalog; WebChat dispatches
+   `SetAgents` with the payload.
 5. On health-check failure `ChannelConnectionHost` reconnects and re-registers, so a channel-server
    restart self-heals.
 
@@ -123,17 +126,17 @@ McpChannelConnection.RegisterAgentsAsync ─┘
 ### SignalR server
 
 - **`McpTools/RegisterAgentsTool.cs`** — `register_agents`; `catalog.Replace(...)`, then broadcast
-  `AgentsUpdated` via `IHubContext<ChatHub>`.
+  `OnAgentsUpdated` (carrying the catalog) via `IHubNotificationSender`, fire-and-forget.
 - **`ChatHub`** — `GetAgents()` returns `IReadOnlyList<AgentCatalogEntry>` from the catalog;
-  `IsValidAgent()` reads from the catalog.
+  `ValidateAgent()` reads from the catalog.
 - **DI** — register `MutableAgentCatalog` as the `IAgentCatalog` singleton + add the tool.
 - **Removals:** `ChannelSettings.Agents`, `AgentConfig`, and the `Agents` block in
   `McpChannelSignalR/appsettings.json`.
 
 ### WebChat client
 
-- Handle the `AgentsUpdated` hub event (via the existing `HubEventDispatcher`) → re-fetch
-  `GetAgents` → update agent-selector state.
+- Handle the `OnAgentsUpdated` hub event (via the existing `HubEventDispatcher`) → dispatch
+  `SetAgents(payload)` → update agent-selector state. Initial load still uses `GetAgents` on connect.
 - Update references from `Domain.DTOs.WebChat.AgentInfo` to `AgentCatalogEntry` (serialization is
   byte-identical, so connected clients are unaffected).
 
@@ -148,7 +151,8 @@ McpChannelConnection.RegisterAgentsAsync ─┘
 "registered 2 agents"
 ```
 
-`AgentsUpdated` hub event (SignalR → WebChat): no payload; a signal to re-fetch `GetAgents`.
+`OnAgentsUpdated` hub event (SignalR → WebChat): payload is the updated catalog
+(`IReadOnlyList<AgentCatalogEntry>`), which WebChat applies via `SetAgents`.
 
 ## Error handling
 
