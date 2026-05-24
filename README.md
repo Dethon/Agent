@@ -6,7 +6,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 ## Features
 
 - **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Channel Architecture** - Transports (WebChat, Telegram, ServiceBus) run as independent MCP channel servers
+- **Channel Architecture** - Transports (WebChat, Telegram, ServiceBus, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
 - **Azure Service Bus** - Queue-based integration for external systems
@@ -19,6 +19,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
 - **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, and delete. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
 - **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
+- **Scheduled Tasks** - Cron and one-shot agent prompts managed as a virtual filesystem (`filesystem://schedules`); a dedicated scheduling channel server fires due schedules and fans the result out to chosen delivery channels
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
@@ -77,6 +78,12 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │         Redis Vector Store        │
               └───────────────────────────────────┘
 
+              ┌───────────────────────────────────┐
+              │     Scheduling (channel + VFS)    │
+              │  Cron/one-shot → channel/message  │
+              │       filesystem://schedules      │
+              └───────────────────────────────────┘
+
                      ┌─────────────────────────────────┐
   metrics:events     │       Observability             │
   (Redis Pub/Sub)───▶│  Collector → Redis Aggregation  │──▶ Dashboard (PWA)
@@ -87,17 +94,21 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 
 ### Channel Protocol
 
-Each channel MCP server exposes a standard protocol:
+Each channel MCP server exposes a standard protocol. Wire serialization is centralized in `ChannelProtocol` — a shared `JsonSerializerOptions` plus typed notification/param records (`ChannelMessageNotification`, `ChannelCancelNotification`, `RegisterAgentsParams`, `RequestApprovalParams`) so every channel speaks the same contract.
 - **Inbound**: `channel/message` notification — pushes user messages to the agent
+- **Inbound**: `channel/cancel` notification — cancels an in-flight turn
 - **Outbound**: `send_reply` tool — agent streams response chunks back to the user
 - **Outbound**: `request_approval` tool — interactive tool approval or auto-approval notification
-- **Outbound**: `create_conversation` tool — agent-initiated conversations (scheduling)
+- **Outbound**: `create_conversation` tool — agent-initiated conversations
+- **Outbound**: `register_agents` tool — agent publishes its agent catalog to the channel on connect/reconnect
+
+Channels use the registered catalog as the single source of truth for available agents (SignalR rebroadcasts it as `OnAgentsUpdated`, so the WebChat agent list updates live) instead of maintaining a duplicated `Agents` config. A server can be **dual-role** — both a channel and a tool/filesystem server (`mcp-scheduling` is both); for those, the channel-protocol tools are hidden from the LLM.
 
 New transports can be added by deploying a new channel MCP server — zero agent code changes needed.
 
 ### Virtual Filesystem
 
-Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
+Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. Backends need not be disk-backed: `mcp-homeassistant` advertises `filesystem://ha` (entities/areas/actions) and `mcp-scheduling` advertises `filesystem://schedules` (scheduled tasks), both implementing the same `IFileSystemBackend` contract and returning typed `FsResult<T>`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
 
 Because each mount is just an MCP endpoint over HTTP, filesystems can be deployed wherever is convenient:
 
@@ -111,6 +122,15 @@ The agent exposes 8 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `Vf
 
 New filesystems are added by deploying any MCP server that exposes a `filesystem://` resource — no agent code changes needed.
 
+### Scheduled Tasks
+
+Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-process agent feature. The agent connects to it both as a tool/filesystem server and as a channel:
+
+- **As a filesystem** (`filesystem://schedules`, mounted at `/schedules`) the agent manages schedules with the ordinary `Vfs*` tools. Each agent gets a directory; a schedule lives at `/schedules/<agentId>/<scheduleId>/schedule.json` containing `{prompt, cron|runAt, userId?, deliverTo?}` — exactly one of `cron` (recurring 5-field UTC cron) or `runAt` (one-shot ISO-8601 UTC datetime, auto-deleted after it fires). `agent_info.json` describes each agent and read-only `status.json` reports `createdAt`/`lastRunAt`/`nextRunAt`. Running `VfsExec` with `run_now.sh` on a schedule directory fires it immediately.
+- **As a channel** a background dispatcher polls Redis for due schedules and emits a `channel/message` to the agent. The agent runs the prompt and fans the result out to the schedule's `deliverTo` channels (e.g. `["signalr", "telegram"]`), minting conversations as needed.
+
+The `scheduling_prompt` MCP prompt teaches the LLM the `/schedules` idiom.
+
 ### MCP Tool Servers
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
@@ -121,6 +141,7 @@ New filesystems are added by deploying any MCP server that exposes a `filesystem
 | **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
 | **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 | **mcp-homeassistant** | fs_glob, fs_read, fs_info, fs_search, fs_exec                                                                          | `filesystem://ha`     | Control a Home Assistant instance as a virtual filesystem (entities, areas, `.sh` action files); injects a slim setup index into the system prompt |
+| **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
 
 ### MCP Channel Servers
 
@@ -129,13 +150,14 @@ New filesystems are added by deploying any MCP server that exposes a `filesystem
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
 | **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
+| **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
 ### Agents
 
 | Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant | filesystem, scheduling, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, and Home Assistant control |
+| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, and Home Assistant control |
 
 ### Multi-Agent Configuration
 
@@ -144,7 +166,7 @@ Agents are defined as configuration data, each with:
 - Specific MCP server endpoints
 - Tool whitelist patterns (e.g., `mcp:mcp-library:*`, `domain:subagents:*`)
 - Custom system instructions
-- Enabled features (e.g., `filesystem`, `scheduling`, `subagents`, `memory`)
+- Enabled features (e.g., `filesystem`, `subagents`, `memory`)
 
 #### Subagents
 
@@ -168,6 +190,7 @@ Agent routing:
 | `McpServerWebSearch`     | MCP server for web search and browsing via Camoufox             |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpServerHomeAssistant` | MCP server for Home Assistant entity/service control            |
+| `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
@@ -249,6 +272,8 @@ CHANNELENDPOINTS__1__CHANNELID=telegram
 CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/mcp
 CHANNELENDPOINTS__2__CHANNELID=servicebus
 CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/mcp
+CHANNELENDPOINTS__3__CHANNELID=scheduling
+CHANNELENDPOINTS__3__ENDPOINT=http://mcp-scheduling:8080/mcp
 
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
@@ -296,6 +321,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Channel SignalR      | 6010 | WebChat channel server         |
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
 | MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
+| MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
 | Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
 
 ## Usage
@@ -421,6 +447,7 @@ The agent uses Redis to persist conversation history and memory across restarts:
 - **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
 - **Download Tracking** - Use `download_resubscribe` tool to resume tracking downloads after restart
 - **Memory Storage** - Proactively extracted memories from windowed conversation context, stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
+- **Schedules** - Cron and one-shot schedule definitions stored in Redis, polled by the scheduling server's dispatcher; one-shot schedules are auto-deleted after firing
 - **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
 - **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL
 - **Service Health** - Heartbeat-based health tracking with 60-second TTL keys in Redis
