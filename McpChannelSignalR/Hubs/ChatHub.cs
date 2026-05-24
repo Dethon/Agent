@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using McpChannelSignalR.Services;
@@ -15,7 +16,7 @@ public sealed class ChatHub(
     StreamService streamService,
     ApprovalService approvalService,
     ChannelNotificationEmitter notificationEmitter,
-    ChannelSettings settings,
+    IAgentCatalog catalog,
     RedisStateService redisStateService,
     IPushSubscriptionStore pushSubscriptionStore) : Hub
 {
@@ -42,16 +43,14 @@ public sealed class ChatHub(
         return Task.CompletedTask;
     }
 
-    public IReadOnlyList<AgentInfo> GetAgents()
+    public IReadOnlyList<AgentCatalogEntry> GetAgents()
     {
-        return settings.Agents
-            .Select(a => new AgentInfo(a.Id, a.Name, a.Description))
-            .ToList();
+        return catalog.GetAll();
     }
 
     public bool ValidateAgent(string agentId)
     {
-        return settings.Agents.Any(a => a.Id == agentId);
+        return catalog.Exists(agentId);
     }
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId, string? topicName = null)
