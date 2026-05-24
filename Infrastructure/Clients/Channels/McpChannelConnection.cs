@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -72,13 +73,35 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             ? agentIdProp.GetString()
             : null;
 
+        var replyTo = payload.TryGetProperty("replyTo", out var replyToProp)
+                      && replyToProp.ValueKind == JsonValueKind.Array
+            ? replyToProp.EnumerateArray()
+                .Select(t => new ReplyTarget(
+                    t.GetProperty("channelId").GetString()!,
+                    t.TryGetProperty("conversationId", out var cid) && cid.ValueKind == JsonValueKind.String
+                        ? cid.GetString()
+                        : null))
+                .ToList()
+            : null;
+
+        var origin = payload.TryGetProperty("origin", out var originProp)
+                     && originProp.ValueKind == JsonValueKind.Object
+            ? new MessageOrigin(
+                originProp.GetProperty("kind").GetString()!,
+                originProp.TryGetProperty("scheduleId", out var sid) && sid.ValueKind == JsonValueKind.String
+                    ? sid.GetString()
+                    : null)
+            : null;
+
         var message = new ChannelMessage
         {
             ConversationId = conversationId,
             Content = content,
             Sender = sender,
             ChannelId = ChannelId,
-            AgentId = agentId
+            AgentId = agentId,
+            ReplyTo = replyTo,
+            Origin = origin
         };
 
         _messageChannel.Writer.TryWrite(message);
