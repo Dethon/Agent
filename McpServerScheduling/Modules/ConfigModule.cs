@@ -68,6 +68,11 @@ public static class ConfigModule
             .WithTools<FsInfoTool>()
             .WithTools<FsReadTool>()
             .WithTools<FsSearchTool>()
+            .WithTools<FsCreateTool>()
+            .WithTools<FsEditTool>()
+            .WithTools<FsDeleteTool>()
+            .WithTools<FsMoveTool>()
+            .WithTools<FsExecTool>()
             .WithResources<FileSystemResource>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {

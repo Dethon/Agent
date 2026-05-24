@@ -297,6 +297,32 @@ public sealed class ScheduleFileSystem(
         });
     }
 
+    public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    {
+        var node = SchedulePath.Parse(path);
+        if (node.Kind != ScheduleNodeKind.ScheduleDir || await GetScheduleAsync(node, ct) is not { } schedule)
+        {
+            return NotFound(path);
+        }
+
+        var trimmed = command.Trim();
+        if (trimmed != SchedulePath.RunNowFileName)
+        {
+            return Exec("", $"command not found: {trimmed}\navailable: {SchedulePath.RunNowFileName}", 127, path);
+        }
+
+        // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left as-is (the dispatcher overwrites it with the real fire-time when it actually runs).
+        await store.UpdateLastRunAsync(schedule.Id, schedule.LastRunAt ?? DateTime.UtcNow, DateTime.UtcNow, ct);
+        return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
+    }
+
+    private static JsonNode Exec(string stdout, string stderr, int exitCode, string cwd) =>
+        FsResultContract.ToNode(new FsExecResult
+        {
+            Stdout = stdout, Stderr = stderr, ExitCode = exitCode,
+            Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
+        });
+
     private sealed record SpecDto
     {
         public string? Prompt { get; init; }
