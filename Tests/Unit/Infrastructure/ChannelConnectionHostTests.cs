@@ -1,5 +1,6 @@
 using Agent.App;
 using Agent.Settings;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -15,7 +16,7 @@ public class ChannelConnectionHostTests
     {
         var fake = new FakeMcpChannelConnection("ch-1");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], _logger);
+        var sut = new ChannelConnectionHost(endpoints, [fake], [], _logger);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         _ = sut.StartAsync(cts.Token);
@@ -30,7 +31,7 @@ public class ChannelConnectionHostTests
         var fake = new FakeMcpChannelConnection("ch-1");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
         var sut = new ChannelConnectionHost(
-            endpoints, [fake], _logger,
+            endpoints, [fake], [], _logger,
             healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -54,7 +55,7 @@ public class ChannelConnectionHostTests
         var fake = new FakeMcpChannelConnection("ch-1");
         fake.FailNextConnects(2);
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
-        var sut = new ChannelConnectionHost(endpoints, [fake], _logger);
+        var sut = new ChannelConnectionHost(endpoints, [fake], [], _logger);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         _ = sut.StartAsync(cts.Token);
@@ -70,7 +71,7 @@ public class ChannelConnectionHostTests
         var fake = new FakeMcpChannelConnection("ch-1");
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
         var sut = new ChannelConnectionHost(
-            endpoints, [fake], _logger,
+            endpoints, [fake], [], _logger,
             healthCheckInterval: TimeSpan.FromMilliseconds(50));
 
         using var cts = new CancellationTokenSource();
@@ -84,11 +85,28 @@ public class ChannelConnectionHostTests
         // Should not throw
         await task;
     }
+
+    [Fact]
+    public async Task RegistersAgents_AfterConnect()
+    {
+        var fake = new FakeMcpChannelConnection("ch-1");
+        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", "general") };
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
+        var sut = new ChannelConnectionHost(endpoints, [fake], catalog, _logger);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        _ = sut.StartAsync(cts.Token);
+
+        await fake.WaitForRegisterAsync(cts.Token);
+        fake.RegisteredAgents.ShouldNotBeNull();
+        fake.RegisteredAgents!.Single().Id.ShouldBe("jonas");
+    }
 }
 
 internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelConnection
 {
     private readonly TaskCompletionSource _firstConnect = new();
+    private readonly TaskCompletionSource _firstRegister = new();
     private readonly SemaphoreSlim _connectSignal = new(0);
     private int _healthy = 1;
     private int _failNextConnects;
@@ -99,6 +117,7 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
     public string ChannelId { get; } = channelId;
     public int ConnectCount => Volatile.Read(ref _connectCount);
     public int ConnectAttempts => Volatile.Read(ref _connectAttempts);
+    public IReadOnlyList<AgentCatalogEntry>? RegisteredAgents { get; private set; }
 
     public Task ConnectAsync(string endpoint, CancellationToken ct)
     {
@@ -119,11 +138,20 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
 
     public Task ReconnectAsync(string endpoint, CancellationToken ct) => ConnectAsync(endpoint, ct);
 
+    public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        RegisteredAgents = agents;
+        _firstRegister.TrySetResult();
+        return Task.CompletedTask;
+    }
+
     public void SetHealthy(bool healthy) => Interlocked.Exchange(ref _healthy, healthy ? 1 : 0);
 
     public void FailNextConnects(int count) => Interlocked.Exchange(ref _failNextConnects, count);
 
     public Task WaitForConnectAsync(CancellationToken ct) => _firstConnect.Task.WaitAsync(ct);
+
+    public Task WaitForRegisterAsync(CancellationToken ct) => _firstRegister.Task.WaitAsync(ct);
 
     public async Task WaitForConnectCountAsync(int count, CancellationToken ct)
     {

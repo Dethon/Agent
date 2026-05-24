@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace Infrastructure.Clients.Channels;
 
 public interface IMcpChannelConnection
@@ -6,4 +8,5 @@ public interface IMcpChannelConnection
     Task ConnectAsync(string endpoint, CancellationToken ct);
     Task<bool> IsHealthyAsync(CancellationToken ct);
     Task ReconnectAsync(string endpoint, CancellationToken ct);
+    Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct);
 }

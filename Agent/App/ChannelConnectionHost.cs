@@ -1,4 +1,5 @@
 using Agent.Settings;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 
 namespace Agent.App;
@@ -6,6 +7,7 @@ namespace Agent.App;
 public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
     IReadOnlyList<IMcpChannelConnection> connections,
+    IReadOnlyList<AgentCatalogEntry> agentCatalog,
     ILogger<ChannelConnectionHost> logger,
     TimeSpan? healthCheckInterval = null) : BackgroundService
 {
@@ -26,6 +28,7 @@ public class ChannelConnectionHost(
         IMcpChannelConnection conn, string endpoint, CancellationToken ct)
     {
         await ConnectWithRetryAsync(conn, endpoint, ct);
+        await RegisterAgentsSafelyAsync(conn, ct);
 
         while (!ct.IsCancellationRequested)
         {
@@ -35,7 +38,21 @@ public class ChannelConnectionHost(
             {
                 logger.LogWarning("Channel {ChannelId} health check failed, reconnecting", conn.ChannelId);
                 await ReconnectWithRetryAsync(conn, endpoint, ct);
+                await RegisterAgentsSafelyAsync(conn, ct);
             }
+        }
+    }
+
+    private async Task RegisterAgentsSafelyAsync(IMcpChannelConnection conn, CancellationToken ct)
+    {
+        try
+        {
+            await conn.RegisterAgentsAsync(agentCatalog, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                "Failed to register agents with channel {ChannelId}: {Error}", conn.ChannelId, ex.Message);
         }
     }
 
