@@ -42,7 +42,7 @@ public class MutableAgentCatalogTests
     }
 
     [Fact]
-    public void Replace_SnapshotsInput_LaterMutationOfSourceDoesNotLeak()
+    public void Replace_SourceListMutatedAfterCall_CatalogUnaffected()
     {
         var catalog = new MutableAgentCatalog();
         var source = new List<AgentCatalogEntry> { new("jonas", "Jonas", null) };

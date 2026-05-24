@@ -3,7 +3,7 @@ using Domain.DTOs.Channel;
 
 namespace Domain.Agents;
 
-public sealed class MutableAgentCatalog : IAgentCatalog
+public sealed class MutableAgentCatalog : IMutableAgentCatalog
 {
     private volatile IReadOnlyList<AgentCatalogEntry> _agents = [];
 
