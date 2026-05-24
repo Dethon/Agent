@@ -159,9 +159,11 @@ McpChannelConnection.RegisterAgentsAsync ─┘
 
 ## Error handling
 
-- **Registration failure** (tool throws, server unreachable mid-call): caught in
-  `RegisterAgentsAsync`, logged, swallowed. The channel connection stays up; re-registration occurs
-  on the next reconnect.
+- **Registration failure** (tool throws, server unreachable mid-call): `RegisterAgentsAsync` lets the
+  error propagate to the host's `RegisterAgentsSafelyAsync`, which logs a warning and swallows it
+  (only `OperationCanceledException` is rethrown). The channel connection stays up; re-registration
+  occurs on the next reconnect. (The connection-layer method itself does not catch — surfacing the
+  failure through the host gives one logged warning instead of a silent drop.)
 - **Tool absence:** the probe skips it; no error.
 - **Empty catalog reads:** Scheduling `fs_create` rejects unknown `agentId` (existing validation
   path); `agent_info.json` lists none; WebChat selector is empty. All acceptable per choice 7.
