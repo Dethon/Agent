@@ -231,25 +231,19 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             return;
         }
 
-        try
+        var tools = await _client.ListToolsAsync(cancellationToken: ct);
+        if (tools.All(t => t.Name != "register_agents"))
         {
-            var tools = await _client.ListToolsAsync(cancellationToken: ct);
-            if (tools.All(t => t.Name != "register_agents"))
-            {
-                return;
-            }
+            return;
+        }
 
-            await _client.CallToolAsync(
-                "register_agents",
-                new Dictionary<string, object?>
-                {
-                    ["agents"] = JsonSerializer.Serialize(agents)
-                },
-                cancellationToken: ct);
-        }
-        catch (McpException)
-        {
-        }
+        await _client.CallToolAsync(
+            "register_agents",
+            new Dictionary<string, object?>
+            {
+                ["agents"] = JsonSerializer.Serialize(agents)
+            },
+            cancellationToken: ct);
     }
 
     public async ValueTask DisposeAsync()

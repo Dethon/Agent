@@ -97,26 +97,47 @@ public class ChannelConnectionHostTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         _ = sut.StartAsync(cts.Token);
 
-        await fake.WaitForRegisterAsync(cts.Token);
+        await fake.WaitForRegisterCountAsync(1, cts.Token);
         fake.RegisteredAgents.ShouldNotBeNull();
         fake.RegisteredAgents!.Single().Id.ShouldBe("jonas");
+    }
+
+    [Fact]
+    public async Task RegistersAgents_AfterReconnect()
+    {
+        var fake = new FakeMcpChannelConnection("ch-1");
+        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", null) };
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
+        var sut = new ChannelConnectionHost(
+            endpoints, [fake], catalog, _logger,
+            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+
+        await fake.WaitForRegisterCountAsync(1, cts.Token);
+        fake.SetHealthy(false);
+        await fake.WaitForRegisterCountAsync(2, cts.Token);
+        fake.RegisterCount.ShouldBeGreaterThanOrEqualTo(2);
     }
 }
 
 internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelConnection
 {
     private readonly TaskCompletionSource _firstConnect = new();
-    private readonly TaskCompletionSource _firstRegister = new();
     private readonly SemaphoreSlim _connectSignal = new(0);
+    private readonly SemaphoreSlim _registerSignal = new(0);
     private int _healthy = 1;
     private int _failNextConnects;
 
     private int _connectCount;
     private int _connectAttempts;
+    private int _registerCount;
 
     public string ChannelId { get; } = channelId;
     public int ConnectCount => Volatile.Read(ref _connectCount);
     public int ConnectAttempts => Volatile.Read(ref _connectAttempts);
+    public int RegisterCount => Volatile.Read(ref _registerCount);
     public IReadOnlyList<AgentCatalogEntry>? RegisteredAgents { get; private set; }
 
     public Task ConnectAsync(string endpoint, CancellationToken ct)
@@ -141,7 +162,8 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
     public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
     {
         RegisteredAgents = agents;
-        _firstRegister.TrySetResult();
+        Interlocked.Increment(ref _registerCount);
+        _registerSignal.Release();
         return Task.CompletedTask;
     }
 
@@ -151,13 +173,19 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
 
     public Task WaitForConnectAsync(CancellationToken ct) => _firstConnect.Task.WaitAsync(ct);
 
-    public Task WaitForRegisterAsync(CancellationToken ct) => _firstRegister.Task.WaitAsync(ct);
-
     public async Task WaitForConnectCountAsync(int count, CancellationToken ct)
     {
         while (ConnectCount < count)
         {
             await _connectSignal.WaitAsync(ct);
+        }
+    }
+
+    public async Task WaitForRegisterCountAsync(int count, CancellationToken ct)
+    {
+        while (RegisterCount < count)
+        {
+            await _registerSignal.WaitAsync(ct);
         }
     }
 }
