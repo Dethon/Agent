@@ -1,0 +1,136 @@
+using Domain.DTOs;
+using Domain.Tools;
+using Domain.Tools.Scheduling.Vfs;
+using Infrastructure.Validation;
+using Shouldly;
+using Xunit;
+
+namespace Tests.Unit.Domain.Scheduling.Vfs;
+
+public class ScheduleFileSystemWriteTests
+{
+    private static ScheduleFileSystem Build(FakeScheduleStore store) =>
+        new(store, new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "Jonas", "general")]), new CronValidator());
+
+    private const string ValidSpec = """{"prompt":"summarize news","cron":"0 8 * * *"}""";
+
+    [Fact]
+    public async Task Create_PersistsScheduleWithAgentIdFromPath()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store);
+
+        var node = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        var saved = store.Items["morning-news"];
+        saved.AgentId.ShouldBe("jonas");
+        saved.CronExpression.ShouldBe("0 8 * * *");
+        saved.NextRunAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Create_UnknownAgent_IsRejected()
+    {
+        var fs = Build(new FakeScheduleStore());
+        var node = await fs.CreateAsync("/ghost/x/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Create_DuplicateId_IsRejected()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var node = await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Create_WithBothCronAndRunAt_IsRejected()
+    {
+        var fs = Build(new FakeScheduleStore());
+        var spec = """{"prompt":"p","cron":"0 8 * * *","runAt":"2999-01-01T00:00:00Z"}""";
+        var node = await fs.CreateAsync("/jonas/x/schedule.json", spec, false, true, CancellationToken.None);
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Edit_UpdatesSchedulePrompt()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "summarize news", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var node = await fs.EditAsync("/jonas/morning-news/schedule.json",
+            [new TextEdit("summarize news", "summarize sports")], CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        store.Items["morning-news"].Prompt.ShouldBe("summarize sports");
+    }
+
+    [Fact]
+    public async Task Move_ReassignsAgent()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = new ScheduleFileSystem(store,
+            new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "J", null), new ScheduleAgentInfo("home", "Home", null)]),
+            new CronValidator());
+
+        var node = await fs.MoveAsync("/jonas/morning-news", "/home/morning-news", CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        store.Items["morning-news"].AgentId.ShouldBe("home");
+    }
+
+    [Fact]
+    public async Task Delete_RemovesSchedule()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var node = await fs.DeleteAsync("/jonas/morning-news", CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeFalse();
+        store.Items.ContainsKey("morning-news").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Edit_ProducingInvalidSpec_IsRejected()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "summarize news", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        // blank out the prompt value -> ValidateSpec must reject
+        var node = await fs.EditAsync("/jonas/morning-news/schedule.json",
+            [new TextEdit("\"prompt\": \"summarize news\"", "\"prompt\": \"\"")], CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Move_ToExistingDestinationId_IsRejected()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        await store.CreateAsync(new Schedule { Id = "evening-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 20 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var node = await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
+
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Delete_NonExistent_IsRejected()
+    {
+        var fs = Build(new FakeScheduleStore());
+        var node = await fs.DeleteAsync("/jonas/ghost-schedule", CancellationToken.None);
+        ToolErrorResult.IsErrorEnvelope(node).ShouldBeTrue();
+    }
+}
