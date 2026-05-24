@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using WebChat.Client.Contracts;
@@ -46,6 +47,10 @@ public sealed class SignalREventSubscriber(
         _subscriptions.Add(
             hubConnection.On<UserMessageNotification>(
                 "OnUserMessage", hubEventDispatcher.HandleUserMessage));
+
+        _subscriptions.Add(
+            hubConnection.On<IReadOnlyList<AgentCatalogEntry>>(
+                "OnAgentsUpdated", hubEventDispatcher.HandleAgentsUpdated));
 
         IsSubscribed = true;
     }

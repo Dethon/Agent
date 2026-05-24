@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Shouldly;
 using WebChat.Client.Models;
@@ -174,7 +175,7 @@ public class TopicsStoreTests : IDisposable
     public void SetAgents_UpdatesAgentsList()
     {
         // Arrange
-        var agents = new List<AgentInfo>
+        var agents = new List<AgentCatalogEntry>
         {
             new("agent-1", "Agent One", null),
             new("agent-2", "Agent Two", "Description")

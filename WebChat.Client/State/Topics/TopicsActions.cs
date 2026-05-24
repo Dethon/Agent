@@ -1,4 +1,4 @@
-using Domain.DTOs.WebChat;
+using Domain.DTOs.Channel;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Topics;
@@ -15,7 +15,7 @@ public record UpdateTopic(StoredTopic Topic) : IAction;
 
 public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;
 
-public record SetAgents(IReadOnlyList<AgentInfo> Agents) : IAction;
+public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
 public record SelectAgent(string AgentId) : IAction;
 
