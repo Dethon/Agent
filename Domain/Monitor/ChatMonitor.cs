@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Domain.Agents;
@@ -137,13 +138,38 @@ public class ChatMonitor(
 
                         await warmup;
                         var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt);
+                        var scheduleOrigin = x.Message.Origin is { Kind: "schedule" } ? x.Message : null;
+                        var stopwatch = scheduleOrigin is not null ? Stopwatch.StartNew() : null;
+                        var sawError = false;
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                            .Select(pair => (pair.Item1, pair.Item2, targets));
+                            .Select(async (pair, _, _) =>
+                            {
+                                if (scheduleOrigin is not null)
+                                {
+                                    if (pair.Item1.Contents.OfType<ErrorContent>().Any())
+                                    {
+                                        sawError = true;
+                                    }
+
+                                    if (pair.Item1.Contents.OfType<StreamCompleteContent>().Any())
+                                    {
+                                        var evt = BuildScheduleEvent(
+                                            scheduleOrigin, stopwatch!.ElapsedMilliseconds, !sawError,
+                                            sawError ? "Agent run reported an error" : null);
+                                        if (evt is not null)
+                                        {
+                                            await metricsPublisher.PublishAsync(evt, linkedCt);
+                                        }
+                                    }
+                                }
+
+                                return (pair.Item1, pair.Item2, targets);
+                            });
                 }
             })
             .Merge(linkedCt);
@@ -171,6 +197,25 @@ public class ChatMonitor(
 
             yield return true;
         }
+    }
+
+    public static ScheduleExecutionEvent? BuildScheduleEvent(
+        ChannelMessage message, long durationMs, bool success, string? error)
+    {
+        if (message.Origin is not { Kind: "schedule", ScheduleId: { } scheduleId })
+        {
+            return null;
+        }
+
+        return new ScheduleExecutionEvent
+        {
+            ScheduleId = scheduleId,
+            AgentId = message.AgentId ?? "default",
+            Prompt = message.Content,
+            DurationMs = durationMs,
+            Success = success,
+            Error = error
+        };
     }
 
     private static IEnumerable<(string Content, ReplyContentType ContentType, bool IsComplete)> MapResponseUpdate(
