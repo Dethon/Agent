@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
+using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Configuration;
@@ -57,6 +58,8 @@ public static class ConfigModule
                 };
 #pragma warning restore MCPEXP002
             })
+            .WithTools<SendReplyTool>()
+            .WithTools<RequestApprovalTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

@@ -1,0 +1,19 @@
+using System.ComponentModel;
+using Domain.DTOs;
+using ModelContextProtocol.Server;
+
+namespace McpServerScheduling.McpTools;
+
+[McpServerToolType]
+public sealed class SendReplyTool
+{
+    [McpServerTool(Name = "send_reply")]
+    [Description("Receive a reply chunk — scheduling has no inbound surface; chunks are dropped")]
+    public static string McpRun(
+        [Description("Conversation ID")] string conversationId,
+        [Description("Response content")] string content,
+        [Description("Kind of chunk")] ReplyContentType contentType,
+        [Description("Whether this is the final chunk")] bool isComplete,
+        [Description("Message ID")] string? messageId)
+        => "ok";
+}
