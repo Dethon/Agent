@@ -22,6 +22,6 @@ public class VfsFileInfoTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(path);
-        return await resolution.Backend.InfoAsync(resolution.RelativePath, cancellationToken);
+        return (await resolution.Backend.InfoAsync(resolution.RelativePath, cancellationToken)).ToNode();
     }
 }

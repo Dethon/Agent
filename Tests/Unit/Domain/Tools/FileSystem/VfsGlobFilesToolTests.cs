@@ -1,6 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
-using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -21,28 +20,42 @@ public class GlobFilesToolTests
     [Fact]
     public async Task RunAsync_ResolvesBasePathAndCallsBackend()
     {
-        var expected = new JsonObject { ["files"] = new JsonArray("a.md", "b.md") };
         _registry.Setup(r => r.Resolve("/library"))
             .Returns(new FileSystemResolution(_backend.Object, ""));
-        _backend.Setup(b => b.GlobAsync("", "**/*.md", VfsGlobMode.Files, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+        _backend.Setup(b => b.GlobAsync("", "**/*", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = ["a.md", "sub/"], Truncated = false, Total = 2
+            }));
 
-        var result = await _tool.RunAsync("/library", "**/*.md", VfsGlobMode.Files, cancellationToken: CancellationToken.None);
+        var result = await _tool.RunAsync("/library", "**/*", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["entries"]!.AsArray().Count.ShouldBe(2);
+        result["total"]!.GetValue<int>().ShouldBe(2);
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
     }
 
     [Fact]
     public async Task RunAsync_WithSubdirectory_ResolvesRelativePath()
     {
-        var expected = new JsonObject { ["directories"] = new JsonObject() };
         _registry.Setup(r => r.Resolve("/vault/docs"))
             .Returns(new FileSystemResolution(_backend.Object, "docs"));
-        _backend.Setup(b => b.GlobAsync("docs", "*", VfsGlobMode.Directories, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+        _backend.Setup(b => b.GlobAsync("docs", "*/", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = ["docs/"], Truncated = false, Total = 1
+            }));
 
-        var result = await _tool.RunAsync("/vault/docs", "*", VfsGlobMode.Directories, cancellationToken: CancellationToken.None);
+        var result = await _tool.RunAsync("/vault/docs", "*/", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["entries"]!.AsArray().Count.ShouldBe(1);
+        result["total"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Name_IsGlob()
+    {
+        VfsGlobFilesTool.Name.ShouldBe("glob");
+        VfsGlobFilesTool.Key.ShouldBe("glob");
     }
 }

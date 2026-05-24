@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.Config;
 
 namespace Domain.Tools.Files;
@@ -24,13 +25,13 @@ public class MoveTool(IFileSystemClient client, LibraryPathConfig libraryPath)
         destinationPath = ResolveAndValidatePath(destinationPath);
 
         await client.Move(sourcePath, destinationPath, ct);
-        return new JsonObject
+        return FsResultContract.ToNode(new FsMoveResult
         {
-            ["status"] = "success",
-            ["message"] = "File moved successfully",
-            ["source"] = sourcePath,
-            ["destination"] = destinationPath
-        };
+            Status = "success",
+            Message = "File moved successfully",
+            Source = sourcePath,
+            Destination = destinationPath
+        });
     }
 
     private string ResolveAndValidatePath(string path)

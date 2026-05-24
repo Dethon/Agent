@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Text;
 
@@ -230,68 +231,43 @@ public class TextSearchTool(string vaultPath, string[] allowedExtensions)
         int maxResults,
         SearchOutputMode outputMode)
     {
-        var resultMapper = outputMode == SearchOutputMode.FilesOnly
-            ? (Func<FileMatch, JsonNode>)ToFileMatchSummaryJson
-            : ToFileMatchJson;
-
-        return new JsonObject
+        return FsResultContract.ToNode(new FsSearchResult
         {
-            ["query"] = query,
-            ["regex"] = regex,
-            ["path"] = path,
-            ["filesSearched"] = filesSearched,
-            ["filesWithMatches"] = results.Count,
-            ["totalMatches"] = totalMatches,
-            ["truncated"] = totalMatches >= maxResults,
-            ["results"] = new JsonArray(results.Select(resultMapper).ToArray())
-        };
+            Query = query,
+            Regex = regex,
+            Path = path,
+            FilesSearched = filesSearched,
+            FilesWithMatches = results.Count,
+            TotalMatches = totalMatches,
+            Truncated = totalMatches >= maxResults,
+            Results = results.Select(r => ToFileResult(r, outputMode)).ToList()
+        });
     }
 
-    private static JsonNode ToFileMatchSummaryJson(FileMatch fileMatch)
-    {
-        return new JsonObject
-        {
-            ["file"] = fileMatch.File,
-            ["matchCount"] = fileMatch.Matches.Count
-        };
-    }
-
-    private static JsonNode ToFileMatchJson(FileMatch fileMatch)
-    {
-        return new JsonObject
-        {
-            ["file"] = fileMatch.File,
-            ["matches"] = new JsonArray(fileMatch.Matches.Select(ToMatchResultJson).ToArray())
-        };
-    }
-
-    private static JsonNode ToMatchResultJson(MatchResult match)
-    {
-        var obj = new JsonObject
-        {
-            ["line"] = match.LineNumber,
-            ["text"] = match.Text
-        };
-
-        if (match.Section is not null)
-        {
-            obj["section"] = match.Section;
-        }
-
-        if (match.ContextBefore?.Count > 0 || match.ContextAfter?.Count > 0)
-        {
-            obj["context"] = new JsonObject
+    private static FsSearchFileResult ToFileResult(FileMatch fileMatch, SearchOutputMode outputMode) =>
+        outputMode == SearchOutputMode.FilesOnly
+            ? new FsSearchFileResult { File = fileMatch.File, MatchCount = fileMatch.Matches.Count }
+            : new FsSearchFileResult
             {
-                ["before"] = ToJsonArray(match.ContextBefore ?? []),
-                ["after"] = ToJsonArray(match.ContextAfter ?? [])
+                File = fileMatch.File,
+                Matches = fileMatch.Matches.Select(ToMatch).ToList()
             };
-        }
 
-        return obj;
-    }
-
-    private static JsonArray ToJsonArray(IEnumerable<string> items)
+    private static FsSearchMatch ToMatch(MatchResult match)
     {
-        return new JsonArray(items.Select(s => JsonValue.Create(s)).ToArray<JsonNode>());
+        var hasContext = match.ContextBefore?.Count > 0 || match.ContextAfter?.Count > 0;
+        return new FsSearchMatch
+        {
+            Line = match.LineNumber,
+            Text = match.Text,
+            Section = match.Section,
+            Context = hasContext
+                ? new FsSearchContext
+                {
+                    Before = match.ContextBefore ?? [],
+                    After = match.ContextAfter ?? []
+                }
+                : null
+        };
     }
 }

@@ -1,0 +1,38 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "stdout": {
+      "type": "string"
+    },
+    "stderr": {
+      "type": "string"
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "timedOut": {
+      "type": "boolean"
+    },
+    "durationMs": {
+      "type": "integer"
+    },
+    "cwd": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "stdout",
+    "stderr",
+    "exitCode",
+    "truncated",
+    "timedOut",
+    "durationMs",
+    "cwd"
+  ]
+}

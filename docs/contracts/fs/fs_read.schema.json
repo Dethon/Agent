@@ -1,0 +1,32 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "filePath": {
+      "type": "string"
+    },
+    "content": {
+      "type": "string"
+    },
+    "totalLines": {
+      "type": "integer"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "suggestion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "filePath",
+    "content",
+    "totalLines",
+    "truncated"
+  ]
+}

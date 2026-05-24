@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -20,14 +20,17 @@ public class RemoveToolTests
     [Fact]
     public async Task RunAsync_ResolvesPathAndCallsBackend()
     {
-        var expected = new JsonObject { ["status"] = "success", ["trashPath"] = ".trash/file.md" };
         _registry.Setup(r => r.Resolve("/library/old/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "old/file.md"));
         _backend.Setup(b => b.DeleteAsync("old/file.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+            {
+                Status = "trashed", Message = "", OriginalPath = "old/file.md", TrashPath = ".trash/file.md"
+            }));
 
         var result = await _tool.RunAsync("/library/old/file.md", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["status"]!.GetValue<string>().ShouldBe("trashed");
+        result["trashPath"]!.GetValue<string>().ShouldBe(".trash/file.md");
     }
 }

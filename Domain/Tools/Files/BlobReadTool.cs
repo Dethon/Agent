@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -50,12 +51,12 @@ public class BlobReadTool(string rootPath)
         }
 
         var eof = offset + actuallyRead >= info.Length;
-        return new JsonObject
+        return FsResultContract.ToNode(new FsBlobReadResult
         {
-            ["contentBase64"] = Convert.ToBase64String(buffer, 0, actuallyRead),
-            ["eof"] = eof,
-            ["totalBytes"] = info.Length
-        };
+            ContentBase64 = Convert.ToBase64String(buffer, 0, actuallyRead),
+            Eof = eof,
+            TotalBytes = info.Length
+        });
     }
 
     private string ResolveAndValidate(string path)

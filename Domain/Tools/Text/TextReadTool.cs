@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Text;
 
@@ -46,20 +47,15 @@ public class TextReadTool(string vaultPath, string[] allowedExtensions)
             .Select((line, i) => $"{startIndex + i + 1}: {line}");
         var content = string.Join("\n", numberedLines);
 
-        var result = new JsonObject
+        return FsResultContract.ToNode(new FsReadResult
         {
-            ["filePath"] = fullPath,
-            ["content"] = content,
-            ["totalLines"] = totalLines,
-            ["truncated"] = truncated
-        };
-
-        if (truncated)
-        {
-            var nextOffset = startIndex + effectiveLimit + 1;
-            result["suggestion"] = $"File has more content. Use offset={nextOffset} to continue reading.";
-        }
-
-        return result;
+            FilePath = fullPath,
+            Content = content,
+            TotalLines = totalLines,
+            Truncated = truncated,
+            Suggestion = truncated
+                ? $"File has more content. Use offset={startIndex + effectiveLimit + 1} to continue reading."
+                : null
+        });
     }
 }

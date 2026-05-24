@@ -58,11 +58,12 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Subagent DI module | `Agent/Modules/SubAgentModule.cs` |
 | Filesystem tools & feature | `Domain/Tools/FileSystem/*.cs` |
 | Filesystem contracts | `Domain/Contracts/IFileSystem*.cs`, `Domain/Contracts/IVirtualFileSystemRegistry.cs` |
-| Filesystem DTOs | `Domain/DTOs/FileSystemMount.cs` |
+| Filesystem DTOs | `Domain/DTOs/FileSystemMount.cs`, `Domain/DTOs/FileSystem/*.cs` |
 | Virtual filesystem registry | `Infrastructure/Agents/VirtualFileSystemRegistry.cs` |
 | MCP filesystem backend | `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs`, `McpFileSystemDiscovery.cs` |
 | Local filesystem client | `Infrastructure/Clients/LocalFileSystemClient.cs` |
-| Filesystem MCP resources | `McpServer{Vault,Library}/McpResources/FileSystemResource.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant}/McpResources/FileSystemResource.cs` |
+| Home Assistant VFS engine | `Domain/Tools/HomeAssistant/Vfs/*.cs` |
 | Web browsing tools | `Domain/Tools/Web/*.cs` |
 | Web browsing prompt | `Domain/Prompts/WebBrowsingPrompt.cs` |
 | Web browser contracts | `Domain/Contracts/IWebBrowser.cs` |

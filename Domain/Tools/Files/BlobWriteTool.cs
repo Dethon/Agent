@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Files;
 
@@ -46,12 +47,12 @@ public class BlobWriteTool(string rootPath)
         }
 
         var info = new FileInfo(resolved);
-        return new JsonObject
+        return FsResultContract.ToNode(new FsBlobWriteResult
         {
-            ["path"] = path,
-            ["bytesWritten"] = bytes.Length,
-            ["totalBytes"] = info.Length
-        };
+            Path = path,
+            BytesWritten = bytes.Length,
+            TotalBytes = info.Length
+        });
     }
 
     private string ResolveAndValidate(string path)

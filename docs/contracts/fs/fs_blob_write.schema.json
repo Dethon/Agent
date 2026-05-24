@@ -1,0 +1,22 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "bytesWritten": {
+      "type": "integer"
+    },
+    "totalBytes": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "path",
+    "bytesWritten",
+    "totalBytes"
+  ]
+}

@@ -61,6 +61,8 @@ public class McpVaultServerFixture : IAsyncLifetime
             .WithTools<FsSearchTool>()
             .WithTools<FsMoveTool>()
             .WithTools<FsDeleteTool>()
+            .WithTools<FsInfoTool>()
+            .WithTools<FsCopyTool>()
             .WithResources<FileSystemResource>();
 
         var app = builder.Build();

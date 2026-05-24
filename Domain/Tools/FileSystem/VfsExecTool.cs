@@ -31,6 +31,6 @@ public class VfsExecTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(path);
-        return await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken);
+        return (await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken)).ToNode();
     }
 }

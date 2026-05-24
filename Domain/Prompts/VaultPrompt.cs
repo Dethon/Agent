@@ -30,7 +30,7 @@ public static class VaultPrompt
 
         ### Placing new notes
 
-        - **Survey before you create.** Before creating the first note in a vault session, glob the vault root for top-level folders (and any obvious sub-folders for the topic). Cache that mental map for the rest of the turn — don't re-glob for every note.
+        - **Survey before you create.** Before creating the first note in a vault session, glob the vault root for top-level folders — use a trailing slash (`*/`) to list directories only, or `**/` to include sub-folders. Cache that mental map for the rest of the turn — don't re-glob for every note.
         - **Fit into the existing tree.** Pick the deepest existing folder whose topic matches the note. A note about a recipe goes under the user's existing `Cooking/` (or `Recipes/`, or whatever they call it), not at the root. Match the user's naming style (casing, spaces vs. hyphens, language) when picking a filename.
         - **Don't dump at the root.** The vault root is reserved for the user's own top-level notes and folder structure. Only place a note there if it genuinely belongs at the top level (e.g. an index/MOC) or if the vault has no folder structure at all.
         - **Don't invent new top-level folders silently.** If nothing in the existing tree fits, ask the user where the note should live (or whether to create a new folder for it) before creating. A one-off "Misc" or "Inbox" folder is a smell — prefer asking.

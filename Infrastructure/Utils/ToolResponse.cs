@@ -35,7 +35,7 @@ public static class ToolResponse
     {
         return new CallToolResult
         {
-            IsError = IsErrorEnvelope(json),
+            IsError = ToolErrorResult.IsErrorEnvelope(json),
             Content =
             [
                 new TextContentBlock
@@ -55,7 +55,7 @@ public static class ToolResponse
 
         return new CallToolResult
         {
-            IsError = IsErrorEnvelope(envelope),
+            IsError = ToolErrorResult.IsErrorEnvelope(envelope),
             Content = content
         };
     }
@@ -74,13 +74,6 @@ public static class ToolResponse
             ]
         };
     }
-
-    private static bool IsErrorEnvelope(JsonNode json)
-        => json is JsonObject obj
-           && obj.TryGetPropertyValue("ok", out var ok)
-           && ok is JsonValue v
-           && v.TryGetValue<bool>(out var okValue)
-           && !okValue;
 
     // Exception → envelope code mapping. FileNotFoundException/DirectoryNotFoundException
     // derive from IOException, so list them first; the switch matches the most specific arm.

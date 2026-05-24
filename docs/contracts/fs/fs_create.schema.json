@@ -1,0 +1,26 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "filePath": {
+      "type": "string"
+    },
+    "size": {
+      "type": "string"
+    },
+    "lines": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "status",
+    "filePath",
+    "size",
+    "lines"
+  ]
+}

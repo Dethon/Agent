@@ -1,41 +1,39 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Agents.Mcp;
 
-internal class McpFileSystemBackend(McpClient client, string filesystemName) : IFileSystemBackend
+internal class McpFileSystemBackend(McpClient client, string filesystemName, ILogger? logger = null) : IFileSystemBackend
 {
     public string FilesystemName => filesystemName;
 
-    public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_read", new Dictionary<string, object?>
+    public Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
+        CallTypedAsync<FsReadResult>("fs_read", new Dictionary<string, object?>
         {
             ["path"] = path,
             ["offset"] = offset,
             ["limit"] = limit
         }, ct);
-    }
 
-    public async Task<JsonNode> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_create", new Dictionary<string, object?>
+    public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct) =>
+        CallTypedAsync<FsCreateResult>("fs_create", new Dictionary<string, object?>
         {
             ["path"] = path,
             ["content"] = content,
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
         }, ct);
-    }
 
-    public async Task<JsonNode> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_edit", new Dictionary<string, object?>
+    public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
+        CallTypedAsync<FsEditResult>("fs_edit", new Dictionary<string, object?>
         {
             ["path"] = path,
             ["edits"] = edits.Select(e => new Dictionary<string, object?>
@@ -45,22 +43,17 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
                 ["replaceAll"] = e.ReplaceAll
             }).ToList()
         }, ct);
-    }
 
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, VfsGlobMode mode, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_glob", new Dictionary<string, object?>
+    public Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+        CallTypedAsync<FsGlobResult>("fs_glob", new Dictionary<string, object?>
         {
             ["basePath"] = basePath,
-            ["pattern"] = pattern,
-            ["mode"] = mode.ToString()
+            ["pattern"] = pattern
         }, ct);
-    }
 
-    public async Task<JsonNode> SearchAsync(string query, bool regex, string? path, string? directoryPath,
-        string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_search", new Dictionary<string, object?>
+    public Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path, string? directoryPath,
+        string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct) =>
+        CallTypedAsync<FsSearchResult>("fs_search", new Dictionary<string, object?>
         {
             ["query"] = query,
             ["regex"] = regex,
@@ -71,54 +64,43 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
             ["contextLines"] = contextLines,
             ["outputMode"] = outputMode.ToString()
         }, ct);
-    }
 
-    public async Task<JsonNode> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_move", new Dictionary<string, object?>
+    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        CallTypedAsync<FsMoveResult>("fs_move", new Dictionary<string, object?>
         {
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath
         }, ct);
-    }
 
-    public async Task<JsonNode> DeleteAsync(string path, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_delete", new Dictionary<string, object?>
+    public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        CallTypedAsync<FsRemoveResult>("fs_delete", new Dictionary<string, object?>
         {
             ["path"] = path
         }, ct);
-    }
 
-    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_info", new Dictionary<string, object?>
+    public Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
+        CallTypedAsync<FsInfoResult>("fs_info", new Dictionary<string, object?>
         {
             ["path"] = path
         }, ct);
-    }
 
-    public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_exec", new Dictionary<string, object?>
+    public Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct) =>
+        CallTypedAsync<FsExecResult>("fs_exec", new Dictionary<string, object?>
         {
             ["path"] = path,
             ["command"] = command,
             ["timeoutSeconds"] = timeoutSeconds
         }, ct);
-    }
 
-    public async Task<JsonNode> CopyAsync(string sourcePath, string destinationPath,
-        bool overwrite, bool createDirectories, CancellationToken ct)
-    {
-        return await CallToolAsync("fs_copy", new Dictionary<string, object?>
+    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        CallTypedAsync<FsCopyResult>("fs_copy", new Dictionary<string, object?>
         {
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath,
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
         }, ct);
-    }
 
     public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
@@ -136,9 +118,10 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
                 ["length"] = chunkSize
             }, ct);
 
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            var blobError = ToolErrorResult.FromEnvelope(node);
+            if (blobError is not null)
             {
-                throw new IOException($"fs_blob_read failed: {obj["message"]?.GetValue<string>()}");
+                throw new IOException($"fs_blob_read failed: {blobError.Message}");
             }
 
             var bytes = Convert.FromBase64String(node["contentBase64"]!.GetValue<string>());
@@ -177,9 +160,10 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
                 ["createDirectories"] = createDirectories
             }, ct);
 
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            var blobError = ToolErrorResult.FromEnvelope(node);
+            if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+                throw new IOException($"fs_blob_write failed: {blobError.Message}");
             }
 
             offset += chunk.Length;
@@ -197,13 +181,30 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
                 ["createDirectories"] = createDirectories
             }, ct);
 
-            if (node is JsonObject obj && obj["ok"] is JsonValue ok && !ok.GetValue<bool>())
+            var blobError = ToolErrorResult.FromEnvelope(node);
+            if (blobError is not null)
             {
-                throw new IOException($"fs_blob_write failed: {obj["message"]?.GetValue<string>()}");
+                throw new IOException($"fs_blob_write failed: {blobError.Message}");
             }
         }
 
         return offset;
+    }
+
+    private async Task<FsResult<T>> CallTypedAsync<T>(
+        string toolName, Dictionary<string, object?> args, CancellationToken ct) where T : class
+    {
+        var node = await CallToolAsync(toolName, args, ct);
+
+        var error = ToolErrorResult.FromEnvelope(node);
+        if (error is not null)
+        {
+            return new FsResult<T>.Err(error);
+        }
+
+        var value = node.Deserialize<T>(FsResultContract.ValidationOptions)
+            ?? throw new InvalidOperationException($"Failed to deserialize '{toolName}' payload.");
+        return new FsResult<T>.Ok(value);
     }
 
     protected internal virtual async Task<JsonNode> CallToolAsync(string toolName, Dictionary<string, object?> args, CancellationToken ct)
@@ -235,15 +236,31 @@ internal class McpFileSystemBackend(McpClient client, string filesystemName) : I
 
         if (result.IsError == true)
         {
-            return parsed is JsonObject envelope && envelope["ok"] is JsonValue
-                ? envelope
+            return ToolErrorResult.IsErrorEnvelope(parsed)
+                ? parsed!
                 : ToolError.Create(
                     ToolError.Codes.InternalError,
                     $"Error calling '{toolName}' on the '{filesystemName}' filesystem: {text}",
                     retryable: false);
         }
 
-        return parsed
+        var node = parsed
             ?? throw new InvalidOperationException($"Failed to parse response from {toolName}");
+
+        if (!FsResultContract.TryValidate(toolName, node, out var validationError))
+        {
+            logger?.LogWarning(
+                "Filesystem '{Filesystem}' returned a malformed '{Tool}' payload: {Error}",
+                filesystemName, toolName, validationError);
+
+            return ToolError.Create(
+                ToolError.Codes.InternalError,
+                $"The '{filesystemName}' filesystem returned a malformed '{toolName}' payload " +
+                "that does not match the expected schema.",
+                retryable: false,
+                hint: "This is a backend bug; the payload was rejected to protect the conversation.");
+        }
+
+        return node;
     }
 }

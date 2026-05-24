@@ -48,7 +48,7 @@ internal static class McpFileSystemDiscovery
                     }
 
                     var mount = new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "");
-                    var backend = new McpFileSystemBackend(client, metadata.Name);
+                    var backend = new McpFileSystemBackend(client, metadata.Name, logger);
                     registry.Mount(mount, backend);
 
                     logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",

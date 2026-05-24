@@ -1,0 +1,26 @@
+{
+  "type": [
+    "object",
+    "null"
+  ],
+  "properties": {
+    "status": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "originalPath": {
+      "type": "string"
+    },
+    "trashPath": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "message",
+    "originalPath",
+    "trashPath"
+  ]
+}

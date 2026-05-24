@@ -1,6 +1,6 @@
 using System.Text;
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -15,11 +15,14 @@ public class VfsMoveToolCrossFsTests
         var src = new Mock<IFileSystemBackend>();
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         src.Setup(b => b.ReadChunksAsync("a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("hello")));
         src.Setup(b => b.DeleteAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["status"] = "deleted" });
+            .ReturnsAsync(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+            {
+                Status = "trashed", Message = "", OriginalPath = "a.md", TrashPath = ".trash/a.md"
+            }));
 
         var dst = new Mock<IFileSystemBackend>();
         dst.SetupGet(b => b.FilesystemName).Returns("sandbox");
@@ -50,9 +53,12 @@ public class VfsMoveToolCrossFsTests
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
         backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["isDirectory"] = false });
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         backend.Setup(b => b.MoveAsync("a.md", "b.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["status"] = "moved" });
+            .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
+            {
+                Status = "moved", Message = "", Source = "a.md", Destination = "b.md"
+            }));
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/a.md"))

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.Text;
 
@@ -37,13 +38,13 @@ public class TextCreateTool(string vaultPath, string[] allowedExtensions)
         File.WriteAllText(fullPath, content);
 
         var info = new FileInfo(fullPath);
-        return new JsonObject
+        return FsResultContract.ToNode(new FsCreateResult
         {
-            ["status"] = "created",
-            ["filePath"] = ToRelativePath(fullPath),
-            ["size"] = FormatFileSize(info.Length),
-            ["lines"] = content.Split('\n').Length
-        };
+            Status = "created",
+            FilePath = ToRelativePath(fullPath),
+            Size = FormatFileSize(info.Length),
+            Lines = content.Split('\n').Length
+        });
     }
 
     private void ValidateExtension(string fullPath)

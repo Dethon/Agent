@@ -144,7 +144,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act
         var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__glob_files tool with basePath: /vault/glob-test and pattern: **/*.md to list all .md files. " +
+                "Use the domain__filesystem__glob tool with basePath: /vault/glob-test and pattern: **/*.md to list all .md files. " +
                 "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
                 "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)
@@ -299,7 +299,7 @@ public class McpAgentFileSystemTests(McpVaultServerFixture vaultFixture, RedisFi
 
         // Act - use glob (an enabled tool) to find files
         var responses = await agent.RunStreamingAsync(
-                "Use the domain__filesystem__glob_files tool with basePath: /vault/subset-test and pattern: **/*.md to find all .md files. " +
+                "Use the domain__filesystem__glob tool with basePath: /vault/subset-test and pattern: **/*.md to find all .md files. " +
                 "IMPORTANT: the basePath argument MUST start with the mounted prefix /vault. " +
                 "Pass it exactly as written — do not shorten, rename, or invent paths.",
                 cancellationToken: cts.Token)

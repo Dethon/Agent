@@ -27,6 +27,6 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(filePath);
-        return await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken);
+        return (await resolution.Backend.EditAsync(resolution.RelativePath, edits, cancellationToken)).ToNode();
     }
 }
