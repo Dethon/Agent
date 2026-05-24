@@ -91,6 +91,22 @@ public static class IAsyncEnumerableExtensions
             return new[] { source, right }.ToAsyncEnumerable().Merge(ct);
         }
 
+        public async IAsyncEnumerable<TSource> OnCompletion<TState>(
+            TState seed,
+            Func<TState, TSource, TState> fold,
+            Func<TState, CancellationToken, ValueTask> onCompletion,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            var state = seed;
+            await foreach (var item in source.WithCancellation(ct))
+            {
+                state = fold(state, item);
+                yield return item;
+            }
+
+            await onCompletion(state, ct);
+        }
+
         public async IAsyncEnumerable<TSource> IgnoreCancellation(
             [EnumeratorCancellation] CancellationToken ct = default)
         {

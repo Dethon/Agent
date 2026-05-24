@@ -138,38 +138,27 @@ public class ChatMonitor(
 
                         await warmup;
                         var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt);
-                        var scheduleOrigin = x.Message.Origin is { Kind: "schedule" } ? x.Message : null;
-                        var stopwatch = scheduleOrigin is not null ? Stopwatch.StartNew() : null;
-                        var sawError = false;
+                        var stopwatch = Stopwatch.StartNew();
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                            .Select(async (pair, _, _) =>
-                            {
-                                if (scheduleOrigin is not null)
+                            .Select(pair => (pair.Item1, pair.Item2, targets))
+                            .OnCompletion(
+                                seed: false,
+                                fold: (faulted, pair) => faulted || pair.Item1.Contents.OfType<ErrorContent>().Any(),
+                                onCompletion: async (faulted, completionCt) =>
                                 {
-                                    if (pair.Item1.Contents.OfType<ErrorContent>().Any())
+                                    var error = faulted ? "Agent run reported an error" : null;
+                                    var evt = BuildScheduleEvent(x.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
+                                    if (evt is not null)
                                     {
-                                        sawError = true;
+                                        await metricsPublisher.PublishAsync(evt, completionCt);
                                     }
-
-                                    if (pair.Item1.Contents.OfType<StreamCompleteContent>().Any())
-                                    {
-                                        var evt = BuildScheduleEvent(
-                                            scheduleOrigin, stopwatch!.ElapsedMilliseconds, !sawError,
-                                            sawError ? "Agent run reported an error" : null);
-                                        if (evt is not null)
-                                        {
-                                            await metricsPublisher.PublishAsync(evt, linkedCt);
-                                        }
-                                    }
-                                }
-
-                                return (pair.Item1, pair.Item2, targets);
-                            });
+                                },
+                                linkedCt);
                 }
             })
             .Merge(linkedCt);
