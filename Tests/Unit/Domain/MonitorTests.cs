@@ -108,7 +108,7 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 
 internal sealed class FakeChannelConnection : IChannelConnection
 {
-    private readonly Channel<ChannelMessage> _channel = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly Channel<ChannelMessage> _channel = System.Threading.Channels.Channel.CreateUnbounded<ChannelMessage>();
 
     public string ChannelId { get; init; } = "test-channel";
 
