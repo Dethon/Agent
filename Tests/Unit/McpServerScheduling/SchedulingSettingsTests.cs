@@ -14,10 +14,7 @@ public class SchedulingSettingsTests
         {
             ["RedisConnectionString"] = "redis:6379",
             ["DispatchIntervalSeconds"] = "15",
-            ["DefaultDeliverTo:0"] = "signalr",
-            ["Agents:0:Id"] = "jonas",
-            ["Agents:0:Name"] = "Jonas",
-            ["Agents:0:Description"] = "General assistant"
+            ["DefaultDeliverTo:0"] = "signalr"
         }).Build();
 
         var settings = config.Get<SchedulingSettings>()!;
@@ -25,8 +22,5 @@ public class SchedulingSettingsTests
         settings.RedisConnectionString.ShouldBe("redis:6379");
         settings.DispatchIntervalSeconds.ShouldBe(15);
         settings.DefaultDeliverTo[0].ShouldBe("signalr");
-        settings.Agents[0].Id.ShouldBe("jonas");
-        settings.Agents[0].Name.ShouldBe("Jonas");
-        settings.Agents[0].Description.ShouldBe("General assistant");
     }
 }

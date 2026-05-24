@@ -1,4 +1,6 @@
+using Domain.Agents;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
@@ -9,11 +11,15 @@ namespace Tests.Unit.Domain.Scheduling.Vfs;
 
 public class ScheduleFileSystemSearchTests
 {
-    private static ScheduleFileSystem Build(FakeScheduleStore store) =>
-        new(store, new FakeAgentCatalog([
-            new ScheduleAgentInfo("jonas", "Jonas", "general"),
-            new ScheduleAgentInfo("jack", "Jack", "library")
-        ]), new CronValidator());
+    private static ScheduleFileSystem Build(FakeScheduleStore store)
+    {
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([
+            new AgentCatalogEntry("jonas", "Jonas", "general"),
+            new AgentCatalogEntry("jack", "Jack", "library")
+        ]);
+        return new ScheduleFileSystem(store, catalog, new CronValidator());
+    }
 
     private static async Task<FakeScheduleStore> Seed()
     {

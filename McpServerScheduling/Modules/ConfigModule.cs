@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.StateManagers;
@@ -39,7 +40,9 @@ public static class ConfigModule
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
             .AddSingleton<ICronValidator, CronValidator>()
-            .AddSingleton<IScheduleAgentCatalog, ScheduleAgentCatalog>()
+            .AddSingleton<MutableAgentCatalog>()
+            .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+            .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<ScheduleFileSystem>()
             .AddHostedService<ScheduleDispatcherService>();
 

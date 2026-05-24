@@ -10,7 +10,7 @@ namespace Domain.Tools.Scheduling.Vfs;
 
 public sealed class ScheduleFileSystem(
     IScheduleStore store,
-    IScheduleAgentCatalog agents,
+    IAgentCatalog agents,
     ICronValidator cronValidator) : IFileSystemBackend
 {
     public string FilesystemName => "schedules";

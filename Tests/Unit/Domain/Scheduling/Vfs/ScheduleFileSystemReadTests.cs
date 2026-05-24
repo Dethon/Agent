@@ -1,4 +1,6 @@
+using Domain.Agents;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
@@ -11,9 +13,10 @@ public class ScheduleFileSystemReadTests
 {
     private static ScheduleFileSystem Build(FakeScheduleStore store)
     {
-        var catalog = new FakeAgentCatalog([
-            new ScheduleAgentInfo("jonas", "Jonas", "general"),
-            new ScheduleAgentInfo("jack", "Jack", "library")
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([
+            new AgentCatalogEntry("jonas", "Jonas", "general"),
+            new AgentCatalogEntry("jack", "Jack", "library")
         ]);
         return new ScheduleFileSystem(store, catalog, new CronValidator());
     }

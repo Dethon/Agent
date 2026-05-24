@@ -1,10 +1,13 @@
 using System.Net;
+using Domain.Contracts;
+using Domain.DTOs.Channel;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Integration.Fixtures;
@@ -33,11 +36,7 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         {
             RedisConnectionString = redisConnection,
             DispatchIntervalSeconds = 3600,
-            DefaultDeliverTo = ["signalr"],
-            Agents =
-            [
-                new SchedulingAgentConfig { Id = "jonas", Name = "Jonas", Description = "test agent" }
-            ]
+            DefaultDeliverTo = ["signalr"]
         };
 
         var builder = WebApplication.CreateBuilder();
@@ -46,6 +45,9 @@ public class McpSchedulingServerFixture : IAsyncLifetime
 
         var app = builder.Build();
         app.MapMcp("/mcp");
+
+        app.Services.GetRequiredService<IMutableAgentCatalog>()
+            .Replace([new AgentCatalogEntry("jonas", "Jonas", "test agent")]);
 
         _host = app;
         await _host.StartAsync();

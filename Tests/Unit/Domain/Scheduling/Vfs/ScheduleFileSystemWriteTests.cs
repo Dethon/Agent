@@ -1,4 +1,6 @@
+using Domain.Agents;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
@@ -9,8 +11,12 @@ namespace Tests.Unit.Domain.Scheduling.Vfs;
 
 public class ScheduleFileSystemWriteTests
 {
-    private static ScheduleFileSystem Build(FakeScheduleStore store) =>
-        new(store, new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "Jonas", "general")]), new CronValidator());
+    private static ScheduleFileSystem Build(FakeScheduleStore store)
+    {
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
+        return new ScheduleFileSystem(store, catalog, new CronValidator());
+    }
 
     private const string ValidSpec = """{"prompt":"summarize news","cron":"0 8 * * *"}""";
 
@@ -76,9 +82,9 @@ public class ScheduleFileSystemWriteTests
     {
         var store = new FakeScheduleStore();
         await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
-        var fs = new ScheduleFileSystem(store,
-            new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "J", null), new ScheduleAgentInfo("home", "Home", null)]),
-            new CronValidator());
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "J", null), new AgentCatalogEntry("home", "Home", null)]);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator());
 
         var result = await fs.MoveAsync("/jonas/morning-news", "/home/morning-news", CancellationToken.None);
 

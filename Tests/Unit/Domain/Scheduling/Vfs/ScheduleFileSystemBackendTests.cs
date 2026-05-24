@@ -1,5 +1,6 @@
+using Domain.Agents;
 using Domain.Contracts;
-using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
@@ -10,8 +11,12 @@ namespace Tests.Unit.Domain.Scheduling.Vfs;
 
 public class ScheduleFileSystemBackendTests
 {
-    private static ScheduleFileSystem Build() =>
-        new(new FakeScheduleStore(), new FakeAgentCatalog([new ScheduleAgentInfo("jonas", "J", null)]), new CronValidator());
+    private static ScheduleFileSystem Build()
+    {
+        var catalog = new MutableAgentCatalog();
+        catalog.Replace([new AgentCatalogEntry("jonas", "J", null)]);
+        return new ScheduleFileSystem(new FakeScheduleStore(), catalog, new CronValidator());
+    }
 
     [Fact]
     public void ImplementsFileSystemBackend()
