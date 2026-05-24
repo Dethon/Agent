@@ -1,16 +1,20 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Scheduling.Vfs;
 
 public sealed class ScheduleFileSystem(
     IScheduleStore store,
     IScheduleAgentCatalog agents,
-    ICronValidator cronValidator)
+    ICronValidator cronValidator) : IFileSystemBackend
 {
+    public string FilesystemName => "schedules";
+
     private static readonly JsonSerializerOptions _json = new()
     {
         WriteIndented = true,
@@ -87,25 +91,82 @@ public sealed class ScheduleFileSystem(
         });
     }
 
-    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, CancellationToken ct)
+    // fs_search follows the standard VFS convention: it scans each schedule's searchable schedule.json
+    // content line-by-line, honoring regex, scope (path/directoryPath), filePattern, maxResults,
+    // contextLines, and the Content/FilesOnly output shape — identical to the file-backed backends.
+    public async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
+        string? directoryPath, string? filePattern, int maxResults, int contextLines,
+        VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
-        var all = await store.ListAsync(ct);
-        var hits = all.Where(s =>
-            s.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            s.Prompt.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-            s.AgentId.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+        var matcher = new Regex(regex ? query : Regex.Escape(query), RegexOptions.IgnoreCase);
+        var scope = path ?? directoryPath;
+
+        // schedule.json is the only searchable file per schedule, so a filePattern either includes it
+        // (search the scoped schedules) or excludes it entirely (nothing to search).
+        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, SchedulePath.ScheduleFileName)
+            ? await ScopeSchedulesAsync(scope, ct)
+            : [];
+
+        var results = new List<FsSearchFileResult>();
+        var totalMatches = 0;
+        var filesWithMatches = 0;
+        var filesSearched = 0;
+        var truncated = false;
+
+        foreach (var schedule in scoped)
+        {
+            if (totalMatches >= maxResults)
+            {
+                truncated = true;
+                break;
+            }
+            filesSearched++;
+            var lines = RenderSpec(schedule).Split('\n');
+            var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+            truncated |= more;
+            if (matches.Count == 0)
+            {
+                continue;
+            }
+            filesWithMatches++;
+            totalMatches += matches.Count;
+            results.Add(VfsContentSearch.BuildFileResult($"/{schedule.AgentId}/{schedule.Id}/schedule.json", matches, outputMode));
+        }
 
         return new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = query,
-            Regex = false,
-            Path = "/",
-            FilesSearched = all.Count,
-            FilesWithMatches = hits.Count,
-            TotalMatches = hits.Count,
-            Truncated = false,
-            Results = hits.Select(s => new FsSearchFileResult { File = $"/{s.AgentId}/{s.Id}/schedule.json", MatchCount = 1 }).ToList()
+            Regex = regex,
+            Path = scope ?? "/",
+            FilesSearched = filesSearched,
+            FilesWithMatches = filesWithMatches,
+            TotalMatches = totalMatches,
+            Truncated = truncated,
+            Results = results
         });
+    }
+
+    // Restricts the searched set to the requested scope: a single schedule (file/dir path), one
+    // agent's schedules (agent dir), or everything (root / null). An unknown path scopes to nothing.
+    private async Task<IReadOnlyList<Schedule>> ScopeSchedulesAsync(string? scope, CancellationToken ct)
+    {
+        var all = await store.ListAsync(ct);
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            return all;
+        }
+
+        var node = SchedulePath.Parse(scope);
+        return node.Kind switch
+        {
+            ScheduleNodeKind.Root => all,
+            ScheduleNodeKind.AgentDir when agents.Exists(node.AgentId!) =>
+                all.Where(s => s.AgentId == node.AgentId).ToList(),
+            ScheduleNodeKind.ScheduleDir or ScheduleNodeKind.ScheduleFile
+                or ScheduleNodeKind.StatusFile or ScheduleNodeKind.RunNowFile =>
+                all.Where(s => s.AgentId == node.AgentId && s.Id == node.ScheduleId).ToList(),
+            _ => []
+        };
     }
 
     private static string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
@@ -315,6 +376,18 @@ public sealed class ScheduleFileSystem(
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 
+    // The schedule control surface is not byte-backed: copy and raw chunk streaming are unsupported.
+    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsCopyResult>("The schedules filesystem does not support copy."));
+
+    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        throw new NotSupportedException("The schedules filesystem does not support raw byte streaming.");
+
+    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        throw new NotSupportedException("The schedules filesystem does not support raw byte streaming.");
+
     private static FsResult<FsExecResult> Exec(string stdout, string stderr, int exitCode, string cwd) =>
         new FsResult<FsExecResult>.Ok(new FsExecResult
         {
@@ -395,6 +468,9 @@ public sealed class ScheduleFileSystem(
 
     private static FsResult<T> NotFound<T>(string path) where T : class =>
         new FsResult<T>.Err(Error(ToolError.Codes.NotFound, $"Path not found: {path}"));
+
+    private static FsResult<T> Unsupported<T>(string message) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, message));
 
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message, Retryable = false };

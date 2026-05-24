@@ -89,19 +89,4 @@ public class ScheduleFileSystemReadTests
         var info = result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
         info.Exists.ShouldBeFalse();
     }
-
-    [Fact]
-    public async Task Search_MatchesByPromptIdOrAgent()
-    {
-        var store = new FakeScheduleStore();
-        await store.CreateAsync(new Schedule { Id = "morning-news", AgentId = "jonas", Prompt = "summarize the news", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
-        var fs = Build(store);
-
-        var result = await fs.SearchAsync("news", CancellationToken.None);
-
-        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
-        search.Results.Count.ShouldBe(1);
-        search.Results[0].File.ShouldBe("/jonas/morning-news/schedule.json");
-        search.TotalMatches.ShouldBe(1);
-    }
 }

@@ -2,14 +2,17 @@ using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
 public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
-    TimeSpan? regexMatchTimeout = null)
+    TimeSpan? regexMatchTimeout = null) : IFileSystemBackend
 {
+    public string FilesystemName => "ha";
+
     private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
@@ -89,7 +92,7 @@ public sealed partial class HaFileSystem(
 
         // state.json is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).
-        var scoped = MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
+        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
             ? ScopeEntities(catalog, path, directoryPath)
             : [];
 
@@ -114,7 +117,7 @@ public sealed partial class HaFileSystem(
                 }
                 filesSearched++;
                 var lines = HaStateRenderer.ToJson(entity).Split('\n');
-                var (matches, more) = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+                var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
                 truncated |= more;
                 if (matches.Count == 0)
                 {
@@ -122,7 +125,7 @@ public sealed partial class HaFileSystem(
                 }
                 filesWithMatches++;
                 totalMatches += matches.Count;
-                results.Add(BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
+                results.Add(VfsContentSearch.BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
             }
         }
         catch (RegexMatchTimeoutException)
@@ -176,59 +179,10 @@ public sealed partial class HaFileSystem(
         };
     }
 
-    // Returns up to `limit` matches and whether the file held more than that (per-file truncation).
-    private static (List<FsSearchMatch> Matches, bool More) FindMatches(
-        string[] lines, Regex matcher, int contextLines, int limit)
-    {
-        var hits = lines
-            .Select((text, index) => (text, index))
-            .Where(l => matcher.IsMatch(l.text))
-            .ToList();
-        var taken = hits
-            .Take(limit)
-            .Select(l => BuildMatch(lines, l.index, contextLines))
-            .ToList();
-        return (taken, hits.Count > limit);
-    }
-
-    private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
-    {
-        if (contextLines <= 0)
-        {
-            return new FsSearchMatch { Line = index + 1, Text = lines[index] };
-        }
-        var before = lines.Take(index).TakeLast(contextLines).ToList();
-        var after = lines.Skip(index + 1).Take(contextLines).ToList();
-        var hasContext = before.Count > 0 || after.Count > 0;
-        return new FsSearchMatch
-        {
-            Line = index + 1,
-            Text = lines[index],
-            Context = hasContext ? new FsSearchContext { Before = before, After = after } : null
-        };
-    }
-
-    private static FsSearchFileResult BuildFileResult(string file, IReadOnlyList<FsSearchMatch> matches, VfsTextSearchOutputMode outputMode) =>
-        outputMode == VfsTextSearchOutputMode.FilesOnly
-            ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
-            : new FsSearchFileResult { File = file, Matches = matches };
-
     // Composes the entities-root form only — search hits are always reported under entities/, never
     // the area form, so callers get one canonical path per entity regardless of area membership.
     private static string CanonicalStatePath(HaEntityState entity) =>
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
-
-    // Matches a bare file name against a simple glob (* and ?). Used to gate whether the searchable
-    // state.json is included by a caller-supplied filePattern.
-    private static bool MatchesFilePattern(string? filePattern, string fileName)
-    {
-        if (string.IsNullOrEmpty(filePattern))
-        {
-            return true;
-        }
-        var pattern = "^" + Regex.Escape(filePattern).Replace("\\*", "[^/]*").Replace("\\?", ".") + "$";
-        return Regex.IsMatch(fileName, pattern, RegexOptions.IgnoreCase);
-    }
 
     private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
@@ -306,6 +260,40 @@ public sealed partial class HaFileSystem(
             Suggestion = truncated ? $"Use offset={start + take + 1} to continue reading." : null
         });
     }
+
+    // Home Assistant is a read + exec control surface: mutating a file, copying, and raw byte
+    // streaming have no meaning here, so these IFileSystemBackend members return unsupported.
+    public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
+        bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsCreateResult>(nameof(CreateAsync)));
+
+    public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsEditResult>(nameof(EditAsync)));
+
+    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsMoveResult>(nameof(MoveAsync)));
+
+    public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsRemoveResult>(nameof(DeleteAsync)));
+
+    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath, bool overwrite,
+        bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsCopyResult>(nameof(CopyAsync)));
+
+    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
+
+    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
+
+    private static FsResult<T> Unsupported<T>(string operation) where T : class =>
+        new FsResult<T>.Err(new ToolErrorResult
+        {
+            ErrorCode = ToolError.Codes.UnsupportedOperation,
+            Message = $"The Home Assistant filesystem does not support '{operation}'.",
+            Retryable = false
+        });
 
     private static FsResult<FsReadResult> NotFound(string path, string? canonicalName = null) =>
         new FsResult<FsReadResult>.Err(new ToolErrorResult
