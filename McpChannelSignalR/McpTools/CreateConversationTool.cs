@@ -10,7 +10,7 @@ namespace McpChannelSignalR.McpTools;
 [McpServerToolType]
 public sealed class CreateConversationTool
 {
-    [McpServerTool(Name = "create_conversation")]
+    [McpServerTool(Name = ChannelProtocol.CreateConversationTool)]
     [Description("Create a new conversation for agent-initiated messages")]
     public static async Task<string> McpRun(
         [Description("Agent identifier")] string agentId,

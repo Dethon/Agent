@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using ModelContextProtocol.Server;
 
 namespace McpServerScheduling.McpTools;
@@ -7,7 +8,7 @@ namespace McpServerScheduling.McpTools;
 [McpServerToolType]
 public sealed class SendReplyTool
 {
-    [McpServerTool(Name = "send_reply")]
+    [McpServerTool(Name = ChannelProtocol.SendReplyTool)]
     [Description("Receive a reply chunk — scheduling has no inbound surface; chunks are dropped")]
     public static string McpRun(
         [Description("Conversation ID")] string conversationId,

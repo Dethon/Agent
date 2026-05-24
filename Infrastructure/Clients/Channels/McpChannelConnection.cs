@@ -136,15 +136,15 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
     {
         EnsureConnected();
         await _client!.CallToolAsync(
-            "send_reply",
-            new Dictionary<string, object?>
+            ChannelProtocol.SendReplyTool,
+            ChannelProtocol.ToArguments(new SendReplyParams
             {
-                ["conversationId"] = conversationId,
-                ["content"] = content,
-                ["contentType"] = contentType.ToString(),
-                ["isComplete"] = isComplete,
-                ["messageId"] = messageId
-            },
+                ConversationId = conversationId,
+                Content = content,
+                ContentType = contentType,
+                IsComplete = isComplete,
+                MessageId = messageId
+            }),
             cancellationToken: ct);
     }
 
@@ -201,19 +201,19 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
         try
         {
             var tools = await _client.ListToolsAsync(cancellationToken: ct);
-            if (tools.All(t => t.Name != "create_conversation"))
+            if (tools.All(t => t.Name != ChannelProtocol.CreateConversationTool))
             {
                 return null;
             }
 
             var result = await _client.CallToolAsync(
-                "create_conversation",
-                new Dictionary<string, object?>
+                ChannelProtocol.CreateConversationTool,
+                ChannelProtocol.ToArguments(new CreateConversationParams
                 {
-                    ["agentId"] = agentId,
-                    ["topicName"] = topicName,
-                    ["sender"] = sender
-                },
+                    AgentId = agentId,
+                    TopicName = topicName,
+                    Sender = sender
+                }),
                 cancellationToken: ct);
 
             return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;

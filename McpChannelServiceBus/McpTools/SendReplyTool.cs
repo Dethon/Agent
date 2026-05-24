@@ -9,7 +9,7 @@ namespace McpChannelServiceBus.McpTools;
 [McpServerToolType]
 public sealed class SendReplyTool
 {
-    [McpServerTool(Name = "send_reply")]
+    [McpServerTool(Name = ChannelProtocol.SendReplyTool)]
     [Description("Send a response chunk to a Service Bus conversation")]
     public static async Task<string> McpRun(
         [Description("Conversation ID (correlationId)")] string conversationId,

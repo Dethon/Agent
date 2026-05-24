@@ -9,7 +9,7 @@ namespace McpChannelSignalR.McpTools;
 [McpServerToolType]
 public sealed class SendReplyTool
 {
-    [McpServerTool(Name = "send_reply")]
+    [McpServerTool(Name = ChannelProtocol.SendReplyTool)]
     [Description("Send a response chunk to a WebChat conversation")]
     public static async Task<string> McpRun(
         [Description("Conversation ID")] string conversationId,
