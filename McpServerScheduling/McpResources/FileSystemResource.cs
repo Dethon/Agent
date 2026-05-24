@@ -13,6 +13,6 @@ public class FileSystemResource
     {
         name = "schedules",
         mountPoint = "/schedules",
-        description = "Scheduled agent tasks grouped by agent: /<agentId>/<scheduleId>/schedule.json (edit), status.json (read-only), run_now.sh (exec). Agent dirs are always listed; read agent_info.json to learn an agent. Create a schedule with fs_create using a descriptive, unique id; reassign with fs_move; supports fs_exec for run_now."
+        description = "Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what an agent does. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring) or runAt (one-shot); all times are UTC. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt. Fire a schedule immediately with fs_exec on its directory using command run_now.sh. Use descriptive, unique schedule ids."
     });
 }

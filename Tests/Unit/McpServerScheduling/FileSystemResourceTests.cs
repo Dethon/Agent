@@ -14,6 +14,13 @@ public class FileSystemResourceTests
         using var doc = JsonDocument.Parse(json);
         doc.RootElement.GetProperty("name").GetString().ShouldBe("schedules");
         doc.RootElement.GetProperty("mountPoint").GetString().ShouldBe("/schedules");
-        doc.RootElement.GetProperty("description").GetString()!.ShouldContain("schedule.json");
+        var description = doc.RootElement.GetProperty("description").GetString()!;
+        description.ShouldContain("schedule.json");
+        description.ShouldContain("cron");
+        description.ShouldContain("runAt");
+        description.ShouldContain("UTC");
+        description.ShouldContain("status.json");
+        description.ShouldContain("run_now.sh");
+        description.ShouldContain("/schedules/");
     }
 }
