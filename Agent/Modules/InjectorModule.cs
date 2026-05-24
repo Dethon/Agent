@@ -44,9 +44,7 @@ public static class InjectorModule
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
-                        sp.GetService<ILoggerFactory>()))
-                .AddSingleton<IScheduleAgentFactory>(sp =>
-                    (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
+                        sp.GetService<ILoggerFactory>()));
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)

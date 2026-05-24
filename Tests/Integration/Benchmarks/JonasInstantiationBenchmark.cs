@@ -187,7 +187,6 @@ public class JonasInstantiationBenchmark(
         services.AddLogging();
         services
             .AddAgent(settings)
-            .AddScheduling()
             .AddSubAgents(settings.SubAgents)
             .AddMemory(_configuration);
 
