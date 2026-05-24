@@ -34,7 +34,8 @@ public static class ConfigModule
             .AddSingleton(settings)
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
-            .AddSingleton<ICronValidator, CronValidator>();
+            .AddSingleton<ICronValidator, CronValidator>()
+            .AddHostedService<ScheduleDispatcherService>();
 
         services
             .AddMcpServer()
