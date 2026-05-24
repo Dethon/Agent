@@ -506,6 +506,8 @@ services:
         condition: service_started
       mcp-channel-servicebus:
         condition: service_started
+      mcp-scheduling:
+        condition: service_started
       redis:
         condition: service_healthy
       base-sdk:
