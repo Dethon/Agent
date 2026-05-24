@@ -97,11 +97,14 @@ McpChannelConnection.RegisterAgentsAsync ─┘
 - **`Domain/DTOs/Channel/AgentCatalogEntry.cs`** — `record AgentCatalogEntry(string Id, string Name,
   string? Description)`. Canonical wire + domain DTO. Replaces `ScheduleAgentInfo` and
   `Domain.DTOs.WebChat.AgentInfo`.
-- **`IAgentCatalog`** — `IReadOnlyList<AgentCatalogEntry> GetAll()`, `AgentCatalogEntry? Get(string id)`,
-  `bool Exists(string id)`, `void Replace(IReadOnlyList<AgentCatalogEntry> agents)`. Replaces
-  `IScheduleAgentCatalog`.
-- **`MutableAgentCatalog`** — thread-safe implementation (atomic reference swap on `Replace`).
-  Both servers register it as a singleton. Replaces `ScheduleAgentCatalog`.
+- **`IAgentCatalog`** (read) — `IReadOnlyList<AgentCatalogEntry> GetAll()`, `AgentCatalogEntry? Get(string id)`,
+  `bool Exists(string id)`. Replaces `IScheduleAgentCatalog`. Injected by read-only consumers
+  (scheduling VFS, SignalR hub).
+- **`IMutableAgentCatalog : IAgentCatalog`** (write) — adds `void Replace(IReadOnlyList<AgentCatalogEntry> agents)`.
+  Injected only by the `register_agents` tools, so read consumers cannot mutate the shared singleton.
+- **`MutableAgentCatalog`** — thread-safe implementation of `IMutableAgentCatalog` (atomic reference swap on
+  `Replace`). Both servers register the concrete singleton once and forward both interfaces to it. Replaces
+  `ScheduleAgentCatalog`.
 
 ### Agent (client)
 

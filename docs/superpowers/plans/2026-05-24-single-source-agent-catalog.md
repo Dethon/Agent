@@ -24,6 +24,27 @@
 
 ---
 
+## AMENDMENT (post-Task-1 code review): split read/write catalog interfaces
+
+`IAgentCatalog` is split into two interfaces (both in `Domain/Contracts/IAgentCatalog.cs`):
+
+- `IAgentCatalog` — read only: `GetAll()`, `Get(id)`, `Exists(id)`.
+- `IMutableAgentCatalog : IAgentCatalog` — adds `void Replace(IReadOnlyList<AgentCatalogEntry> agents)`.
+
+`MutableAgentCatalog` implements `IMutableAgentCatalog`. This amendment is **authoritative** wherever it conflicts with the Task 1 code blocks below (those show the pre-split single interface; the split was committed right after Task 1). Apply these adjustments:
+
+- **Read-only consumers inject `IAgentCatalog`:** `ScheduleFileSystem` (Task 2), `ChatHub` (Task 4).
+- **`register_agents` tools inject `IMutableAgentCatalog`:** scheduling (Task 3) and SignalR (Task 4) — so the constructor param type is `IMutableAgentCatalog catalog`.
+- **DI registration (both Scheduling and SignalR `ConfigModule`)** registers the concrete singleton once and forwards both interfaces to it. Wherever a step below shows `AddSingleton<IAgentCatalog, MutableAgentCatalog>()`, use instead:
+  ```csharp
+  .AddSingleton<MutableAgentCatalog>()
+  .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+  .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+  ```
+- **Fixture seeding (Task 2 Step 6):** resolve `IMutableAgentCatalog` (not `IAgentCatalog`) to call `.Replace(...)`.
+
+---
+
 ## File Structure
 
 **Created:**
