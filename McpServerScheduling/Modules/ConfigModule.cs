@@ -3,6 +3,7 @@ using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
+using McpServerScheduling.McpPrompts;
 using McpServerScheduling.McpResources;
 using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
@@ -74,6 +75,7 @@ public static class ConfigModule
             .WithTools<FsMoveTool>()
             .WithTools<FsExecTool>()
             .WithResources<FileSystemResource>()
+            .WithPrompts<McpSystemPrompt>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

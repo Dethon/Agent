@@ -41,6 +41,35 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
+    public async Task McpServer_ListPrompts_IncludesSchedulingPrompt()
+    {
+        var client = await ConnectAsync();
+
+        var prompts = await client.ListPromptsAsync();
+
+        prompts.ShouldContain(p => p.Name == "scheduling_prompt");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task McpServer_GetSchedulingPrompt_ExplainsCronAndScheduleFile()
+    {
+        var client = await ConnectAsync();
+
+        var result = await client.GetPromptAsync("scheduling_prompt");
+        var text = string.Join("", result.Messages
+            .Select(m => m.Content)
+            .OfType<TextContentBlock>()
+            .Select(c => c.Text));
+
+        text.ShouldContain("schedule.json");
+        text.ShouldContain("0 9 * * *");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
     public async Task McpServer_ListTools_IncludesFsTools()
     {
         var client = await ConnectAsync();
