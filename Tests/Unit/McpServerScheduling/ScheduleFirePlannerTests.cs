@@ -16,9 +16,9 @@ public class ScheduleFirePlannerTests
         plan.DeleteAfterFire.ShouldBeFalse();
         plan.NextRunAt.ShouldBe(new DateTime(2026, 5, 25, 8, 0, 0, DateTimeKind.Utc));
         plan.Payload.AgentId.ShouldBe("jonas");
-        plan.Payload.ReplyTo[0].ChannelId.ShouldBe("signalr");
-        plan.Payload.Origin.Kind.ShouldBe("schedule");
-        plan.Payload.Origin.ScheduleId.ShouldBe("n");
+        plan.Payload.ReplyTo![0].ChannelId.ShouldBe("signalr");
+        plan.Payload.Origin!.Kind.ShouldBe("schedule");
+        plan.Payload.Origin!.ScheduleId.ShouldBe("n");
     }
 
     [Fact]
@@ -29,6 +29,6 @@ public class ScheduleFirePlannerTests
 
         plan.DeleteAfterFire.ShouldBeTrue();
         plan.NextRunAt.ShouldBeNull();
-        plan.Payload.ReplyTo[0].ChannelId.ShouldBe("telegram");
+        plan.Payload.ReplyTo![0].ChannelId.ShouldBe("telegram");
     }
 }
