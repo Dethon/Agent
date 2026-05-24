@@ -17,6 +17,7 @@ public sealed class RegisterAgentsTool(IMutableAgentCatalog catalog, IHubNotific
     {
         var entries = JsonSerializer.Deserialize<List<AgentCatalogEntry>>(agents, _options) ?? [];
         catalog.Replace(entries);
+        // best-effort UI refresh; a client-push failure must not block registration
         _ = hubSender.SendAsync("OnAgentsUpdated", entries);
         return $"registered {entries.Count} agents";
     }

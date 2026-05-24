@@ -38,5 +38,8 @@ public class RegisterAgentsToolTests
 
         result.ShouldBe("registered 0 agents");
         catalog.GetAll().ShouldBeEmpty();
+        sender.Verify(
+            s => s.SendAsync("OnAgentsUpdated", It.IsAny<object>(), It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }
