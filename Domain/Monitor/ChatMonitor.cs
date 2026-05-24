@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Microsoft.Agents.AI;
@@ -20,6 +21,41 @@ public class ChatMonitor(
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger)
 {
+    public readonly record struct DeliveryTarget(IChannelConnection Channel, string ConversationId);
+
+    public static async Task<IReadOnlyList<DeliveryTarget>> ResolveDeliveryTargetsAsync(
+        ChannelMessage message,
+        IChannelConnection originChannel,
+        IReadOnlyList<IChannelConnection> channels,
+        CancellationToken ct)
+    {
+        if (message.ReplyTo is not { Count: > 0 })
+        {
+            return [new DeliveryTarget(originChannel, message.ConversationId)];
+        }
+
+        var targets = new List<DeliveryTarget>();
+        foreach (var target in message.ReplyTo)
+        {
+            var channel = channels.FirstOrDefault(c => c.ChannelId == target.ChannelId);
+            if (channel is null)
+            {
+                continue;
+            }
+
+            var conversationId = target.ConversationId
+                ?? await channel.CreateConversationAsync(
+                    message.AgentId ?? "default", "Scheduled task", message.Sender, ct);
+
+            if (conversationId is not null)
+            {
+                targets.Add(new DeliveryTarget(channel, conversationId));
+            }
+        }
+
+        return targets;
+    }
+
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
@@ -83,15 +119,13 @@ public class ChatMonitor(
                         return AsyncEnumerable.Empty<(
                             AgentResponseUpdate Update,
                             AiResponse? Response,
-                            IChannelConnection Channel,
-                            string ConversationId)>();
+                            IReadOnlyList<DeliveryTarget> Targets)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
                         return AsyncEnumerable.Empty<(
                             AgentResponseUpdate Update,
                             AiResponse? Response,
-                            IChannelConnection Channel,
-                            string ConversationId)>();
+                            IReadOnlyList<DeliveryTarget> Targets)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
@@ -102,24 +136,27 @@ public class ChatMonitor(
                         }
 
                         await warmup;
+                        var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt);
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
                             .RunStreamingAsync([userMessage], thread, cancellationToken: linkedCt)
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
-                            .Append((
-                                new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                            .Select(pair => (pair.Item1, pair.Item2, x.Channel, x.Message.ConversationId));
+                            .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
+                            .Select(pair => (pair.Item1, pair.Item2, targets));
                 }
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, _, channel, conversationId) in aiResponses.WithCancellation(ct))
+        await foreach (var (update, _, targets) in aiResponses.WithCancellation(ct))
         {
             foreach (var mapped in MapResponseUpdate(update))
             {
-                await channel.SendReplyAsync(
-                    conversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+                foreach (var target in targets)
+                {
+                    await target.Channel.SendReplyAsync(
+                        target.ConversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
+                }
             }
 
             foreach (var error in update.Contents.OfType<ErrorContent>())
