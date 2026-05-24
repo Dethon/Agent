@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -20,29 +20,36 @@ public class GlobFilesToolTests
     [Fact]
     public async Task RunAsync_ResolvesBasePathAndCallsBackend()
     {
-        var expected = new JsonObject { ["entries"] = new JsonArray("a.md", "sub/"), ["truncated"] = false, ["total"] = 2 };
         _registry.Setup(r => r.Resolve("/library"))
             .Returns(new FileSystemResolution(_backend.Object, ""));
         _backend.Setup(b => b.GlobAsync("", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = ["a.md", "sub/"], Truncated = false, Total = 2
+            }));
 
         var result = await _tool.RunAsync("/library", "**/*", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["entries"]!.AsArray().Count.ShouldBe(2);
+        result["total"]!.GetValue<int>().ShouldBe(2);
+        result["truncated"]!.GetValue<bool>().ShouldBeFalse();
     }
 
     [Fact]
     public async Task RunAsync_WithSubdirectory_ResolvesRelativePath()
     {
-        var expected = new JsonObject { ["entries"] = new JsonArray("docs/"), ["truncated"] = false, ["total"] = 1 };
         _registry.Setup(r => r.Resolve("/vault/docs"))
             .Returns(new FileSystemResolution(_backend.Object, "docs"));
         _backend.Setup(b => b.GlobAsync("docs", "*/", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = ["docs/"], Truncated = false, Total = 1
+            }));
 
         var result = await _tool.RunAsync("/vault/docs", "*/", cancellationToken: CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["entries"]!.AsArray().Count.ShouldBe(1);
+        result["total"]!.GetValue<int>().ShouldBe(1);
     }
 
     [Fact]

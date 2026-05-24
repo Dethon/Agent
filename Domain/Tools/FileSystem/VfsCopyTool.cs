@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Tools;
 
 namespace Domain.Tools.FileSystem;
 
@@ -27,8 +28,12 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
         var src = registry.Resolve(sourcePath);
         var dst = registry.Resolve(destinationPath);
 
-        var info = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
-        var isDirectory = info["isDirectory"]?.GetValue<bool>() == true;
+        var infoResult = await src.Backend.InfoAsync(src.RelativePath, cancellationToken);
+        if (!infoResult.TryGetValue(out var info, out var infoError))
+        {
+            return infoError.ToNode();
+        }
+        var isDirectory = info.IsDirectory == true;
 
         if (isDirectory)
         {
@@ -48,22 +53,34 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
     {
         if (ReferenceEquals(src.Backend, dst.Backend))
         {
-            JsonNode native;
             if (deleteSource)
             {
-                native = await src.Backend.MoveAsync(src.RelativePath, dst.RelativePath, ct);
+                var moveResult = await src.Backend.MoveAsync(src.RelativePath, dst.RelativePath, ct);
+                if (!moveResult.TryGetValue(out _, out var moveError))
+                {
+                    return moveError.ToNode();
+                }
+                return new JsonObject
+                {
+                    ["status"] = "ok",
+                    ["source"] = srcVirtual,
+                    ["destination"] = dstVirtual,
+                    ["bytes"] = -1L // FsMoveResult carries no byte count
+                };
             }
-            else
+
+            var copyResult = await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath,
+                overwrite, createDirectories, ct);
+            if (!copyResult.TryGetValue(out var copy, out var copyError))
             {
-                native = await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath,
-                    overwrite, createDirectories, ct);
+                return copyError.ToNode();
             }
             return new JsonObject
             {
                 ["status"] = "ok",
                 ["source"] = srcVirtual,
                 ["destination"] = dstVirtual,
-                ["bytes"] = (native["bytes"] is JsonValue v && v.TryGetValue<long>(out var b) ? b : -1L)
+                ["bytes"] = copy.Bytes
             };
         }
 
@@ -94,45 +111,64 @@ public class VfsCopyTool(IVirtualFileSystemRegistry registry)
     {
         if (ReferenceEquals(src.Backend, dst.Backend))
         {
-            var native = deleteSource
-                ? await src.Backend.MoveAsync(src.RelativePath, dst.RelativePath, ct)
-                : await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath, overwrite, createDirectories, ct);
+            ToolErrorResult? nativeError;
+            if (deleteSource)
+            {
+                var moveResult = await src.Backend.MoveAsync(src.RelativePath, dst.RelativePath, ct);
+                moveResult.TryGetValue(out _, out nativeError);
+                if (nativeError is not null)
+                {
+                    return nativeError.ToNode();
+                }
+                return new JsonObject
+                {
+                    ["status"] = "ok",
+                    ["source"] = srcVirtual,
+                    ["destination"] = dstVirtual,
+                    ["bytes"] = -1L // FsMoveResult carries no byte count
+                };
+            }
 
+            var copyResult = await src.Backend.CopyAsync(src.RelativePath, dst.RelativePath, overwrite, createDirectories, ct);
+            if (!copyResult.TryGetValue(out var copy, out nativeError))
+            {
+                return nativeError.ToNode();
+            }
             return new JsonObject
             {
                 ["status"] = "ok",
                 ["source"] = srcVirtual,
                 ["destination"] = dstVirtual,
-                ["bytes"] = native["bytes"] is JsonValue v && v.TryGetValue<long>(out var b) ? b : -1L
+                ["bytes"] = copy.Bytes
             };
         }
 
-        var glob = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
+        var globResult = await src.Backend.GlobAsync(src.RelativePath, "**/*", ct);
+        if (!globResult.TryGetValue(out var glob, out var globError))
+        {
+            return globError.ToNode();
+        }
         // A capped backend (e.g. a file mount truncating at 200) can't enumerate the whole tree.
         // Transferring the partial listing would silently drop files while reporting success, so abort.
-        if (glob["truncated"]?.GetValue<bool>() == true)
+        if (glob.Truncated)
         {
-            var total = glob["total"]?.GetValue<int>() ?? 0;
             return ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                $"Source directory '{srcVirtual}' has {total} entries, more than a single listing can " +
+                $"Source directory '{srcVirtual}' has {glob.Total} entries, more than a single listing can " +
                 "enumerate; copying it would silently drop files.",
                 retryable: false,
                 hint: "Copy smaller subdirectories individually.");
         }
-        var entries = glob["entries"] as JsonArray ?? new JsonArray();
+        var entries = glob.Entries;
 
         var perEntry = new JsonArray();
         var transferred = 0;
         var failed = 0;
         long totalBytes = 0;
 
-        foreach (var entry in entries)
+        foreach (var srcRel in entries)
         {
             ct.ThrowIfCancellationRequested();
-            var srcRel = entry is JsonValue jv
-                ? jv.GetValue<string>()
-                : entry!["path"]!.GetValue<string>();
             // Pure glob returns directory marker entries (trailing '/') alongside files.
             // Directories carry no content and are recreated implicitly when their files are
             // written (createDirectories), so they are not transfer candidates.

@@ -1,6 +1,6 @@
 using System.Text;
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -14,16 +14,10 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray
-                {
-                    new JsonObject { ["path"] = "src/a.md" },
-                    new JsonObject { ["path"] = "src/sub/b.md" }
-                },
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/a.md", "src/sub/b.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
         src.Setup(b => b.ReadChunksAsync("src/sub/b.md", It.IsAny<CancellationToken>()))
@@ -59,16 +53,10 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray
-                {
-                    new JsonObject { ["path"] = "src/a.md" },
-                    new JsonObject { ["path"] = "src/b.md" }
-                },
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/a.md", "src/b.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
         src.Setup(b => b.ReadChunksAsync("src/b.md", It.IsAny<CancellationToken>()))
@@ -97,16 +85,10 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray
-                {
-                    new JsonObject { ["path"] = "src/a.md" },
-                    new JsonObject { ["path"] = "elsewhere/secret.md" }
-                },
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/a.md", "elsewhere/secret.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
 
@@ -145,18 +127,17 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray
-                {
-                    new JsonObject { ["path"] = "src/a.md" },
-                    new JsonObject { ["path"] = "src/sub/b.md" }
-                },
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/a.md", "src/sub/b.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("X")));
+        src.Setup(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
+            {
+                Status = "trashed", Message = "", OriginalPath = "src", TrashPath = ".trash/src"
+            }));
 
         var dst = new Mock<IFileSystemBackend>();
         dst.Setup(b => b.WriteChunksAsync(
@@ -181,16 +162,10 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray
-                {
-                    new JsonObject { ["path"] = "src/a.md" },
-                    new JsonObject { ["path"] = "src/b.md" }
-                },
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/a.md", "src/b.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync("src/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
         src.Setup(b => b.ReadChunksAsync("src/b.md", It.IsAny<CancellationToken>()))
@@ -220,12 +195,10 @@ public class VfsTransferDirectoryTests
         // listing would silently drop files while reporting success, so the transfer must abort.
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray("src/a.md"),
-                ["truncated"] = true,
-                ["total"] = 500
-            });
+                Entries = [], Truncated = true, Total = 500
+            }));
 
         var dst = new Mock<IFileSystemBackend>();
         var srcRes = new FileSystemResolution(src.Object, "src");
@@ -250,12 +223,10 @@ public class VfsTransferDirectoryTests
     {
         var src = new Mock<IFileSystemBackend>();
         src.Setup(b => b.GlobAsync("src", "**/*", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject
+            .ReturnsAsync(new FsResult<FsGlobResult>.Ok(new FsGlobResult
             {
-                ["entries"] = new JsonArray("src/sub/", "src/sub/a.md"),
-                ["truncated"] = false,
-                ["total"] = 2
-            });
+                Entries = ["src/sub/", "src/sub/a.md"], Truncated = false, Total = 2
+            }));
         src.Setup(b => b.ReadChunksAsync("src/sub/a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(Encoding.UTF8.GetBytes("A")));
 

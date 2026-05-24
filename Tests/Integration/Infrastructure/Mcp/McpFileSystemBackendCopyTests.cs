@@ -1,3 +1,4 @@
+using Domain.DTOs.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol.Client;
@@ -19,7 +20,8 @@ public class McpFileSystemBackendCopyTests(MultiFileSystemFixture fx)
         var result = await backend.CopyAsync("note.md", "note-copy.md",
             overwrite: false, createDirectories: true, CancellationToken.None);
 
-        result["status"]!.GetValue<string>().ShouldBe("copied");
+        result.TryGetValue(out var copy, out _).ShouldBeTrue();
+        copy.Status.ShouldBe("copied");
         File.ReadAllText(Path.Combine(fx.LibraryPath, "note-copy.md")).ShouldBe("hello");
     }
 
@@ -34,7 +36,8 @@ public class McpFileSystemBackendCopyTests(MultiFileSystemFixture fx)
         var result = await backend.CopyAsync("src", "dst",
             overwrite: false, createDirectories: true, CancellationToken.None);
 
-        result["status"]!.GetValue<string>().ShouldBe("copied");
+        result.TryGetValue(out var copy, out _).ShouldBeTrue();
+        copy.Status.ShouldBe("copied");
         File.ReadAllText(Path.Combine(fx.LibraryPath, "dst", "a.md")).ShouldBe("A");
         File.ReadAllText(Path.Combine(fx.LibraryPath, "dst", "sub", "b.md")).ShouldBe("B");
     }

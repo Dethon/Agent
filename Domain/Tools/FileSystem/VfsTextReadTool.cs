@@ -26,6 +26,6 @@ public class VfsTextReadTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(filePath);
-        return await resolution.Backend.ReadAsync(resolution.RelativePath, offset, limit, cancellationToken);
+        return (await resolution.Backend.ReadAsync(resolution.RelativePath, offset, limit, cancellationToken)).ToNode();
     }
 }

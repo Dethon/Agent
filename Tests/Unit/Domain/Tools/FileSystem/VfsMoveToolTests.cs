@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -25,9 +25,12 @@ public class MoveToolTests
         _registry.Setup(r => r.Resolve("/library/new/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "new/file.md"));
         _backend.Setup(b => b.InfoAsync("old/file.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["type"] = "file" });
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "old/file.md", IsDirectory = false }));
         _backend.Setup(b => b.MoveAsync("old/file.md", "new/file.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["status"] = "moved" });
+            .ReturnsAsync(new FsResult<FsMoveResult>.Ok(new FsMoveResult
+            {
+                Status = "moved", Message = "", Source = "old/file.md", Destination = "new/file.md"
+            }));
 
         var result = await _tool.RunAsync("/library/old/file.md", "/library/new/file.md", cancellationToken: CancellationToken.None);
 

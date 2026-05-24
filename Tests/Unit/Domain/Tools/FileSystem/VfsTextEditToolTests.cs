@@ -1,6 +1,6 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -21,7 +21,6 @@ public class TextEditToolTests
     [Fact]
     public async Task RunAsync_ResolvesPathAndForwardsEdits()
     {
-        var expected = new JsonObject { ["status"] = "success", ["totalOccurrencesReplaced"] = 1 };
         var edits = new[] { new TextEdit("old", "new") };
         _registry.Setup(r => r.Resolve("/library/file.md"))
             .Returns(new FileSystemResolution(_backend.Object, "file.md"));
@@ -33,17 +32,23 @@ public class TextEditToolTests
                     list[0].NewString == "new" &&
                     list[0].ReplaceAll == false),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new FsResult<FsEditResult>.Ok(new FsEditResult
+            {
+                Status = "edited",
+                FilePath = "file.md",
+                TotalOccurrencesReplaced = 1,
+                Edits = [new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }]
+            }));
 
         var result = await _tool.RunAsync("/library/file.md", edits, CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["status"]!.GetValue<string>().ShouldBe("edited");
+        result["totalOccurrencesReplaced"]!.GetValue<int>().ShouldBe(1);
     }
 
     [Fact]
     public async Task RunAsync_ForwardsMultipleEditsInOrder()
     {
-        var expected = new JsonObject { ["status"] = "success", ["totalOccurrencesReplaced"] = 5 };
         var edits = new[]
         {
             new TextEdit("a", "A", ReplaceAll: true),
@@ -58,10 +63,17 @@ public class TextEditToolTests
                     list[0].OldString == "a" && list[0].ReplaceAll == true &&
                     list[1].OldString == "b" && list[1].ReplaceAll == false),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(expected);
+            .ReturnsAsync(new FsResult<FsEditResult>.Ok(new FsEditResult
+            {
+                Status = "edited",
+                FilePath = "config.md",
+                TotalOccurrencesReplaced = 5,
+                Edits = [new FsEditDetail { OccurrencesReplaced = 5, AffectedLines = new FsLineRange { Start = 1, End = 10 } }]
+            }));
 
         var result = await _tool.RunAsync("/vault/config.md", edits, CancellationToken.None);
 
-        result.ShouldBe(expected);
+        result!["status"]!.GetValue<string>().ShouldBe("edited");
+        result["totalOccurrencesReplaced"]!.GetValue<int>().ShouldBe(5);
     }
 }

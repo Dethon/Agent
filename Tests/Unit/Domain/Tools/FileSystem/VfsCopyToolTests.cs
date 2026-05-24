@@ -1,5 +1,5 @@
-using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
 using Shouldly;
@@ -14,9 +14,12 @@ public class VfsCopyToolTests
         var backend = new Mock<IFileSystemBackend>();
         backend.SetupGet(b => b.FilesystemName).Returns("vault");
         backend.Setup(b => b.InfoAsync("notes/a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 42 });
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "notes/a.md", IsDirectory = false }));
         backend.Setup(b => b.CopyAsync("notes/a.md", "notes/b.md", false, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["status"] = "copied", ["bytes"] = 42 });
+            .ReturnsAsync(new FsResult<FsCopyResult>.Ok(new FsCopyResult
+            {
+                Status = "copied", Source = "notes/a.md", Destination = "notes/b.md", Bytes = 42
+            }));
 
         var registry = new Mock<IVirtualFileSystemRegistry>();
         registry.Setup(r => r.Resolve("/vault/notes/a.md"))
@@ -30,6 +33,7 @@ public class VfsCopyToolTests
         result["status"]!.GetValue<string>().ShouldBe("ok");
         result["source"]!.GetValue<string>().ShouldBe("/vault/notes/a.md");
         result["destination"]!.GetValue<string>().ShouldBe("/vault/notes/b.md");
+        result["bytes"]!.GetValue<long>().ShouldBe(42L);
         backend.Verify(b => b.CopyAsync("notes/a.md", "notes/b.md", false, true, It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -40,7 +44,7 @@ public class VfsCopyToolTests
         var src = new Mock<IFileSystemBackend>();
         src.SetupGet(b => b.FilesystemName).Returns("vault");
         src.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["isDirectory"] = false, ["bytes"] = 5 });
+            .ReturnsAsync(new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = "a.md", IsDirectory = false }));
         src.Setup(b => b.ReadChunksAsync("a.md", It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerableTestHelpers.ToAsyncEnumerable(System.Text.Encoding.UTF8.GetBytes("hello")));
 
@@ -66,27 +70,5 @@ public class VfsCopyToolTests
             "a.md", It.IsAny<IAsyncEnumerable<ReadOnlyMemory<byte>>>(),
             false, true, It.IsAny<CancellationToken>()), Times.Once);
         src.Verify(b => b.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task RunAsync_SameFsFile_BackendOmitsBytes_ReturnsMinusOne()
-    {
-        var backend = new Mock<IFileSystemBackend>();
-        backend.SetupGet(b => b.FilesystemName).Returns("vault");
-        backend.Setup(b => b.InfoAsync("a.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["isDirectory"] = false });
-        backend.Setup(b => b.CopyAsync("a.md", "b.md", false, true, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new JsonObject { ["status"] = "copied" });
-
-        var registry = new Mock<IVirtualFileSystemRegistry>();
-        registry.Setup(r => r.Resolve("/vault/a.md"))
-            .Returns(new FileSystemResolution(backend.Object, "a.md"));
-        registry.Setup(r => r.Resolve("/vault/b.md"))
-            .Returns(new FileSystemResolution(backend.Object, "b.md"));
-
-        var tool = new VfsCopyTool(registry.Object);
-        var result = await tool.RunAsync("/vault/a.md", "/vault/b.md");
-
-        result["bytes"]!.GetValue<long>().ShouldBe(-1L);
     }
 }

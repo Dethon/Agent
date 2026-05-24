@@ -27,6 +27,6 @@ public class VfsTextCreateTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(filePath);
-        return await resolution.Backend.CreateAsync(resolution.RelativePath, content, overwrite, createDirectories, cancellationToken);
+        return (await resolution.Backend.CreateAsync(resolution.RelativePath, content, overwrite, createDirectories, cancellationToken)).ToNode();
     }
 }
