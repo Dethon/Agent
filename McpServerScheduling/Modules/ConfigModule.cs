@@ -1,7 +1,9 @@
 using Domain.Contracts;
+using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
+using McpServerScheduling.McpResources;
 using McpServerScheduling.McpTools;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
@@ -37,6 +39,7 @@ public static class ConfigModule
             .AddSingleton<IScheduleStore, RedisScheduleStore>()
             .AddSingleton<ICronValidator, CronValidator>()
             .AddSingleton<IScheduleAgentCatalog, ScheduleAgentCatalog>()
+            .AddSingleton<ScheduleFileSystem>()
             .AddHostedService<ScheduleDispatcherService>();
 
         services
@@ -61,6 +64,11 @@ public static class ConfigModule
             })
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<FsGlobTool>()
+            .WithTools<FsInfoTool>()
+            .WithTools<FsReadTool>()
+            .WithTools<FsSearchTool>()
+            .WithResources<FileSystemResource>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

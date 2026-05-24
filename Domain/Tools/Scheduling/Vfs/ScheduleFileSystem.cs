@@ -86,6 +86,27 @@ public sealed class ScheduleFileSystem(
         });
     }
 
+    public async Task<JsonNode> SearchAsync(string query, CancellationToken ct)
+    {
+        var all = await store.ListAsync(ct);
+        var hits = all.Where(s =>
+            s.Id.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            s.Prompt.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            s.AgentId.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        return FsResultContract.ToNode(new FsSearchResult
+        {
+            Query = query,
+            Regex = false,
+            Path = "/",
+            FilesSearched = all.Count,
+            FilesWithMatches = hits.Count,
+            TotalMatches = hits.Count,
+            Truncated = false,
+            Results = hits.Select(s => new FsSearchFileResult { File = $"/{s.AgentId}/{s.Id}/schedule.json", MatchCount = 1 }).ToList()
+        });
+    }
+
     private static string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
     {
         prompt = s.Prompt,
