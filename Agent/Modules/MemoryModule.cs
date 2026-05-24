@@ -5,6 +5,7 @@ using Domain.Memory;
 using Domain.Tools.Memory;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Memory;
+using Infrastructure.Validation;
 using Microsoft.Extensions.AI;
 using OpenAI;
 
@@ -100,6 +101,7 @@ public static class MemoryModule
             services.AddTransient<IDomainToolFeature, MemoryToolFeature>();
 
             // Background workers
+            services.AddSingleton<ICronValidator, CronValidator>();
             services.AddHostedService<MemoryExtractionWorker>();
             services.AddHostedService<MemoryDreamingService>();
 
