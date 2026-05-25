@@ -15,13 +15,6 @@ public sealed class RequestApprovalTool
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests)
     {
-        _ = new RequestApprovalParams
-        {
-            ConversationId = conversationId,
-            Mode = mode,
-            Requests = requests
-        };
-
         // ServiceBus has no interactive user — auto-approve everything
         return mode == ApprovalMode.Notify ? "notified" : "approved";
     }
