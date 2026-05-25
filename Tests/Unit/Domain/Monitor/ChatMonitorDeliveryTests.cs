@@ -70,4 +70,25 @@ public class ChatMonitorDeliveryTests
 
         targets.ShouldBeEmpty();
     }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_WhenMintingThrows_SkipsTargetInsteadOfThrowing()
+    {
+        var origin = Channel("scheduling");
+        var failing = new Mock<IChannelConnection>();
+        failing.SetupGet(c => c.ChannelId).Returns("signalr");
+        failing.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("connection reset"));
+        var channels = new[] { origin, failing.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1", Content = "x", Sender = "s", ChannelId = "scheduling",
+            ReplyTo = [new ReplyTarget("signalr", null)]
+        };
+
+        var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        targets.ShouldBeEmpty();
+    }
 }

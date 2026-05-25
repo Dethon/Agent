@@ -28,7 +28,8 @@ public class ChatMonitor(
         ChannelMessage message,
         IChannelConnection originChannel,
         IReadOnlyList<IChannelConnection> channels,
-        CancellationToken ct)
+        CancellationToken ct,
+        ILogger? logger = null)
     {
         if (message.ReplyTo is not { Count: > 0 })
         {
@@ -44,9 +45,22 @@ public class ChatMonitor(
                 continue;
             }
 
-            var conversationId = target.ConversationId
-                ?? await channel.CreateConversationAsync(
-                    message.AgentId ?? "default", "Scheduled task", message.Sender, ct);
+            var conversationId = target.ConversationId;
+            if (conversationId is null)
+            {
+                try
+                {
+                    conversationId = await channel.CreateConversationAsync(
+                        message.AgentId ?? "default", "Scheduled task", message.Sender, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A target whose conversation can't be minted is skipped rather than
+                    // aborting the whole fan-out (and the agent run that depends on it).
+                    logger?.LogWarning(ex, "Failed to mint conversation on {ChannelId}; skipping target", target.ChannelId);
+                    continue;
+                }
+            }
 
             if (conversationId is not null)
             {
@@ -137,7 +151,7 @@ public class ChatMonitor(
                         }
 
                         await warmup;
-                        var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt);
+                        var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt, logger);
                         var stopwatch = Stopwatch.StartNew();
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
@@ -165,26 +179,48 @@ public class ChatMonitor(
 
         await foreach (var (update, _, targets) in aiResponses.WithCancellation(ct))
         {
-            foreach (var mapped in MapResponseUpdate(update))
+            await DeliverUpdateAsync(update, targets, ct);
+            yield return true;
+        }
+    }
+
+    private async Task DeliverUpdateAsync(
+        AgentResponseUpdate update, IReadOnlyList<DeliveryTarget> targets, CancellationToken ct)
+    {
+        foreach (var mapped in MapResponseUpdate(update))
+        {
+            foreach (var target in targets)
             {
-                foreach (var target in targets)
+                try
                 {
                     await target.Channel.SendReplyAsync(
                         target.ConversationId, mapped.Content, mapped.ContentType, mapped.IsComplete, update.MessageId, ct);
                 }
-            }
-
-            foreach (var error in update.Contents.OfType<ErrorContent>())
-            {
-                await metricsPublisher.PublishAsync(new ErrorEvent
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    Service = "agent",
-                    ErrorType = error.ErrorCode ?? "Unknown",
-                    Message = error.Message
-                }, ct);
+                    // Isolate per-target delivery failures: one channel being down must not
+                    // abort delivery to the other targets or tear down the agent run (which
+                    // would also suppress its schedule-execution metric).
+                    logger.LogWarning(ex, "Failed to deliver reply to {ChannelId}; skipping target",
+                        target.Channel.ChannelId);
+                    await metricsPublisher.PublishAsync(new ErrorEvent
+                    {
+                        Service = "agent",
+                        ErrorType = ex.GetType().Name,
+                        Message = ex.Message
+                    }, ct);
+                }
             }
+        }
 
-            yield return true;
+        foreach (var error in update.Contents.OfType<ErrorContent>())
+        {
+            await metricsPublisher.PublishAsync(new ErrorEvent
+            {
+                Service = "agent",
+                ErrorType = error.ErrorCode ?? "Unknown",
+                Message = error.Message
+            }, ct);
         }
     }
 
