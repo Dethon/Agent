@@ -187,10 +187,14 @@ public class BashRunnerTests
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
 
-        var unobserved = new List<Exception>();
+        // TaskScheduler.UnobservedTaskException is process-global and xUnit runs collections in
+        // parallel, so this handler also fires for faulted tasks abandoned by *other* tests. The
+        // forced GC below finalizes those too, so we record only leaks that originate in BashRunner
+        // — otherwise an unrelated leak (e.g. a WebChat streaming task) would fail this assertion.
+        var leaks = new List<Exception>();
         void handler(object? _, UnobservedTaskExceptionEventArgs e)
         {
-            unobserved.AddRange(e.Exception.InnerExceptions);
+            leaks.AddRange(e.Exception.InnerExceptions.Where(IsFromBashRunner));
             e.SetObserved();
         }
         TaskScheduler.UnobservedTaskException += handler;
@@ -215,6 +219,42 @@ public class BashRunnerTests
             TaskScheduler.UnobservedTaskException -= handler;
         }
 
-        unobserved.ShouldBeEmpty();
+        leaks.ShouldBeEmpty();
     }
+
+    [SkippableFact]
+    public async Task IsFromBashRunner_DistinguishesBashRunnerExceptionsFromForeignOnes()
+    {
+        SkipIfNotLinux();
+
+        // A real exception that propagated through BashRunner (the caller-cancellation path).
+        // Awaited directly — not via Should.ThrowAsync — because a canceled task only gets its
+        // stack trace populated when ExceptionDispatchInfo rethrows it through an await.
+        Exception? captured = null;
+        var runner = new BashRunner(_settings);
+        using var cts = new CancellationTokenSource();
+        var task = runner.RunAsync("", "yes hello", timeoutSeconds: 30, cts.Token);
+        await Task.Delay(200);
+        cts.Cancel();
+        try
+        { await task; }
+        catch (OperationCanceledException e)
+        { captured = e; }
+        var bashException = captured.ShouldNotBeNull();
+
+        // An exception thrown entirely outside BashRunner, standing in for another test's leak.
+        Exception foreignException;
+        try
+        { throw new InvalidOperationException("not from bash"); }
+        catch (Exception e)
+        { foreignException = e; }
+
+        IsFromBashRunner(bashException).ShouldBeTrue();
+        IsFromBashRunner(foreignException).ShouldBeFalse();
+    }
+
+    // Attributes a faulted-task exception to BashRunner by its fully-qualified type name in the
+    // stack trace. The full name (not just "BashRunner") avoids matching this test class.
+    private static bool IsFromBashRunner(Exception ex) =>
+        ex.StackTrace?.Contains(typeof(BashRunner).FullName!, StringComparison.Ordinal) ?? false;
 }
