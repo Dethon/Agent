@@ -2,6 +2,7 @@ const { launchServer } = require('camoufox-js');
 
 (async () => {
     const server = await launchServer({
+        host: '0.0.0.0',
         port: 9377,
         ws_path: '/browser',
         headless: 'virtual',

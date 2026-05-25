@@ -63,24 +63,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await DismissApprovalOverlayAsync(page);
 
         // Select a unique user identity per test to avoid server-side state pollution.
-        await page.Locator(".avatar-button").ClickAsync();
-        await page.Locator(".user-dropdown-item").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-
-        // The overlay can arrive asynchronously after the initial dismiss check
-        // (StreamResumeService pushes state over SignalR), so retry the click if
-        // an overlay intercepts it.
-        try
-        {
-            await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync(
-                new LocatorClickOptions { Timeout = 5_000 });
-        }
-        catch (TimeoutException)
-        {
-            await DismissApprovalOverlayAsync(page);
-            await page.Locator(".avatar-button").ClickAsync();
-            await page.Locator(".user-dropdown-item").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-            await page.Locator(".user-dropdown-item").Nth(userIndex).ClickAsync();
-        }
+        await OpenUserDropdownAndSelectAsync(page, userIndex);
 
         var chatInput = page.Locator("textarea.chat-input");
 
@@ -139,6 +122,52 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
 
             await Assertions.Expect(overlay).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
+        }
+    }
+
+    // Opens the user-identity dropdown and selects the user at <paramref name="userIndex"/>.
+    //
+    // Two overlays can intercept these clicks and make the flow flaky:
+    //   * .approval-modal-overlay (z-index 1000) — pushed by StreamResumeService over SignalR
+    //     at any moment; it sits above the dropdown items, so the item click is intercepted
+    //     until it is dismissed.
+    //   * .dropdown-backdrop (full-viewport, painted above the avatar button) — it exists only
+    //     while the dropdown is open and intercepts the avatar-button click. Re-clicking the
+    //     avatar button while the dropdown is already open therefore never lands.
+    //
+    // Each attempt dismisses any approval overlay, opens the dropdown ONLY when it is closed
+    // (no backdrop present), then clicks the item. On interception it resets to a known-closed
+    // state — dismiss overlay, then click the backdrop to close the dropdown — so the next
+    // attempt re-opens cleanly.
+    private static async Task OpenUserDropdownAndSelectAsync(IPage page, int userIndex)
+    {
+        var avatarButton = page.Locator(".avatar-button");
+        var backdrop = page.Locator(".dropdown-backdrop");
+        var dropdownItem = page.Locator(".user-dropdown-item").Nth(userIndex);
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                await DismissApprovalOverlayAsync(page);
+
+                if (!await backdrop.IsVisibleAsync())
+                {
+                    await avatarButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+
+                await dropdownItem.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
+                await dropdownItem.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                return;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+                await DismissApprovalOverlayAsync(page);
+                if (await backdrop.IsVisibleAsync())
+                {
+                    await backdrop.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+            }
         }
     }
 
