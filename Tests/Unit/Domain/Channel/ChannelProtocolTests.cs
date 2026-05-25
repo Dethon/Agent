@@ -75,4 +75,16 @@ public class ChannelProtocolTests
         roundTripped.IsComplete.ShouldBeTrue();
         roundTripped.MessageId.ShouldBe("m1");
     }
+
+    [Fact]
+    public void SerializerOptions_CanBeMarkedReadOnly_AsTheMcpSdkNotificationPathRequires()
+    {
+        // Regression: the MCP SDK's SendNotificationAsync calls JsonSerializerOptions.MakeReadOnly()
+        // on the options it is handed, which throws when no TypeInfoResolver is set. Channel emitters
+        // pass ChannelProtocol.SerializerOptions there, so without a resolver every channel/message
+        // emit threw and was swallowed — the agent never saw inbound messages and never replied.
+        var options = new JsonSerializerOptions(ChannelProtocol.SerializerOptions);
+
+        Should.NotThrow(() => options.MakeReadOnly());
+    }
 }
