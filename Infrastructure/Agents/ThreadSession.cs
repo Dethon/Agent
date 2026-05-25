@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Agents.AI;
@@ -88,7 +89,10 @@ internal sealed class ThreadSessionBuilder(
     // exposes them on the same /mcp endpoint, so they leak into the agent-visible tool list unless stripped.
     private static readonly HashSet<string> _channelProtocolToolNames =
     [
-        "send_reply", "request_approval", "register_agents"
+        ChannelProtocol.SendReplyTool,
+        ChannelProtocol.RequestApprovalTool,
+        ChannelProtocol.CreateConversationTool,
+        ChannelProtocol.RegisterAgentsTool
     ];
 
     private IReadOnlyList<AITool> _tools = [];
