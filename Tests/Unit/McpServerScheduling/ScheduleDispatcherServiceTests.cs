@@ -5,6 +5,7 @@ using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Shouldly;
 using Xunit;
 
 namespace Tests.Unit.McpServerScheduling;
@@ -63,6 +64,16 @@ public class ScheduleDispatcherServiceTests
 
         store.Verify(s => s.GetDueSchedulesAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public void ResolveInterval_NonPositive_ClampsToOneSecond(int seconds) =>
+        ScheduleDispatcherService.ResolveInterval(seconds).ShouldBe(TimeSpan.FromSeconds(1));
+
+    [Fact]
+    public void ResolveInterval_Positive_IsUnchanged() =>
+        ScheduleDispatcherService.ResolveInterval(30).ShouldBe(TimeSpan.FromSeconds(30));
 
     private static Schedule OneShot() =>
         new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };

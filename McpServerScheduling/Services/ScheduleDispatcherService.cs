@@ -14,7 +14,7 @@ public sealed class ScheduleDispatcherService(
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var interval = TimeSpan.FromSeconds(settings.DispatchIntervalSeconds);
+        var interval = ResolveInterval(settings.DispatchIntervalSeconds);
         while (!ct.IsCancellationRequested)
         {
             try
@@ -31,6 +31,11 @@ public sealed class ScheduleDispatcherService(
             catch (OperationCanceledException) { break; }
         }
     }
+
+    // Guard against a 0/negative config value: 0 makes Task.Delay return immediately (tight loop)
+    // and a negative span throws, so floor the poll interval at one second.
+    internal static TimeSpan ResolveInterval(int dispatchIntervalSeconds) =>
+        TimeSpan.FromSeconds(Math.Max(1, dispatchIntervalSeconds));
 
     internal async Task DispatchDueAsync(CancellationToken ct)
     {
