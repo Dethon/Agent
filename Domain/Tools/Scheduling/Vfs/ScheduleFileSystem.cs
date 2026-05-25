@@ -268,7 +268,12 @@ public sealed class ScheduleFileSystem(
     public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
-        if (node.Kind != ScheduleNodeKind.ScheduleFile || await GetScheduleAsync(node, ct) is not { } existing)
+        if (node.Kind != ScheduleNodeKind.ScheduleFile)
+        {
+            return await RejectWriteAsync<FsEditResult>(node, path, ct);
+        }
+
+        if (await GetScheduleAsync(node, ct) is not { } existing)
         {
             return NotFound<FsEditResult>(path);
         }
@@ -316,7 +321,9 @@ public sealed class ScheduleFileSystem(
         var dst = SchedulePath.Parse(destinationPath);
         if (src.Kind != ScheduleNodeKind.ScheduleDir || dst.Kind != ScheduleNodeKind.ScheduleDir)
         {
-            return Invalid<FsMoveResult>("Move a schedule dir to /<agentId>/<scheduleId>");
+            return IsReadOnlyFile(src.Kind) && await NodeExistsAsync(src, ct)
+                ? ReadOnly<FsMoveResult>(sourcePath)
+                : Invalid<FsMoveResult>("Move a schedule dir to /<agentId>/<scheduleId>");
         }
 
         if (await GetScheduleAsync(src, ct) is not { } existing)
@@ -349,7 +356,12 @@ public sealed class ScheduleFileSystem(
     public async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
         var node = SchedulePath.Parse(path);
-        if (node.Kind != ScheduleNodeKind.ScheduleDir || await GetScheduleAsync(node, ct) is null)
+        if (node.Kind != ScheduleNodeKind.ScheduleDir)
+        {
+            return await RejectWriteAsync<FsRemoveResult>(node, path, ct);
+        }
+
+        if (await GetScheduleAsync(node, ct) is null)
         {
             return NotFound<FsRemoveResult>(path);
         }
@@ -477,6 +489,17 @@ public sealed class ScheduleFileSystem(
         var i = text.IndexOf(oldValue, StringComparison.Ordinal);
         return i < 0 ? text : text[..i] + newValue + text[(i + oldValue.Length)..];
     }
+
+    private static bool IsReadOnlyFile(ScheduleNodeKind kind) =>
+        kind is ScheduleNodeKind.StatusFile or ScheduleNodeKind.AgentInfoFile or ScheduleNodeKind.RunNowFile;
+
+    // A write aimed at a path that isn't a writable schedule.json is either a known read-only file
+    // (status.json/agent_info.json/run_now.sh) that exists — rejected as read-only — or a genuine miss.
+    private async Task<FsResult<T>> RejectWriteAsync<T>(ScheduleNode node, string path, CancellationToken ct) where T : class =>
+        IsReadOnlyFile(node.Kind) && await NodeExistsAsync(node, ct) ? ReadOnly<T>(path) : NotFound<T>(path);
+
+    private static FsResult<T> ReadOnly<T>(string path) where T : class =>
+        new FsResult<T>.Err(Error(ToolError.Codes.UnsupportedOperation, $"{path} is read-only"));
 
     private static FsResult<T> Invalid<T>(string message) where T : class =>
         new FsResult<T>.Err(Error(ToolError.Codes.InvalidArgument, message));

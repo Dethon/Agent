@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
 using Shouldly;
@@ -139,6 +140,50 @@ public class ScheduleFileSystemWriteTests
         var fs = Build(new FakeScheduleStore());
         var result = await fs.DeleteAsync("/jonas/ghost-schedule", CancellationToken.None);
         result.ShouldBeOfType<FsResult<FsRemoveResult>.Err>();
+    }
+
+    [Fact]
+    public async Task Edit_StatusFile_IsRejectedAsReadOnly()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var result = await fs.EditAsync("/jonas/n/status.json", [new TextEdit("a", "b")], CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsEditResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+    }
+
+    [Fact]
+    public async Task Edit_AgentInfoFile_IsRejectedAsReadOnly()
+    {
+        var fs = Build(new FakeScheduleStore());
+
+        var result = await fs.EditAsync("/jonas/agent_info.json", [new TextEdit("a", "b")], CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsEditResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+    }
+
+    [Fact]
+    public async Task Delete_StatusFile_IsRejectedAsReadOnly()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        var result = await fs.DeleteAsync("/jonas/n/status.json", CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
+    }
+
+    [Fact]
+    public async Task Edit_NonExistentSchedule_StillReturnsNotFound()
+    {
+        var fs = Build(new FakeScheduleStore());
+
+        var result = await fs.EditAsync("/jonas/ghost/schedule.json", [new TextEdit("a", "b")], CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsEditResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
     }
 
     [Theory]
