@@ -8,7 +8,7 @@ namespace McpServerScheduling.Services;
 public sealed class ScheduleDispatcherService(
     IScheduleStore store,
     ICronValidator cronValidator,
-    ScheduleNotificationEmitter emitter,
+    IScheduleNotificationEmitter emitter,
     SchedulingSettings settings,
     ILogger<ScheduleDispatcherService> logger) : BackgroundService
 {
@@ -32,7 +32,7 @@ public sealed class ScheduleDispatcherService(
         }
     }
 
-    private async Task DispatchDueAsync(CancellationToken ct)
+    internal async Task DispatchDueAsync(CancellationToken ct)
     {
         if (!emitter.HasActiveSessions)
         {
@@ -48,6 +48,17 @@ public sealed class ScheduleDispatcherService(
 
             var plan = ScheduleFirePlanner.Plan(schedule, settings.DefaultDeliverTo, nextRun);
 
+            // Emit before mutating the store: if no active session receives the
+            // notification, leave the schedule due so the next tick retries instead of
+            // silently dropping the fire. (Trade-off: a store write that fails after a
+            // successful emit can double-fire — at-least-once is the safer default here.)
+            if (!await emitter.EmitAsync(plan.Payload, ct))
+            {
+                logger.LogWarning(
+                    "No active session received schedule {ScheduleId}; leaving it due for retry", schedule.Id);
+                continue;
+            }
+
             if (plan.DeleteAfterFire)
             {
                 await store.DeleteAsync(schedule.Id, ct);
@@ -57,7 +68,6 @@ public sealed class ScheduleDispatcherService(
                 await store.UpdateLastRunAsync(schedule.Id, DateTime.UtcNow, plan.NextRunAt, ct);
             }
 
-            await emitter.EmitAsync(plan.Payload, ct);
             logger.LogInformation("Fired schedule {ScheduleId} for agent {AgentId}", schedule.Id, schedule.AgentId);
         }
     }

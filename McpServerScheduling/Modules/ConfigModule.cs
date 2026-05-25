@@ -34,6 +34,7 @@ public static class ConfigModule
         var emitter = new ScheduleNotificationEmitter(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ScheduleNotificationEmitter>());
         services.AddSingleton(emitter);
+        services.AddSingleton<IScheduleNotificationEmitter>(emitter);
 
         services
             .AddSingleton(settings)

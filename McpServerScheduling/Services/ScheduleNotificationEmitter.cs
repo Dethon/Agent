@@ -6,6 +6,7 @@ using ModelContextProtocol.Server;
 namespace McpServerScheduling.Services;
 
 public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmitter> logger)
+    : IScheduleNotificationEmitter
 {
     private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
 
@@ -37,7 +38,7 @@ public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmit
             Timestamp = DateTimeOffset.UtcNow
         };
 
-    public async Task EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
+    public async Task<bool> EmitAsync(ChannelMessageNotification payload, CancellationToken ct = default)
     {
         var tasks = _activeSessions.Values.Select(async server =>
         {
@@ -45,13 +46,16 @@ public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmit
             {
                 await server.SendNotificationAsync(
                     ChannelProtocol.MessageNotification, payload, ChannelProtocol.SerializerOptions, ct);
+                return true;
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Failed to emit channel/message notification");
+                return false;
             }
         });
 
-        await Task.WhenAll(tasks);
+        var results = await Task.WhenAll(tasks);
+        return Array.Exists(results, delivered => delivered);
     }
 }
