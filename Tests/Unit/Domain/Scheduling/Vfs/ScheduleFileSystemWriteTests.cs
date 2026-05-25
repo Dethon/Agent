@@ -80,6 +80,36 @@ public class ScheduleFileSystemWriteTests
     }
 
     [Fact]
+    public async Task Edit_PromptOnly_PreservesExistingNextRunAt()
+    {
+        var nextRun = new DateTime(2999, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "old prompt", CronExpression = "0 8 * * *", NextRunAt = nextRun, CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        await fs.EditAsync("/jonas/n/schedule.json",
+            [new TextEdit("old prompt", "new prompt")], CancellationToken.None);
+
+        store.Items["n"].Prompt.ShouldBe("new prompt");
+        store.Items["n"].NextRunAt.ShouldBe(nextRun);
+    }
+
+    [Fact]
+    public async Task Edit_ChangingCron_RecomputesNextRunAt()
+    {
+        var stale = new DateTime(2999, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", NextRunAt = stale, CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        await fs.EditAsync("/jonas/n/schedule.json",
+            [new TextEdit("0 8 * * *", "0 9 * * *")], CancellationToken.None);
+
+        store.Items["n"].CronExpression.ShouldBe("0 9 * * *");
+        store.Items["n"].NextRunAt.ShouldNotBe(stale);
+    }
+
+    [Fact]
     public async Task Move_ReassignsAgent()
     {
         var store = new FakeScheduleStore();

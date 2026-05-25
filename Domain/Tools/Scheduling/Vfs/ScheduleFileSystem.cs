@@ -297,14 +297,18 @@ public sealed class ScheduleFileSystem(
 
         spec = spec! with { RunAt = spec.RunAt?.ToUniversalTime() };
 
+        // Only recompute the next fire when the timing actually changes; a prompt-only edit must
+        // not push out (or skip) an already-scheduled run by recomputing NextRunAt from "now".
+        var timingChanged = spec.Cron != existing.CronExpression || spec.RunAt != existing.RunAt;
+
         var updated = existing with
         {
-            Prompt = spec!.Prompt!,
+            Prompt = spec.Prompt!,
             CronExpression = spec.Cron,
             RunAt = spec.RunAt,
             UserId = spec.UserId,
             DeliverTo = spec.DeliverTo,
-            NextRunAt = ComputeNextRunAt(spec)
+            NextRunAt = timingChanged ? ComputeNextRunAt(spec) : existing.NextRunAt
         };
 
         await store.CreateAsync(updated, ct);
