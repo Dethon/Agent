@@ -103,6 +103,27 @@ public class ChannelConnectionHostTests
     }
 
     [Fact]
+    public async Task RetriesRegistration_WhenInitialRegisterFails_WithoutReconnecting()
+    {
+        var fake = new FakeMcpChannelConnection("ch-1");
+        fake.FailNextRegisters(1);
+        var catalog = new[] { new AgentCatalogEntry("jonas", "Jonas", null) };
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9999" } };
+        var sut = new ChannelConnectionHost(
+            endpoints, [fake], catalog, _logger,
+            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+
+        // The first registration throws; the connection stays healthy, so the only way the
+        // catalog ever lands is a retry on a subsequent health tick (not a reconnect).
+        await fake.WaitForRegisterCountAsync(1, cts.Token);
+        fake.ConnectCount.ShouldBe(1);
+        fake.RegisteredAgents!.Single().Id.ShouldBe("jonas");
+    }
+
+    [Fact]
     public async Task RegistersAgents_AfterReconnect()
     {
         var fake = new FakeMcpChannelConnection("ch-1");
@@ -129,6 +150,7 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
     private readonly SemaphoreSlim _registerSignal = new(0);
     private int _healthy = 1;
     private int _failNextConnects;
+    private int _failNextRegisters;
 
     private int _connectCount;
     private int _connectAttempts;
@@ -161,6 +183,11 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
 
     public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
     {
+        if (Interlocked.Decrement(ref _failNextRegisters) >= 0)
+        {
+            throw new HttpRequestException("Simulated register failure");
+        }
+
         RegisteredAgents = agents;
         Interlocked.Increment(ref _registerCount);
         _registerSignal.Release();
@@ -170,6 +197,8 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
     public void SetHealthy(bool healthy) => Interlocked.Exchange(ref _healthy, healthy ? 1 : 0);
 
     public void FailNextConnects(int count) => Interlocked.Exchange(ref _failNextConnects, count);
+
+    public void FailNextRegisters(int count) => Interlocked.Exchange(ref _failNextRegisters, count);
 
     public Task WaitForConnectAsync(CancellationToken ct) => _firstConnect.Task.WaitAsync(ct);
 
