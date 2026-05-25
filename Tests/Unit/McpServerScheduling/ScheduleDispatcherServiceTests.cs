@@ -23,7 +23,7 @@ public class ScheduleDispatcherServiceTests
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         store.Verify(
             s => s.UpdateLastRunAsync(
-                It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()),
+                It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -48,7 +48,7 @@ public class ScheduleDispatcherServiceTests
 
         await BuildDispatcher(store.Object, Emitter(delivers: true), cron.Object).DispatchDueAsync(CancellationToken.None);
 
-        store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime>(), next, It.IsAny<CancellationToken>()), Times.Once);
+        store.Verify(s => s.UpdateLastRunAsync("daily", It.IsAny<DateTime?>(), next, It.IsAny<CancellationToken>()), Times.Once);
         store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

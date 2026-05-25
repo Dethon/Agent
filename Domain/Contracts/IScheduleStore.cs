@@ -9,5 +9,6 @@ public interface IScheduleStore
     Task<IReadOnlyList<Schedule>> ListAsync(CancellationToken ct = default);
     Task DeleteAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<Schedule>> GetDueSchedulesAsync(DateTime asOf, CancellationToken ct = default);
-    Task UpdateLastRunAsync(string id, DateTime lastRunAt, DateTime? nextRunAt, CancellationToken ct = default);
+    // A null lastRunAt leaves the existing value untouched (used when only nextRunAt changes).
+    Task UpdateLastRunAsync(string id, DateTime? lastRunAt, DateTime? nextRunAt, CancellationToken ct = default);
 }

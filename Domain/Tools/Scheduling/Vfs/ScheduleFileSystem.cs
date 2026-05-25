@@ -375,8 +375,9 @@ public sealed class ScheduleFileSystem(
             return Exec("", $"command not found: {trimmed}\navailable: {SchedulePath.RunNowFileName}", 127, path);
         }
 
-        // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left as-is (the dispatcher overwrites it with the real fire-time when it actually runs).
-        await store.UpdateLastRunAsync(schedule.Id, schedule.LastRunAt ?? DateTime.UtcNow, DateTime.UtcNow, ct);
+        // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left
+        // untouched (null = don't change it); the dispatcher stamps the real fire-time when it actually runs.
+        await store.UpdateLastRunAsync(schedule.Id, null, DateTime.UtcNow, ct);
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 

@@ -28,11 +28,11 @@ public sealed class FakeScheduleStore : IScheduleStore
     public Task<IReadOnlyList<Schedule>> GetDueSchedulesAsync(DateTime asOf, CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<Schedule>>(Items.Values.Where(s => s.NextRunAt <= asOf).ToList());
 
-    public Task UpdateLastRunAsync(string id, DateTime lastRunAt, DateTime? nextRunAt, CancellationToken ct = default)
+    public Task UpdateLastRunAsync(string id, DateTime? lastRunAt, DateTime? nextRunAt, CancellationToken ct = default)
     {
         if (Items.TryGetValue(id, out var s))
         {
-            Items[id] = s with { LastRunAt = lastRunAt, NextRunAt = nextRunAt };
+            Items[id] = s with { LastRunAt = lastRunAt ?? s.LastRunAt, NextRunAt = nextRunAt };
         }
 
         return Task.CompletedTask;

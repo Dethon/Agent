@@ -93,7 +93,7 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
         return schedules;
     }
 
-    public async Task UpdateLastRunAsync(string id, DateTime lastRunAt, DateTime? nextRunAt,
+    public async Task UpdateLastRunAsync(string id, DateTime? lastRunAt, DateTime? nextRunAt,
         CancellationToken ct = default)
     {
         var schedule = await GetAsync(id, ct);
@@ -104,7 +104,7 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 
         var updated = schedule with
         {
-            LastRunAt = lastRunAt,
+            LastRunAt = lastRunAt ?? schedule.LastRunAt,
             NextRunAt = nextRunAt
         };
 

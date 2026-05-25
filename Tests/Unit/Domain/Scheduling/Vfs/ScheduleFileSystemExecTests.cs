@@ -33,6 +33,31 @@ public class ScheduleFileSystemExecTests
     }
 
     [Fact]
+    public async Task Exec_RunNow_OnNeverRunSchedule_DoesNotSetLastRunAt()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", NextRunAt = DateTime.UtcNow.AddDays(1), CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+
+        store.Items["n"].LastRunAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Exec_RunNow_PreservesExistingLastRunAt()
+    {
+        var lastRun = DateTime.UtcNow.AddHours(-3);
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(new Schedule { Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", LastRunAt = lastRun, NextRunAt = DateTime.UtcNow.AddDays(1), CreatedAt = DateTime.UtcNow });
+        var fs = Build(store);
+
+        await fs.ExecAsync("/jonas/n", "run_now.sh", null, CancellationToken.None);
+
+        store.Items["n"].LastRunAt.ShouldBe(lastRun);
+    }
+
+    [Fact]
     public async Task Exec_UnknownCommand_Returns127()
     {
         var store = new FakeScheduleStore();
