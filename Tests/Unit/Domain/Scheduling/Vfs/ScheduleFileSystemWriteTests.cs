@@ -1,3 +1,4 @@
+using System.Globalization;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -138,5 +139,38 @@ public class ScheduleFileSystemWriteTests
         var fs = Build(new FakeScheduleStore());
         var result = await fs.DeleteAsync("/jonas/ghost-schedule", CancellationToken.None);
         result.ShouldBeOfType<FsResult<FsRemoveResult>.Err>();
+    }
+
+    [Theory]
+    [InlineData("2999-01-01T00:00:00")]    // no zone
+    [InlineData("2999-01-01T14:30:00.5")]  // no zone, fractional seconds
+    public async Task Create_WithRunAtMissingTimeZone_IsRejected(string runAtInput)
+    {
+        var fs = Build(new FakeScheduleStore());
+        var spec = $$"""{"prompt":"p","runAt":"{{runAtInput}}"}""";
+        var result = await fs.CreateAsync("/jonas/once/schedule.json", spec, false, true, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+    }
+
+    [Theory]
+    [InlineData("2999-07-15T14:30:00Z", "2999-07-15T14:30:00Z")]       // UTC, unchanged
+    [InlineData("2999-07-15T14:30:00+00:00", "2999-07-15T14:30:00Z")]  // explicit zero offset
+    [InlineData("2999-07-15T14:30:00+05:00", "2999-07-15T09:30:00Z")]  // ahead of UTC
+    [InlineData("2999-07-15T14:30:00-08:00", "2999-07-15T22:30:00Z")]  // behind UTC
+    [InlineData("2999-01-15T14:30:00+02:00", "2999-01-15T12:30:00Z")]  // offset differs from server's winter offset
+    public async Task Create_WithZonedRunAt_IsNormalizedToUtc(string runAtInput, string expectedUtc)
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store);
+        var spec = $$"""{"prompt":"p","runAt":"{{runAtInput}}"}""";
+
+        var result = await fs.CreateAsync("/jonas/once/schedule.json", spec, false, true, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        var expected = DateTime.Parse(expectedUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        var saved = store.Items["once"];
+        saved.RunAt!.Value.Kind.ShouldBe(DateTimeKind.Utc);
+        saved.RunAt.ShouldBe(expected);
+        saved.NextRunAt.ShouldBe(expected);
     }
 }

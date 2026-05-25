@@ -43,7 +43,8 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
                 await server.SendNotificationAsync(
                     ChannelProtocol.MessageNotification,
                     payload,
-                    cancellationToken: cancellationToken);
+                    ChannelProtocol.SerializerOptions,
+                    cancellationToken);
             }
             catch (Exception ex)
             {

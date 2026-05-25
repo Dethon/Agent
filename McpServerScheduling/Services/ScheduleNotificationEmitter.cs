@@ -43,7 +43,8 @@ public sealed class ScheduleNotificationEmitter(ILogger<ScheduleNotificationEmit
         {
             try
             {
-                await server.SendNotificationAsync(ChannelProtocol.MessageNotification, payload, cancellationToken: ct);
+                await server.SendNotificationAsync(
+                    ChannelProtocol.MessageNotification, payload, ChannelProtocol.SerializerOptions, ct);
             }
             catch (Exception ex)
             {

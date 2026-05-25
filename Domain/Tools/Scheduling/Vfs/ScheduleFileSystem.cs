@@ -243,6 +243,8 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsCreateResult>.Err(validation);
         }
 
+        spec = spec! with { RunAt = spec.RunAt?.ToUniversalTime() };
+
         var schedule = new Schedule
         {
             Id = node.ScheduleId,
@@ -287,6 +289,8 @@ public sealed class ScheduleFileSystem(
         {
             return new FsResult<FsEditResult>.Err(validation);
         }
+
+        spec = spec! with { RunAt = spec.RunAt?.ToUniversalTime() };
 
         var updated = existing with
         {
@@ -446,9 +450,19 @@ public sealed class ScheduleFileSystem(
             return Error(ToolError.Codes.InvalidArgument, $"Invalid cron expression: {spec.Cron}");
         }
 
-        if (spec.RunAt is not null && spec.RunAt <= DateTime.UtcNow)
+        if (spec.RunAt is { } runAt)
         {
-            return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
+            if (runAt.Kind == DateTimeKind.Unspecified)
+            {
+                return Error(ToolError.Codes.InvalidArgument,
+                    "runAt must include a time zone — use 'Z' for UTC (e.g. 2026-06-01T14:30:00Z) " +
+                    "or an offset (e.g. 2026-06-01T16:30:00+02:00)");
+            }
+
+            if (runAt.ToUniversalTime() <= DateTime.UtcNow)
+            {
+                return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
+            }
         }
 
         return null;

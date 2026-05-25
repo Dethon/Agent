@@ -29,7 +29,7 @@ public static class SchedulingPrompt
             - `"0 9 * * *"` — every day at 09:00
             - `"0 */2 * * *"` — every 2 hours
             - `"30 14 * * 1-5"` — weekdays at 14:30
-          - `runAt` — an ISO-8601 UTC datetime for a **one-shot** schedule. It is deleted automatically once it fires.
+          - `runAt` — an ISO-8601 datetime for a **one-shot** schedule. It **must include a time zone**: either `Z` for UTC (e.g. `2026-06-01T14:30:00Z`) or an explicit offset (e.g. `2026-06-01T16:30:00+02:00`); it is normalized to UTC. A datetime without a zone is rejected. It is deleted automatically once it fires.
         - `userId` (optional) — the user the fired prompt should be attributed to.
         - `deliverTo` (optional) — a list of channel ids that should receive the result (e.g. `["signalr", "telegram"]`). Omit to use the configured default.
 
