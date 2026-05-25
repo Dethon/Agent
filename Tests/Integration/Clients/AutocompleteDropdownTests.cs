@@ -27,13 +27,15 @@ public class AutocompleteDropdownTests(
                 Url: "https://japantravel.navitime.com/en/"));
             browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
-            // Take snapshot to find the departure textbox ref
-            var snapshot1 = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
-            snapshot1.ErrorMessage.ShouldBeNull();
+            // Wait for the departure textbox to render — navitime builds the form client-side
+            // after navigation, so a single immediate snapshot is a race.
+            var snapshot1 = await fixture.WaitForSnapshotAsync(
+                sessionId,
+                s => System.Text.RegularExpressions.Regex.IsMatch(s, @"textbox ""ex\) Tokyo"" \[ref=(e\d+)\]"),
+                "departure textbox to appear in snapshot");
 
             var refMatch = System.Text.RegularExpressions.Regex.Match(
-                snapshot1.Snapshot!, @"textbox ""ex\) Tokyo"" \[ref=(e\d+)\]");
-            refMatch.Success.ShouldBeTrue("Should find departure textbox in snapshot");
+                snapshot1, @"textbox ""ex\) Tokyo"" \[ref=(e\d+)\]");
             var depRef = refMatch.Groups[1].Value;
             output.WriteLine($"Departure ref: {depRef}");
 
@@ -46,19 +48,16 @@ public class AutocompleteDropdownTests(
             typeResult.Status.ShouldBe(WebActionStatus.Success);
             output.WriteLine($"Type diff:\n{typeResult.Snapshot}");
 
-            // Take a snapshot and verify dropdown items appear
-            var snapshot2 = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
-            snapshot2.ErrorMessage.ShouldBeNull();
-            output.WriteLine($"Snapshot after type:\n{snapshot2.Snapshot}");
-
-            var hasOdawaraItem = snapshot2.Snapshot!.Contains("\"Odawara\"")
-                              && snapshot2.Snapshot.Contains("listitem");
-            hasOdawaraItem.ShouldBeTrue("Dropdown should contain 'Odawara' listitem");
+            // Wait for the dropdown to populate — suggestions arrive asynchronously after typing.
+            var snapshot2 = await fixture.WaitForSnapshotAsync(
+                sessionId,
+                s => System.Text.RegularExpressions.Regex.IsMatch(s, @"listitem ""Odawara"" \[ref=(e\d+)\]"),
+                "Odawara dropdown listitem to appear");
+            output.WriteLine($"Snapshot after type:\n{snapshot2}");
 
             // Find the Odawara listitem ref and click it
             var itemMatch = System.Text.RegularExpressions.Regex.Match(
-                snapshot2.Snapshot!, @"listitem ""Odawara"" \[ref=(e\d+)\]");
-            itemMatch.Success.ShouldBeTrue("Should find Odawara listitem with ref");
+                snapshot2, @"listitem ""Odawara"" \[ref=(e\d+)\]");
             var itemRef = itemMatch.Groups[1].Value;
             output.WriteLine($"Odawara item ref: {itemRef}");
 

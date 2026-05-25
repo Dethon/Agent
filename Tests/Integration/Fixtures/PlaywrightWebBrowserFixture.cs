@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Docker.DotNet;
 using Docker.DotNet.Models;
 using Domain.Contracts;
@@ -168,6 +169,44 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     }
 
     public Task ClearContextStateAsync() => Browser.ClearCookiesAsync();
+
+    /// <summary>
+    /// Polls <see cref="IWebBrowser.SnapshotAsync"/> until <paramref name="predicate"/> matches the
+    /// captured snapshot, then returns it. JS-heavy live pages render form elements client-side after
+    /// navigation, so asserting on a single snapshot taken right after <c>NavigateAsync</c> is a race.
+    /// Waits for the actual condition instead of guessing at a fixed delay.
+    /// </summary>
+    public async Task<string> WaitForSnapshotAsync(
+        string sessionId,
+        Func<string, bool> predicate,
+        string description,
+        TimeSpan? timeout = null,
+        TimeSpan? pollInterval = null)
+    {
+        var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(15);
+        var interval = pollInterval ?? TimeSpan.FromMilliseconds(500);
+        var start = Stopwatch.GetTimestamp();
+
+        string? lastError = null;
+        while (true)
+        {
+            var result = await Browser.SnapshotAsync(new SnapshotRequest(sessionId));
+            lastError = result.ErrorMessage;
+            if (result is { ErrorMessage: null, Snapshot: not null } && predicate(result.Snapshot))
+            {
+                return result.Snapshot;
+            }
+
+            if (Stopwatch.GetElapsedTime(start) >= effectiveTimeout)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {effectiveTimeout.TotalSeconds:0}s waiting for {description}. " +
+                    $"Last snapshot error: {lastError ?? "none"}.");
+            }
+
+            await Task.Delay(interval);
+        }
+    }
 
     public async Task DisposeAsync()
     {
