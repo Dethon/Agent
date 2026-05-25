@@ -14,6 +14,8 @@ public class CronValidator : ICronValidator
     public DateTime? GetNextOccurrence(string cronExpression, DateTime from)
     {
         var schedule = CrontabSchedule.TryParse(cronExpression);
-        return schedule?.GetNextOccurrence(from);
+        // Cron schedules are evaluated in UTC; NCrontab carries the input's Kind onto the
+        // result, so normalize to UTC to keep NextRunAt unambiguous for every caller.
+        return schedule is null ? null : DateTime.SpecifyKind(schedule.GetNextOccurrence(from), DateTimeKind.Utc);
     }
 }
