@@ -17,7 +17,7 @@ public class ChannelProtocolDtoTests
             Content = "run",
             AgentId = "jonas",
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-1")],
-            Origin = new MessageOrigin("schedule", "morning-news"),
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news"),
             Timestamp = DateTimeOffset.UnixEpoch
         };
 
@@ -29,7 +29,7 @@ public class ChannelProtocolDtoTests
         copy.ReplyTo!.Count.ShouldBe(2);
         copy.ReplyTo[0].ChannelId.ShouldBe("signalr");
         copy.ReplyTo[0].ConversationId.ShouldBeNull();
-        copy.Origin!.Kind.ShouldBe("schedule");
+        copy.Origin!.Kind.ShouldBe(MessageOriginKind.Schedule);
         copy.Origin.ScheduleId.ShouldBe("morning-news");
         element.GetProperty("replyTo")[1].GetProperty("conversationId").GetString().ShouldBe("t-1");
     }

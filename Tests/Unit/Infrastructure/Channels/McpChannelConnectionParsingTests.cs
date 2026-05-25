@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Shouldly;
 
@@ -32,7 +33,7 @@ public class McpChannelConnectionParsingTests
             msg.ReplyTo[0].ConversationId.ShouldBeNull();
             msg.ReplyTo[1].ChannelId.ShouldBe("telegram");
             msg.ReplyTo[1].ConversationId.ShouldBe("t-1");
-            msg.Origin!.Kind.ShouldBe("schedule");
+            msg.Origin!.Kind.ShouldBe(MessageOriginKind.Schedule);
             msg.Origin.ScheduleId.ShouldBe("morning-news");
             break;
         }

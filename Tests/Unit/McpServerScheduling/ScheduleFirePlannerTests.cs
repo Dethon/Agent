@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using McpServerScheduling.Services;
 using Shouldly;
 using Xunit;
@@ -17,7 +18,7 @@ public class ScheduleFirePlannerTests
         plan.NextRunAt.ShouldBe(new DateTime(2026, 5, 25, 8, 0, 0, DateTimeKind.Utc));
         plan.Payload.AgentId.ShouldBe("jonas");
         plan.Payload.ReplyTo![0].ChannelId.ShouldBe("signalr");
-        plan.Payload.Origin!.Kind.ShouldBe("schedule");
+        plan.Payload.Origin!.Kind.ShouldBe(MessageOriginKind.Schedule);
         plan.Payload.Origin!.ScheduleId.ShouldBe("n");
     }
 

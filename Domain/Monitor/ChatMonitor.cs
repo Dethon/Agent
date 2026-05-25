@@ -191,7 +191,7 @@ public class ChatMonitor(
     public static ScheduleExecutionEvent? BuildScheduleEvent(
         ChannelMessage message, long durationMs, bool success, string? error)
     {
-        if (message.Origin is not { Kind: "schedule", ScheduleId: { } scheduleId })
+        if (message.Origin is not { Kind: MessageOriginKind.Schedule, ScheduleId: { } scheduleId })
         {
             return null;
         }

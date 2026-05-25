@@ -17,7 +17,7 @@ public class ScheduleNotificationPayloadTests
             content: "do it",
             agentId: "jonas",
             replyTo: [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-1")],
-            origin: new MessageOrigin("schedule", "morning-news"));
+            origin: new MessageOrigin(MessageOriginKind.Schedule, "morning-news"));
 
         payload.AgentId.ShouldBe("jonas");
         payload.ReplyTo!.Count.ShouldBe(2);
@@ -27,6 +27,6 @@ public class ScheduleNotificationPayloadTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         root.GetProperty("replyTo")[1].GetProperty("conversationId").GetString().ShouldBe("t-1");
-        root.GetProperty("origin").GetProperty("kind").GetString().ShouldBe("schedule");
+        root.GetProperty("origin").GetProperty("kind").GetString().ShouldBe("Schedule");
     }
 }

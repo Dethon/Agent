@@ -184,7 +184,7 @@ public class MemoryExtractionWorkerTests
             .Returns(new AgentDefinition
             {
                 Id = "agent-no-memory", Name = "NoMem", Model = "test",
-                McpServerEndpoints = [], EnabledFeatures = ["scheduling"]
+                McpServerEndpoints = [], EnabledFeatures = []
             });
 
         var request = new MemoryExtractionRequest("user1", "any-key", 0, "conv_1", "agent-no-memory");

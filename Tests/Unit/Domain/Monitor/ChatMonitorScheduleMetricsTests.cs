@@ -14,7 +14,7 @@ public class ChatMonitorScheduleMetricsTests
         var msg = new ChannelMessage
         {
             ConversationId = "c", Content = "do the thing", Sender = "scheduler", ChannelId = "scheduling",
-            AgentId = "jonas", Origin = new MessageOrigin("schedule", "morning-news")
+            AgentId = "jonas", Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news")
         };
 
         var evt = ChatMonitor.BuildScheduleEvent(msg, durationMs: 1234, success: true, error: null);

@@ -18,13 +18,13 @@ public class ChannelMessageTests
             ChannelId = "scheduling",
             AgentId = "jonas",
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-42")],
-            Origin = new MessageOrigin("schedule", "morning-news")
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "morning-news")
         };
 
         message.ReplyTo!.Count.ShouldBe(2);
         message.ReplyTo[0].ChannelId.ShouldBe("signalr");
         message.ReplyTo[0].ConversationId.ShouldBeNull();
-        message.Origin!.Kind.ShouldBe("schedule");
+        message.Origin!.Kind.ShouldBe(MessageOriginKind.Schedule);
         message.Origin.ScheduleId.ShouldBe("morning-news");
     }
 

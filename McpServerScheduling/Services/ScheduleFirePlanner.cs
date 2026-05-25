@@ -11,7 +11,7 @@ public static class ScheduleFirePlanner
     {
         var channels = schedule.DeliverTo is { Count: > 0 } ? schedule.DeliverTo : defaultDeliverTo;
         var replyTo = channels.Select(c => new ReplyTarget(c, null)).ToList();
-        var origin = new MessageOrigin("schedule", schedule.Id);
+        var origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id);
 
         var payload = ScheduleNotificationEmitter.BuildPayload(
             conversationId: $"sched-{schedule.Id}-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}",
