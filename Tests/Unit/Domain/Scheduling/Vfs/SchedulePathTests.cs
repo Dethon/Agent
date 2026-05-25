@@ -28,4 +28,15 @@ public class SchedulePathTests
         node.AgentId.ShouldBe("jonas");
         node.ScheduleId.ShouldBe("morning-news");
     }
+
+    [Theory]
+    [InlineData("/status.json")]                       // reserved name as agent id
+    [InlineData("/jonas/status.json")]                 // reserved name as schedule id
+    [InlineData("/jonas/schedule.json")]               // reserved name as schedule id
+    [InlineData("/jonas/run_now.sh")]                  // reserved name as schedule id
+    [InlineData("/jonas/..")]                          // traversal marker as id
+    [InlineData("/../morning-news/schedule.json")]     // traversal marker as agent id
+    [InlineData("/jonas/./schedule.json")]             // dot segment as schedule id
+    public void Parse_ReservedNamesOrDotSegments_AreUnknown(string path) =>
+        SchedulePath.Parse(path).Kind.ShouldBe(ScheduleNodeKind.Unknown);
 }
