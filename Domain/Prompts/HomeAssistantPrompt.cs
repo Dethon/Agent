@@ -22,8 +22,8 @@ public static class HomeAssistantPrompt
           `/ha/entities/light/kitchen_(kitchen)/`). Contains `state.json` (live state +
           attributes) and one `<service>.sh` per available action.
         - `/ha/areas/<room>/<entity_id>/` — the same entities grouped by room; `<room>` is
-          the area `id` slug (e.g. `salon`), the same value shown in parentheses beside each
-          room in the setup index — not the display name.
+          the area `id` slug (e.g. `salon`) shown in each `/ha/areas/...` path of the setup
+          index — not the display name.
         - Each entity directory's name carries its friendly name as `..._(<friendly-name>)`
           (e.g. `0x00158d00abcd_(aire-acondicionado-salon)` under `entities/climate/`, or the
           full `climate.0x00158d00abcd_(aire-acondicionado-salon)` under `areas/<room>/`) so
@@ -69,9 +69,8 @@ public static class HomeAssistantPrompt
         - Area/room ids: HA generates an area's `id` once, as a lowercase slug of its name at
           creation (`Salón` → `salon`), and keeps it fixed even if the area is later renamed.
           So the id is NOT something you can reliably derive yourself from the display name —
-          accents, spaces, and past renames make a guess wrong. Read the real value, which
-          appears verbatim in two places: the parentheses beside each room in the setup index,
-          and the `<room>` segment under `/ha/areas/` (`glob /ha/areas/*/` lists them).
+          accents, spaces, and past renames make a guess wrong. Read the real value verbatim
+          from the `<room>` segment in any `/ha/areas/<room>/...` path of the setup index.
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
           typed `AREA_ID (slug)`.
