@@ -27,6 +27,18 @@ public class MemoryRecallHookTests
 
     private static readonly float[] _testEmbedding = Enumerable.Range(0, 1536).Select(i => (float)i / 1536).ToArray();
 
+    public enum MemoryDisabledReason
+    {
+        MemoryFeatureNotPresent,
+        NoEnabledFeatures,
+    }
+
+    public enum ExtractionFallbackCause
+    {
+        ThreadStoreThrows,
+        NoStateKey,
+    }
+
     public MemoryRecallHookTests()
     {
         _hook = new MemoryRecallHook(
@@ -130,7 +142,7 @@ public class MemoryRecallHookTests
     }
 
     [Fact]
-    public async Task EnrichAsync_PublishesRecallMetricEvent()
+    public async Task EnrichAsync_PublishesRecallAndLatencyEvents()
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
 
@@ -143,27 +155,46 @@ public class MemoryRecallHookTests
         _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemorySearchResult>());
 
-        await _hook.EnrichAsync(message, "user1", null, null, session, CancellationToken.None);
+        LatencyEvent? capturedLatency = null;
+        _metricsPublisher
+            .Setup(p => p.PublishAsync(It.IsAny<LatencyEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => capturedLatency = e as LatencyEvent)
+            .Returns(Task.CompletedTask);
+
+        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
 
         _metricsPublisher.Verify(p => p.PublishAsync(
             It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
             Times.Once);
+
+        capturedLatency.ShouldNotBeNull();
+        capturedLatency.Stage.ShouldBe(LatencyStage.MemoryRecall);
+        capturedLatency.ConversationId.ShouldBe("conv1");
+        capturedLatency.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
-    [Fact]
-    public async Task EnrichAsync_SkipsRecall_WhenAgentDoesNotHaveMemoryFeature()
+    [Theory]
+    [InlineData(MemoryDisabledReason.MemoryFeatureNotPresent)]
+    [InlineData(MemoryDisabledReason.NoEnabledFeatures)]
+    public async Task EnrichAsync_SkipsRecall_WhenMemoryDisabled(MemoryDisabledReason reason)
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
-        _agentDefinitionProvider.Setup(p => p.GetById("agent-no-memory"))
+        var agentId = reason switch
+        {
+            MemoryDisabledReason.MemoryFeatureNotPresent => "agent-no-memory",
+            MemoryDisabledReason.NoEnabledFeatures => "agent-empty",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason)),
+        };
+        _agentDefinitionProvider.Setup(p => p.GetById(agentId))
             .Returns(new AgentDefinition
             {
-                Id = "agent-no-memory", Name = "NoMem", Model = "test",
+                Id = agentId, Name = agentId, Model = "test",
                 McpServerEndpoints = [], EnabledFeatures = []
             });
 
         var session = new Mock<AgentSession>().Object;
 
-        await _hook.EnrichAsync(message, "user1", "conv_1", "agent-no-memory", session, CancellationToken.None);
+        await _hook.EnrichAsync(message, "user1", "conv_1", agentId, session, CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
         _embeddingService.Verify(
@@ -171,27 +202,6 @@ public class MemoryRecallHookTests
             Times.Never);
         _metricsPublisher.Verify(
             p => p.PublishAsync(It.IsAny<MetricsDTOs.MemoryRecallEvent>(), It.IsAny<CancellationToken>()),
-            Times.Never);
-    }
-
-    [Fact]
-    public async Task EnrichAsync_SkipsRecall_WhenAgentHasNoEnabledFeatures()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-        _agentDefinitionProvider.Setup(p => p.GetById("agent-empty"))
-            .Returns(new AgentDefinition
-            {
-                Id = "agent-empty", Name = "Empty", Model = "test",
-                McpServerEndpoints = [], EnabledFeatures = []
-            });
-
-        var session = new Mock<AgentSession>().Object;
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", "agent-empty", session, CancellationToken.None);
-
-        message.GetMemoryContext().ShouldBeNull();
-        _embeddingService.Verify(
-            e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -301,14 +311,29 @@ public class MemoryRecallHookTests
         }
     }
 
-    [Fact]
-    public async Task EnrichAsync_WhenThreadStoreThrows_StillEnqueuesExtractionWithFallback()
+    [Theory]
+    [InlineData(ExtractionFallbackCause.ThreadStoreThrows)]
+    [InlineData(ExtractionFallbackCause.NoStateKey)]
+    public async Task EnrichAsync_WhenThreadContextUnavailable_StillEnqueuesExtractionWithFallback(ExtractionFallbackCause cause)
     {
         var message = new ChatMessage(ChatRole.User, "hello");
-        var session = CreateSessionWithStateKey("state-broken");
-
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-broken"))
-            .ThrowsAsync(new InvalidOperationException("redis down"));
+        AgentSession session;
+        string? expectedStateKey;
+        switch (cause)
+        {
+            case ExtractionFallbackCause.ThreadStoreThrows:
+                session = CreateSessionWithStateKey("state-broken");
+                expectedStateKey = "state-broken";
+                _threadStateStore.Setup(s => s.GetMessagesAsync("state-broken"))
+                    .ThrowsAsync(new InvalidOperationException("redis down"));
+                break;
+            case ExtractionFallbackCause.NoStateKey:
+                session = new Mock<AgentSession>().Object;
+                expectedStateKey = null;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(cause));
+        }
 
         string? capturedEmbeddingInput = null;
         _embeddingService
@@ -322,70 +347,26 @@ public class MemoryRecallHookTests
 
         await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
 
-        capturedEmbeddingInput.ShouldBe("hello");
+        if (cause == ExtractionFallbackCause.ThreadStoreThrows)
+        {
+            capturedEmbeddingInput.ShouldBe("hello");
+        }
+        else
+        {
+            _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
+        }
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
         await foreach (var item in _queue.ReadAllAsync(cts.Token))
         {
             item.UserId.ShouldBe("user1");
-            item.ThreadStateKey.ShouldBe("state-broken");
+            item.ThreadStateKey.ShouldBe(expectedStateKey);
             item.FallbackContent.ShouldBe("hello");
+            if (cause == ExtractionFallbackCause.NoStateKey)
+            {
+                item.AnchorIndex.ShouldBe(0);
+            }
             break;
         }
-    }
-
-    [Fact]
-    public async Task EnrichAsync_WhenSessionHasNoStateKey_StillEnqueuesExtractionWithFallback()
-    {
-        var message = new ChatMessage(ChatRole.User, "hello");
-        var session = new Mock<AgentSession>().Object;
-
-        _embeddingService
-            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_testEmbedding);
-        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
-                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
-                It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync([]);
-
-        await _hook.EnrichAsync(message, "user1", "conv_1", null, session, CancellationToken.None);
-
-        _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        await foreach (var item in _queue.ReadAllAsync(cts.Token))
-        {
-            item.UserId.ShouldBe("user1");
-            item.ThreadStateKey.ShouldBeNull();
-            item.AnchorIndex.ShouldBe(0);
-            item.FallbackContent.ShouldBe("hello");
-            break;
-        }
-    }
-
-    [Fact]
-    public async Task EnrichAsync_AlsoPublishesLatencyEvent_WithMemoryRecallStage()
-    {
-        var message = new ChatMessage(ChatRole.User, "Hello");
-        var session = CreateSessionWithStateKey("state-test");
-        _threadStateStore.Setup(s => s.GetMessagesAsync("state-test"))
-            .ReturnsAsync((ChatMessage[]?)null);
-        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(_testEmbedding);
-        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(), It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<MemorySearchResult>());
-
-        LatencyEvent? captured = null;
-        _metricsPublisher
-            .Setup(p => p.PublishAsync(It.IsAny<LatencyEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => captured = e as LatencyEvent)
-            .Returns(Task.CompletedTask);
-
-        await _hook.EnrichAsync(message, "user1", "conv1", null, session, CancellationToken.None);
-
-        captured.ShouldNotBeNull();
-        captured.Stage.ShouldBe(LatencyStage.MemoryRecall);
-        captured.ConversationId.ShouldBe("conv1");
-        captured.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 }
