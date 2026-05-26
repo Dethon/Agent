@@ -51,7 +51,7 @@ public class ChatMonitor(
                 try
                 {
                     conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", "Scheduled task", message.Sender, ct);
+                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -106,18 +106,26 @@ public class ChatMonitor(
         IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> group,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        // Resolve delivery targets BEFORE binding the approval handler and restoring
+        // the thread. Two reasons:
+        // 1) The persistence key for chat-history must match the first delivery
+        //    target's conversation id — otherwise, when a target is minted (e.g. a
+        //    schedule fire with a null ReplyTo conversationId), history persists
+        //    under the synthetic group id while the receiving channel (WebChat)
+        //    reads history keyed on the minted id and sees an empty conversation.
+        // 2) The approval handler must route to the delivery target's channel, not
+        //    the origin. Schedule/ServiceBus channels auto-approve silently, so
+        //    binding to the origin would hide tool calls from the user in WebChat.
+        // Resolved once per group; reused for every message.
         var first = await group.FirstAsync(ct);
-        var approvalHandler = approvalHandlerFactory(first.Channel, first.Message.ConversationId);
+        var targets = await ResolveDeliveryTargetsAsync(first.Message, first.Channel, channels, ct, logger);
+        var (approvalChannel, approvalConversationId) = targets.Count > 0
+            ? (targets[0].Channel, targets[0].ConversationId)
+            : (first.Channel, first.Message.ConversationId);
+        var approvalHandler = approvalHandlerFactory(approvalChannel, approvalConversationId);
         await using var agent = agentFactory.Create(agentKey, first.Message.Sender, first.Message.AgentId, approvalHandler);
         var context = threadResolver.Resolve(agentKey);
 
-        // Resolve delivery targets BEFORE the thread is restored. The persistence key
-        // for chat-history must match the first delivery target's conversation id —
-        // otherwise, when a target is minted (e.g. a schedule fire with a null ReplyTo
-        // conversationId), history persists under the synthetic group id while the
-        // receiving channel (WebChat) reads history keyed on the minted id and sees
-        // an empty conversation. Resolved once per group; reused for every message.
-        var targets = await ResolveDeliveryTargetsAsync(first.Message, first.Channel, channels, ct, logger);
         var persistenceKey = targets.Count > 0
             ? new AgentKey(targets[0].ConversationId, first.Message.AgentId)
             : agentKey;

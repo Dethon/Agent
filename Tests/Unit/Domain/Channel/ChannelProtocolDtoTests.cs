@@ -78,7 +78,24 @@ public class ChannelProtocolDtoTests
 
         var args = ChannelProtocol.ToArguments(p);
 
-        args.Keys.OrderBy(k => k).ShouldBe(["agentId", "sender", "topicName"]);
+        args.Keys.OrderBy(k => k).ShouldBe(["agentId", "initialPrompt", "sender", "topicName"]);
+    }
+
+    [Fact]
+    public void ToArguments_WithCreateConversationParams_PreservesInitialPrompt()
+    {
+        var p = new CreateConversationParams
+        {
+            AgentId = "jonas",
+            TopicName = "Scheduled task",
+            Sender = "scheduler",
+            InitialPrompt = "Check qBittorrent for stalled torrents"
+        };
+
+        var args = ChannelProtocol.ToArguments(p);
+        var prompt = (JsonElement)args["initialPrompt"]!;
+
+        prompt.GetString().ShouldBe("Check qBittorrent for stalled torrents");
     }
 
     [Fact]

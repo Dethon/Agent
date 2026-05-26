@@ -196,6 +196,7 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
         string agentId,
         string topicName,
         string sender,
+        string? initialPrompt,
         CancellationToken ct)
     {
         if (_client is null)
@@ -217,7 +218,8 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
                 {
                     AgentId = agentId,
                     TopicName = topicName,
-                    Sender = sender
+                    Sender = sender,
+                    InitialPrompt = initialPrompt
                 }),
                 cancellationToken: ct);
 
