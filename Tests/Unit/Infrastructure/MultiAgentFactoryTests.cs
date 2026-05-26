@@ -19,6 +19,18 @@ public sealed class MultiAgentFactoryTests
         McpServerEndpoints = []
     };
 
+    private static readonly AgentDefinition _fullyMappedAgent = new()
+    {
+        Id = "custom-full",
+        Name = "FullBot",
+        Description = "Full description",
+        Model = "test-model",
+        McpServerEndpoints = [],
+        WhitelistPatterns = ["pattern1"],
+        CustomInstructions = "Be helpful",
+        EnabledFeatures = ["feature1"]
+    };
+
     private readonly CustomAgentRegistry _customAgentRegistry = new();
     private readonly AgentDefinitionProvider _definitionProvider;
     private readonly MultiAgentFactory _sut;
@@ -71,94 +83,52 @@ public sealed class MultiAgentFactoryTests
         return definition;
     }
 
-    // --- Create ---
-
-    [Fact]
-    public void Create_WithNullAgentId_ReturnsDefaultAgent()
-    {
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var agent = _sut.Create(agentKey, "user1", null, _approvalHandler.Object);
-
-        agent.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void Create_WithBuiltInAgentId_CreatesAgent()
-    {
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var agent = _sut.Create(agentKey, "user1", "built-in-id", _approvalHandler.Object);
-
-        agent.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void Create_WithCustomAgentId_CreatesAgent()
-    {
-        var custom = AddCustomAgent("user1");
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var agent = _sut.Create(agentKey, "user1", custom.Id, _approvalHandler.Object);
-
-        agent.ShouldNotBeNull();
-    }
-
-    [Fact]
-    public void Create_WithUnknownAgentId_Throws()
-    {
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user1", "unknown-id", _approvalHandler.Object));
-
-        ex.Message.ShouldContain("unknown-id");
-    }
-
-    [Fact]
-    public void Create_AfterUnregister_Throws()
-    {
-        var custom = AddCustomAgent("user1");
-        _customAgentRegistry.Remove("user1", custom.Id);
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user1", custom.Id, _approvalHandler.Object));
-
-        ex.Message.ShouldContain(custom.Id);
-    }
-
-    [Fact]
-    public void Create_WithCustomAgentIdOfDifferentUser_Throws()
-    {
-        var custom = AddCustomAgent("user1");
-        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
-
-        var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, "user2", custom.Id, _approvalHandler.Object));
-
-        ex.Message.ShouldContain(custom.Id);
-    }
-
-    [Fact]
-    public void Create_WithAllFieldsMapped_Succeeds()
-    {
-        var definition = new AgentDefinition
+    public static IEnumerable<object[]> SuccessCases =>
+    [
+        ["null agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => null)],
+        ["built-in agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => _builtInAgent.Id)],
+        ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, string?>)(t => t.AddCustomAgent("user1").Id)],
+        ["custom agent with all fields populated", "user1", (Func<MultiAgentFactoryTests, string?>)(t =>
         {
-            Id = "custom-full",
-            Name = "FullBot",
-            Description = "Full description",
-            Model = "test-model",
-            McpServerEndpoints = [],
-            WhitelistPatterns = ["pattern1"],
-            CustomInstructions = "Be helpful",
-            EnabledFeatures = ["feature1"]
-        };
-        _customAgentRegistry.Add("user1", definition);
+            t._customAgentRegistry.Add("user1", _fullyMappedAgent);
+            return _fullyMappedAgent.Id;
+        })]
+    ];
+
+    [Theory]
+    [MemberData(nameof(SuccessCases))]
+    public void Create_SupportedAgentIdentifier_ReturnsAgent(string _, string userId, Func<MultiAgentFactoryTests, string?> agentIdFactory)
+    {
+        var agentId = agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, "user1", "custom-full", _approvalHandler.Object);
+        var agent = _sut.Create(agentKey, userId, agentId, _approvalHandler.Object);
 
         agent.ShouldNotBeNull();
+    }
+
+    public static IEnumerable<object?[]> ErrorCases =>
+    [
+        ["unknown agent id", "user1", (Func<MultiAgentFactoryTests, string>)(_ => "unknown-id"), "unknown-id"],
+        ["custom agent unregistered before create", "user1", (Func<MultiAgentFactoryTests, string>)(t =>
+        {
+            var def = t.AddCustomAgent("user1");
+            t._customAgentRegistry.Remove("user1", def.Id);
+            return def.Id;
+        }), null],
+        ["custom agent owned by a different user", "user2", (Func<MultiAgentFactoryTests, string>)(t => t.AddCustomAgent("user1").Id), null]
+    ];
+
+    [Theory]
+    [MemberData(nameof(ErrorCases))]
+    public void Create_RejectsInvalidAgentId_Throws(string _, string userId, Func<MultiAgentFactoryTests, string> agentIdFactory, string? expectedMessageFragment)
+    {
+        var agentId = agentIdFactory(this);
+        var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
+
+        var ex = Should.Throw<InvalidOperationException>(
+            () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object));
+
+        ex.Message.ShouldContain(expectedMessageFragment ?? agentId);
     }
 }
