@@ -8,10 +8,10 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public sealed partial class HaFileSystem
 {
-    public async Task<JsonNode> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+    public async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        JsonNode done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
+        FsResult<FsExecResult> done(int exitCode, string stdout, string stderr, bool timedOut = false) =>
             ExecResult(exitCode, stdout, stderr, timedOut, sw.ElapsedMilliseconds, path);
 
         var catalog = await catalogProvider.GetAsync(ct);
@@ -100,8 +100,8 @@ public sealed partial class HaFileSystem
         }
     }
 
-    private static JsonNode ExecResult(int exitCode, string stdout, string stderr, bool timedOut, long durationMs, string cwd) =>
-        FsResultContract.ToNode(new FsExecResult
+    private static FsResult<FsExecResult> ExecResult(int exitCode, string stdout, string stderr, bool timedOut, long durationMs, string cwd) =>
+        new FsResult<FsExecResult>.Ok(new FsExecResult
         {
             Stdout = stdout,
             Stderr = stderr,

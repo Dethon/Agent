@@ -10,19 +10,21 @@ namespace McpChannelSignalR.McpTools;
 [McpServerToolType]
 public sealed class CreateConversationTool
 {
-    [McpServerTool(Name = "create_conversation")]
+    [McpServerTool(Name = ChannelProtocol.CreateConversationTool)]
     [Description("Create a new conversation for agent-initiated messages")]
     public static async Task<string> McpRun(
         [Description("Agent identifier")] string agentId,
         [Description("Topic display name")] string topicName,
         [Description("User who initiated")] string sender,
-        IServiceProvider services)
+        IServiceProvider services,
+        [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null)
     {
         var p = new CreateConversationParams
         {
             AgentId = agentId,
             TopicName = topicName,
-            Sender = sender
+            Sender = sender,
+            InitialPrompt = initialPrompt
         };
 
         var sessionService = services.GetRequiredService<SessionService>();
@@ -49,9 +51,12 @@ public sealed class CreateConversationTool
             TopicChangeType.Created, topicId, topic, SpaceSlug: "default");
         await hubSender.SendToGroupAsync("space:default", "OnTopicChanged", notification);
 
-        // Create a stream so send_reply chunks have somewhere to go
+        // Create a stream so send_reply chunks have somewhere to go. The stream's
+        // `currentPrompt` seeds the user-role bubble on WebChat (via StreamState),
+        // so it must be the originating prompt — falling back to topicName only
+        // for legacy callers that don't pass one.
         var streamService = services.GetRequiredService<StreamService>();
-        streamService.GetOrCreateStream(topicId, topicName, sender, CancellationToken.None);
+        streamService.GetOrCreateStream(topicId, initialPrompt ?? topicName, sender, CancellationToken.None);
 
         return conversationId;
     }

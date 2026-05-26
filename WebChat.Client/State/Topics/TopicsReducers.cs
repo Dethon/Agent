@@ -51,6 +51,11 @@ public static class TopicsReducers
         SetAgents a => state with
         {
             Agents = a.Agents,
+            // A live catalog refresh may drop the selected agent; fall back to the first
+            // available (or null when empty) so the UI never points at a ghost agent.
+            SelectedAgentId = state.SelectedAgentId is not null && a.Agents.All(ag => ag.Id != state.SelectedAgentId)
+                ? a.Agents.FirstOrDefault()?.Id
+                : state.SelectedAgentId,
             Error = null // Auto-clear on success
         },
 

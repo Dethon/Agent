@@ -225,16 +225,18 @@ public class JQueryFocusWidgetTests(
             browseResult.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
             output.WriteLine($"Page loaded: {browseResult.Url}");
 
-            // Take snapshot to get refs
-            var snapshot = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
-            snapshot.ErrorMessage.ShouldBeNull();
-            output.WriteLine($"Snapshot (first 2000 chars):\n{snapshot.Snapshot?[..Math.Min(2000, snapshot.Snapshot.Length)]}");
+            // Wait for the readonly date textbox to render — navitime builds the JR booking form
+            // client-side after navigation, so a single immediate snapshot is a race.
+            var snapshotText = await fixture.WaitForSnapshotAsync(
+                sessionId,
+                s => s.Split('\n').Any(l =>
+                    l.Contains("textbox") && l.Contains("ref=") && l.Contains("readonly")),
+                "readonly date textbox to appear in snapshot");
+            output.WriteLine($"Snapshot (first 2000 chars):\n{snapshotText[..Math.Min(2000, snapshotText.Length)]}");
 
             // Find the departure date textbox — readonly input with date value
-            var lines = snapshot.Snapshot!.Split('\n');
-            var dateLine = lines.FirstOrDefault(l =>
+            var dateLine = snapshotText.Split('\n').First(l =>
                 l.Contains("textbox") && l.Contains("ref=") && l.Contains("readonly"));
-            dateLine.ShouldNotBeNull("Should find a readonly textbox (date input) in snapshot");
             output.WriteLine($"Date input line: {dateLine}");
 
             var refMatch = System.Text.RegularExpressions.Regex.Match(dateLine, @"ref=(e\d+)");

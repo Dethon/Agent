@@ -1,25 +1,27 @@
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
 public sealed partial class HaFileSystem(
     HaCatalogProvider catalogProvider,
     Func<IHomeAssistantClient> clientFactory,
-    TimeSpan? regexMatchTimeout = null)
+    TimeSpan? regexMatchTimeout = null) : IFileSystemBackend
 {
+    public string FilesystemName => "ha";
+
     private readonly TimeSpan _regexMatchTimeout = regexMatchTimeout ?? TimeSpan.FromSeconds(1);
 
     // Glob is uncapped: the result set is bounded by the home's entity count.
-    public async Task<JsonNode> GlobAsync(string basePath, string pattern, CancellationToken ct)
+    public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var hits = HaTree.Glob(catalog, basePath, pattern);
         var entries = hits.ToList();
-        return FsResultContract.ToNode(new FsGlobResult
+        return new FsResult<FsGlobResult>.Ok(new FsGlobResult
         {
             Entries = entries,
             Truncated = false,
@@ -27,17 +29,16 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    public async Task<JsonNode> InfoAsync(string path, CancellationToken ct)
+    public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var catalog = await catalogProvider.GetAsync(ct);
         var node = HaVfsPath.Parse(path);
         var (exists, isDir) = Resolve(node, catalog);
 
-        var result = new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null };
-        return FsResultContract.ToNode(result);
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
     }
 
-    public async Task<JsonNode> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
+    public async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
         var node = HaVfsPath.Parse(path);
         if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
@@ -58,7 +59,7 @@ public sealed partial class HaFileSystem(
             : ReadAction(path, entityId, node.Service!, catalog);
     }
 
-    public async Task<JsonNode> SearchAsync(
+    public async Task<FsResult<FsSearchResult>> SearchAsync(
         string query, bool regex, string? path, string? directoryPath, string? filePattern,
         int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
@@ -80,16 +81,18 @@ public sealed partial class HaFileSystem(
         }
         catch (ArgumentException ex)
         {
-            return Domain.Tools.ToolError.Create(
-                Domain.Tools.ToolError.Codes.InvalidArgument,
-                $"Invalid search pattern '{query}': {ex.Message}",
-                retryable: false,
-                hint: "Fix the regex, or set regex=false to match a literal string.");
+            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.InvalidArgument,
+                Message = $"Invalid search pattern '{query}': {ex.Message}",
+                Retryable = false,
+                Hint = "Fix the regex, or set regex=false to match a literal string."
+            });
         }
 
         // state.json is the only searchable file per entity, so a filePattern either includes it
         // (search the scoped entities) or excludes it entirely (nothing to search).
-        var scoped = MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
+        var scoped = VfsContentSearch.MatchesFilePattern(filePattern, HaVfsPath.StateFileName)
             ? ScopeEntities(catalog, path, directoryPath)
             : [];
 
@@ -114,7 +117,7 @@ public sealed partial class HaFileSystem(
                 }
                 filesSearched++;
                 var lines = HaStateRenderer.ToJson(entity).Split('\n');
-                var (matches, more) = FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+                var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
                 truncated |= more;
                 if (matches.Count == 0)
                 {
@@ -122,19 +125,21 @@ public sealed partial class HaFileSystem(
                 }
                 filesWithMatches++;
                 totalMatches += matches.Count;
-                results.Add(BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
+                results.Add(VfsContentSearch.BuildFileResult(CanonicalStatePath(entity), matches, outputMode));
             }
         }
         catch (RegexMatchTimeoutException)
         {
-            return Domain.Tools.ToolError.Create(
-                Domain.Tools.ToolError.Codes.Timeout,
-                $"Search pattern '{query}' timed out while matching.",
-                retryable: false,
-                hint: "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string.");
+            return new FsResult<FsSearchResult>.Err(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.Timeout,
+                Message = $"Search pattern '{query}' timed out while matching.",
+                Retryable = false,
+                Hint = "Simplify the regex (avoid nested quantifiers), or set regex=false to match a literal string."
+            });
         }
 
-        return FsResultContract.ToNode(new FsSearchResult
+        return new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = query,
             Regex = regex,
@@ -174,67 +179,18 @@ public sealed partial class HaFileSystem(
         };
     }
 
-    // Returns up to `limit` matches and whether the file held more than that (per-file truncation).
-    private static (List<FsSearchMatch> Matches, bool More) FindMatches(
-        string[] lines, Regex matcher, int contextLines, int limit)
-    {
-        var hits = lines
-            .Select((text, index) => (text, index))
-            .Where(l => matcher.IsMatch(l.text))
-            .ToList();
-        var taken = hits
-            .Take(limit)
-            .Select(l => BuildMatch(lines, l.index, contextLines))
-            .ToList();
-        return (taken, hits.Count > limit);
-    }
-
-    private static FsSearchMatch BuildMatch(string[] lines, int index, int contextLines)
-    {
-        if (contextLines <= 0)
-        {
-            return new FsSearchMatch { Line = index + 1, Text = lines[index] };
-        }
-        var before = lines.Take(index).TakeLast(contextLines).ToList();
-        var after = lines.Skip(index + 1).Take(contextLines).ToList();
-        var hasContext = before.Count > 0 || after.Count > 0;
-        return new FsSearchMatch
-        {
-            Line = index + 1,
-            Text = lines[index],
-            Context = hasContext ? new FsSearchContext { Before = before, After = after } : null
-        };
-    }
-
-    private static FsSearchFileResult BuildFileResult(string file, IReadOnlyList<FsSearchMatch> matches, VfsTextSearchOutputMode outputMode) =>
-        outputMode == VfsTextSearchOutputMode.FilesOnly
-            ? new FsSearchFileResult { File = file, MatchCount = matches.Count }
-            : new FsSearchFileResult { File = file, Matches = matches };
-
     // Composes the entities-root form only — search hits are always reported under entities/, never
     // the area form, so callers get one canonical path per entity regardless of area membership.
     private static string CanonicalStatePath(HaEntityState entity) =>
         $"entities/{HaCatalog.ClassOf(entity.EntityId)}/{HaSlug.Compose(HaCatalog.ObjectOf(entity.EntityId), HaCatalog.FriendlyName(entity))}/{HaVfsPath.StateFileName}";
 
-    // Matches a bare file name against a simple glob (* and ?). Used to gate whether the searchable
-    // state.json is included by a caller-supplied filePattern.
-    private static bool MatchesFilePattern(string? filePattern, string fileName)
-    {
-        if (string.IsNullOrEmpty(filePattern))
-        {
-            return true;
-        }
-        var pattern = "^" + Regex.Escape(filePattern).Replace("\\*", "[^/]*").Replace("\\?", ".") + "$";
-        return Regex.IsMatch(fileName, pattern, RegexOptions.IgnoreCase);
-    }
-
-    private async Task<JsonNode> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
+    private async Task<FsResult<FsReadResult>> ReadStateAsync(string path, string entityId, int? offset, int? limit, CancellationToken ct)
     {
         var entity = await clientFactory().GetStateAsync(entityId, ct);
         return entity is null ? NotFound(path) : BuildReadResult(path, HaStateRenderer.ToJson(entity), offset, limit);
     }
 
-    private static JsonNode ReadAction(string path, string entityId, string service, HaCatalog catalog)
+    private static FsResult<FsReadResult> ReadAction(string path, string entityId, string service, HaCatalog catalog)
     {
         var svc = HaActionResolver.ServicesFor(entityId, catalog.Services)
             .FirstOrDefault(s => s.Service.Equals(service, StringComparison.Ordinal));
@@ -286,7 +242,7 @@ public sealed partial class HaFileSystem(
     };
 
     // Line-numbered read result matching the Sandbox/Vault text_read shape.
-    private static JsonNode BuildReadResult(string filePath, string text, int? offset, int? limit)
+    private static FsResult<FsReadResult> BuildReadResult(string filePath, string text, int? offset, int? limit)
     {
         var allLines = text.Split('\n');
         var start = Math.Clamp((offset ?? 1) - 1, 0, allLines.Length);
@@ -295,7 +251,7 @@ public sealed partial class HaFileSystem(
         var content = string.Join("\n", remaining.Take(take).Select((l, i) => $"{start + i + 1}: {l}"));
         var truncated = take < remaining.Length;
 
-        return FsResultContract.ToNode(new FsReadResult
+        return new FsResult<FsReadResult>.Ok(new FsReadResult
         {
             FilePath = filePath,
             Content = content,
@@ -305,11 +261,48 @@ public sealed partial class HaFileSystem(
         });
     }
 
-    private static JsonObject NotFound(string path, string? canonicalName = null) =>
-        Domain.Tools.ToolError.Create(
-            Domain.Tools.ToolError.Codes.NotFound,
-            $"No such path: {path}",
-            hint: canonicalName is null
+    // Home Assistant is a read + exec control surface: mutating a file, copying, and raw byte
+    // streaming have no meaning here, so these IFileSystemBackend members return unsupported.
+    public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
+        bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsCreateResult>(nameof(CreateAsync)));
+
+    public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsEditResult>(nameof(EditAsync)));
+
+    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsMoveResult>(nameof(MoveAsync)));
+
+    public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsRemoveResult>(nameof(DeleteAsync)));
+
+    public Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath, bool overwrite,
+        bool createDirectories, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsCopyResult>(nameof(CopyAsync)));
+
+    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(string path, CancellationToken ct) =>
+        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
+
+    public Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        throw new NotSupportedException("The Home Assistant filesystem does not support raw byte streaming.");
+
+    private static FsResult<T> Unsupported<T>(string operation) where T : class =>
+        new FsResult<T>.Err(new ToolErrorResult
+        {
+            ErrorCode = ToolError.Codes.UnsupportedOperation,
+            Message = $"The Home Assistant filesystem does not support '{operation}'.",
+            Retryable = false
+        });
+
+    private static FsResult<FsReadResult> NotFound(string path, string? canonicalName = null) =>
+        new FsResult<FsReadResult>.Err(new ToolErrorResult
+        {
+            ErrorCode = ToolError.Codes.NotFound,
+            Message = $"No such path: {path}",
+            Retryable = false,
+            Hint = canonicalName is null
                 ? null
-                : $"Use the exact directory name a listing returns: '{canonicalName}'.");
+                : $"Use the exact directory name a listing returns: '{canonicalName}'."
+        });
 }

@@ -7,7 +7,7 @@
 @code {
     private IReadOnlyList<StoredTopic> _topics = [];
     private string? _selectedTopicId;
-    private IReadOnlyList<AgentInfo> _agents = [];
+    private IReadOnlyList<AgentCatalogEntry> _agents = [];
     private string? _selectedAgentId;
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
     private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();

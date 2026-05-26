@@ -18,7 +18,7 @@ public sealed class MultiAgentFactory(
     IDomainToolRegistry domainToolRegistry,
     IMetricsPublisher? metricsPublisher = null,
     ILoggerFactory? loggerFactory = null,
-    Func<string, int?, IMetricsPublisher?, IChatClient>? chatClientFactory = null) : IAgentFactory, IScheduleAgentFactory
+    Func<string, int?, IMetricsPublisher?, IChatClient>? chatClientFactory = null) : IAgentFactory
 {
 
     public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
@@ -86,7 +86,7 @@ public sealed class MultiAgentFactory(
             reasoningEffort: definition.ReasoningEffort);
     }
 
-    public DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
+    private DisposableAgent CreateFromDefinition(AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
     {
         var agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, definition.Name)

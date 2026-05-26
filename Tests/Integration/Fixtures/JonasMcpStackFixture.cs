@@ -8,6 +8,9 @@ namespace Tests.Integration.Fixtures;
 // Brings up the five MCP servers jonas connects to (mcp-vault, mcp-sandbox, mcp-websearch,
 // mcp-idealista, mcp-homeassistant) and the SignalR channel server as real Docker containers,
 // so the benchmark times the actual MCP handshake + tool/resource discovery surface area.
+// mcp-homeassistant is backed by a real Home Assistant container (see HomeAssistantSeed) on the
+// same network, so the home_assistant_guide prompt's live catalog fetch exercises the real path
+// instead of a stub — the benchmark measures genuine session-build overhead.
 // Images are rebuilt only when source under the watched directories has changed
 // (see TestHelpers.EnsureImageAsync).
 public class JonasMcpStackFixture : IAsyncLifetime
@@ -16,6 +19,8 @@ public class JonasMcpStackFixture : IAsyncLifetime
 
     private INetwork? _network;
     private IContainer? _redis;
+    private IContainer? _homeAssistant;
+    private string? _haConfigDir;
     private IContainer? _mcpVault;
     private IContainer? _mcpSandbox;
     private IContainer? _mcpWebsearch;
@@ -84,11 +89,31 @@ public class JonasMcpStackFixture : IAsyncLifetime
             .Build();
         await _redis.StartAsync(ct);
 
+        // Boot a real Home Assistant on the benchmark network under the alias the agent's HA client
+        // expects by default (http://homeassistant:8123). Started before the MCP servers so its
+        // ~30-60s cold start overlaps their startup; the API-ready wait runs once everything is up.
+        _haConfigDir = Path.Combine(Path.GetTempPath(), $"ha-bench-{Guid.NewGuid():N}");
+        var haToken = HomeAssistantSeed.WriteConfig(_haConfigDir);
+        _homeAssistant = new ContainerBuilder(HomeAssistantSeed.ContainerImage)
+            .WithName($"homeassistant-bench-{Guid.NewGuid():N}")
+            .WithNetwork(_network)
+            .WithNetworkAliases("homeassistant")
+            .WithBindMount(_haConfigDir, "/config")
+            .WithEnvironment("TZ", "UTC")
+            .WithPortBinding(HomeAssistantSeed.Port, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(HomeAssistantSeed.Port))
+            .Build();
+        await _homeAssistant.StartAsync(ct);
+
         _mcpVault = await StartContainer("mcp-vault:latest", "mcp-vault", ct);
         _mcpSandbox = await StartContainer("mcp-sandbox:latest", "mcp-sandbox", ct);
         _mcpWebsearch = await StartContainer("mcp-websearch:latest", "mcp-websearch", ct);
         _mcpIdealista = await StartContainer("mcp-idealista:latest", "mcp-idealista", ct);
-        _mcpHomeassistant = await StartContainer("mcp-homeassistant:latest", "mcp-homeassistant", ct);
+        // mcp-homeassistant reaches the real HA above via the default BaseUrl (network alias
+        // `homeassistant`); it only needs the matching long-lived token.
+        _mcpHomeassistant = await StartContainer(
+            "mcp-homeassistant:latest", "mcp-homeassistant", ct,
+            new Dictionary<string, string> { ["HOMEASSISTANT__TOKEN"] = haToken });
 
         _mcpChannelSignalR = new ContainerBuilder("mcp-channel-signalr:latest")
             .WithName($"mcp-channel-signalr-bench-{Guid.NewGuid():N}")
@@ -111,6 +136,11 @@ public class JonasMcpStackFixture : IAsyncLifetime
             .Build();
         await _mcpChannelSignalR.StartAsync(ct);
 
+        // All containers are up; ensure HA's REST API is fully ready (states/services/template) before
+        // tests run, so the first session build hits a live HA rather than one still booting.
+        var haBaseUrl = $"http://{_homeAssistant.Hostname}:{_homeAssistant.GetMappedPublicPort(HomeAssistantSeed.Port)}";
+        await HomeAssistantSeed.WaitForApiReadyAsync(_homeAssistant, haBaseUrl, haToken);
+
         Endpoints =
         [
             EndpointFor(_mcpVault),
@@ -124,15 +154,21 @@ public class JonasMcpStackFixture : IAsyncLifetime
         SignalRHubUrl = $"http://{_mcpChannelSignalR.Hostname}:{_mcpChannelSignalR.GetMappedPublicPort(8080)}/hubs/chat";
     }
 
-    private async Task<IContainer> StartContainer(string image, string alias, CancellationToken ct)
+    private async Task<IContainer> StartContainer(
+        string image, string alias, CancellationToken ct,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
-        var container = new ContainerBuilder(image)
+        var builder = new ContainerBuilder(image)
             .WithName($"{alias}-bench-{Guid.NewGuid():N}")
             .WithNetwork(_network!)
             .WithNetworkAliases(alias)
             .WithPortBinding(8080, true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
-            .Build();
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080));
+
+        builder = (environment ?? new Dictionary<string, string>())
+            .Aggregate(builder, (b, kv) => b.WithEnvironment(kv.Key, kv.Value));
+
+        var container = builder.Build();
         await container.StartAsync(ct);
         return container;
     }
@@ -146,7 +182,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
         {
             _mcpChannelSignalR,
             _mcpHomeassistant, _mcpIdealista, _mcpWebsearch, _mcpSandbox, _mcpVault,
-            _redis,
+            _homeAssistant, _redis,
         };
         foreach (var container in containers)
         {
@@ -158,6 +194,12 @@ public class JonasMcpStackFixture : IAsyncLifetime
         if (_network is not null)
         {
             await _network.DeleteAsync();
+        }
+        if (_haConfigDir is not null && Directory.Exists(_haConfigDir))
+        {
+            try
+            { Directory.Delete(_haConfigDir, recursive: true); }
+            catch { /* best effort — container may still hold handles momentarily */ }
         }
     }
 }

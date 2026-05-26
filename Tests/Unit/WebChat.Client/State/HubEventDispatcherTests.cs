@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Moq;
 using WebChat.Client.Contracts;
@@ -182,6 +183,18 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher.Verify(
             d => d.Dispatch(It.IsAny<StreamChunk>()),
             Times.Never);
+    }
+
+    [Fact]
+    public void HandleAgentsUpdated_DispatchesSetAgents()
+    {
+        var agents = new List<AgentCatalogEntry> { new("agent-1", "Agent One", null) };
+
+        _sut.HandleAgentsUpdated(agents);
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<SetAgents>(a => a.Agents.Count == 1 && a.Agents[0].Id == "agent-1")),
+            Times.Once);
     }
 
     [Fact]

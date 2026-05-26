@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
@@ -93,6 +94,11 @@ public sealed class HubEventDispatcher(
             Reasoning: null,
             ToolCalls: notification.ToolCalls,
             MessageId: notification.MessageId));
+    }
+
+    public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
+    {
+        dispatcher.Dispatch(new SetAgents(agents));
     }
 
     public void HandleUserMessage(UserMessageNotification notification)

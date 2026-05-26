@@ -203,13 +203,7 @@ public class RedisScheduleStoreTests(RedisFixture fixture) : IClassFixture<Redis
         return new Schedule
         {
             Id = $"test_{Guid.NewGuid():N}",
-            Agent = new AgentDefinition
-            {
-                Id = "test",
-                Name = "Test Agent",
-                Model = "test-model",
-                McpServerEndpoints = []
-            },
+            AgentId = "test",
             Prompt = "Test prompt",
             CronExpression = "0 9 * * *",
             UserId = "testuser",

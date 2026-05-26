@@ -187,7 +187,6 @@ public class JonasInstantiationBenchmark(
         services.AddLogging();
         services
             .AddAgent(settings)
-            .AddScheduling()
             .AddSubAgents(settings.SubAgents)
             .AddMemory(_configuration);
 
@@ -390,7 +389,7 @@ internal sealed class StubChannelConnection : IChannelConnection
         => Task.CompletedTask;
 
     public Task<string?> CreateConversationAsync(
-        string agentId, string topicName, string sender, CancellationToken ct)
+        string agentId, string topicName, string sender, string? initialPrompt, CancellationToken ct)
         => Task.FromResult<string?>(null);
 
     private TaskCompletionSource GetOrAddCompletion(string conversationId)

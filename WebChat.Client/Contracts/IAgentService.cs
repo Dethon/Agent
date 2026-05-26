@@ -1,8 +1,8 @@
-using Domain.DTOs.WebChat;
+using Domain.DTOs.Channel;
 
 namespace WebChat.Client.Contracts;
 
 public interface IAgentService
 {
-    Task<IReadOnlyList<AgentInfo>> GetAgentsAsync();
+    Task<IReadOnlyList<AgentCatalogEntry>> GetAgentsAsync();
 }

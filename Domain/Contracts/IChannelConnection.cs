@@ -32,5 +32,6 @@ public interface IChannelConnection
         string agentId,
         string topicName,
         string sender,
+        string? initialPrompt,
         CancellationToken ct);
 }

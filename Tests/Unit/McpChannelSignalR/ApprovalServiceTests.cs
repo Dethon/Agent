@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -30,17 +29,14 @@ public class ApprovalServiceTests : IDisposable
             new Mock<ILogger<ApprovalService>>().Object);
     }
 
-    private static string SerializeRequests(params ToolApprovalRequest[] requests) =>
-        JsonSerializer.Serialize(requests);
-
     [Fact]
     public async Task RequestApprovalAsync_ApprovalGranted_ReturnsApproved()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
-        var requests = SerializeRequests(
-            new ToolApprovalRequest("msg-1", "mcp__server__tool", new Dictionary<string, object?> { ["key"] = "val" }));
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "mcp__server__tool", new Dictionary<string, object?> { ["key"] = "val" })];
 
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
@@ -61,8 +57,8 @@ public class ApprovalServiceTests : IDisposable
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
-        var requests = SerializeRequests(
-            new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>()));
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
 
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
@@ -80,8 +76,8 @@ public class ApprovalServiceTests : IDisposable
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
-        var requests = SerializeRequests(
-            new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>()));
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "tool", new Dictionary<string, object?>())];
 
         var approvalTask = _sut.RequestApprovalAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
@@ -99,8 +95,8 @@ public class ApprovalServiceTests : IDisposable
         var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
         var reader = channel.Subscribe();
 
-        var requests = SerializeRequests(
-            new ToolApprovalRequest("msg-1", "search", new Dictionary<string, object?> { ["q"] = "test" }));
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "search", new Dictionary<string, object?> { ["q"] = "test" })];
 
         await _sut.NotifyAutoApprovedAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Notify, Requests = requests });

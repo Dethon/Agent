@@ -440,6 +440,33 @@ services:
     depends_on:
       - base-sdk
 
+  mcp-scheduling:
+    image: mcp-scheduling:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-scheduling
+    ports:
+      - "6013:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerScheduling/Dockerfile
+      cache_from:
+        - mcp-scheduling:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
   agent:
     image: agent:latest
     logging:
@@ -480,6 +507,8 @@ services:
       mcp-channel-telegram:
         condition: service_started
       mcp-channel-servicebus:
+        condition: service_started
+      mcp-scheduling:
         condition: service_started
       redis:
         condition: service_healthy

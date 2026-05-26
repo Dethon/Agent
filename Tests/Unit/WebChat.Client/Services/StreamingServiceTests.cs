@@ -206,6 +206,36 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StreamResponseAsync_InterleavedMessageIds_PreservesAllContentPerMessage()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _dispatcher.Dispatch(new StreamStarted(topic.TopicId));
+
+        // Reproduces the backend race: a later message's chunk arrives in the middle of an
+        // earlier message's content stream, and the earlier message's remaining content arrives
+        // afterward (MessageIds interleave instead of arriving contiguously).
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "First part ", MessageId = "msg-1" },
+            new ChatStreamMessage { ToolCalls = "tool_a", MessageId = "msg-2" },
+            new ChatStreamMessage { Content = "second part", MessageId = "msg-1" },
+            new ChatStreamMessage { Content = "msg2 text", MessageId = "msg-2" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
+
+        await _service.StreamResponseAsync(topic, "test");
+
+        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId) ?? [];
+        var msg1 = messages.FirstOrDefault(m => m.MessageId == "msg-1");
+        var msg2 = messages.FirstOrDefault(m => m.MessageId == "msg-2");
+
+        msg1.ShouldNotBeNull();
+        msg1.Content.ShouldBe("First part second part");
+        msg2.ShouldNotBeNull();
+        msg2.Content.ShouldBe("msg2 text");
+        msg2.ToolCalls.ShouldBe("tool_a");
+    }
+
+    [Fact]
     public async Task StreamResponseAsync_ReasoningOnlyTurn_FinalizesToStore()
     {
         var topic = CreateTopic();

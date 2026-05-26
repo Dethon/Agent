@@ -36,4 +36,26 @@ public class CronValidatorTests
         var next = _validator.GetNextOccurrence("invalid", DateTime.UtcNow);
         next.ShouldBeNull();
     }
+
+    [Fact]
+    public void GetNextOccurrence_ValidCron_ReturnsUtcKind()
+    {
+        var next = _validator.GetNextOccurrence("0 9 * * *", DateTime.UtcNow);
+
+        next.ShouldNotBeNull();
+        next.Value.Kind.ShouldBe(DateTimeKind.Utc);
+    }
+
+    [Theory]
+    [InlineData(DateTimeKind.Local)]
+    [InlineData(DateTimeKind.Unspecified)]
+    public void GetNextOccurrence_NormalizesResultToUtc_RegardlessOfInputKind(DateTimeKind inputKind)
+    {
+        var from = DateTime.SpecifyKind(new DateTime(2024, 1, 15, 8, 0, 0), inputKind);
+
+        var next = _validator.GetNextOccurrence("0 9 * * *", from);
+
+        next.ShouldNotBeNull();
+        next.Value.Kind.ShouldBe(DateTimeKind.Utc);
+    }
 }

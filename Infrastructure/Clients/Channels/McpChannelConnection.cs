@@ -2,16 +2,17 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Infrastructure.Clients.Channels;
 
-public sealed class McpChannelConnection(string channelId) : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
+public sealed class McpChannelConnection(string channelId, ILogger<McpChannelConnection>? logger = null)
+    : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
-    private const string ChannelMessageNotification = "notifications/channel/message";
-    private const string ChannelCancelNotification = "notifications/channel/cancel";
     private const string CancelCommandContent = "/cancel";
     private const string SystemSender = "system";
 
@@ -37,7 +38,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             cancellationToken: ct);
 
         _client.RegisterNotificationHandler(
-            ChannelMessageNotification,
+            ChannelProtocol.MessageNotification,
             (notification, _) =>
             {
                 if (notification.Params is { } paramsNode)
@@ -50,7 +51,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
             });
 
         _client.RegisterNotificationHandler(
-            ChannelCancelNotification,
+            ChannelProtocol.CancelNotification,
             (notification, _) =>
             {
                 if (notification.Params is { } paramsNode)
@@ -65,20 +66,31 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
     public void HandleChannelMessageNotification(JsonElement payload)
     {
-        var conversationId = payload.GetProperty("conversationId").GetString()!;
-        var content = payload.GetProperty("content").GetString()!;
-        var sender = payload.GetProperty("sender").GetString()!;
-        var agentId = payload.TryGetProperty("agentId", out var agentIdProp)
-            ? agentIdProp.GetString()
-            : null;
+        ChannelMessageNotification? notification;
+        try
+        {
+            notification = ChannelProtocol.Deserialize<ChannelMessageNotification>(payload);
+        }
+        catch (JsonException ex)
+        {
+            logger?.LogWarning(ex, "Discarding malformed channel/message notification on {ChannelId}", ChannelId);
+            return;
+        }
+
+        if (notification is null)
+        {
+            return;
+        }
 
         var message = new ChannelMessage
         {
-            ConversationId = conversationId,
-            Content = content,
-            Sender = sender,
+            ConversationId = notification.ConversationId,
+            Content = notification.Content,
+            Sender = notification.Sender,
             ChannelId = ChannelId,
-            AgentId = agentId
+            AgentId = notification.AgentId,
+            ReplyTo = notification.ReplyTo,
+            Origin = notification.Origin
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -86,18 +98,29 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
 
     public void HandleChannelCancelNotification(JsonElement payload)
     {
-        var conversationId = payload.GetProperty("conversationId").GetString()!;
-        var agentId = payload.TryGetProperty("agentId", out var agentIdProp)
-            ? agentIdProp.GetString()
-            : null;
+        ChannelCancelNotification? notification;
+        try
+        {
+            notification = ChannelProtocol.Deserialize<ChannelCancelNotification>(payload);
+        }
+        catch (JsonException ex)
+        {
+            logger?.LogWarning(ex, "Discarding malformed channel/cancel notification on {ChannelId}", ChannelId);
+            return;
+        }
+
+        if (notification is null)
+        {
+            return;
+        }
 
         var message = new ChannelMessage
         {
-            ConversationId = conversationId,
+            ConversationId = notification.ConversationId,
             Content = CancelCommandContent,
             Sender = SystemSender,
             ChannelId = ChannelId,
-            AgentId = agentId
+            AgentId = notification.AgentId
         };
 
         _messageChannel.Writer.TryWrite(message);
@@ -112,8 +135,13 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         CancellationToken ct)
     {
         EnsureConnected();
+        // send_reply fires once per streamed content chunk (hundreds per response). Building
+        // the args dictionary directly avoids ChannelProtocol.ToArguments's reflection
+        // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
+        // identical (same camelCase keys, ContentType.ToString() matches the
+        // JsonStringEnumConverter output).
         await _client!.CallToolAsync(
-            "send_reply",
+            ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>
             {
                 ["conversationId"] = conversationId,
@@ -132,13 +160,13 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
     {
         EnsureConnected();
         var result = await _client!.CallToolAsync(
-            "request_approval",
-            new Dictionary<string, object?>
+            ChannelProtocol.RequestApprovalTool,
+            ChannelProtocol.ToArguments(new RequestApprovalParams
             {
-                ["conversationId"] = conversationId,
-                ["mode"] = nameof(ApprovalMode.Request),
-                ["requests"] = JsonSerializer.Serialize(requests)
-            },
+                ConversationId = conversationId,
+                Mode = ApprovalMode.Request,
+                Requests = requests
+            }),
             cancellationToken: ct);
 
         var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
@@ -154,13 +182,13 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
     {
         EnsureConnected();
         await _client!.CallToolAsync(
-            "request_approval",
-            new Dictionary<string, object?>
+            ChannelProtocol.RequestApprovalTool,
+            ChannelProtocol.ToArguments(new RequestApprovalParams
             {
-                ["conversationId"] = conversationId,
-                ["mode"] = nameof(ApprovalMode.Notify),
-                ["requests"] = JsonSerializer.Serialize(requests)
-            },
+                ConversationId = conversationId,
+                Mode = ApprovalMode.Notify,
+                Requests = requests
+            }),
             cancellationToken: ct);
     }
 
@@ -168,6 +196,7 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         string agentId,
         string topicName,
         string sender,
+        string? initialPrompt,
         CancellationToken ct)
     {
         if (_client is null)
@@ -178,19 +207,20 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         try
         {
             var tools = await _client.ListToolsAsync(cancellationToken: ct);
-            if (tools.All(t => t.Name != "create_conversation"))
+            if (tools.All(t => t.Name != ChannelProtocol.CreateConversationTool))
             {
                 return null;
             }
 
             var result = await _client.CallToolAsync(
-                "create_conversation",
-                new Dictionary<string, object?>
+                ChannelProtocol.CreateConversationTool,
+                ChannelProtocol.ToArguments(new CreateConversationParams
                 {
-                    ["agentId"] = agentId,
-                    ["topicName"] = topicName,
-                    ["sender"] = sender
-                },
+                    AgentId = agentId,
+                    TopicName = topicName,
+                    Sender = sender,
+                    InitialPrompt = initialPrompt
+                }),
                 cancellationToken: ct);
 
             return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
@@ -199,6 +229,25 @@ public sealed class McpChannelConnection(string channelId) : IChannelConnection,
         {
             return null;
         }
+    }
+
+    public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    {
+        if (_client is null)
+        {
+            return;
+        }
+
+        var tools = await _client.ListToolsAsync(cancellationToken: ct);
+        if (tools.All(t => t.Name != ChannelProtocol.RegisterAgentsTool))
+        {
+            return;
+        }
+
+        await _client.CallToolAsync(
+            ChannelProtocol.RegisterAgentsTool,
+            ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
+            cancellationToken: ct);
     }
 
     public async ValueTask DisposeAsync()

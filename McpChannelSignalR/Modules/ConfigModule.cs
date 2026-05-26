@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Push;
 using Infrastructure.StateManagers;
@@ -32,6 +33,9 @@ public static class ConfigModule
         services
             .AddSingleton<IConnectionMultiplexer>(redisMultiplexer)
             .AddSingleton(settings)
+            .AddSingleton<MutableAgentCatalog>()
+            .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+            .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton(notificationEmitter)
             .AddSingleton<RedisStateService>()
             .AddSingleton<StreamService>()
@@ -86,6 +90,7 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<CreateConversationTool>()
+            .WithTools<RegisterAgentsTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try

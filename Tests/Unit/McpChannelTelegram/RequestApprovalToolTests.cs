@@ -33,7 +33,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_SendsAutoApprovedMessage()
     {
-        const string requests = """[{"toolName":"mcp__server__search","arguments":{"q":"test"}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__server__search", new Dictionary<string, object?> { ["q"] = "test" })];
 
         var result = await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 
@@ -46,7 +46,11 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_MultipleTools_ListsAllNames()
     {
-        const string requests = """[{"toolName":"mcp__a__search","arguments":{}},{"toolName":"mcp__b__write","arguments":{}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests =
+        [
+            new ToolApprovalRequest(null, "mcp__a__search", new Dictionary<string, object?>()),
+            new ToolApprovalRequest(null, "mcp__b__write", new Dictionary<string, object?>())
+        ];
 
         var result = await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 
@@ -59,7 +63,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_RequestMode_SendsKeyboardAndWaitsForApproval()
     {
-        const string requests = """[{"toolName":"mcp__server__delete","arguments":{"path":"/tmp/file"}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__server__delete", new Dictionary<string, object?> { ["path"] = "/tmp/file" })];
 
         var approvalTask = Task.Run(async () =>
             await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
@@ -80,7 +84,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_RequestMode_ApprovalGranted_ReturnsApproved()
     {
-        const string requests = """[{"toolName":"tool","arguments":{}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
 
         _ = Task.Run(async () =>
             await RequestApprovalTool.McpRun("100:100", ApprovalMode.Request, requests, _services));
@@ -129,7 +133,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_UnknownChat_ThrowsInvalidOperation()
     {
-        const string requests = """[{"toolName":"tool","arguments":{}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
 
         await Should.ThrowAsync<InvalidOperationException>(
             () => RequestApprovalTool.McpRun("999:999", ApprovalMode.Notify, requests, _services));
@@ -138,7 +142,7 @@ public class RequestApprovalToolTests
     [Fact]
     public async Task McpRun_NotifyMode_ExtractsShortToolName()
     {
-        const string requests = """[{"toolName":"mcp__very__long__prefix__actual_tool","arguments":{}}]""";
+        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__very__long__prefix__actual_tool", new Dictionary<string, object?>())];
 
         await RequestApprovalTool.McpRun("100:100", ApprovalMode.Notify, requests, _services);
 

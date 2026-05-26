@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools;
 using ModelContextProtocol.Protocol;
@@ -7,6 +8,11 @@ namespace Infrastructure.Utils;
 
 public static class ToolResponse
 {
+    // Typed filesystem results carry their own success/error discriminator; ToNode() renders the
+    // success payload (camelCase, nulls omitted) or the ok:false error envelope, and Create(JsonNode)
+    // propagates that to MCP's IsError flag — so an Err surfaces as a protocol-level error.
+    public static CallToolResult Create<T>(FsResult<T> result) where T : class => Create(result.ToNode());
+
     public static CallToolResult Create(Exception ex)
     {
         var envelope = ToolError.Create(

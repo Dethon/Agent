@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
@@ -23,6 +24,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TimeSpan WarmupDelay { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
+    public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
@@ -54,6 +56,10 @@ internal sealed class FakeAiAgent : DisposableAgent
         JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (serializedThread.ValueKind == JsonValueKind.String && serializedThread.GetString() is { } key)
+        {
+            RestoredSessionKeys.Enqueue(key);
+        }
         return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
     }
 
@@ -108,7 +114,7 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 
 internal sealed class FakeChannelConnection : IChannelConnection
 {
-    private readonly Channel<ChannelMessage> _channel = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly Channel<ChannelMessage> _channel = System.Threading.Channels.Channel.CreateUnbounded<ChannelMessage>();
 
     public string ChannelId { get; init; } = "test-channel";
 
@@ -118,7 +124,9 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)> SentReplies { get; } = [];
 
-    public List<(string AgentId, string TopicName, string Sender)> CreatedConversations { get; } = [];
+    public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt)> CreatedConversations { get; } = [];
+
+    public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
     public Task SendReplyAsync(string conversationId, string content, ReplyContentType contentType, bool isComplete, string? messageId, CancellationToken ct)
     {
@@ -130,11 +138,14 @@ internal sealed class FakeChannelConnection : IChannelConnection
         => Task.FromResult(new ToolApprovalResult());
 
     public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
-        => Task.CompletedTask;
-
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, CancellationToken ct)
     {
-        CreatedConversations.Add((agentId, topicName, sender));
+        NotifyAutoApprovedCalls.Add((conversationId, requests));
+        return Task.CompletedTask;
+    }
+
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, CancellationToken ct)
+    {
+        CreatedConversations.Add((agentId, topicName, sender, initialPrompt));
         return Task.FromResult(ConversationIdToReturn);
     }
 
@@ -372,6 +383,48 @@ public class ChatMonitorTests
                 e.ErrorType == nameof(HttpRequestException) &&
                 e.Message.Contains("422 Unprocessable Entity")),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Monitor_ScheduledFireWithReplyTo_BindsApprovalHandlerToDeliveryTarget()
+    {
+        // For a scheduled fire the origin channel (mcp-scheduling) auto-approves
+        // every tool call silently. If the approval handler is bound to the origin,
+        // the delivery target (WebChat) never sees the tool calls and the user
+        // can't tell what the scheduled run did. The handler must instead bind to
+        // the first delivery target so tool-call notifications surface there.
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+        var fire = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
+        {
+            ReplyTo = [new ReplyTarget("signalr", null)]
+        };
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", fire);
+        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
+        signalr.Complete();
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+        (string ChannelId, string ConversationId)? captured = null;
+        Func<IChannelConnection, string, IToolApprovalHandler> factory = (ch, cid) =>
+        {
+            captured = (ch.ChannelId, cid);
+            return new Mock<IToolApprovalHandler>().Object;
+        };
+
+        var monitor = new ChatMonitor(
+            [scheduling, signalr],
+            agentFactory,
+            factory,
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        captured.ShouldNotBeNull();
+        captured.Value.ChannelId.ShouldBe("signalr");
+        captured.Value.ConversationId.ShouldBe("minted-signalr");
     }
 
     [Fact]

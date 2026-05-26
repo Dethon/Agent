@@ -2,6 +2,7 @@ using Agent.App;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -44,20 +45,16 @@ public static class InjectorModule
                         llmConfig,
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
-                        sp.GetService<ILoggerFactory>()))
-                .AddSingleton<IScheduleAgentFactory>(sp =>
-                    (IScheduleAgentFactory)sp.GetRequiredService<IAgentFactory>());
+                        sp.GetService<ILoggerFactory>()));
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
-            var channelConnections = settings.ChannelEndpoints
-                .Select(ep => new McpChannelConnection(ep.ChannelId))
-                .ToList();
-
-            foreach (var conn in channelConnections)
+            foreach (var endpoint in settings.ChannelEndpoints)
             {
-                services = services.AddSingleton<IChannelConnection>(conn);
+                var channelId = endpoint.ChannelId;
+                services = services.AddSingleton<IChannelConnection>(sp =>
+                    new McpChannelConnection(channelId, sp.GetService<ILogger<McpChannelConnection>>()));
             }
 
             return services
@@ -71,6 +68,7 @@ public static class InjectorModule
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
+                        settings.Agents.Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)).ToList(),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
         }
 

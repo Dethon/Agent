@@ -30,7 +30,7 @@ public class HaFileSystemExecTests
         var fs = Build(out var client);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.Domain.ShouldBe("light");
         client.LastCall.Value.Service.ShouldBe("turn_on");
         client.LastCall.Value.EntityId.ShouldBe("light.kitchen");
@@ -43,8 +43,9 @@ public class HaFileSystemExecTests
         var fs = Build(out var client);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --help", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(0);
-        result["stdout"]!.GetValue<string>().ShouldContain("--brightness_pct");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.Stdout.ShouldContain("--brightness_pct");
         client.LastCall.ShouldBeNull();
     }
 
@@ -53,7 +54,7 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out var client);
         var result = await fs.ExecAsync("entities/light/kitchen", "./turn_on.sh", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall.ShouldNotBeNull();
     }
 
@@ -63,8 +64,9 @@ public class HaFileSystemExecTests
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light/kitchen", "cat state.json", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(127);
-        result["stderr"]!.GetValue<string>().ShouldContain("turn_on.sh");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(127);
+        exec.Stderr.ShouldContain("turn_on.sh");
     }
 
     [Fact]
@@ -72,8 +74,9 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --nope 1", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(2);
-        result["stderr"]!.GetValue<string>().ShouldContain("nope");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(2);
+        exec.Stderr.ShouldContain("nope");
     }
 
     [Fact]
@@ -81,7 +84,7 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct NaN", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(2);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(2);
     }
 
     [Fact]
@@ -89,7 +92,7 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light", "turn_on.sh", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(127);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(127);
     }
 
     [Fact]
@@ -99,9 +102,10 @@ public class HaFileSystemExecTests
         client.CallHandler = (_, _, _, _) => throw new HomeAssistantException("400 bad field", 400);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh --brightness_pct 60", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(1);
-        result["stderr"]!.GetValue<string>().ShouldContain("400 bad field");
-        result["stderr"]!.GetValue<string>().ShouldContain("--help");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(1);
+        exec.Stderr.ShouldContain("400 bad field");
+        exec.Stderr.ShouldContain("--help");
     }
 
     [Fact]
@@ -116,11 +120,11 @@ public class HaFileSystemExecTests
 
         var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(0);
-        result["timedOut"]!.GetValue<bool>().ShouldBeFalse();
-        result["cwd"]!.GetValue<string>().ShouldBe("entities/light/kitchen_(kitchen)");
-        result["durationMs"]!.GetValue<long>().ShouldBeGreaterThanOrEqualTo(0);
-        FsResultContract.TryValidate("fs_exec", result, out var err).ShouldBeTrue(err);
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(0);
+        exec.TimedOut.ShouldBeFalse();
+        exec.Cwd.ShouldBe("entities/light/kitchen_(kitchen)");
+        exec.DurationMs.ShouldBeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
@@ -135,9 +139,9 @@ public class HaFileSystemExecTests
 
         var result = await fs.ExecAsync("entities/light/kitchen_(kitchen)", "turn_on.sh", 1, CancellationToken.None);
 
-        result["timedOut"]!.GetValue<bool>().ShouldBeTrue();
-        result["exitCode"]!.GetValue<int>().ShouldBe(124); // GNU `timeout` convention
-        FsResultContract.TryValidate("fs_exec", result, out _).ShouldBeTrue();
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.TimedOut.ShouldBeTrue();
+        exec.ExitCode.ShouldBe(124); // GNU `timeout` convention
     }
 
     [Fact]
@@ -145,8 +149,9 @@ public class HaFileSystemExecTests
     {
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light/ghost", "turn_on.sh", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(127);
-        result["stderr"]!.GetValue<string>().ShouldNotContain("Did you mean");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(127);
+        exec.Stderr.ShouldNotContain("Did you mean");
     }
 
     private sealed class BlockingHaClient : FakeHaClient

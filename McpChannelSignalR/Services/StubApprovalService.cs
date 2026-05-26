@@ -8,7 +8,7 @@ public sealed class StubApprovalService(ILogger<StubApprovalService> logger) : I
     {
         logger.LogDebug(
             "RequestApproval: conversation={ConversationId}, requests={Requests}",
-            p.ConversationId, p.Requests);
+            p.ConversationId, string.Join(", ", p.Requests.Select(r => r.ToolName)));
         return Task.FromResult("approved");
     }
 
@@ -16,7 +16,7 @@ public sealed class StubApprovalService(ILogger<StubApprovalService> logger) : I
     {
         logger.LogDebug(
             "NotifyAutoApproved: conversation={ConversationId}, requests={Requests}",
-            p.ConversationId, p.Requests);
+            p.ConversationId, string.Join(", ", p.Requests.Select(r => r.ToolName)));
         return Task.CompletedTask;
     }
 

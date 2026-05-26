@@ -158,7 +158,7 @@ public class MemoryRecallHookTests
             .Returns(new AgentDefinition
             {
                 Id = "agent-no-memory", Name = "NoMem", Model = "test",
-                McpServerEndpoints = [], EnabledFeatures = ["scheduling"]
+                McpServerEndpoints = [], EnabledFeatures = []
             });
 
         var session = new Mock<AgentSession>().Object;

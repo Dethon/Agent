@@ -28,63 +28,60 @@ public class HaFileSystemReadTests
     {
         var fs = Build(out _);
         var result = await fs.GlobAsync("entities/light", "*/", CancellationToken.None);
-        result["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldContain("entities/light/kitchen_(kitchen)/");
-        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
+        var glob = result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        glob.Entries.ShouldContain("entities/light/kitchen_(kitchen)/");
     }
 
     [Fact]
     public async Task InfoAsync_EntityDir_Exists()
     {
         var fs = Build(out _);
-        var info = await fs.InfoAsync("entities/light/kitchen_(kitchen)", CancellationToken.None);
-        info["exists"]!.GetValue<bool>().ShouldBeTrue();
-        info["isDirectory"]!.GetValue<bool>().ShouldBeTrue();
-        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
+        var result = await fs.InfoAsync("entities/light/kitchen_(kitchen)", CancellationToken.None);
+        var info = result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        info.Exists.ShouldBeTrue();
+        info.IsDirectory.ShouldBe(true);
     }
 
     [Fact]
     public async Task InfoAsync_MissingEntity_ExistsFalse()
     {
         var fs = Build(out _);
-        var info = await fs.InfoAsync("entities/light/ghost", CancellationToken.None);
-        info["exists"]!.GetValue<bool>().ShouldBeFalse();
-        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
+        var result = await fs.InfoAsync("entities/light/ghost", CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value.Exists.ShouldBeFalse();
     }
 
     [Fact]
     public async Task ReadAsync_StateFile_RendersFreshJson()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
-        read["content"]!.GetValue<string>().ShouldContain("1: ");
-        FsResultContract.TryValidate("fs_read", read, out var err).ShouldBeTrue(err);
+        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
+        var read = result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        read.Content.ShouldContain("\"entity_id\": \"light.kitchen\"");
+        read.Content.ShouldContain("1: ");
     }
 
     [Fact]
     public async Task ReadAsync_ActionFile_RendersHelp()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/turn_on.sh", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("call light.turn_on on light.kitchen");
+        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/turn_on.sh", null, null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("call light.turn_on on light.kitchen");
     }
 
     [Fact]
     public async Task InfoAsync_ActionFileForMissingEntity_ExistsFalse()
     {
         var fs = Build(out _);
-        var info = await fs.InfoAsync("entities/light/ghost/turn_on.sh", CancellationToken.None);
-        info["exists"]!.GetValue<bool>().ShouldBeFalse();
-        FsResultContract.TryValidate("fs_info", info, out var err).ShouldBeTrue(err);
+        var result = await fs.InfoAsync("entities/light/ghost/turn_on.sh", CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value.Exists.ShouldBeFalse();
     }
 
     [Fact]
     public async Task ReadAsync_ActionFileForMissingEntity_ReturnsNotFound()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/ghost/turn_on.sh", null, null, CancellationToken.None);
-        read["ok"]!.GetValue<bool>().ShouldBeFalse();
-        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        var result = await fs.ReadAsync("entities/light/ghost/turn_on.sh", null, null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("not_found");
     }
 
     [Fact]
@@ -93,10 +90,10 @@ public class HaFileSystemReadTests
         var fs = Build(out _);
         var result = await fs.SearchAsync(
             "off", false, null, null, null, 50, 1, VfsTextSearchOutputMode.Content, CancellationToken.None);
-        result["totalMatches"]!.GetValue<int>().ShouldBeGreaterThan(0);
-        result["results"]!.AsArray().Count.ShouldBeGreaterThan(0);
-        result["results"]![0]!["file"]!.GetValue<string>().ShouldContain("light/kitchen_(kitchen)");
-        FsResultContract.TryValidate("fs_search", result, out var searchErr).ShouldBeTrue(searchErr);
+        var search = result.ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.TotalMatches.ShouldBeGreaterThan(0);
+        search.Results.Count.ShouldBeGreaterThan(0);
+        search.Results[0].File.ShouldContain("light/kitchen_(kitchen)");
     }
 
     [Fact]
@@ -114,11 +111,10 @@ public class HaFileSystemReadTests
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
 
         var result = await fs.GlobAsync("areas/salon", "*/", CancellationToken.None);
-        var hits = result["entries"]!.AsArray().Select(n => n!.GetValue<string>()).ToList();
+        var hits = result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
 
         hits.ShouldContain("areas/salon/climate.0x01_(aire-acondicionado-salon)/");
         hits.ShouldContain("areas/salon/climate.0x02_(calefaccion-salon)/");
-        FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
 
     [Fact]
@@ -135,7 +131,7 @@ public class HaFileSystemReadTests
         var result = await fs.ExecAsync(
             "areas/salon/climate.0x01_(aire-acondicionado-salon)", "turn_off.sh", null, CancellationToken.None);
 
-        result["exitCode"]!.GetValue<int>().ShouldBe(0);
+        result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value.ExitCode.ShouldBe(0);
         client.LastCall!.Value.EntityId.ShouldBe("climate.0x01");
     }
 
@@ -143,27 +139,26 @@ public class HaFileSystemReadTests
     public async Task ReadAsync_BareId_WhenFriendlyNameExists_NotFoundWithHint()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
-        read["ok"]!.GetValue<bool>().ShouldBeFalse();
-        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
-        read["hint"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+        var result = await fs.ReadAsync("entities/light/kitchen/state.json", null, null, CancellationToken.None);
+        var error = result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
+        error.ErrorCode.ShouldBe("not_found");
+        error.Hint.ShouldNotBeNull().ShouldContain("kitchen_(kitchen)");
     }
 
     [Fact]
     public async Task ReadAsync_WrongSuffix_NotFoundWithHint()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen_(wrong)/state.json", null, null, CancellationToken.None);
-        read["ok"]!.GetValue<bool>().ShouldBeFalse();
-        read["hint"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+        var result = await fs.ReadAsync("entities/light/kitchen_(wrong)/state.json", null, null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.Hint.ShouldNotBeNull().ShouldContain("kitchen_(kitchen)");
     }
 
     [Fact]
     public async Task ReadAsync_CompositeName_Resolves()
     {
         var fs = Build(out _);
-        var read = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.kitchen\"");
+        var result = await fs.ReadAsync("entities/light/kitchen_(kitchen)/state.json", null, null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"entity_id\": \"light.kitchen\"");
     }
 
     [Fact]
@@ -171,8 +166,9 @@ public class HaFileSystemReadTests
     {
         var fs = Build(out _);
         var result = await fs.ExecAsync("entities/light/kitchen", "turn_on.sh", null, CancellationToken.None);
-        result["exitCode"]!.GetValue<int>().ShouldBe(127);
-        result["stderr"]!.GetValue<string>().ShouldContain("kitchen_(kitchen)");
+        var exec = result.ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        exec.ExitCode.ShouldBe(127);
+        exec.Stderr.ShouldContain("kitchen_(kitchen)");
     }
 
     [Fact]
@@ -180,8 +176,8 @@ public class HaFileSystemReadTests
     {
         var client = new FakeHaClient { States = { Entity("light.porch", "off") } };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
-        var read = await fs.ReadAsync("entities/light/porch/state.json", null, null, CancellationToken.None);
-        read["content"]!.GetValue<string>().ShouldContain("\"entity_id\": \"light.porch\"");
+        var result = await fs.ReadAsync("entities/light/porch/state.json", null, null, CancellationToken.None);
+        result.ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"entity_id\": \"light.porch\"");
     }
 
     [Fact]
@@ -189,9 +185,9 @@ public class HaFileSystemReadTests
     {
         var client = new FakeHaClient { States = { Entity("light.porch", "off") } };
         var fs = new HaFileSystem(new HaCatalogProvider(() => client, new FakeTimeProvider()), () => client);
-        var read = await fs.ReadAsync("entities/light/porch_(garbage)/state.json", null, null, CancellationToken.None);
-        read["ok"]!.GetValue<bool>().ShouldBeFalse();
-        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
-        read["hint"]!.GetValue<string>().ShouldContain("porch");
+        var result = await fs.ReadAsync("entities/light/porch_(garbage)/state.json", null, null, CancellationToken.None);
+        var error = result.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error;
+        error.ErrorCode.ShouldBe("not_found");
+        error.Hint.ShouldNotBeNull().ShouldContain("porch");
     }
 }
