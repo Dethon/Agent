@@ -31,6 +31,246 @@ public class LocalFileSystemClientTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    private async Task BuildTempTree(string[] setupFiles)
+    {
+        foreach (var entry in setupFiles)
+        {
+            var full = Path.Combine(_testDir, entry);
+            if (entry.EndsWith('/'))
+            {
+                Directory.CreateDirectory(full);
+            }
+            else
+            {
+                var parent = Path.GetDirectoryName(full);
+                if (!string.IsNullOrEmpty(parent))
+                {
+                    Directory.CreateDirectory(parent);
+                }
+                await File.WriteAllTextAsync(full, "content");
+            }
+        }
+    }
+
+    public sealed record GlobScenario(
+        string Name,
+        string[] SetupFiles,
+        string Pattern,
+        Action<string[], string> AssertResult);
+
+    public static IEnumerable<object[]> GlobScenarios => new[]
+    {
+        new object[]
+        {
+            new GlobScenario(
+                "FileWildcard",
+                ["movie.mkv", "movie.mp4", "readme.txt"],
+                "*.mkv",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("movie.mkv");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "NoTrailingSlash_FilesAndDirsWithDirsMarked",
+                ["movies/", "todo.md"],
+                "*",
+                (hits, _) =>
+                {
+                    hits.ShouldContain(h => h.EndsWith("todo.md") && !h.EndsWith("/"));
+                    hits.ShouldContain(h => h.EndsWith("movies/"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "TrailingSlash_DirsOnly",
+                ["movies/", "todo.md"],
+                "*/",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(1);
+                    hits[0].ShouldEndWith("movies/");
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveDirsOnly_NestedDirsMarked",
+                ["movies/action/film.mkv"],
+                "**/",
+                (hits, _) =>
+                {
+                    hits.ShouldContain(h => h.EndsWith("movies/"));
+                    hits.ShouldContain(h => h.EndsWith("action/"));
+                    hits.ShouldAllBe(h => h.EndsWith("/"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "ExcludesRootDirectory",
+                ["sub/"],
+                "**/",
+                (hits, testDir) =>
+                {
+                    hits.ShouldNotContain(h => h.TrimEnd('/') == testDir);
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "RecursiveFilePattern_NestedFiles",
+                ["sub/deep/", "root.txt", "sub/deep/nested.txt"],
+                "**/*.txt",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(2);
+                    hits.ShouldContain(h => h.EndsWith("root.txt"));
+                    hits.ShouldContain(h => h.EndsWith("nested.txt"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "NoMatches_EmptyArray",
+                ["file.txt"],
+                "*.pdf",
+                (hits, _) => hits.ShouldBeEmpty())
+        },
+        new object[]
+        {
+            new GlobScenario(
+                "AbsolutePaths",
+                ["file.txt"],
+                "**/*",
+                (hits, testDir) => hits.ShouldAllBe(h => h.StartsWith(testDir)))
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(GlobScenarios))]
+    public async Task Glob_ReturnsExpectedMatches(GlobScenario scenario)
+    {
+        await BuildTempTree(scenario.SetupFiles);
+
+        var hits = await _client.Glob(_testDir, scenario.Pattern);
+
+        scenario.AssertResult(hits, _testDir);
+    }
+
+    public sealed record MoveToTrashScenario(
+        string Name,
+        string[] SetupFiles,
+        string[] InputsToTrash,
+        Action<string[], string[]> AssertResult);
+
+    public static IEnumerable<object[]> MoveToTrashScenarios => new[]
+    {
+        new object[]
+        {
+            new MoveToTrashScenario(
+                "ExistingFile_MovesToUserTrashFolder",
+                ["to-trash.txt"],
+                ["to-trash.txt"],
+                (inputs, trashPaths) =>
+                {
+                    var trashDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        LocalFileSystemClient.TrashFolderName);
+                    var trashPath = trashPaths[0];
+
+                    File.Exists(inputs[0]).ShouldBeFalse();
+                    File.Exists(trashPath).ShouldBeTrue();
+                    trashPath.ShouldStartWith(trashDir);
+                    trashPath.ShouldContain("to-trash.txt");
+                    File.ReadAllText(trashPath).ShouldBe("content");
+
+                    File.Delete(trashPath);
+                })
+        },
+        new object[]
+        {
+            new MoveToTrashScenario(
+                "Directory_MovesDirectoryToTrash",
+                ["to-trash-dir/file.txt"],
+                ["to-trash-dir/"],
+                (inputs, trashPaths) =>
+                {
+                    var trashDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        LocalFileSystemClient.TrashFolderName);
+                    var trashPath = trashPaths[0];
+                    var dirPath = inputs[0].TrimEnd('/');
+
+                    Directory.Exists(dirPath).ShouldBeFalse();
+                    Directory.Exists(trashPath).ShouldBeTrue();
+                    trashPath.ShouldStartWith(trashDir);
+                    trashPath.ShouldContain("to-trash-dir");
+                    File.Exists(Path.Combine(trashPath, "file.txt")).ShouldBeTrue();
+
+                    Directory.Delete(trashPath, true);
+                })
+        },
+        new object[]
+        {
+            new MoveToTrashScenario(
+                "MultipleFiles_CreatesUniqueTrashPaths",
+                ["same-name.txt", "subdir/same-name.txt"],
+                ["same-name.txt", "subdir/same-name.txt"],
+                (_, trashPaths) =>
+                {
+                    trashPaths[0].ShouldNotBe(trashPaths[1]);
+                    File.Exists(trashPaths[0]).ShouldBeTrue();
+                    File.Exists(trashPaths[1]).ShouldBeTrue();
+
+                    File.Delete(trashPaths[0]);
+                    File.Delete(trashPaths[1]);
+                })
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(MoveToTrashScenarios))]
+    public async Task MoveToTrash_DispatchesByInputKind(MoveToTrashScenario scenario)
+    {
+        await BuildTempTree(scenario.SetupFiles);
+
+        var absoluteInputs = scenario.InputsToTrash
+            .Select(i => Path.Combine(_testDir, i.TrimEnd('/')))
+            .ToArray();
+
+        var trashPaths = new List<string>();
+        foreach (var input in absoluteInputs)
+        {
+            trashPaths.Add(await _client.MoveToTrash(input));
+        }
+
+        scenario.AssertResult(absoluteInputs, trashPaths.ToArray());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Remove_NonExistentTargetDoesNotThrow(bool isDirectory)
+    {
+        var nonExistentPath = Path.Combine(
+            _testDir,
+            isDirectory ? "does-not-exist" : "does-not-exist.txt");
+
+        if (isDirectory)
+        {
+            await Should.NotThrowAsync(async () => await _client.RemoveDirectory(nonExistentPath));
+        }
+        else
+        {
+            await Should.NotThrowAsync(async () => await _client.RemoveFile(nonExistentPath));
+        }
+    }
+
     [Fact]
     public async Task Move_WithNestedDirectories_CreatesParentDirectories()
     {
@@ -125,16 +365,6 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task RemoveDirectory_WithNonExistent_DoesNotThrow()
-    {
-        // Arrange
-        var nonExistentPath = Path.Combine(_testDir, "does-not-exist");
-
-        // Act & Assert
-        await Should.NotThrowAsync(async () => await _client.RemoveDirectory(nonExistentPath));
-    }
-
-    [Fact]
     public async Task RemoveFile_WithExistingFile_RemovesFile()
     {
         // Arrange
@@ -149,40 +379,6 @@ public class LocalFileSystemClientTests : IDisposable
     }
 
     [Fact]
-    public async Task RemoveFile_WithNonExistent_DoesNotThrow()
-    {
-        // Arrange
-        var nonExistentPath = Path.Combine(_testDir, "does-not-exist.txt");
-
-        // Act & Assert
-        await Should.NotThrowAsync(async () => await _client.RemoveFile(nonExistentPath));
-    }
-
-    [Fact]
-    public async Task MoveToTrash_WithExistingFile_MovesToUserTrashFolder()
-    {
-        // Arrange
-        var filePath = Path.Combine(_testDir, "to-trash.txt");
-        await File.WriteAllTextAsync(filePath, "content");
-        var trashDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            LocalFileSystemClient.TrashFolderName);
-
-        // Act
-        var trashPath = await _client.MoveToTrash(filePath);
-
-        // Assert
-        File.Exists(filePath).ShouldBeFalse();
-        File.Exists(trashPath).ShouldBeTrue();
-        trashPath.ShouldStartWith(trashDir);
-        trashPath.ShouldContain("to-trash.txt");
-        (await File.ReadAllTextAsync(trashPath)).ShouldBe("content");
-
-        // Cleanup
-        File.Delete(trashPath);
-    }
-
-    [Fact]
     public async Task MoveToTrash_WithNonExistentPath_ThrowsIOException()
     {
         // Arrange
@@ -191,152 +387,5 @@ public class LocalFileSystemClientTests : IDisposable
         // Act & Assert
         await Should.ThrowAsync<IOException>(async () =>
             await _client.MoveToTrash(nonExistentPath));
-    }
-
-    [Fact]
-    public async Task MoveToTrash_WithDirectory_MovesDirectoryToTrash()
-    {
-        // Arrange
-        var dirPath = Path.Combine(_testDir, "to-trash-dir");
-        Directory.CreateDirectory(dirPath);
-        await File.WriteAllTextAsync(Path.Combine(dirPath, "file.txt"), "content");
-        var trashDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            LocalFileSystemClient.TrashFolderName);
-
-        // Act
-        var trashPath = await _client.MoveToTrash(dirPath);
-
-        // Assert
-        Directory.Exists(dirPath).ShouldBeFalse();
-        Directory.Exists(trashPath).ShouldBeTrue();
-        trashPath.ShouldStartWith(trashDir);
-        trashPath.ShouldContain("to-trash-dir");
-        File.Exists(Path.Combine(trashPath, "file.txt")).ShouldBeTrue();
-
-        // Cleanup
-        Directory.Delete(trashPath, true);
-    }
-
-    [Fact]
-    public async Task MoveToTrash_WithMultipleFiles_CreatesUniqueTrashPaths()
-    {
-        // Arrange
-        var file1 = Path.Combine(_testDir, "same-name.txt");
-        var file2 = Path.Combine(_testDir, "subdir", "same-name.txt");
-        Directory.CreateDirectory(Path.Combine(_testDir, "subdir"));
-        await File.WriteAllTextAsync(file1, "content1");
-        await File.WriteAllTextAsync(file2, "content2");
-
-        // Act
-        var trashPath1 = await _client.MoveToTrash(file1);
-        var trashPath2 = await _client.MoveToTrash(file2);
-
-        // Assert
-        trashPath1.ShouldNotBe(trashPath2);
-        File.Exists(trashPath1).ShouldBeTrue();
-        File.Exists(trashPath2).ShouldBeTrue();
-
-        // Cleanup
-        File.Delete(trashPath1);
-        File.Delete(trashPath2);
-    }
-
-    [Fact]
-    public async Task Glob_WithFileWildcard_ReturnsMatchingFiles()
-    {
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mkv"), "content");
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "movie.mp4"), "content");
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "readme.txt"), "content");
-
-        var hits = await _client.Glob(_testDir, "*.mkv");
-
-        hits.Length.ShouldBe(1);
-        hits[0].ShouldEndWith("movie.mkv");
-    }
-
-    [Fact]
-    public async Task Glob_NoTrailingSlash_ReturnsFilesAndDirectoriesWithDirsMarked()
-    {
-        var subDir = Path.Combine(_testDir, "movies");
-        Directory.CreateDirectory(subDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "todo.md"), "content");
-
-        var hits = await _client.Glob(_testDir, "*");
-
-        hits.ShouldContain(h => h.EndsWith("todo.md") && !h.EndsWith("/"));
-        hits.ShouldContain(h => h.EndsWith("movies/"));
-    }
-
-    [Fact]
-    public async Task Glob_WithTrailingSlash_ReturnsDirectoriesOnly()
-    {
-        var subDir = Path.Combine(_testDir, "movies");
-        Directory.CreateDirectory(subDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "todo.md"), "content");
-
-        var hits = await _client.Glob(_testDir, "*/");
-
-        hits.Length.ShouldBe(1);
-        hits[0].ShouldEndWith("movies/");
-    }
-
-    [Fact]
-    public async Task Glob_RecursiveDirsOnly_ReturnsNestedDirectoriesMarked()
-    {
-        var deep = Path.Combine(_testDir, "movies", "action");
-        Directory.CreateDirectory(deep);
-        await File.WriteAllTextAsync(Path.Combine(deep, "film.mkv"), "content");
-
-        var hits = await _client.Glob(_testDir, "**/");
-
-        hits.ShouldContain(h => h.EndsWith("movies/"));
-        hits.ShouldContain(h => h.EndsWith("action/"));
-        hits.ShouldAllBe(h => h.EndsWith("/"));
-    }
-
-    [Fact]
-    public async Task Glob_ExcludesRootDirectory()
-    {
-        Directory.CreateDirectory(Path.Combine(_testDir, "sub"));
-
-        var hits = await _client.Glob(_testDir, "**/");
-
-        hits.ShouldNotContain(h => h.TrimEnd('/') == _testDir);
-    }
-
-    [Fact]
-    public async Task Glob_RecursiveFilePattern_ReturnsNestedFiles()
-    {
-        var subDir = Path.Combine(_testDir, "sub", "deep");
-        Directory.CreateDirectory(subDir);
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "root.txt"), "content");
-        await File.WriteAllTextAsync(Path.Combine(subDir, "nested.txt"), "content");
-
-        var hits = await _client.Glob(_testDir, "**/*.txt");
-
-        hits.Length.ShouldBe(2);
-        hits.ShouldContain(h => h.EndsWith("root.txt"));
-        hits.ShouldContain(h => h.EndsWith("nested.txt"));
-    }
-
-    [Fact]
-    public async Task Glob_WithNoMatches_ReturnsEmptyArray()
-    {
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
-
-        var hits = await _client.Glob(_testDir, "*.pdf");
-
-        hits.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task Glob_ReturnsAbsolutePaths()
-    {
-        await File.WriteAllTextAsync(Path.Combine(_testDir, "file.txt"), "content");
-
-        var hits = await _client.Glob(_testDir, "**/*");
-
-        hits.ShouldAllBe(h => h.StartsWith(_testDir));
     }
 }
