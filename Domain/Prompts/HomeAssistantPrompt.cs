@@ -14,7 +14,7 @@ public static class HomeAssistantPrompt
         Home Assistant is mounted at `/ha` and used through the standard filesystem
         tools. The "## Current Home Assistant setup" index appended below lists every
         device directory under `/ha/areas/<room>/...` and `/ha/entities/<class>/...`
-        — copy a path verbatim instead of globbing to discover it.
+        — use that summary to porevent unnecessary exploration.
 
         ### Layout
 
