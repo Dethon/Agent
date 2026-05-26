@@ -165,7 +165,7 @@ public sealed class StreamingService(
                     else if (streamingMessage.HasContent)
                     {
                         // No finalization request - we need to add the message here
-                        Flush(streamingMessage, currentMessageId);
+                        flush(streamingMessage, currentMessageId);
                         dispatcher.Dispatch(new ResetStreamingContent(topic.TopicId));
                     }
 
@@ -187,7 +187,7 @@ public sealed class StreamingService(
                         // Commit the message we're switching away from (AddMessage first time,
                         // UpdateMessage on a revisit) and stash its accumulator so a future
                         // revisit can continue appending into it.
-                        Flush(streamingMessage, currentMessageId);
+                        flush(streamingMessage, currentMessageId);
                         if (currentMessageId is not null)
                         {
                             stash[currentMessageId] = new MessageAccumulator(
@@ -267,7 +267,7 @@ public sealed class StreamingService(
 
             if (streamingMessage.HasContent)
             {
-                Flush(streamingMessage, currentMessageId);
+                flush(streamingMessage, currentMessageId);
             }
         }
         catch (Exception ex) when (!TransientErrorFilter.IsTransientException(ex))
@@ -286,7 +286,7 @@ public sealed class StreamingService(
 
         return;
 
-        void Flush(ChatMessageModel message, string? mid)
+        void flush(ChatMessageModel message, string? mid)
         {
             if (!message.HasContent)
             {

@@ -12,7 +12,7 @@ namespace Tests.Unit.Observability.Services;
 
 public class MetricsCollectorServiceTests
 {
-    private static readonly DateTimeOffset FixedTimestamp = new(2026, 3, 15, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _fixedTimestamp = new(2026, 3, 15, 10, 0, 0, TimeSpan.Zero);
     private const string FixedDate = "2026-03-15";
 
     private readonly Mock<IDatabase> _db = new();
@@ -54,7 +54,7 @@ public class MetricsCollectorServiceTests
                 InputTokens = 100,
                 OutputTokens = 50,
                 Cost = 0.0025m,
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             [
                 ("tokens:input", 100),
@@ -70,7 +70,7 @@ public class MetricsCollectorServiceTests
                 DurationMs = 250,
                 MemoryCount = 5,
                 UserId = "alice",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             [
                 ("memory:recalls", 1),
@@ -86,7 +86,7 @@ public class MetricsCollectorServiceTests
                 CandidateCount = 8,
                 StoredCount = 3,
                 UserId = "bob",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             [
                 ("memory:extractions", 1),
@@ -103,7 +103,7 @@ public class MetricsCollectorServiceTests
                 DecayedCount = 3,
                 ProfileRegenerated = true,
                 UserId = "alice",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             [
                 ("memory:dreamings", 1),
@@ -118,7 +118,7 @@ public class MetricsCollectorServiceTests
                 Stage = LatencyStage.LlmTotal,
                 DurationMs = 1500,
                 Model = "anthropic/claude",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             [
                 ("latency:LlmTotal:count", 1),
@@ -159,7 +159,7 @@ public class MetricsCollectorServiceTests
                 InputTokens = 100,
                 OutputTokens = 50,
                 Cost = 0.01m,
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:tokens:{FixedDate}",
             "\"sender\":\"alice\""),
@@ -171,7 +171,7 @@ public class MetricsCollectorServiceTests
                 Prompt = "Do something",
                 DurationMs = 5000,
                 Success = true,
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:schedules:{FixedDate}",
             string.Empty),
@@ -182,7 +182,7 @@ public class MetricsCollectorServiceTests
                 DurationMs = 250,
                 MemoryCount = 5,
                 UserId = "alice",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:memory-recall:{FixedDate}",
             "\"userId\":\"alice\""),
@@ -194,7 +194,7 @@ public class MetricsCollectorServiceTests
                 CandidateCount = 8,
                 StoredCount = 3,
                 UserId = "bob",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:memory-extraction:{FixedDate}",
             "\"userId\":\"bob\""),
@@ -206,7 +206,7 @@ public class MetricsCollectorServiceTests
                 DecayedCount = 3,
                 ProfileRegenerated = true,
                 UserId = "alice",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:memory-dreaming:{FixedDate}",
             "\"userId\":\"alice\""),
@@ -217,7 +217,7 @@ public class MetricsCollectorServiceTests
                 Stage = LatencyStage.LlmTotal,
                 DurationMs = 1500,
                 Model = "anthropic/claude",
-                Timestamp = FixedTimestamp
+                Timestamp = _fixedTimestamp
             },
             $"metrics:latency:{FixedDate}",
             "\"type\":\"latency\"")
@@ -309,7 +309,7 @@ public class MetricsCollectorServiceTests
         var evt = new HeartbeatEvent
         {
             Service = "agent-1",
-            Timestamp = FixedTimestamp
+            Timestamp = _fixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -333,7 +333,7 @@ public class MetricsCollectorServiceTests
             Service = "agent",
             ErrorType = "NullRef",
             Message = "Object reference not set",
-            Timestamp = FixedTimestamp
+            Timestamp = _fixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -363,7 +363,7 @@ public class MetricsCollectorServiceTests
             ToolName = "search",
             DurationMs = 150,
             Success = true,
-            Timestamp = FixedTimestamp
+            Timestamp = _fixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -391,7 +391,7 @@ public class MetricsCollectorServiceTests
             DurationMs = 150,
             Success = false,
             Error = "timeout",
-            Timestamp = FixedTimestamp
+            Timestamp = _fixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -422,7 +422,7 @@ public class MetricsCollectorServiceTests
             DecayedCount = 1,
             ProfileRegenerated = false,
             UserId = "bob",
-            Timestamp = FixedTimestamp
+            Timestamp = _fixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
