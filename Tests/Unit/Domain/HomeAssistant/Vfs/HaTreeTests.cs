@@ -13,9 +13,13 @@ public class HaTreeTests
         [new HaAreaEntities("salon", "Salón", ["sensor.salon_temp"])]);
 
     [Fact]
-    public void Directories_IncludeRootsClassesEntitiesAndAreas()
+    public void DirectoriesAndFiles_IncludeRootsClassesEntitiesAreas_AndApplicableActions()
     {
-        var dirs = HaTree.Directories(Cat());
+        var cat = Cat();
+        var dirs = HaTree.Directories(cat);
+        var files = HaTree.Files(cat);
+
+        // Directory tree: root + class + entity + areas (assigned and "unassigned" bucket).
         dirs.ShouldContain("entities");
         dirs.ShouldContain("entities/light");
         dirs.ShouldContain("entities/light/kitchen");
@@ -23,12 +27,8 @@ public class HaTreeTests
         dirs.ShouldContain("areas/salon");
         dirs.ShouldContain("areas/salon/sensor.salon_temp");
         dirs.ShouldContain("areas/unassigned/light.kitchen");
-    }
 
-    [Fact]
-    public void Files_IncludeStateAndApplicableActions()
-    {
-        var files = HaTree.Files(Cat());
+        // Files: state.json always, action .sh only for entities whose class has services.
         files.ShouldContain("entities/light/kitchen/state.json");
         files.ShouldContain("entities/light/kitchen/turn_on.sh");
         files.ShouldContain("entities/sensor/salon_temp/state.json");
@@ -36,20 +36,29 @@ public class HaTreeTests
     }
 
     [Fact]
-    public void Glob_TrailingSlash_ReturnsDirectoriesMarkedWithSlash()
+    public void DirectoriesAndFiles_UseCompositeNameWhenFriendlyNamePresent()
     {
-        var hits = HaTree.Glob(Cat(), "entities/light", "*/");
+        var cat = new HaCatalog(
+            [
+                Entity("climate.0x00158d00abcd", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón"))),
+                Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen Light")))
+            ],
+            [Service("light", "turn_on", AnyEntityTarget())],
+            [new HaAreaEntities("salon", "Salón", ["climate.0x00158d00abcd"])]);
 
-        hits.ShouldBe(["entities/light/kitchen/"]);
+        var dirs = HaTree.Directories(cat);
+        var files = HaTree.Files(cat);
+
+        dirs.ShouldContain("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
+        dirs.ShouldContain("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.json");
+        files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
     }
 
     [Fact]
-    public void Glob_NoTrailingSlash_MatchesFiles()
+    public void Glob_TrailingSlash_ReturnsDirectoriesOnly_MarkedWithSlash()
     {
-        var hits = HaTree.Glob(Cat(), "entities", "**/*.sh");
-
-        hits.ShouldNotBeEmpty();
-        hits.ShouldAllBe(h => h.EndsWith(".sh"));
+        HaTree.Glob(Cat(), "entities/light", "*/").ShouldBe(["entities/light/kitchen/"]);
     }
 
     [Fact]
@@ -63,50 +72,23 @@ public class HaTreeTests
     }
 
     [Fact]
-    public void Glob_DoubleStar_MatchesZeroLeadingSegments()
+    public void Glob_DoubleStar_MatchesZeroLeadingSegments_AndStillRecurses()
     {
         // `**/X` must match X at the base level (zero leading segments), matching the Local file
-        // matcher. The old `** -> .*` translation required a leading '/', so `**/entities` missed
-        // the base-level `entities` directory.
-        var hits = HaTree.Glob(Cat(), "", "**/entities");
+        // matcher. An older `** -> .*` translation required a leading '/', missing the base-level
+        // `entities` directory — guard against regressions here.
+        var cat = Cat();
 
-        hits.ShouldContain("entities/");
-    }
+        var baseLevel = HaTree.Glob(cat, "", "**/entities");
+        baseLevel.ShouldContain("entities/");
 
-    [Fact]
-    public void Glob_DoubleStar_StillRecursesIntoSubdirectories()
-    {
-        var hits = HaTree.Glob(Cat(), "", "**/state.json");
+        var recursive = HaTree.Glob(cat, "", "**/state.json");
+        recursive.ShouldContain("entities/light/kitchen/state.json");
+        recursive.ShouldContain("entities/sensor/salon_temp/state.json");
 
-        hits.ShouldContain("entities/light/kitchen/state.json");
-        hits.ShouldContain("entities/sensor/salon_temp/state.json");
-    }
-
-    [Fact]
-    public void Directories_UseCompositeNameWhenFriendlyNamePresent()
-    {
-        var cat = new HaCatalog(
-            [Entity("climate.0x00158d00abcd", "cool", ("friendly_name", JsonValue.Create("Aire Acondicionado Salón")))],
-            [],
-            [new HaAreaEntities("salon", "Salón", ["climate.0x00158d00abcd"])]);
-
-        var dirs = HaTree.Directories(cat);
-
-        dirs.ShouldContain("entities/climate/0x00158d00abcd_(aire-acondicionado-salon)");
-        dirs.ShouldContain("areas/salon/climate.0x00158d00abcd_(aire-acondicionado-salon)");
-    }
-
-    [Fact]
-    public void Files_UseCompositeDir()
-    {
-        var cat = new HaCatalog(
-            [Entity("light.kitchen", "off", ("friendly_name", JsonValue.Create("Kitchen Light")))],
-            [Service("light", "turn_on", AnyEntityTarget())],
-            []);
-
-        var files = HaTree.Files(cat);
-
-        files.ShouldContain("entities/light/kitchen_(kitchen-light)/state.json");
-        files.ShouldContain("entities/light/kitchen_(kitchen-light)/turn_on.sh");
+        // File-pattern variant must only yield files of the requested extension.
+        var shFiles = HaTree.Glob(cat, "entities", "**/*.sh");
+        shFiles.ShouldNotBeEmpty();
+        shFiles.ShouldAllBe(h => h.EndsWith(".sh"));
     }
 }
