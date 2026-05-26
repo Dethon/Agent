@@ -80,212 +80,272 @@ public class HomeAssistantClientTests : IDisposable
         result.ShouldBeNull();
     }
 
-    [Fact]
-    public async Task ListServicesAsync_CapturesTargetWhenPresent()
+    public static IEnumerable<object[]> ServiceShapeFixtures => new[]
     {
-        var body = JsonSerializer.Serialize(new[]
+        new object[]
         {
-            new
+            // Captures Target when present; absent target stays null.
+            JsonSerializer.Serialize(new[]
             {
-                domain = "roborock",
-                services = new Dictionary<string, object>
+                new
                 {
-                    ["get_maps"] = new
+                    domain = "roborock",
+                    services = new Dictionary<string, object>
                     {
-                        description = "Get maps",
-                        fields = new Dictionary<string, object>(),
-                        target = new
+                        ["get_maps"] = new
                         {
-                            entity = new[]
+                            description = "Get maps",
+                            fields = new Dictionary<string, object>(),
+                            target = new
                             {
-                                new { integration = "roborock", domain = new[] { "vacuum" } }
+                                entity = new[]
+                                {
+                                    new { integration = "roborock", domain = new[] { "vacuum" } }
+                                }
+                            }
+                        }
+                    }
+                },
+                new
+                {
+                    domain = "homeassistant",
+                    services = new Dictionary<string, object>
+                    {
+                        ["restart"] = new
+                        {
+                            description = "Restart HA",
+                            fields = new Dictionary<string, object>()
+                            // no target key
+                        }
+                    }
+                }
+            }),
+            (Action<IReadOnlyList<HaServiceDefinition>>)(result =>
+            {
+                var getMaps = result.Single(s => s.Service == "get_maps");
+                getMaps.Target.ShouldNotBeNull();
+                getMaps.Target!["entity"]![0]!["integration"]!.GetValue<string>().ShouldBe("roborock");
+                getMaps.Target["entity"]![0]!["domain"]![0]!.GetValue<string>().ShouldBe("vacuum");
+
+                var restart = result.Single(s => s.Service == "restart");
+                restart.Target.ShouldBeNull();
+            })
+        },
+        new object[]
+        {
+            // HA exposes field type metadata via `selector` — e.g. {"object":{}} for a free-form
+            // map, {"number":{...}} for a number, {"select":{"multiple":true,...}} for a multi-pick.
+            // The agent needs this to know whether a field takes a scalar, list, or object;
+            // a `required: true` flag alone leaves it guessing.
+            JsonSerializer.Serialize(new[]
+            {
+                new
+                {
+                    domain = "vacuum",
+                    services = new Dictionary<string, object>
+                    {
+                        ["clean_area"] = new
+                        {
+                            description = "Clean specified areas",
+                            fields = new Dictionary<string, object>
+                            {
+                                ["cleaning_area_id"] = new
+                                {
+                                    required = true,
+                                    selector = new Dictionary<string, object> { ["object"] = new { } }
+                                }
                             }
                         }
                     }
                 }
-            },
-            new
+            }),
+            (Action<IReadOnlyList<HaServiceDefinition>>)(result =>
             {
-                domain = "homeassistant",
-                services = new Dictionary<string, object>
+                var cleanArea = result.Single(s => s.Service == "clean_area");
+                var cleaningAreaField = cleanArea.Fields["cleaning_area_id"];
+                cleaningAreaField.Required.ShouldBeTrue();
+                cleaningAreaField.Selector.ShouldNotBeNull();
+                cleaningAreaField.Selector!["object"].ShouldNotBeNull();
+            })
+        },
+        new object[]
+        {
+            // Flattens nested {domain, services{name → metadata}} into a flat list with domain copied onto each entry.
+            JsonSerializer.Serialize(new[]
+            {
+                new
                 {
-                    ["restart"] = new
+                    domain = "vacuum",
+                    services = new Dictionary<string, object>
                     {
-                        description = "Restart HA",
-                        fields = new Dictionary<string, object>()
-                        // no target key
+                        ["start"] = new
+                        {
+                            description = "Start cleaning",
+                            fields = new Dictionary<string, object>
+                            {
+                                ["entity_id"] = new
+                                {
+                                    description = "Target",
+                                    required = true,
+                                    example = "vacuum.s8"
+                                }
+                            }
+                        },
+                        ["return_to_base"] = new { description = "Send home", fields = new Dictionary<string, object>() }
                     }
                 }
-            }
-        });
+            }),
+            (Action<IReadOnlyList<HaServiceDefinition>>)(result =>
+            {
+                result.Count.ShouldBe(2);
+                var start = result.Single(s => s.Service == "start");
+                start.Domain.ShouldBe("vacuum");
+                start.Description.ShouldBe("Start cleaning");
+                start.Fields["entity_id"].Required.ShouldBeTrue();
+                start.Fields["entity_id"].Description.ShouldBe("Target");
+                start.Fields["entity_id"].Example!.GetValue<string>().ShouldBe("vacuum.s8");
+            })
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(ServiceShapeFixtures))]
+    public async Task ListServicesAsync_NormalizesServiceShape(
+        string payload,
+        Action<IReadOnlyList<HaServiceDefinition>> assertions)
+    {
         _server.Given(Request.Create().WithPath("/api/services").UsingGet())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+            .RespondWith(Response.Create().WithStatusCode(200).WithBody(payload));
 
         var result = await _client.ListServicesAsync();
 
-        var getMaps = result.Single(s => s.Service == "get_maps");
-        getMaps.Target.ShouldNotBeNull();
-        getMaps.Target!["entity"]![0]!["integration"]!.GetValue<string>().ShouldBe("roborock");
-        getMaps.Target["entity"]![0]!["domain"]![0]!.GetValue<string>().ShouldBe("vacuum");
-
-        var restart = result.Single(s => s.Service == "restart");
-        restart.Target.ShouldBeNull();
+        assertions(result);
     }
 
-    [Fact]
-    public async Task ListServicesAsync_CapturesSelectorWhenPresent()
+    public static IEnumerable<object[]> CallServiceBodyFixtures => new[]
     {
-        // HA exposes field type metadata via `selector` — e.g. {"object":{}} for a free-form
-        // map, {"number":{...}} for a number, {"select":{"multiple":true,...}} for a multi-pick.
-        // The agent needs this to know whether a field takes a scalar, list, or object;
-        // a `required: true` flag alone leaves it guessing.
-        var body = JsonSerializer.Serialize(new[]
+        new object[]
         {
-            new
-            {
-                domain = "vacuum",
-                services = new Dictionary<string, object>
+            // SendsEntityIdFlatInBody: entity-targeted, data payload, fallback path (no response).
+            new CallServiceCase(
+                Domain: "vacuum",
+                Service: "start",
+                EntityId: "vacuum.s8",
+                Data: new Dictionary<string, JsonNode?> { ["mode"] = JsonValue.Create("spot") },
+                StubFallback: true,
+                FallbackBody: JsonSerializer.Serialize(new[]
                 {
-                    ["clean_area"] = new
+                    new { entity_id = "vacuum.s8", state = "cleaning", attributes = new Dictionary<string, object>() }
+                }),
+                ResponseBody: null,
+                ResultAssertions: result =>
+                {
+                    result.ChangedEntities.Count.ShouldBe(1);
+                    result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
+                    result.ChangedEntities[0].State.ShouldBe("cleaning");
+                    result.Response.ShouldBeNull();
+                },
+                PostAssertions: (body, _) =>
+                {
+                    body.ShouldNotBeNull();
+                    body!["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
+                    body["mode"]!.GetValue<string>().ShouldBe("spot");
+                    body.ContainsKey("target").ShouldBeFalse();
+                })
+        },
+        new object[]
+        {
+            // NoEntityId_OmitsEntityIdAndTarget: no entity, no data, fallback path.
+            new CallServiceCase(
+                Domain: "homeassistant",
+                Service: "restart",
+                EntityId: null,
+                Data: null,
+                StubFallback: true,
+                FallbackBody: "[]",
+                ResponseBody: null,
+                ResultAssertions: _ => { },
+                PostAssertions: (body, _) =>
+                {
+                    body.ShouldNotBeNull();
+                    body!.ContainsKey("target").ShouldBeFalse();
+                    body.ContainsKey("entity_id").ShouldBeFalse();
+                })
+        },
+        new object[]
+        {
+            // RequestsResponseByDefault: service supports response, returns {changed_states, service_response} on first try.
+            new CallServiceCase(
+                Domain: "script",
+                Service: "echo",
+                EntityId: null,
+                Data: new Dictionary<string, JsonNode?> { ["value"] = JsonValue.Create("hello") },
+                StubFallback: false,
+                FallbackBody: null,
+                ResponseBody: """
                     {
-                        description = "Clean specified areas",
-                        fields = new Dictionary<string, object>
-                        {
-                            ["cleaning_area_id"] = new
-                            {
-                                required = true,
-                                selector = new Dictionary<string, object> { ["object"] = new { } }
-                            }
-                        }
+                      "changed_states": [
+                        {"entity_id":"script.echo","state":"on","attributes":{}}
+                      ],
+                      "service_response": {"echoed":"hello"}
                     }
-                }
-            }
-        });
-        _server.Given(Request.Create().WithPath("/api/services").UsingGet())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
-
-        var result = await _client.ListServicesAsync();
-
-        var cleanArea = result.Single(s => s.Service == "clean_area");
-        var field = cleanArea.Fields["cleaning_area_id"];
-        field.Required.ShouldBeTrue();
-        field.Selector.ShouldNotBeNull();
-        field.Selector!["object"].ShouldNotBeNull();
-    }
-
-    [Fact]
-    public async Task ListServicesAsync_FlattensNestedDomainShape()
-    {
-        var body = JsonSerializer.Serialize(new[]
-        {
-            new
-            {
-                domain = "vacuum",
-                services = new Dictionary<string, object>
+                    """,
+                ResultAssertions: result =>
                 {
-                    ["start"] = new
-                    {
-                        description = "Start cleaning",
-                        fields = new Dictionary<string, object>
-                        {
-                            ["entity_id"] = new
-                            {
-                                description = "Target",
-                                required = true,
-                                example = "vacuum.s8"
-                            }
-                        }
-                    },
-                    ["return_to_base"] = new { description = "Send home", fields = new Dictionary<string, object>() }
-                }
-            }
-        });
-        _server.Given(Request.Create().WithPath("/api/services").UsingGet())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody(body));
+                    result.ChangedEntities.Count.ShouldBe(1);
+                    result.ChangedEntities[0].EntityId.ShouldBe("script.echo");
+                    result.Response.ShouldNotBeNull();
+                    result.Response!["echoed"]!.GetValue<string>().ShouldBe("hello");
+                },
+                PostAssertions: (_, url) => url.ShouldContain("return_response=true"))
+        }
+    };
 
-        var result = await _client.ListServicesAsync();
-
-        result.Count.ShouldBe(2);
-        var start = result.Single(s => s.Service == "start");
-        start.Domain.ShouldBe("vacuum");
-        start.Description.ShouldBe("Start cleaning");
-        start.Fields["entity_id"].Required.ShouldBeTrue();
-        start.Fields["entity_id"].Description.ShouldBe("Target");
-        start.Fields["entity_id"].Example!.GetValue<string>().ShouldBe("vacuum.s8");
-    }
-
-    [Fact]
-    public async Task CallServiceAsync_SendsEntityIdFlatInBody()
+    [Theory]
+    [MemberData(nameof(CallServiceBodyFixtures))]
+    public async Task CallServiceAsync_ShapesOutboundRequest(CallServiceCase c)
     {
-        var responseBody = JsonSerializer.Serialize(new[]
+        var path = $"/api/services/{c.Domain}/{c.Service}";
+
+        if (c.StubFallback)
         {
-            new { entity_id = "vacuum.s8", state = "cleaning", attributes = new Dictionary<string, object>() }
-        });
-        StubServiceUnsupportedResponse("/api/services/vacuum/start");
-        _server.Given(Request.Create()
-                .WithPath("/api/services/vacuum/start")
-                .WithHeader("Authorization", "Bearer test-token")
-                .UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody(responseBody));
+            // First call (with return_response=true) → 400 with the canonical HA message.
+            StubServiceUnsupportedResponse(path);
+            _server.Given(Request.Create()
+                    .WithPath(path)
+                    .WithHeader("Authorization", "Bearer test-token")
+                    .UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBody(c.FallbackBody!));
+        }
+        else
+        {
+            _server.Given(Request.Create()
+                    .WithPath(path)
+                    .WithParam("return_response", "true")
+                    .UsingPost())
+                .RespondWith(Response.Create().WithStatusCode(200).WithBody(c.ResponseBody!)
+                    .WithHeader("Content-Type", "application/json"));
+        }
 
-        var data = new Dictionary<string, JsonNode?> { ["mode"] = JsonValue.Create("spot") };
-        var result = await _client.CallServiceAsync("vacuum", "start", "vacuum.s8", data);
+        var result = await _client.CallServiceAsync(c.Domain, c.Service, c.EntityId, c.Data);
 
-        result.ChangedEntities.Count.ShouldBe(1);
-        result.ChangedEntities[0].EntityId.ShouldBe("vacuum.s8");
-        result.ChangedEntities[0].State.ShouldBe("cleaning");
-        result.Response.ShouldBeNull();
+        c.ResultAssertions(result);
 
-        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
-        posted["entity_id"]!.GetValue<string>().ShouldBe("vacuum.s8");
-        posted["mode"]!.GetValue<string>().ShouldBe("spot");
-        posted.ContainsKey("target").ShouldBeFalse();
+        var lastPost = _server.LogEntries.Last(e => e.RequestMessage?.Method == "POST").RequestMessage!;
+        var body = lastPost.Body is { Length: > 0 } ? JsonNode.Parse(lastPost.Body)?.AsObject() : null;
+        c.PostAssertions(body, lastPost.AbsoluteUrl);
     }
 
-    [Fact]
-    public async Task CallServiceAsync_NoEntityId_OmitsEntityIdAndTarget()
-    {
-        StubServiceUnsupportedResponse("/api/services/homeassistant/restart");
-        _server.Given(Request.Create().WithPath("/api/services/homeassistant/restart").UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody("[]"));
-
-        await _client.CallServiceAsync("homeassistant", "restart", null, null);
-
-        var posted = JsonNode.Parse(_server.LogEntries.Last().RequestMessage?.Body!)!.AsObject();
-        posted.ContainsKey("target").ShouldBeFalse();
-        posted.ContainsKey("entity_id").ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task CallServiceAsync_RequestsResponseByDefault()
-    {
-        // Service supports response: HA returns {changed_states, service_response} with 200.
-        var responseBody = """
-            {
-              "changed_states": [
-                {"entity_id":"script.echo","state":"on","attributes":{}}
-              ],
-              "service_response": {"echoed":"hello"}
-            }
-            """;
-        _server.Given(Request.Create()
-                .WithPath("/api/services/script/echo")
-                .WithParam("return_response", "true")
-                .UsingPost())
-            .RespondWith(Response.Create().WithStatusCode(200).WithBody(responseBody)
-                .WithHeader("Content-Type", "application/json"));
-
-        var data = new Dictionary<string, JsonNode?> { ["value"] = JsonValue.Create("hello") };
-        var result = await _client.CallServiceAsync("script", "echo", null, data);
-
-        result.ChangedEntities.Count.ShouldBe(1);
-        result.ChangedEntities[0].EntityId.ShouldBe("script.echo");
-        result.Response.ShouldNotBeNull();
-        result.Response!["echoed"]!.GetValue<string>().ShouldBe("hello");
-
-        var url = _server.LogEntries.Last().RequestMessage?.AbsoluteUrl!;
-        url.ShouldContain("return_response=true");
-    }
+    public record CallServiceCase(
+        string Domain,
+        string Service,
+        string? EntityId,
+        IReadOnlyDictionary<string, JsonNode?>? Data,
+        bool StubFallback,
+        string? FallbackBody,
+        string? ResponseBody,
+        Action<HaServiceCallResult> ResultAssertions,
+        Action<JsonObject?, string> PostAssertions);
 
     [Fact]
     public async Task CallServiceAsync_400DoesNotSupportResponses_FallsBackWithoutQuery()
