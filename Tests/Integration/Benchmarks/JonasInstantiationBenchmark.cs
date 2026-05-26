@@ -23,6 +23,7 @@ using Xunit.Abstractions;
 namespace Tests.Integration.Benchmarks;
 
 [Trait("Category", "Benchmark")]
+[Trait("Category", "Performance")]
 public class JonasInstantiationBenchmark(
     RedisFixture redisFixture,
     JonasMcpStackFixture mcpStackFixture,
