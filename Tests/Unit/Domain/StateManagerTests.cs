@@ -3,7 +3,7 @@ using Infrastructure.StateManagers;
 using Microsoft.Extensions.Caching.Memory;
 using Shouldly;
 
-namespace Tests.Integration.Domain;
+namespace Tests.Unit.Domain;
 
 public class StateManagerTests
 {
