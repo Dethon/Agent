@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Prompts;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
@@ -45,6 +46,7 @@ public static class ConfigModule
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<ScheduleFileSystem>()
+            .AddSingleton<ScheduleSetupSummary>()
             .AddHostedService<ScheduleDispatcherService>();
 
         services

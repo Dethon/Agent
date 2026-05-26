@@ -5,12 +5,15 @@ using ModelContextProtocol.Server;
 namespace McpServerScheduling.McpPrompts;
 
 [McpServerPromptType]
-public class McpSystemPrompt
+public class McpSystemPrompt(ScheduleSetupSummary summary)
 {
     [McpServerPrompt(Name = SchedulingPrompt.Name)]
     [Description(SchedulingPrompt.Description)]
-    public static string GetSchedulingPrompt()
+    public string GetSchedulingPrompt()
     {
-        return SchedulingPrompt.Prompt;
+        var setup = summary.Get();
+        return string.IsNullOrEmpty(setup)
+            ? SchedulingPrompt.Prompt
+            : SchedulingPrompt.Prompt + "\n\n" + setup;
     }
 }

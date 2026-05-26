@@ -71,6 +71,36 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     }
 
     [Fact]
+    public async Task McpServer_GetSchedulingPrompt_IncludesRegisteredAgents()
+    {
+        var client = await ConnectAsync();
+
+        var register = await client.CallToolAsync(
+            ChannelProtocol.RegisterAgentsTool,
+            ChannelProtocol.ToArguments(new RegisterAgentsParams
+            {
+                Agents =
+                [
+                    new AgentCatalogEntry("itest-summary-agent", "Summary Agent", "Used by the snippet test."),
+                ]
+            }),
+            cancellationToken: CancellationToken.None);
+        (register.IsError ?? false).ShouldBeFalse();
+
+        var result = await client.GetPromptAsync("scheduling_prompt");
+        var text = string.Join("", result.Messages
+            .Select(m => m.Content)
+            .OfType<TextContentBlock>()
+            .Select(c => c.Text));
+
+        text.ShouldContain("## Current scheduling setup");
+        text.ShouldContain("/schedules/itest-summary-agent");
+        text.ShouldContain("- `itest-summary-agent` (Summary Agent) — Used by the snippet test.");
+
+        await client.DisposeAsync();
+    }
+
+    [Fact]
     public async Task McpServer_ListTools_IncludesFsTools()
     {
         var client = await ConnectAsync();
