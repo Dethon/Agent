@@ -57,7 +57,7 @@ else
         },
         Xaxis = new XAxis
         {
-            Labels = new XAxisLabels { Formatter = "function(val) { return new Date(val).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}); }" }
+            Labels = new XAxisLabels { Formatter = "function(val) { return new Date(val).toLocaleDateString([], {month: 'short', day: 'numeric'}); }" }
         }
     };
 
