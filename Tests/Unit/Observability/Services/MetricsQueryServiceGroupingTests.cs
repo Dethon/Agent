@@ -38,151 +38,84 @@ public class MetricsQueryServiceGroupingTests
     }
 
     // =====================================================================
-    // Task 3: Token Grouped Aggregation
+    // Token Grouped Aggregation
     // =====================================================================
 
-    [Fact]
-    public async Task GetTokenGroupedAsync_ByUser_Tokens_SumsTokensPerSender()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tokens:2026-03-15",
-        [
-            new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 100, OutputTokens = 50, Cost = 0.1m },
-            new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 200, OutputTokens = 100, Cost = 0.2m },
-            new TokenUsageEvent { Sender = "bob", Model = "gpt-4", InputTokens = 50, OutputTokens = 25, Cost = 0.05m }
-        ]);
-
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
-
-        result["alice"].ShouldBe(450m); // (100+50) + (200+100)
-        result["bob"].ShouldBe(75m);    // 50+25
-    }
-
-    [Fact]
-    public async Task GetTokenGroupedAsync_ByModel_Cost_SumsCostPerModel()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tokens:2026-03-15",
-        [
-            new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 100, OutputTokens = 50, Cost = 0.1m },
-            new TokenUsageEvent { Sender = "bob", Model = "gpt-4", InputTokens = 200, OutputTokens = 100, Cost = 0.3m },
-            new TokenUsageEvent { Sender = "alice", Model = "claude-3", InputTokens = 50, OutputTokens = 25, Cost = 0.05m }
-        ]);
-
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.Model, TokenMetric.Cost, date, date);
-
-        result["gpt-4"].ShouldBe(0.4m);
-        result["claude-3"].ShouldBe(0.05m);
-    }
-
-    [Fact]
-    public async Task GetTokenGroupedAsync_ByAgent_Tokens_GroupsByAgentId()
+    [Theory]
+    [InlineData(TokenDimension.User, TokenMetric.Tokens, "alice", 450.0, "bob", 75.0)]
+    [InlineData(TokenDimension.Model, TokenMetric.Cost, "gpt-4", 0.3, "claude-3", 0.05)]
+    [InlineData(TokenDimension.Agent, TokenMetric.Tokens, "agent-1", 450.0, "unknown", 75.0)]
+    public async Task GetTokenGroupedAsync_GroupsByDimensionAndMetric(
+        TokenDimension dimension, TokenMetric metric,
+        string keyA, double expectedA, string keyB, double expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:tokens:2026-03-15",
         [
             new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 100, OutputTokens = 50, Cost = 0.1m, AgentId = "agent-1" },
-            new TokenUsageEvent { Sender = "bob", Model = "gpt-4", InputTokens = 200, OutputTokens = 100, Cost = 0.3m, AgentId = "agent-1" },
-            new TokenUsageEvent { Sender = "carol", Model = "gpt-4", InputTokens = 50, OutputTokens = 25, Cost = 0.05m, AgentId = null }
+            new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 200, OutputTokens = 100, Cost = 0.2m, AgentId = "agent-1" },
+            new TokenUsageEvent { Sender = "bob", Model = "claude-3", InputTokens = 50, OutputTokens = 25, Cost = 0.05m, AgentId = null }
         ]);
 
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.Agent, TokenMetric.Tokens, date, date);
+        var result = await _sut.GetTokenGroupedAsync(dimension, metric, date, date);
 
-        result["agent-1"].ShouldBe(450m); // (100+50) + (200+100)
-        result["unknown"].ShouldBe(75m);  // 50+25
-    }
-
-    [Fact]
-    public async Task GetTokenGroupedAsync_EmptyData_ReturnsEmptyDictionary()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tokens:2026-03-15", []);
-
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
-
-        result.ShouldBeEmpty();
+        result[keyA].ShouldBe((decimal)expectedA);
+        result[keyB].ShouldBe((decimal)expectedB);
     }
 
     // =====================================================================
-    // Task 4: Tools Grouped Aggregation
+    // Tools Grouped Aggregation
     // =====================================================================
 
-    [Fact]
-    public async Task GetToolGroupedAsync_ByTool_CallCount_CountsPerTool()
+    [Theory]
+    [InlineData(ToolDimension.ToolName, ToolMetric.CallCount)]
+    [InlineData(ToolDimension.ToolName, ToolMetric.AvgDuration)]
+    [InlineData(ToolDimension.ToolName, ToolMetric.ErrorRate)]
+    [InlineData(ToolDimension.Status, ToolMetric.CallCount)]
+    public async Task GetToolGroupedAsync_GroupsByDimensionAndMetric(
+        ToolDimension dimension, ToolMetric metric)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:tools:2026-03-15",
         [
             new ToolCallEvent { ToolName = "search", DurationMs = 100, Success = true },
-            new ToolCallEvent { ToolName = "search", DurationMs = 200, Success = true },
-            new ToolCallEvent { ToolName = "read_file", DurationMs = 50, Success = false }
-        ]);
-
-        var result = await _sut.GetToolGroupedAsync(ToolDimension.ToolName, ToolMetric.CallCount, date, date);
-
-        result["search"].ShouldBe(2m);
-        result["read_file"].ShouldBe(1m);
-    }
-
-    [Fact]
-    public async Task GetToolGroupedAsync_ByTool_AvgDuration_AveragesPerTool()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tools:2026-03-15",
-        [
-            new ToolCallEvent { ToolName = "search", DurationMs = 100, Success = true },
-            new ToolCallEvent { ToolName = "search", DurationMs = 300, Success = true },
-            new ToolCallEvent { ToolName = "read_file", DurationMs = 50, Success = true }
-        ]);
-
-        var result = await _sut.GetToolGroupedAsync(ToolDimension.ToolName, ToolMetric.AvgDuration, date, date);
-
-        result["search"].ShouldBe(200m);  // (100+300)/2
-        result["read_file"].ShouldBe(50m);
-    }
-
-    [Fact]
-    public async Task GetToolGroupedAsync_ByTool_ErrorRate_CalculatesPercentage()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tools:2026-03-15",
-        [
-            new ToolCallEvent { ToolName = "search", DurationMs = 100, Success = true },
+            new ToolCallEvent { ToolName = "search", DurationMs = 300, Success = false },
             new ToolCallEvent { ToolName = "search", DurationMs = 200, Success = false },
-            new ToolCallEvent { ToolName = "search", DurationMs = 150, Success = false },
             new ToolCallEvent { ToolName = "read_file", DurationMs = 50, Success = true }
         ]);
 
-        var result = await _sut.GetToolGroupedAsync(ToolDimension.ToolName, ToolMetric.ErrorRate, date, date);
+        var result = await _sut.GetToolGroupedAsync(dimension, metric, date, date);
 
-        // search: 2 failures out of 3 = 66.666...%
-        result["search"].ShouldBeInRange(66.66m, 66.67m);
-        result["read_file"].ShouldBe(0m);
-    }
-
-    [Fact]
-    public async Task GetToolGroupedAsync_ByStatus_CallCount_CountsPerStatus()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tools:2026-03-15",
-        [
-            new ToolCallEvent { ToolName = "search", DurationMs = 100, Success = true },
-            new ToolCallEvent { ToolName = "read_file", DurationMs = 50, Success = false },
-            new ToolCallEvent { ToolName = "search", DurationMs = 200, Success = true }
-        ]);
-
-        var result = await _sut.GetToolGroupedAsync(ToolDimension.Status, ToolMetric.CallCount, date, date);
-
-        result["Success"].ShouldBe(2m);
-        result["Failure"].ShouldBe(1m);
+        switch (dimension, metric)
+        {
+            case (ToolDimension.ToolName, ToolMetric.CallCount):
+                result["search"].ShouldBe(3m);
+                result["read_file"].ShouldBe(1m);
+                break;
+            case (ToolDimension.ToolName, ToolMetric.AvgDuration):
+                result["search"].ShouldBe(200m);   // (100+300+200)/3
+                result["read_file"].ShouldBe(50m);
+                break;
+            case (ToolDimension.ToolName, ToolMetric.ErrorRate):
+                result["search"].ShouldBeInRange(66.66m, 66.67m); // 2/3
+                result["read_file"].ShouldBe(0m);
+                break;
+            case (ToolDimension.Status, ToolMetric.CallCount):
+                result["Success"].ShouldBe(2m);
+                result["Failure"].ShouldBe(2m);
+                break;
+        }
     }
 
     // =====================================================================
-    // Task 5: Errors & Schedules Grouped Aggregation
+    // Errors Grouped Aggregation
     // =====================================================================
 
-    [Fact]
-    public async Task GetErrorGroupedAsync_ByService_CountsPerService()
+    [Theory]
+    [InlineData(ErrorDimension.Service, "Agent", 2, "Observability", 1)]
+    [InlineData(ErrorDimension.ErrorType, "NullReference", 2, "Timeout", 1)]
+    public async Task GetErrorGroupedAsync_GroupsByDimension(
+        ErrorDimension dimension, string keyA, int expectedA, string keyB, int expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:errors:2026-03-15",
@@ -192,31 +125,21 @@ public class MetricsQueryServiceGroupingTests
             new ErrorEvent { Service = "Observability", ErrorType = "NullReference", Message = "oops2" }
         ]);
 
-        var result = await _sut.GetErrorGroupedAsync(ErrorDimension.Service, date, date);
+        var result = await _sut.GetErrorGroupedAsync(dimension, date, date);
 
-        result["Agent"].ShouldBe(2);
-        result["Observability"].ShouldBe(1);
+        result[keyA].ShouldBe(expectedA);
+        result[keyB].ShouldBe(expectedB);
     }
 
-    [Fact]
-    public async Task GetErrorGroupedAsync_ByErrorType_CountsPerType()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:errors:2026-03-15",
-        [
-            new ErrorEvent { Service = "Agent", ErrorType = "NullReference", Message = "oops" },
-            new ErrorEvent { Service = "Observability", ErrorType = "NullReference", Message = "oops2" },
-            new ErrorEvent { Service = "Agent", ErrorType = "Timeout", Message = "timed out" }
-        ]);
+    // =====================================================================
+    // Schedules Grouped Aggregation
+    // =====================================================================
 
-        var result = await _sut.GetErrorGroupedAsync(ErrorDimension.ErrorType, date, date);
-
-        result["NullReference"].ShouldBe(2);
-        result["Timeout"].ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task GetScheduleGroupedAsync_BySchedule_CountsPerScheduleId()
+    [Theory]
+    [InlineData(ScheduleDimension.Schedule, "daily-report", 2, "weekly-summary", 1)]
+    [InlineData(ScheduleDimension.Status, "Success", 2, "Failure", 1)]
+    public async Task GetScheduleGroupedAsync_GroupsByDimension(
+        ScheduleDimension dimension, string keyA, int expectedA, string keyB, int expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:schedules:2026-03-15",
@@ -226,80 +149,24 @@ public class MetricsQueryServiceGroupingTests
             new ScheduleExecutionEvent { ScheduleId = "weekly-summary", Prompt = "...", DurationMs = 2000, Success = true }
         ]);
 
-        var result = await _sut.GetScheduleGroupedAsync(ScheduleDimension.Schedule, date, date);
+        var result = await _sut.GetScheduleGroupedAsync(dimension, date, date);
 
-        result["daily-report"].ShouldBe(2);
-        result["weekly-summary"].ShouldBe(1);
-    }
-
-    [Fact]
-    public async Task GetScheduleGroupedAsync_ByStatus_CountsPerStatus()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:schedules:2026-03-15",
-        [
-            new ScheduleExecutionEvent { ScheduleId = "daily-report", Prompt = "...", DurationMs = 1000, Success = true },
-            new ScheduleExecutionEvent { ScheduleId = "daily-report", Prompt = "...", DurationMs = 1200, Success = false },
-            new ScheduleExecutionEvent { ScheduleId = "weekly-summary", Prompt = "...", DurationMs = 2000, Success = true }
-        ]);
-
-        var result = await _sut.GetScheduleGroupedAsync(ScheduleDimension.Status, date, date);
-
-        result["Success"].ShouldBe(2);
-        result["Failure"].ShouldBe(1);
+        result[keyA].ShouldBe(expectedA);
+        result[keyB].ShouldBe(expectedB);
     }
 
     // =====================================================================
     // Memory Grouped Aggregation
     // =====================================================================
 
-    [Fact]
-    public async Task GetMemoryGroupedAsync_ByUser_Count_CountsPerUser()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15",
-        [
-            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
-            new MemoryRecallEvent { DurationMs = 200, MemoryCount = 3, UserId = "alice" },
-        ]);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15",
-        [
-            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "bob" },
-        ]);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
-        [
-            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice" },
-        ]);
-
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
-
-        result["alice"].ShouldBe(3m); // 2 recalls + 1 dreaming
-        result["bob"].ShouldBe(1m);   // 1 extraction
-    }
-
-    [Fact]
-    public async Task GetMemoryGroupedAsync_ByEventType_Count_CountsPerType()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15",
-        [
-            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
-            new MemoryRecallEvent { DurationMs = 200, MemoryCount = 3, UserId = "bob" },
-        ]);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15",
-        [
-            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
-        ]);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
-
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.EventType, MemoryMetric.Count, date, date);
-
-        result["Recall"].ShouldBe(2m);
-        result["Extraction"].ShouldBe(1m);
-    }
-
-    [Fact]
-    public async Task GetMemoryGroupedAsync_ByUser_AvgDuration_AveragesRecallAndExtractionOnly()
+    [Theory]
+    [InlineData(MemoryDimension.User, MemoryMetric.Count)]
+    [InlineData(MemoryDimension.EventType, MemoryMetric.Count)]
+    [InlineData(MemoryDimension.User, MemoryMetric.AvgDuration)]
+    [InlineData(MemoryDimension.EventType, MemoryMetric.StoredCount)]
+    [InlineData(MemoryDimension.Agent, MemoryMetric.MergedCount)]
+    public async Task GetMemoryGroupedAsync_GroupsByDimensionAndMetric(
+        MemoryDimension dimension, MemoryMetric metric)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:memory-recall:2026-03-15",
@@ -310,45 +177,8 @@ public class MetricsQueryServiceGroupingTests
         SetupSortedSet("metrics:memory-extraction:2026-03-15",
         [
             new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
-        ]);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
-        [
-            new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice" },
-        ]);
-
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.AvgDuration, date, date);
-
-        // Only recall + extraction have duration: (100 + 300 + 1000) / 3 = 466.666...
-        result["alice"].ShouldBeInRange(466.66m, 466.67m);
-    }
-
-    [Fact]
-    public async Task GetMemoryGroupedAsync_ByEventType_StoredCount_SumsFromExtractions()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15",
-        [
-            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
-        ]);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15",
-        [
-            new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, UserId = "alice" },
             new MemoryExtractionEvent { DurationMs = 2000, CandidateCount = 12, StoredCount = 5, UserId = "bob" },
         ]);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
-
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.EventType, MemoryMetric.StoredCount, date, date);
-
-        result["Extraction"].ShouldBe(8m); // 3 + 5
-        result["Recall"].ShouldBe(0m);     // recalls have no StoredCount
-    }
-
-    [Fact]
-    public async Task GetMemoryGroupedAsync_ByAgent_MergedCount_SumsFromDreaming()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
         SetupSortedSet("metrics:memory-dreaming:2026-03-15",
         [
             new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1" },
@@ -356,23 +186,51 @@ public class MetricsQueryServiceGroupingTests
             new MemoryDreamingEvent { MergedCount = 7, DecayedCount = 4, ProfileRegenerated = true, UserId = "alice", AgentId = null },
         ]);
 
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.Agent, MemoryMetric.MergedCount, date, date);
+        var result = await _sut.GetMemoryGroupedAsync(dimension, metric, date, date);
 
-        result["agent-1"].ShouldBe(8m); // 5 + 3
-        result["unknown"].ShouldBe(7m);
+        switch (dimension, metric)
+        {
+            case (MemoryDimension.User, MemoryMetric.Count):
+                // alice: 2 recalls + 1 extraction + 2 dreamings = 5
+                // bob:   1 extraction + 1 dreaming = 2
+                result["alice"].ShouldBe(5m);
+                result["bob"].ShouldBe(2m);
+                break;
+            case (MemoryDimension.EventType, MemoryMetric.Count):
+                result["Recall"].ShouldBe(2m);
+                result["Extraction"].ShouldBe(2m);
+                result["Dreaming"].ShouldBe(3m);
+                break;
+            case (MemoryDimension.User, MemoryMetric.AvgDuration):
+                // alice durations: 100, 300 (recall), 1000 (extraction) — dreaming has no duration
+                // (100 + 300 + 1000) / 3 = 466.666...
+                result["alice"].ShouldBeInRange(466.66m, 466.67m);
+                break;
+            case (MemoryDimension.EventType, MemoryMetric.StoredCount):
+                result["Extraction"].ShouldBe(8m); // 3 + 5
+                result["Recall"].ShouldBe(0m);     // recalls have no StoredCount
+                break;
+            case (MemoryDimension.Agent, MemoryMetric.MergedCount):
+                result["agent-1"].ShouldBe(8m); // 5 + 3
+                result["unknown"].ShouldBe(7m);
+                break;
+        }
     }
 
-    [Fact]
-    public async Task GetMemoryGroupedAsync_EmptyData_ReturnsEmptyDictionary()
+    // =====================================================================
+    // Percentile Helper
+    // =====================================================================
+
+    [Theory]
+    [InlineData(new[] { 10, 20, 30, 40, 100 }, 50, 30)]
+    [InlineData(new[] { 10, 20, 30, 40, 100 }, 95, 100)]
+    [InlineData(new[] { 10, 20, 30, 40, 100 }, 99, 100)]
+    [InlineData(new int[0], 95, 0)]
+    [InlineData(new[] { 7 }, 95, 7)]
+    public void ComputePercentile_ReturnsExpected(int[] values, int q, int expected)
     {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
-
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
-
-        result.ShouldBeEmpty();
+        var decimalValues = values.Select(v => (decimal)v).ToArray();
+        MetricsQueryService.ComputePercentile(decimalValues, q).ShouldBe(expected);
     }
 
     // =====================================================================
@@ -380,75 +238,60 @@ public class MetricsQueryServiceGroupingTests
     // =====================================================================
 
     [Theory]
-    [InlineData(50, 30)]
-    [InlineData(95, 100)]
-    [InlineData(99, 100)]
-    public void ComputePercentile_NearestRank_ReturnsExpected(int q, int expected)
-    {
-        decimal[] values = [10, 20, 30, 40, 100];
-        MetricsQueryService.ComputePercentile(values, q).ShouldBe(expected);
-    }
-
-    [Fact]
-    public void ComputePercentile_EmptyCollection_ReturnsZero()
-    {
-        MetricsQueryService.ComputePercentile([], 95).ShouldBe(0m);
-    }
-
-    [Fact]
-    public void ComputePercentile_SingleElement_ReturnsElement()
-    {
-        MetricsQueryService.ComputePercentile([7m], 95).ShouldBe(7m);
-    }
-
-    [Fact]
-    public async Task GetLatencyGroupedAsync_ByStage_P95_PercentilePerStage()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:latency:2026-03-15",
-        [
-            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100 },
-            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 200 },
-            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5000 },
-            new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 40 },
-        ]);
-
-        var result = await _sut.GetLatencyGroupedAsync(
-            LatencyDimension.Stage, LatencyMetric.P95, date, date);
-
-        result["LlmTotal"].ShouldBe(5000m);
-        result["MemoryRecall"].ShouldBe(40m);
-    }
-
-    [Fact]
-    public async Task GetLatencyGroupedAsync_ByModel_Avg_GroupsByModel()
+    [InlineData(LatencyDimension.Stage, LatencyMetric.P95, "LlmTotal", 5000.0, "MemoryRecall", 40.0)]
+    [InlineData(LatencyDimension.Model, LatencyMetric.Avg, "m1", 1800.0, "unknown", 45.0)]
+    public async Task GetLatencyGroupedAsync_GroupsByDimensionAndMetric(
+        LatencyDimension dimension, LatencyMetric metric,
+        string keyA, double expectedA, string keyB, double expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
         SetupSortedSet("metrics:latency:2026-03-15",
         [
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100, Model = "m1" },
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300, Model = "m1" },
+            new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 5000, Model = "m1" },
+            new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 40 },
             new LatencyEvent { Stage = LatencyStage.SessionWarmup, DurationMs = 50 },
         ]);
 
-        var result = await _sut.GetLatencyGroupedAsync(
-            LatencyDimension.Model, LatencyMetric.Avg, date, date);
+        var result = await _sut.GetLatencyGroupedAsync(dimension, metric, date, date);
 
-        result["m1"].ShouldBe(200m);
-        result["unknown"].ShouldBe(50m);
+        result[keyA].ShouldBe((decimal)expectedA);
+        result[keyB].ShouldBe((decimal)expectedB);
     }
 
-    [Fact]
-    public async Task GetLatencyGroupedAsync_EmptyData_ReturnsEmptyDictionary()
+    // =====================================================================
+    // Empty-data behavior (every grouped query returns an empty dictionary
+    // when no events exist for the date range)
+    // =====================================================================
+
+    [Theory]
+    [InlineData("tokens")]
+    [InlineData("memory")]
+    [InlineData("latency")]
+    public async Task GetGroupedAsync_EmptyData_ReturnsEmptyDictionary(string query)
     {
         var date = new DateOnly(2026, 3, 15);
+        SetupSortedSet("metrics:tokens:2026-03-15", []);
+        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
+        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
+        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
         SetupSortedSet("metrics:latency:2026-03-15", []);
 
-        var result = await _sut.GetLatencyGroupedAsync(
-            LatencyDimension.Stage, LatencyMetric.P95, date, date);
+        var result = query switch
+        {
+            "tokens" => await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date),
+            "memory" => await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date),
+            "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, LatencyMetric.P95, date, date),
+            _ => throw new ArgumentOutOfRangeException(nameof(query))
+        };
 
         result.ShouldBeEmpty();
     }
+
+    // =====================================================================
+    // Latency Trend (hourly vs. daily bucketing)
+    // =====================================================================
 
     [Fact]
     public async Task GetLatencyTrendAsync_ShortRange_BucketsHourlyPerStage()

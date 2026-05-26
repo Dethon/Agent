@@ -8,6 +8,7 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 
+[Trait("Category", "Performance")]
 public class McpAgentLatencyTests : IAsyncDisposable
 {
     private readonly McpAgent _agent;

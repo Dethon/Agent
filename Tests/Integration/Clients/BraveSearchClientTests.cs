@@ -5,6 +5,7 @@ using Shouldly;
 
 namespace Tests.Integration.Clients;
 
+[Trait("Category", "External")]
 public class BraveSearchClientTests : IAsyncLifetime
 {
     private readonly string? _apiKey;

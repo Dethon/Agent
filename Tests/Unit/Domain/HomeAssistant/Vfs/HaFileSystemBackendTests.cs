@@ -15,54 +15,38 @@ public class HaFileSystemBackendTests
     }
 
     [Fact]
-    public void ImplementsFileSystemBackend() => Build().ShouldBeAssignableTo<IFileSystemBackend>();
-
-    [Fact]
-    public void FilesystemName_IsHa() => Build().FilesystemName.ShouldBe("ha");
-
-    [Fact]
-    public async Task CreateAsync_IsUnsupported()
+    public void ImplementsFileSystemBackend_NamedHa()
     {
-        var result = await Build().CreateAsync("entities/light/x/state.json", "{}", false, true, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        var fs = Build();
+        fs.ShouldBeAssignableTo<IFileSystemBackend>();
+        fs.FilesystemName.ShouldBe("ha");
     }
 
     [Fact]
-    public async Task EditAsync_IsUnsupported()
+    public async Task MutatingOperations_ReturnUnsupported()
     {
-        var result = await Build().EditAsync("entities/light/x/state.json", [], CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsEditResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        var fs = Build();
+
+        (await fs.CreateAsync("entities/light/x/state.json", "{}", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        (await fs.EditAsync("entities/light/x/state.json", [], CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsEditResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        (await fs.MoveAsync("entities/light/a", "entities/light/b", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        (await fs.DeleteAsync("entities/light/x", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
+        (await fs.CopyAsync("entities/light/a", "entities/light/b", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
     }
 
     [Fact]
-    public async Task MoveAsync_IsUnsupported()
+    public async Task StreamingChunkApis_ThrowNotSupported()
     {
-        var result = await Build().MoveAsync("entities/light/a", "entities/light/b", CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsMoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-    }
-
-    [Fact]
-    public async Task DeleteAsync_IsUnsupported()
-    {
-        var result = await Build().DeleteAsync("entities/light/x", CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-    }
-
-    [Fact]
-    public async Task CopyAsync_IsUnsupported()
-    {
-        var result = await Build().CopyAsync("entities/light/a", "entities/light/b", false, true, CancellationToken.None);
-        result.ShouldBeOfType<FsResult<FsCopyResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
-    }
-
-    [Fact]
-    public void ReadChunksAsync_IsUnsupported() =>
-        Should.Throw<NotSupportedException>(() => { Build().ReadChunksAsync("entities/light/x/state.json", CancellationToken.None); });
-
-    [Fact]
-    public async Task WriteChunksAsync_IsUnsupported() =>
+        var fs = Build();
+        Should.Throw<NotSupportedException>(() => { fs.ReadChunksAsync("entities/light/x/state.json", CancellationToken.None); });
         await Should.ThrowAsync<NotSupportedException>(() =>
-            Build().WriteChunksAsync("entities/light/x/state.json", AsyncEmpty(), false, true, CancellationToken.None));
+            fs.WriteChunksAsync("entities/light/x/state.json", AsyncEmpty(), false, true, CancellationToken.None));
+    }
 
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> AsyncEmpty()
     {

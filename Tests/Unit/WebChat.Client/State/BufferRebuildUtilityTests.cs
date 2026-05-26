@@ -7,127 +7,155 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class BufferRebuildUtilityTests
 {
-    #region RebuildFromBuffer Tests
+    #region RebuildFromBuffer
 
-    [Fact]
-    public void RebuildFromBuffer_WithEmptyBuffer_ReturnsEmptyMessage()
-    {
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer([]);
-
-        completedTurns.ShouldBeEmpty();
-        streamingMessage.Role.ShouldBe("assistant");
-        streamingMessage.Content.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithSingleTurn_ReturnsStreamingMessage()
-    {
-        var buffer = new List<ChatStreamMessage>
+    public static IEnumerable<object[]> RebuildBasicStateCases =>
+    [
+        ["Empty buffer", new List<ChatStreamMessage>(),
+            new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+            {
+                completed.ShouldBeEmpty();
+                streaming.Role.ShouldBe("assistant");
+                streaming.Content.ShouldBeEmpty();
+            })],
+        ["Single streaming turn (no complete flag)", new List<ChatStreamMessage>
         {
             new() { Content = "Hello", MessageId = "msg-1" },
             new() { Content = " world", MessageId = "msg-1" }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.ShouldBeEmpty();
-        streamingMessage.Content.ShouldBe("Hello world");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithCompleteFlag_MovesToCompletedTurns()
-    {
-        var buffer = new List<ChatStreamMessage>
+        }, new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+        {
+            completed.ShouldBeEmpty();
+            streaming.Content.ShouldBe("Hello world");
+        })],
+        ["Single complete turn finalizes", new List<ChatStreamMessage>
         {
             new() { Content = "First turn", MessageId = "msg-1" },
             new() { IsComplete = true, MessageId = "msg-1" }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.Count.ShouldBe(1);
-        completedTurns[0].Content.ShouldBe("First turn");
-        streamingMessage.Content.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithMultipleTurns_SeparatesCompleted()
-    {
-        var buffer = new List<ChatStreamMessage>
+        }, new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+        {
+            completed.Count.ShouldBe(1);
+            completed[0].Content.ShouldBe("First turn");
+            streaming.Content.ShouldBeEmpty();
+        })],
+        ["Complete turn followed by partial second turn", new List<ChatStreamMessage>
         {
             new() { Content = "First", MessageId = "msg-1" },
             new() { IsComplete = true, MessageId = "msg-1" },
             new() { Content = "Second", MessageId = "msg-2" }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.Count.ShouldBe(1);
-        completedTurns[0].Content.ShouldBe("First");
-        streamingMessage.Content.ShouldBe("Second");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_GroupsByMessageId_PreservesOrder()
-    {
-        var buffer = new List<ChatStreamMessage>
+        }, new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+        {
+            completed.Count.ShouldBe(1);
+            completed[0].Content.ShouldBe("First");
+            streaming.Content.ShouldBe("Second");
+        })],
+        ["Groups by MessageId preserving order", new List<ChatStreamMessage>
         {
             new() { Content = "A1", MessageId = "msg-a" },
             new() { Content = "A2", MessageId = "msg-a" },
             new() { IsComplete = true, MessageId = "msg-a" },
             new() { Content = "B1", MessageId = "msg-b" },
             new() { Content = "B2", MessageId = "msg-b" }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.Count.ShouldBe(1);
-        completedTurns[0].Content.ShouldBe("A1A2");
-        streamingMessage.Content.ShouldBe("B1B2");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithReasoning_AccumulatesCorrectly()
-    {
-        var buffer = new List<ChatStreamMessage>
+        }, new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
         {
-            new() { Reasoning = "Thinking...", MessageId = "msg-1" },
-            new() { Content = "Answer", MessageId = "msg-1" }
-        };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        streamingMessage.Reasoning.ShouldBe("Thinking...");
-        streamingMessage.Content.ShouldBe("Answer");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithToolCalls_AccumulatesWithNewlines()
-    {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { ToolCalls = "tool_1", MessageId = "msg-1" },
-            new() { ToolCalls = "tool_2", MessageId = "msg-1" }
-        };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        streamingMessage.ToolCalls.ShouldBe("tool_1\ntool_2");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_SkipsEmptyCompletedTurns()
-    {
-        var buffer = new List<ChatStreamMessage>
+            completed.Count.ShouldBe(1);
+            completed[0].Content.ShouldBe("A1A2");
+            streaming.Content.ShouldBe("B1B2");
+        })],
+        ["Skips empty completed turns", new List<ChatStreamMessage>
         {
             new() { IsComplete = true, MessageId = "msg-1" },
             new() { Content = "Second turn", MessageId = "msg-2" }
-        };
+        }, new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+        {
+            completed.ShouldBeEmpty();
+            streaming.Content.ShouldBe("Second turn");
+        })]
+    ];
 
+    [Theory]
+    [MemberData(nameof(RebuildBasicStateCases))]
+    public void RebuildFromBuffer_BasicStates(
+        string _, List<ChatStreamMessage> buffer, Action<List<ChatMessageModel>, ChatMessageModel> assert)
+    {
         var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
-        completedTurns.ShouldBeEmpty();
-        streamingMessage.Content.ShouldBe("Second turn");
+        assert(completedTurns, streamingMessage);
+    }
+
+    public static IEnumerable<object[]> NonContentAccumulationCases =>
+    [
+        ["Reasoning accumulates alongside content", new List<ChatStreamMessage>
+        {
+            new() { Reasoning = "Thinking...", MessageId = "msg-1" },
+            new() { Content = "Answer", MessageId = "msg-1" }
+        }, new Action<ChatMessageModel>(streaming =>
+        {
+            streaming.Reasoning.ShouldBe("Thinking...");
+            streaming.Content.ShouldBe("Answer");
+        })],
+        ["ToolCalls accumulate with newline separator", new List<ChatStreamMessage>
+        {
+            new() { ToolCalls = "tool_1", MessageId = "msg-1" },
+            new() { ToolCalls = "tool_2", MessageId = "msg-1" }
+        }, new Action<ChatMessageModel>(streaming => streaming.ToolCalls.ShouldBe("tool_1\ntool_2"))]
+    ];
+
+    [Theory]
+    [MemberData(nameof(NonContentAccumulationCases))]
+    public void RebuildFromBuffer_AccumulatesNonContentFields(
+        string _, List<ChatStreamMessage> buffer, Action<ChatMessageModel> assert)
+    {
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        assert(streamingMessage);
+    }
+
+    public static IEnumerable<object?[]> TimestampCases
+    {
+        get
+        {
+            var ts1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
+            var ts2 = new DateTimeOffset(2025, 6, 15, 12, 0, 5, TimeSpan.Zero);
+            yield return
+            [
+                "First chunk has timestamp, second does not -> carried forward",
+                new List<ChatStreamMessage>
+                {
+                    new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts1 },
+                    new() { Content = " world", MessageId = "msg-1" }
+                },
+                (DateTimeOffset?)ts1
+            ];
+            yield return
+            [
+                "Both chunks have timestamps -> last wins",
+                new List<ChatStreamMessage>
+                {
+                    new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts1 },
+                    new() { Content = " world", MessageId = "msg-1", Timestamp = ts2 }
+                },
+                (DateTimeOffset?)ts2
+            ];
+            yield return
+            [
+                "No timestamps -> remains null",
+                new List<ChatStreamMessage>
+                {
+                    new() { Content = "Hello", MessageId = "msg-1" }
+                },
+                (DateTimeOffset?)null
+            ];
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(TimestampCases))]
+    public void RebuildFromBuffer_StreamingMessageTimestamp(
+        string _, List<ChatStreamMessage> buffer, DateTimeOffset? expected)
+    {
+        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        streamingMessage.Timestamp.ShouldBe(expected);
     }
 
     [Fact]
@@ -172,193 +200,263 @@ public sealed class BufferRebuildUtilityTests
         streamingMessage.Content.ShouldBe("Assistant response 2");
     }
 
-    [Fact]
-    public void RebuildFromBuffer_PropagatesMessageIdToCompletedTurns()
-    {
-        var buffer = new List<ChatStreamMessage>
+    public static IEnumerable<object?[]> MessageIdPropagationCases =>
+    [
+        ["Assistant turn propagates MessageId", new List<ChatStreamMessage>
         {
             new() { Content = "First", MessageId = "msg-1" },
             new() { IsComplete = true, MessageId = "msg-1" },
             new() { Content = "Second", MessageId = "msg-2" }
-        };
-
-        var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns[0].MessageId.ShouldBe("msg-1");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_UserMessages_HaveNoMessageId()
-    {
-        var buffer = new List<ChatStreamMessage>
+        }, (string?)"msg-1"],
+        ["User message has null MessageId", new List<ChatStreamMessage>
         {
             new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null) }
-        };
+        }, (string?)null]
+    ];
 
+    [Theory]
+    [MemberData(nameof(MessageIdPropagationCases))]
+    public void RebuildFromBuffer_MessageIdPropagation(
+        string _, List<ChatStreamMessage> buffer, string? expectedFirstCompletedId)
+    {
         var (completedTurns, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
-        completedTurns[0].MessageId.ShouldBeNull();
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithTimestamp_CarriesTimestampForward()
-    {
-        var ts = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts },
-            new() { Content = " world", MessageId = "msg-1" }
-        };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        streamingMessage.Timestamp.ShouldBe(ts);
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithMultipleTimestamps_LastWins()
-    {
-        var ts1 = new DateTimeOffset(2025, 6, 15, 12, 0, 0, TimeSpan.Zero);
-        var ts2 = new DateTimeOffset(2025, 6, 15, 12, 0, 5, TimeSpan.Zero);
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Hello", MessageId = "msg-1", Timestamp = ts1 },
-            new() { Content = " world", MessageId = "msg-1", Timestamp = ts2 }
-        };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        streamingMessage.Timestamp.ShouldBe(ts2);
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_WithoutTimestamp_RemainsNull()
-    {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Hello", MessageId = "msg-1" }
-        };
-
-        var (_, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        streamingMessage.Timestamp.ShouldBeNull();
+        completedTurns[0].MessageId.ShouldBe(expectedFirstCompletedId);
     }
 
     #endregion
 
-    #region ResumeFromBuffer Tests
+    #region Same-MessageId IsComplete Split
 
-    [Fact]
-    public void ResumeFromBuffer_WithEmptyBuffer_ReturnsHistoryUnchanged()
+    // The interleaved-messageId race (see memory: project_webchat_interleaved_messageid_bubble_loss)
+    // makes these three scenarios behaviourally distinct; they are kept as separate cases so a
+    // regression in any one variant is pinpointed individually.
+    public static IEnumerable<object[]> SameMessageIdIsCompleteSplitCases =>
+    [
+        [
+            "Same MessageId, all IsComplete -> single completed message",
+            new List<ChatStreamMessage>
+            {
+                new() { Reasoning = "Thinking...", MessageId = "msg-1", SequenceNumber = 1 },
+                new() { ToolCalls = "search(query)", MessageId = "msg-1", IsComplete = true, SequenceNumber = 2 },
+                new()
+                {
+                    Content = "Here is the answer", MessageId = "msg-1", IsComplete = true, SequenceNumber = 3
+                }
+            },
+            new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+            {
+                completed.Count.ShouldBe(1);
+                completed[0].Reasoning.ShouldBe("Thinking...");
+                completed[0].ToolCalls.ShouldBe("search(query)");
+                completed[0].Content.ShouldBe("Here is the answer");
+                completed[0].MessageId.ShouldBe("msg-1");
+                streaming.HasContent.ShouldBeFalse();
+            })
+        ],
+        [
+            "Same MessageId, last chunk not complete -> stays streaming",
+            new List<ChatStreamMessage>
+            {
+                new() { ToolCalls = "tool1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+                new() { Content = "partial answer", MessageId = "msg-1", SequenceNumber = 2 }
+            },
+            new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+            {
+                completed.ShouldBeEmpty();
+                streaming.ToolCalls.ShouldBe("tool1");
+                streaming.Content.ShouldBe("partial answer");
+                streaming.MessageId.ShouldBe("msg-1");
+            })
+        ],
+        [
+            "Different MessageIds, both complete -> two completed messages (unchanged behaviour)",
+            new List<ChatStreamMessage>
+            {
+                new()
+                {
+                    Reasoning = "R1", ToolCalls = "TC1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1
+                },
+                new()
+                {
+                    Reasoning = "R2", Content = "Answer", MessageId = "msg-2", IsComplete = true, SequenceNumber = 2
+                }
+            },
+            new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
+            {
+                completed.Count.ShouldBe(2);
+                completed[0].Reasoning.ShouldBe("R1");
+                completed[0].ToolCalls.ShouldBe("TC1");
+                completed[0].MessageId.ShouldBe("msg-1");
+                completed[1].Reasoning.ShouldBe("R2");
+                completed[1].Content.ShouldBe("Answer");
+                completed[1].MessageId.ShouldBe("msg-2");
+                streaming.HasContent.ShouldBeFalse();
+            })
+        ]
+    ];
+
+    [Theory]
+    [MemberData(nameof(SameMessageIdIsCompleteSplitCases))]
+    public void RebuildFromBuffer_SameMessageIdIsCompleteSplit(
+        string _, List<ChatStreamMessage> buffer, Action<List<ChatMessageModel>, ChatMessageModel> assert)
     {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
-        };
+        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
 
-        var result = BufferRebuildUtility.ResumeFromBuffer([], history, null, null);
-
-        result.MergedMessages.Count.ShouldBe(2);
-        result.MergedMessages[0].Content.ShouldBe("Q1");
-        result.MergedMessages[1].Content.ShouldBe("A1");
-        result.StreamingMessage.HasContent.ShouldBeFalse();
+        assert(completedTurns, streamingMessage);
     }
 
-    [Fact]
-    public void ResumeFromBuffer_InterleavesByAnchorPosition()
+    #endregion
+
+    #region ResumeFromBuffer
+
+    public static IEnumerable<object[]> ResumeEmptySideCases =>
+    [
+        [
+            "Empty buffer + non-empty history -> history unchanged, no streaming",
+            new List<ChatStreamMessage>(),
+            new List<ChatMessageModel>
+            {
+                new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+                new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+            },
+            new Action<BufferResumeResult>(result =>
+            {
+                result.MergedMessages.Count.ShouldBe(2);
+                result.MergedMessages[0].Content.ShouldBe("Q1");
+                result.MergedMessages[1].Content.ShouldBe("A1");
+                result.StreamingMessage.HasContent.ShouldBeFalse();
+            })
+        ],
+        [
+            "Empty history + buffer -> buffer turns surface as merged/streaming",
+            new List<ChatStreamMessage>
+            {
+                new() { Content = "First", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+                new() { Content = "Second", MessageId = "msg-2", SequenceNumber = 2 }
+            },
+            new List<ChatMessageModel>(),
+            new Action<BufferResumeResult>(result =>
+            {
+                result.MergedMessages.Count.ShouldBe(1);
+                result.MergedMessages[0].Content.ShouldBe("First");
+                result.StreamingMessage.Content.ShouldBe("Second");
+            })
+        ]
+    ];
+
+    [Theory]
+    [MemberData(nameof(ResumeEmptySideCases))]
+    public void ResumeFromBuffer_EmptySideBehaviour(
+        string _,
+        List<ChatStreamMessage> buffer,
+        List<ChatMessageModel> history,
+        Action<BufferResumeResult> assert)
     {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" },
-            new() { Role = "user", Content = "Q2", MessageId = "msg-3" },
-            new() { Role = "assistant", Content = "A2", MessageId = "msg-4" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "New message", IsComplete = true, SequenceNumber = 2 },
-            new() { MessageId = "msg-4", Content = "A2", IsComplete = true, SequenceNumber = 3 }
-        };
-
         var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
 
-        result.MergedMessages.Count.ShouldBe(5);
-        result.MergedMessages[0].Content.ShouldBe("Q1");
-        result.MergedMessages[1].Content.ShouldBe("A1");
-        result.MergedMessages[2].Content.ShouldBe("New message");
-        result.MergedMessages[3].Content.ShouldBe("Q2");
-        result.MergedMessages[4].Content.ShouldBe("A2");
+        assert(result);
     }
 
-    [Fact]
-    public void ResumeFromBuffer_LeadingNewMessagesBeforeFirstAnchor()
+    public static IEnumerable<object[]> AnchorPositioningCases
     {
-        var history = new List<ChatMessageModel>
+        get
         {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Leading new", IsComplete = true, SequenceNumber = 1 },
-            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 2 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
-
-        result.MergedMessages.Count.ShouldBe(3);
-        result.MergedMessages[0].Content.ShouldBe("Q1");
-        result.MergedMessages[1].Content.ShouldBe("Leading new");
-        result.MergedMessages[2].Content.ShouldBe("A1");
+            var twoTurnHistory = new List<ChatMessageModel>
+            {
+                new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+                new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+            };
+            yield return
+            [
+                "Interleaves new message between two anchors",
+                new List<ChatMessageModel>
+                {
+                    new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+                    new() { Role = "assistant", Content = "A1", MessageId = "msg-2" },
+                    new() { Role = "user", Content = "Q2", MessageId = "msg-3" },
+                    new() { Role = "assistant", Content = "A2", MessageId = "msg-4" }
+                },
+                new List<ChatStreamMessage>
+                {
+                    new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+                    new() { Content = "New message", IsComplete = true, SequenceNumber = 2 },
+                    new() { MessageId = "msg-4", Content = "A2", IsComplete = true, SequenceNumber = 3 }
+                },
+                new Action<BufferResumeResult>(result =>
+                {
+                    result.MergedMessages.Count.ShouldBe(5);
+                    result.MergedMessages[0].Content.ShouldBe("Q1");
+                    result.MergedMessages[1].Content.ShouldBe("A1");
+                    result.MergedMessages[2].Content.ShouldBe("New message");
+                    result.MergedMessages[3].Content.ShouldBe("Q2");
+                    result.MergedMessages[4].Content.ShouldBe("A2");
+                })
+            ];
+            yield return
+            [
+                "Leading new messages appear before first anchor",
+                twoTurnHistory,
+                new List<ChatStreamMessage>
+                {
+                    new() { Content = "Leading new", IsComplete = true, SequenceNumber = 1 },
+                    new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 2 }
+                },
+                new Action<BufferResumeResult>(result =>
+                {
+                    result.MergedMessages.Count.ShouldBe(3);
+                    result.MergedMessages[0].Content.ShouldBe("Q1");
+                    result.MergedMessages[1].Content.ShouldBe("Leading new");
+                    result.MergedMessages[2].Content.ShouldBe("A1");
+                })
+            ];
+            yield return
+            [
+                "Trailing new messages appear after last anchor",
+                twoTurnHistory,
+                new List<ChatStreamMessage>
+                {
+                    new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
+                    new() { Content = "Trailing new", IsComplete = true, SequenceNumber = 2 }
+                },
+                new Action<BufferResumeResult>(result =>
+                {
+                    result.MergedMessages.Count.ShouldBe(3);
+                    result.MergedMessages[0].Content.ShouldBe("Q1");
+                    result.MergedMessages[1].Content.ShouldBe("A1");
+                    result.MergedMessages[2].Content.ShouldBe("Trailing new");
+                })
+            ];
+            yield return
+            [
+                "No anchors -> appends all new messages at end",
+                twoTurnHistory,
+                new List<ChatStreamMessage>
+                {
+                    new() { Content = "New1", IsComplete = true, SequenceNumber = 1 },
+                    new() { Content = "New2", IsComplete = true, SequenceNumber = 2 }
+                },
+                new Action<BufferResumeResult>(result =>
+                {
+                    result.MergedMessages.Count.ShouldBe(4);
+                    result.MergedMessages[2].Content.ShouldBe("New1");
+                    result.MergedMessages[3].Content.ShouldBe("New2");
+                })
+            ];
+        }
     }
 
-    [Fact]
-    public void ResumeFromBuffer_TrailingNewMessagesAfterLastAnchor()
+    [Theory]
+    [MemberData(nameof(AnchorPositioningCases))]
+    public void ResumeFromBuffer_AnchorPositioning(
+        string _,
+        List<ChatMessageModel> history,
+        List<ChatStreamMessage> buffer,
+        Action<BufferResumeResult> assert)
     {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { MessageId = "msg-2", Content = "A1", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "Trailing new", IsComplete = true, SequenceNumber = 2 }
-        };
-
         var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
 
-        result.MergedMessages.Count.ShouldBe(3);
-        result.MergedMessages[0].Content.ShouldBe("Q1");
-        result.MergedMessages[1].Content.ShouldBe("A1");
-        result.MergedMessages[2].Content.ShouldBe("Trailing new");
-    }
-
-    [Fact]
-    public void ResumeFromBuffer_NoAnchors_AppendsAllAtEnd()
-    {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "New1", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "New2", IsComplete = true, SequenceNumber = 2 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
-
-        result.MergedMessages.Count.ShouldBe(4);
-        result.MergedMessages[2].Content.ShouldBe("New1");
-        result.MergedMessages[3].Content.ShouldBe("New2");
+        assert(result);
     }
 
     [Fact]
@@ -386,56 +484,6 @@ public sealed class BufferRebuildUtilityTests
     }
 
     [Fact]
-    public void ResumeFromBuffer_AddsPromptIfNotInHistory()
-    {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "assistant", Content = "Previous", MessageId = "msg-1" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { MessageId = "msg-1", Content = "Previous", IsComplete = true, SequenceNumber = 1 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "New question", "alice");
-
-        result.MergedMessages.Count.ShouldBe(2);
-        result.MergedMessages[1].Role.ShouldBe("user");
-        result.MergedMessages[1].Content.ShouldBe("New question");
-        result.MergedMessages[1].SenderId.ShouldBe("alice");
-    }
-
-    [Fact]
-    public void ResumeFromBuffer_DoesNotDuplicatePrompt()
-    {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Same prompt" }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer([], history, "Same prompt", null);
-
-        var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "Same prompt" });
-        promptCount.ShouldBe(1);
-    }
-
-    [Fact]
-    public void ResumeFromBuffer_ExcludesCurrentPromptFromBufferTurns()
-    {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "User's question", UserMessage = new UserMessageInfo("Bob", null), SequenceNumber = 1 },
-            new() { Content = "Response", MessageId = "msg-1", SequenceNumber = 2 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], "User's question", "Bob");
-
-        var promptCount = result.MergedMessages.Count(m => m is { Role: "user", Content: "User's question" });
-        promptCount.ShouldBe(1);
-    }
-
-    [Fact]
     public void ResumeFromBuffer_StripsStreamingMessageContentAgainstHistory()
     {
         var history = new List<ChatMessageModel>
@@ -453,182 +501,190 @@ public sealed class BufferRebuildUtilityTests
         result.StreamingMessage.Content.ShouldBeEmpty();
     }
 
-    [Fact]
-    public void ResumeFromBuffer_WithEmptyHistory_ReturnsBufferTurns()
+    public static IEnumerable<object?[]> PromptHandlingCases =>
+    [
+        [
+            "Adds current prompt when missing from history",
+            new List<ChatMessageModel>
+            {
+                new() { Role = "assistant", Content = "Previous", MessageId = "msg-1" }
+            },
+            new List<ChatStreamMessage>
+            {
+                new() { MessageId = "msg-1", Content = "Previous", IsComplete = true, SequenceNumber = 1 }
+            },
+            "New question",
+            (string?)"alice",
+            new Action<BufferResumeResult>(result =>
+            {
+                result.MergedMessages.Count.ShouldBe(2);
+                result.MergedMessages[1].Role.ShouldBe("user");
+                result.MergedMessages[1].Content.ShouldBe("New question");
+                result.MergedMessages[1].SenderId.ShouldBe("alice");
+            })
+        ],
+        [
+            "Does not duplicate prompt already present in history",
+            new List<ChatMessageModel> { new() { Role = "user", Content = "Same prompt" } },
+            new List<ChatStreamMessage>(),
+            "Same prompt",
+            (string?)null,
+            new Action<BufferResumeResult>(result =>
+            {
+                var promptCount = result.MergedMessages
+                    .Count(m => m is { Role: "user", Content: "Same prompt" });
+                promptCount.ShouldBe(1);
+            })
+        ],
+        [
+            "Excludes current prompt that appears as buffered user message",
+            new List<ChatMessageModel>(),
+            new List<ChatStreamMessage>
+            {
+                new()
+                {
+                    Content = "User's question", UserMessage = new UserMessageInfo("Bob", null), SequenceNumber = 1
+                },
+                new() { Content = "Response", MessageId = "msg-1", SequenceNumber = 2 }
+            },
+            "User's question",
+            (string?)"Bob",
+            new Action<BufferResumeResult>(result =>
+            {
+                var promptCount = result.MergedMessages
+                    .Count(m => m is { Role: "user", Content: "User's question" });
+                promptCount.ShouldBe(1);
+            })
+        ],
+        [
+            "Current prompt is added before unanchored buffer content",
+            new List<ChatMessageModel>
+            {
+                new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
+                new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
+            },
+            new List<ChatStreamMessage>
+            {
+                new()
+                {
+                    Content = "Response to new question", MessageId = "msg-3", IsComplete = true, SequenceNumber = 1
+                },
+                new() { Content = "Still responding", MessageId = "msg-4", SequenceNumber = 2 }
+            },
+            "New question",
+            (string?)"alice",
+            new Action<BufferResumeResult>(result =>
+            {
+                result.MergedMessages.Count.ShouldBe(4);
+                result.MergedMessages[0].Content.ShouldBe("Q1");
+                result.MergedMessages[1].Content.ShouldBe("A1");
+                result.MergedMessages[2].Role.ShouldBe("user");
+                result.MergedMessages[2].Content.ShouldBe("New question");
+                result.MergedMessages[3].Content.ShouldBe("Response to new question");
+                result.StreamingMessage.Content.ShouldBe("Still responding");
+            })
+        ]
+    ];
+
+    [Theory]
+    [MemberData(nameof(PromptHandlingCases))]
+    public void ResumeFromBuffer_PromptHandling(
+        string _,
+        List<ChatMessageModel> history,
+        List<ChatStreamMessage> buffer,
+        string? currentPrompt,
+        string? currentSenderId,
+        Action<BufferResumeResult> assert)
     {
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "First", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "Second", MessageId = "msg-2", SequenceNumber = 2 }
-        };
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, currentPrompt, currentSenderId);
 
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], null, null);
-
-        result.MergedMessages.Count.ShouldBe(1);
-        result.MergedMessages[0].Content.ShouldBe("First");
-        result.StreamingMessage.Content.ShouldBe("Second");
+        assert(result);
     }
 
-    [Fact]
-    public void ResumeFromBuffer_DoesNotDuplicateNonCurrentPromptUserMessages()
+    public static IEnumerable<object[]> UserMessageDedupCases =>
+    [
+        [
+            // Multi-turn topic reconnects with buffer containing previous user messages.
+            // The first user message is in both history (with ID) and buffer (without ID);
+            // it should NOT be duplicated in the merged result.
+            "Clean history, buffered user messages not duplicated across reconnect",
+            new List<ChatMessageModel>
+            {
+                new() { Role = "user", Content = "First question", MessageId = "user-1" },
+                new() { Role = "assistant", Content = "First answer", MessageId = "asst-1" }
+            },
+            new List<ChatStreamMessage>
+            {
+                new()
+                {
+                    Content = "First question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1
+                },
+                new() { Content = "First answer", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
+                new()
+                {
+                    Content = "Second question", UserMessage = new UserMessageInfo("alice", null),
+                    SequenceNumber = 3
+                },
+                new() { Content = "Streaming response", MessageId = "asst-2", SequenceNumber = 4 }
+            },
+            "Second question",
+            "alice",
+            new Action<BufferResumeResult>(result =>
+            {
+                var firstQuestionCount = result.MergedMessages
+                    .Count(m => m is { Role: "user", Content: "First question" });
+                firstQuestionCount.ShouldBe(1);
+                var secondQuestionCount = result.MergedMessages
+                    .Count(m => m is { Role: "user", Content: "Second question" });
+                secondQuestionCount.ShouldBe(1);
+                result.MergedMessages.Count.ShouldBe(3);
+                result.StreamingMessage.Content.ShouldBe("Streaming response");
+            })
+        ],
+        [
+            // Dirty history (e.g. left over from an earlier bad merge): buffer user messages
+            // must not push the count higher.
+            "Dirty history, buffer user messages don't make the duplicate count grow",
+            new List<ChatMessageModel>
+            {
+                new() { Role = "user", Content = "Hello", MessageId = "user-1" },
+                new() { Role = "user", Content = "Hello" }, // leftover from previous bad merge
+                new() { Role = "assistant", Content = "Hi there", MessageId = "asst-1" }
+            },
+            new List<ChatStreamMessage>
+            {
+                new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
+                new() { Content = "Hi there", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
+                new()
+                {
+                    Content = "New question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 3
+                },
+                new() { Content = "Response", MessageId = "asst-2", SequenceNumber = 4 }
+            },
+            "New question",
+            "alice",
+            new Action<BufferResumeResult>(result =>
+            {
+                var helloCount = result.MergedMessages
+                    .Count(m => m is { Role: "user", Content: "Hello" });
+                helloCount.ShouldBeLessThanOrEqualTo(2);
+            })
+        ]
+    ];
+
+    [Theory]
+    [MemberData(nameof(UserMessageDedupCases))]
+    public void ResumeFromBuffer_DoesNotDuplicateUserMessages(
+        string _,
+        List<ChatMessageModel> history,
+        List<ChatStreamMessage> buffer,
+        string currentPrompt,
+        string currentSenderId,
+        Action<BufferResumeResult> assert)
     {
-        // Scenario: multi-turn topic reconnects with buffer containing previous user messages.
-        // The first user message is in both history (with ID) and buffer (without ID).
-        // It should NOT be duplicated in the merged result.
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "First question", MessageId = "user-1" },
-            new() { Role = "assistant", Content = "First answer", MessageId = "asst-1" }
-        };
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, currentPrompt, currentSenderId);
 
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "First question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
-            new() { Content = "First answer", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
-            new() { Content = "Second question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 3 },
-            new() { Content = "Streaming response", MessageId = "asst-2", SequenceNumber = 4 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(
-            buffer, history, "Second question", "alice");
-
-        // First question should appear exactly once (from history, not duplicated from buffer)
-        var firstQuestionCount = result.MergedMessages
-            .Count(m => m is { Role: "user", Content: "First question" });
-        firstQuestionCount.ShouldBe(1);
-
-        // Second question (current prompt) should also appear exactly once
-        var secondQuestionCount = result.MergedMessages
-            .Count(m => m is { Role: "user", Content: "Second question" });
-        secondQuestionCount.ShouldBe(1);
-
-        // Total messages: user1, asst1, user2
-        result.MergedMessages.Count.ShouldBe(3);
-        result.StreamingMessage.Content.ShouldBe("Streaming response");
-    }
-
-    [Fact]
-    public void ResumeFromBuffer_DoesNotDuplicateUserMessagesOnRepeatedReconnections()
-    {
-        // Simulate what happens after a first reconnection left duplicates in existingHistory.
-        // Even with dirty history, user messages from buffer should not be re-added.
-        var dirtyHistory = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Hello", MessageId = "user-1" },
-            new() { Role = "user", Content = "Hello" }, // leftover from previous bad merge
-            new() { Role = "assistant", Content = "Hi there", MessageId = "asst-1" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Hello", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 1 },
-            new() { Content = "Hi there", MessageId = "asst-1", IsComplete = true, SequenceNumber = 2 },
-            new() { Content = "New question", UserMessage = new UserMessageInfo("alice", null), SequenceNumber = 3 },
-            new() { Content = "Response", MessageId = "asst-2", SequenceNumber = 4 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(
-            buffer, dirtyHistory, "New question", "alice");
-
-        // Buffer user messages should not add more copies
-        var helloCount = result.MergedMessages
-            .Count(m => m is { Role: "user", Content: "Hello" });
-        helloCount.ShouldBeLessThanOrEqualTo(2); // at most the existing dirty count, not worse
-    }
-
-    [Fact]
-    public void ResumeFromBuffer_CurrentPromptAppearsBeforeUnanchoredBufferContent()
-    {
-        var history = new List<ChatMessageModel>
-        {
-            new() { Role = "user", Content = "Q1", MessageId = "msg-1" },
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-2" }
-        };
-
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Content = "Response to new question", MessageId = "msg-3", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "Still responding", MessageId = "msg-4", SequenceNumber = 2 }
-        };
-
-        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, "New question", "alice");
-
-        // Order should be: Q1, A1, New question, Response to new question
-        result.MergedMessages.Count.ShouldBe(4);
-        result.MergedMessages[0].Content.ShouldBe("Q1");
-        result.MergedMessages[1].Content.ShouldBe("A1");
-        result.MergedMessages[2].Role.ShouldBe("user");
-        result.MergedMessages[2].Content.ShouldBe("New question");
-        result.MergedMessages[3].Content.ShouldBe("Response to new question");
-        result.StreamingMessage.Content.ShouldBe("Still responding");
-    }
-
-    #endregion
-
-    #region Same-MessageId IsComplete Split Tests
-
-    [Fact]
-    public void RebuildFromBuffer_SameMessageId_ChunksAfterIsComplete_AccumulatesIntoSingleMessage()
-    {
-        // During streaming, all chunks with the same MessageId are accumulated into ONE message.
-        // RebuildFromBuffer should match: IsComplete mid-stream should NOT split the message
-        // when more chunks follow with the same MessageId.
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Reasoning = "Thinking...", MessageId = "msg-1", SequenceNumber = 1 },
-            new() { ToolCalls = "search(query)", MessageId = "msg-1", IsComplete = true, SequenceNumber = 2 },
-            new() { Content = "Here is the answer", MessageId = "msg-1", IsComplete = true, SequenceNumber = 3 }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        // Should be ONE completed message with all fields, not split into two
-        completedTurns.Count.ShouldBe(1);
-        completedTurns[0].Reasoning.ShouldBe("Thinking...");
-        completedTurns[0].ToolCalls.ShouldBe("search(query)");
-        completedTurns[0].Content.ShouldBe("Here is the answer");
-        completedTurns[0].MessageId.ShouldBe("msg-1");
-        streamingMessage.HasContent.ShouldBeFalse();
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_SameMessageId_ChunksAfterIsComplete_StillStreamingIfLastNotComplete()
-    {
-        // Same MessageId continues after IsComplete, but last chunk is NOT complete → streaming
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { ToolCalls = "tool1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
-            new() { Content = "partial answer", MessageId = "msg-1", SequenceNumber = 2 }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.ShouldBeEmpty();
-        streamingMessage.ToolCalls.ShouldBe("tool1");
-        streamingMessage.Content.ShouldBe("partial answer");
-        streamingMessage.MessageId.ShouldBe("msg-1");
-    }
-
-    [Fact]
-    public void RebuildFromBuffer_DifferentMessageIds_WithIsComplete_StillSplitsCorrectly()
-    {
-        // Different MessageIds should still produce separate messages (unchanged behavior)
-        var buffer = new List<ChatStreamMessage>
-        {
-            new() { Reasoning = "R1", ToolCalls = "TC1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
-            new() { Reasoning = "R2", Content = "Answer", MessageId = "msg-2", IsComplete = true, SequenceNumber = 2 }
-        };
-
-        var (completedTurns, streamingMessage) = BufferRebuildUtility.RebuildFromBuffer(buffer);
-
-        completedTurns.Count.ShouldBe(2);
-        completedTurns[0].Reasoning.ShouldBe("R1");
-        completedTurns[0].ToolCalls.ShouldBe("TC1");
-        completedTurns[0].MessageId.ShouldBe("msg-1");
-        completedTurns[1].Reasoning.ShouldBe("R2");
-        completedTurns[1].Content.ShouldBe("Answer");
-        completedTurns[1].MessageId.ShouldBe("msg-2");
-        streamingMessage.HasContent.ShouldBeFalse();
+        assert(result);
     }
 
     #endregion

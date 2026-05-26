@@ -6,6 +6,9 @@ using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
+// TODO(cleanup): convert to Unit test with mocked clock once SubscriptionMonitor accepts TimeProvider.
+//   See docs/superpowers/plans/2026-05-26-test-suite-cleanup.md Task 12.
+
 namespace Tests.Integration.McpServerTests;
 
 public class SubscriptionMonitorTests(ThreadSessionServerFixture fixture)

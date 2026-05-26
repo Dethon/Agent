@@ -9,7 +9,7 @@ using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
-namespace Tests.Integration.WebChat.Client;
+namespace Tests.Unit.WebChat.Client;
 
 public sealed class ConcurrentStreamingTests : IDisposable
 {

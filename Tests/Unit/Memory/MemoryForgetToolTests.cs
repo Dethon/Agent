@@ -17,23 +17,34 @@ public class MemoryForgetToolTests
     private MemoryForgetTool CreateTool(string? userId = UserId) =>
         new(_store.Object, _embedding.Object, new FeatureConfig(UserId: userId));
 
+    private float[] StubEmbedding(string query, params float[] values)
+    {
+        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(values);
+        return values;
+    }
+
+    private void StubDelete(params string[] memoryIds)
+    {
+        foreach (var id in memoryIds)
+        {
+            _store.Setup(s => s.DeleteAsync(UserId, id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        }
+    }
+
     [Fact]
     public async Task Run_WithQuery_GeneratesEmbeddingAndUsesSearchAsync()
     {
         var query = "my job";
-        var fakeEmbedding = new float[] { 0.1f, 0.2f, 0.3f };
+        var fakeEmbedding = StubEmbedding(query, 0.1f, 0.2f, 0.3f);
         var memory = CreateMemory("mem1", "I work at Acme Corp", MemoryCategory.Fact);
 
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
         _store.Setup(s => s.SearchAsync(
                 UserId, query, fakeEmbedding, null, null, null, 100, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MemorySearchResult(memory, 0.9)]);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        StubDelete("mem1");
 
-        var tool = CreateTool();
-        var result = await tool.Run(query: query);
+        var result = await CreateTool().Run(query: query);
 
         _embedding.Verify(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.SearchAsync(
@@ -46,21 +57,17 @@ public class MemoryForgetToolTests
     {
         var query = "some query";
         var parsedTags = new List<string> { "work", "project" };
-        var fakeEmbedding = new float[] { 0.1f };
+        var fakeEmbedding = StubEmbedding(query, 0.1f);
         var memory = CreateMemory("mem1", "Work project info", MemoryCategory.Project);
 
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
         _store.Setup(s => s.SearchAsync(
                 UserId, query, fakeEmbedding, null,
                 It.Is<IEnumerable<string>>(t => t.SequenceEqual(parsedTags)),
                 null, 100, It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MemorySearchResult(memory, 0.9)]);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        StubDelete("mem1");
 
-        var tool = CreateTool();
-        var result = await tool.Run(query: query, tags: "work,project");
+        var result = await CreateTool().Run(query: query, tags: "work,project");
 
         _store.Verify(s => s.SearchAsync(
             UserId, query, fakeEmbedding, null,
@@ -70,26 +77,41 @@ public class MemoryForgetToolTests
     }
 
     [Fact]
+    public async Task Run_WithCategories_PassesCategoriesToSearchAsync()
+    {
+        var query = "stuff";
+        var fakeEmbedding = StubEmbedding(query, 0.1f);
+        var memory = CreateMemory("mem1", "A preference", MemoryCategory.Preference);
+
+        _store.Setup(s => s.SearchAsync(
+                UserId, query, fakeEmbedding,
+                It.Is<IEnumerable<MemoryCategory>>(c => c.SequenceEqual(new[] { MemoryCategory.Preference })),
+                null, null, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new MemorySearchResult(memory, 0.9)]);
+        StubDelete("mem1");
+
+        var result = await CreateTool().Run(query: query, categories: [MemoryCategory.Preference]);
+
+        result["affectedCount"]!.GetValue<int>().ShouldBe(1);
+    }
+
+    [Fact]
     public async Task Run_WithMaxImportance_FiltersOutHighImportanceMemories()
     {
         var query = "stuff";
-        var fakeEmbedding = new float[] { 0.1f };
+        var fakeEmbedding = StubEmbedding(query, 0.1f);
         var lowImportance = CreateMemory("mem1", "Low importance", MemoryCategory.Event, importance: 0.3);
         var highImportance = CreateMemory("mem2", "High importance", MemoryCategory.Instruction, importance: 0.9);
 
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
         _store.Setup(s => s.SearchAsync(
                 UserId, query, fakeEmbedding, null, null, null, 100, It.IsAny<CancellationToken>()))
             .ReturnsAsync([
                 new MemorySearchResult(lowImportance, 0.8),
                 new MemorySearchResult(highImportance, 0.7)
             ]);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        StubDelete("mem1");
 
-        var tool = CreateTool();
-        var result = await tool.Run(query: query, maxImportance: 0.5);
+        var result = await CreateTool().Run(query: query, maxImportance: 0.5);
 
         result["affectedCount"]!.GetValue<int>().ShouldBe(1);
         _store.Verify(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()), Times.Once);
@@ -100,51 +122,24 @@ public class MemoryForgetToolTests
     public async Task Run_WithOlderThan_FiltersOutRecentMemories()
     {
         var query = "stuff";
-        var fakeEmbedding = new float[] { 0.1f };
+        var fakeEmbedding = StubEmbedding(query, 0.1f);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-7);
         var oldMemory = CreateMemory("mem1", "Old memory", MemoryCategory.Fact, createdAt: cutoff.AddDays(-1));
         var newMemory = CreateMemory("mem2", "New memory", MemoryCategory.Fact, createdAt: cutoff.AddDays(1));
 
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
         _store.Setup(s => s.SearchAsync(
                 UserId, query, fakeEmbedding, null, null, null, 100, It.IsAny<CancellationToken>()))
             .ReturnsAsync([
                 new MemorySearchResult(oldMemory, 0.8),
                 new MemorySearchResult(newMemory, 0.7)
             ]);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        StubDelete("mem1");
 
-        var tool = CreateTool();
-        var result = await tool.Run(query: query, olderThan: cutoff.ToString("O"));
+        var result = await CreateTool().Run(query: query, olderThan: cutoff.ToString("O"));
 
         result["affectedCount"]!.GetValue<int>().ShouldBe(1);
         _store.Verify(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.DeleteAsync(UserId, "mem2", It.IsAny<CancellationToken>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task Run_WithCategories_PassesCategoriesToSearchAsync()
-    {
-        var query = "stuff";
-        var fakeEmbedding = new float[] { 0.1f };
-        var memory = CreateMemory("mem1", "A preference", MemoryCategory.Preference);
-
-        _embedding.Setup(e => e.GenerateEmbeddingAsync(query, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(fakeEmbedding);
-        _store.Setup(s => s.SearchAsync(
-                UserId, query, fakeEmbedding,
-                It.Is<IEnumerable<MemoryCategory>>(c => c.SequenceEqual(new[] { MemoryCategory.Preference })),
-                null, null, 100, It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new MemorySearchResult(memory, 0.9)]);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        var tool = CreateTool();
-        var result = await tool.Run(query: query, categories: [MemoryCategory.Preference]);
-
-        result["affectedCount"]!.GetValue<int>().ShouldBe(1);
     }
 
     [Fact]
@@ -154,11 +149,9 @@ public class MemoryForgetToolTests
 
         _store.Setup(s => s.GetByIdAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(memory);
-        _store.Setup(s => s.DeleteAsync(UserId, "mem1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+        StubDelete("mem1");
 
-        var tool = CreateTool();
-        var result = await tool.Run(memoryId: "mem1");
+        var result = await CreateTool().Run(memoryId: "mem1");
 
         result["affectedCount"]!.GetValue<int>().ShouldBe(1);
         _embedding.Verify(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -171,8 +164,7 @@ public class MemoryForgetToolTests
     [Fact]
     public async Task Run_NoMemoryIdOrQuery_ReturnsError()
     {
-        var tool = CreateTool();
-        var result = await tool.Run();
+        var result = await CreateTool().Run();
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
@@ -185,8 +177,7 @@ public class MemoryForgetToolTests
     [InlineData("   ")]
     public async Task Run_MissingUserIdInFeatureConfig_ReturnsUnavailableAndDoesNotTouchStore(string? userId)
     {
-        var tool = CreateTool(userId);
-        var result = await tool.Run(memoryId: "mem1");
+        var result = await CreateTool(userId).Run(memoryId: "mem1");
 
         result["ok"]!.GetValue<bool>().ShouldBeFalse();
         result["errorCode"]!.GetValue<string>().ShouldBe("unavailable");

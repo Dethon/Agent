@@ -76,70 +76,84 @@ public sealed class StreamResumeServiceTests : IDisposable
 
     #region Resume Guard Tests
 
-    [Fact]
-    public async Task TryResumeStreamAsync_WhenAlreadyResuming_DoesNotDuplicateResume()
+    public enum StreamResumePrecondition
     {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new StartResuming("topic-1"));
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        // Should exit early without doing any work
-        _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
+        AlreadyResuming,
+        AlreadyStreaming,
+        NoStreamState,
+        NotProcessingAndNoBuffer,
     }
 
-    [Fact]
-    public async Task TryResumeStreamAsync_WhenAlreadyStreaming_DoesNotResume()
+    [Theory]
+    [InlineData(StreamResumePrecondition.AlreadyResuming)]
+    [InlineData(StreamResumePrecondition.AlreadyStreaming)]
+    [InlineData(StreamResumePrecondition.NoStreamState)]
+    [InlineData(StreamResumePrecondition.NotProcessingAndNoBuffer)]
+    public async Task TryResumeStreamAsync_NoOpsWhenPreconditionNotMet(StreamResumePrecondition precondition)
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new StreamStarted("topic-1"));
-
-        // Set up stream state that would normally trigger resume
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "buffered" }],
-            "msg-1",
-            "prompt",
-            null));
+        ApplyPrecondition(precondition);
 
         await _resumeService.TryResumeStreamAsync(topic);
 
-        // Streaming was already true, should not have processed buffer
-        // (in real scenario, the existing stream handles it)
+        // Across every precondition above, the service must NOT process a buffer or
+        // dispatch any StreamChunk for topic-1. The pre-existing StreamingContent (only
+        // present in the AlreadyStreaming case, where StreamStarted creates an empty one)
+        // stays at its default empty state.
+        var streaming = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
+        (streaming?.HasContent ?? false).ShouldBeFalse();
     }
 
-    [Fact]
-    public async Task TryResumeStreamAsync_WhenNoStreamState_DoesNothing()
+    private void ApplyPrecondition(StreamResumePrecondition precondition)
     {
-        var topic = CreateTopic(topicId: "topic-1");
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task TryResumeStreamAsync_WhenNotProcessingAndNoBuffer_DoesNothing()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _messagingService.SetStreamState("topic-1", new StreamState(false, [], "msg-1", null, null));
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
+        switch (precondition)
+        {
+            case StreamResumePrecondition.AlreadyResuming:
+                _dispatcher.Dispatch(new StartResuming("topic-1"));
+                break;
+            case StreamResumePrecondition.AlreadyStreaming:
+                _dispatcher.Dispatch(new StreamStarted("topic-1"));
+                // Stream state that would normally trigger resume; existing stream owns it.
+                _messagingService.SetStreamState("topic-1", new StreamState(
+                    true,
+                    [new ChatStreamMessage { Content = "buffered" }],
+                    "msg-1",
+                    "prompt",
+                    null));
+                break;
+            case StreamResumePrecondition.NoStreamState:
+                // Intentionally no setup — service has no buffer to resume from.
+                break;
+            case StreamResumePrecondition.NotProcessingAndNoBuffer:
+                _messagingService.SetStreamState("topic-1", new StreamState(false, [], "msg-1", null, null));
+                break;
+        }
     }
 
     #endregion
 
     #region History Loading Tests
 
-    [Fact]
-    public async Task TryResumeStreamAsync_LoadsHistoryIfNeeded()
+    [Theory]
+    [InlineData(false)] // No existing messages → should load from history.
+    [InlineData(true)]  // Existing messages → should keep them, not reload from history.
+    public async Task TryResumeStreamAsync_LoadsHistoryOnlyWhenMessagesAreEmpty(bool hasExistingMessages)
     {
         var topic = CreateTopic(topicId: "topic-1");
-        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("1", "user", "Hello", null, null),
-            new ChatHistoryMessage("2", "assistant", "Hi", null, null));
+        if (hasExistingMessages)
+        {
+            _dispatcher.Dispatch(new MessagesLoaded("topic-1", [
+                new ChatMessageModel { Role = "user", Content = "Existing" }
+            ]));
+            _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+                new ChatHistoryMessage("1", "user", "Different content", null, null));
+        }
+        else
+        {
+            _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+                new ChatHistoryMessage("1", "user", "Hello", null, null),
+                new ChatHistoryMessage("2", "assistant", "Hi", null, null));
+        }
         _messagingService.SetStreamState("topic-1", new StreamState(
             true,
             [
@@ -153,33 +167,16 @@ public sealed class StreamResumeServiceTests : IDisposable
         await _resumeService.TryResumeStreamAsync(topic);
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
-        messages.Count.ShouldBeGreaterThanOrEqualTo(2);
-    }
-
-    [Fact]
-    public async Task TryResumeStreamAsync_DoesNotReloadIfMessagesExist()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [
-            new ChatMessageModel { Role = "user", Content = "Existing" }
-        ]));
-        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
-            new ChatHistoryMessage("1", "user", "Different content", null, null));
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [
-                new ChatStreamMessage { Content = "new", MessageId = "msg-1" },
-                new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
-            ],
-            "msg-1",
-            null,
-            null));
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
-        // Should keep existing messages, not replace with history
-        var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault("topic-1") ?? [];
-        messages.ShouldContain(m => m.Content == "Existing");
+        if (hasExistingMessages)
+        {
+            // Existing messages preserved; history NOT used to replace them.
+            messages.ShouldContain(m => m.Content == "Existing");
+        }
+        else
+        {
+            // History was loaded — both history entries are present.
+            messages.Count.ShouldBeGreaterThanOrEqualTo(2);
+        }
     }
 
     #endregion
@@ -386,7 +383,7 @@ public sealed class StreamResumeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task TryResumeStreamAsync_OnComplete_StopsResuming()
+    public async Task TryResumeStreamAsync_OnComplete_StopsResumingAndStreaming()
     {
         var topic = CreateTopic(topicId: "topic-1");
         _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
@@ -403,25 +400,6 @@ public sealed class StreamResumeServiceTests : IDisposable
         await _resumeService.TryResumeStreamAsync(topic);
 
         _streamingStore.State.ResumingTopics.Contains("topic-1").ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task TryResumeStreamAsync_OnComplete_StopsStreaming()
-    {
-        var topic = CreateTopic(topicId: "topic-1");
-        _dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
-        _messagingService.SetStreamState("topic-1", new StreamState(
-            true,
-            [new ChatStreamMessage { Content = "content", MessageId = "msg-1" }],
-            "msg-1",
-            null,
-            null));
-
-        _messagingService.EnqueueMessages(
-            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
-
-        await _resumeService.TryResumeStreamAsync(topic);
-
         _streamingStore.State.StreamingTopics.Contains("topic-1").ShouldBeFalse();
     }
 
