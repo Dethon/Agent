@@ -12,6 +12,9 @@ namespace Tests.Unit.Observability.Services;
 
 public class MetricsCollectorServiceTests
 {
+    private static readonly DateTimeOffset FixedTimestamp = new(2026, 3, 15, 10, 0, 0, TimeSpan.Zero);
+    private const string FixedDate = "2026-03-15";
+
     private readonly Mock<IDatabase> _db = new();
     private readonly Mock<IConnectionMultiplexer> _redis = new();
     private readonly Mock<IHubContext<MetricsHub>> _hubContext = new();
@@ -32,73 +35,271 @@ public class MetricsCollectorServiceTests
             NullLogger<MetricsCollectorService>.Instance);
     }
 
-    [Fact]
-    public async Task ProcessEventAsync_TokenUsage_IncrementsDailyTotalsHash()
+    public sealed record HashIncrementCase(
+        string Name,
+        MetricEvent Event,
+        IReadOnlyList<(string Field, long Value)> ExpectedIncrements)
     {
-        var evt = new TokenUsageEvent
-        {
-            Sender = "alice",
-            Model = "gpt-4",
-            InputTokens = 100,
-            OutputTokens = 50,
-            Cost = 0.0025m,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tokens:input", 100, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tokens:output", 50, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tokens:cost", 25, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tokens:byUser:alice", 150, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tokens:byModel:gpt-4", 150, It.IsAny<CommandFlags>()), Times.Once);
+        public override string ToString() => Name;
     }
 
-    [Fact]
-    public async Task ProcessEventAsync_TokenUsage_AddsSortedSetEntry()
+    public static TheoryData<HashIncrementCase> HashIncrementCases => new()
     {
-        var evt = new TokenUsageEvent
-        {
-            Sender = "alice",
-            Model = "gpt-4",
-            InputTokens = 100,
-            OutputTokens = 50,
-            Cost = 0.01m,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
+        new HashIncrementCase(
+            "TokenUsage",
+            new TokenUsageEvent
+            {
+                Sender = "alice",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.0025m,
+                Timestamp = FixedTimestamp
+            },
+            [
+                ("tokens:input", 100),
+                ("tokens:output", 50),
+                ("tokens:cost", 25),
+                ("tokens:byUser:alice", 150),
+                ("tokens:byModel:gpt-4", 150)
+            ]),
+        new HashIncrementCase(
+            "MemoryRecall",
+            new MemoryRecallEvent
+            {
+                DurationMs = 250,
+                MemoryCount = 5,
+                UserId = "alice",
+                Timestamp = FixedTimestamp
+            },
+            [
+                ("memory:recalls", 1),
+                ("memory:recallDuration", 250),
+                ("memory:recallMemories", 5),
+                ("memory:byUser:alice", 1)
+            ]),
+        new HashIncrementCase(
+            "MemoryExtraction",
+            new MemoryExtractionEvent
+            {
+                DurationMs = 1500,
+                CandidateCount = 8,
+                StoredCount = 3,
+                UserId = "bob",
+                Timestamp = FixedTimestamp
+            },
+            [
+                ("memory:extractions", 1),
+                ("memory:extractionDuration", 1500),
+                ("memory:candidates", 8),
+                ("memory:stored", 3),
+                ("memory:byUser:bob", 1)
+            ]),
+        new HashIncrementCase(
+            "MemoryDreaming",
+            new MemoryDreamingEvent
+            {
+                MergedCount = 7,
+                DecayedCount = 3,
+                ProfileRegenerated = true,
+                UserId = "alice",
+                Timestamp = FixedTimestamp
+            },
+            [
+                ("memory:dreamings", 1),
+                ("memory:merged", 7),
+                ("memory:decayed", 3),
+                ("memory:profileRegens", 1)
+            ]),
+        new HashIncrementCase(
+            "Latency",
+            new LatencyEvent
+            {
+                Stage = LatencyStage.LlmTotal,
+                DurationMs = 1500,
+                Model = "anthropic/claude",
+                Timestamp = FixedTimestamp
+            },
+            [
+                ("latency:LlmTotal:count", 1),
+                ("latency:LlmTotal:totalMs", 1500)
+            ])
+    };
 
-        await _sut.ProcessEventAsync(evt, _db.Object);
+    [Theory]
+    [MemberData(nameof(HashIncrementCases))]
+    public async Task ProcessEventAsync_IncrementsExpectedDailyTotalsHashFields(HashIncrementCase @case)
+    {
+        await _sut.ProcessEventAsync(@case.Event, _db.Object);
+
+        foreach (var (field, value) in @case.ExpectedIncrements)
+        {
+            _db.Verify(d => d.HashIncrementAsync(
+                $"metrics:totals:{FixedDate}", field, value, It.IsAny<CommandFlags>()), Times.Once);
+        }
+    }
+
+    public sealed record SortedSetCase(
+        string Name,
+        MetricEvent Event,
+        string ExpectedKey,
+        string ExpectedPayloadFragment)
+    {
+        public override string ToString() => Name;
+    }
+
+    public static TheoryData<SortedSetCase> SortedSetCases => new()
+    {
+        new SortedSetCase(
+            "TokenUsage",
+            new TokenUsageEvent
+            {
+                Sender = "alice",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.01m,
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:tokens:{FixedDate}",
+            "\"sender\":\"alice\""),
+        new SortedSetCase(
+            "ScheduleExecution",
+            new ScheduleExecutionEvent
+            {
+                ScheduleId = "sched-1",
+                Prompt = "Do something",
+                DurationMs = 5000,
+                Success = true,
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:schedules:{FixedDate}",
+            string.Empty),
+        new SortedSetCase(
+            "MemoryRecall",
+            new MemoryRecallEvent
+            {
+                DurationMs = 250,
+                MemoryCount = 5,
+                UserId = "alice",
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:memory-recall:{FixedDate}",
+            "\"userId\":\"alice\""),
+        new SortedSetCase(
+            "MemoryExtraction",
+            new MemoryExtractionEvent
+            {
+                DurationMs = 1500,
+                CandidateCount = 8,
+                StoredCount = 3,
+                UserId = "bob",
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:memory-extraction:{FixedDate}",
+            "\"userId\":\"bob\""),
+        new SortedSetCase(
+            "MemoryDreaming",
+            new MemoryDreamingEvent
+            {
+                MergedCount = 7,
+                DecayedCount = 3,
+                ProfileRegenerated = true,
+                UserId = "alice",
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:memory-dreaming:{FixedDate}",
+            "\"userId\":\"alice\""),
+        new SortedSetCase(
+            "Latency",
+            new LatencyEvent
+            {
+                Stage = LatencyStage.LlmTotal,
+                DurationMs = 1500,
+                Model = "anthropic/claude",
+                Timestamp = FixedTimestamp
+            },
+            $"metrics:latency:{FixedDate}",
+            "\"type\":\"latency\"")
+    };
+
+    [Theory]
+    [MemberData(nameof(SortedSetCases))]
+    public async Task ProcessEventAsync_AddsSortedSetEntryForDay(SortedSetCase @case)
+    {
+        await _sut.ProcessEventAsync(@case.Event, _db.Object);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:tokens:2026-03-15",
-            It.Is<RedisValue>(v => v.ToString().Contains("\"sender\":\"alice\"")),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
+            @case.ExpectedKey,
+            It.Is<RedisValue>(v => string.IsNullOrEmpty(@case.ExpectedPayloadFragment)
+                || v.ToString().Contains(@case.ExpectedPayloadFragment)),
+            @case.Event.Timestamp.ToUnixTimeMilliseconds(),
             It.IsAny<SortedSetWhen>(),
             It.IsAny<CommandFlags>()), Times.Once);
     }
 
-    [Fact]
-    public async Task ProcessEventAsync_TokenUsage_ForwardsToSignalR()
+    public sealed record SignalRForwardCase(string Name, MetricEvent Event, string ExpectedMethod)
     {
-        var evt = new TokenUsageEvent
-        {
-            Sender = "alice",
-            Model = "gpt-4",
-            InputTokens = 100,
-            OutputTokens = 50,
-            Cost = 0.01m
-        };
+        public override string ToString() => Name;
+    }
 
-        await _sut.ProcessEventAsync(evt, _db.Object);
+    public static TheoryData<SignalRForwardCase> SignalRForwardCases => new()
+    {
+        new SignalRForwardCase(
+            "TokenUsage",
+            new TokenUsageEvent
+            {
+                Sender = "alice",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.01m
+            },
+            "OnTokenUsage"),
+        new SignalRForwardCase(
+            "MemoryRecall",
+            new MemoryRecallEvent
+            {
+                DurationMs = 250,
+                MemoryCount = 5,
+                UserId = "alice"
+            },
+            "OnMemoryRecall"),
+        new SignalRForwardCase(
+            "MemoryExtraction",
+            new MemoryExtractionEvent
+            {
+                DurationMs = 1500,
+                CandidateCount = 8,
+                StoredCount = 3,
+                UserId = "bob"
+            },
+            "OnMemoryExtraction"),
+        new SignalRForwardCase(
+            "MemoryDreaming",
+            new MemoryDreamingEvent
+            {
+                MergedCount = 7,
+                DecayedCount = 3,
+                ProfileRegenerated = true,
+                UserId = "alice"
+            },
+            "OnMemoryDreaming"),
+        new SignalRForwardCase(
+            "Latency",
+            new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 42 },
+            "OnLatency")
+    };
+
+    [Theory]
+    [MemberData(nameof(SignalRForwardCases))]
+    public async Task ProcessEventAsync_ForwardsEventToSignalR(SignalRForwardCase @case)
+    {
+        await _sut.ProcessEventAsync(@case.Event, _db.Object);
 
         _clientProxy.Verify(c => c.SendCoreAsync(
-            "OnTokenUsage",
-            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
+            @case.ExpectedMethod,
+            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], @case.Event)),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -108,7 +309,7 @@ public class MetricsCollectorServiceTests
         var evt = new HeartbeatEvent
         {
             Service = "agent-1",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+            Timestamp = FixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -132,7 +333,7 @@ public class MetricsCollectorServiceTests
             Service = "agent",
             ErrorType = "NullRef",
             Message = "Object reference not set",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+            Timestamp = FixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
@@ -147,7 +348,7 @@ public class MetricsCollectorServiceTests
             "metrics:errors:recent", 0, 99, It.IsAny<CommandFlags>()), Times.Once);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:errors:2026-03-15",
+            $"metrics:errors:{FixedDate}",
             It.IsAny<RedisValue>(),
             evt.Timestamp.ToUnixTimeMilliseconds(),
             It.IsAny<SortedSetWhen>(),
@@ -155,26 +356,34 @@ public class MetricsCollectorServiceTests
     }
 
     [Fact]
-    public async Task ProcessEventAsync_ToolCall_IncrementsCountAndByName()
+    public async Task ProcessEventAsync_ToolCall_Success_IncrementsCountAndByNameOnly()
     {
         var evt = new ToolCallEvent
         {
             ToolName = "search",
             DurationMs = 150,
             Success = true,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+            Timestamp = FixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tools:count", 1, It.IsAny<CommandFlags>()), Times.Once);
+            $"metrics:totals:{FixedDate}", "tools:count", 1, It.IsAny<CommandFlags>()), Times.Once);
         _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tools:byName:search", 1, It.IsAny<CommandFlags>()), Times.Once);
+            $"metrics:totals:{FixedDate}", "tools:byName:search", 1, It.IsAny<CommandFlags>()), Times.Once);
+        _db.Verify(d => d.HashIncrementAsync(
+            $"metrics:totals:{FixedDate}", "tools:errors", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
+        _db.Verify(d => d.SortedSetAddAsync(
+            It.Is<RedisKey>(k => k.ToString().StartsWith("metrics:errors:")),
+            It.IsAny<RedisValue>(),
+            It.IsAny<double>(),
+            It.IsAny<SortedSetWhen>(),
+            It.IsAny<CommandFlags>()), Times.Never);
     }
 
     [Fact]
-    public async Task ProcessEventAsync_ToolCall_Failure_IncrementsErrors()
+    public async Task ProcessEventAsync_ToolCall_Failure_IncrementsErrorsAndCreatesErrorEvent()
     {
         var evt = new ToolCallEvent
         {
@@ -182,31 +391,16 @@ public class MetricsCollectorServiceTests
             DurationMs = 150,
             Success = false,
             Error = "timeout",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+            Timestamp = FixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tools:errors", 1, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_ToolCall_Failure_CreatesErrorEvent()
-    {
-        var evt = new ToolCallEvent
-        {
-            ToolName = "search",
-            DurationMs = 150,
-            Success = false,
-            Error = "timeout",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
+            $"metrics:totals:{FixedDate}", "tools:errors", 1, It.IsAny<CommandFlags>()), Times.Once);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:errors:2026-03-15",
+            $"metrics:errors:{FixedDate}",
             It.Is<RedisValue>(v => v.ToString().Contains("\"errorType\":\"search\"")
                 && v.ToString().Contains("\"message\":\"timeout\"")),
             evt.Timestamp.ToUnixTimeMilliseconds(),
@@ -220,219 +414,6 @@ public class MetricsCollectorServiceTests
     }
 
     [Fact]
-    public async Task ProcessEventAsync_ToolCall_Success_DoesNotCreateErrorEvent()
-    {
-        var evt = new ToolCallEvent
-        {
-            ToolName = "search",
-            DurationMs = 150,
-            Success = true,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            It.Is<RedisKey>(k => k.ToString().StartsWith("metrics:errors:")),
-            It.IsAny<RedisValue>(),
-            It.IsAny<double>(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_ToolCall_Success_DoesNotIncrementErrors()
-    {
-        var evt = new ToolCallEvent
-        {
-            ToolName = "search",
-            DurationMs = 150,
-            Success = true,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "tools:errors", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_ScheduleExecution_AddsSortedSetEntry()
-    {
-        var evt = new ScheduleExecutionEvent
-        {
-            ScheduleId = "sched-1",
-            Prompt = "Do something",
-            DurationMs = 5000,
-            Success = true,
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:schedules:2026-03-15",
-            It.IsAny<RedisValue>(),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryRecall_IncrementsDailyTotals()
-    {
-        var evt = new MemoryRecallEvent
-        {
-            DurationMs = 250,
-            MemoryCount = 5,
-            UserId = "alice",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:recalls", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:recallDuration", 250, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:recallMemories", 5, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:byUser:alice", 1, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryRecall_AddsSortedSetEntry()
-    {
-        var evt = new MemoryRecallEvent
-        {
-            DurationMs = 250,
-            MemoryCount = 5,
-            UserId = "alice",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:memory-recall:2026-03-15",
-            It.Is<RedisValue>(v => v.ToString().Contains("\"userId\":\"alice\"")),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryRecall_ForwardsToSignalR()
-    {
-        var evt = new MemoryRecallEvent
-        {
-            DurationMs = 250,
-            MemoryCount = 5,
-            UserId = "alice"
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _clientProxy.Verify(c => c.SendCoreAsync(
-            "OnMemoryRecall",
-            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryExtraction_IncrementsDailyTotals()
-    {
-        var evt = new MemoryExtractionEvent
-        {
-            DurationMs = 1500,
-            CandidateCount = 8,
-            StoredCount = 3,
-            UserId = "bob",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:extractions", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:extractionDuration", 1500, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:candidates", 8, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:stored", 3, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:byUser:bob", 1, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryExtraction_AddsSortedSetEntry()
-    {
-        var evt = new MemoryExtractionEvent
-        {
-            DurationMs = 1500,
-            CandidateCount = 8,
-            StoredCount = 3,
-            UserId = "bob",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:memory-extraction:2026-03-15",
-            It.Is<RedisValue>(v => v.ToString().Contains("\"userId\":\"bob\"")),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryExtraction_ForwardsToSignalR()
-    {
-        var evt = new MemoryExtractionEvent
-        {
-            DurationMs = 1500,
-            CandidateCount = 8,
-            StoredCount = 3,
-            UserId = "bob"
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _clientProxy.Verify(c => c.SendCoreAsync(
-            "OnMemoryExtraction",
-            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryDreaming_IncrementsDailyTotals()
-    {
-        var evt = new MemoryDreamingEvent
-        {
-            MergedCount = 7,
-            DecayedCount = 3,
-            ProfileRegenerated = true,
-            UserId = "alice",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:dreamings", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:merged", 7, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:decayed", 3, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:profileRegens", 1, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
     public async Task ProcessEventAsync_MemoryDreaming_NoProfileRegen_DoesNotIncrementRegens()
     {
         var evt = new MemoryDreamingEvent
@@ -441,106 +422,12 @@ public class MetricsCollectorServiceTests
             DecayedCount = 1,
             ProfileRegenerated = false,
             UserId = "bob",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
+            Timestamp = FixedTimestamp
         };
 
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "memory:profileRegens", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryDreaming_AddsSortedSetEntry()
-    {
-        var evt = new MemoryDreamingEvent
-        {
-            MergedCount = 7,
-            DecayedCount = 3,
-            ProfileRegenerated = true,
-            UserId = "alice",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:memory-dreaming:2026-03-15",
-            It.Is<RedisValue>(v => v.ToString().Contains("\"userId\":\"alice\"")),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_MemoryDreaming_ForwardsToSignalR()
-    {
-        var evt = new MemoryDreamingEvent
-        {
-            MergedCount = 7,
-            DecayedCount = 3,
-            ProfileRegenerated = true,
-            UserId = "alice"
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _clientProxy.Verify(c => c.SendCoreAsync(
-            "OnMemoryDreaming",
-            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Latency_IncrementsDailyTotals()
-    {
-        var evt = new LatencyEvent
-        {
-            Stage = LatencyStage.LlmTotal,
-            DurationMs = 1500,
-            Model = "anthropic/claude",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "latency:LlmTotal:count", 1, It.IsAny<CommandFlags>()), Times.Once);
-        _db.Verify(d => d.HashIncrementAsync(
-            "metrics:totals:2026-03-15", "latency:LlmTotal:totalMs", 1500, It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Latency_AddsSortedSetEntry()
-    {
-        var evt = new LatencyEvent
-        {
-            Stage = LatencyStage.LlmTotal,
-            DurationMs = 1500,
-            Model = "anthropic/claude",
-            Timestamp = new DateTimeOffset(2026, 3, 15, 10, 0, 0, TimeSpan.Zero)
-        };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:latency:2026-03-15",
-            It.Is<RedisValue>(v => v.ToString().Contains("\"type\":\"latency\"")),
-            evt.Timestamp.ToUnixTimeMilliseconds(),
-            It.IsAny<SortedSetWhen>(),
-            It.IsAny<CommandFlags>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task ProcessEventAsync_Latency_ForwardsToSignalR()
-    {
-        var evt = new LatencyEvent { Stage = LatencyStage.MemoryRecall, DurationMs = 42 };
-
-        await _sut.ProcessEventAsync(evt, _db.Object);
-
-        _clientProxy.Verify(c => c.SendCoreAsync(
-            "OnLatency",
-            It.Is<object[]>(args => args.Length == 1 && ReferenceEquals(args[0], evt)),
-            It.IsAny<CancellationToken>()), Times.Once);
+            $"metrics:totals:{FixedDate}", "memory:profileRegens", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
     }
 }
