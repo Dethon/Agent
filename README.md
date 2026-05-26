@@ -71,13 +71,11 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │  Discovers filesystem:// resources │
               │  Mounts → Registry → Domain tools  │
               └────────────────────────────────────┘
-
               ┌────────────────────────────────────┐
               │       Memory (built-in)            │
               │  Extract → Store → Recall → Dream  │
               │         Redis Vector Store         │
               └────────────────────────────────────┘
-
                      ┌─────────────────────────────────┐
   metrics:events     │       Observability             │
   (Redis Pub/Sub)───▶│  Collector → Redis Aggregation  │──▶ Dashboard (PWA)
