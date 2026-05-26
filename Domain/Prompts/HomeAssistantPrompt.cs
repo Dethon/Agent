@@ -16,6 +16,14 @@ public static class HomeAssistantPrompt
         device directory under `/ha/areas/<room>/...` and `/ha/entities/<class>/...`
         — use that summary to prevent unnecessary exploration.
 
+        ### Scope
+
+        Do exactly what the user asked — nothing more. If they say "turn on the AC",
+        call `turn_on.sh` and stop; don't pick a mode or set a temperature. If they
+        say "turn on the AC and set it to 22", do both. Only infer additional actions
+        when the request itself requires them (e.g. "cool the room" implies choosing
+        mode/target).
+
         ### Layout
 
         - `/ha/entities/<class>/<id>/` — one directory per entity (e.g.
@@ -74,8 +82,5 @@ public static class HomeAssistantPrompt
           Whenever an action argument names a room or area, pass that slug, never the display
           name (e.g. a vacuum's `--cleaning_area_id salon`). In `--help`, such arguments are
           typed `AREA_ID (slug)`.
-        - Climate: read the ambient (a room temperature sensor, or the climate entity's
-          `current_temperature`) before choosing a direction; set heating targets above
-          ambient and cooling targets below; change mode first if it conflicts.
         """;
 }
