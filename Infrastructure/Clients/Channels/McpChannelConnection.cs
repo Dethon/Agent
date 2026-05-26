@@ -135,16 +135,21 @@ public sealed class McpChannelConnection(string channelId, ILogger<McpChannelCon
         CancellationToken ct)
     {
         EnsureConnected();
+        // send_reply fires once per streamed content chunk (hundreds per response). Building
+        // the args dictionary directly avoids ChannelProtocol.ToArguments's reflection
+        // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
+        // identical (same camelCase keys, ContentType.ToString() matches the
+        // JsonStringEnumConverter output).
         await _client!.CallToolAsync(
             ChannelProtocol.SendReplyTool,
-            ChannelProtocol.ToArguments(new SendReplyParams
+            new Dictionary<string, object?>
             {
-                ConversationId = conversationId,
-                Content = content,
-                ContentType = contentType,
-                IsComplete = isComplete,
-                MessageId = messageId
-            }),
+                ["conversationId"] = conversationId,
+                ["content"] = content,
+                ["contentType"] = contentType.ToString(),
+                ["isComplete"] = isComplete,
+                ["messageId"] = messageId
+            },
             cancellationToken: ct);
     }
 
