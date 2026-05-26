@@ -169,11 +169,10 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
         output.WriteLine(rendered);
 
         rendered.ShouldContain("## Current Home Assistant setup");
-        rendered.ShouldContain("### Rooms");
-        rendered.ShouldContain("### Device classes");
-        // Both seeded entities — the input_boolean and the script — must appear.
-        rendered.ShouldContain("input_boolean");
-        rendered.ShouldContain("script");
+        rendered.ShouldContain("/ha/entities/");
+        // Both seeded entities — the input_boolean and the script — must appear under /ha/entities.
+        rendered.ShouldContain("/ha/entities/input_boolean/");
+        rendered.ShouldContain("/ha/entities/script/");
     }
 
     [Fact]
