@@ -26,6 +26,7 @@ public class PlaywrightWebBrowserTests(
         return $"test-{Guid.NewGuid():N}";
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithSimplePage_ReturnsContent()
     {
@@ -55,6 +56,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithWikipedia_ReturnsContent()
     {
@@ -81,6 +83,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithCssSelector_ExtractsSpecificContent()
     {
@@ -107,6 +110,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_SessionPersistsAcrossCalls()
     {
@@ -146,6 +150,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task GetCurrentPageAsync_WithValidSession_ReturnsContent()
     {
@@ -175,6 +180,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task GetCurrentPageAsync_WithNoSession_ReturnsSessionNotFound()
     {
@@ -186,6 +192,7 @@ public class PlaywrightWebBrowserTests(
         result.ErrorMessage.ShouldNotBeNullOrEmpty();
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task CloseSessionAsync_ClosesSession()
     {
@@ -208,6 +215,7 @@ public class PlaywrightWebBrowserTests(
         result.Status.ShouldBe(BrowseStatus.SessionNotFound);
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithInvalidUrl_ReturnsError()
     {
@@ -225,6 +233,7 @@ public class PlaywrightWebBrowserTests(
         result.ErrorMessage!.ShouldContain("http");
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_WithNonexistentDomain_ReturnsError()
     {
@@ -248,6 +257,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_MultipleSessions_AreIndependent()
     {
@@ -288,6 +298,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task NavigateAsync_ParallelSessions_AllSucceedIndependently()
     {
@@ -340,6 +351,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task SnapshotAsync_ParallelSessions_ReturnIndependentSnapshots()
     {
@@ -393,6 +405,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableFact]
     public async Task ActionAsync_ParallelSessions_ExecuteIndependently()
     {
@@ -458,6 +471,7 @@ public class PlaywrightWebBrowserTests(
         }
     }
 
+    [Trait("Category", "External")]
     [SkippableTheory]
     [InlineData("https://en.wikipedia.org/wiki/Stranger_Things_season_5")]
     [InlineData("https://en.wikipedia.org/wiki/Web_browser")]
