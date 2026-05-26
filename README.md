@@ -15,7 +15,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **MCP Resource Subscriptions** - Real-time updates from MCP servers via resource subscriptions
 - **Download Resubscription** - Resume tracking in-progress downloads after restart
 - **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
-- **Home Assistant Control** - Drive a Home Assistant instance via generic entity/service tools, with a per-user dynamic setup summary (climate setpoint-vs-ambient rules, friendly names, selector metadata) injected into the system prompt
+- **Home Assistant Control** - Drive a Home Assistant instance as a virtual filesystem (`filesystem://ha`, mounted at `/ha`) — entities and areas are directories, `state.json` is the live state, and each available service is a `<service>.sh` action file invoked via `fs_exec`. A directory-listing setup index is injected into the system prompt so the LLM can pick devices without exploring
 - **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
 - **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, and delete. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
 - **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
@@ -30,21 +30,21 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    WebChat      │     │    Telegram     │     │  Azure Service  │
-│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ McpChannel      │     │ McpChannel      │     │ McpChannel      │
-│ SignalR         │     │ Telegram        │     │ ServiceBus      │
-│ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │    channel/message    │                       │
-         │    send_reply         │                       │
-         │    request_approval   │                       │
-         └────────────┬──────────┘───────────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    WebChat      │     │    Telegram     │     │  Azure Service  │     │ Schedule timer  │
+│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │     │   (internal)    │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │                       │
+         ▼                       ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ McpChannel      │     │ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │
+│ SignalR         │     │ Telegram        │     │ ServiceBus      │     │ (channel role — │
+│ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │    channel/message    │                       │                       │
+         │    send_reply         │                       │                       │
+         │    request_approval   │                       │                       │
+         └────────────┬──────────┘───────────────────────┘───────────────────────┘
                       │
                       ▼
               ┌───────────────┐
@@ -52,13 +52,13 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
               │ (MCP Client)  │
               └───────┬───────┘
                       │
-      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
-      ▼               ▼               ▼               ▼               ▼               ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│
-│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │             │
-│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │             │
-└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
+      ▼               ▼               ▼               ▼               ▼               ▼               ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│ │MCP Schedules│
+│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │ filesystem: │ │ filesystem: │
+│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │    //ha     │ │ //schedules │
+└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └─────────────┘
        │                               │               │               │               │
 ┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐
 │ qBittorrent │                 │Linux sandbox│ │  Camoufox   │ │  Idealista  │ │HomeAssistant│
@@ -66,23 +66,17 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 │ FileBrowser │                 │   fs_exec   │ │   browser)  │ └─────────────┘ └─────────────┘
 └─────────────┘                 └─────────────┘ └─────────────┘
 
-              ┌───────────────────────────────────┐
-              │  Virtual Filesystem (domain)      │
+              ┌────────────────────────────────────┐
+              │  Virtual Filesystem (domain)       │
               │  Discovers filesystem:// resources │
-              │  Mounts → Registry → Domain tools │
-              └───────────────────────────────────┘
+              │  Mounts → Registry → Domain tools  │
+              └────────────────────────────────────┘
 
-              ┌───────────────────────────────────┐
-              │       Memory (built-in)           │
-              │  Extract → Store → Recall → Dream │
-              │         Redis Vector Store        │
-              └───────────────────────────────────┘
-
-              ┌───────────────────────────────────┐
-              │     Scheduling (channel + VFS)    │
-              │  Cron/one-shot → channel/message  │
-              │       filesystem://schedules      │
-              └───────────────────────────────────┘
+              ┌────────────────────────────────────┐
+              │       Memory (built-in)            │
+              │  Extract → Store → Recall → Dream  │
+              │         Redis Vector Store         │
+              └────────────────────────────────────┘
 
                      ┌─────────────────────────────────┐
   metrics:events     │       Observability             │
@@ -130,6 +124,20 @@ Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-proces
 - **As a channel** a background dispatcher polls Redis for due schedules and emits a `channel/message` to the agent. The agent runs the prompt and fans the result out to the schedule's `deliverTo` channels (e.g. `["signalr", "telegram"]`), minting conversations as needed.
 
 The `scheduling_prompt` MCP prompt teaches the LLM the `/schedules` idiom.
+
+### Home Assistant
+
+Home Assistant is exposed as the `filesystem://ha` mount (path `/ha`) by `mcp-homeassistant`, so the agent drives it with the ordinary `Vfs*` tools rather than a bespoke entity/service API. The `HaFileSystem` backend (`Domain/Tools/HomeAssistant/Vfs/`) implements `IFileSystemBackend` and returns typed `FsResult<T>` — no disk, just live HA REST calls overlaid on a cached catalog of entities/areas/services.
+
+Layout:
+
+- `/ha/entities/<class>/<object-id>_(<friendly-slug>)/` — one directory per entity, grouped by domain (e.g. `/ha/entities/light/kitchen_(kitchen)/`). The directory name carries the friendly name in `_(...)` suffix form so `glob` alone identifies a device.
+- `/ha/areas/<area-slug>/<entity-id>_(<friendly-slug>)/` — the same entities grouped by room. `<area-slug>` is the HA-assigned area `id` (a frozen slug, not the renameable display name).
+- Inside each entity directory: `state.json` (live state + attributes, fetched fresh on read) and one `<service>.sh` per available action.
+
+Workflow: `VfsGlobFiles` to find the entity → optionally `VfsTextRead` `state.json` for an input attribute → `VfsExec` `<service>.sh --help` to learn arguments → `VfsExec` `<service>.sh --arg value` from the entity directory to act. Action results come back via `exitCode` (0 success, 1 HA rejected, 2 bad argument, 124 timeout, 127 unknown action) with `{ok, changed[], response}` in `stdout`.
+
+A directory-listing setup index (`HomeAssistantSetupSummary`) is appended to the `home_assistant_guide` MCP prompt at fetch time so the LLM sees every device path without globbing first. The MCP server only exposes the filesystem (`fs_glob`, `fs_read`, `fs_info`, `fs_search`, `fs_exec`) — there are no entity-specific or service-specific tools.
 
 ### MCP Tool Servers
 
@@ -189,7 +197,7 @@ Agent routing:
 | `McpServerSandbox`       | MCP server exposing a Linux sandbox container with `fs_exec`    |
 | `McpServerWebSearch`     | MCP server for web search and browsing via Camoufox             |
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
-| `McpServerHomeAssistant` | MCP server for Home Assistant entity/service control            |
+| `McpServerHomeAssistant` | MCP server exposing Home Assistant as `filesystem://ha`         |
 | `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
