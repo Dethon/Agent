@@ -57,6 +57,7 @@ else
         },
         Xaxis = new XAxis
         {
+            Type = XAxisType.Datetime,
             Labels = new XAxisLabels { Formatter = "function(val) { return new Date(val).toLocaleDateString([], {month: 'short', day: 'numeric'}); }" }
         }
     };
