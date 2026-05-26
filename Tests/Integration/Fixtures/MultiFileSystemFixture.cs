@@ -15,6 +15,9 @@ using ModelContextProtocol.Server;
 
 namespace Tests.Integration.Fixtures;
 
+[CollectionDefinition("MultiFileSystem")]
+public class MultiFileSystemCollection : ICollectionFixture<MultiFileSystemFixture> { }
+
 public class MultiFileSystemFixture : IAsyncLifetime
 {
     private IHost _libraryHost = null!;
