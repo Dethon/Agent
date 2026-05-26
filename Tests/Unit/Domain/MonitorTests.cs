@@ -23,6 +23,7 @@ internal sealed class FakeAiAgent : DisposableAgent
     public TaskCompletionSource WarmupSignaled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TimeSpan WarmupDelay { get; init; }
     public ConcurrentQueue<string> Events { get; } = new();
+    public ConcurrentQueue<string> RestoredSessionKeys { get; } = new();
 
     public override async Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default)
     {
@@ -54,6 +55,10 @@ internal sealed class FakeAiAgent : DisposableAgent
         JsonSerializerOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        if (serializedThread.ValueKind == JsonValueKind.String && serializedThread.GetString() is { } key)
+        {
+            RestoredSessionKeys.Enqueue(key);
+        }
         return ValueTask.FromResult<AgentSession>(new FakeAgentThread());
     }
 

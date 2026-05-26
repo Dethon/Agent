@@ -110,7 +110,18 @@ public class ChatMonitor(
         var approvalHandler = approvalHandlerFactory(first.Channel, first.Message.ConversationId);
         await using var agent = agentFactory.Create(agentKey, first.Message.Sender, first.Message.AgentId, approvalHandler);
         var context = threadResolver.Resolve(agentKey);
-        var thread = await GetOrRestoreThread(agent, agentKey, ct);
+
+        // Resolve delivery targets BEFORE the thread is restored. The persistence key
+        // for chat-history must match the first delivery target's conversation id —
+        // otherwise, when a target is minted (e.g. a schedule fire with a null ReplyTo
+        // conversationId), history persists under the synthetic group id while the
+        // receiving channel (WebChat) reads history keyed on the minted id and sees
+        // an empty conversation. Resolved once per group; reused for every message.
+        var targets = await ResolveDeliveryTargetsAsync(first.Message, first.Channel, channels, ct, logger);
+        var persistenceKey = targets.Count > 0
+            ? new AgentKey(targets[0].ConversationId, first.Message.AgentId)
+            : agentKey;
+        var thread = await GetOrRestoreThread(agent, persistenceKey, ct);
 
         context.RegisterCompletionCallback(group.Complete);
 
@@ -131,16 +142,10 @@ public class ChatMonitor(
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update,
-                            AiResponse? Response,
-                            IReadOnlyList<DeliveryTarget> Targets)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(
-                            AgentResponseUpdate Update,
-                            AiResponse? Response,
-                            IReadOnlyList<DeliveryTarget> Targets)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response)>();
                     default:
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
@@ -151,7 +156,6 @@ public class ChatMonitor(
                         }
 
                         await warmup;
-                        var targets = await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt, logger);
                         var stopwatch = Stopwatch.StartNew();
                         // ReSharper disable once AccessToDisposedClosure
                         return agent
@@ -159,7 +163,6 @@ public class ChatMonitor(
                             .WithErrorHandling(linkedCt)
                             .ToUpdateAiResponsePairs()
                             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
-                            .Select(pair => (pair.Item1, pair.Item2, targets))
                             .OnCompletion(
                                 seed: false,
                                 fold: (faulted, pair) => faulted || pair.Item1.Contents.OfType<ErrorContent>().Any(),
@@ -177,7 +180,7 @@ public class ChatMonitor(
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, _, targets) in aiResponses.WithCancellation(ct))
+        await foreach (var (update, _) in aiResponses.WithCancellation(ct))
         {
             await DeliverUpdateAsync(update, targets, ct);
             yield return true;
