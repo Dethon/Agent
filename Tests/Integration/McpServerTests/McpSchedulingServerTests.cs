@@ -81,6 +81,7 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
             {
                 Agents =
                 [
+                    new AgentCatalogEntry("jonas", "Jonas", "test agent"),
                     new AgentCatalogEntry("itest-summary-agent", "Summary Agent", "Used by the snippet test."),
                 ]
             }),
