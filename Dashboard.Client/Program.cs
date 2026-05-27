@@ -10,6 +10,7 @@ using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
+using Dashboard.Client.State.Voice;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
@@ -30,6 +31,7 @@ builder.Services.AddSingleton<SchedulesStore>();
 builder.Services.AddSingleton<ConnectionStore>();
 builder.Services.AddSingleton<MemoryStore>();
 builder.Services.AddSingleton<LatencyStore>();
+builder.Services.AddSingleton<VoiceStore>();
 
 // Services
 builder.Services.AddScoped<MetricsApiService>();
