@@ -75,6 +75,9 @@ public static class ConfigModule
 
         services.AddHostedService<WyomingHealthProbeService>();
 
+        services.AddSingleton(settings.Announce);
+        services.AddSingleton<AnnouncementService>();
+
         services
             .AddMcpServer()
             .WithHttpTransport(options =>
