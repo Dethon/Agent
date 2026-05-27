@@ -27,7 +27,7 @@ public class VoiceEventTests
         var json = JsonSerializer.Serialize(evt, _options);
 
         json.ShouldContain("\"type\":\"voice\"");
-        json.ShouldContain("\"metric\":\"WakeTriggered\"");
+        json.ShouldContain($"\"metric\":{(int)VoiceMetric.WakeTriggered}");
         json.ShouldContain("\"satelliteId\":\"kitchen-01\"");
     }
 

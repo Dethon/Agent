@@ -1,11 +1,9 @@
-using System.Text.Json.Serialization;
 using Domain.DTOs.Metrics.Enums;
 
 namespace Domain.DTOs.Metrics;
 
 public record VoiceEvent : MetricEvent
 {
-    [JsonConverter(typeof(JsonStringEnumConverter<VoiceMetric>))]
     public required VoiceMetric Metric { get; init; }
     public string? SatelliteId { get; init; }
     public string? Room { get; init; }
