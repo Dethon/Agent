@@ -9,7 +9,7 @@ namespace McpChannelVoice.McpTools;
 public sealed class RequestApprovalTool
 {
     [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
-    [Description("Request user approval (placeholder, returns 'decline')")]
+    [Description("Request user approval (placeholder, returns 'declined' or 'notified')")]
     public static Task<string> McpRun(
         [Description("Satellite ID owning the conversation")] string conversationId,
         [Description("Whether to ask the user or just notify them")] ApprovalMode mode,
