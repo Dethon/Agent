@@ -32,7 +32,7 @@ public class ConfidenceGateTests
         var emitter = new CapturingEmitter();
         var publisher = new Mock<IMetricsPublisher>();
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, confidenceThreshold: 0.4,
+            emitter, publisher.Object, new ApprovalCaptureBroker(), confidenceThreshold: 0.4,
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await dispatcher.DispatchAsync(
@@ -51,7 +51,7 @@ public class ConfidenceGateTests
         var emitter = new CapturingEmitter();
         var publisher = new Mock<IMetricsPublisher>();
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, confidenceThreshold: 0.4,
+            emitter, publisher.Object, new ApprovalCaptureBroker(), confidenceThreshold: 0.4,
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await dispatcher.DispatchAsync(
@@ -70,7 +70,7 @@ public class ConfidenceGateTests
         var emitter = new CapturingEmitter();
         var publisher = new Mock<IMetricsPublisher>();
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, confidenceThreshold: 0.4,
+            emitter, publisher.Object, new ApprovalCaptureBroker(), confidenceThreshold: 0.4,
             NullLogger<TranscriptDispatcher>.Instance);
 
         var ok = await dispatcher.DispatchAsync(

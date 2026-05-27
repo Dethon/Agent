@@ -46,7 +46,7 @@ public class WyomingServerInboundTests
         var emitter = new CapturingEmitter();
         var publisher = new Mock<IMetricsPublisher>();
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, new ApprovalCaptureBroker(), 0.4, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
