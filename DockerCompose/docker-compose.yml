@@ -497,6 +497,36 @@ services:
       base-sdk:
         condition: service_started
 
+  mcp-channel-voice:
+    image: mcp-channel-voice:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-channel-voice
+    ports:
+      - "6014:8080"
+      - "10700:10700"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelVoice/Dockerfile
+      cache_from:
+        - mcp-channel-voice:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    restart: unless-stopped
+    environment:
+      - VOICE__ANNOUNCE__TOKEN=${ANNOUNCE_TOKEN}
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
   agent:
     image: agent:latest
     logging:
@@ -541,6 +571,8 @@ services:
       mcp-scheduling:
         condition: service_started
       mcp-printer:
+        condition: service_started
+      mcp-channel-voice:
         condition: service_started
       redis:
         condition: service_healthy
