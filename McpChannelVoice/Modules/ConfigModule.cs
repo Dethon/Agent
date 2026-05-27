@@ -47,6 +47,24 @@ public static class ConfigModule
                 new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "mcp-channel-voice"));
 
         services
+            .AddSingleton<SatelliteSessionRegistry>()
+            .AddSingleton<TranscriptDispatcher>(sp => new TranscriptDispatcher(
+                sp.GetRequiredService<ChannelNotificationEmitter>(),
+                sp.GetRequiredService<IMetricsPublisher>(),
+                settings.ConfidenceThreshold,
+                sp.GetRequiredService<ILogger<TranscriptDispatcher>>()));
+
+        if (settings.Stt.Provider.Equals("Wyoming", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ISpeechToText>(sp => new McpChannelVoice.Services.Stt.WyomingSpeechToText(
+                settings.Stt.Wyoming ?? throw new InvalidOperationException("Stt.Wyoming missing"),
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>()));
+        }
+
+        services.AddHostedService<WyomingServer>();
+        services.AddSingleton(settings.WyomingServer);
+
+        services
             .AddMcpServer()
             .WithHttpTransport(options =>
             {

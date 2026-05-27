@@ -526,6 +526,18 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      wyoming-whisper:
+        condition: service_started
+
+  wyoming-whisper:
+    image: rhasspy/wyoming-whisper:latest
+    container_name: wyoming-whisper
+    command: --model base --language es --device cpu --uri tcp://0.0.0.0:10300
+    volumes:
+      - ./volumes/whisper-data:/data
+    restart: unless-stopped
+    networks:
+      - jackbot
 
   agent:
     image: agent:latest
