@@ -4,7 +4,7 @@ using ModelContextProtocol.Server;
 
 namespace McpChannelVoice.Services;
 
-public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
+public class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitter> logger)
 {
     private readonly ConcurrentDictionary<string, McpServer> _activeSessions = new();
 
@@ -22,7 +22,7 @@ public sealed class ChannelNotificationEmitter(ILogger<ChannelNotificationEmitte
 
     public bool HasActiveSessions => !_activeSessions.IsEmpty;
 
-    public async Task EmitMessageNotificationAsync(
+    public virtual async Task EmitMessageNotificationAsync(
         ChannelMessageNotification payload,
         CancellationToken cancellationToken = default)
     {
