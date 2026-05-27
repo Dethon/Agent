@@ -211,5 +211,27 @@ public static class MetricsApiEndpoints
             var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
             return await query.GetLatencyTrendAsync(metric, fromDate, toDate);
         });
+
+        api.MapGet("/voice", async (
+            MetricsQueryService query,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetEventsAsync<VoiceEvent>("metrics:voice:", fromDate, toDate);
+        });
+
+        api.MapGet("/voice/by/{dimension}", async (
+            MetricsQueryService query,
+            VoiceDimension dimension,
+            VoiceMetric metric,
+            DateOnly? from,
+            DateOnly? to) =>
+        {
+            var fromDate = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var toDate = to ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            return await query.GetVoiceGroupedAsync(dimension, metric, fromDate, toDate);
+        });
     }
 }

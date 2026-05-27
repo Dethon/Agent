@@ -395,6 +395,46 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             : new DateTimeOffset(u.Year, u.Month, u.Day, 0, 0, 0, TimeSpan.Zero);
     }
 
+    public async Task<Dictionary<string, decimal>> GetVoiceGroupedAsync(
+        VoiceDimension dimension,
+        VoiceMetric metric,
+        DateOnly from,
+        DateOnly to)
+    {
+        var events = await GetEventsAsync<VoiceEvent>("metrics:voice:", from, to);
+        var scoped = events.Where(e => e.Metric == metric);
+
+        Func<VoiceEvent, string?> selector = dimension switch
+        {
+            VoiceDimension.SatelliteId => e => e.SatelliteId,
+            VoiceDimension.Room => e => e.Room,
+            VoiceDimension.Identity => e => e.Identity,
+            VoiceDimension.WakeWord => e => e.WakeWord,
+            VoiceDimension.Language => e => e.Language,
+            VoiceDimension.SttProvider => e => e.SttProvider,
+            VoiceDimension.SttModel => e => e.SttModel,
+            VoiceDimension.TtsProvider => e => e.TtsProvider,
+            VoiceDimension.TtsVoice => e => e.TtsVoice,
+            VoiceDimension.Outcome => e => e.Outcome,
+            VoiceDimension.Source => e => e.Source,
+            VoiceDimension.Priority => e => e.Priority,
+            _ => e => e.SatelliteId
+        };
+
+        return scoped
+            .GroupBy(e => selector(e) ?? "(unknown)")
+            .ToDictionary(
+                g => g.Key,
+                g => metric switch
+                {
+                    VoiceMetric.SttLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
+                    VoiceMetric.TtsLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
+                    VoiceMetric.WakeToFirstAudioMs => (decimal)g.Average(e => e.DurationMs ?? 0),
+                    VoiceMetric.AudioSeconds => (decimal)g.Sum(e => e.AudioSeconds ?? 0),
+                    _ => (decimal)g.Count()
+                });
+    }
+
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
         ScheduleDimension dimension, DateOnly from, DateOnly to)
     {

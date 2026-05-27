@@ -121,6 +121,9 @@ public sealed class MetricsCollectorService(
             case LatencyEvent latency:
                 await ProcessLatencyAsync(latency, db);
                 break;
+            case VoiceEvent voice:
+                await ProcessVoiceAsync(voice, db);
+                break;
         }
     }
 
@@ -330,5 +333,22 @@ public sealed class MetricsCollectorService(
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
 
         await hubContext.Clients.All.SendAsync("OnContextTruncation", evt);
+    }
+
+    private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)
+    {
+        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
+        var sortedSetKey = $"metrics:voice:{dateKey}";
+        var totalsKey = $"metrics:totals:{dateKey}";
+        var score = evt.Timestamp.ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, score),
+            db.HashIncrementAsync(totalsKey, $"voice:{evt.Metric}:count"),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+
+        await hubContext.Clients.All.SendAsync("OnVoice", evt);
     }
 }
