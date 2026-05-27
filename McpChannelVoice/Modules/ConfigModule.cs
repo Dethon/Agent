@@ -67,6 +67,7 @@ public static class ConfigModule
                 var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai");
                 return new Infrastructure.Clients.Voice.OpenAiSpeechToText(
                     http, settings.Stt.OpenAi?.Model ?? "whisper-1", key,
+                    sp.GetRequiredService<IMetricsPublisher>(),
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiSpeechToText>>());
             }
             return new McpChannelVoice.Services.Stt.WyomingSpeechToText(
@@ -91,6 +92,7 @@ public static class ConfigModule
                     settings.Tts.OpenAi?.Model ?? "tts-1",
                     settings.Tts.OpenAi?.Voice ?? "alloy",
                     key,
+                    sp.GetRequiredService<IMetricsPublisher>(),
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiTextToSpeech>>());
             }
             return new McpChannelVoice.Services.Tts.WyomingTextToSpeech(

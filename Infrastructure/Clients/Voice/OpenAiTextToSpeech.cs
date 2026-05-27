@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
 using Microsoft.Extensions.Logging;
 
@@ -12,8 +13,11 @@ public sealed class OpenAiTextToSpeech(
     string model,
     string voice,
     string apiKey,
+    IMetricsPublisher metrics,
     ILogger<OpenAiTextToSpeech> logger) : ITextToSpeech
 {
+    private const decimal CostPerCharacter = 0.000015m;
+
     private static readonly AudioFormat _format = new()
     {
         SampleRateHz = 24_000,
@@ -55,5 +59,15 @@ public sealed class OpenAiTextToSpeech(
             yield return new AudioChunk { Data = slice, Format = _format };
         }
         logger.LogDebug("OpenAI TTS stream complete");
+
+        await metrics.PublishAsync(new TokenUsageEvent
+        {
+            Sender = "voice-sat",
+            Model = model,
+            InputTokens = text.Length,
+            OutputTokens = 0,
+            Cost = text.Length * CostPerCharacter,
+            Origin = "voice"
+        }, ct);
     }
 }

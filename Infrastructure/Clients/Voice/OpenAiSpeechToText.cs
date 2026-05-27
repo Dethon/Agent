@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
 using Microsoft.Extensions.Logging;
 
@@ -10,6 +11,7 @@ public sealed class OpenAiSpeechToText(
     HttpClient http,
     string model,
     string apiKey,
+    IMetricsPublisher metrics,
     ILogger<OpenAiSpeechToText> logger) : ISpeechToText
 {
     public async Task<TranscriptionResult> TranscribeAsync(
@@ -48,6 +50,16 @@ public sealed class OpenAiSpeechToText(
                       ?? throw new InvalidOperationException("Empty OpenAI response");
 
         logger.LogInformation("OpenAI STT: lang={Lang} duration={Duration:F2}", payload.Language, payload.Duration);
+
+        await metrics.PublishAsync(new TokenUsageEvent
+        {
+            Sender = "voice-sat",
+            Model = model,
+            InputTokens = 0,
+            OutputTokens = 0,
+            Cost = 0m,
+            Origin = "voice"
+        }, ct);
 
         return new TranscriptionResult
         {

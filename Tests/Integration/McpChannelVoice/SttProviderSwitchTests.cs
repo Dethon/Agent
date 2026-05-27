@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs.Voice;
 using Infrastructure.Clients.Voice;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Shouldly;
 
 namespace Tests.Integration.McpChannelVoice;
@@ -22,7 +23,8 @@ public class SttProviderSwitchTests
     public async Task ProviderOpenAi_AdapterTranscribesViaHttp()
     {
         var http = new HttpClient(new FixedHandler()) { BaseAddress = new Uri("https://api.openai.com") };
-        ISpeechToText sut = new OpenAiSpeechToText(http, "whisper-1", "sk", NullLogger<OpenAiSpeechToText>.Instance);
+        ISpeechToText sut = new OpenAiSpeechToText(http, "whisper-1", "sk",
+            Mock.Of<IMetricsPublisher>(), NullLogger<OpenAiSpeechToText>.Instance);
 
         async IAsyncEnumerable<AudioChunk> Audio()
         {
