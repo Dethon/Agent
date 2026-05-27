@@ -25,9 +25,10 @@ public static class ConfigModule
 
     public static IServiceCollection ConfigureVoiceChannel(
         this IServiceCollection services,
+        IConfiguration configuration,
         VoiceSettings settings)
     {
-        var redisConnection = Environment.GetEnvironmentVariable("REDIS__CONNECTIONSTRING")
+        var redisConnection = configuration.GetSection("Redis")["ConnectionString"]
                               ?? "redis:6379";
 
         var emitter = new ChannelNotificationEmitter(
@@ -49,7 +50,7 @@ public static class ConfigModule
             .AddMcpServer()
             .WithHttpTransport(options =>
             {
-#pragma warning disable MCPEXP002
+#pragma warning disable MCPEXP002 // RunSessionHandler is experimental
                 options.RunSessionHandler = async (_, server, ct) =>
                 {
                     var sessionId = server.SessionId ?? Guid.NewGuid().ToString();
