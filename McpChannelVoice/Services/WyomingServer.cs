@@ -64,7 +64,9 @@ public sealed class WyomingServer(
     {
         await using var stream = client.GetStream();
         var reader = new WyomingReader(stream);
+        var writer = new WyomingWriter(stream);
         SatelliteSession? session = null;
+        Task? playbackTask = null;
 
         try
         {
@@ -90,7 +92,12 @@ public sealed class WyomingServer(
                         ConversationId = session.ConversationId
                     }, ct);
 
-                    _ = Task.Run(() => RunTranscriptionAsync(session, ct), ct);
+                    var capturedSession = session;
+                    var capturedWriter = writer;
+                    playbackTask = Task.Run(() => capturedSession.RunPlaybackLoopAsync(
+                        async (chunk, jct) => await WritePlaybackFrameAsync(capturedWriter, chunk, jct), ct), ct);
+
+                    _ = Task.Run(() => RunTranscriptionAsync(capturedSession, ct), ct);
                     continue;
                 }
 
@@ -126,10 +133,28 @@ public sealed class WyomingServer(
             if (session is not null)
             {
                 session.CompleteInboundAudio();
+                session.CompletePlayback();
+                if (playbackTask is not null)
+                {
+                    try
+                    { await playbackTask; }
+                    catch { /* ignore */ }
+                }
                 sessionRegistry.Unregister(session.SatelliteId);
             }
             client.Dispose();
         }
+    }
+
+    private static async Task WritePlaybackFrameAsync(WyomingWriter writer, AudioChunk chunk, CancellationToken ct)
+    {
+        var data = new System.Text.Json.Nodes.JsonObject
+        {
+            ["rate"] = chunk.Format.SampleRateHz,
+            ["width"] = chunk.Format.SampleWidthBytes,
+            ["channels"] = chunk.Format.Channels
+        };
+        await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data, chunk.Data), ct);
     }
 
     private async Task RunTranscriptionAsync(SatelliteSession session, CancellationToken ct)
