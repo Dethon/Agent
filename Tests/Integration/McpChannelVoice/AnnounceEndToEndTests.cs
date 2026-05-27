@@ -40,6 +40,7 @@ public class AnnounceEndToEndTests
         builder.Services.AddSingleton(settings.WyomingServer);
         builder.Services.AddSingleton(new SatelliteRegistry(settings.Satellites));
         builder.Services.AddSingleton<SatelliteSessionRegistry>();
+        builder.Services.AddSingleton<ApprovalCaptureBroker>();
         builder.Services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
 
         var tts = new Mock<ITextToSpeech>();

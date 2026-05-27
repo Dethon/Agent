@@ -15,6 +15,7 @@ public sealed class WyomingServer(
     SatelliteSessionRegistry sessionRegistry,
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
+    ApprovalCaptureBroker broker,
     IMetricsPublisher metrics,
     ILogger<WyomingServer> logger) : IHostedService
 {
@@ -120,6 +121,13 @@ public sealed class WyomingServer(
                 if (evt.Type == "audio-stop")
                 {
                     session.CompleteInboundAudio();
+                    continue;
+                }
+
+                if (evt.Type == "button-press" && session is not null)
+                {
+                    var count = evt.Data["count"]?.GetValue<int>() ?? 1;
+                    broker.SubmitUtterance(session.SatelliteId, count == 1 ? "sí" : "no");
                     continue;
                 }
             }

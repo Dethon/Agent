@@ -55,7 +55,7 @@ public class WyomingServerInboundTests
 
         var server = new WyomingServer(
             new WyomingServerSettings { Host = "127.0.0.1", Port = 0 },
-            registry, sessions, stt.Object, dispatcher, publisher.Object,
+            registry, sessions, stt.Object, dispatcher, new ApprovalCaptureBroker(), publisher.Object,
             NullLogger<WyomingServer>.Instance);
 
         await server.StartAsync(CancellationToken.None);
