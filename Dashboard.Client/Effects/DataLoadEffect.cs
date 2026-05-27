@@ -8,6 +8,7 @@ using Dashboard.Client.State.Metrics;
 using Dashboard.Client.State.Schedules;
 using Dashboard.Client.State.Tokens;
 using Dashboard.Client.State.Tools;
+using Dashboard.Client.State.Voice;
 
 namespace Dashboard.Client.Effects;
 
@@ -21,7 +22,8 @@ public sealed class DataLoadEffect(
     SchedulesStore schedulesStore,
     ConnectionStore connectionStore,
     MemoryStore memoryStore,
-    LatencyStore latencyStore)
+    LatencyStore latencyStore,
+    VoiceStore voiceStore)
 {
     public async Task LoadAsync(DateOnly from, DateOnly to)
     {
@@ -33,6 +35,7 @@ public sealed class DataLoadEffect(
             schedulesStore.SetDateRange(from, to);
             memoryStore.SetDateRange(from, to);
             latencyStore.SetDateRange(from, to);
+            voiceStore.SetDateRange(from, to);
 
             var summaryTask = api.GetSummaryAsync(from, to);
             var tokensTask = api.GetTokensAsync(from, to);
@@ -60,11 +63,16 @@ public sealed class DataLoadEffect(
                 latencyStore.State.GroupBy, latencyStore.State.Metric, from, to);
             var latencyTrendTask = api.GetLatencyTrendAsync(latencyStore.State.Metric, from, to);
 
+            var voiceTask = api.GetVoiceEventsAsync(from, to);
+            var voiceBreakdownTask = api.GetVoiceGroupedAsync(
+                voiceStore.State.GroupBy, voiceStore.State.Metric, from, to);
+
             await Task.WhenAll(summaryTask, tokensTask, toolsTask, errorsTask,
                 schedulesTask, healthTask, tokenBreakdownTask, toolBreakdownTask,
                 errorBreakdownTask, scheduleBreakdownTask,
                 memoryRecallTask, memoryExtractionTask, memoryDreamingTask, memoryBreakdownTask,
-                latencyTask, latencyBreakdownTask, latencyTrendTask);
+                latencyTask, latencyBreakdownTask, latencyTrendTask,
+                voiceTask, voiceBreakdownTask);
 
             var summary = await summaryTask;
             if (summary is not null)
@@ -103,6 +111,9 @@ public sealed class DataLoadEffect(
             latencyStore.SetEvents(await latencyTask ?? []);
             latencyStore.SetBreakdown(await latencyBreakdownTask ?? []);
             latencyStore.SetTrend(await latencyTrendTask ?? []);
+
+            voiceStore.SetEvents(await voiceTask ?? []);
+            voiceStore.SetBreakdown(await voiceBreakdownTask ?? []);
 
             var health = await healthTask;
             if (health is not null)
