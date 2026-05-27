@@ -125,6 +125,7 @@ public sealed class WyomingServer(
         {
             if (session is not null)
             {
+                session.CompleteInboundAudio();
                 sessionRegistry.Unregister(session.SatelliteId);
             }
             client.Dispose();
