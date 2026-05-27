@@ -528,6 +528,8 @@ services:
         condition: service_healthy
       wyoming-whisper:
         condition: service_started
+      wyoming-piper:
+        condition: service_started
 
   wyoming-whisper:
     image: rhasspy/wyoming-whisper:latest
@@ -535,6 +537,16 @@ services:
     command: --model base --language es --device cpu --uri tcp://0.0.0.0:10300
     volumes:
       - ./volumes/whisper-data:/data
+    restart: unless-stopped
+    networks:
+      - jackbot
+
+  wyoming-piper:
+    image: rhasspy/wyoming-piper:latest
+    container_name: wyoming-piper
+    command: --voice es_ES-davefx-medium --uri tcp://0.0.0.0:10200
+    volumes:
+      - ./volumes/piper-data:/data
     restart: unless-stopped
     networks:
       - jackbot

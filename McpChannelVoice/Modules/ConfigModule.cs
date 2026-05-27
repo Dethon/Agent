@@ -64,6 +64,15 @@ public static class ConfigModule
         services.AddHostedService<WyomingServer>();
         services.AddSingleton(settings.WyomingServer);
 
+        services.AddSingleton<ReplyTextAccumulator>();
+
+        if (settings.Tts.Provider.Equals("Wyoming", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<ITextToSpeech>(sp => new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
+                settings.Tts.Wyoming ?? throw new InvalidOperationException("Tts.Wyoming missing"),
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()));
+        }
+
         services
             .AddMcpServer()
             .WithHttpTransport(options =>
