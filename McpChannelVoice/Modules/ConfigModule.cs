@@ -73,6 +73,8 @@ public static class ConfigModule
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()));
         }
 
+        services.AddHostedService<WyomingHealthProbeService>();
+
         services
             .AddMcpServer()
             .WithHttpTransport(options =>
