@@ -69,6 +69,19 @@ public class SendReplyToolTests
     }
 
     [Fact]
+    public async Task McpRun_StreamComplete_SynthesisesAccumulatedText()
+    {
+        // Real agent streaming (see ChatMonitor.MapResponseUpdate): Text chunks are
+        // emitted with isComplete=false; completion arrives only as a StreamComplete
+        // event with empty content and no messageId. The reply must still be spoken.
+        await SendReplyTool.McpRun("kitchen-01", "hola ", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun("kitchen-01", "mundo", ReplyContentType.Text, false, "m-1", _services);
+        await SendReplyTool.McpRun("kitchen-01", "", ReplyContentType.StreamComplete, true, null, _services);
+
+        _tts.Verify(t => t.SynthesizeAsync("hola mundo", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task McpRun_Error_SpeaksErrorPrefix()
     {
         await SendReplyTool.McpRun("kitchen-01", "boom", ReplyContentType.Error, true, "m-1", _services);

@@ -40,24 +40,41 @@ public sealed class SendReplyTool
         {
             case ReplyContentType.Reasoning:
             case ReplyContentType.ToolCall:
-            case ReplyContentType.StreamComplete:
                 return "ok";
 
             case ReplyContentType.Error:
                 await SpeakAsync(session, $"Hubo un error: {content}", tts, settings, metrics, default);
                 return "ok";
 
+            // Completion arrives as a dedicated StreamComplete event (empty content, no
+            // messageId). Text chunks are never flagged complete, so this is where we
+            // speak the accumulated reply.
+            case ReplyContentType.StreamComplete:
+                await FlushAndSpeakAsync(session, accumulator, tts, settings, metrics);
+                return "ok";
+
             default:
-                accumulator.Append(conversationId, messageId ?? "_default", content);
+                accumulator.Append(conversationId, content);
+                // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (isComplete)
                 {
-                    var text = accumulator.Flush(conversationId, messageId ?? "_default");
-                    if (!string.IsNullOrWhiteSpace(text))
-                    {
-                        await SpeakAsync(session, text, tts, settings, metrics, default);
-                    }
+                    await FlushAndSpeakAsync(session, accumulator, tts, settings, metrics);
                 }
                 return "ok";
+        }
+    }
+
+    private static async Task FlushAndSpeakAsync(
+        SatelliteSession session,
+        ReplyTextAccumulator accumulator,
+        ITextToSpeech tts,
+        VoiceSettings settings,
+        IMetricsPublisher metrics)
+    {
+        var text = accumulator.Flush(session.ConversationId);
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            await SpeakAsync(session, text, tts, settings, metrics, default);
         }
     }
 
