@@ -14,7 +14,8 @@ public sealed class OpenAiTextToSpeech(
     string voice,
     string apiKey,
     IMetricsPublisher metrics,
-    ILogger<OpenAiTextToSpeech> logger) : ITextToSpeech
+    ILogger<OpenAiTextToSpeech> logger,
+    string endpointPath = "/v1/audio/speech") : ITextToSpeech
 {
     private const decimal CostPerCharacter = 0.000015m;
 
@@ -30,7 +31,7 @@ public sealed class OpenAiTextToSpeech(
         SynthesisOptions options,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/audio/speech")
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpointPath)
         {
             Content = JsonContent.Create(new
             {
