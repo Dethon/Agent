@@ -518,6 +518,7 @@ services:
     environment:
       - VOICE__ANNOUNCE__TOKEN=${ANNOUNCE_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     env_file:
       - .env
     networks:
