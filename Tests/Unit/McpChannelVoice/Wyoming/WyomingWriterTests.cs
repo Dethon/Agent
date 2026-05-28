@@ -23,7 +23,7 @@ public class WyomingWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_WithPayload_AppendsBytesAfterNewline()
+    public async Task WriteAsync_WithPayload_FramesDataAndPayloadAfterHeader()
     {
         await using var ms = new MemoryStream();
         var writer = new WyomingWriter(ms);
@@ -37,8 +37,20 @@ public class WyomingWriterTests
         var bytes = ms.ToArray();
         var newlineIndex = Array.IndexOf(bytes, (byte)'\n');
         newlineIndex.ShouldBeGreaterThan(0);
+
         var header = Encoding.UTF8.GetString(bytes, 0, newlineIndex);
+        header.ShouldContain("\"type\":\"audio-chunk\"");
         header.ShouldContain("\"payload_length\":4");
-        bytes[(newlineIndex + 1)..].ShouldBe(payload);
+        header.ShouldContain("\"data_length\":");
+
+        var dataLength = int.Parse(header.Split("\"data_length\":")[1].Split(['}', ','])[0]);
+        var dataStart = newlineIndex + 1;
+        var dataEnd = dataStart + dataLength;
+        var dataJson = Encoding.UTF8.GetString(bytes, dataStart, dataLength);
+        dataJson.ShouldContain("\"rate\":16000");
+        dataJson.ShouldContain("\"width\":2");
+        dataJson.ShouldContain("\"channels\":1");
+
+        bytes[dataEnd..].ShouldBe(payload);
     }
 }
