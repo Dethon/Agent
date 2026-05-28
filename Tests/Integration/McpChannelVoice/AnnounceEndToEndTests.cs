@@ -27,7 +27,8 @@ public class AnnounceEndToEndTests
         satListener.Start();
         var satPort = ((IPEndPoint)satListener.LocalEndpoint).Port;
 
-        var sawAudioChunk = new TaskCompletionSource();
+        var audioEvents = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var sawAudioStop = new TaskCompletionSource();
         var fakeSatellite = Task.Run(async () =>
         {
             using var conn = await satListener.AcceptTcpClientAsync(ct);
@@ -35,9 +36,13 @@ public class AnnounceEndToEndTests
             var reader = new WyomingReader(stream);
             await foreach (var evt in reader.ReadAllAsync(ct))
             {
-                if (evt.Type == "audio-chunk")
+                if (evt.Type is "audio-start" or "audio-chunk" or "audio-stop")
                 {
-                    sawAudioChunk.TrySetResult();
+                    audioEvents.Enqueue(evt.Type);
+                }
+                if (evt.Type == "audio-stop")
+                {
+                    sawAudioStop.TrySetResult();
                 }
             }
         }, ct);
@@ -103,7 +108,16 @@ public class AnnounceEndToEndTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted);
 
-        await sawAudioChunk.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        // The satellite must receive a full Wyoming playback envelope, not bare chunks:
+        // without audio-stop the satellite's paplay never closes stdin and a short clip
+        // never clears the prebuffer, so nothing is audible.
+        await sawAudioStop.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        var seq = audioEvents.ToArray();
+        seq.ShouldContain("audio-start");
+        seq.ShouldContain("audio-chunk");
+        seq.ShouldContain("audio-stop");
+        Array.IndexOf(seq, "audio-start").ShouldBeLessThan(Array.IndexOf(seq, "audio-chunk"));
+        Array.IndexOf(seq, "audio-chunk").ShouldBeLessThan(Array.LastIndexOf(seq, "audio-stop"));
 
         await app.StopAsync(CancellationToken.None);
         satListener.Stop();

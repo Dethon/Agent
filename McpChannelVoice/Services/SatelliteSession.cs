@@ -70,7 +70,10 @@ public sealed class SatelliteSession
 
     public async Task RunPlaybackLoopAsync(
         Func<AudioChunk, CancellationToken, Task> writer,
-        CancellationToken ct)
+        CancellationToken ct,
+        ILogger? logger = null,
+        Func<AudioFormat, CancellationToken, Task>? onAudioStart = null,
+        Func<CancellationToken, Task>? onAudioStop = null)
     {
         await foreach (var job in _playback.Reader.ReadAllAsync(ct))
         {
@@ -80,12 +83,19 @@ public sealed class SatelliteSession
 
             await job.OnStarted(job.Label);
 
+            var chunks = 0;
             try
             {
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
+                    if (chunks == 0 && onAudioStart is not null)
+                    {
+                        await onAudioStart(chunk.Format, jobCts.Token);
+                    }
+                    chunks++;
                     await writer(chunk, jobCts.Token);
                 }
+                logger?.LogInformation("Playback job {Label} drained {Chunks} chunk(s)", job.Label, chunks);
             }
             catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
@@ -93,6 +103,21 @@ public sealed class SatelliteSession
             }
             finally
             {
+                // Close the playback envelope so the satellite flushes paplay (EOF on
+                // disconnect_after_stop). Use the connection token: jobCts may be canceled
+                // by preemption, but the satellite still needs the audio-stop. A bare
+                // audio-start with no chunks gets no stop, matching Wyoming framing.
+                if (chunks > 0 && onAudioStop is not null && !ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await onAudioStop(ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "Failed to send audio-stop for {Label}", job.Label);
+                    }
+                }
                 lock (_gate)
                 { _currentPlaybackCts = null; }
                 jobCts.Dispose();

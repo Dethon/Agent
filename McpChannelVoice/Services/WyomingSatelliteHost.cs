@@ -121,8 +121,33 @@ public sealed class WyomingSatelliteHost(
         sessionRegistry.Register(session);
         logger.LogInformation("Connected to satellite {Id} at {Host}:{Port}", id, host, port);
 
-        var playbackTask = Task.Run(
-            () => session.RunPlaybackLoopAsync((chunk, jct) => WritePlaybackFrameAsync(client, chunk, jct), ct), ct);
+        var playbackFrames = 0L;
+        var playbackTask = Task.Run(() => session.RunPlaybackLoopAsync(
+            async (chunk, jct) =>
+            {
+                if (Interlocked.Increment(ref playbackFrames) == 1)
+                {
+                    logger.LogInformation(
+                        "Playback: first frame to {Id} ({Rate}Hz/{Width}B/{Ch}ch, {Bytes} bytes)",
+                        id, chunk.Format.SampleRateHz, chunk.Format.SampleWidthBytes, chunk.Format.Channels,
+                        chunk.Data.Length);
+                }
+                await WritePlaybackFrameAsync(client, chunk, jct);
+            },
+            ct, logger,
+            onAudioStart: (format, sct) => client.WriteAsync(WyomingEvent.Header("audio-start", new JsonObject
+            {
+                ["rate"] = format.SampleRateHz,
+                ["width"] = format.SampleWidthBytes,
+                ["channels"] = format.Channels,
+                ["timestamp"] = 0
+            }), sct),
+            onAudioStop: sct => client.WriteAsync(
+                WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct)), ct);
+        _ = playbackTask.ContinueWith(
+            t => logger.LogError(t.Exception, "Playback loop faulted for {Id} after {Frames} frame(s)",
+                id, Interlocked.Read(ref playbackFrames)),
+            TaskContinuationOptions.OnlyOnFaulted);
 
         Channel<AudioChunk>? utterance = null;
         SilenceGate? gate = null;
