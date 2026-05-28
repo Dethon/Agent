@@ -127,7 +127,7 @@ public class GroupByStreamingTests
         processedCount.ShouldBeGreaterThanOrEqualTo(5);
         return;
 
-        async IAsyncEnumerable<int> infiniteSource()
+        static async IAsyncEnumerable<int> infiniteSource()
         {
             var i = 0;
             while (true)

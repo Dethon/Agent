@@ -53,7 +53,7 @@ public class WyomingSpeechToTextTests
             new WyomingSttConfig { Host = "127.0.0.1", Port = port, Language = "es" },
             NullLogger<WyomingSpeechToText>.Instance);
 
-        async IAsyncEnumerable<AudioChunk> Audio()
+        static async IAsyncEnumerable<AudioChunk> audio()
         {
             for (var i = 0; i < 3; i++)
             {
@@ -67,7 +67,7 @@ public class WyomingSpeechToTextTests
             }
         }
 
-        var result = await sut.TranscribeAsync(Audio(), new TranscriptionOptions(), CancellationToken.None);
+        var result = await sut.TranscribeAsync(audio(), new TranscriptionOptions(), CancellationToken.None);
 
         await serverTask;
         listener.Stop();

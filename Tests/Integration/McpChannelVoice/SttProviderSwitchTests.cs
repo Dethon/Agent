@@ -26,13 +26,13 @@ public class SttProviderSwitchTests
         ISpeechToText sut = new OpenAiSpeechToText(http, "whisper-1", "sk",
             Mock.Of<IMetricsPublisher>(), NullLogger<OpenAiSpeechToText>.Instance);
 
-        async IAsyncEnumerable<AudioChunk> Audio()
+        static async IAsyncEnumerable<AudioChunk> audio()
         {
             yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
             await Task.Yield();
         }
 
-        var result = await sut.TranscribeAsync(Audio(), new TranscriptionOptions(), CancellationToken.None);
+        var result = await sut.TranscribeAsync(audio(), new TranscriptionOptions(), CancellationToken.None);
         result.Text.ShouldBe("hi");
     }
 }
