@@ -142,6 +142,19 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
+  mcp-channel-voice:
+    build:
+      args:
+        - BUILD_CONFIGURATION=Debug
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+    volumes:
+      - vsdbg:/remote_debugger:ro
+
   mcp-scheduling:
     build:
       args:

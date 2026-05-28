@@ -16,6 +16,7 @@
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
         "Docker: MCP Channel ServiceBus",
+        "Docker: MCP Channel Voice",
         "Docker: MCP Scheduling",
         "Docker: MCP Printer"
       ],
@@ -37,6 +38,7 @@
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
         "Local: MCP Channel ServiceBus",
+        "Local: MCP Channel Voice",
         "Local: MCP Scheduling",
         "Local: MCP Printer"
       ],
@@ -348,6 +350,22 @@
       }
     },
     {
+      "name": "Local: MCP Channel Voice",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpChannelVoice/bin/Debug/net10.0/McpChannelVoice.dll",
+      "cwd": "${workspaceFolder}/McpChannelVoice",
+      "envFile": "${workspaceFolder}/DockerCompose/.env",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6014",
+        "Redis__ConnectionString": "localhost:6379",
+        "Voice__Stt__Provider": "OpenRouter",
+        "Voice__Tts__Provider": "OpenRouter"
+      }
+    },
+    {
       "name": "Local: MCP Scheduling",
       "type": "coreclr",
       "request": "launch",
@@ -409,6 +427,21 @@
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-printer"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Docker: MCP Channel Voice",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-channel-voice"],
         "debuggerPath": "/remote_debugger/vsdbg",
         "quoteArgs": false
       },
