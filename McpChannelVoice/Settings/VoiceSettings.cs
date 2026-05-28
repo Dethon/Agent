@@ -2,7 +2,7 @@ namespace McpChannelVoice.Settings;
 
 public record VoiceSettings
 {
-    public WyomingServerSettings WyomingServer { get; init; } = new();
+    public WyomingClientSettings WyomingClient { get; init; } = new();
     public SttSettings Stt { get; init; } = new();
     public TtsSettings Tts { get; init; } = new();
     public double ConfidenceThreshold { get; init; } = 0.4;

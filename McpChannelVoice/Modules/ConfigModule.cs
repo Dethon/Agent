@@ -88,8 +88,8 @@ public static class ConfigModule
                 sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
         });
 
-        services.AddHostedService<WyomingServer>();
-        services.AddSingleton(settings.WyomingServer);
+        services.AddHostedService<WyomingSatelliteHost>();
+        services.AddSingleton(settings.WyomingClient);
 
         services.AddSingleton<ReplyTextAccumulator>();
 

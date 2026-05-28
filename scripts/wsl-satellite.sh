@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run a wyoming-satellite on this WSL host, routing audio through WSLg PulseAudio
-# to a McpChannelVoice hub running in Docker on the same machine.
+# Run a wyoming-satellite on this WSL host, routing audio through WSLg PulseAudio.
+#
+# Topology: wyoming-satellite is itself a Wyoming *server* listening on its --uri
+# (SAT_PORT). The McpChannelVoice hub (in Docker) dials OUT to it as a client — see
+# the satellite's Address in McpChannelVoice/appsettings.Development.json, which
+# points at tcp://host.docker.internal:SAT_PORT. Local wake detection runs here via
+# wyoming-openwakeword; once the wake word fires the satellite streams mic audio to
+# the connected hub and plays back the TTS audio the hub streams in return.
 #
 # Defaults match `McpChannelVoice/appsettings.Development.json` — change SAT_ID
 # to one of {kitchen-01, living-room-01, bedroom-01} or edit appsettings to add
-# a new satellite.
+# a new satellite (and give it an Address so the hub dials it).
 #
 # Usage:
 #   ./scripts/wsl-satellite.sh
@@ -14,8 +20,6 @@ set -euo pipefail
 
 SAT_ID="${SAT_ID:-kitchen-01}"
 WAKE_WORD="${WAKE_WORD:-hey_jarvis}"
-HUB_HOST="${HUB_HOST:-127.0.0.1}"
-HUB_PORT="${HUB_PORT:-10700}"
 SAT_PORT="${SAT_PORT:-10800}"
 WW_PORT="${WW_PORT:-10400}"
 WW_THRESHOLD="${WW_THRESHOLD:-0.5}"
@@ -80,7 +84,7 @@ if ! kill -0 "$WW_PID" 2>/dev/null; then
   exit 1
 fi
 
-echo "[2/2] wyoming-satellite name=$SAT_ID listen=tcp://0.0.0.0:$SAT_PORT  hub=tcp://$HUB_HOST:$HUB_PORT"
+echo "[2/2] wyoming-satellite name=$SAT_ID listening on tcp://0.0.0.0:$SAT_PORT (hub dials in)"
 echo "      Logs: /tmp/wyoming-openwakeword.log  (Ctrl+C to stop)"
 exec "$SAT_VENV/bin/python" -m wyoming_satellite \
   --name "$SAT_ID" \
@@ -94,5 +98,4 @@ exec "$SAT_VENV/bin/python" -m wyoming_satellite \
   --snd-command-width 2 \
   --snd-command-channels 1 \
   --wake-uri "tcp://127.0.0.1:$WW_PORT" \
-  --wake-word-name "$WAKE_WORD" \
-  --event-uri "tcp://$HUB_HOST:$HUB_PORT"
+  --wake-word-name "$WAKE_WORD"

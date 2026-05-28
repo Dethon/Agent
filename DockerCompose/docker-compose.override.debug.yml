@@ -146,8 +146,17 @@ services:
     build:
       args:
         - BUILD_CONFIGURATION=Debug
+    # Satellite topology for local debug. appsettings.Development.json is excluded
+    # from the image by .dockerignore (**/appsettings.Development.json), so the hub
+    # gets its satellites from env here instead. The hub dials out to the satellite's
+    # Wyoming server; a WSL wyoming-satellite (scripts/wsl-satellite.sh) is reached
+    # via host.docker.internal:10800.
     environment:
       - DOTNET_ENVIRONMENT=Development
+      - Voice__Satellites__kitchen-01__Identity=household
+      - Voice__Satellites__kitchen-01__Room=Kitchen
+      - Voice__Satellites__kitchen-01__WakeWord=hey_jarvis
+      - Voice__Satellites__kitchen-01__Address=tcp://host.docker.internal:10800
     cap_add:
       - SYS_PTRACE
     security_opt:
