@@ -5,7 +5,10 @@ using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
 
-public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? wsEndpoint = null)
+public class PlaywrightWebBrowser(
+    ICaptchaSolver? captchaSolver = null,
+    string? wsEndpoint = null,
+    Func<Task<IBrowser>>? browserFactory = null)
     : IWebBrowser, IAsyncDisposable
 {
     private IPlaywright? _playwright;
@@ -576,9 +579,9 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         }
     }
 
-    private async Task EnsureInitializedAsync()
+    internal async Task EnsureInitializedAsync()
     {
-        if (_initialized)
+        if (IsConnectionHealthy())
         {
             return;
         }
@@ -586,40 +589,23 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         await _initLock.WaitAsync();
         try
         {
-            if (_initialized)
+            if (IsConnectionHealthy())
             {
                 return;
             }
 
-            if (string.IsNullOrEmpty(wsEndpoint))
+            // A previous connection died (Camoufox restart, idle drop, network blip).
+            // Tear down the stale browser/context/sessions before reconnecting, otherwise
+            // every call would keep failing with "Target page, context or browser has been
+            // closed" until the process restarts.
+            if (_initialized)
             {
-                throw new InvalidOperationException(
-                    "Camoufox WebSocket endpoint is not configured. Set the CAMOUFOX__WSENDPOINT environment variable.");
+                await ResetStaleConnectionAsync();
             }
 
-            _playwright = await Playwright.CreateAsync();
+            _browser = await ConnectBrowserAsync();
 
-            // Connect to Camoufox sidecar with retry
-            for (var attempt = 1; attempt <= ConnectionRetryAttempts; attempt++)
-            {
-                try
-                {
-                    _browser = await _playwright.Firefox.ConnectAsync(wsEndpoint);
-                    break;
-                }
-                catch (PlaywrightException) when (attempt < ConnectionRetryAttempts)
-                {
-                    await Task.Delay(ConnectionRetryDelayMs);
-                }
-            }
-
-            if (_browser is null)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to connect to Camoufox at {wsEndpoint} after {ConnectionRetryAttempts} attempts.");
-            }
-
-            _context = await _browser!.NewContextAsync(new BrowserNewContextOptions
+            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
             {
                 ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
                 Locale = "en-US",
@@ -641,6 +627,68 @@ public class PlaywrightWebBrowser(ICaptchaSolver? captchaSolver = null, string? 
         {
             _initLock.Release();
         }
+    }
+
+    private bool IsConnectionHealthy() => _initialized && _browser?.IsConnected == true;
+
+    private async Task ResetStaleConnectionAsync()
+    {
+        _initialized = false;
+        _sessions.Clear();
+
+        try
+        {
+            if (_context is not null)
+            {
+                await _context.CloseAsync();
+            }
+
+            if (_browser is not null)
+            {
+                await _browser.CloseAsync();
+            }
+        }
+        catch (PlaywrightException)
+        {
+            // Best-effort: the connection is already gone, closing it may throw.
+        }
+        finally
+        {
+            _context = null;
+            _browser = null;
+        }
+    }
+
+    private async Task<IBrowser> ConnectBrowserAsync()
+    {
+        if (browserFactory is not null)
+        {
+            return await browserFactory();
+        }
+
+        if (string.IsNullOrEmpty(wsEndpoint))
+        {
+            throw new InvalidOperationException(
+                "Camoufox WebSocket endpoint is not configured. Set the CAMOUFOX__WSENDPOINT environment variable.");
+        }
+
+        _playwright ??= await Playwright.CreateAsync();
+
+        // Connect to Camoufox sidecar with retry
+        for (var attempt = 1; attempt <= ConnectionRetryAttempts; attempt++)
+        {
+            try
+            {
+                return await _playwright.Firefox.ConnectAsync(wsEndpoint);
+            }
+            catch (PlaywrightException) when (attempt < ConnectionRetryAttempts)
+            {
+                await Task.Delay(ConnectionRetryDelayMs);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to connect to Camoufox at {wsEndpoint} after {ConnectionRetryAttempts} attempts.");
     }
 
     private static async Task ScrollToLoadAsync(IPage page, int scrollSteps, CancellationToken ct)

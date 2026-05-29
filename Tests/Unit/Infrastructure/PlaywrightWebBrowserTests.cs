@@ -1,5 +1,7 @@
 using Domain.Contracts;
 using Infrastructure.Clients.Browser;
+using Microsoft.Playwright;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
@@ -67,6 +69,38 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         // Act & Assert
         await Should.ThrowAsync<InvalidOperationException>(
             () => browser.NavigateAsync(request));
+    }
+
+    [Fact]
+    public async Task EnsureInitializedAsync_AfterBrowserDisconnects_ReconnectsToNewBrowser()
+    {
+        // Arrange: a connection factory that hands out a fresh mock browser each call,
+        // mirroring how Camoufox is reached over a WebSocket that can drop at any time.
+        var connections = new List<Mock<IBrowser>>();
+        Func<Task<IBrowser>> factory = () =>
+        {
+            var browser = new Mock<IBrowser>();
+            browser.SetupGet(b => b.IsConnected).Returns(true);
+            browser
+                .Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+                .ReturnsAsync(new Mock<IBrowserContext>().Object);
+            connections.Add(browser);
+            return Task.FromResult(browser.Object);
+        };
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
+
+        // First use connects once.
+        await browser.EnsureInitializedAsync();
+        connections.Count.ShouldBe(1);
+
+        // Act: the underlying WebSocket drops — the live browser now reports disconnected.
+        connections[0].SetupGet(b => b.IsConnected).Returns(false);
+        await browser.EnsureInitializedAsync();
+
+        // Assert: a new connection was established instead of reusing the dead one forever.
+        connections.Count.ShouldBe(2);
     }
 
 }

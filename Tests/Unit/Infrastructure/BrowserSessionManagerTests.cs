@@ -103,6 +103,21 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
+    public async Task Clear_DropsAllSessions()
+    {
+        var (ctx, _) = CreateMocks();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.GetOrCreateAsync("s1", ctx.Object);
+        await manager.GetOrCreateAsync("s2", ctx.Object);
+
+        manager.Clear();
+
+        manager.Get("s1").ShouldBeNull();
+        manager.Get("s2").ShouldBeNull();
+    }
+
+    [Fact]
     public async Task BackgroundTimer_FiresPrune_OnPruneInterval()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

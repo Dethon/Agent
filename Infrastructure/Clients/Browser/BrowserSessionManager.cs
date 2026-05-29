@@ -115,6 +115,14 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
+    public void Clear()
+    {
+        // Why: when the underlying browser connection dies, every cached page points at a
+        // dead context. Drop the references so the next access creates fresh pages on the
+        // new context — closing the dead pages is pointless and would throw.
+        _sessions.Clear();
+    }
+
     public async Task PruneIdleAsync()
     {
         var cutoff = _timeProvider.GetUtcNow() - _idleTimeout;
