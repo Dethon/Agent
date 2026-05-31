@@ -7,6 +7,7 @@ namespace Infrastructure.Clients.Browser;
 public class BrowserSessionManager : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _navigationLocks = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleTimeout;
@@ -95,6 +96,24 @@ public class BrowserSessionManager : IAsyncDisposable
         return _sessions.GetValueOrDefault(sessionId);
     }
 
+    public async Task<IDisposable> AcquireSessionLockAsync(string sessionId, CancellationToken ct = default)
+    {
+        var gate = _navigationLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        return new SessionLockReleaser(gate);
+    }
+
+    private sealed class SessionLockReleaser(SemaphoreSlim gate) : IDisposable
+    {
+        private SemaphoreSlim? _gate = gate;
+
+        public void Dispose()
+        {
+            // Why: a using-block disposes once, but guard against double-release inflating the count
+            Interlocked.Exchange(ref _gate, null)?.Release();
+        }
+    }
+
     public void UpdateCurrentUrl(string sessionId, string url)
     {
         if (_sessions.TryGetValue(sessionId, out var session))
@@ -109,6 +128,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
     public async Task CloseAsync(string sessionId)
     {
+        _navigationLocks.TryRemove(sessionId, out _);
         if (_sessions.TryRemove(sessionId, out var session) && !session.Page.IsClosed)
         {
             await session.Page.CloseAsync();

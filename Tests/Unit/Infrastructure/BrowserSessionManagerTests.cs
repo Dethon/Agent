@@ -118,6 +118,37 @@ public class BrowserSessionManagerTests
     }
 
     [Fact]
+    public async Task AcquireSessionLockAsync_SameSession_BlocksUntilReleased()
+    {
+        await using var manager = new BrowserSessionManager();
+
+        var first = await manager.AcquireSessionLockAsync("s1");
+        var second = manager.AcquireSessionLockAsync("s1");
+
+        // A second acquisition for the same session must wait for the first to release.
+        (await Task.WhenAny(second, Task.Delay(200))).ShouldNotBe(second);
+
+        first.Dispose();
+
+        // Once released, the queued acquisition completes.
+        (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
+        (await second).Dispose();
+    }
+
+    [Fact]
+    public async Task AcquireSessionLockAsync_DifferentSessions_DoNotBlockEachOther()
+    {
+        await using var manager = new BrowserSessionManager();
+
+        using var first = await manager.AcquireSessionLockAsync("s1");
+        var second = manager.AcquireSessionLockAsync("s2");
+
+        // A different session must acquire immediately, even while another lock is held.
+        (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
+        (await second).Dispose();
+    }
+
+    [Fact]
     public async Task BackgroundTimer_FiresPrune_OnPruneInterval()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

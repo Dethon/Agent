@@ -72,6 +72,64 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task NavigateAsync_ConcurrentRequestsForSameSession_DoNotNavigateSimultaneously()
+    {
+        // Reproduces "Navigation to X is interrupted by another navigation to Y": two browse
+        // calls share one IPage per session, so concurrent GotoAsync calls clobber each other.
+        var firstGotoEntered = new TaskCompletionSource();
+        var releaseFirstGoto = new TaskCompletionSource();
+        var gotoCallCount = 0;
+
+        var page = new Mock<IPage>();
+        page.SetupGet(p => p.Url).Returns("https://a.test/");
+        page.SetupGet(p => p.IsClosed).Returns(false);
+        page
+            .Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+            .Returns(async () =>
+            {
+                var n = Interlocked.Increment(ref gotoCallCount);
+                if (n == 1)
+                {
+                    firstGotoEntered.TrySetResult();
+                    await releaseFirstGoto.Task;
+                }
+
+                return Mock.Of<IResponse>();
+            });
+        // Abort the post-navigation pipeline immediately so the test stays fast and focused.
+        page.Setup(p => p.ContentAsync()).ThrowsAsync(new InvalidOperationException("stop"));
+
+        var context = new Mock<IBrowserContext>();
+        context.Setup(c => c.NewPageAsync()).ReturnsAsync(page.Object);
+
+        var browserMock = new Mock<IBrowser>();
+        browserMock.SetupGet(b => b.IsConnected).Returns(true);
+        browserMock
+            .Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+            .ReturnsAsync(context.Object);
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser",
+            browserFactory: () => Task.FromResult(browserMock.Object));
+
+        var nav1 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://a.test/"));
+        await firstGotoEntered.Task;
+
+        var nav2 = browser.NavigateAsync(new BrowseRequest(SessionId: "shared", Url: "https://b.test/"));
+        var secondStarted = await Task.WhenAny(nav2, Task.Delay(300)) == nav2;
+
+        // While the first navigation holds the session, the second must not have navigated.
+        gotoCallCount.ShouldBe(1);
+        secondStarted.ShouldBeFalse();
+
+        // Releasing the first lets the second proceed and navigate.
+        releaseFirstGoto.TrySetResult();
+        await nav1;
+        await nav2;
+        gotoCallCount.ShouldBe(2);
+    }
+
+    [Fact]
     public async Task EnsureInitializedAsync_AfterBrowserDisconnects_ReconnectsToNewBrowser()
     {
         // Arrange: a connection factory that hands out a fresh mock browser each call,

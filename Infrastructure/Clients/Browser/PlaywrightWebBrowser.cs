@@ -37,6 +37,11 @@ public class PlaywrightWebBrowser(
 
         try
         {
+            // Why: all calls for one session share a single IPage, so concurrent navigations
+            // would interrupt each other ("Navigation to X is interrupted by another navigation
+            // to Y"). Serialize per-session work so parallel tool calls queue instead of clobber.
+            using var sessionLock = await _sessions.AcquireSessionLockAsync(request.SessionId, ct);
+
             await EnsureInitializedAsync();
             var session = await _sessions.GetOrCreateAsync(request.SessionId, _context!, ct);
             var page = session.Page;
@@ -258,6 +263,10 @@ public class PlaywrightWebBrowser(
 
         try
         {
+            // Why: an action can trigger navigation; serialize it against other same-session
+            // calls so it cannot interrupt (or be interrupted by) a concurrent navigation.
+            using var sessionLock = await _sessions.AcquireSessionLockAsync(request.SessionId, ct);
+
             return request.Action switch
             {
                 WebActionType.Back => await ExecuteBackAsync(request, page, urlBefore, ct),
