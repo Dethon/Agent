@@ -54,4 +54,29 @@ public class IppPrinterClientTests
         var bytes = new byte[] { 0xFF, 0xD8, 0x0A, 0x10 };
         IppPrinterClient.PreparePayload("image/jpeg", bytes).ShouldBe(bytes);
     }
+
+    [Fact]
+    public void PreparePayload_OctetStreamTextWithLf_ConvertsToCrlf()
+    {
+        // Cross-backend copies arrive as octet-stream but are really text — sniff and normalize.
+        var bytes = Encoding.UTF8.GetBytes("copied\nlines\nhere");
+        var result = IppPrinterClient.PreparePayload("application/octet-stream", bytes);
+        Encoding.UTF8.GetString(result).ShouldBe("copied\r\nlines\r\nhere");
+    }
+
+    [Fact]
+    public void PreparePayload_OctetStreamBinaryWithNul_IsUnchanged()
+    {
+        // A NUL byte marks this octet-stream payload as binary — must not be rewritten.
+        var bytes = new byte[] { 0x89, 0x50, 0x00, 0x0A, 0x1A, 0x0A };
+        IppPrinterClient.PreparePayload("application/octet-stream", bytes).ShouldBe(bytes);
+    }
+
+    [Fact]
+    public void PreparePayload_ExplicitBinaryType_WithTextLikeBytes_IsUnchanged()
+    {
+        // An explicit binary type is honored even when the bytes look like text.
+        var bytes = Encoding.UTF8.GetBytes("a\nb");
+        IppPrinterClient.PreparePayload("image/jpeg", bytes).ShouldBe(bytes);
+    }
 }
