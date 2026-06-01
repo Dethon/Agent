@@ -467,6 +467,36 @@ services:
       redis:
         condition: service_healthy
 
+  mcp-printer:
+    image: mcp-printer:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-printer
+    ports:
+      - "6014:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerPrinter/Dockerfile
+      cache_from:
+        - mcp-printer:latest
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    environment:
+      - PRINTERURI=${PRINTER_URI:-ipp://cups:631/printers/Main}
+      - SPOOLPATH=/spool
+    volumes:
+      - printer-spool:/spool
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+
   agent:
     image: agent:latest
     logging:
@@ -509,6 +539,8 @@ services:
       mcp-channel-servicebus:
         condition: service_started
       mcp-scheduling:
+        condition: service_started
+      mcp-printer:
         condition: service_started
       redis:
         condition: service_healthy
@@ -590,3 +622,6 @@ services:
 
 networks:
   jackbot:
+
+volumes:
+  printer-spool:
