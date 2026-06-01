@@ -1,3 +1,4 @@
+using System.Text;
 using Domain.Contracts;
 using Domain.DTOs.Printing;
 using SharpIpp;
@@ -13,7 +14,7 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
 {
     public async Task<PrintJobHandle> SubmitAsync(string jobName, string contentType, ReadOnlyMemory<byte> document, CancellationToken ct)
     {
-        await using var stream = new MemoryStream(document.ToArray(), writable: false);
+        await using var stream = new MemoryStream(PreparePayload(contentType, document), writable: false);
         var request = new PrintJobRequest
         {
             Document = stream,
@@ -63,5 +64,20 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
         };
 
         await client.CancelJobAsync(request, ct);
+    }
+
+    // Raw text sent to a printer staircases when lines end in bare LF: the printer feeds a line
+    // but does not return the carriage. Normalize text payloads to CRLF; binary payloads (sent as
+    // octet-stream and auto-sensed) are passed through untouched so their bytes are never rewritten.
+    internal static byte[] PreparePayload(string contentType, ReadOnlyMemory<byte> document)
+    {
+        if (string.IsNullOrEmpty(contentType) || !contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase))
+        {
+            return document.ToArray();
+        }
+
+        var text = Encoding.UTF8.GetString(document.Span);
+        var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+        return Encoding.UTF8.GetBytes(normalized);
     }
 }
