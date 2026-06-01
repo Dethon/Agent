@@ -7,7 +7,9 @@ using SharpIpp.Protocol.Models;
 namespace Infrastructure.Clients.Printer;
 
 // Talks IPP over HTTP to a single configured printer (a CUPS server or a direct-IPP printer).
-public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri) : IPrinterClient
+// The document is submitted with documentFormat (default "application/octet-stream", the IPP
+// auto-sense type) rather than the spooled content type, which printers often reject.
+public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, string documentFormat) : IPrinterClient
 {
     public async Task<PrintJobHandle> SubmitAsync(string jobName, string contentType, ReadOnlyMemory<byte> document, CancellationToken ct)
     {
@@ -20,7 +22,7 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri) : I
                 PrinterUri = printerUri,
                 JobName = jobName,
                 DocumentName = jobName,
-                DocumentFormat = contentType
+                DocumentFormat = documentFormat
             }
         };
 
