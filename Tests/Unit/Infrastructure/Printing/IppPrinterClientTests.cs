@@ -1,5 +1,6 @@
 using System.Text;
 using Infrastructure.Clients.Printer;
+using SharpIpp.Protocol.Models;
 using Shouldly;
 using Xunit;
 
@@ -7,6 +8,20 @@ namespace Tests.Unit.Infrastructure.Printing;
 
 public class IppPrinterClientTests
 {
+    [Theory]
+    [InlineData("fit", "fit")]
+    [InlineData("auto-fit", "auto-fit")]
+    [InlineData("auto", "auto")]
+    [InlineData("fill", "fill")]
+    [InlineData("none", "none")]
+    [InlineData("FIT", "fit")]
+    [InlineData("bogus", "fit")]
+    [InlineData("", "fit")]
+    public void ParseScaling_MapsKnownValues_AndFallsBackToFit(string input, string expected)
+    {
+        IppPrinterClient.ParseScaling(input).Value.ShouldBe(expected);
+    }
+
     [Fact]
     public void PreparePayload_TextWithLf_ConvertsToCrlf()
     {

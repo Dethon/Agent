@@ -12,4 +12,8 @@ public record PrinterSettings
     // format from the bytes); sending a specific type like "text/plain" is rejected by
     // printers that do not advertise it.
     public string DocumentFormat { get; init; } = "application/octet-stream";
+
+    // IPP print-scaling for image/binary jobs: auto | auto-fit | fill | fit | none. "fit" sizes the
+    // image within the page margins; the printer's "auto" default tends to fill the page borderless.
+    public string PrintScaling { get; init; } = "fit";
 }

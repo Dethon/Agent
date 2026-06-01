@@ -36,7 +36,7 @@ public static class ConfigModule
             .AddSingleton(TimeProvider.System)
             .AddSingleton<ISharpIppClient>(_ => new SharpIppClient())
             .AddSingleton<IPrinterClient>(sp => new IppPrinterClient(
-                sp.GetRequiredService<ISharpIppClient>(), new Uri(settings.PrinterUri), settings.DocumentFormat))
+                sp.GetRequiredService<ISharpIppClient>(), new Uri(settings.PrinterUri), settings.DocumentFormat, settings.PrintScaling))
             .AddSingleton<IPrintSpool>(sp => new PrintSpool(settings.SpoolPath, sp.GetRequiredService<TimeProvider>()))
             .AddSingleton(sp => new PrintQueueCoordinator(
                 sp.GetRequiredService<IPrintSpool>(),

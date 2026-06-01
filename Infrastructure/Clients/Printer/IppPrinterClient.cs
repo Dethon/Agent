@@ -10,10 +10,11 @@ namespace Infrastructure.Clients.Printer;
 // Talks IPP over HTTP to a single configured printer (a CUPS server or a direct-IPP printer).
 // The document is submitted with documentFormat (default "application/octet-stream", the IPP
 // auto-sense type) rather than the spooled content type, which printers often reject.
-public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, string documentFormat) : IPrinterClient
+public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, string documentFormat, string printScaling) : IPrinterClient
 {
     public async Task<PrintJobHandle> SubmitAsync(string jobName, string contentType, ReadOnlyMemory<byte> document, CancellationToken ct)
     {
+        var isText = IsTextPayload(contentType, document);
         await using var stream = new MemoryStream(PreparePayload(contentType, document), writable: false);
         var request = new PrintJobRequest
         {
@@ -24,7 +25,11 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
                 JobName = jobName,
                 DocumentName = jobName,
                 DocumentFormat = documentFormat
-            }
+            },
+            // Images otherwise default to print-scaling=auto, which this printer renders as a
+            // borderless fill; request scaling (default "fit") so they size within the page margins.
+            // Text is left alone so the printer's text engine renders it normally.
+            JobTemplateAttributes = isText ? null : new JobTemplateAttributes { PrintScaling = ParseScaling(printScaling) }
         };
 
         var response = await client.PrintJobAsync(request, ct);
@@ -113,4 +118,13 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
             return false;
         }
     }
+
+    internal static PrintScaling ParseScaling(string value) => (value ?? "").ToLowerInvariant() switch
+    {
+        "auto" => PrintScaling.Auto,
+        "auto-fit" => PrintScaling.AutoFit,
+        "fill" => PrintScaling.Fill,
+        "none" => PrintScaling.None,
+        _ => PrintScaling.Fit
+    };
 }
