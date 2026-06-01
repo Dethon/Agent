@@ -135,6 +135,64 @@ public class PrinterQueueFileSystemTests : IDisposable
         info.Size.ShouldBe(6);
     }
 
+    [Fact]
+    public async Task Edit_ReplacesText_AndCancelsPriorSubmission()
+    {
+        var fs = Build();
+        await fs.CreateAsync("note.txt", "hello world", false, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await _coordinator.SubmitDueAsync(CancellationToken.None);
+        var jobId = (await _spool.GetAsync("note.txt", CancellationToken.None))!.JobId!.Value;
+
+        var edit = await fs.EditAsync("note.txt", new[] { new TextEdit("world", "there") }, CancellationToken.None);
+        edit.ShouldBeOfType<FsResult<FsEditResult>.Ok>().Value.TotalOccurrencesReplaced.ShouldBe(1);
+
+        _printer.Canceled.ShouldContain(jobId);
+        (await fs.ReadAsync("note.txt", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldBe("hello there");
+        (await _spool.GetAsync("note.txt", CancellationToken.None))!.IsSubmitted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Copy_DuplicatesDocumentAsNewQueueEntry()
+    {
+        var fs = Build();
+        await fs.CreateAsync("a.txt", "content", false, true, CancellationToken.None);
+
+        var copy = await fs.CopyAsync("a.txt", "b.txt", false, true, CancellationToken.None);
+        copy.ShouldBeOfType<FsResult<FsCopyResult>.Ok>();
+
+        (await fs.ReadAsync("b.txt", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldBe("content");
+    }
+
+    [Fact]
+    public async Task Search_FindsTextAcrossQueuedDocuments()
+    {
+        var fs = Build();
+        await fs.CreateAsync("a.txt", "the quick brown fox", false, true, CancellationToken.None);
+        await fs.CreateAsync("b.txt", "lazy dog", false, true, CancellationToken.None);
+
+        var search = (await fs.SearchAsync("quick", false, null, null, "*", 50, 0, VfsTextSearchOutputMode.Content, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value;
+        search.FilesWithMatches.ShouldBe(1);
+        search.Results[0].File.ShouldBe("/a.txt");
+    }
+
+    [Fact]
+    public async Task FinishedJob_DisappearsFromQueue_OnNextListing()
+    {
+        var fs = Build();
+        await fs.CreateAsync("note.txt", "print me", false, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await _coordinator.SubmitDueAsync(CancellationToken.None);
+        var jobId = (await _spool.GetAsync("note.txt", CancellationToken.None))!.JobId!.Value;
+
+        _printer.CompleteJob(jobId);
+        var glob = (await fs.GlobAsync("/", "*", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        glob.Entries.ShouldNotContain("/note.txt");
+    }
+
     private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Single(byte[] bytes)
     {
         yield return bytes;
