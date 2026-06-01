@@ -241,6 +241,27 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     }
 
     [SkippableFact]
+    public async Task IdleWelcomeScreen_HasNoPerpetualAnimations()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageAsync();
+        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+
+        // The welcome/empty-state screen is the idle foreground state (no conversation selected).
+        // Any CSS animation that loops forever here keeps the browser compositor awake every frame,
+        // pinning GPU usage even while the user is idle. The idle screen must declare no such animation.
+        var perpetualAnimations = await page.EvaluateAsync<int>(
+            @"() => document.getAnimations()
+                .filter(a => a.playState === 'running'
+                    && a.effect
+                    && a.effect.getComputedTiming().iterations === Infinity)
+                .length");
+
+        perpetualAnimations.ShouldBe(0);
+    }
+
+    [SkippableFact]
     public async Task SelectUser_AvatarUpdates()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");

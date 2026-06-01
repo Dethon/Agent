@@ -1492,16 +1492,6 @@ html, body {
     border-radius: 24px;
     color: var(--accent);
     transition: all var(--transition-normal);
-    animation: iconFloat 3s ease-in-out infinite;
-}
-
-@keyframes iconFloat {
-    0%, 100% {
-        transform: translateY(0);
-    }
-    50% {
-        transform: translateY(-8px);
-    }
 }
 
 .empty-state-icon svg {
