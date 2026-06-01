@@ -484,7 +484,7 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     environment:
-      - PRINTERURI=${PRINTER_URI:-ipp://cups:631/printers/Main}
+      - PRINTERURI=${PRINTER_URI:-ipp://192.168.4.59:631/ipp/print}
       - SPOOLPATH=/spool
     volumes:
       - printer-spool:/spool

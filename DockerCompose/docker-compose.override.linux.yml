@@ -35,6 +35,10 @@ services:
     volumes:
       - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
 
+  mcp-printer:
+    volumes:
+      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+
   agent:
     volumes:
       - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
