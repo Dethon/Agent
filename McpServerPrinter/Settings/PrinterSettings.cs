@@ -16,4 +16,8 @@ public record PrinterSettings
     // IPP print-scaling for image/binary jobs: auto | auto-fit | fill | fit | none. "fit" sizes the
     // image within the page margins; the printer's "auto" default tends to fill the page borderless.
     public string PrintScaling { get; init; } = "fit";
+
+    // Comma-separated format tokens accepted into the queue (matched by PrintableContent.DetectFormat).
+    // Files of any other format are rejected on copy-in so they cannot print as gibberish.
+    public string SupportedFormats { get; init; } = "text,jpeg,pwg-raster,urf,pcl";
 }
