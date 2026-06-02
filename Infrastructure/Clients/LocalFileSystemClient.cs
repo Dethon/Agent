@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.FileSystemGlobbing;
 
 namespace Infrastructure.Clients;
@@ -21,7 +22,10 @@ public class LocalFileSystemClient : IFileSystemClient
         var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
 
         var matcher = new Matcher();
-        matcher.AddInclude(effectivePattern);
+        foreach (var expanded in GlobBraceExpander.Expand(effectivePattern))
+        {
+            matcher.AddInclude(expanded);
+        }
 
         var dirRelativePaths = Directory.EnumerateDirectories(basePath, "*", SearchOption.AllDirectories)
             .Select(d => Path.GetRelativePath(basePath, d));

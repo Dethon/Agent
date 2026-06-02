@@ -136,6 +136,21 @@ public class LocalFileSystemClientTests : IDisposable
         new object[]
         {
             new GlobScenario(
+                "BraceExpansion_MatchesAnyAlternative",
+                ["movie.mkv", "movie.mp4", "poster.png", "readme.txt"],
+                "*.{mkv,mp4,png}",
+                (hits, _) =>
+                {
+                    hits.Length.ShouldBe(3);
+                    hits.ShouldContain(h => h.EndsWith("movie.mkv"));
+                    hits.ShouldContain(h => h.EndsWith("movie.mp4"));
+                    hits.ShouldContain(h => h.EndsWith("poster.png"));
+                    hits.ShouldNotContain(h => h.EndsWith("readme.txt"));
+                })
+        },
+        new object[]
+        {
+            new GlobScenario(
                 "NoMatches_EmptyArray",
                 ["file.txt"],
                 "*.pdf",

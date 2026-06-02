@@ -1,11 +1,9 @@
-using System.Text.RegularExpressions;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaTree
 {
-    private static readonly TimeSpan _globMatchTimeout = TimeSpan.FromSeconds(1);
-
     public static IReadOnlyList<string> Directories(HaCatalog catalog)
     {
         var dirs = new List<string> { "entities", "areas" };
@@ -60,56 +58,15 @@ public static class HaTree
         var dirsOnly = pattern.EndsWith('/');
         var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
         var prefix = string.IsNullOrEmpty(basePath) ? string.Empty : basePath.Trim('/') + "/";
-        var regex = GlobToRegex(prefix + effectivePattern);
+        var matches = GlobRegex.CompileMatcher(prefix + effectivePattern);
 
-        var dirs = Directories(catalog).Where(p => regex.IsMatch(p)).Select(p => p + "/");
+        var dirs = Directories(catalog).Where(matches).Select(p => p + "/");
         if (dirsOnly)
         {
             return dirs.OrderBy(p => p, StringComparer.Ordinal).ToList();
         }
 
-        var files = Files(catalog).Where(p => regex.IsMatch(p));
+        var files = Files(catalog).Where(matches);
         return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
-    }
-
-    // GlobToRegex emits only literals, '[^/]*'/'[^/]', and the recursive-wildcard forms below. The
-    // '`**/` -> (?:[^/]+/)*' construct matches zero or more whole path segments, so `**/X` also matches
-    // X at the base level — matching the Local file matcher rather than requiring a leading '/'. The
-    // segment separator inside the group can't overlap '[^/]+', so the pattern can't catastrophically
-    // backtrack; the match timeout below is belt-and-suspenders only.
-    private static Regex GlobToRegex(string glob)
-    {
-        var sb = new System.Text.StringBuilder("^");
-        for (var i = 0; i < glob.Length; i++)
-        {
-            var c = glob[i];
-            if (c == '*' && i + 1 < glob.Length && glob[i + 1] == '*')
-            {
-                // `**/` matches zero or more whole segments (incl. none); bare `**` matches anything.
-                if (i + 2 < glob.Length && glob[i + 2] == '/')
-                {
-                    sb.Append("(?:[^/]+/)*");
-                    i += 2;
-                }
-                else
-                {
-                    sb.Append(".*");
-                    i++;
-                }
-            }
-            else
-            {
-                sb.Append(c switch
-                {
-                    '*' => "[^/]*",
-                    '?' => "[^/]",
-                    _ => Regex.Escape(c.ToString())
-                });
-            }
-        }
-        sb.Append('$');
-        // Glob regexes are compiled fresh per call and matched once over a small pool, so the
-        // interpreter is cheaper than RegexOptions.Compiled's JIT cost (matches the search path).
-        return new Regex(sb.ToString(), RegexOptions.None, _globMatchTimeout);
     }
 }

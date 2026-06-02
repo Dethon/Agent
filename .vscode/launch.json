@@ -16,7 +16,8 @@
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
         "Docker: MCP Channel ServiceBus",
-        "Docker: MCP Scheduling"
+        "Docker: MCP Scheduling",
+        "Docker: MCP Printer"
       ],
       "preLaunchTask": "docker-debug-up",
       "stopAll": true
@@ -36,7 +37,8 @@
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
         "Local: MCP Channel ServiceBus",
-        "Local: MCP Scheduling"
+        "Local: MCP Scheduling",
+        "Local: MCP Printer"
       ],
       "preLaunchTask": "build-all-local",
       "stopAll": true
@@ -358,6 +360,18 @@
       }
     },
     {
+      "name": "Local: MCP Printer",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/McpServerPrinter/bin/Debug/net10.0/McpServerPrinter.dll",
+      "cwd": "${workspaceFolder}/McpServerPrinter",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:6014",
+        "SPOOLPATH": "${workspaceFolder}/McpServerPrinter/.spool"
+      }
+    },
+    {
       "name": "Docker: MCP Channel ServiceBus",
       "type": "coreclr",
       "request": "attach",
@@ -380,6 +394,21 @@
       "pipeTransport": {
         "pipeProgram": "docker",
         "pipeArgs": ["exec", "-i", "mcp-scheduling"],
+        "debuggerPath": "/remote_debugger/vsdbg",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
+    },
+    {
+      "name": "Docker: MCP Printer",
+      "type": "coreclr",
+      "request": "attach",
+      "processId": 1,
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": ["exec", "-i", "mcp-printer"],
         "debuggerPath": "/remote_debugger/vsdbg",
         "quoteArgs": false
       },
