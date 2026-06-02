@@ -19,5 +19,7 @@ public interface IPrintSpool
 
     Task MarkSubmittedAsync(string fileName, int jobId, DateTimeOffset submittedAt, CancellationToken ct);
 
+    Task SetMissingSinceAsync(string fileName, DateTimeOffset? missingSince, CancellationToken ct);
+
     Task RemoveAsync(string fileName, CancellationToken ct);
 }

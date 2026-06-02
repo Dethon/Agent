@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.Printing;
+using Domain.Tools.Printing.Vfs;
 using Infrastructure.Utils;
 using McpServerPrinter.Settings;
 using ModelContextProtocol.Protocol;
@@ -18,7 +19,20 @@ public class FsBlobWriteTool(IPrintSpool spool, PrinterSettings settings)
     public async Task<CallToolResult> McpRun(
         string path, string contentBase64, long offset = 0, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default)
     {
-        var fileName = path.TrimStart('/');
+        // Validate the path the same way every other op does: only /print-queue/<filename> is writable
+        // (rejects nested paths, traversal, and the read-only status.json instead of spooling a shadow).
+        var node = PrinterQueuePath.Parse(path);
+        if (node.Kind != PrinterNodeKind.DocumentFile)
+        {
+            return ToolResponse.Create(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.InvalidArgument,
+                Message = $"Cannot write to '{path}'. Write documents to /print-queue/<filename>.",
+                Retryable = false
+            }.ToNode());
+        }
+
+        var fileName = node.FileName!;
         var bytes = Convert.FromBase64String(contentBase64);
 
         // The first chunk carries the file header; reject formats the printer cannot render before

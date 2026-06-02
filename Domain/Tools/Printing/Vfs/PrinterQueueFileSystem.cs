@@ -12,7 +12,8 @@ namespace Domain.Tools.Printing.Vfs;
 public sealed class PrinterQueueFileSystem(
     IPrintSpool spool,
     IPrinterClient printer,
-    PrintQueueCoordinator coordinator) : IFileSystemBackend
+    PrintQueueCoordinator coordinator,
+    string supportedFormats) : IFileSystemBackend
 {
     public string FilesystemName => "print-queue";
 
@@ -335,6 +336,8 @@ public sealed class PrinterQueueFileSystem(
             });
         }
 
+        // No format check needed: the source is already a spooled document, so it passed the
+        // format gate on the way in and cannot introduce an unsupported payload.
         var srcEntry = await spool.GetAsync(src.FileName!, ct);
         await CancelIfSubmittedAsync(dst.FileName!, ct);
         await spool.WriteBytesAsync(dst.FileName!, srcEntry!.ContentType, bytes, 0, true, ct);
@@ -382,6 +385,19 @@ public sealed class PrinterQueueFileSystem(
         await CancelIfSubmittedAsync(node.FileName!, ct);
         await foreach (var chunk in chunks.WithCancellation(ct))
         {
+            // The first chunk carries the file header; reject formats the printer cannot render before
+            // anything is spooled. The MCP fs_blob_write tool guards too, but enforcing it here keeps
+            // the backend self-consistent for any in-process caller.
+            if (offset == 0)
+            {
+                var format = PrintableContent.DetectFormat(chunk.Span);
+                if (!PrintableContent.IsSupported(format, supportedFormats))
+                {
+                    throw new InvalidOperationException(
+                        $"'{node.FileName}' looks like '{format}', which this printer cannot render. Supported formats: {supportedFormats}.");
+                }
+            }
+
             await spool.WriteBytesAsync(node.FileName!, "application/octet-stream", chunk, offset, overwrite && offset == 0, ct);
             offset += chunk.Length;
         }

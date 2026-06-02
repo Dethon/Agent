@@ -7,6 +7,11 @@ public record PrinterSettings
     public int SubmitDebounceMilliseconds { get; init; } = 750;
     public int TickIntervalMilliseconds { get; init; } = 500;
 
+    // How long a submitted job must stay absent from the printer's active set before it is pruned from
+    // the queue. Debounces the gap between submitting a job and the printer registering it, and any
+    // transient empty Get-Jobs response, so still-printing jobs aren't dropped early.
+    public int ReconcileGraceMilliseconds { get; init; } = 5000;
+
     // IPP document-format sent to the printer. "application/octet-stream" is the IPP
     // auto-sense default supported by virtually all printers (the printer detects the real
     // format from the bytes); sending a specific type like "text/plain" is rejected by

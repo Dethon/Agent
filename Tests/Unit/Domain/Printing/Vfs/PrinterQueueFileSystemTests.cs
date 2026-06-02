@@ -22,8 +22,9 @@ public class PrinterQueueFileSystemTests : IDisposable
     private PrinterQueueFileSystem Build()
     {
         _spool = new PrintSpool(_root, _clock);
-        _coordinator = new PrintQueueCoordinator(_spool, _printer, _clock, TimeSpan.FromMilliseconds(500));
-        return new PrinterQueueFileSystem(_spool, _printer, _coordinator);
+        _coordinator = new PrintQueueCoordinator(_spool, _printer, _clock,
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+        return new PrinterQueueFileSystem(_spool, _printer, _coordinator, "text,jpeg,pwg-raster,urf,pcl");
     }
 
     [Fact]
@@ -139,14 +140,24 @@ public class PrinterQueueFileSystemTests : IDisposable
     public async Task ReadAndInfo_BinaryDocument_AreHandled()
     {
         var fs = Build();
-        await fs.WriteChunksAsync("scan.pdf", Single(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x00, 0x01 }), true, true, CancellationToken.None);
+        // A supported binary format (JPEG) — read-as-text still fails, info still works.
+        await fs.WriteChunksAsync("scan.jpg", Single(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 }), true, true, CancellationToken.None);
 
-        var read = await fs.ReadAsync("scan.pdf", null, null, CancellationToken.None);
+        var read = await fs.ReadAsync("scan.jpg", null, null, CancellationToken.None);
         read.ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe("unsupported_operation");
 
-        var info = (await fs.InfoAsync("scan.pdf", CancellationToken.None)).ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
+        var info = (await fs.InfoAsync("scan.jpg", CancellationToken.None)).ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
         info.Exists.ShouldBeTrue();
         info.Size.ShouldBe(6);
+    }
+
+    [Fact]
+    public async Task WriteChunks_UnsupportedFormat_IsRejected()
+    {
+        var fs = Build();
+        // PDF is not in the supported set; the backend rejects it rather than spooling unprintable bytes.
+        await Should.ThrowAsync<InvalidOperationException>(
+            fs.WriteChunksAsync("scan.pdf", Single(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x00, 0x01 }), true, true, CancellationToken.None));
     }
 
     [Fact]
@@ -203,6 +214,12 @@ public class PrinterQueueFileSystemTests : IDisposable
         var jobId = (await _spool.GetAsync("note.txt", CancellationToken.None))!.JobId!.Value;
 
         _printer.CompleteJob(jobId);
+
+        // First listing records the absence but keeps the job (debounced); it disappears after the grace.
+        (await fs.GlobAsync("/", "*", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>()
+            .Value.Entries.ShouldContain("/note.txt");
+
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
         var glob = (await fs.GlobAsync("/", "*", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
         glob.Entries.ShouldNotContain("/note.txt");
     }

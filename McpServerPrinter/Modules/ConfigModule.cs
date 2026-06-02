@@ -42,8 +42,13 @@ public static class ConfigModule
                 sp.GetRequiredService<IPrintSpool>(),
                 sp.GetRequiredService<IPrinterClient>(),
                 sp.GetRequiredService<TimeProvider>(),
-                TimeSpan.FromMilliseconds(settings.SubmitDebounceMilliseconds)))
-            .AddSingleton<PrinterQueueFileSystem>()
+                TimeSpan.FromMilliseconds(settings.SubmitDebounceMilliseconds),
+                TimeSpan.FromMilliseconds(settings.ReconcileGraceMilliseconds)))
+            .AddSingleton(sp => new PrinterQueueFileSystem(
+                sp.GetRequiredService<IPrintSpool>(),
+                sp.GetRequiredService<IPrinterClient>(),
+                sp.GetRequiredService<PrintQueueCoordinator>(),
+                settings.SupportedFormats))
             .AddHostedService<PrintSubmissionWorker>();
 
         services

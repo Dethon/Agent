@@ -32,6 +32,9 @@ public sealed class FakePrinterClient : IPrinterClient
     // Test helpers:
     public void CompleteJob(int jobId) => _active.Remove(jobId);
 
+    public void SetActive(int jobId, string jobName) =>
+        _active[jobId] = new PrintJobStatus(jobId, jobName, PrintJobState.Processing);
+
     public void SetState(int jobId, PrintJobState state)
     {
         if (_active.TryGetValue(jobId, out var job))

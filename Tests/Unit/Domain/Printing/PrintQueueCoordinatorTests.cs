@@ -16,7 +16,8 @@ public class PrintQueueCoordinatorTests : IDisposable
     private (PrintSpool Spool, PrintQueueCoordinator Coordinator) Build()
     {
         var spool = new PrintSpool(_root, _clock);
-        return (spool, new PrintQueueCoordinator(spool, _printer, _clock, TimeSpan.FromMilliseconds(500)));
+        return (spool, new PrintQueueCoordinator(spool, _printer, _clock,
+            TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500)));
     }
 
     [Fact]
@@ -58,10 +59,55 @@ public class PrintQueueCoordinatorTests : IDisposable
         await coordinator.ReconcileAsync(CancellationToken.None);
         (await spool.GetAsync("a.txt", CancellationToken.None)).ShouldNotBeNull();
 
-        // Printer finished it → pruned (auto-disappear).
+        // Printer finished it → not pruned on first sight (debounced), only once absent past the grace.
         _printer.CompleteJob(jobId);
         await coordinator.ReconcileAsync(CancellationToken.None);
+        (await spool.GetAsync("a.txt", CancellationToken.None)).ShouldNotBeNull();
+
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await coordinator.ReconcileAsync(CancellationToken.None);
         (await spool.GetAsync("a.txt", CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Reconcile_DoesNotPruneJustSubmittedJob_BeforePrinterRegistersIt()
+    {
+        var (spool, coordinator) = Build();
+        await spool.WriteBytesAsync("a.txt", "text/plain", Encoding.UTF8.GetBytes("hi"), 0, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await coordinator.SubmitDueAsync(CancellationToken.None);
+        var jobId = (await spool.GetAsync("a.txt", CancellationToken.None))!.JobId!.Value;
+
+        // Simulate the printer not yet listing the freshly submitted job (registration lag).
+        _printer.CompleteJob(jobId);
+        await coordinator.ReconcileAsync(CancellationToken.None);
+
+        // Within the grace window the job must survive rather than be pruned mid-print.
+        (await spool.GetAsync("a.txt", CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Reconcile_TransientAbsence_DoesNotPrune_AndReappearanceClearsTheMark()
+    {
+        var (spool, coordinator) = Build();
+        await spool.WriteBytesAsync("a.txt", "text/plain", Encoding.UTF8.GetBytes("hi"), 0, true, CancellationToken.None);
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await coordinator.SubmitDueAsync(CancellationToken.None);
+        var jobId = (await spool.GetAsync("a.txt", CancellationToken.None))!.JobId!.Value;
+
+        // A transient empty/partial Get-Jobs response — the job briefly vanishes from the active set.
+        _printer.CompleteJob(jobId);
+        await coordinator.ReconcileAsync(CancellationToken.None);
+        (await spool.GetAsync("a.txt", CancellationToken.None))!.MissingSince.ShouldNotBeNull();
+
+        // It reappears on the next poll (still printing); the missing mark is cleared, nothing pruned.
+        _printer.SetActive(jobId, "a.txt");
+        _clock.Advance(TimeSpan.FromMilliseconds(600));
+        await coordinator.ReconcileAsync(CancellationToken.None);
+
+        var entry = await spool.GetAsync("a.txt", CancellationToken.None);
+        entry.ShouldNotBeNull();
+        entry!.MissingSince.ShouldBeNull();
     }
 
     public void Dispose()

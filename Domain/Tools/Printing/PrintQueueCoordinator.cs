@@ -8,7 +8,8 @@ public sealed class PrintQueueCoordinator(
     IPrintSpool spool,
     IPrinterClient printer,
     TimeProvider clock,
-    TimeSpan submitDebounce)
+    TimeSpan submitDebounce,
+    TimeSpan reconcileGrace)
 {
     public async Task TickAsync(CancellationToken ct)
     {
@@ -44,12 +45,36 @@ public sealed class PrintQueueCoordinator(
             return;
         }
 
+        var now = clock.GetUtcNow();
         var activeIds = (await printer.GetActiveJobsAsync(ct)).Select(j => j.JobId).ToHashSet();
-        var finished = submitted.Where(e => !activeIds.Contains(e.JobId!.Value));
 
-        foreach (var entry in finished)
+        foreach (var entry in submitted)
         {
-            await spool.RemoveAsync(entry.FileName, ct);
+            if (activeIds.Contains(entry.JobId!.Value))
+            {
+                // Live on the printer; clear any earlier "missing" mark so a brief blip doesn't count.
+                if (entry.MissingSince is not null)
+                {
+                    await spool.SetMissingSinceAsync(entry.FileName, null, ct);
+                }
+
+                continue;
+            }
+
+            // Absent from the active set. A just-submitted job the printer hasn't registered yet, and a
+            // transient empty/partial Get-Jobs response, both look like this — so don't prune on first
+            // sight. Record when it went missing and only prune once it has stayed gone past the grace
+            // window (debounced absence), which is the reliable signal that it actually finished.
+            var missingSince = entry.MissingSince ?? now;
+            if (entry.MissingSince is null)
+            {
+                await spool.SetMissingSinceAsync(entry.FileName, missingSince, ct);
+            }
+
+            if (now - missingSince >= reconcileGrace)
+            {
+                await spool.RemoveAsync(entry.FileName, ct);
+            }
         }
     }
 }

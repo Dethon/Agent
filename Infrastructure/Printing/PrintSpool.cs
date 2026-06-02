@@ -46,7 +46,8 @@ public sealed class PrintSpool(string rootPath, TimeProvider clock) : IPrintSpoo
                 LastWriteAt = clock.GetUtcNow(),
                 // A fresh offset-0 write restarts the lifecycle; a re-write clears any prior submission.
                 SubmittedAt = offset == 0 ? null : existing?.SubmittedAt,
-                JobId = offset == 0 ? null : existing?.JobId
+                JobId = offset == 0 ? null : existing?.JobId,
+                MissingSince = offset == 0 ? null : existing?.MissingSince
             };
             await WriteMetaAsync(entry, ct);
         }
@@ -124,6 +125,25 @@ public sealed class PrintSpool(string rootPath, TimeProvider clock) : IPrintSpoo
             }
 
             await WriteMetaAsync(existing with { JobId = jobId, SubmittedAt = submittedAt }, ct);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task SetMissingSinceAsync(string fileName, DateTimeOffset? missingSince, CancellationToken ct)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            var existing = await ReadMetaAsync(fileName, ct);
+            if (existing is null)
+            {
+                return;
+            }
+
+            await WriteMetaAsync(existing with { MissingSince = missingSince }, ct);
         }
         finally
         {

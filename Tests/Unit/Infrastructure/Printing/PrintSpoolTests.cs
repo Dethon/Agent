@@ -72,6 +72,26 @@ public class PrintSpoolTests : IDisposable
     }
 
     [Fact]
+    public async Task SetMissingSince_SetsAndClears_AndOffsetZeroRewriteResetsIt()
+    {
+        var spool = Build();
+        await spool.WriteBytesAsync("a.txt", "text/plain", new byte[] { 1 }, 0, true, CancellationToken.None);
+        await spool.MarkSubmittedAsync("a.txt", 7, _clock.GetUtcNow(), CancellationToken.None);
+
+        var marked = _clock.GetUtcNow();
+        await spool.SetMissingSinceAsync("a.txt", marked, CancellationToken.None);
+        (await spool.GetAsync("a.txt", CancellationToken.None))!.MissingSince.ShouldBe(marked);
+
+        await spool.SetMissingSinceAsync("a.txt", null, CancellationToken.None);
+        (await spool.GetAsync("a.txt", CancellationToken.None))!.MissingSince.ShouldBeNull();
+
+        // Re-marked, then a fresh offset-0 write restarts the lifecycle and clears the missing mark.
+        await spool.SetMissingSinceAsync("a.txt", marked, CancellationToken.None);
+        await spool.WriteBytesAsync("a.txt", "text/plain", new byte[] { 2 }, 0, true, CancellationToken.None);
+        (await spool.GetAsync("a.txt", CancellationToken.None))!.MissingSince.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task List_ReturnsAllEntries_AndRemove_DeletesBytesAndMeta()
     {
         var spool = Build();
