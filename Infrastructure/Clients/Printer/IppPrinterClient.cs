@@ -43,17 +43,24 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
             OperationAttributes = new GetJobsOperationAttributes
             {
                 PrinterUri = printerUri,
-                WhichJobs = WhichJobs.NotCompleted
+                WhichJobs = WhichJobs.NotCompleted,
+                // Without an explicit request many printers (e.g. HP) return only job-id/job-uri and
+                // omit job-state, which would make every active job look stateless and get pruned
+                // from the queue mid-print. Ask for the attributes we actually need.
+                RequestedAttributes = ["job-id", "job-state", "job-name"]
             }
         };
 
         var response = await client.GetJobsAsync(request, ct);
+        // WhichJobs.NotCompleted already restricts the result to active (pending/processing) jobs
+        // server-side, so keep every returned job; map its state for display, defaulting to
+        // Processing when the printer still omits job-state.
         return (response.JobsAttributes ?? [])
-            .Where(j => j.JobState is not null && IppJobStateMapper.IsActive(j.JobState.Value))
+            .Where(j => j.JobId is not null)
             .Select(j => new PrintJobStatus(
-                j.JobId ?? 0,
+                j.JobId!.Value,
                 j.JobName ?? string.Empty,
-                IppJobStateMapper.Map(j.JobState!.Value)))
+                j.JobState is not null ? IppJobStateMapper.Map(j.JobState.Value) : PrintJobState.Processing))
             .ToList();
     }
 
