@@ -52,11 +52,14 @@ public sealed class IppPrinterClient(ISharpIppClient client, Uri printerUri, str
         };
 
         var response = await client.GetJobsAsync(request, ct);
-        // WhichJobs.NotCompleted already restricts the result to active (pending/processing) jobs
-        // server-side, so keep every returned job; map its state for display, defaulting to
-        // Processing when the printer still omits job-state.
+        // WhichJobs.NotCompleted should restrict the result server-side, but some printers ignore it
+        // and return finished jobs too — which would keep those jobs "active" forever and stop the
+        // queue from ever pruning them. Defensively drop any job whose reported state isn't active.
+        // A printer that omits job-state entirely is kept (mapped to Processing) since we asked for
+        // not-completed jobs and have nothing better to go on.
         return (response.JobsAttributes ?? [])
             .Where(j => j.JobId is not null)
+            .Where(j => j.JobState is null || IppJobStateMapper.IsActive(j.JobState.Value))
             .Select(j => new PrintJobStatus(
                 j.JobId!.Value,
                 j.JobName ?? string.Empty,

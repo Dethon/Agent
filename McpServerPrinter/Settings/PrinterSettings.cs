@@ -18,6 +18,7 @@ public record PrinterSettings
     public string PrintScaling { get; init; } = "fit";
 
     // Comma-separated format tokens accepted into the queue (matched by PrintableContent.DetectFormat).
-    // Files of any other format are rejected on copy-in so they cannot print as gibberish.
-    public string SupportedFormats { get; init; } = "text,jpeg,pwg-raster,urf,pcl";
+    // Files of any other format are rejected on copy-in so they cannot print as gibberish. Kept to the
+    // two formats the docs/prompt promise the agent can print directly; anything else is converted first.
+    public string SupportedFormats { get; init; } = "text,jpeg";
 }
