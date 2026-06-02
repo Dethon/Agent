@@ -80,16 +80,17 @@ public class ScheduleFileSystemJourneyTests
         saved.CronExpression.ShouldBe("0 8 * * *");
         saved.NextRunAt.ShouldNotBeNull();
 
-        // Glob root — every catalog agent shows up, even ones with no schedules.
+        // Glob root — every catalog agent shows up, even ones with no schedules. Directory
+        // results are marked with a trailing slash, like every other filesystem.
         var rootGlob = (await fs.GlobAsync("/", "*", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        rootGlob.Entries.ShouldContain("/jonas");
-        rootGlob.Entries.ShouldContain("/jack");
+        rootGlob.Entries.ShouldContain("/jonas/");
+        rootGlob.Entries.ShouldContain("/jack/");
 
         // Glob agent dir — lists this agent's schedules.
         var agentGlob = (await fs.GlobAsync("/jonas", "*", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        agentGlob.Entries.ShouldContain("/jonas/morning-news");
+        agentGlob.Entries.ShouldContain("/jonas/morning-news/");
 
         // Read schedule.json — spec is rendered without agentId (path already encodes it).
         var readSchedule = (await fs.ReadAsync("/jonas/morning-news/schedule.json", null, null, CancellationToken.None))
@@ -113,6 +114,95 @@ public class ScheduleFileSystemJourneyTests
         var delete = await fs.DeleteAsync("/jonas/morning-news", CancellationToken.None);
         delete.ShouldBeOfType<FsResult<FsRemoveResult>.Ok>();
         store.Items.ContainsKey("morning-news").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Glob_StarAtRoot_ListsAgentDirsOnly_MarkedWithSlash_NoRecursion()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store,
+            new AgentCatalogEntry("jonas", "Jonas", "general"),
+            new AgentCatalogEntry("jack", "Jack", "library"));
+        await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        var root = (await fs.GlobAsync("/", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        root.Entries.ShouldContain("/jonas/");
+        root.Entries.ShouldContain("/jack/");
+        root.Entries.ShouldNotContain(e => e.Contains("morning-news"));
+    }
+
+    [Fact]
+    public async Task Glob_NonMatchingPattern_ReturnsEmpty()
+    {
+        var fs = Build();
+
+        var glob = (await fs.GlobAsync("/", "does-not-exist", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Glob_DoubleStar_RecursesIntoScheduleFiles()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store, new AgentCatalogEntry("jonas", "Jonas", "general"));
+        await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/", "**/*.json", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("/jonas/agent_info.json");
+        glob.Entries.ShouldContain("/jonas/morning-news/schedule.json");
+        glob.Entries.ShouldContain("/jonas/morning-news/status.json");
+        glob.Entries.ShouldNotContain("/jonas/morning-news/run_now.sh");
+    }
+
+    [Fact]
+    public async Task Glob_TrailingSlash_ReturnsDirectoriesOnly()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store, new AgentCatalogEntry("jonas", "Jonas", "general"));
+        await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/jonas", "*/", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBe(["/jonas/morning-news/"]);
+    }
+
+    [Fact]
+    public async Task Glob_BraceExpansion_MatchesEitherControlFile()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store, new AgentCatalogEntry("jonas", "Jonas", "general"));
+        await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/jonas/morning-news", "{schedule.json,run_now.sh}", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("/jonas/morning-news/schedule.json");
+        glob.Entries.ShouldContain("/jonas/morning-news/run_now.sh");
+        glob.Entries.ShouldNotContain("/jonas/morning-news/status.json");
+    }
+
+    [Fact]
+    public async Task Glob_ScheduleDirectory_ListsItsControlFiles()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store, new AgentCatalogEntry("jonas", "Jonas", "general"));
+        await fs.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/jonas/morning-news", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldBe([
+            "/jonas/morning-news/run_now.sh",
+            "/jonas/morning-news/schedule.json",
+            "/jonas/morning-news/status.json"
+        ]);
     }
 
     [Fact]

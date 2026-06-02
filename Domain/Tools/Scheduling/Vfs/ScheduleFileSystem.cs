@@ -23,27 +23,26 @@ public sealed class ScheduleFileSystem(
 
     private static readonly JsonSerializerOptions _parseOptions = new() { PropertyNameCaseInsensitive = true };
 
+    // Glob matches the same semantics as every other filesystem: the pattern (relative to basePath)
+    // filters the schedule tree, `*`/`**`/`?`/`{a,b}` behave as documented, a trailing slash lists
+    // directories only, and directory results are marked with a trailing slash.
     public async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
-        var node = SchedulePath.Parse(basePath);
-        // pattern is unused: the schedule tree is shallow (agent/schedule) and entries are returned unfiltered.
-        switch (node.Kind)
+        var all = await store.ListAsync(ct);
+        var prefix = string.IsNullOrEmpty(basePath?.Trim('/')) ? string.Empty : basePath.Trim('/') + "/";
+
+        var dirsOnly = pattern.EndsWith('/');
+        var effectivePattern = dirsOnly ? pattern.TrimEnd('/') : pattern;
+        var matches = GlobRegex.CompileMatcher(prefix + effectivePattern);
+
+        var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
+        if (dirsOnly)
         {
-            case ScheduleNodeKind.Root:
-                {
-                    var entries = agents.GetAll().Select(a => $"/{a.Id}").ToList();
-                    return Glob(entries);
-                }
-            case ScheduleNodeKind.AgentDir when agents.Exists(node.AgentId!):
-                {
-                    var all = await store.ListAsync(ct);
-                    var entries = all.Where(s => s.AgentId == node.AgentId)
-                        .Select(s => $"/{node.AgentId}/{s.Id}").ToList();
-                    return Glob(entries);
-                }
-            default:
-                return NotFound<FsGlobResult>(basePath);
+            return Glob(dirs.OrderBy(p => p, StringComparer.Ordinal).ToList());
         }
+
+        var files = ScheduleTree.Files(agents, all).Where(matches).Select(p => $"/{p}");
+        return Glob(dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList());
     }
 
     public async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)

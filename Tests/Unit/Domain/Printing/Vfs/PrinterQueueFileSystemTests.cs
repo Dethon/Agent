@@ -77,6 +77,20 @@ public class PrinterQueueFileSystemTests : IDisposable
     }
 
     [Fact]
+    public async Task Glob_BraceExpansion_MatchesEitherExtension()
+    {
+        var fs = Build();
+        await fs.CreateAsync("report.txt", "hello", false, true, CancellationToken.None);
+        await fs.CreateAsync("notes.md", "hi", false, true, CancellationToken.None);
+
+        var glob = (await fs.GlobAsync("/", "*.{txt,md}", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("/report.txt");
+        glob.Entries.ShouldContain("/notes.md");
+    }
+
+    [Fact]
     public async Task Create_DuplicateName_RequiresOverwrite()
     {
         var fs = Build();

@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Printing;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Printing.Vfs;
 
@@ -190,8 +191,8 @@ public sealed class PrinterQueueFileSystem(
         var entries = await spool.ListAsync(ct);
         var names = entries.Select(e => e.FileName).Append(PrinterQueuePath.StatusFileName);
 
-        var regex = GlobToRegex(pattern);
-        var matched = names.Where(n => regex.IsMatch(n)).OrderBy(n => n)
+        var regexes = GlobBraceExpander.Expand(pattern).Select(GlobToRegex).ToList();
+        var matched = names.Where(n => regexes.Any(r => r.IsMatch(n))).OrderBy(n => n)
             .Select(n => "/" + n).ToList();
 
         return new FsResult<FsGlobResult>.Ok(new FsGlobResult

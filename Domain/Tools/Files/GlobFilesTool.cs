@@ -10,6 +10,7 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
     protected const string Description = """
                                          Searches for files and directories matching a glob pattern relative to the mount root.
                                          `*` matches one path segment, `**` recurses, `?` matches one character.
+                                         Brace alternation expands too: `**/*.{jpg,png,gif}` matches any of the listed extensions.
                                          A trailing slash matches directories only (e.g. `*/`, `src/**/`); otherwise both files
                                          and directories match, with directory results returned with a trailing slash so you can
                                          tell them apart. Results are capped at 200; the response is `{entries, truncated, total}`.
