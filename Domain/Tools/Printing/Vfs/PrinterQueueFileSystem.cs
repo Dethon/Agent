@@ -5,7 +5,6 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Printing;
-using Domain.Tools;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Printing.Vfs;
@@ -191,8 +190,8 @@ public sealed class PrinterQueueFileSystem(
         var entries = await spool.ListAsync(ct);
         var names = entries.Select(e => e.FileName).Append(PrinterQueuePath.StatusFileName);
 
-        var regexes = GlobBraceExpander.Expand(pattern).Select(GlobToRegex).ToList();
-        var matched = names.Where(n => regexes.Any(r => r.IsMatch(n))).OrderBy(n => n)
+        var matches = GlobRegex.CompileMatcher(pattern);
+        var matched = names.Where(matches).OrderBy(n => n, StringComparer.Ordinal)
             .Select(n => "/" + n).ToList();
 
         return new FsResult<FsGlobResult>.Ok(new FsGlobResult
@@ -207,7 +206,6 @@ public sealed class PrinterQueueFileSystem(
         string? filePattern, int maxResults, int contextLines, VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
         await coordinator.ReconcileAsync(ct);
-        var entries = await spool.ListAsync(ct);
 
         Regex matcher;
         try
@@ -219,44 +217,55 @@ public sealed class PrinterQueueFileSystem(
             return Invalid<FsSearchResult>($"Invalid regex: {ex.Message}");
         }
 
+        var entries = await spool.ListAsync(ct);
         var results = new List<FsSearchFileResult>();
         var totalMatches = 0;
+        var filesWithMatches = 0;
+        var filesSearched = 0;
+        var truncated = false;
+
         foreach (var entry in entries)
         {
+            if (!VfsContentSearch.MatchesFilePattern(filePattern, entry.FileName))
+            {
+                continue;
+            }
+
             var bytes = await spool.ReadAllBytesAsync(entry.FileName, ct);
             if (bytes is null || !IsText(bytes))
             {
                 continue;
             }
 
-            var lines = Encoding.UTF8.GetString(bytes).Split('\n');
-            var matches = lines
-                .Select((text, i) => (text, i))
-                .Where(l => SafeMatch(matcher, l.text))
-                .Select(l => new FsSearchMatch { Line = l.i + 1, Text = l.text })
-                .Take(maxResults)
-                .ToList();
+            if (totalMatches >= maxResults)
+            {
+                truncated = true;
+                break;
+            }
 
+            filesSearched++;
+            var lines = Encoding.UTF8.GetString(bytes).Split('\n');
+            var (matches, more) = VfsContentSearch.FindMatches(lines, matcher, contextLines, maxResults - totalMatches);
+            truncated |= more;
             if (matches.Count == 0)
             {
                 continue;
             }
 
+            filesWithMatches++;
             totalMatches += matches.Count;
-            results.Add(outputMode == VfsTextSearchOutputMode.FilesOnly
-                ? new FsSearchFileResult { File = "/" + entry.FileName, MatchCount = matches.Count }
-                : new FsSearchFileResult { File = "/" + entry.FileName, Matches = matches });
+            results.Add(VfsContentSearch.BuildFileResult("/" + entry.FileName, matches, outputMode));
         }
 
         return new FsResult<FsSearchResult>.Ok(new FsSearchResult
         {
             Query = query,
             Regex = regex,
-            Path = path ?? "/",
-            FilesSearched = entries.Count,
-            FilesWithMatches = results.Count,
+            Path = path ?? directoryPath ?? "/",
+            FilesSearched = filesSearched,
+            FilesWithMatches = filesWithMatches,
             TotalMatches = totalMatches,
-            Truncated = false,
+            Truncated = truncated,
             Results = results
         });
     }
@@ -470,12 +479,6 @@ public sealed class PrinterQueueFileSystem(
 
         var index = text.IndexOf(oldValue, StringComparison.Ordinal);
         return index < 0 ? text : text[..index] + newValue + text[(index + oldValue.Length)..];
-    }
-
-    private static Regex GlobToRegex(string pattern)
-    {
-        var escaped = Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".");
-        return new Regex("^" + escaped + "$", RegexOptions.IgnoreCase);
     }
 
     private static FsResult<FsReadResult> Ok(string path, string content) =>

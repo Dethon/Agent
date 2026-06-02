@@ -31,46 +31,46 @@ public static class GlobBraceExpander
     {
         for (var i = 0; i < pattern.Length; i++)
         {
-            if (pattern[i] != '{')
+            if (pattern[i] == '{' && TryScanGroup(pattern, i, out close))
             {
-                continue;
+                open = i;
+                return true;
             }
-
-            var depth = 0;
-            var hasTopLevelComma = false;
-            for (var j = i; j < pattern.Length; j++)
-            {
-                switch (pattern[j])
-                {
-                    case '{':
-                        depth++;
-                        break;
-                    case ',' when depth == 1:
-                        hasTopLevelComma = true;
-                        break;
-                    case '}':
-                        depth--;
-                        if (depth == 0)
-                        {
-                            if (hasTopLevelComma)
-                            {
-                                open = i;
-                                close = j;
-                                return true;
-                            }
-
-                            goto nextOpen;
-                        }
-
-                        break;
-                }
-            }
-
-nextOpen:
-            ;
         }
 
         open = close = -1;
+        return false;
+    }
+
+    // Scans the brace group opening at `open`. Succeeds only when the group closes and holds a
+    // top-level comma; comma-free or unbalanced braces fail so they stay literal.
+    private static bool TryScanGroup(string pattern, int open, out int close)
+    {
+        var depth = 0;
+        var hasTopLevelComma = false;
+        for (var j = open; j < pattern.Length; j++)
+        {
+            switch (pattern[j])
+            {
+                case '{':
+                    depth++;
+                    break;
+                case ',' when depth == 1:
+                    hasTopLevelComma = true;
+                    break;
+                case '}':
+                    depth--;
+                    if (depth == 0)
+                    {
+                        close = j;
+                        return hasTopLevelComma;
+                    }
+
+                    break;
+            }
+        }
+
+        close = -1;
         return false;
     }
 
