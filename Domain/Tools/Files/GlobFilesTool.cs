@@ -45,14 +45,26 @@ public class GlobFilesTool(IFileSystemClient client, LibraryPathConfig libraryPa
 
         var matcherRoot = ResolveMatcherRoot(basePath);
         var result = await client.Glob(matcherRoot, pattern, cancellationToken);
-        var capped = result.Length > FileResultCap;
+
+        // Return entries relative to the mount root (the disk client yields absolute paths). The
+        // agent-side VFS tool re-prefixes the mount point, so every filesystem speaks one format.
+        var baseRoot = Path.GetFullPath(libraryPath.BaseLibraryPath);
+        var relative = result.Select(p => ToMountRelative(baseRoot, p)).ToArray();
+        var capped = relative.Length > FileResultCap;
 
         return FsResultContract.ToNode(new FsGlobResult
         {
-            Entries = capped ? result.Take(FileResultCap).ToArray() : result,
+            Entries = capped ? relative.Take(FileResultCap).ToArray() : relative,
             Truncated = capped,
-            Total = result.Length
+            Total = relative.Length
         });
+    }
+
+    private static string ToMountRelative(string baseRoot, string absolute)
+    {
+        var isDirectory = absolute.EndsWith('/');
+        var relative = Path.GetRelativePath(baseRoot, absolute.TrimEnd('/')).Replace('\\', '/');
+        return isDirectory ? relative + "/" : relative;
     }
 
     private string ResolveMatcherRoot(string? basePath)

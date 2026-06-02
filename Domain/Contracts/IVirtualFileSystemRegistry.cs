@@ -2,7 +2,7 @@ using Domain.DTOs;
 
 namespace Domain.Contracts;
 
-public record FileSystemResolution(IFileSystemBackend Backend, string RelativePath);
+public record FileSystemResolution(IFileSystemBackend Backend, string RelativePath, string MountPoint = "");
 
 public interface IVirtualFileSystemRegistry
 {

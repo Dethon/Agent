@@ -29,7 +29,7 @@ public class GlobFilesToolTests
 
         var array = result["entries"]!.AsArray();
         array.Count.ShouldBe(2);
-        array.ShouldContain(n => n!.GetValue<string>() == "/library/sub/");
+        array.ShouldContain(n => n!.GetValue<string>() == "sub/");
         result["truncated"]!.GetValue<bool>().ShouldBeFalse();
         FsResultContract.TryValidate("fs_glob", result, out var err).ShouldBeTrue(err);
     }
@@ -53,7 +53,7 @@ public class GlobFilesToolTests
 
         var result = await _tool.TestRun("/library/movies/", CancellationToken.None);
 
-        result["entries"]!.AsArray()[0]!.GetValue<string>().ShouldBe("/library/movies/");
+        result["entries"]!.AsArray()[0]!.GetValue<string>().ShouldBe("movies/");
         _mockClient.Verify(c => c.Glob(BasePath, "movies/", It.IsAny<CancellationToken>()), Times.Once);
     }
 

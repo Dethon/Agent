@@ -21,7 +21,8 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
             .OrderByDescending(m => m.Key.Length)
             .Select(m => (FileSystemResolution?)new FileSystemResolution(
                 m.Value.Backend,
-                virtualPath[m.Key.Length..].TrimStart('/')))
+                virtualPath[m.Key.Length..].TrimStart('/'),
+                m.Key))
             .FirstOrDefault();
 
         return match ?? throw new InvalidOperationException(

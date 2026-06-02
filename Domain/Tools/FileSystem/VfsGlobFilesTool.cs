@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem;
 
@@ -16,8 +17,9 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         `**/*.{jpg,png,gif}` matches any of the listed extensions. A trailing slash restricts the match to
         directories (e.g. `*/`, `src/**/`); without it, both files and directories match.
         Directory results are returned with a trailing slash so you can tell them apart; files
-        are not. Results are lexically sorted and capped at 200 on file mounts; the response is
-        `{entries, truncated, total}`. An empty result means nothing matched the pattern.
+        are not. Entries are full virtual paths (including the mount point), ready to pass straight
+        to other filesystem tools. Results are lexically sorted and capped at 200 on file mounts;
+        the response is `{entries, truncated, total}`. An empty result means nothing matched.
         """;
 
     [Description(ToolDescription)]
@@ -32,6 +34,19 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
         CancellationToken cancellationToken = default)
     {
         var resolution = registry.Resolve(basePath);
-        return (await resolution.Backend.GlobAsync(resolution.RelativePath, pattern, cancellationToken)).ToNode();
+        var result = await resolution.Backend.GlobAsync(resolution.RelativePath, pattern, cancellationToken);
+        return Normalize(result, resolution.MountPoint).ToNode();
     }
+
+    // Backends return entries relative to their mount root (with varying leading-slash conventions).
+    // Prefixing the mount point here yields a single, uniform full-virtual-path format across every
+    // filesystem — directly reusable as input to read/edit/etc. Directory markers (trailing slash)
+    // are preserved because only the leading slash is trimmed.
+    private static FsResult<FsGlobResult> Normalize(FsResult<FsGlobResult> result, string mountPoint) =>
+        result is FsResult<FsGlobResult>.Ok ok
+            ? new FsResult<FsGlobResult>.Ok(ok.Value with
+            {
+                Entries = ok.Value.Entries.Select(e => $"{mountPoint.TrimEnd('/')}/{e.TrimStart('/')}").ToList()
+            })
+            : result;
 }
