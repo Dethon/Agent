@@ -13,12 +13,13 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | `Agent` | Composition root, DI, connects to channel and tool MCP servers |
 | `Domain` | Contracts, DTOs, business logic |
 | `Infrastructure` | External clients, agent implementations, push notifications |
-| `McpServer*` | MCP tool servers (Library, Vault, WebSearch, Idealista) |
+| `McpServer*` | MCP tool servers (Library, Vault, WebSearch, Idealista, Printer) |
 | `McpChannel*` | MCP channel servers — each bridges a transport to the agent |
 | `McpChannelSignalR` | WebChat/SignalR channel — hosts SignalR hub, streams, approvals, push notifications |
 | `McpChannelTelegram` | Telegram channel — multi-bot polling (one bot per agent), inline keyboard approvals |
 | `McpChannelServiceBus` | Azure Service Bus channel — queue processor, auto-approval |
 | `McpServerScheduling` | Scheduling server — dual-role: `filesystem://schedules` VFS + channel that fires due schedules as `channel/message` |
+| `McpServerPrinter` | Printer server — `filesystem://print-queue` VFS that submits copied/created files to a configured IPP/CUPS printer |
 | `WebChat`/`.Client` | Blazor WebAssembly chat interface, Redux-like state (Stores + Effects + HubEventDispatcher) |
 | `Observability` | Metrics collector, REST API, SignalR hub — serves the Dashboard PWA |
 | `Dashboard.Client` | Blazor WebAssembly observability dashboard (token costs, tool analytics, errors, schedules, memory, health) |
@@ -63,12 +64,18 @@ Before proposing any architectural change or debugging hypothesis, first verify 
 | Virtual filesystem registry | `Infrastructure/Agents/VirtualFileSystemRegistry.cs` |
 | MCP filesystem backend | `Infrastructure/Agents/Mcp/McpFileSystemBackend.cs`, `McpFileSystemDiscovery.cs` |
 | Local filesystem client | `Infrastructure/Clients/LocalFileSystemClient.cs` |
-| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant}/McpResources/FileSystemResource.cs` |
+| Filesystem MCP resources | `McpServer{Vault,Library,Sandbox,HomeAssistant,Printer}/McpResources/FileSystemResource.cs` |
+| Glob brace expansion / regex | `Domain/Tools/FileSystem/GlobBraceExpander.cs`, `Domain/Tools/FileSystem/GlobRegex.cs` |
 | Home Assistant VFS engine | `Domain/Tools/HomeAssistant/Vfs/*.cs` |
 | Scheduling server (channel + filesystem) | `McpServerScheduling/**/*.cs` |
 | Schedule VFS engine | `Domain/Tools/Scheduling/Vfs/*.cs` |
 | Scheduling prompt | `Domain/Prompts/SchedulingPrompt.cs` |
 | Schedule DTO | `Domain/DTOs/Schedule.cs` |
+| Printer server (filesystem) | `McpServerPrinter/**/*.cs` |
+| Print queue VFS engine | `Domain/Tools/Printing/Vfs/*.cs`, `Domain/Tools/Printing/*.cs` |
+| Printing prompt | `Domain/Prompts/PrintingPrompt.cs` |
+| Printing contracts & DTOs | `Domain/Contracts/IPrinterClient.cs`, `Domain/Contracts/IPrintSpool.cs`, `Domain/DTOs/Printing/*.cs` |
+| IPP printer client & spool | `Infrastructure/Clients/Printer/*.cs`, `Infrastructure/Printing/PrintSpool.cs` |
 | Agent catalog | `Domain/Agents/MutableAgentCatalog.cs`, `Domain/Contracts/IAgentCatalog.cs`, `Domain/DTOs/Channel/AgentCatalogEntry.cs` |
 | Channel protocol serialization | `Domain/DTOs/Channel/ChannelProtocol.cs` |
 | Web browsing tools | `Domain/Tools/Web/*.cs` |
@@ -126,10 +133,10 @@ Pick the override file matching your OS:
 
 ```bash
 # Linux / WSL
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-scheduling qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-scheduling mcp-printer qbittorrent jackett redis caddy camoufox homeassistant
 
 # Windows
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-scheduling qbittorrent jackett redis caddy camoufox homeassistant
+docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.windows.yml -p jackbot up -d --build agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-scheduling mcp-printer qbittorrent jackett redis caddy camoufox homeassistant
 ```
 
 The base compose maps `/dev/dri` into `plex`/`mcp-sandbox` for GPU hardware acceleration. Hosts **without** a DRI render node (NVIDIA-only WSL2 has `/dev/dxg` + the NVIDIA Container Toolkit, never `/dev/dri`) will fail with `error gathering device information while adding custom device "/dev/dri"`. On those hosts, append `-f DockerCompose/docker-compose.override.no-dri.yml` as the last `-f` to strip the device. (The VS Code `docker-debug-up` task already includes this override — debug never needs the GPU.)
@@ -189,9 +196,19 @@ Scheduling is a dual-role MCP server (`McpServerScheduling`), not an in-process 
 
 The `scheduling_prompt` MCP prompt (`Domain/Prompts/SchedulingPrompt.cs`) teaches the LLM the `/schedules` idiom. The old in-process path (`ScheduleDispatcher`, `ScheduleExecutor`, dedicated `Schedule*Tool`s, `SchedulingToolFeature`) was removed.
 
+### Printing Architecture
+
+Printing is a non-disk MCP filesystem server (`McpServerPrinter`), not an in-process agent feature — same shape as `McpServerScheduling`. It exposes a **`filesystem://print-queue` resource** (mount `/print-queue`) backed by `PrinterQueueFileSystem` (`Domain/Tools/Printing/Vfs/`), an `IFileSystemBackend` returning typed `FsResult<T>`. Copying or creating a file into `/print-queue/<filename>` (bytes ingest via `fs_blob_write` chunk streaming) immediately submits it to a single configured printer; `fs_delete` on a still-active job cancels it; `move` and `exec` are unsupported. The engine depends on two contracts:
+- **`IPrinterClient`** — `IppPrinterClient` (`Infrastructure/Clients/Printer/`) is a `SharpIppNext` + `HttpClient` adapter against `PRINTERURI` (CUPS server or direct-IPP printer), mapping `Print-Job`/`Get-Jobs`/`Cancel-Job`. `IppJobStateMapper` maps IPP job states to domain `PrintJobState`. Get-Jobs requests `job-state` so active jobs aren't pruned mid-print.
+- **`IPrintSpool`** — `PrintSpool` (`Infrastructure/Printing/`) is a disk-backed store under the spool volume (mount `/spool`), keyed by filename, holding `{JobId, ContentType, Bytes, SubmittedAt}` so `read`/`search`/`edit`/blob read-back work while a job is active. Pruned during reconciliation by `PrintQueueCoordinator`.
+
+**Only plain text and JPEG are accepted** — other formats are rejected on copy-in. Submission is `application/octet-stream` (IPP printers reject unknown content types otherwise); text payloads are CRLF-normalized (content-sniffed for octet-stream copies) to stop staircase printing, and images use `print-scaling=fit`. Spool blobs use the `.blob` suffix. `PrintableContent` (`Domain/Tools/Printing/`) handles format detection/normalization. The `printing_prompt` MCP prompt (`Domain/Prompts/PrintingPrompt.cs`) teaches the LLM the accepted formats and to convert anything else first. `/print-queue/status.json` is a read-only view of queued jobs; finished jobs auto-disappear from the listing.
+
 ### Virtual Filesystem Architecture
 
-The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`, `filesystem://ha`, `filesystem://schedules`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 8 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec`) that dispatch through the registry. `VfsExec` is filesystem-conditional — backends that don't implement `fs_exec` return a "tool missing" envelope when invoked. Raw MCP `fs_*` tools are filtered out when domain tools are active. Backends implement `IFileSystemBackend` and return typed `FsResult<T>` (`Ok`/`Err`); besides plain disk-backed servers, `HaFileSystem` (Home Assistant entities/areas/actions) and `ScheduleFileSystem` (scheduled tasks) are non-disk backends that follow the same contract. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
+The agent exposes a unified virtual filesystem across MCP servers. Each MCP server can expose a `filesystem://` resource (e.g., `filesystem://vault`, `filesystem://media`, `filesystem://ha`, `filesystem://schedules`, `filesystem://print-queue`). At session start, `McpFileSystemDiscovery` detects these resources and mounts them into a `VirtualFileSystemRegistry` with longest-prefix path resolution. `FileSystemToolFeature` provides 8 domain tools (`VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec`) that dispatch through the registry. `VfsExec` is filesystem-conditional — backends that don't implement `fs_exec` return a "tool missing" envelope when invoked. Raw MCP `fs_*` tools are filtered out when domain tools are active. Backends implement `IFileSystemBackend` and return typed `FsResult<T>` (`Ok`/`Err`); besides plain disk-backed servers, `HaFileSystem` (Home Assistant entities/areas/actions), `ScheduleFileSystem` (scheduled tasks), and `PrinterQueueFileSystem` (print queue) are non-disk backends that follow the same contract. New filesystems are added by exposing a `filesystem://` resource from any MCP server — no agent changes needed.
+
+Glob patterns support brace expansion (`GlobBraceExpander`): `**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png` (lone/unbalanced `{...}` stay literal). All backends normalize glob entries to full virtual paths so results are consistent across mounts.
 
 ### Web Browsing Architecture
 

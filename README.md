@@ -20,6 +20,7 @@ using OpenRouter LLMs and the Model Context Protocol (MCP).
 - **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, and delete. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
 - **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
 - **Scheduled Tasks** - Cron and one-shot agent prompts managed as a virtual filesystem (`filesystem://schedules`); a dedicated scheduling channel server fires due schedules and fans the result out to chosen delivery channels
+- **Printing** - Print to a real IPP/CUPS printer as a virtual filesystem (`filesystem://print-queue`, mounted at `/print-queue`) — copying or creating a file into the mount immediately submits it to the configured printer, removing a still-pending file cancels the job, and finished jobs auto-disappear from the listing. Only plain text and JPEG are accepted (other formats are rejected on copy-in); text is CRLF-normalized and images are scaled to fit the page
 - **OpenRouter LLMs** - Supports multiple models (Gemini, GPT-4, etc.) via OpenRouter API
 - **MCP Architecture** - Modular tool servers and channel servers for extensibility
 - **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
@@ -100,7 +101,7 @@ New transports can be added by deploying a new channel MCP server — zero agent
 
 ### Virtual Filesystem
 
-Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. Backends need not be disk-backed: `mcp-homeassistant` advertises `filesystem://ha` (entities/areas/actions) and `mcp-scheduling` advertises `filesystem://schedules` (scheduled tasks), both implementing the same `IFileSystemBackend` contract and returning typed `FsResult<T>`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
+Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. Backends need not be disk-backed: `mcp-homeassistant` advertises `filesystem://ha` (entities/areas/actions), `mcp-scheduling` advertises `filesystem://schedules` (scheduled tasks), and `mcp-printer` advertises `filesystem://print-queue` (a print spool that submits to a real printer), all implementing the same `IFileSystemBackend` contract and returning typed `FsResult<T>`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
 
 Because each mount is just an MCP endpoint over HTTP, filesystems can be deployed wherever is convenient:
 
@@ -108,7 +109,7 @@ Because each mount is just an MCP endpoint over HTTP, filesystems can be deploye
 - **Different containers on the same host**: the default Docker Compose layout. Each MCP server is its own container with its own volume mount, and the agent reaches them over the compose network (e.g. `http://mcp-vault:8080/mcp`).
 - **Different machines**: point `mcpServerEndpoints` at any reachable URL. A NAS, a remote workstation, or a cloud VM that runs the same MCP server image becomes a first-class mount with no agent code changes — it's just another HTTP endpoint speaking the MCP `fs_*` protocol.
 
-The agent exposes 8 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount.
+The agent exposes 8 unified domain tools — `VfsTextRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsRemove`, `VfsExec` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount. `VfsGlobFiles` supports brace-expansion patterns (`**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png`), and every backend returns glob matches as full virtual paths.
 
 **Cross-filesystem operations.** `VfsMove` and `VfsCopy` detect when source and destination live on different mounts and fall back to a streaming pipeline: the source MCP server's `fs_blob_read` streams chunks, which are written to the destination via `fs_blob_write`, then the source is removed (for move). This works regardless of where the two backends are deployed — moving a file from a sandbox container on one host to a vault directory on another host is the same operation as moving it between two paths in the same container. Best-effort per-entry results are reported for directory recursion so partial failures are visible.
 
@@ -137,6 +138,17 @@ Workflow: `VfsGlobFiles` to find the entity → optionally `VfsTextRead` `state.
 
 A directory-listing setup index (`HomeAssistantSetupSummary`) is appended to the `home_assistant_guide` MCP prompt at fetch time so the LLM sees every device path without globbing first. The MCP server only exposes the filesystem (`fs_glob`, `fs_read`, `fs_info`, `fs_search`, `fs_exec`) — there are no entity-specific or service-specific tools.
 
+### Printing
+
+Printing is another non-disk MCP filesystem server (`mcp-printer`) exposing `filesystem://print-queue` (mounted at `/print-queue`). It mirrors the `ScheduleFileSystem`/`HaFileSystem` pattern — a domain `PrinterQueueFileSystem : IFileSystemBackend` engine (`Domain/Tools/Printing/Vfs/`) plus thin `fs_*` MCP wrappers — so the agent prints with the ordinary `Vfs*` tools and **zero agent code changes**.
+
+- **Submit by copy/create.** Copying or creating a file into `/print-queue/<filename>` immediately submits it to the configured printer. Bytes ingest through `fs_blob_write` (chunk streaming), are written to a disk-backed spool (`IPrintSpool`/`PrintSpool` under the spool volume, keyed by filename), and are handed to `IPrinterClient.SubmitAsync` for an assigned job id.
+- **Cancel by remove.** `VfsRemove` on a still-active job calls `IPrinterClient.CancelAsync`; if the job has already finished it is a no-op. `move` and `exec` are intentionally unsupported.
+- **Accepted formats.** Only plain text and JPEG are accepted — any other format (PNG, PDF, Office docs, etc.) is rejected on copy-in rather than printed as garbage. Text payloads are CRLF-normalized to stop staircase printing, and images are submitted with `print-scaling=fit` so they fit the page with margins. The `printing_prompt` MCP prompt teaches the LLM to convert anything else to text/JPEG first.
+- **Status & retention.** `/print-queue/status.json` is a read-only view of every queued job and its state (queued / pending / processing). Finished jobs auto-disappear from the listing during reconciliation; there is no print history.
+
+The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `SharpIppNext` + `HttpClient` adapter against the configured `PRINTERURI` (a CUPS server or a direct-IPP printer — same protocol), mapping the `Print-Job`, `Get-Jobs`, and `Cancel-Job` IPP operations.
+
 ### MCP Tool Servers
 
 | Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
@@ -148,6 +160,7 @@ A directory-listing setup index (`HomeAssistantSetupSummary`) is appended to the
 | **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
 | **mcp-homeassistant** | fs_glob, fs_read, fs_info, fs_search, fs_exec                                                                          | `filesystem://ha`     | Control a Home Assistant instance as a virtual filesystem (entities, areas, `.sh` action files); injects a slim setup index into the system prompt |
 | **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
+| **mcp-printer**   | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_copy, fs_delete, fs_blob_read, fs_blob_write              | `filesystem://print-queue` | Print plain text/JPEG to a configured IPP/CUPS printer as a virtual filesystem — copy/create to submit, remove to cancel (see [Printing](#printing)) |
 
 ### MCP Channel Servers
 
@@ -163,7 +176,7 @@ A directory-listing setup index (`HomeAssistantSetupSummary`) is appended to the
 | Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
 |-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
 | **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, and Home Assistant control |
+| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, and printing |
 
 ### Multi-Agent Configuration
 
@@ -197,6 +210,7 @@ Agent routing:
 | `McpServerIdealista`     | MCP server for Idealista real estate property search            |
 | `McpServerHomeAssistant` | MCP server exposing Home Assistant as `filesystem://ha`         |
 | `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
+| `McpServerPrinter`       | MCP server exposing a print queue as `filesystem://print-queue` (IPP/CUPS) |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
 | `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
@@ -328,6 +342,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
 | MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
 | MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
+| MCP Printer              | 6014 | Print queue MCP server         |
 | Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
 
 ## Usage
