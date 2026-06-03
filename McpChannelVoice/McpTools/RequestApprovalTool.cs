@@ -29,6 +29,7 @@ public sealed class RequestApprovalTool
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
+        var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
 
         var session = sessions.Get(conversationId);
         if (session is null)
@@ -38,8 +39,15 @@ public sealed class RequestApprovalTool
 
         if (mode == ApprovalMode.Notify)
         {
-            // Auto-approved tool calls are not narrated over voice — only the agent's
-            // spoken content and genuine consent prompts reach the user.
+            // The tool name itself is never narrated. But if the agent wrote an
+            // acknowledgement before this auto-approved tool call, speak it now so the
+            // user hears that work is happening while the tool runs (instead of it being
+            // buffered with the final answer until the turn completes).
+            var pending = accumulator.Flush(conversationId);
+            if (!string.IsNullOrWhiteSpace(pending))
+            {
+                await SpeakAsync(session, pending, tts, settings, AnnouncePriority.Normal);
+            }
             return "notified";
         }
 
@@ -76,13 +84,15 @@ public sealed class RequestApprovalTool
         return "declined";
     }
 
-    private static async Task SpeakAsync(SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings)
+    private static async Task SpeakAsync(
+        SatelliteSession session, string text, ITextToSpeech tts, VoiceSettings settings,
+        AnnouncePriority priority = AnnouncePriority.High)
     {
         var voice = session.Config.Tts?.Wyoming?.Voice ?? settings.Tts.Wyoming?.Voice;
         var options = new SynthesisOptions { Voice = voice };
         var job = new PlaybackJob(
             Label: $"approval:{session.SatelliteId}",
-            Priority: AnnouncePriority.High,
+            Priority: priority,
             Audio: tts.SynthesizeAsync(text, options, default),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask);
