@@ -505,7 +505,7 @@ services:
         max-file: "3"
     container_name: mcp-channel-voice
     ports:
-      - "6014:8080"
+      - "6015:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelVoice/Dockerfile

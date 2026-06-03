@@ -95,7 +95,7 @@ public class WyomingSatelliteHostTests
                                          It.IsAny<TranscriptionOptions>(),
                                          It.IsAny<CancellationToken>()))
             .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(
-                async (audio, _opts, token) =>
+                async (audio, opts, token) =>
                 {
                     await foreach (var _ in audio.WithCancellation(token))
                     { }
