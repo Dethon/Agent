@@ -44,20 +44,42 @@ if [[ -z "${PULSE_SERVER:-}" ]] && [[ ! -S /mnt/wslg/PulseServer ]]; then
   exit 1
 fi
 
+WW_PID=
+SAT_PID=
 cleanup() {
-  if [[ -n "${WW_PID:-}" ]]; then
-    kill "$WW_PID" 2>/dev/null || true
-    wait "$WW_PID" 2>/dev/null || true
-  fi
+  trap - EXIT INT TERM
+  for pid in "${SAT_PID:-}" "${WW_PID:-}"; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+  done
+  for pid in "${SAT_PID:-}" "${WW_PID:-}"; do
+    [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
+  done
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
-# Wipe any stale instances from a prior run (Ctrl+C of the foreground satellite
-# doesn't necessarily clean up the backgrounded openwakeword, so port 10400 may
-# still be held). Quiet — only kills our own.
+# Return 0 once nothing is listening on $1, escalating to SIGKILL if a stale
+# instance refuses to release the port within ~5s.
+wait_port_free() {
+  local port="$1"
+  for _ in $(seq 1 20); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || return 0
+    sleep 0.25
+  done
+  pkill -9 -u "$USER" -f wyoming_openwakeword 2>/dev/null || true
+  pkill -9 -u "$USER" -f wyoming_satellite 2>/dev/null || true
+  sleep 0.5
+}
+
+# Wipe any stale instances from a prior run. Historically the satellite was exec'd,
+# which discarded this script's EXIT trap and orphaned the backgrounded openwakeword
+# whenever the satellite died without a process-group signal (kill-by-PID, crash,
+# OOM) — leaving port 10400 held. The satellite now runs as a child (see below) so
+# cleanup always fires, but we still defensively wipe and wait for the ports to free
+# rather than racing a fixed sleep. Quiet — only kills our own.
 pkill -u "$USER" -f wyoming_openwakeword 2>/dev/null || true
 pkill -u "$USER" -f wyoming_satellite 2>/dev/null || true
-sleep 0.5
+wait_port_free "$WW_PORT"
+wait_port_free "$SAT_PORT"
 
 echo "[1/2] wyoming-openwakeword listening on tcp://0.0.0.0:$WW_PORT (model=$WAKE_WORD threshold=$WW_THRESHOLD)"
 WW_EXTRA=()
@@ -86,7 +108,9 @@ fi
 
 echo "[2/2] wyoming-satellite name=$SAT_ID listening on tcp://0.0.0.0:$SAT_PORT (hub dials in)"
 echo "      Logs: /tmp/wyoming-openwakeword.log  (Ctrl+C to stop)"
-exec "$SAT_VENV/bin/python" -m wyoming_satellite \
+# Run as a child (NOT exec) so the EXIT/INT/TERM trap above survives and always
+# reaps openwakeword when the satellite stops for ANY reason.
+"$SAT_VENV/bin/python" -m wyoming_satellite \
   --name "$SAT_ID" \
   --uri "tcp://0.0.0.0:$SAT_PORT" \
   --mic-command "parecord --raw --rate=16000 --format=s16le --channels=1" \
@@ -98,4 +122,6 @@ exec "$SAT_VENV/bin/python" -m wyoming_satellite \
   --snd-command-width 2 \
   --snd-command-channels 1 \
   --wake-uri "tcp://127.0.0.1:$WW_PORT" \
-  --wake-word-name "$WAKE_WORD"
+  --wake-word-name "$WAKE_WORD" &
+SAT_PID=$!
+wait "$SAT_PID" || true
