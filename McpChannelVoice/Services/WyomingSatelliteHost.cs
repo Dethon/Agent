@@ -18,6 +18,7 @@ namespace McpChannelVoice.Services;
 // audio-start/audio-chunk/audio-stop frames driven by the session playback loop.
 public sealed class WyomingSatelliteHost(
     WyomingClientSettings settings,
+    VoiceSettings voiceSettings,
     SatelliteRegistry satelliteRegistry,
     SatelliteSessionRegistry sessionRegistry,
     ISpeechToText speechToText,
@@ -254,7 +255,7 @@ public sealed class WyomingSatelliteHost(
             await client.WriteAsync(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = result.Text ?? string.Empty }), ct);
 
-            await dispatcher.DispatchAsync(session, result, agentId: null, ct);
+            await dispatcher.DispatchAsync(session, result, voiceSettings.AgentId, ct);
         }
         catch (OperationCanceledException)
         {

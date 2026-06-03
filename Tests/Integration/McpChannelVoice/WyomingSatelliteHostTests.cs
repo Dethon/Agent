@@ -127,6 +127,7 @@ public class WyomingSatelliteHostTests
                 MaxUtteranceMs = 3000,
                 MinSpeechMs = 100
             },
+            new VoiceSettings { AgentId = "jonas_voice" },
             registry, sessions, stt.Object, dispatcher, publisher.Object,
             NullLogger<WyomingSatelliteHost>.Instance);
 
@@ -136,6 +137,7 @@ public class WyomingSatelliteHostTests
         msg.Content.ShouldBe("hola");
         msg.ConversationId.ShouldBe("kitchen-01");
         msg.Sender.ShouldBe("household");
+        msg.AgentId.ShouldBe("jonas_voice");
 
         var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         transcriptText.ShouldBe("hola");
