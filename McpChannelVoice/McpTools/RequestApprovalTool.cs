@@ -25,13 +25,15 @@ public sealed class RequestApprovalTool
         IServiceProvider services)
     {
         var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
+        var manager = services.GetRequiredService<VoiceConversationManager>();
         var broker = services.GetRequiredService<ApprovalCaptureBroker>();
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
         var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
 
-        var session = sessions.Get(conversationId);
+        var satelliteId = manager.ResolveSatelliteId(conversationId);
+        var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
             return mode == ApprovalMode.Notify ? "notified" : "declined";
@@ -67,7 +69,7 @@ public sealed class RequestApprovalTool
                 SatelliteId = session.SatelliteId,
                 Identity = session.Config.Identity,
                 Outcome = parsed.ToString(),
-                ConversationId = session.ConversationId
+                ConversationId = conversationId
             });
 
             switch (parsed)
