@@ -539,7 +539,26 @@ services:
   wyoming-whisper:
     image: rhasspy/wyoming-whisper:latest
     container_name: wyoming-whisper
-    command: --model base --language es --device cpu --uri tcp://0.0.0.0:10300
+    # 'medium' for accurate Castilian Spanish on CPU; beam-size 5 and a Spanish
+    # initial-prompt bias spelling/vocabulary. List form so the prompt's spaces
+    # stay a single argument.
+    command:
+      - --model
+      - medium
+      - --language
+      - es
+      - --device
+      - cpu
+      # int8 keeps 'medium' fast and low-memory on CPU; without it the model loads
+      # as float32 (the warning at startup), which is much slower.
+      - --compute-type
+      - int8
+      - --beam-size
+      - "5"
+      - --initial-prompt
+      - "Conversación en español de España con el asistente de voz Jonas sobre domótica, la casa, recordatorios, listas de la compra y preguntas generales."
+      - --uri
+      - tcp://0.0.0.0:10300
     volumes:
       - ./volumes/whisper-data:/data
     restart: unless-stopped
