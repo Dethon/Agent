@@ -43,7 +43,7 @@ public class RequestApprovalToolTests
         new(null, toolName, new Dictionary<string, object?>());
 
     [Fact]
-    public async Task NotifyMode_DoesNotWaitForResponse()
+    public async Task NotifyMode_DoesNotSpeakOrWaitForResponse()
     {
         var tts = new Mock<ITextToSpeech>();
         tts.Setup(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
@@ -57,6 +57,11 @@ public class RequestApprovalToolTests
             services);
 
         result.ShouldBe("notified");
+        // Auto-approved tool calls must not be narrated over voice — only content
+        // (and genuine consent prompts) reach the user.
+        tts.Verify(
+            t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

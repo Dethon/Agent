@@ -36,14 +36,14 @@ public sealed class RequestApprovalTool
             return mode == ApprovalMode.Notify ? "notified" : "declined";
         }
 
-        var toolList = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
-
         if (mode == ApprovalMode.Notify)
         {
-            await SpeakAsync(session, $"Aprobado automáticamente: {toolList}", tts, settings);
+            // Auto-approved tool calls are not narrated over voice — only the agent's
+            // spoken content and genuine consent prompts reach the user.
             return "notified";
         }
 
+        var toolList = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
 
         for (var attempt = 1; attempt <= 2; attempt++)
