@@ -544,7 +544,7 @@ services:
     # stay a single argument.
     command:
       - --model
-      - medium
+      - small
       - --language
       - es
       - --device
@@ -552,7 +552,7 @@ services:
       # int8 keeps 'medium' fast and low-memory on CPU; without it the model loads
       # as float32 (the warning at startup), which is much slower.
       - --compute-type
-      - int8
+      - float32
       - --beam-size
       - "5"
       - --initial-prompt
