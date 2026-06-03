@@ -38,6 +38,25 @@ public class McpAgentInstructionsTests
     }
 
     [Fact]
+    public void BuildInstructions_PlacesCustomInstructionsLast()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            customInstructions: "CUSTOM",
+            domainPrompts: ["DOMAIN"],
+            fileSystemPrompts: ["FS"],
+            clientPrompts: ["CLIENT"],
+            now: fixedTime);
+
+        // User custom instructions go last so they are the most recent guidance the
+        // model sees, not buried at the top above the tool/MCP prompts.
+        result.ShouldEndWith("CUSTOM");
+        result.IndexOf("CUSTOM", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void BuildInstructions_AppendsAllPromptSections()
     {
         var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);

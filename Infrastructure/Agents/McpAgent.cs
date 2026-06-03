@@ -327,9 +327,12 @@ public sealed class McpAgent : DisposableAgent
             .Prepend(BasePrompt.Instructions)
             .Prepend(datePrompt);
 
+        // User custom instructions go LAST: closest to the conversation, they are the
+        // most recent (and least "lost in the middle") guidance the model sees, which
+        // matters for action-time rules like "acknowledge before calling a tool".
         if (!string.IsNullOrEmpty(customInstructions))
         {
-            prompts = prompts.Prepend(customInstructions);
+            prompts = prompts.Append(customInstructions);
         }
 
         return string.Join("\n\n", prompts);
