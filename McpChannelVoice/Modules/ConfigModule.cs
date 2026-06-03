@@ -43,6 +43,11 @@ public static class ConfigModule
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+            .AddSingleton(TimeProvider.System)
+            .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
+                new Infrastructure.StateManagers.RedisThreadStateStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(), TimeSpan.FromDays(30)))
+            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>()
             .AddHostedService(sp =>
                 new HeartbeatService(sp.GetRequiredService<IMetricsPublisher>(), "mcp-channel-voice"));
 
@@ -54,7 +59,13 @@ public static class ConfigModule
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<ApprovalCaptureBroker>(),
                 settings.ConfidenceThreshold,
-                sp.GetRequiredService<ILogger<TranscriptDispatcher>>()));
+                sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
+            .AddSingleton(sp => new VoiceConversationManager(
+                sp.GetRequiredService<Domain.Contracts.IConversationFactory>(),
+                sp.GetRequiredService<ReplyTextAccumulator>(),
+                sp.GetRequiredService<TimeProvider>(),
+                settings.ConversationLifetime,
+                sp.GetRequiredService<ILogger<VoiceConversationManager>>()));
 
         services.AddHttpClient("openai", c => c.BaseAddress = new Uri("https://api.openai.com"));
         services.AddHttpClient("openrouter", c => c.BaseAddress = new Uri("https://openrouter.ai"));
