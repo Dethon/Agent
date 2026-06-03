@@ -25,12 +25,14 @@ public sealed class SendReplyTool
         IServiceProvider services)
     {
         var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
+        var manager = services.GetRequiredService<VoiceConversationManager>();
         var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
         var tts = services.GetRequiredService<ITextToSpeech>();
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
 
-        var session = sessions.Get(conversationId);
+        var satelliteId = manager.ResolveSatelliteId(conversationId);
+        var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
             return "ok";
@@ -43,14 +45,14 @@ public sealed class SendReplyTool
                 return "ok";
 
             case ReplyContentType.Error:
-                await SpeakAsync(session, $"Hubo un error: {content}", tts, settings, metrics, default);
+                await SpeakAsync(session, $"Hubo un error: {content}", conversationId, tts, settings, metrics, default);
                 return "ok";
 
             // Completion arrives as a dedicated StreamComplete event (empty content, no
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                await FlushAndSpeakAsync(session, accumulator, tts, settings, metrics);
+                await FlushAndSpeakAsync(session, accumulator, conversationId, tts, settings, metrics);
                 return "ok";
 
             default:
@@ -58,7 +60,7 @@ public sealed class SendReplyTool
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
                 if (isComplete)
                 {
-                    await FlushAndSpeakAsync(session, accumulator, tts, settings, metrics);
+                    await FlushAndSpeakAsync(session, accumulator, conversationId, tts, settings, metrics);
                 }
                 return "ok";
         }
@@ -67,20 +69,22 @@ public sealed class SendReplyTool
     private static async Task FlushAndSpeakAsync(
         SatelliteSession session,
         ReplyTextAccumulator accumulator,
+        string conversationId,
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics)
     {
-        var text = accumulator.Flush(session.ConversationId);
+        var text = accumulator.Flush(conversationId);
         if (!string.IsNullOrWhiteSpace(text))
         {
-            await SpeakAsync(session, text, tts, settings, metrics, default);
+            await SpeakAsync(session, text, conversationId, tts, settings, metrics, default);
         }
     }
 
     private static async Task SpeakAsync(
         SatelliteSession session,
         string text,
+        string conversationId,
         ITextToSpeech tts,
         VoiceSettings settings,
         IMetricsPublisher metrics,
@@ -103,7 +107,7 @@ public sealed class SendReplyTool
                     Room = session.Config.Room,
                     Identity = session.Config.Identity,
                     DurationMs = sw.ElapsedMilliseconds,
-                    ConversationId = session.ConversationId
+                    ConversationId = conversationId
                 });
             },
             OnPreempted: async _ =>
@@ -112,7 +116,7 @@ public sealed class SendReplyTool
                 {
                     Metric = VoiceMetric.AnnouncePreemptedReply,
                     SatelliteId = session.SatelliteId,
-                    ConversationId = session.ConversationId
+                    ConversationId = conversationId
                 });
             });
 
@@ -125,7 +129,7 @@ public sealed class SendReplyTool
             Room = session.Config.Room,
             Identity = session.Config.Identity,
             DurationMs = sw.ElapsedMilliseconds,
-            ConversationId = session.ConversationId
+            ConversationId = conversationId
         });
     }
 }
