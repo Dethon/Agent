@@ -27,37 +27,29 @@ public sealed class CreateConversationTool
             InitialPrompt = initialPrompt
         };
 
+        // Shared factory generates the conversation identity and persists the topic
+        // to Redis (single source of truth shared with the voice channel).
+        var factory = services.GetRequiredService<IConversationFactory>();
+        var creation = await factory.CreateAsync(p);
+
+        // Register the in-memory session so send_reply/request_approval can resolve it.
         var sessionService = services.GetRequiredService<SessionService>();
-        var conversationId = await sessionService.CreateConversationAsync(p);
-        var topicId = sessionService.GetTopicIdByConversationId(conversationId)!;
-        var session = sessionService.GetSessionByConversationId(conversationId);
+        sessionService.StartSession(
+            creation.Identity.TopicId, agentId, creation.Identity.ChatId, creation.Identity.ThreadId,
+            spaceSlug: "default", topicName: topicName);
 
-        // Save topic to Redis so WebChat client can see it in the topic list
-        var redisState = services.GetRequiredService<RedisStateService>();
-        var topic = new TopicMetadata(
-            topicId,
-            session!.ChatId,
-            session.ThreadId,
-            agentId,
-            topicName,
-            DateTimeOffset.UtcNow,
-            LastMessageAt: null,
-            SpaceSlug: "default");
-        await redisState.SaveTopicAsync(topic);
-
-        // Notify WebChat clients so the topic appears without refresh
+        // Notify WebChat clients so the topic appears without refresh.
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
         var notification = new TopicChangedNotification(
-            TopicChangeType.Created, topicId, topic, SpaceSlug: "default");
+            TopicChangeType.Created, creation.Identity.TopicId, creation.Topic, SpaceSlug: "default");
         await hubSender.SendToGroupAsync("space:default", "OnTopicChanged", notification);
 
         // Create a stream so send_reply chunks have somewhere to go. The stream's
-        // `currentPrompt` seeds the user-role bubble on WebChat (via StreamState),
-        // so it must be the originating prompt — falling back to topicName only
-        // for legacy callers that don't pass one.
+        // currentPrompt seeds the user-role bubble on WebChat, so it must be the
+        // originating prompt — falling back to topicName for legacy callers.
         var streamService = services.GetRequiredService<StreamService>();
-        streamService.GetOrCreateStream(topicId, initialPrompt ?? topicName, sender, CancellationToken.None);
+        streamService.GetOrCreateStream(creation.Identity.TopicId, initialPrompt ?? topicName, sender, CancellationToken.None);
 
-        return conversationId;
+        return creation.Identity.ConversationId;
     }
 }
