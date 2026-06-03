@@ -58,6 +58,7 @@ public static class ConfigModule
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<ApprovalCaptureBroker>(),
+                sp.GetRequiredService<VoiceConversationManager>(),
                 settings.ConfidenceThreshold,
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(

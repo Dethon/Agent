@@ -2,12 +2,15 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
+using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 
@@ -104,8 +107,20 @@ public class WyomingSatelliteHostTests
 
         var emitter = new CapturingEmitter();
         var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
+                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, new ApprovalCaptureBroker(), 0.4, NullLogger<TranscriptDispatcher>.Instance);
+            emitter, publisher.Object, new ApprovalCaptureBroker(), manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {
@@ -135,7 +150,7 @@ public class WyomingSatelliteHostTests
 
         var msg = await emitter.Tcs.Task.WaitAsync(TimeSpan.FromSeconds(10), ct);
         msg.Content.ShouldBe("hola");
-        msg.ConversationId.ShouldBe("kitchen-01");
+        msg.ConversationId.ShouldNotBeNullOrWhiteSpace();
         msg.Sender.ShouldBe("household");
         msg.AgentId.ShouldBe("jonas_voice");
 

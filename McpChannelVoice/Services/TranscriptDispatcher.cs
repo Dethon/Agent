@@ -10,6 +10,7 @@ public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
     IMetricsPublisher publisher,
     ApprovalCaptureBroker broker,
+    VoiceConversationManager manager,
     double confidenceThreshold,
     ILogger<TranscriptDispatcher> logger)
 {
@@ -45,16 +46,20 @@ public sealed class TranscriptDispatcher(
                     Language = transcript.Language,
                     Outcome = "dropped",
                     Confidence = transcript.Confidence,
-                    ConversationId = session.ConversationId
+                    ConversationId = manager.GetActiveConversationId(session.SatelliteId)
                 },
                 ct);
             return false;
         }
 
+        // AgentId is required by CreateConversationParams; the dispatch path always supplies one in
+        // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
+        var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct);
+
         await emitter.EmitMessageNotificationAsync(
             new ChannelMessageNotification
             {
-                ConversationId = session.ConversationId,
+                ConversationId = conversationId,
                 Sender = session.Config.Identity,
                 Content = transcript.Text,
                 AgentId = agentId,
@@ -72,7 +77,7 @@ public sealed class TranscriptDispatcher(
                 Language = transcript.Language,
                 Outcome = "dispatched",
                 Confidence = transcript.Confidence,
-                ConversationId = session.ConversationId
+                ConversationId = conversationId
             },
             ct);
         return true;
