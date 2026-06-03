@@ -143,7 +143,7 @@ public class WyomingSatelliteHostTests
                 MinSpeechMs = 100
             },
             new VoiceSettings { AgentId = "jonas_voice" },
-            registry, sessions, stt.Object, dispatcher, publisher.Object,
+            registry, sessions, manager, stt.Object, dispatcher, publisher.Object,
             NullLogger<WyomingSatelliteHost>.Instance);
 
         await host.StartAsync(ct);

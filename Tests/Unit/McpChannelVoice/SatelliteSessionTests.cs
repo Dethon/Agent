@@ -26,12 +26,12 @@ public class SatelliteSessionTests
     }
 
     [Fact]
-    public void ConversationId_EqualsSatelliteId()
+    public void SatelliteId_ReturnsConfiguredId()
     {
         var session = new SatelliteSession(
             satelliteId: "bedroom-01",
             config: new SatelliteConfig { Identity = "francisco", Room = "Bedroom" });
 
-        session.ConversationId.ShouldBe("bedroom-01");
+        session.SatelliteId.ShouldBe("bedroom-01");
     }
 }

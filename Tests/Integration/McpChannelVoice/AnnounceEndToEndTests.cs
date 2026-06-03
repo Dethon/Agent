@@ -9,6 +9,7 @@ using McpChannelVoice.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 
@@ -83,6 +84,14 @@ public class AnnounceEndToEndTests
         var stt = new Mock<ISpeechToText>();
         builder.Services.AddSingleton(stt.Object);
 
+        builder.Services.AddSingleton<ReplyTextAccumulator>();
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddSingleton<VoiceConversationManager>(sp => new VoiceConversationManager(
+            Mock.Of<IConversationFactory>(),
+            sp.GetRequiredService<ReplyTextAccumulator>(),
+            sp.GetRequiredService<TimeProvider>(),
+            TimeSpan.FromMinutes(5),
+            NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
         builder.Services.AddHostedService<WyomingSatelliteHost>();
 

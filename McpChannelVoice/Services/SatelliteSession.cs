@@ -25,7 +25,6 @@ public sealed class SatelliteSession
     }
 
     public string SatelliteId { get; }
-    public string ConversationId => SatelliteId;
     public SatelliteConfig Config { get; }
 
     public ValueTask PublishAudioAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct) =>

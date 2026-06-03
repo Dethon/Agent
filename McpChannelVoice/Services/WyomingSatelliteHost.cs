@@ -21,6 +21,7 @@ public sealed class WyomingSatelliteHost(
     VoiceSettings voiceSettings,
     SatelliteRegistry satelliteRegistry,
     SatelliteSessionRegistry sessionRegistry,
+    VoiceConversationManager conversationManager,
     ISpeechToText speechToText,
     TranscriptDispatcher dispatcher,
     IMetricsPublisher metrics,
@@ -224,7 +225,7 @@ public sealed class WyomingSatelliteHost(
             Room = session.Config.Room,
             Identity = session.Config.Identity,
             WakeWord = session.Config.WakeWord,
-            ConversationId = session.ConversationId
+            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         }, ct), ct);
 
         _ = Task.Run(() => TranscribeAndReplyAsync(client, session, channel.Reader, ct), ct);
@@ -248,7 +249,7 @@ public sealed class WyomingSatelliteHost(
                 Identity = session.Config.Identity,
                 DurationMs = sw.ElapsedMilliseconds,
                 Language = result.Language,
-                ConversationId = session.ConversationId
+                ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
 
             // Stop the satellite streaming and re-arm wake detection.
@@ -269,7 +270,7 @@ public sealed class WyomingSatelliteHost(
                 Metric = VoiceMetric.SttError,
                 SatelliteId = session.SatelliteId,
                 Error = ex.Message,
-                ConversationId = session.ConversationId
+                ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
 
             // Release the satellite even on failure so it re-arms instead of streaming forever.
