@@ -57,6 +57,14 @@ public class VoiceSettingsBindingTests
     }
 
     [Fact]
+    public void ConversationLifetime_DefaultsToFiveMinutes()
+    {
+        var settings = new VoiceSettings();
+
+        settings.ConversationLifetime.ShouldBe(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
     public void VoiceSettings_BindsSatelliteFromEnvironmentVariables()
     {
         // Mirrors how docker-compose.override.debug.yml delivers the satellite topology:
