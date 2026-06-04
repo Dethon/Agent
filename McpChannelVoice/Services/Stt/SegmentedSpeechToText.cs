@@ -27,7 +27,11 @@ public sealed class SegmentedSpeechToText(
             TimeSpan.FromMilliseconds(config.SegmentSilenceMs),
             TimeSpan.MaxValue,
             minSpeech);
-        using var slot = new SemaphoreSlim(Math.Max(1, config.MaxInFlightDecodes));
+        // Not disposed deliberately: a merge-backward re-decode can supersede an
+        // in-flight segment decode that is no longer awaited, and that detached task
+        // must still Release() safely after this method returns. SemaphoreSlim needs
+        // no disposal unless AvailableWaitHandle is used (it isn't).
+        var slot = new SemaphoreSlim(Math.Max(1, config.MaxInFlightDecodes));
         var segments = new List<Segment>();
         var current = new List<AudioChunk>();
 
