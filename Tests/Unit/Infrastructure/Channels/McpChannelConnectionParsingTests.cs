@@ -73,4 +73,36 @@ public class McpChannelConnectionParsingTests
 
         await Should.ThrowAsync<OperationCanceledException>(read);
     }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithLocation_ParsesIt()
+    {
+        var conn = new McpChannelConnection("voice");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"c1","content":"lights on","sender":"household","location":"the office"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.Location.ShouldBe("the office");
+            break;
+        }
+    }
+
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithoutLocation_LeavesItNull()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"c1","content":"hi","sender":"user"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.Location.ShouldBeNull();
+            break;
+        }
+    }
 }
