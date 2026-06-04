@@ -409,14 +409,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             VoiceDimension.SatelliteId => e => e.SatelliteId,
             VoiceDimension.Room => e => e.Room,
             VoiceDimension.Identity => e => e.Identity,
-            VoiceDimension.WakeWord => e => e.WakeWord,
-            VoiceDimension.Language => e => e.Language,
             VoiceDimension.SttProvider => e => e.SttProvider,
             VoiceDimension.SttModel => e => e.SttModel,
             VoiceDimension.TtsProvider => e => e.TtsProvider,
             VoiceDimension.TtsVoice => e => e.TtsVoice,
             VoiceDimension.Outcome => e => e.Outcome,
-            VoiceDimension.Source => e => e.Source,
             VoiceDimension.Priority => e => e.Priority,
             _ => e => e.SatelliteId
         };

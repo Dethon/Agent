@@ -20,8 +20,7 @@ public class VoiceEventTests
             Metric = VoiceMetric.WakeTriggered,
             SatelliteId = "kitchen-01",
             Room = "Kitchen",
-            Identity = "household",
-            WakeWord = "hey_jarvis"
+            Identity = "household"
         };
 
         var json = JsonSerializer.Serialize(evt, _options);

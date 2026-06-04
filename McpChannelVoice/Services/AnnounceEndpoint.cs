@@ -27,11 +27,9 @@ public static class AnnounceEndpoint
                 return Results.Unauthorized();
             }
 
-            var source = ctx.Request.Headers["X-Announce-Source"].FirstOrDefault() ?? "unknown";
-
             try
             {
-                var response = await announcer.AnnounceAsync(body, source, ct);
+                var response = await announcer.AnnounceAsync(body, ct);
                 return Results.Accepted(value: response);
             }
             catch (AnnounceTargetNotFoundException ex)

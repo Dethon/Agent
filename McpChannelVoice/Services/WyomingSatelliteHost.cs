@@ -224,7 +224,6 @@ public sealed class WyomingSatelliteHost(
             SatelliteId = session.SatelliteId,
             Room = session.Config.Room,
             Identity = session.Config.Identity,
-            WakeWord = session.Config.WakeWord,
             ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
         }, ct), ct);
 
@@ -248,7 +247,6 @@ public sealed class WyomingSatelliteHost(
                 Room = session.Config.Room,
                 Identity = session.Config.Identity,
                 DurationMs = sw.ElapsedMilliseconds,
-                Language = result.Language,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);
 

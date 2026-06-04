@@ -53,7 +53,7 @@ public class AnnouncementServiceTests
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" },
-            source: "ha", CancellationToken.None);
+            CancellationToken.None);
 
         response.Satellites.Count.ShouldBe(1);
         response.Satellites[0].Id.ShouldBe("kitchen-01");
@@ -67,7 +67,7 @@ public class AnnouncementServiceTests
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { Room = "Kitchen" }, Text = "hi" },
-            source: "ha", CancellationToken.None);
+            CancellationToken.None);
 
         response.Satellites.Select(s => s.Id).ShouldBe(["kitchen-01", "kitchen-02"], ignoreOrder: true);
     }
@@ -79,7 +79,7 @@ public class AnnouncementServiceTests
 
         var response = await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { All = true }, Text = "hi" },
-            source: "ha", CancellationToken.None);
+            CancellationToken.None);
 
         response.Satellites.Count.ShouldBe(2);
     }
@@ -92,7 +92,7 @@ public class AnnouncementServiceTests
         await Should.ThrowAsync<AnnounceTargetNotFoundException>(
             () => sut.AnnounceAsync(
                 new AnnounceRequest { Target = new() { SatelliteId = "ghost" }, Text = "hi" },
-                source: "ha", CancellationToken.None));
+                CancellationToken.None));
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class AnnouncementServiceTests
 
         await sut.AnnounceAsync(
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "alert", Priority = AnnouncePriority.High },
-            source: "ha", CancellationToken.None);
+            CancellationToken.None);
 
         // Verify the 'ongoing' job's OnPreempted callback fired within a reasonable window.
         (await Task.WhenAny(preempted.Task, Task.Delay(2_000))).ShouldBe(preempted.Task);

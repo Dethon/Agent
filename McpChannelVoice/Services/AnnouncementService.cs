@@ -18,7 +18,6 @@ public class AnnouncementService(
 {
     public async Task<AnnounceResponse> AnnounceAsync(
         AnnounceRequest request,
-        string source,
         CancellationToken ct)
     {
         var targetIds = ResolveTargets(request.Target);
@@ -41,7 +40,6 @@ public class AnnouncementService(
                 {
                     Metric = VoiceMetric.AnnounceError,
                     SatelliteId = id,
-                    Source = source,
                     Priority = request.Priority.ToString(),
                     Outcome = "offline"
                 }, ct);
@@ -64,7 +62,6 @@ public class AnnouncementService(
                         Metric = VoiceMetric.AnnouncePlayed,
                         SatelliteId = id,
                         Room = session.Config.Room,
-                        Source = source,
                         Priority = request.Priority.ToString()
                     }, ct);
                 },
@@ -73,8 +70,7 @@ public class AnnouncementService(
                     await metrics.PublishAsync(new VoiceEvent
                     {
                         Metric = VoiceMetric.AnnouncePreemptedReply,
-                        SatelliteId = id,
-                        Source = source
+                        SatelliteId = id
                     }, ct);
                 });
 
@@ -86,7 +82,6 @@ public class AnnouncementService(
                 Metric = accepted ? VoiceMetric.AnnounceQueued : VoiceMetric.AnnounceError,
                 SatelliteId = id,
                 Room = session.Config.Room,
-                Source = source,
                 Priority = request.Priority.ToString(),
                 Outcome = accepted ? "queued" : "dropped"
             }, ct);

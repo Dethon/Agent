@@ -43,7 +43,6 @@ public sealed class TranscriptDispatcher(
                     SatelliteId = session.SatelliteId,
                     Room = session.Config.Room,
                     Identity = session.Config.Identity,
-                    Language = transcript.Language,
                     Outcome = "dropped",
                     Confidence = transcript.Confidence,
                     ConversationId = manager.GetActiveConversationId(session.SatelliteId)
@@ -75,7 +74,6 @@ public sealed class TranscriptDispatcher(
                 SatelliteId = session.SatelliteId,
                 Room = session.Config.Room,
                 Identity = session.Config.Identity,
-                Language = transcript.Language,
                 Outcome = "dispatched",
                 Confidence = transcript.Confidence,
                 ConversationId = conversationId

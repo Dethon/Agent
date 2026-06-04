@@ -12,15 +12,17 @@ public class VoiceEnumsTests
         names.ShouldContain(nameof(VoiceDimension.SatelliteId));
         names.ShouldContain(nameof(VoiceDimension.Room));
         names.ShouldContain(nameof(VoiceDimension.Identity));
-        names.ShouldContain(nameof(VoiceDimension.WakeWord));
-        names.ShouldContain(nameof(VoiceDimension.Language));
         names.ShouldContain(nameof(VoiceDimension.SttProvider));
         names.ShouldContain(nameof(VoiceDimension.SttModel));
         names.ShouldContain(nameof(VoiceDimension.TtsProvider));
         names.ShouldContain(nameof(VoiceDimension.TtsVoice));
         names.ShouldContain(nameof(VoiceDimension.Outcome));
-        names.ShouldContain(nameof(VoiceDimension.Source));
         names.ShouldContain(nameof(VoiceDimension.Priority));
+
+        // WakeWord, Language and Source were always structurally "(unknown)" and were removed.
+        names.ShouldNotContain("WakeWord");
+        names.ShouldNotContain("Language");
+        names.ShouldNotContain("Source");
     }
 
     [Fact]
