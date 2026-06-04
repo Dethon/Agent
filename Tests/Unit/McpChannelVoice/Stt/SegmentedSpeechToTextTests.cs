@@ -108,4 +108,21 @@ public class SegmentedSpeechToTextTests
         inner.Calls.ShouldBe(3);
         result.Text.ShouldBe("9 10 8");
     }
+
+    [Fact]
+    public async Task TranscribeAsync_ManySegments_RespectsMaxInFlightDecodes()
+    {
+        // Each decode holds a slot for 50 ms so overlaps are observable.
+        var inner = new FakeStt(async count =>
+        {
+            await Task.Delay(50);
+            return new TranscriptionResult { Text = count.ToString() };
+        });
+
+        await New(inner, Config(maxInFlight: 1)).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(7), Silence(3), Speech(8)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        inner.MaxConcurrent.ShouldBe(1);
+    }
 }

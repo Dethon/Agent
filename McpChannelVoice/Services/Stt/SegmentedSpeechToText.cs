@@ -27,6 +27,7 @@ public sealed class SegmentedSpeechToText(
             TimeSpan.FromMilliseconds(config.SegmentSilenceMs),
             TimeSpan.MaxValue,
             minSpeech);
+        using var slot = new SemaphoreSlim(Math.Max(1, config.MaxInFlightDecodes));
         var segments = new List<Segment>();
         var current = new List<AudioChunk>();
 
@@ -39,13 +40,13 @@ public sealed class SegmentedSpeechToText(
                 var closed = current;
                 current = new List<AudioChunk>();
                 gate.Reset();
-                segments.Add(new Segment(closed, StartDecode(closed, options, ct)));
+                segments.Add(new Segment(closed, StartDecode(closed, options, slot, ct)));
             }
         }
 
         if (gate.SpeechElapsed > TimeSpan.Zero)
         {
-            segments.Add(new Segment(current, StartDecode(current, options, ct)));
+            segments.Add(new Segment(current, StartDecode(current, options, slot, ct)));
         }
 
         if (segments.Count == 0)
@@ -71,8 +72,19 @@ public sealed class SegmentedSpeechToText(
     }
 
     private Task<TranscriptionResult> StartDecode(
-        IReadOnlyList<AudioChunk> chunks, TranscriptionOptions options, CancellationToken ct) =>
-        Task.Run(() => inner.TranscribeAsync(ToAsyncEnumerable(chunks), options, ct), ct);
+        IReadOnlyList<AudioChunk> chunks, TranscriptionOptions options, SemaphoreSlim slot, CancellationToken ct) =>
+        Task.Run(async () =>
+        {
+            await slot.WaitAsync(ct);
+            try
+            {
+                return await inner.TranscribeAsync(ToAsyncEnumerable(chunks), options, ct);
+            }
+            finally
+            {
+                slot.Release();
+            }
+        }, ct);
 
     private static async IAsyncEnumerable<AudioChunk> ToAsyncEnumerable(IReadOnlyList<AudioChunk> chunks)
     {
