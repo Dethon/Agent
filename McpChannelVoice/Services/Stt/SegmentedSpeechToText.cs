@@ -75,14 +75,19 @@ public sealed class SegmentedSpeechToText(
         IReadOnlyList<AudioChunk> chunks, TranscriptionOptions options, SemaphoreSlim slot, CancellationToken ct) =>
         Task.Run(async () =>
         {
-            await slot.WaitAsync(ct);
+            var acquired = false;
             try
             {
+                await slot.WaitAsync(ct);
+                acquired = true;
                 return await inner.TranscribeAsync(ToAsyncEnumerable(chunks), options, ct);
             }
             finally
             {
-                slot.Release();
+                if (acquired)
+                {
+                    slot.Release();
+                }
             }
         }, ct);
 
