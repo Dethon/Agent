@@ -73,12 +73,19 @@ public sealed class OpenRouterChatClient : IChatClient
             var newMessage = x.Clone();
             var msgSender = newMessage.GetSenderId();
             var timestamp = newMessage.GetTimestamp();
+            var location = newMessage.GetLocation();
             if (newMessage.Role == ChatRole.User && (msgSender is not null || timestamp is not null))
             {
-                var prefix = (msgSender, timestamp) switch
+                var senderSegment = msgSender is null
+                    ? null
+                    : string.IsNullOrWhiteSpace(location)
+                        ? $"Message from {msgSender}"
+                        : $"Message from {msgSender} (in {location})";
+
+                var prefix = (senderSegment, timestamp) switch
                 {
-                    (not null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}] Message from {msgSender}:\n",
-                    (not null, null) => $"Message from {msgSender}:\n",
+                    (not null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}] {senderSegment}:\n",
+                    (not null, null) => $"{senderSegment}:\n",
                     (null, not null) => $"[Current time: {timestamp:yyyy-MM-dd HH:mm:ss zzz}]:\n",
                     _ => ""
                 };
