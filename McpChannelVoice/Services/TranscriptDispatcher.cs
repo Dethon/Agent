@@ -61,6 +61,7 @@ public sealed class TranscriptDispatcher(
             {
                 ConversationId = conversationId,
                 Sender = session.Config.Identity,
+                Location = session.Config.Room,
                 Content = transcript.Text,
                 AgentId = agentId,
                 Timestamp = DateTimeOffset.UtcNow
