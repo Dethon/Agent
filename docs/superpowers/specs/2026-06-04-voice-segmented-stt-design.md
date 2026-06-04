@@ -84,7 +84,7 @@ In `McpChannelVoice/Modules/ConfigModule.cs`, after the inner `ISpeechToText` is
 - **Min-segment floor (~800 ms speech):** never decode a sub-second fragment alone; merge forward (automatic via `SilenceGate.minSpeech`). A too-short **final** segment merges **backward** — its audio is appended to the previous segment and that segment is re-decoded, replacing the previous result (bounded: one extra decode).
 - **Tunable thresholds are the accuracy/speed knob.** Raising the segment-pause and min-segment thresholds yields fewer, longer, more context-complete segments (closer to batch accuracy, less overlap); lowering them yields more overlap (more speed, more context-loss risk). All config, no code change.
 - **Offline WER measurement gate (acceptance criterion):** an integration test runs a corpus of recorded Spanish utterances (WAV + reference transcript) through both the plain inner backend (whole-utterance) and `SegmentedSpeechToText`, computes WER against the reference for each, and asserts `segmented_WER ≤ batch_WER + ε`. A+ ships only if this passes. The harness reads fixtures from a corpus directory; absent a corpus it skips (mirroring the existing live-site test pattern), but the gate must be run against a real seed corpus before enabling in production.
-- **Escape hatch:** a `Stt:Streaming:FinalReconcile` flag that additionally runs one whole-utterance decode at the end and prefers it — degrading A+ to a guaranteed-accuracy variant (speed becomes pipelining-only) if real-world measurement ever regresses.
+- **Escape hatch (flag in v1, decode path deferred):** a `Stt:Streaming:FinalReconcile` config flag is defined up front so it can be toggled without a config-schema change, but its decode path (run one whole-utterance decode at the end and prefer it — degrading A+ to a guaranteed-accuracy variant, speed becomes pipelining-only) is implemented only if real-world measurement ever shows a regression.
 
 ## Edge cases
 
@@ -110,7 +110,7 @@ Must be mirrored into `appsettings.json` / `appsettings.Development.json` and `D
 
 ## Metrics
 
-Reuse `VoiceEvent` / `VoiceMetric`. `SttLatencyMs` is already measured around the transcription call in `WyomingSatelliteHost.TranscribeAndReplyAsync`; with A+ it should drop, which is the headline signal. Add a lightweight `SttSegments` count (segments decoded per utterance) to observe overlap effectiveness on the dashboard. No new dashboard work required in this scope beyond the enum addition.
+Reuse the existing `SttLatencyMs` `VoiceEvent`, already measured around the transcription call in `WyomingSatelliteHost.TranscribeAndReplyAsync`; with A+ it should drop, which is the headline signal — no new metric is needed to observe the win. For overlap visibility in v1 the decorator **logs** the segment count per utterance (`ILogger`, already injected). A dedicated `SttSegments` dashboard metric is **out of scope** for this change (would touch the `VoiceMetric` enum and dashboard) and deferred.
 
 ## Testing strategy
 
