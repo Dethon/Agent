@@ -18,6 +18,11 @@ public sealed class SegmentedSpeechToText(
 {
     private sealed record Segment(IReadOnlyList<AudioChunk> Audio, Task<TranscriptionResult> Task);
 
+    public static ISpeechToText Wrap(ISpeechToText inner, SegmentedSttConfig config, ILoggerFactory loggers) =>
+        config.Enabled
+            ? new SegmentedSpeechToText(inner, config, loggers.CreateLogger<SegmentedSpeechToText>())
+            : inner;
+
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
     {

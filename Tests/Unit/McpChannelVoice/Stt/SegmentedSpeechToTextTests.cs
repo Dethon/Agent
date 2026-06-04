@@ -154,4 +154,24 @@ public class SegmentedSpeechToTextTests
 
         result.Text.ShouldBe("whole");
     }
+
+    [Fact]
+    public void Wrap_WhenDisabled_ReturnsInnerUnchanged()
+    {
+        var inner = new FakeStt();
+        var result = SegmentedSpeechToText.Wrap(
+            inner, new SegmentedSttConfig { Enabled = false }, NullLoggerFactory.Instance);
+
+        result.ShouldBeSameAs(inner);
+    }
+
+    [Fact]
+    public void Wrap_WhenEnabled_ReturnsDecorator()
+    {
+        var inner = new FakeStt();
+        var result = SegmentedSpeechToText.Wrap(
+            inner, new SegmentedSttConfig { Enabled = true }, NullLoggerFactory.Instance);
+
+        result.ShouldBeOfType<SegmentedSpeechToText>();
+    }
 }

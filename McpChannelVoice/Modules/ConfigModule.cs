@@ -73,31 +73,38 @@ public static class ConfigModule
 
         services.AddSingleton<ISpeechToText>(sp =>
         {
+            ISpeechToText inner;
             if (settings.Stt.Provider.Equals("OpenAi", StringComparison.OrdinalIgnoreCase))
             {
                 var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                           ?? throw new InvalidOperationException("OPENAI_API_KEY missing");
                 var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai");
-                return new Infrastructure.Clients.Voice.OpenAiSpeechToText(
+                inner = new Infrastructure.Clients.Voice.OpenAiSpeechToText(
                     http, settings.Stt.OpenAi?.Model ?? "whisper-1", key,
                     sp.GetRequiredService<IMetricsPublisher>(),
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiSpeechToText>>());
             }
-            if (settings.Stt.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
+            else if (settings.Stt.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
             {
                 var key = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
                           ?? throw new InvalidOperationException("OPENROUTER_API_KEY missing");
                 var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openrouter");
-                return new Infrastructure.Clients.Voice.OpenRouterSpeechToText(
+                inner = new Infrastructure.Clients.Voice.OpenRouterSpeechToText(
                     http,
                     settings.Stt.OpenRouter?.Model ?? "openai/whisper-1",
                     key,
                     sp.GetRequiredService<IMetricsPublisher>(),
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenRouterSpeechToText>>());
             }
-            return new McpChannelVoice.Services.Stt.WyomingSpeechToText(
-                settings.Stt.Wyoming ?? throw new InvalidOperationException("Stt.Wyoming missing"),
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
+            else
+            {
+                inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
+                    settings.Stt.Wyoming ?? throw new InvalidOperationException("Stt.Wyoming missing"),
+                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
+            }
+
+            return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
+                inner, settings.Stt.Streaming, sp.GetRequiredService<ILoggerFactory>());
         });
 
         services.AddHostedService<WyomingSatelliteHost>();
