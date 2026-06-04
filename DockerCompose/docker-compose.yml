@@ -520,8 +520,6 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - VOICE__ANNOUNCE__TOKEN=${ANNOUNCE_TOKEN}
-      - VOICE__STT__STREAMING__ENABLED=false
-      - VOICE__STT__STREAMING__MAXINFLIGHTDECODES=1
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     env_file:
