@@ -6,6 +6,7 @@ public record SttSettings
     public WyomingSttConfig? Wyoming { get; init; }
     public OpenAiSttConfig? OpenAi { get; init; }
     public OpenRouterSttConfig? OpenRouter { get; init; }
+    public SegmentedSttConfig Streaming { get; init; } = new();
 }
 
 public record WyomingSttConfig
@@ -25,4 +26,14 @@ public record OpenRouterSttConfig
 {
     public string Model { get; init; } = "openai/whisper-1";
     public string? Language { get; init; }
+}
+
+public record SegmentedSttConfig
+{
+    public bool Enabled { get; init; }
+    public double SilenceRmsThreshold { get; init; } = 500;
+    public int SegmentSilenceMs { get; init; } = 350;
+    public int MinSegmentMs { get; init; } = 800;
+    public int MaxInFlightDecodes { get; init; } = 1;
+    public bool FinalReconcile { get; init; }
 }
