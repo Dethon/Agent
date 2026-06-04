@@ -18,7 +18,7 @@ set -euo pipefail
 #   ./scripts/wsl-satellite.sh
 #   SAT_ID=bedroom-01 WAKE_WORD=hey_jarvis ./scripts/wsl-satellite.sh
 
-SAT_ID="${SAT_ID:-kitchen-01}"
+SAT_ID="${SAT_ID:-fran-office-01}"
 WAKE_WORD="${WAKE_WORD:-hey_jarvis}"
 SAT_PORT="${SAT_PORT:-10800}"
 WW_PORT="${WW_PORT:-10400}"
@@ -57,12 +57,21 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# True when something is LISTENing on $1. We check ss state rather than opening a
+# connection: WSL2 *mirrored* networking makes a loopback connect to a port with no
+# listener HANG instead of refusing, so the old `/dev/tcp` probe never returned and
+# the script wedged before printing "[1/2]". A LISTEN-state check is instant in both
+# NAT and mirrored modes.
+port_listening() {
+  [[ -n "$(ss -ltnH "sport = :$1" 2>/dev/null)" ]]
+}
+
 # Return 0 once nothing is listening on $1, escalating to SIGKILL if a stale
 # instance refuses to release the port within ~5s.
 wait_port_free() {
   local port="$1"
   for _ in $(seq 1 20); do
-    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || return 0
+    port_listening "$port" || return 0
     sleep 0.25
   done
   pkill -9 -u "$USER" -f wyoming_openwakeword 2>/dev/null || true
@@ -94,8 +103,7 @@ WW_PID=$!
 
 # Wait for openwakeword to bind its port (first run downloads the model — can take >30s)
 for _ in $(seq 1 120); do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$WW_PORT") 2>/dev/null; then
-    exec 3<&- 3>&-
+  if port_listening "$WW_PORT"; then
     break
   fi
   sleep 0.5
