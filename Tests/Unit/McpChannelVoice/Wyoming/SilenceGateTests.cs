@@ -91,4 +91,16 @@ public class SilenceGateTests
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
         Feed(gate, Silent()).ShouldBe(SilenceGate.Decision.Continue);
     }
+
+    [Fact]
+    public void SpeechElapsed_AccumulatesSpeechAndIgnoresSilence()
+    {
+        var gate = NewGate();
+
+        Feed(gate, Loud());   // 100 ms speech
+        Feed(gate, Loud());   // 100 ms speech
+        Feed(gate, Silent()); // silence — must not count
+
+        gate.SpeechElapsed.ShouldBe(TimeSpan.FromMilliseconds(200));
+    }
 }

@@ -25,6 +25,8 @@ public sealed class SilenceGate(
         EndUtterance
     }
 
+    public TimeSpan SpeechElapsed => _speechElapsed;
+
     public Decision Process(ReadOnlySpan<byte> pcm, int sampleRateHz, int sampleWidthBytes, int channels)
     {
         var duration = DurationOf(pcm.Length, sampleRateHz, sampleWidthBytes, channels);
