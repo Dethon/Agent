@@ -125,4 +125,17 @@ public class SegmentedSpeechToTextTests
 
         inner.MaxConcurrent.ShouldBe(1);
     }
+
+    [Fact]
+    public async Task TranscribeAsync_ShortFinalPhrase_MergesBackwardIntoPreviousSegment()
+    {
+        var inner = new FakeStt();
+
+        // seg0 = 6 loud + 3 silent = 9 ; tail = 2 loud (200 ms < 500 ms min) -> merge into seg0 => 11
+        var result = await New(inner).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(2)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        result.Text.ShouldBe("11"); // single merged segment, not "9 2"
+    }
 }

@@ -46,7 +46,17 @@ public sealed class SegmentedSpeechToText(
 
         if (gate.SpeechElapsed > TimeSpan.Zero)
         {
-            segments.Add(new Segment(current, StartDecode(current, options, slot, ct)));
+            if (gate.SpeechElapsed >= minSpeech || segments.Count == 0)
+            {
+                segments.Add(new Segment(current, StartDecode(current, options, slot, ct)));
+            }
+            else
+            {
+                var prev = segments[^1];
+                ObserveAndDiscard(prev.Task);
+                var merged = prev.Audio.Concat(current).ToList();
+                segments[^1] = new Segment(merged, StartDecode(merged, options, slot, ct));
+            }
         }
 
         if (segments.Count == 0)
@@ -90,6 +100,11 @@ public sealed class SegmentedSpeechToText(
                 }
             }
         }, ct);
+
+    private static void ObserveAndDiscard(Task task) =>
+        _ = task.ContinueWith(
+            static t => _ = t.Exception,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
 
     private static async IAsyncEnumerable<AudioChunk> ToAsyncEnumerable(IReadOnlyList<AudioChunk> chunks)
     {
