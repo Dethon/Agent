@@ -33,10 +33,12 @@ public sealed class SegmentedSpeechToText(
         // no disposal unless AvailableWaitHandle is used (it isn't).
         var slot = new SemaphoreSlim(Math.Max(1, config.MaxInFlightDecodes));
         var segments = new List<Segment>();
+        var all = new List<AudioChunk>();
         var current = new List<AudioChunk>();
 
         await foreach (var chunk in audio.WithCancellation(ct))
         {
+            all.Add(chunk);
             current.Add(chunk);
             if (gate.Process(chunk.Data.Span, chunk.Format.SampleRateHz,
                     chunk.Format.SampleWidthBytes, chunk.Format.Channels) == SilenceGate.Decision.EndUtterance)
@@ -68,21 +70,33 @@ public sealed class SegmentedSpeechToText(
             return new TranscriptionResult { Text = "" };
         }
 
-        var results = new List<TranscriptionResult>(segments.Count);
-        foreach (var seg in segments)
+        try
         {
-            results.Add(await seg.Task);
-        }
+            var results = new List<TranscriptionResult>(segments.Count);
+            foreach (var seg in segments)
+            {
+                results.Add(await seg.Task);
+            }
 
-        logger.LogInformation("Segmented STT finalized {Segments} segment(s)", segments.Count);
-        return new TranscriptionResult
+            logger.LogInformation("Segmented STT finalized {Segments} segment(s)", segments.Count);
+            return new TranscriptionResult
+            {
+                Text = string.Join(" ", results
+                    .Select(r => r.Text?.Trim())
+                    .Where(t => !string.IsNullOrEmpty(t))),
+                Language = results.Select(r => r.Language).FirstOrDefault(l => l is not null),
+                Confidence = null
+            };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Text = string.Join(" ", results
-                .Select(r => r.Text?.Trim())
-                .Where(t => !string.IsNullOrEmpty(t))),
-            Language = results.Select(r => r.Language).FirstOrDefault(l => l is not null),
-            Confidence = null
-        };
+            logger.LogWarning(ex, "Segmented decode failed; falling back to whole-utterance decode");
+            foreach (var seg in segments)
+            {
+                ObserveAndDiscard(seg.Task);
+            }
+            return await inner.TranscribeAsync(ToAsyncEnumerable(all), options, ct);
+        }
     }
 
     private Task<TranscriptionResult> StartDecode(

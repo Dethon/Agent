@@ -138,4 +138,20 @@ public class SegmentedSpeechToTextTests
 
         result.Text.ShouldBe("11"); // single merged segment, not "9 2"
     }
+
+    [Fact]
+    public async Task TranscribeAsync_SegmentDecodeFails_FallsBackToWholeUtterance()
+    {
+        // seg0 = 9 chunks, tail seg1 = 7 chunks, whole = 16. Segment-sized decodes
+        // throw; only the whole-utterance fallback (16 chunks) succeeds.
+        var inner = new FakeStt(count => count >= 16
+            ? Task.FromResult(new TranscriptionResult { Text = "whole" })
+            : throw new InvalidOperationException("segment decode boom"));
+
+        var result = await New(inner).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(7)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        result.Text.ShouldBe("whole");
+    }
 }
