@@ -10,6 +10,7 @@ public static class ChatMessageExtensions
     private const string SenderIdKey = "SenderId";
     private const string TimestampKey = "Timestamp";
     private const string MemoryContextKey = "MemoryContext";
+    private const string LocationKey = "Location";
 
     extension(ChatMessage message)
     {
@@ -33,6 +34,28 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SenderIdKey] = senderId;
+        }
+
+        public string? GetLocation()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(LocationKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetLocation(string? location)
+        {
+            if (string.IsNullOrWhiteSpace(location))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[LocationKey] = location;
         }
 
         public DateTimeOffset? GetTimestamp()

@@ -77,4 +77,29 @@ public class ChatMessageSerializationTests
 
         msg.AdditionalProperties.ShouldBeNull();
     }
+
+    [Fact]
+    public void SetAndGetLocation_StoresAndRetrievesValue()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+
+        msg.SetLocation("the office");
+
+        msg.AdditionalProperties.ShouldNotBeNull();
+        msg.AdditionalProperties["Location"].ShouldBe("the office");
+        msg.GetLocation().ShouldBe("the office");
+    }
+
+    [Fact]
+    public void GetLocation_ReturnsValueAfterJsonRoundtrip()
+    {
+        var msg = new ChatMessage(ChatRole.User, "Hello");
+        msg.SetLocation("the office");
+
+        var json = JsonSerializer.Serialize(msg);
+        var deserialized = JsonSerializer.Deserialize<ChatMessage>(json);
+
+        deserialized.ShouldNotBeNull();
+        deserialized.GetLocation().ShouldBe("the office");
+    }
 }
