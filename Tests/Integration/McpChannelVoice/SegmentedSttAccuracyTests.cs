@@ -9,18 +9,17 @@ namespace Tests.Integration.McpChannelVoice;
 
 // Accuracy gate. Requires a reachable wyoming-whisper (set WYOMING_WHISPER_HOST/PORT)
 // and a corpus of <name>.wav + <name>.txt under SEGMENTED_STT_CORPUS. No corpus or
-// no host => the test no-ops, so CI without the rig stays green.
+// no host => the test skips, so CI without the rig stays green.
 public class SegmentedSttAccuracyTests
 {
-    [Fact]
+    [SkippableFact]
     public async Task SegmentedWer_DoesNotExceedBatchWer()
     {
         var corpus = Environment.GetEnvironmentVariable("SEGMENTED_STT_CORPUS");
         var host = Environment.GetEnvironmentVariable("WYOMING_WHISPER_HOST");
-        if (string.IsNullOrWhiteSpace(corpus) || !Directory.Exists(corpus) || string.IsNullOrWhiteSpace(host))
-        {
-            return; // rig not provisioned — skip
-        }
+        Skip.If(
+            string.IsNullOrWhiteSpace(corpus) || !Directory.Exists(corpus) || string.IsNullOrWhiteSpace(host),
+            "wyoming-whisper rig / SEGMENTED_STT_CORPUS not provisioned");
 
         var port = int.TryParse(Environment.GetEnvironmentVariable("WYOMING_WHISPER_PORT"), out var p) ? p : 10300;
         var wyomingConfig = new WyomingSttConfig { Host = host, Port = port, Language = "es" };
