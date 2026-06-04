@@ -174,4 +174,30 @@ public class SegmentedSpeechToTextTests
 
         result.ShouldBeOfType<SegmentedSpeechToText>();
     }
+
+    [Fact]
+    public async Task TranscribeAsync_AllSegmentsReportConfidence_AggregatesMean()
+    {
+        var inner = new FakeStt(count =>
+            Task.FromResult(new TranscriptionResult { Text = count.ToString(), Confidence = 0.8 }));
+
+        var result = await New(inner).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(7)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        result.Confidence.ShouldNotBeNull();
+        result.Confidence!.Value.ShouldBe(0.8, 1e-9);
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_NoSegmentReportsConfidence_IsNull()
+    {
+        var inner = new FakeStt(); // default handler returns Confidence = null
+
+        var result = await New(inner).TranscribeAsync(
+            Stream(Speech(6), Silence(3), Speech(7)),
+            new TranscriptionOptions(), CancellationToken.None);
+
+        result.Confidence.ShouldBeNull();
+    }
 }

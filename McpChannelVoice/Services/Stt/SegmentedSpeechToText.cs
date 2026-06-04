@@ -83,6 +83,11 @@ public sealed class SegmentedSpeechToText(
                 results.Add(await seg.Task);
             }
 
+            var confidences = results
+                .Where(r => r.Confidence is not null)
+                .Select(r => r.Confidence!.Value)
+                .ToList();
+
             logger.LogInformation("Segmented STT finalized {Segments} segment(s)", segments.Count);
             return new TranscriptionResult
             {
@@ -90,7 +95,7 @@ public sealed class SegmentedSpeechToText(
                     .Select(r => r.Text?.Trim())
                     .Where(t => !string.IsNullOrEmpty(t))),
                 Language = results.Select(r => r.Language).FirstOrDefault(l => l is not null),
-                Confidence = null
+                Confidence = confidences.Count > 0 ? confidences.Average() : null
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
