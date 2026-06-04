@@ -2,7 +2,6 @@ using Domain.Contracts;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
-using Microsoft.Extensions.Logging;
 
 namespace McpChannelVoice.Services.Stt;
 
