@@ -51,7 +51,7 @@ public class ChatMonitor(
                 try
                 {
                     conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, ct);
+                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

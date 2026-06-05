@@ -14,8 +14,8 @@ public class ChatMonitorDeliveryTests
     {
         var m = new Mock<IChannelConnection>();
         m.SetupGet(c => c.ChannelId).Returns(id);
-        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string? _, CancellationToken _) => $"minted-{id}");
+        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, CancellationToken _) => $"minted-{id}");
         return m.Object;
     }
 
@@ -83,8 +83,8 @@ public class ChatMonitorDeliveryTests
         captor.SetupGet(c => c.ChannelId).Returns("signalr");
         string? capturedPrompt = null;
         captor.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? p, CancellationToken _) => capturedPrompt = p)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? p, string? _, CancellationToken _) => capturedPrompt = p)
             .ReturnsAsync("minted-signalr");
         var channels = new[] { origin, captor.Object };
         var msg = new ChannelMessage
@@ -109,7 +109,7 @@ public class ChatMonitorDeliveryTests
         var failing = new Mock<IChannelConnection>();
         failing.SetupGet(c => c.ChannelId).Returns("signalr");
         failing.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection reset"));
         var channels = new[] { origin, failing.Object };
         var msg = new ChannelMessage
@@ -121,5 +121,32 @@ public class ChatMonitorDeliveryTests
         var targets = await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
 
         targets.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ResolveDeliveryTargets_ThreadsReplyTargetAddressIntoCreateConversation()
+    {
+        var origin = Channel("scheduling");
+        var captor = new Mock<IChannelConnection>();
+        captor.SetupGet(c => c.ChannelId).Returns("voice");
+        string? capturedAddress = null;
+        captor.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? _, string? a, CancellationToken _) => capturedAddress = a)
+            .ReturnsAsync("minted-voice");
+        var channels = new[] { origin, captor.Object };
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "The AC is on",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "mycroft",
+            ReplyTo = [new ReplyTarget("voice", null, "fran-office-01")]
+        };
+
+        await ChatMonitor.ResolveDeliveryTargetsAsync(msg, origin, channels, CancellationToken.None);
+
+        capturedAddress.ShouldBe("fran-office-01");
     }
 }

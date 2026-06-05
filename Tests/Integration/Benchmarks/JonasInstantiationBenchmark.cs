@@ -390,7 +390,7 @@ internal sealed class StubChannelConnection : IChannelConnection
         => Task.CompletedTask;
 
     public Task<string?> CreateConversationAsync(
-        string agentId, string topicName, string sender, string? initialPrompt, CancellationToken ct)
+        string agentId, string topicName, string sender, string? initialPrompt, string? address, CancellationToken ct)
         => Task.FromResult<string?>(null);
 
     private TaskCompletionSource GetOrAddCompletion(string conversationId)
