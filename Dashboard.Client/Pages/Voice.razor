@@ -50,24 +50,16 @@
         new("Satellite", nameof(VoiceDimension.SatelliteId)),
         new("Room", nameof(VoiceDimension.Room)),
         new("Identity", nameof(VoiceDimension.Identity)),
-        new("Outcome", nameof(VoiceDimension.Outcome)),
-        new("Priority", nameof(VoiceDimension.Priority)),
     ];
 
     private static readonly IReadOnlyList<PillOption> MetricOptions =
     [
-        new("Wake triggered", nameof(VoiceMetric.WakeTriggered)),
         new("Utterances", nameof(VoiceMetric.UtteranceTranscribed)),
         new("Wake → audio (ms)", nameof(VoiceMetric.WakeToFirstAudioMs)),
         new("STT latency (ms)", nameof(VoiceMetric.SttLatencyMs)),
         new("TTS latency (ms)", nameof(VoiceMetric.TtsLatencyMs)),
-        new("Approvals", nameof(VoiceMetric.ApprovalResolved)),
-        new("Announce played", nameof(VoiceMetric.AnnouncePlayed)),
-        new("Announce queued", nameof(VoiceMetric.AnnounceQueued)),
-        new("Announce preempted", nameof(VoiceMetric.AnnouncePreemptedReply)),
-        new("Announce errors", nameof(VoiceMetric.AnnounceError)),
+        new("Announcements", nameof(VoiceMetric.AnnouncePlayed)),
         new("STT errors", nameof(VoiceMetric.SttError)),
-        new("TTS errors", nameof(VoiceMetric.TtsError)),
     ];
 
     private static readonly IReadOnlyList<PillOption> TimeOptions =
@@ -143,9 +135,35 @@
 }
 
 <style>
-    .voice-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
+    .voice-page {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .page-header h2 {
+        font-size: 1.4rem;
+        font-weight: 600;
+    }
+
+    .controls {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        align-items: flex-end;
+    }
+
+    .kpi-row {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
 </style>
