@@ -12,6 +12,8 @@ public class McpAgentInstructionsTests
         var fixedTime = new DateTimeOffset(2026, 5, 15, 10, 30, 0, TimeSpan.Zero);
 
         var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
             customInstructions: null,
             domainPrompts: [],
             fileSystemPrompts: [],
@@ -27,6 +29,8 @@ public class McpAgentInstructionsTests
         var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
 
         var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
             customInstructions: null,
             domainPrompts: [],
             fileSystemPrompts: [],
@@ -43,6 +47,8 @@ public class McpAgentInstructionsTests
         var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
 
         var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
             customInstructions: "CUSTOM",
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
@@ -62,6 +68,8 @@ public class McpAgentInstructionsTests
         var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
 
         var result = McpAgent.BuildInstructions(
+            name: "TestAgent",
+            description: null,
             customInstructions: "CUSTOM",
             domainPrompts: ["DOMAIN"],
             fileSystemPrompts: ["FS"],
@@ -73,5 +81,60 @@ public class McpAgentInstructionsTests
         result.ShouldContain("FS");
         result.ShouldContain("CLIENT");
         result.ShouldContain("Today is");
+    }
+
+    [Fact]
+    public void BuildInstructions_IncludesAgentIdentity()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "Mycroft",
+            description: "Voice assistant.",
+            customInstructions: null,
+            domainPrompts: [],
+            fileSystemPrompts: [],
+            clientPrompts: [],
+            now: fixedTime);
+
+        result.ShouldContain("## Identity");
+        result.ShouldContain("You are Mycroft. Voice assistant.");
+    }
+
+    [Fact]
+    public void BuildInstructions_PlacesIdentityAfterBasePromptBeforeDomainPrompts()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "Mycroft",
+            description: "Voice assistant.",
+            customInstructions: null,
+            domainPrompts: ["DOMAIN"],
+            fileSystemPrompts: [],
+            clientPrompts: [],
+            now: fixedTime);
+
+        result.IndexOf(BasePrompt.Instructions, StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("## Identity", StringComparison.Ordinal));
+        result.IndexOf("## Identity", StringComparison.Ordinal)
+            .ShouldBeLessThan(result.IndexOf("DOMAIN", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildInstructions_BlankName_OmitsIdentityFragment()
+    {
+        var fixedTime = new DateTimeOffset(2026, 5, 15, 0, 0, 0, TimeSpan.Zero);
+
+        var result = McpAgent.BuildInstructions(
+            name: "  ",
+            description: "Voice assistant.",
+            customInstructions: null,
+            domainPrompts: [],
+            fileSystemPrompts: [],
+            clientPrompts: [],
+            now: fixedTime);
+
+        result.ShouldNotContain("## Identity");
     }
 }

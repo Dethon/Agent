@@ -302,6 +302,8 @@ public sealed class McpAgent : DisposableAgent
         {
             Tools = [.. session.Tools],
             Instructions = BuildInstructions(
+                _name,
+                _description,
                 _customInstructions,
                 _domainPrompts,
                 session.FileSystemPrompts,
@@ -314,6 +316,8 @@ public sealed class McpAgent : DisposableAgent
     }
 
     internal static string BuildInstructions(
+        string name,
+        string? description,
         string? customInstructions,
         IEnumerable<string> domainPrompts,
         IEnumerable<string> fileSystemPrompts,
@@ -323,7 +327,16 @@ public sealed class McpAgent : DisposableAgent
         var datePrompt = $"Today is {now.ToString("dddd, yyyy-MM-dd", CultureInfo.InvariantCulture)}.";
         var prompts = domainPrompts
             .Concat(fileSystemPrompts)
-            .Concat(clientPrompts)
+            .Concat(clientPrompts);
+
+        // Identity sits right after the core directive and before feature guidance, so the
+        // model knows which agent it is before reading any feature- or tool-specific prompt.
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            prompts = prompts.Prepend(IdentityPrompt.Build(name, description));
+        }
+
+        prompts = prompts
             .Prepend(BasePrompt.Instructions)
             .Prepend(datePrompt);
 
