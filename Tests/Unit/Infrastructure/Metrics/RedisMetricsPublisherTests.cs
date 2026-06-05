@@ -18,44 +18,46 @@ public class RedisMetricsPublisherTests
         _sut = new RedisMetricsPublisher(_redis.Object);
     }
 
-    public static TheoryData<MetricEvent, string> EventCases => new()
+    [Fact]
+    public async Task PublishAsync_serializes_heartbeat_event_to_metrics_channel()
     {
-        {
-            new HeartbeatEvent { Service = "agent" },
-            "\"service\":\"agent\""
-        },
-        {
-            new TokenUsageEvent
-            {
-                Sender = "user1",
-                Model = "gpt-4",
-                InputTokens = 100,
-                OutputTokens = 50,
-                Cost = 0.01m
-            },
-            "\"type\":\"token_usage\""
-        },
-        {
-            new LatencyEvent
-            {
-                Stage = LatencyStage.LlmTotal,
-                DurationMs = 1234,
-                Model = "anthropic/claude",
-                ConversationId = "conv1"
-            },
-            "\"type\":\"latency\""
-        }
-    };
+        await _sut.PublishAsync(new HeartbeatEvent { Service = "agent" });
 
-    [Theory]
-    [MemberData(nameof(EventCases))]
-    public async Task PublishAsync_publishes_serialized_event_to_metrics_channel(MetricEvent evt, string expectedFragment)
+        VerifyPublished("\"service\":\"agent\"");
+    }
+
+    [Fact]
+    public async Task PublishAsync_serializes_token_usage_event_to_metrics_channel()
     {
-        await _sut.PublishAsync(evt);
+        await _sut.PublishAsync(new TokenUsageEvent
+        {
+            Sender = "user1",
+            Model = "gpt-4",
+            InputTokens = 100,
+            OutputTokens = 50,
+            Cost = 0.01m
+        });
 
+        VerifyPublished("\"type\":\"token_usage\"");
+    }
+
+    [Fact]
+    public async Task PublishAsync_serializes_latency_event_to_metrics_channel()
+    {
+        await _sut.PublishAsync(new LatencyEvent
+        {
+            Stage = LatencyStage.LlmTotal,
+            DurationMs = 1234,
+            Model = "anthropic/claude",
+            ConversationId = "conv1"
+        });
+
+        VerifyPublished("\"type\":\"latency\"");
+    }
+
+    private void VerifyPublished(string expectedFragment) =>
         _subscriber.Verify(s => s.PublishAsync(
             RedisChannel.Literal("metrics:events"),
             It.Is<RedisValue>(v => v.ToString().Contains(expectedFragment)),
             It.IsAny<CommandFlags>()), Times.Once);
-    }
 }
