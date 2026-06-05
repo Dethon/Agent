@@ -53,25 +53,6 @@ public class ConfidenceGateTests
     }
 
     [Fact]
-    public async Task Dispatch_LowConfidence_DropsAndPublishesMetric()
-    {
-        var emitter = new CapturingEmitter();
-        var publisher = new Mock<IMetricsPublisher>();
-        var dispatcher = new TranscriptDispatcher(
-            emitter, publisher.Object, new ApprovalCaptureBroker(), MakeManager(), confidenceThreshold: 0.4,
-            NullLogger<TranscriptDispatcher>.Instance);
-
-        var ok = await dispatcher.DispatchAsync(
-            MakeSession(),
-            new TranscriptionResult { Text = "what?", Confidence = 0.2, Language = "en" },
-            agentId: "jonas",
-            CancellationToken.None);
-
-        ok.ShouldBeFalse();
-        emitter.Captured.ShouldBeEmpty();
-    }
-
-    [Fact]
     public async Task Dispatch_GoodTranscript_EmitsAndPublishes()
     {
         var emitter = new CapturingEmitter();

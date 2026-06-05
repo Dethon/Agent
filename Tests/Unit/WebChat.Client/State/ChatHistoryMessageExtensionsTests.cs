@@ -6,32 +6,20 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class ChatHistoryMessageExtensionsTests
 {
-    [Fact]
-    public void ToChatMessageModel_MapsAllProperties()
+    [Theory]
+    [InlineData("msg-123", "assistant", "Hello", "agent-1")]
+    [InlineData(null, "user", "Hi", null)]
+    public void ToChatMessageModel_MapsProperties(string? messageId, string role, string content, string? senderId)
     {
-        var history = new ChatHistoryMessage(
-            MessageId: "msg-123",
-            Role: "assistant",
-            Content: "Hello",
-            SenderId: "agent-1",
-            Timestamp: new DateTimeOffset(2026, 1, 28, 12, 0, 0, TimeSpan.Zero));
+        var ts = messageId != null ? new DateTimeOffset(2026, 1, 28, 12, 0, 0, TimeSpan.Zero) : (DateTimeOffset?)null;
+        var history = new ChatHistoryMessage(MessageId: messageId, Role: role, Content: content, SenderId: senderId, Timestamp: ts);
 
         var result = history.ToChatMessageModel();
 
-        result.MessageId.ShouldBe("msg-123");
-        result.Role.ShouldBe("assistant");
-        result.Content.ShouldBe("Hello");
-        result.SenderId.ShouldBe("agent-1");
-        result.Timestamp.ShouldBe(new DateTimeOffset(2026, 1, 28, 12, 0, 0, TimeSpan.Zero));
-    }
-
-    [Fact]
-    public void ToChatMessageModel_HandlesNullMessageId()
-    {
-        var history = new ChatHistoryMessage(null, "user", "Hi", null, null);
-
-        var result = history.ToChatMessageModel();
-
-        result.MessageId.ShouldBeNull();
+        result.MessageId.ShouldBe(messageId);
+        result.Role.ShouldBe(role);
+        result.Content.ShouldBe(content);
+        result.SenderId.ShouldBe(senderId);
+        result.Timestamp.ShouldBe(ts);
     }
 }

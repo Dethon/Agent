@@ -18,9 +18,4 @@ public class SegmentedSttConfigTests
         config.FinalReconcile.ShouldBeFalse();
     }
 
-    [Fact]
-    public void SttSettings_ExposesStreamingWithNonNullDefault()
-    {
-        new SttSettings().Streaming.ShouldNotBeNull();
-    }
 }

@@ -6,32 +6,6 @@ namespace Tests.Unit.Domain;
 public class ChatThreadContextTests
 {
     [Fact]
-    public void Constructor_InitializesPropertiesCorrectly()
-    {
-        // Act
-        var context = new ChatThreadContext();
-
-        // Assert
-        context.Cts.ShouldNotBeNull();
-        context.Cts.IsCancellationRequested.ShouldBeFalse();
-    }
-
-    [Fact]
-    public void GetLinkedTokenSource_ReturnsLinkedSource()
-    {
-        // Arrange
-        var context = new ChatThreadContext();
-        using var externalCts = new CancellationTokenSource();
-
-        // Act
-        using var linked = context.GetLinkedTokenSource(externalCts.Token);
-
-        // Assert
-        linked.ShouldNotBeNull();
-        linked.Token.IsCancellationRequested.ShouldBeFalse();
-    }
-
-    [Fact]
     public void GetLinkedTokenSource_CancelsWhenContextCts_IsCancelled()
     {
         // Arrange

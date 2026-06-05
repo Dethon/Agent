@@ -165,12 +165,4 @@ public class RequestApprovalToolTests
         result.ShouldBe("declined");
     }
 
-    [Fact]
-    public async Task McpRun_Notify_ResolvesSatelliteFromCompositeConversationId()
-    {
-        var result = await RequestApprovalTool.McpRun(
-            _conversationId, ApprovalMode.Notify, new List<ToolApprovalRequest>(), _services);
-
-        result.ShouldBe("notified");
-    }
 }

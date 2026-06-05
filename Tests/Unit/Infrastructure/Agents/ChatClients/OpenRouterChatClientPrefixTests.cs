@@ -43,24 +43,17 @@ public class OpenRouterChatClientPrefixTests : IDisposable
         FirstText().ShouldStartWith("Message from household (in the office):");
     }
 
-    [Fact]
-    public async Task GetStreamingResponseAsync_WithSenderNoLocation_OmitsRoom()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public async Task GetStreamingResponseAsync_WithSenderAndBlankOrNoLocation_OmitsRoom(string? location)
     {
         var msg = new ChatMessage(ChatRole.User, "lights on");
         msg.SetSenderId("household");
-
-        await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
-
-        FirstText().ShouldStartWith("Message from household:");
-        FirstText().ShouldNotContain("(in");
-    }
-
-    [Fact]
-    public async Task GetStreamingResponseAsync_WithWhitespaceLocation_OmitsRoom()
-    {
-        var msg = new ChatMessage(ChatRole.User, "lights on");
-        msg.SetSenderId("household");
-        msg.AdditionalProperties!["Location"] = "   ";
+        if (location is not null)
+        {
+            msg.AdditionalProperties!["Location"] = location;
+        }
 
         await _sut.GetStreamingResponseAsync([msg]).ToListAsync();
 

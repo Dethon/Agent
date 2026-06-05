@@ -15,12 +15,15 @@ namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 
 public class ToolApprovalChatClientMetricsTests
 {
-    [Fact]
-    public async Task InvokeFunctionAsync_ApprovedTool_PublishesSuccessEvent()
+    [Theory]
+    [InlineData((int)ToolApprovalResult.Approved)]
+    [InlineData((int)ToolApprovalResult.ApprovedAndRemember)]
+    public async Task InvokeFunctionAsync_ApprovedOrRememberedTool_PublishesSuccessEvent(int approvalResultInt)
     {
         // Arrange
+        var approvalResult = (ToolApprovalResult)approvalResultInt;
         var publisher = new Mock<IMetricsPublisher>();
-        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var handler = new TestApprovalHandler(approvalResult);
         var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
 
         var fakeClient = new FakeChatClient();
@@ -297,35 +300,6 @@ public class ToolApprovalChatClientMetricsTests
 
         // Assert
         captured.ShouldNotBeNull();
-        captured.Success.ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task InvokeFunctionAsync_ApprovedAndRemember_PublishesSuccessEvent()
-    {
-        // Arrange
-        var publisher = new Mock<IMetricsPublisher>();
-        var handler = new TestApprovalHandler(ToolApprovalResult.ApprovedAndRemember);
-        var function = AIFunctionFactory.Create(() => "result", "mcp__server__TestTool");
-
-        var fakeClient = new FakeChatClient();
-        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__server__TestTool", "call1"));
-
-        ToolCallEvent? captured = null;
-        publisher
-            .Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
-            .Callback<MetricEvent, CancellationToken>((e, _) => { if (e is ToolCallEvent t) { captured = t; } })
-            .Returns(Task.CompletedTask);
-
-        var client = new ToolApprovalChatClient(fakeClient, handler, metricsPublisher: publisher.Object);
-        var options = new ChatOptions { Tools = [function] };
-
-        // Act
-        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], options);
-
-        // Assert
-        captured.ShouldNotBeNull();
-        captured.ToolName.ShouldBe("mcp__server__TestTool");
         captured.Success.ShouldBeTrue();
     }
 

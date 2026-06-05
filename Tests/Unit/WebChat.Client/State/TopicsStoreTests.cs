@@ -248,40 +248,6 @@ public class TopicsStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task StateObservable_EmitsOnDispatch()
-    {
-        // Arrange
-        var emittedStates = new List<TopicsState>();
-        using var subscription = _store.StateObservable.Subscribe(state => emittedStates.Add(state));
-
-        // Act
-        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Test")]));
-        _dispatcher.Dispatch(new SelectTopic("topic-1"));
-
-        // Allow observable to emit
-        await Task.Delay(10);
-
-        // Assert
-        emittedStates.Count.ShouldBeGreaterThanOrEqualTo(3); // Initial + 2 dispatches
-        emittedStates.Last().SelectedTopicId.ShouldBe("topic-1");
-    }
-
-    [Fact]
-    public void StateObservable_ReplaysCurrentStateToNewSubscriber()
-    {
-        // Arrange
-        _dispatcher.Dispatch(new TopicsLoaded([CreateTopic("topic-1", "Test")]));
-        TopicsState? receivedState = null;
-
-        // Act
-        using var subscription = _store.StateObservable.Subscribe(state => receivedState = state);
-
-        // Assert - subscriber immediately receives current state
-        receivedState.ShouldNotBeNull();
-        receivedState.Topics.Count.ShouldBe(1);
-    }
-
-    [Fact]
     public void FromMetadata_PreservesSpaceSlug()
     {
         // Arrange

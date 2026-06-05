@@ -34,18 +34,11 @@ public class ServiceBusProcessorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_StartsProcessor()
+    public async Task ExecuteAsync_StartsAndStopsProcessor()
     {
         await StartAndStopService();
 
         _processor.Verify(p => p.StartProcessingAsync(It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task StopAsync_StopsProcessor()
-    {
-        await StartAndStopService();
-
         _processor.Verify(p => p.StopProcessingAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 

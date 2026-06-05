@@ -392,14 +392,15 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
     #region Move Tests
 
-    [Fact]
-    public async Task MoveTool_WithValidPaths_MovesFile()
+    [Theory]
+    [InlineData("MoveTest/source", "MoveTest/dest", "file-to-move.txt", "file-to-move.txt")]
+    [InlineData("LibraryMoveSource", "LibraryMoveTest", "library-file.mkv", "library-file.mkv")]
+    public async Task MoveTool_WithinLibrary_MovesFile(
+        string srcDir, string dstDir, string srcFileName, string dstFileName)
     {
         // Arrange - both source and dest must be within library path
-        var sourceDir = Path.Combine("MoveTest", "source");
-        var destDir = Path.Combine("MoveTest", "dest");
-        fixture.CreateLibraryStructure(destDir);
-        fixture.CreateLibraryFile(Path.Combine(sourceDir, "file-to-move.txt"), "content");
+        fixture.CreateLibraryStructure(dstDir);
+        fixture.CreateLibraryFile(Path.Combine(srcDir, srcFileName), "content");
 
         var client = await McpClient.CreateAsync(
             new HttpClientTransport(new HttpClientTransportOptions
@@ -408,8 +409,8 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
             }),
             cancellationToken: CancellationToken.None);
 
-        var sourcePath = Path.Combine(fixture.LibraryPath, sourceDir, "file-to-move.txt");
-        var destPath = Path.Combine(fixture.LibraryPath, destDir, "file-to-move.txt");
+        var sourcePath = Path.Combine(fixture.LibraryPath, srcDir, srcFileName);
+        var destPath = Path.Combine(fixture.LibraryPath, dstDir, dstFileName);
 
         // Act
         var result = await client.CallToolAsync(
@@ -423,43 +424,8 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
         // Assert
         result.ShouldNotBeNull();
-        fixture.FileExistsInLibrary(Path.Combine(destDir, "file-to-move.txt")).ShouldBeTrue();
-        fixture.FileExistsInLibrary(Path.Combine(sourceDir, "file-to-move.txt")).ShouldBeFalse();
-
-        await client.DisposeAsync();
-    }
-
-    [Fact]
-    public async Task MoveTool_WithinLibrary_MovesSuccessfully()
-    {
-        // Arrange - Move within library (both paths in library)
-        fixture.CreateLibraryStructure("LibraryMoveTest");
-        fixture.CreateLibraryFile(Path.Combine("LibraryMoveSource", "library-file.mkv"), "content");
-
-        var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(fixture.McpEndpoint)
-            }),
-            cancellationToken: CancellationToken.None);
-
-        var sourcePath = Path.Combine(fixture.LibraryPath, "LibraryMoveSource", "library-file.mkv");
-        var destPath = Path.Combine(fixture.LibraryPath, "LibraryMoveTest", "library-file.mkv");
-
-        // Act
-        var result = await client.CallToolAsync(
-            "fs_move",
-            new Dictionary<string, object?>
-            {
-                ["sourcePath"] = sourcePath,
-                ["destinationPath"] = destPath
-            },
-            cancellationToken: CancellationToken.None);
-
-        // Assert
-        result.ShouldNotBeNull();
-        fixture.FileExistsInLibrary(Path.Combine("LibraryMoveTest", "library-file.mkv")).ShouldBeTrue();
-        fixture.FileExistsInLibrary(Path.Combine("LibraryMoveSource", "library-file.mkv")).ShouldBeFalse();
+        fixture.FileExistsInLibrary(Path.Combine(dstDir, dstFileName)).ShouldBeTrue();
+        fixture.FileExistsInLibrary(Path.Combine(srcDir, srcFileName)).ShouldBeFalse();
 
         await client.DisposeAsync();
     }

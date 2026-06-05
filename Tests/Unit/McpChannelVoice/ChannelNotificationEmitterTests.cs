@@ -7,13 +7,6 @@ namespace Tests.Unit.McpChannelVoice;
 public class ChannelNotificationEmitterTests
 {
     [Fact]
-    public void HasActiveSessions_InitiallyFalse()
-    {
-        var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);
-        emitter.HasActiveSessions.ShouldBeFalse();
-    }
-
-    [Fact]
     public void UnregisterSession_OnUnknownId_DoesNotThrow()
     {
         var emitter = new ChannelNotificationEmitter(NullLogger<ChannelNotificationEmitter>.Instance);

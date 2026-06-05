@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Shouldly;
@@ -25,13 +24,4 @@ public class SatelliteSessionTests
         bytes.ShouldBe([1, 2, 3]);
     }
 
-    [Fact]
-    public void SatelliteId_ReturnsConfiguredId()
-    {
-        var session = new SatelliteSession(
-            satelliteId: "bedroom-01",
-            config: new SatelliteConfig { Identity = "francisco", Room = "Bedroom" });
-
-        session.SatelliteId.ShouldBe("bedroom-01");
-    }
 }

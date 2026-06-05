@@ -37,15 +37,11 @@ public class GlobBraceExpanderTests
         GlobBraceExpander.Expand("file{,.bak}").ShouldBe(["file", "file.bak"]);
     }
 
-    [Fact]
-    public void Expand_GroupWithoutComma_IsTreatedAsLiteral()
+    [Theory]
+    [InlineData("file{1}.txt")]  // no comma → not a group
+    [InlineData("a{b,c")]        // unmatched opening brace
+    public void Expand_NoBraceExpansion_ReturnsSingleLiteralPattern(string pattern)
     {
-        GlobBraceExpander.Expand("file{1}.txt").ShouldBe(["file{1}.txt"]);
-    }
-
-    [Fact]
-    public void Expand_UnmatchedBrace_IsTreatedAsLiteral()
-    {
-        GlobBraceExpander.Expand("a{b,c").ShouldBe(["a{b,c"]);
+        GlobBraceExpander.Expand(pattern).ShouldBe([pattern]);
     }
 }
