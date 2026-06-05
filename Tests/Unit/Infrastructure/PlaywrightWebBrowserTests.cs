@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
@@ -161,4 +162,114 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         connections.Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task NavigateAsync_WhenConnectionClosedMidNavigation_ReconnectsAndRetries()
+    {
+        // The Camoufox WebSocket can drop while a navigation is in flight. The first attempt
+        // throws "Target page, context or browser has been closed"; instead of surfacing that
+        // to the caller, the browser should reconnect and re-navigate on a fresh page.
+        var closedEx = new PlaywrightException(
+            "Target page, context or browser has been closed");
+
+        var page1 = new Mock<IPage>();
+        page1.SetupGet(p => p.IsClosed).Returns(false);
+        page1.SetupGet(p => p.Url).Returns("about:blank");
+        page1.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+            .ThrowsAsync(closedEx);
+
+        // Second attempt runs on a fresh connection. A non-closed sentinel cuts the
+        // post-navigation pipeline short so the test stays focused on the retry.
+        var page2 = new Mock<IPage>();
+        page2.SetupGet(p => p.IsClosed).Returns(false);
+        page2.SetupGet(p => p.Url).Returns("https://a.test/");
+        page2.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+            .ThrowsAsync(new InvalidOperationException("reached-second-attempt"));
+
+        var connections = new List<Mock<IBrowser>>();
+        var pages = new Queue<Mock<IPage>>([page1, page2]);
+        Func<Task<IBrowser>> factory = () =>
+        {
+            var context = new Mock<IBrowserContext>();
+            context.Setup(c => c.NewPageAsync()).ReturnsAsync(pages.Dequeue().Object);
+            var browser = new Mock<IBrowser>();
+            browser.SetupGet(b => b.IsConnected).Returns(true);
+            browser.Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+                .ReturnsAsync(context.Object);
+            connections.Add(browser);
+            return Task.FromResult(browser.Object);
+        };
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
+
+        var result = await browser.NavigateAsync(new BrowseRequest(SessionId: "s", Url: "https://a.test/"));
+
+        connections.Count.ShouldBe(2);
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldNotContain("has been closed");
+        result.ErrorMessage.ShouldContain("reached-second-attempt");
+    }
+
+    [Fact]
+    public async Task SnapshotAsync_WhenConnectionClosed_ReturnsSessionNotFoundInsteadOfRawError()
+    {
+        // A dropped connection makes the cached page dead — its content is gone, so reconnecting
+        // would only yield a blank page. The honest result is a clean session-not-found that tells
+        // the caller to web_browse again, not the raw "has been closed" Playwright message.
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+
+        page.Setup(p => p.EvaluateAsync<JsonElement>(It.IsAny<string>(), It.IsAny<object?>()))
+            .ThrowsAsync(new PlaywrightException("Target page, context or browser has been closed"));
+
+        var result = await browser.SnapshotAsync(new SnapshotRequest("s", null));
+
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldNotContain("has been closed");
+        result.ErrorMessage.ShouldContain("not found");
+    }
+
+    [Fact]
+    public async Task ActionAsync_WhenConnectionClosed_ReturnsSessionNotFoundInsteadOfRawError()
+    {
+        var (browser, page) = await CreateBrowserWithCachedSessionAsync("s", "https://a.test/");
+        await using var _ = browser;
+
+        page.Setup(p => p.GoBackAsync(It.IsAny<PageGoBackOptions?>()))
+            .ThrowsAsync(new PlaywrightException("Target page, context or browser has been closed"));
+
+        var result = await browser.ActionAsync(new WebActionRequest("s", null, WebActionType.Back));
+
+        result.Status.ShouldBe(WebActionStatus.SessionNotFound);
+        result.ErrorMessage.ShouldNotBeNull();
+        result.ErrorMessage.ShouldNotContain("has been closed");
+    }
+
+    // Primes a browser so a session is cached for sessionId. The navigation deliberately
+    // aborts in the post-goto pipeline (ContentAsync throws), which still caches the session.
+    private static async Task<(PlaywrightWebBrowser browser, Mock<IPage> page)>
+        CreateBrowserWithCachedSessionAsync(string sessionId, string url)
+    {
+        var page = new Mock<IPage>();
+        page.SetupGet(p => p.IsClosed).Returns(false);
+        page.SetupGet(p => p.Url).Returns(url);
+        page.Setup(p => p.GotoAsync(It.IsAny<string>(), It.IsAny<PageGotoOptions?>()))
+            .ReturnsAsync(Mock.Of<IResponse>());
+        page.Setup(p => p.ContentAsync()).ThrowsAsync(new InvalidOperationException("prime-stop"));
+
+        var context = new Mock<IBrowserContext>();
+        context.Setup(c => c.NewPageAsync()).ReturnsAsync(page.Object);
+
+        var browserMock = new Mock<IBrowser>();
+        browserMock.SetupGet(b => b.IsConnected).Returns(true);
+        browserMock.Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+            .ReturnsAsync(context.Object);
+
+        var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser",
+            browserFactory: () => Task.FromResult(browserMock.Object));
+
+        await browser.NavigateAsync(new BrowseRequest(SessionId: sessionId, Url: url));
+        return (browser, page);
+    }
 }

@@ -13,7 +13,7 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class VoiceConversationManagerTests
 {
-    private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan _lifetime = TimeSpan.FromMinutes(5);
 
     private static SatelliteSession Session() =>
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
@@ -34,7 +34,7 @@ public class VoiceConversationManagerTests
             });
 
         var sut = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), clock, Lifetime,
+            factory.Object, new ReplyTextAccumulator(), clock, _lifetime,
             NullLogger<VoiceConversationManager>.Instance);
         return (sut, factory);
     }
