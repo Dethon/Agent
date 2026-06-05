@@ -37,6 +37,12 @@ public class ChatMonitor(
         }
 
         var targets = new List<DeliveryTarget>();
+        // The first resolved conversation anchors a shared id for the whole fan-out. A
+        // schedule delivering to both a WebChat channel and voice should surface as ONE
+        // conversation — displayed by WebChat and spoken by voice — not a populated thread
+        // plus an empty duplicate. Later targets that need minting attach to this id (the
+        // voice channel binds its satellite to it instead of persisting its own topic).
+        string? shared = null;
         foreach (var target in message.ReplyTo)
         {
             var channel = channels.FirstOrDefault(c => c.ChannelId == target.ChannelId);
@@ -51,7 +57,7 @@ public class ChatMonitor(
                 try
                 {
                     conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, ct);
+                        message.AgentId ?? "default", "Scheduled task", message.Sender, message.Content, target.Address, shared, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -64,6 +70,7 @@ public class ChatMonitor(
 
             if (conversationId is not null)
             {
+                shared ??= conversationId;
                 targets.Add(new DeliveryTarget(channel, conversationId));
             }
         }

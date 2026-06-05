@@ -56,6 +56,23 @@ public class ScheduleFirePlannerTests
     }
 
     [Fact]
+    public void Plan_MultipleVoiceSatellites_MergesIntoSingleVoiceTarget()
+    {
+        var s = new Schedule
+        {
+            Id = "s", AgentId = "mycroft", Prompt = "p", RunAt = DateTime.UtcNow,
+            DeliverTo = ["signalr", "voice:office-01", "voice:office-02"], CreatedAt = DateTime.UtcNow
+        };
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null);
+
+        plan.Payload.ReplyTo!.Count.ShouldBe(2);
+        plan.Payload.ReplyTo![0].ChannelId.ShouldBe("signalr");
+        var voice = plan.Payload.ReplyTo![1];
+        voice.ChannelId.ShouldBe("voice");
+        voice.Address.ShouldBe("office-01,office-02");
+    }
+
+    [Fact]
     public void Plan_NonVoiceDeliverTo_HasNullAddress()
     {
         var s = new Schedule { Id = "s", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, DeliverTo = ["signalr"], CreatedAt = DateTime.UtcNow };

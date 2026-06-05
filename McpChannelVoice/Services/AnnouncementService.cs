@@ -110,6 +110,13 @@ public class AnnouncementService(
 
     private IReadOnlyList<string> ResolveTargets(AnnounceTarget target)
     {
+        if (target.SatelliteIds is { Count: > 0 })
+        {
+            return target.SatelliteIds
+                .Where(id => registry.GetById(id) is not null)
+                .Distinct()
+                .ToList();
+        }
         if (target.SatelliteId is not null)
         {
             return registry.GetById(target.SatelliteId) is null

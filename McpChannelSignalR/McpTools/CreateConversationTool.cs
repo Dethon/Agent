@@ -18,7 +18,8 @@ public sealed class CreateConversationTool
         [Description("User who initiated")] string sender,
         IServiceProvider services,
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
-        [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null)
+        [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
+        [Description("Unused on this channel; the WebChat channel always owns/mints the shared conversation")] string? existingConversationId = null)
     {
         var p = new CreateConversationParams
         {

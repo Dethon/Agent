@@ -147,7 +147,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.CompletedTask;
     }
 
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, CancellationToken ct)
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
     {
         CreatedConversations.Add((agentId, topicName, sender, initialPrompt));
         return Task.FromResult(ConversationIdToReturn);

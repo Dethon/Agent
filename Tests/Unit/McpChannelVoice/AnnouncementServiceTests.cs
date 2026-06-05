@@ -73,6 +73,18 @@ public class AnnouncementServiceTests
     }
 
     [Fact]
+    public async Task Announce_BySatelliteIds_TargetsEachListedSatellite()
+    {
+        var (sut, _) = BuildSut(("kitchen-01", "Kitchen"), ("bedroom-01", "Bedroom"), ("office-01", "Office"));
+
+        var response = await sut.AnnounceAsync(
+            new AnnounceRequest { Target = new() { SatelliteIds = ["kitchen-01", "office-01"] }, Text = "hi" },
+            CancellationToken.None);
+
+        response.Satellites.Select(s => s.Id).ShouldBe(["kitchen-01", "office-01"], ignoreOrder: true);
+    }
+
+    [Fact]
     public async Task Announce_All_TargetsEverySession()
     {
         var (sut, _) = BuildSut(("kitchen-01", "Kitchen"), ("bedroom-01", "Bedroom"));
