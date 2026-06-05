@@ -32,4 +32,36 @@ public class ScheduleFirePlannerTests
         plan.NextRunAt.ShouldBeNull();
         plan.Payload.ReplyTo![0].ChannelId.ShouldBe("telegram");
     }
+
+    [Fact]
+    public void Plan_VoiceDeliverToWithSatelliteId_SplitsChannelAndAddress()
+    {
+        var s = new Schedule { Id = "s", AgentId = "mycroft", Prompt = "p", RunAt = DateTime.UtcNow, DeliverTo = ["voice:fran-office-01"], CreatedAt = DateTime.UtcNow };
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null);
+
+        var target = plan.Payload.ReplyTo!.ShouldHaveSingleItem();
+        target.ChannelId.ShouldBe("voice");
+        target.Address.ShouldBe("fran-office-01");
+    }
+
+    [Fact]
+    public void Plan_BareVoiceDeliverTo_HasNullAddress()
+    {
+        var s = new Schedule { Id = "s", AgentId = "mycroft", Prompt = "p", RunAt = DateTime.UtcNow, DeliverTo = ["voice"], CreatedAt = DateTime.UtcNow };
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null);
+
+        var target = plan.Payload.ReplyTo!.ShouldHaveSingleItem();
+        target.ChannelId.ShouldBe("voice");
+        target.Address.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Plan_NonVoiceDeliverTo_HasNullAddress()
+    {
+        var s = new Schedule { Id = "s", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, DeliverTo = ["signalr"], CreatedAt = DateTime.UtcNow };
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["telegram"], nextRun: null);
+
+        plan.Payload.ReplyTo![0].ChannelId.ShouldBe("signalr");
+        plan.Payload.ReplyTo![0].Address.ShouldBeNull();
+    }
 }
