@@ -64,7 +64,11 @@ public static class ConfigModule
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<TimeProvider>(),
                 settings.ConversationLifetime,
-                sp.GetRequiredService<ILogger<VoiceConversationManager>>()));
+                sp.GetRequiredService<ILogger<VoiceConversationManager>>()))
+            .AddSingleton(sp => new VoiceDeliveryRegistry(
+                sp.GetRequiredService<TimeProvider>(),
+                settings.ConversationLifetime,
+                sp.GetRequiredService<ILogger<VoiceDeliveryRegistry>>()));
 
         services.AddSingleton<ISpeechToText>(sp =>
         {
@@ -114,6 +118,7 @@ public static class ConfigModule
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
             .WithTools<RegisterAgentsTool>()
+            .WithTools<CreateConversationTool>()
             .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, cancellationToken) =>
             {
                 try
