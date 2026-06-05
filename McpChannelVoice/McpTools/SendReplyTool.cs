@@ -42,11 +42,31 @@ public sealed class SendReplyTool
 
         var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
-        if (session is null)
+        if (session is not null)
         {
-            return "ok";
+            return await HandleUtteranceReplyAsync(session, p, accumulator, tts, settings, metrics);
         }
 
+        var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
+        var target = delivery.Resolve(p.ConversationId);
+        if (target is not null)
+        {
+            var announcer = services.GetRequiredService<AnnouncementService>();
+            var logger = services.GetRequiredService<ILogger<SendReplyTool>>();
+            return await HandleScheduledDeliveryAsync(p, target, delivery, accumulator, announcer, logger);
+        }
+
+        return "ok";
+    }
+
+    private static async Task<string> HandleUtteranceReplyAsync(
+        SatelliteSession session,
+        SendReplyParams p,
+        ReplyTextAccumulator accumulator,
+        ITextToSpeech tts,
+        VoiceSettings settings,
+        IMetricsPublisher metrics)
+    {
         switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
@@ -72,6 +92,67 @@ public sealed class SendReplyTool
                     await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
                 }
                 return "ok";
+        }
+    }
+
+    private static async Task<string> HandleScheduledDeliveryAsync(
+        SendReplyParams p,
+        AnnounceTarget target,
+        VoiceDeliveryRegistry delivery,
+        ReplyTextAccumulator accumulator,
+        AnnouncementService announcer,
+        ILogger<SendReplyTool> logger)
+    {
+        switch (p.ContentType)
+        {
+            case ReplyContentType.Reasoning:
+            case ReplyContentType.ToolCall:
+                return "ok";
+
+            // An unsolicited scheduled delivery prefers silence over announcing a failure
+            // (e.g. at night). Drop the buffer and the binding without speaking.
+            case ReplyContentType.Error:
+                accumulator.Flush(p.ConversationId);
+                delivery.Remove(p.ConversationId);
+                logger.LogWarning("Scheduled voice delivery {ConversationId} errored; not speaking", p.ConversationId);
+                return "ok";
+
+            case ReplyContentType.StreamComplete:
+                await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, accumulator, announcer, logger);
+                return "ok";
+
+            default:
+                accumulator.Append(p.ConversationId, p.Content);
+                if (p.IsComplete)
+                {
+                    await AnnounceAccumulatedAsync(p.ConversationId, target, delivery, accumulator, announcer, logger);
+                }
+                return "ok";
+        }
+    }
+
+    private static async Task AnnounceAccumulatedAsync(
+        string conversationId,
+        AnnounceTarget target,
+        VoiceDeliveryRegistry delivery,
+        ReplyTextAccumulator accumulator,
+        AnnouncementService announcer,
+        ILogger<SendReplyTool> logger)
+    {
+        var text = accumulator.Flush(conversationId);
+        delivery.Remove(conversationId);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        try
+        {
+            await announcer.AnnounceAsync(new AnnounceRequest { Target = target, Text = text }, default);
+        }
+        catch (AnnounceTargetNotFoundException ex)
+        {
+            logger.LogWarning(ex, "Scheduled voice delivery {ConversationId} had no matching satellites", conversationId);
         }
     }
 

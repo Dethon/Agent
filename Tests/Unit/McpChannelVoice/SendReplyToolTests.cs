@@ -52,6 +52,10 @@ public class SendReplyToolTests
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns<string, SynthesisOptions, CancellationToken>((text, _, _) => EmptyAudio(text));
 
+        var delivery = new VoiceDeliveryRegistry(
+            new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
+            NullLogger<VoiceDeliveryRegistry>.Instance);
+
         _services = new ServiceCollection()
             .AddSingleton(_sessions)
             .AddSingleton(_accumulator)
@@ -59,6 +63,7 @@ public class SendReplyToolTests
             .AddSingleton(_tts.Object)
             .AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>())
             .AddSingleton(new VoiceSettings())
+            .AddSingleton(delivery)
             .AddSingleton<ILogger<SendReplyTool>>(NullLogger<SendReplyTool>.Instance)
             .BuildServiceProvider();
     }
