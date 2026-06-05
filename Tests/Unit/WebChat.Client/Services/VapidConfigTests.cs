@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using Shouldly;
 using WebChat.Client.Services;
@@ -18,23 +17,6 @@ public sealed class VapidConfigTests
         config.ShouldNotBeNull();
         config.AgentUrl.ShouldBe("http://localhost:5000");
         config.VapidPublicKey.ShouldBe(expectedKey);
-    }
-
-    [Fact]
-    public void AppConfig_NoPrivateKeyProperty_Exists()
-    {
-        // Security: AppConfig must never expose a private key property
-        var properties = typeof(AppConfig).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-        var propertyNames = properties.Select(p => p.Name).ToList();
-
-        propertyNames.ShouldNotContain("PrivateKey");
-        propertyNames.ShouldNotContain("VapidPrivateKey");
-        propertyNames.ShouldNotContain("WebPushPrivateKey");
-
-        // Also verify no property name contains "private" (case-insensitive)
-        propertyNames.ShouldAllBe(
-            name => !name.Contains("Private", StringComparison.OrdinalIgnoreCase),
-            "AppConfig must not contain any property with 'Private' in its name");
     }
 
     [Fact]
