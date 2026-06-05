@@ -66,40 +66,11 @@ public static class ConfigModule
                 settings.ConversationLifetime,
                 sp.GetRequiredService<ILogger<VoiceConversationManager>>()));
 
-        services.AddHttpClient("openai", c => c.BaseAddress = new Uri("https://api.openai.com"));
-        services.AddHttpClient("openrouter", c => c.BaseAddress = new Uri("https://openrouter.ai"));
-
         services.AddSingleton<ISpeechToText>(sp =>
         {
-            ISpeechToText inner;
-            if (settings.Stt.Provider.Equals("OpenAi", StringComparison.OrdinalIgnoreCase))
-            {
-                var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-                          ?? throw new InvalidOperationException("OPENAI_API_KEY missing");
-                var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai");
-                inner = new Infrastructure.Clients.Voice.OpenAiSpeechToText(
-                    http, settings.Stt.OpenAi?.Model ?? "whisper-1", key,
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiSpeechToText>>());
-            }
-            else if (settings.Stt.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
-            {
-                var key = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
-                          ?? throw new InvalidOperationException("OPENROUTER_API_KEY missing");
-                var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openrouter");
-                inner = new Infrastructure.Clients.Voice.OpenRouterSpeechToText(
-                    http,
-                    settings.Stt.OpenRouter?.Model ?? "openai/whisper-1",
-                    key,
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenRouterSpeechToText>>());
-            }
-            else
-            {
-                inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
-                    settings.Stt.Wyoming ?? throw new InvalidOperationException("Stt.Wyoming missing"),
-                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
-            }
+            var inner = new McpChannelVoice.Services.Stt.WyomingSpeechToText(
+                settings.Stt.Wyoming,
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Stt.WyomingSpeechToText>>());
 
             return McpChannelVoice.Services.Stt.SegmentedSpeechToText.Wrap(
                 inner, settings.Stt.Streaming, sp.GetRequiredService<ILoggerFactory>());
@@ -111,44 +82,9 @@ public static class ConfigModule
         services.AddSingleton<ReplyTextAccumulator>();
 
         services.AddSingleton<ITextToSpeech>(sp =>
-        {
-            ITextToSpeech impl;
-            if (settings.Tts.Provider.Equals("OpenAi", StringComparison.OrdinalIgnoreCase))
-            {
-                var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-                          ?? throw new InvalidOperationException("OPENAI_API_KEY missing");
-                var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai");
-                impl = new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
-                    http,
-                    settings.Tts.OpenAi?.Model ?? "tts-1",
-                    settings.Tts.OpenAi?.Voice ?? "alloy",
-                    key,
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiTextToSpeech>>());
-            }
-            else if (settings.Tts.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
-            {
-                var key = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
-                          ?? throw new InvalidOperationException("OPENROUTER_API_KEY missing");
-                var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openrouter");
-                impl = new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
-                    http,
-                    settings.Tts.OpenRouter?.Model ?? "openai/gpt-4o-mini-tts",
-                    settings.Tts.OpenRouter?.Voice ?? "alloy",
-                    key,
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiTextToSpeech>>(),
-                    endpointPath: "/api/v1/audio/speech");
-            }
-            else
-            {
-                impl = new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
-                    settings.Tts.Wyoming ?? throw new InvalidOperationException("Tts.Wyoming missing"),
-                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>());
-            }
-
-            return impl;
-        });
+            new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
+                settings.Tts.Wyoming,
+                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()));
 
         services.AddHostedService<WyomingHealthProbeService>();
 
