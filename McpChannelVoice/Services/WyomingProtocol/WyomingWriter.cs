@@ -9,6 +9,8 @@ public sealed class WyomingWriter(Stream stream)
     private const string ProtocolVersion = "1.2";
     private static readonly byte[] _newline = "\n"u8.ToArray();
     private static readonly JsonSerializerOptions _serializerOptions = new(JsonSerializerDefaults.Web);
+    // Not disposed by design: SemaphoreSlim only needs disposal when its AvailableWaitHandle is
+    // used (it isn't here), and the writer lives for the whole connection.
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     public async Task WriteAsync(WyomingEvent evt, CancellationToken ct)

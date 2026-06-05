@@ -343,11 +343,22 @@ public sealed class MetricsCollectorService(
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
-        await Task.WhenAll(
+        var tasks = new List<Task>
+        {
             db.SortedSetAddAsync(sortedSetKey, json, score),
             db.HashIncrementAsync(totalsKey, $"voice:{evt.Metric}:count"),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
-            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry)
+        };
+
+        // Accumulate duration for latency-type metrics so summaries can report average latency,
+        // matching how LatencyEvent stores both count and totalMs.
+        if (evt.DurationMs is { } durationMs)
+        {
+            tasks.Add(db.HashIncrementAsync(totalsKey, $"voice:{evt.Metric}:totalMs", durationMs));
+        }
+
+        await Task.WhenAll(tasks);
 
         await hubContext.Clients.All.SendAsync("OnVoice", evt);
     }

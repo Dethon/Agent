@@ -24,6 +24,13 @@ public sealed class RequestApprovalTool
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         IServiceProvider services)
     {
+        var p = new RequestApprovalParams
+        {
+            ConversationId = conversationId,
+            Mode = mode,
+            Requests = requests
+        };
+
         var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
         var manager = services.GetRequiredService<VoiceConversationManager>();
         var broker = services.GetRequiredService<ApprovalCaptureBroker>();
@@ -32,20 +39,20 @@ public sealed class RequestApprovalTool
         var metrics = services.GetRequiredService<IMetricsPublisher>();
         var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
 
-        var satelliteId = manager.ResolveSatelliteId(conversationId);
+        var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
-            return mode == ApprovalMode.Notify ? "notified" : "declined";
+            return p.Mode == ApprovalMode.Notify ? "notified" : "declined";
         }
 
-        if (mode == ApprovalMode.Notify)
+        if (p.Mode == ApprovalMode.Notify)
         {
             // The tool name itself is never narrated. But if the agent wrote an
             // acknowledgement before this auto-approved tool call, speak it now so the
             // user hears that work is happening while the tool runs (instead of it being
             // buffered with the final answer until the turn completes).
-            var pending = accumulator.Flush(conversationId);
+            var pending = accumulator.Flush(p.ConversationId);
             if (!string.IsNullOrWhiteSpace(pending))
             {
                 await SpeakAsync(session, pending, tts, settings, AnnouncePriority.Normal);
@@ -53,7 +60,7 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var toolList = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
+        var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
 
         for (var attempt = 1; attempt <= 2; attempt++)
@@ -67,10 +74,11 @@ public sealed class RequestApprovalTool
             {
                 Metric = VoiceMetric.ApprovalResolved,
                 SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
                 Identity = session.Config.Identity,
                 Outcome = parsed.ToString(),
-                ConversationId = conversationId
-            });
+                ConversationId = p.ConversationId
+            }, default);
 
             switch (parsed)
             {

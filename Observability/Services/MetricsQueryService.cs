@@ -409,10 +409,6 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
             VoiceDimension.SatelliteId => e => e.SatelliteId,
             VoiceDimension.Room => e => e.Room,
             VoiceDimension.Identity => e => e.Identity,
-            VoiceDimension.SttProvider => e => e.SttProvider,
-            VoiceDimension.SttModel => e => e.SttModel,
-            VoiceDimension.TtsProvider => e => e.TtsProvider,
-            VoiceDimension.TtsVoice => e => e.TtsVoice,
             VoiceDimension.Outcome => e => e.Outcome,
             VoiceDimension.Priority => e => e.Priority,
             _ => e => e.SatelliteId
@@ -427,7 +423,6 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis)
                     VoiceMetric.SttLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
                     VoiceMetric.TtsLatencyMs => (decimal)g.Average(e => e.DurationMs ?? 0),
                     VoiceMetric.WakeToFirstAudioMs => (decimal)g.Average(e => e.DurationMs ?? 0),
-                    VoiceMetric.AudioSeconds => (decimal)g.Sum(e => e.AudioSeconds ?? 0),
                     _ => (decimal)g.Count()
                 });
     }

@@ -360,13 +360,13 @@
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6014",
-        "Redis__ConnectionString": "localhost:6379",
-        "Voice__Stt__Provider": "OpenRouter",
-        "Voice__Tts__Provider": "OpenRouter",
-        "Voice__Satellites__kitchen-01__Identity": "household",
-        "Voice__Satellites__kitchen-01__Room": "Kitchen",
-        "Voice__Satellites__kitchen-01__WakeWord": "hey_jarvis",
-        "Voice__Satellites__kitchen-01__Address": "tcp://127.0.0.1:10800"
+        "RedisConnectionString": "localhost:6379",
+        "Stt__Provider": "OpenRouter",
+        "Tts__Provider": "OpenRouter",
+        "Satellites__kitchen-01__Identity": "household",
+        "Satellites__kitchen-01__Room": "Kitchen",
+        "Satellites__kitchen-01__WakeWord": "hey_jarvis",
+        "Satellites__kitchen-01__Address": "tcp://127.0.0.1:10800"
       }
     },
     {

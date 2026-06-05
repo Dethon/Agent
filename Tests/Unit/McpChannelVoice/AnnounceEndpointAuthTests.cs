@@ -64,4 +64,44 @@ public class AnnounceEndpointAuthTests
             new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi" });
         response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
     }
+
+    [Fact]
+    public async Task BlankText_Returns400()
+    {
+        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
+        var response = await client.PostAsJsonAsync("/api/voice/announce",
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "   " });
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task OversizedText_Returns400()
+    {
+        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected", MaxTextLength = 10 });
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
+        var response = await client.PostAsJsonAsync("/api/voice/announce",
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = new string('a', 11) });
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task EmptyTarget_Returns400()
+    {
+        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
+        var response = await client.PostAsJsonAsync("/api/voice/announce",
+            new AnnounceRequest { Target = new(), Text = "hi" });
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task MalformedVoice_Returns400()
+    {
+        using var client = await BuildClientAsync(new AnnounceSettings { Enabled = true, Token = "expected" });
+        client.DefaultRequestHeaders.Add("X-Announce-Token", "expected");
+        var response = await client.PostAsJsonAsync("/api/voice/announce",
+            new AnnounceRequest { Target = new() { SatelliteId = "kitchen-01" }, Text = "hi", Voice = "bad voice!" });
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
 }

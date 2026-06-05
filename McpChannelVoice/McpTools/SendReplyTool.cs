@@ -24,6 +24,15 @@ public sealed class SendReplyTool
         [Description("Message ID for grouping related chunks")] string? messageId,
         IServiceProvider services)
     {
+        var p = new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = content,
+            ContentType = contentType,
+            IsComplete = isComplete,
+            MessageId = messageId
+        };
+
         var sessions = services.GetRequiredService<SatelliteSessionRegistry>();
         var manager = services.GetRequiredService<VoiceConversationManager>();
         var accumulator = services.GetRequiredService<ReplyTextAccumulator>();
@@ -31,36 +40,36 @@ public sealed class SendReplyTool
         var settings = services.GetRequiredService<VoiceSettings>();
         var metrics = services.GetRequiredService<IMetricsPublisher>();
 
-        var satelliteId = manager.ResolveSatelliteId(conversationId);
+        var satelliteId = manager.ResolveSatelliteId(p.ConversationId);
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
             return "ok";
         }
 
-        switch (contentType)
+        switch (p.ContentType)
         {
             case ReplyContentType.Reasoning:
             case ReplyContentType.ToolCall:
                 return "ok";
 
             case ReplyContentType.Error:
-                await SpeakAsync(session, $"Hubo un error: {content}", conversationId, tts, settings, metrics, default);
+                await SpeakAsync(session, $"Hubo un error: {p.Content}", p.ConversationId, tts, settings, metrics, default);
                 return "ok";
 
             // Completion arrives as a dedicated StreamComplete event (empty content, no
             // messageId). Text chunks are never flagged complete, so this is where we
             // speak the accumulated reply.
             case ReplyContentType.StreamComplete:
-                await FlushAndSpeakAsync(session, accumulator, conversationId, tts, settings, metrics);
+                await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
                 return "ok";
 
             default:
-                accumulator.Append(conversationId, content);
+                accumulator.Append(p.ConversationId, p.Content);
                 // Defensive: honor an explicitly-completed text chunk if a transport ever sends one.
-                if (isComplete)
+                if (p.IsComplete)
                 {
-                    await FlushAndSpeakAsync(session, accumulator, conversationId, tts, settings, metrics);
+                    await FlushAndSpeakAsync(session, accumulator, p.ConversationId, tts, settings, metrics);
                 }
                 return "ok";
         }
@@ -108,7 +117,7 @@ public sealed class SendReplyTool
                     Identity = session.Config.Identity,
                     DurationMs = sw.ElapsedMilliseconds,
                     ConversationId = conversationId
-                });
+                }, ct);
             },
             OnPreempted: async _ =>
             {
@@ -116,8 +125,10 @@ public sealed class SendReplyTool
                 {
                     Metric = VoiceMetric.AnnouncePreemptedReply,
                     SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
                     ConversationId = conversationId
-                });
+                }, ct);
             });
 
         await session.EnqueuePlaybackAsync(job, settings.Announce.QueueMaxDepth);
@@ -130,6 +141,6 @@ public sealed class SendReplyTool
             Identity = session.Config.Identity,
             DurationMs = sw.ElapsedMilliseconds,
             ConversationId = conversationId
-        });
+        }, ct);
     }
 }

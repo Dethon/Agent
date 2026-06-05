@@ -18,18 +18,16 @@ public static class ConfigModule
             .AddUserSecrets<Program>()
             .Build();
 
-        var settings = config.GetSection("Voice").Get<VoiceSettings>()
+        var settings = config.Get<VoiceSettings>()
                        ?? throw new InvalidOperationException("Voice settings not found");
         return settings;
     }
 
     public static IServiceCollection ConfigureVoiceChannel(
         this IServiceCollection services,
-        IConfiguration configuration,
         VoiceSettings settings)
     {
-        var redisConnection = configuration.GetSection("Redis")["ConnectionString"]
-                              ?? "redis:6379";
+        var redisConnection = settings.RedisConnectionString;
 
         var emitter = new ChannelNotificationEmitter(
             LoggerFactory.Create(b => b.AddConsole()).CreateLogger<ChannelNotificationEmitter>());
@@ -114,12 +112,13 @@ public static class ConfigModule
 
         services.AddSingleton<ITextToSpeech>(sp =>
         {
+            ITextToSpeech impl;
             if (settings.Tts.Provider.Equals("OpenAi", StringComparison.OrdinalIgnoreCase))
             {
                 var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                           ?? throw new InvalidOperationException("OPENAI_API_KEY missing");
                 var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openai");
-                return new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
+                impl = new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
                     http,
                     settings.Tts.OpenAi?.Model ?? "tts-1",
                     settings.Tts.OpenAi?.Voice ?? "alloy",
@@ -127,12 +126,12 @@ public static class ConfigModule
                     sp.GetRequiredService<IMetricsPublisher>(),
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiTextToSpeech>>());
             }
-            if (settings.Tts.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
+            else if (settings.Tts.Provider.Equals("OpenRouter", StringComparison.OrdinalIgnoreCase))
             {
                 var key = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
                           ?? throw new InvalidOperationException("OPENROUTER_API_KEY missing");
                 var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("openrouter");
-                return new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
+                impl = new Infrastructure.Clients.Voice.OpenAiTextToSpeech(
                     http,
                     settings.Tts.OpenRouter?.Model ?? "openai/gpt-4o-mini-tts",
                     settings.Tts.OpenRouter?.Voice ?? "alloy",
@@ -141,9 +140,14 @@ public static class ConfigModule
                     sp.GetRequiredService<ILogger<Infrastructure.Clients.Voice.OpenAiTextToSpeech>>(),
                     endpointPath: "/api/v1/audio/speech");
             }
-            return new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
-                settings.Tts.Wyoming ?? throw new InvalidOperationException("Tts.Wyoming missing"),
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>());
+            else
+            {
+                impl = new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
+                    settings.Tts.Wyoming ?? throw new InvalidOperationException("Tts.Wyoming missing"),
+                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>());
+            }
+
+            return impl;
         });
 
         services.AddHostedService<WyomingHealthProbeService>();

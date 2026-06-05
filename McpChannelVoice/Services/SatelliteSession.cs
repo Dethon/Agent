@@ -13,7 +13,6 @@ public sealed record PlaybackJob(
 
 public sealed class SatelliteSession
 {
-    private readonly Channel<ReadOnlyMemory<byte>> _inbound = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
     private readonly Channel<PlaybackJob> _playback = Channel.CreateUnbounded<PlaybackJob>();
     private CancellationTokenSource? _currentPlaybackCts;
     private readonly Lock _gate = new();
@@ -26,14 +25,6 @@ public sealed class SatelliteSession
 
     public string SatelliteId { get; }
     public SatelliteConfig Config { get; }
-
-    public ValueTask PublishAudioAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct) =>
-        _inbound.Writer.WriteAsync(bytes, ct);
-
-    public void CompleteInboundAudio() => _inbound.Writer.TryComplete();
-
-    public IAsyncEnumerable<ReadOnlyMemory<byte>> ReadInboundAudioAsync(CancellationToken ct) =>
-        _inbound.Reader.ReadAllAsync(ct);
 
     public async ValueTask<bool> EnqueuePlaybackAsync(PlaybackJob job, int queueMaxDepth)
     {
@@ -72,7 +63,8 @@ public sealed class SatelliteSession
         CancellationToken ct,
         ILogger? logger = null,
         Func<AudioFormat, CancellationToken, Task>? onAudioStart = null,
-        Func<CancellationToken, Task>? onAudioStop = null)
+        Func<CancellationToken, Task>? onAudioStop = null,
+        Func<PlaybackJob, Exception, Task>? onError = null)
     {
         await foreach (var job in _playback.Reader.ReadAllAsync(ct))
         {
@@ -80,11 +72,21 @@ public sealed class SatelliteSession
             lock (_gate)
             { _currentPlaybackCts = jobCts; }
 
-            await job.OnStarted(job.Label);
-
             var chunks = 0;
             try
             {
+                // OnStarted side effects (e.g. a metrics publish) must neither abort this job's
+                // playback nor tear down the loop, so swallow their failures here. Keeping it inside
+                // the try also guarantees the finally cleanup runs no matter what.
+                try
+                {
+                    await job.OnStarted(job.Label);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Playback OnStarted callback failed for {Label}", job.Label);
+                }
+
                 await foreach (var chunk in job.Audio.WithCancellation(jobCts.Token))
                 {
                     if (chunks == 0 && onAudioStart is not null)
@@ -98,7 +100,31 @@ public sealed class SatelliteSession
             }
             catch (OperationCanceledException) when (jobCts.IsCancellationRequested && !ct.IsCancellationRequested)
             {
-                await job.OnPreempted(job.Label);
+                try
+                {
+                    await job.OnPreempted(job.Label);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Playback OnPreempted callback failed for {Label}", job.Label);
+                }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // One job's audio failing (TTS synthesis or a transient write) must not tear down the
+                // whole playback loop: log it, surface it via onError, and continue to the next job.
+                logger?.LogWarning(ex, "Playback job {Label} failed after {Chunks} chunk(s)", job.Label, chunks);
+                if (onError is not null)
+                {
+                    try
+                    {
+                        await onError(job, ex);
+                    }
+                    catch (Exception oex)
+                    {
+                        logger?.LogWarning(oex, "Playback onError handler threw for {Label}", job.Label);
+                    }
+                }
             }
             finally
             {

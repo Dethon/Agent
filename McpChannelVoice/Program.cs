@@ -3,7 +3,7 @@ using McpChannelVoice.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 var settings = builder.Configuration.GetVoiceSettings();
-builder.Services.ConfigureVoiceChannel(builder.Configuration, settings);
+builder.Services.ConfigureVoiceChannel(settings);
 
 if (settings.Announce.BindToLoopbackOnly)
 {

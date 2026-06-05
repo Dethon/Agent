@@ -11,6 +11,8 @@ public record ChannelMessageNotification
     public string? AgentId { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
+    // Optional originating room for room-aware prompts. Part of the shared channel protocol but
+    // currently only populated by the voice channel; other channels leave it null.
     public string? Location { get; init; }
     public DateTimeOffset Timestamp { get; init; }
 }

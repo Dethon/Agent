@@ -36,8 +36,8 @@ public class VoiceEventTests
         MetricEvent evt = new VoiceEvent
         {
             Metric = VoiceMetric.SttLatencyMs,
-            SttProvider = "Wyoming",
-            SttModel = "base",
+            SatelliteId = "kitchen-01",
+            Room = "Kitchen",
             DurationMs = 320
         };
 

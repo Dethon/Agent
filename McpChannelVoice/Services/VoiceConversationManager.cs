@@ -22,6 +22,11 @@ public sealed class VoiceConversationManager(
 
     // firstUtterance only seeds the new conversation's WebChat topic (its InitialPrompt);
     // the caller still dispatches the utterance itself via the channel using the returned id.
+    //
+    // The lock is released across factory.CreateAsync (I/O) and re-acquired with a second
+    // existence check. In practice a satellite's utterances are processed sequentially by its
+    // own connection loop, so concurrent calls for the same satellite don't occur; the
+    // double-check is a cheap safeguard that discards a redundant creation if they ever do.
     public async Task<string> GetOrCreateAsync(
         SatelliteSession session, string agentId, string firstUtterance, CancellationToken ct)
     {

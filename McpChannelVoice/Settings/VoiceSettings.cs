@@ -5,6 +5,7 @@ public record VoiceSettings
     // Agent that handles voice transcripts. Sent as the message AgentId so the agent
     // host resolves this definition; null falls back to the first configured agent.
     public string? AgentId { get; init; }
+    public string RedisConnectionString { get; init; } = "redis:6379";
     public WyomingClientSettings WyomingClient { get; init; } = new();
     public SttSettings Stt { get; init; } = new();
     public TtsSettings Tts { get; init; } = new();

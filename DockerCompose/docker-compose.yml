@@ -514,14 +514,6 @@ services:
       args:
         - BUILDKIT_INLINE_CACHE=1
     restart: unless-stopped
-    # The hub dials each satellite's Wyoming server as a client; satellites running on
-    # the Docker host (e.g. a WSL wyoming-satellite) are reached via host.docker.internal.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - VOICE__ANNOUNCE__TOKEN=${ANNOUNCE_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     env_file:
       - .env
     networks:

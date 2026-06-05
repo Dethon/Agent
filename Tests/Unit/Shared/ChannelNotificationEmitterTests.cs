@@ -1,4 +1,3 @@
-using System.Reflection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Moq;
@@ -6,6 +5,7 @@ using Shouldly;
 using ServiceBusChannel = McpChannelServiceBus.Services;
 using SignalRChannel = McpChannelSignalR.Services;
 using TelegramChannel = McpChannelTelegram.Services;
+using VoiceChannel = McpChannelVoice.Services;
 
 namespace Tests.Unit.Shared;
 
@@ -37,6 +37,15 @@ public class ChannelNotificationEmitterTests
             {
                 var sut = new ServiceBusChannel.ChannelNotificationEmitter(
                     new Mock<ILogger<ServiceBusChannel.ChannelNotificationEmitter>>().Object);
+                return new ReflectionAdapter(sut);
+            }
+        },
+        {
+            "Voice",
+            () =>
+            {
+                var sut = new VoiceChannel.ChannelNotificationEmitter(
+                    new Mock<ILogger<VoiceChannel.ChannelNotificationEmitter>>().Object);
                 return new ReflectionAdapter(sut);
             }
         },
@@ -146,7 +155,19 @@ file class ReflectionAdapter(object inner) : IChannelNotificationEmitterAdapter
         _type.GetMethod(nameof(UnregisterSession))!.Invoke(inner, [sessionId]);
 
     public Task EmitMessageNotificationAsync(
-        string conversationId, string sender, string content, string agentId) =>
-        (Task)_type.GetMethod(nameof(EmitMessageNotificationAsync))!
-            .Invoke(inner, [conversationId, sender, content, agentId, CancellationToken.None])!;
+        string conversationId, string sender, string content, string agentId)
+    {
+        // Bind by parameter name so channels that extend the contract (voice adds an optional
+        // `location`) are still exercised uniformly by the shared lifecycle tests.
+        var method = _type.GetMethod(nameof(EmitMessageNotificationAsync))!;
+        var args = method.GetParameters().Select(p => (object?)(p.Name switch
+        {
+            "conversationId" => conversationId,
+            "sender" => sender,
+            "content" => content,
+            "agentId" => agentId,
+            _ => p.ParameterType == typeof(CancellationToken) ? CancellationToken.None : null
+        })).ToArray();
+        return (Task)method.Invoke(inner, args)!;
+    }
 }

@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
@@ -80,5 +82,35 @@ public class TranscriptDispatcherTests
         ok.ShouldBeFalse();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
         emitter.Captured.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DispatchAsync_EmptyText_DropsAndPublishesDroppedMetric()
+    {
+        var factory = new Mock<IConversationFactory>();
+        var manager = new VoiceConversationManager(
+            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var emitter = new CapturingEmitter();
+        var published = new List<MetricEvent>();
+        var publisher = new Mock<IMetricsPublisher>();
+        publisher.Setup(p => p.PublishAsync(It.IsAny<MetricEvent>(), It.IsAny<CancellationToken>()))
+            .Callback<MetricEvent, CancellationToken>((e, _) => published.Add(e))
+            .Returns(Task.CompletedTask);
+        var sut = new TranscriptDispatcher(
+            emitter, publisher.Object, new ApprovalCaptureBroker(), manager,
+            confidenceThreshold: 0.5, NullLogger<TranscriptDispatcher>.Instance);
+
+        var ok = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "   ", Confidence = 0.9 }, "agent-1", default);
+
+        ok.ShouldBeFalse();
+        emitter.Captured.ShouldBeEmpty();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+        factory.Verify(
+            f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        published.OfType<VoiceEvent>()
+            .ShouldContain(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dropped");
     }
 }

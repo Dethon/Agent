@@ -9,29 +9,29 @@ public class VoiceSettingsBindingTests
     [Fact]
     public void VoiceSettings_BindsFromJson()
     {
+        // Binds at the configuration root, matching the other channels (ChannelSettings).
         var json = """
         {
-          "Voice": {
-            "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
-            "Stt": {
-              "Provider": "Wyoming",
-              "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base", "Language": "es" }
-            },
-            "Tts": {
-              "Provider": "Wyoming",
-              "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
-            },
-            "ConfidenceThreshold": 0.4,
-            "Announce": {
-              "Enabled": true,
-              "Token": "secret",
-              "BindToLoopbackOnly": false,
-              "QueueMaxDepth": 8,
-              "DefaultPriority": "Normal"
-            },
-            "Satellites": {
-              "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis", "Address": "tcp://host.docker.internal:10800" }
-            }
+          "WyomingClient": { "TrailingSilenceMs": 800, "MaxUtteranceMs": 15000 },
+          "Stt": {
+            "Provider": "Wyoming",
+            "Wyoming": { "Host": "wyoming-whisper", "Port": 10300, "Model": "base", "Language": "es" }
+          },
+          "Tts": {
+            "Provider": "Wyoming",
+            "Wyoming": { "Host": "wyoming-piper", "Port": 10200, "Voice": "es_ES-davefx-medium" }
+          },
+          "ConfidenceThreshold": 0.4,
+          "Announce": {
+            "Enabled": true,
+            "Token": "secret",
+            "BindToLoopbackOnly": false,
+            "QueueMaxDepth": 8,
+            "MaxTextLength": 500,
+            "DefaultPriority": "Normal"
+          },
+          "Satellites": {
+            "kitchen-01": { "Identity": "household", "Room": "Kitchen", "WakeWord": "hey_jarvis", "Address": "tcp://host.docker.internal:10800" }
           }
         }
         """;
@@ -40,7 +40,7 @@ public class VoiceSettingsBindingTests
             .AddJsonStream(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json)))
             .Build();
 
-        var settings = config.GetSection("Voice").Get<VoiceSettings>();
+        var settings = config.Get<VoiceSettings>();
 
         settings.ShouldNotBeNull();
         settings!.WyomingClient.TrailingSilenceMs.ShouldBe(800);
@@ -50,6 +50,7 @@ public class VoiceSettingsBindingTests
         settings.Tts.Wyoming!.Voice.ShouldBe("es_ES-davefx-medium");
         settings.ConfidenceThreshold.ShouldBe(0.4);
         settings.Announce.Token.ShouldBe("secret");
+        settings.Announce.MaxTextLength.ShouldBe(500);
         settings.Announce.DefaultPriority.ShouldBe(AnnouncePriorityDefault.Normal);
         settings.Satellites.Count.ShouldBe(1);
         settings.Satellites["kitchen-01"].Identity.ShouldBe("household");
@@ -73,10 +74,10 @@ public class VoiceSettingsBindingTests
         // the hyphen in the satellite id and the "__" segment separator.
         var vars = new Dictionary<string, string>
         {
-            ["Voice__Satellites__kitchen-01__Identity"] = "household",
-            ["Voice__Satellites__kitchen-01__Room"] = "Kitchen",
-            ["Voice__Satellites__kitchen-01__WakeWord"] = "hey_jarvis",
-            ["Voice__Satellites__kitchen-01__Address"] = "tcp://host.docker.internal:10800"
+            ["Satellites__kitchen-01__Identity"] = "household",
+            ["Satellites__kitchen-01__Room"] = "Kitchen",
+            ["Satellites__kitchen-01__WakeWord"] = "hey_jarvis",
+            ["Satellites__kitchen-01__Address"] = "tcp://host.docker.internal:10800"
         };
 
         foreach (var (k, v) in vars)
@@ -86,7 +87,7 @@ public class VoiceSettingsBindingTests
         try
         {
             var config = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-            var settings = config.GetSection("Voice").Get<VoiceSettings>();
+            var settings = config.Get<VoiceSettings>();
 
             settings.ShouldNotBeNull();
             settings!.Satellites.Count.ShouldBe(1);

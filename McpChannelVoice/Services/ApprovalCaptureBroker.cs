@@ -15,13 +15,26 @@ public sealed class ApprovalCaptureBroker
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
-        cts.Token.Register(() =>
+        var registration = cts.Token.Register(() =>
         {
             if (_pending.TryRemove(satelliteId, out var pending) && pending == tcs)
             {
                 tcs.TrySetResult("");
             }
         });
+
+        // Dispose the linked source and its registration once the wait settles (answered or timed
+        // out) so the timer and linked-token callback don't leak across approval requests. The tcs
+        // completes continuations asynchronously, so this never disposes inside the cancel callback.
+        _ = tcs.Task.ContinueWith(
+            _ =>
+            {
+                registration.Dispose();
+                cts.Dispose();
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
 
         return tcs.Task;
     }

@@ -4,7 +4,6 @@ public enum VoiceMetric
 {
     WakeTriggered,
     UtteranceTranscribed,
-    AudioSeconds,
     SttLatencyMs,
     TtsLatencyMs,
     WakeToFirstAudioMs,

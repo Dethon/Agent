@@ -145,7 +145,26 @@ public sealed class WyomingSatelliteHost(
                 ["timestamp"] = 0
             }), sct),
             onAudioStop: sct => client.WriteAsync(
-                WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct)), ct);
+                WyomingEvent.Header("audio-stop", new JsonObject { ["timestamp"] = 0 }), sct),
+            onError: async (job, ex) =>
+            {
+                try
+                {
+                    await metrics.PublishAsync(new VoiceEvent
+                    {
+                        Metric = VoiceMetric.TtsError,
+                        SatelliteId = id,
+                        Room = config.Room,
+                        Identity = config.Identity,
+                        Error = ex.Message,
+                        ConversationId = conversationManager.GetActiveConversationId(id)
+                    }, ct);
+                }
+                catch (Exception mex)
+                {
+                    logger.LogWarning(mex, "Failed to publish TtsError metric for {Id} ({Label})", id, job.Label);
+                }
+            }), ct);
         _ = playbackTask.ContinueWith(
             t => logger.LogError(t.Exception, "Playback loop faulted for {Id} after {Frames} frame(s)",
                 id, Interlocked.Read(ref playbackFrames)),
@@ -218,14 +237,24 @@ public sealed class WyomingSatelliteHost(
             TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
             TimeSpan.FromMilliseconds(settings.MinSpeechMs));
 
-        _ = Task.Run(() => metrics.PublishAsync(new VoiceEvent
+        _ = Task.Run(async () =>
         {
-            Metric = VoiceMetric.WakeTriggered,
-            SatelliteId = session.SatelliteId,
-            Room = session.Config.Room,
-            Identity = session.Config.Identity,
-            ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
-        }, ct), ct);
+            try
+            {
+                await metrics.PublishAsync(new VoiceEvent
+                {
+                    Metric = VoiceMetric.WakeTriggered,
+                    SatelliteId = session.SatelliteId,
+                    Room = session.Config.Room,
+                    Identity = session.Config.Identity,
+                    ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+                }, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to publish WakeTriggered metric for {Id}", session.SatelliteId);
+            }
+        }, ct);
 
         _ = Task.Run(() => TranscribeAndReplyAsync(client, session, channel.Reader, ct), ct);
         return (channel, gate);
@@ -267,6 +296,8 @@ public sealed class WyomingSatelliteHost(
             {
                 Metric = VoiceMetric.SttError,
                 SatelliteId = session.SatelliteId,
+                Room = session.Config.Room,
+                Identity = session.Config.Identity,
                 Error = ex.Message,
                 ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
             }, ct);

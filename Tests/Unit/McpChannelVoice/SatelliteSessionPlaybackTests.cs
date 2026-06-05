@@ -41,6 +41,82 @@ public class SatelliteSessionPlaybackTests
         played.ShouldBe(["first", "first", "second"]);
     }
 
+    [Fact]
+    public async Task RunPlaybackLoop_JobAudioThrows_SurvivesAndReportsThenPlaysNext()
+    {
+        var session = MakeSession();
+        var played = new List<string>();
+        var errors = new List<string>();
+
+        var failing = new PlaybackJob(
+            Label: "failing",
+            Priority: AnnouncePriority.Normal,
+            Audio: ThrowingAudio(),
+            OnStarted: _ => Task.CompletedTask,
+            OnPreempted: _ => Task.CompletedTask);
+        var next = failing with { Label = "next", Audio = GenerateAudio("next", count: 1) };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, ct) =>
+            {
+                played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
+                await Task.Yield();
+            },
+            CancellationToken.None,
+            onError: (job, ex) =>
+            {
+                errors.Add(job.Label);
+                return Task.CompletedTask;
+            });
+
+        await session.EnqueuePlaybackAsync(failing, queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(next, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        await pumpTask;
+
+        errors.ShouldBe(["failing"]);
+        played.ShouldBe(["next"]);
+    }
+
+    [Fact]
+    public async Task RunPlaybackLoop_OnStartedThrows_SwallowsAndKeepsLoopAlive()
+    {
+        var session = MakeSession();
+        var played = new List<string>();
+
+        var bad = new PlaybackJob(
+            Label: "bad-onstarted",
+            Priority: AnnouncePriority.Normal,
+            Audio: GenerateAudio("bad", count: 1),
+            OnStarted: _ => throw new InvalidOperationException("metrics down"),
+            OnPreempted: _ => Task.CompletedTask);
+        var next = bad with
+        {
+            Label = "next",
+            Audio = GenerateAudio("next", count: 1),
+            OnStarted = _ => Task.CompletedTask
+        };
+
+        var pumpTask = session.RunPlaybackLoopAsync(
+            async (chunk, ct) =>
+            {
+                played.Add(System.Text.Encoding.UTF8.GetString(chunk.Data.Span));
+                await Task.Yield();
+            },
+            CancellationToken.None);
+
+        await session.EnqueuePlaybackAsync(bad, queueMaxDepth: 4);
+        await session.EnqueuePlaybackAsync(next, queueMaxDepth: 4);
+        session.CompletePlayback();
+
+        await pumpTask;
+
+        // A failing OnStarted (e.g. metrics publish down) is swallowed: the job's audio still plays
+        // and the loop continues to the next job rather than tearing down.
+        played.ShouldBe(["bad", "next"]);
+    }
+
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
     {
         for (var i = 0; i < count; i++)
@@ -52,5 +128,14 @@ public class SatelliteSessionPlaybackTests
             };
             await Task.Yield();
         }
+    }
+
+    private static async IAsyncEnumerable<AudioChunk> ThrowingAudio()
+    {
+        await Task.Yield();
+        throw new InvalidOperationException("synthesis failed");
+#pragma warning disable CS0162
+        yield break;
+#pragma warning restore CS0162
     }
 }

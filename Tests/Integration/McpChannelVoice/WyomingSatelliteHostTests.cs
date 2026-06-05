@@ -22,9 +22,18 @@ public class WyomingSatelliteHostTests
     {
         public TaskCompletionSource<ChannelMessageNotification> Tcs { get; } = new();
         public CapturingEmitter() : base(NullLogger<ChannelNotificationEmitter>.Instance) { }
-        public override Task EmitMessageNotificationAsync(ChannelMessageNotification p, CancellationToken ct = default)
+        public override Task EmitMessageNotificationAsync(
+            string conversationId, string sender, string content, string? agentId, string? location,
+            CancellationToken ct = default)
         {
-            Tcs.TrySetResult(p);
+            Tcs.TrySetResult(new ChannelMessageNotification
+            {
+                ConversationId = conversationId,
+                Sender = sender,
+                Content = content,
+                AgentId = agentId,
+                Location = location
+            });
             return Task.CompletedTask;
         }
     }

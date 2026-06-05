@@ -12,9 +12,18 @@ internal sealed class CapturingEmitter : ChannelNotificationEmitter
 
     public CapturingEmitter() : base(NullLogger<ChannelNotificationEmitter>.Instance) { }
 
-    public override Task EmitMessageNotificationAsync(ChannelMessageNotification p, CancellationToken ct = default)
+    public override Task EmitMessageNotificationAsync(
+        string conversationId, string sender, string content, string? agentId, string? location,
+        CancellationToken ct = default)
     {
-        Captured.Add(p);
+        Captured.Add(new ChannelMessageNotification
+        {
+            ConversationId = conversationId,
+            Sender = sender,
+            Content = content,
+            AgentId = agentId,
+            Location = location
+        });
         return Task.CompletedTask;
     }
 }

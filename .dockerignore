@@ -40,8 +40,6 @@ DockerCompose
 
 # Dev settings (not needed in container builds)
 **/Properties/launchSettings.json
-**/*.Development.json
-**/appsettings.Development.json
 *.sln
 .editorconfig
 global.json

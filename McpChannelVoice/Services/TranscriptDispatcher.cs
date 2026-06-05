@@ -1,5 +1,4 @@
 using Domain.Contracts;
-using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
@@ -56,15 +55,11 @@ public sealed class TranscriptDispatcher(
         var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct);
 
         await emitter.EmitMessageNotificationAsync(
-            new ChannelMessageNotification
-            {
-                ConversationId = conversationId,
-                Sender = session.Config.Identity,
-                Location = session.Config.Room,
-                Content = transcript.Text,
-                AgentId = agentId,
-                Timestamp = DateTimeOffset.UtcNow
-            },
+            conversationId,
+            session.Config.Identity,
+            transcript.Text,
+            agentId,
+            session.Config.Room,
             ct);
 
         await publisher.PublishAsync(
