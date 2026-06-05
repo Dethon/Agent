@@ -120,6 +120,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string? ConversationIdToReturn { get; init; }
 
+    public Action<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)>? OnReply { get; init; }
+
     public IAsyncEnumerable<ChannelMessage> Messages => _channel.Reader.ReadAllAsync();
 
     public List<(string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete)> SentReplies { get; } = [];
@@ -130,7 +132,9 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Task SendReplyAsync(string conversationId, string content, ReplyContentType contentType, bool isComplete, string? messageId, CancellationToken ct)
     {
-        SentReplies.Add((conversationId, content, contentType, isComplete));
+        var reply = (conversationId, content, contentType, isComplete);
+        SentReplies.Add(reply);
+        OnReply?.Invoke(reply);
         return Task.CompletedTask;
     }
 
@@ -317,6 +321,74 @@ public class ChatMonitorTests
         // Assert - each channel should receive replies for its own conversation
         channel1.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-1");
         channel2.SentReplies.ShouldAllBe(r => r.ConversationId == "conv-2");
+    }
+
+    [Fact]
+    public async Task Monitor_SecondMessageFromDifferentChannelInSameConversation_RepliesToThatChannel()
+    {
+        // A voice-started conversation is mirrored into WebChat under the SAME
+        // ConversationId, so both channels share AgentKey(ConversationId, AgentId) and
+        // the WebChat message joins the existing voice group. The reply to a message
+        // must follow the channel that actually sent it: when the user types into the
+        // WebChat conversation, the answer belongs in WebChat, not spoken on the voice
+        // satellite that originally opened it (which would also leave WebChat stuck
+        // "streaming" because it never receives the terminal StreamComplete).
+        var threadResolver = MonitorTestMocks.CreateThreadResolver();
+
+        var completes = 0;
+        var firstSpoken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondDelivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void track((string ConversationId, string Content, ReplyContentType ContentType, bool IsComplete) r)
+        {
+            if (r.ContentType != ReplyContentType.StreamComplete)
+            {
+                return;
+            }
+
+            var n = Interlocked.Increment(ref completes);
+            if (n == 1)
+            {
+                firstSpoken.TrySetResult();
+            }
+            else if (n == 2)
+            {
+                secondDelivered.TrySetResult();
+            }
+        }
+
+        var voice = new FakeChannelConnection { ChannelId = "voice", OnReply = track };
+        var webchat = new FakeChannelConnection { ChannelId = "webchat", OnReply = track };
+        var fakeAgent = MonitorTestMocks.CreateAgent();
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(fakeAgent);
+
+        var monitor = new ChatMonitor(
+            [voice, webchat],
+            agentFactory,
+            MonitorTestMocks.CreateApprovalHandlerFactory(),
+            threadResolver,
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = monitor.Monitor(cts.Token);
+
+        // User speaks: voice opens conversation "7:42".
+        voice.WriteMessage(MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "voice", agentId: "jonas"));
+        await firstSpoken.Task.WaitAsync(cts.Token);
+
+        // User then types in the SAME conversation from WebChat.
+        webchat.WriteMessage(MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "webchat", agentId: "jonas"));
+        await secondDelivered.Task.WaitAsync(cts.Token);
+
+        voice.Complete();
+        webchat.Complete();
+        await run;
+
+        webchat.SentReplies.ShouldContain(r =>
+            r.ContentType == ReplyContentType.StreamComplete && r.IsComplete);
     }
 
     [Fact]

@@ -116,7 +116,8 @@ public class ChatMonitor(
         // 2) The approval handler must route to the delivery target's channel, not
         //    the origin. Schedule/ServiceBus channels auto-approve silently, so
         //    binding to the origin would hide tool calls from the user in WebChat.
-        // Resolved once per group; reused for every message.
+        // These first-message targets anchor the group-level persistence key and
+        // approval handler; per-message reply delivery is resolved separately below.
         var first = await group.FirstAsync(ct);
         var targets = await ResolveDeliveryTargetsAsync(first.Message, first.Channel, channels, ct, logger);
         var (approvalChannel, approvalConversationId) = targets.Count > 0
@@ -143,18 +144,29 @@ public class ChatMonitor(
         var warmup = agent.WarmupSessionAsync(thread, linkedCt);
 
         var aiResponses = group.Prepend(first)
-            .Select(async (x, _, _) =>
+            .Select(async (x, index, _) =>
             {
                 var command = ChatCommandParser.Parse(x.Message.Content);
                 switch (command)
                 {
                     case ChatCommand.Clear:
                         await threadResolver.ClearAsync(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets)>();
                     case ChatCommand.Cancel:
                         threadResolver.Cancel(agentKey);
-                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, AiResponse? Response)>();
+                        return AsyncEnumerable.Empty<(AgentResponseUpdate Update, IReadOnlyList<DeliveryTarget> Targets)>();
                     default:
+                        // Deliver each message's reply to the channel that actually sent
+                        // it. The group is keyed only by (ConversationId, AgentId), so a
+                        // later message from a different channel — e.g. the user typing in
+                        // WebChat inside a voice-started conversation — joins this same
+                        // group. The group-level `targets` cover the first/initiating
+                        // message and any ReplyTo fan-out (re-resolving the latter would
+                        // re-mint conversations); a subsequent plain interactive message is
+                        // routed back to its own origin instead of the opening channel.
+                        var messageTargets = index == 0 || x.Message.ReplyTo is { Count: > 0 }
+                            ? targets
+                            : await ResolveDeliveryTargetsAsync(x.Message, x.Channel, channels, linkedCt, logger);
                         var userMessage = new ChatMessage(ChatRole.User, x.Message.Content);
                         userMessage.SetSenderId(x.Message.Sender);
                         userMessage.SetLocation(x.Message.Location);
@@ -184,14 +196,15 @@ public class ChatMonitor(
                                         await metricsPublisher.PublishAsync(evt, completionCt);
                                     }
                                 },
-                                linkedCt);
+                                linkedCt)
+                            .Select(pair => (Update: pair.Item1, Targets: messageTargets));
                 }
             })
             .Merge(linkedCt);
 
-        await foreach (var (update, _) in aiResponses.WithCancellation(ct))
+        await foreach (var (update, replyTargets) in aiResponses.WithCancellation(ct))
         {
-            await DeliverUpdateAsync(update, targets, ct);
+            await DeliverUpdateAsync(update, replyTargets, ct);
             yield return true;
         }
     }
