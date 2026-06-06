@@ -589,7 +589,7 @@ services:
   wyoming-piper:
     image: rhasspy/wyoming-piper:latest
     container_name: wyoming-piper
-    command: --voice es_ES-carlfm-high --length-scale 1.185 --noise-w-scale 0.4 --noise-scale 0.4 --uri tcp://0.0.0.0:10200
+    command: --voice es_ES-carlfm-high --length-scale 1.19 --noise-w-scale 0.4 --noise-scale 0.4 --uri tcp://0.0.0.0:10200
     volumes:
       - ./volumes/piper-data:/data
     restart: unless-stopped
