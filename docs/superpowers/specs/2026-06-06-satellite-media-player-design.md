@@ -241,6 +241,19 @@ Each slice ends in a clean commit and a passing test suite.
 - **`module-role-ducking` availability** on the chosen Pi OS image — WirePlumber rule fallback identified in Slice 2.
 - **Fleet migration cost** (Pi 4 across all rooms) — accepted; provisioning is scripted to keep per-unit effort low.
 
+## Decision record: why not linux-voice-assistant / ESPHome?
+
+*Added 2026-06-06 after evaluating [OHF-Voice/linux-voice-assistant](https://github.com/OHF-Voice/linux-voice-assistant) (LVA), the officially-blessed successor to `wyoming-satellite`. It exposes a `media_player` entity natively — exactly what this spec builds with Snapcast — so the question "should we just migrate the satellites to LVA instead?" is legitimate and is recorded here.*
+
+**Decision: stay on the Wyoming/agent-owned model; do not migrate satellites to LVA.**
+
+- **LVA inverts who owns voice.** LVA speaks the **ESPHome native API** (`aioesphomeapi`), not Wyoming; an LVA Pi auto-discovers into Home Assistant as an `assist_satellite` (+ `media_player`) device, and **HA's Assist pipeline owns STT/TTS/intent**. Our architecture is the inverse and deliberate: the **LLM agent (`mycroft`, via MCP) is the brain**, and voice is just one channel feeding it like Telegram/WebChat. Migrating would demote the agent and route voice through HA. (Repo description: "Voice satellite for Home Assistant using the ESPHome protocol"; `pyproject.toml` pins `aioesphomeapi`, no Wyoming dependency.)
+- **What a migration would cost us.** `McpChannelVoice` owns the satellite session and routes transcripts to the agent over MCP. Going HA-native would surrender or force rewrites of: agent routing (voice → our LLM), the `voice:` scheduling targets (`VoiceDeliveryRegistry` + `CreateConversationTool`), the announce endpoint, the playback priority/preemption queue, approval-over-voice, and the custom voice metrics — all of which assume hub session ownership.
+- **"Wyoming" is not deprecated — only the *satellite firmware* is.** The Wyoming **protocol** (`OHF-Voice/wyoming`, used for Whisper/Piper/openWakeWord) is actively maintained and not deprecated. Only **`wyoming-satellite`** (the Python firmware on the Pis) is archived/read-only, with a banner naming LVA as its replacement. So the deprecation pressure is on a replaceable on-device component, not on our hub's STT/TTS path.
+- **`media_player`-for-free does not justify the inversion.** LVA's native `media_player` is the main pull, but **this spec already delivers that capability via Snapcast without surrendering agent ownership** — and keeps music decoupled from voice. Re-architecting voice around HA to obtain something we can already have is a poor trade, especially given LVA is self-labeled "experimental" and ~1 year old.
+
+**Follow-on watch item (not part of this spec):** treat `wyoming-satellite`'s archival as low-urgency. It works today and speaks a maintained protocol to our hub; if a future OS update breaks it, the contained fix is a thin on-device Wyoming shim, which preserves this architecture. The *only* migration that would keep the agent as the brain is a separate, larger project — an **HA conversation integration that forwards Assist → our MCP agent** — to be considered only if HA-native satellites are ever explicitly wanted.
+
 ## Style and layering rules to honour during implementation
 
 - Per repo policy, any new environment variable/config key is added to `DockerCompose/docker-compose.yml`, `DockerCompose/.env` (secrets only), `appsettings.json`, and `appsettings.Development.json` **in the same change**. This spec intentionally introduces **none** — if the dedicated-`snapserver` alternative is chosen and needs a host/port key, it must follow this rule.
