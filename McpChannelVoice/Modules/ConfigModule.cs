@@ -85,9 +85,11 @@ public static class ConfigModule
         services.AddSingleton<ReplyTextAccumulator>();
 
         services.AddSingleton<ITextToSpeech>(sp =>
-            new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
-                settings.Tts.Wyoming,
-                sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()));
+            McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
+                new McpChannelVoice.Services.Tts.WyomingTextToSpeech(
+                    settings.Tts.Wyoming,
+                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.WyomingTextToSpeech>>()),
+                settings.Tts.Wyoming.TrailingSilenceTrimThreshold));
 
         services.AddHostedService<WyomingHealthProbeService>();
 
