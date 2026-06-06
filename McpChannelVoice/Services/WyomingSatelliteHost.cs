@@ -218,12 +218,15 @@ public sealed class WyomingSatelliteHost(
                 {
                     PublishVoiceMetric(VoiceMetric.WakeTriggered, session); // on-device wake started this conversation
                 }
+                // Same no-speech window on the wake turn as on follow-ups: a wake with no speech
+                // (false trigger, user changes their mind) must re-arm after WindowMs instead of
+                // holding the mic open until the far-larger max-utterance cap.
                 return session.OpenCapture(new SilenceGate(
                     settings.SilenceRmsThreshold,
                     TimeSpan.FromMilliseconds(settings.TrailingSilenceMs),
                     TimeSpan.FromMilliseconds(settings.MaxUtteranceMs),
                     TimeSpan.FromMilliseconds(settings.MinSpeechMs),
-                    noSpeechTimeout: isFollowUp ? TimeSpan.FromMilliseconds(followUp.WindowMs) : TimeSpan.Zero));
+                    noSpeechTimeout: TimeSpan.FromMilliseconds(followUp.WindowMs)));
             },
             CloseCapture = session.CloseCapture,
             TranscribeAndDispatch = (audio, isFollowUp, token) =>

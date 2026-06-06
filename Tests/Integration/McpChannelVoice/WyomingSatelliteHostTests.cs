@@ -420,6 +420,100 @@ public class WyomingSatelliteHostTests
         catch { }
     }
 
+    [Fact]
+    public async Task Hub_WakeThenSilence_ReArmsWithoutWaitingForMaxUtterance()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var ct = cts.Token;
+
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var sawTranscript = new TaskCompletionSource<string>();
+        var data = new JsonObject { ["rate"] = 16_000, ["width"] = 2, ["channels"] = 1 };
+
+        var fakeSatellite = Task.Run(async () =>
+        {
+            using var conn = await listener.AcceptTcpClientAsync(ct);
+            await using var stream = conn.GetStream();
+            var reader = new WyomingReader(stream);
+            var writer = new WyomingWriter(stream);
+            var sawRun = new TaskCompletionSource();
+
+            var readLoop = Task.Run(async () =>
+            {
+                await foreach (var evt in reader.ReadAllAsync(ct))
+                {
+                    if (evt.Type == "run-satellite")
+                    { sawRun.TrySetResult(); }
+                    else if (evt.Type == "transcript")
+                    { sawTranscript.TrySetResult(evt.Data["text"]?.GetValue<string>() ?? ""); }
+                }
+            }, ct);
+
+            await sawRun.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            await writer.WriteAsync(WyomingEvent.Header("run-pipeline", new JsonObject()), ct);
+
+            // Wake fired but the user says nothing: stream ONLY silence. ~1.2s (12 chunks) exceeds the
+            // 800ms no-speech window yet stays well under the 3000ms max-utterance cap.
+            foreach (var _ in Enumerable.Range(0, 12))
+            {
+                await writer.WriteAsync(WyomingEvent.WithPayload("audio-chunk", data.DeepClone().AsObject(), Pcm(0)), ct);
+            }
+            await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        }, ct);
+
+        var dispatched = new List<string>();
+        var emitter = new CollectingEmitter(dispatched, new TaskCompletionSource(), expected: 99);
+
+        var stt = new Mock<ISpeechToText>();
+        stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .Returns<IAsyncEnumerable<AudioChunk>, TranscriptionOptions, CancellationToken>(async (audio, opts, token) =>
+            {
+                await foreach (var _ in audio.WithCancellation(token))
+                { }
+                return new TranscriptionResult { Text = "hola", Language = "es", Confidence = 0.9 };
+            });
+
+        var publisher = new Mock<IMetricsPublisher>();
+        var factory = new Mock<IConversationFactory>();
+        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var identity = ConversationIdGenerator.CreateFor("topic-x");
+                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1", "household @ Kitchen", DateTimeOffset.UtcNow, null);
+                return new ConversationCreation(identity, topic);
+            });
+        var manager = new VoiceConversationManager(factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
+        var dispatcher = new TranscriptDispatcher(emitter, publisher.Object, manager, 0.4, NullLogger<TranscriptDispatcher>.Instance);
+        var sessions = new SatelliteSessionRegistry();
+        var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
+        {
+            ["kitchen-01"] = new() { Identity = "household", Room = "Kitchen", WakeWord = "hey_jarvis", Address = $"tcp://127.0.0.1:{port}" }
+        });
+
+        var host = new WyomingSatelliteHost(
+            new WyomingClientSettings { ReconnectDelaySeconds = 1, SilenceRmsThreshold = 500, TrailingSilenceMs = 200, MaxUtteranceMs = 3000, MinSpeechMs = 100 },
+            new VoiceSettings { AgentId = "mycroft", FollowUp = new FollowUpSettings { Enabled = true, Chime = false, PlaybackTailMs = 0, WindowMs = 800 } },
+            registry, sessions, manager, stt.Object, dispatcher, publisher.Object, TimeProvider.System, NullLogger<WyomingSatelliteHost>.Instance);
+
+        await host.StartAsync(ct);
+
+        // The no-speech window must fire on the wake turn too: re-arm with the closing (empty)
+        // transcript instead of holding the mic open until the max-utterance cap, and never dispatch.
+        var transcriptText = await sawTranscript.Task.WaitAsync(TimeSpan.FromSeconds(8), ct);
+        transcriptText.ShouldBe("");
+        dispatched.Count.ShouldBe(0);
+
+        await host.StopAsync(CancellationToken.None);
+        listener.Stop();
+        await cts.CancelAsync();
+        try
+        { await fakeSatellite; }
+        catch { }
+    }
+
     private static async Task WaitForCountAsync(List<string> list, int count, TimeSpan timeout)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();

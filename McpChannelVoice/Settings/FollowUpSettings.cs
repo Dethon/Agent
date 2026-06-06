@@ -6,8 +6,8 @@ public record FollowUpSettings
     // immediately after each utterance and the satellite re-arms wake every turn.
     public bool Enabled { get; init; } = true;
 
-    // How long the re-opened mic waits for the user to START speaking before the
-    // conversation falls back to wake-required mode.
+    // How long an open mic waits for the user to START speaking before the conversation falls
+    // back to wake-required mode. Applies to both the wake turn and follow-up turns.
     public int WindowMs { get; init; } = 7000;
 
     // Echo guard: discard mic after playback for this long before opening the window,
