@@ -1214,7 +1214,7 @@ Add the coordinator factory (delegates carry all the per-connection I/O). Replac
     private FollowUpConversation BuildCoordinator(
         string id, SatelliteConfig config, WyomingClient client, SatelliteSession session, FollowUpSettings followUp)
     {
-        return new FollowUpConversation(followUp, settings, time, logger)
+        return new FollowUpConversation(followUp, time)
         {
             OpenCapture = isFollowUp =>
             {

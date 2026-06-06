@@ -149,7 +149,7 @@ public class SatelliteSessionPlaybackTests
         var drained = new List<string>();
         var firstChunkWritten = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        async IAsyncEnumerable<AudioChunk> Gated(
+        async IAsyncEnumerable<AudioChunk> gated(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token = default)
         {
             yield return new AudioChunk { Data = new byte[16], Format = AudioFormat.WyomingStandard };
@@ -164,7 +164,7 @@ public class SatelliteSessionPlaybackTests
         var job = new PlaybackJob(
             Label: "reply:kitchen-01",
             Priority: AnnouncePriority.Normal,
-            Audio: Gated(),
+            Audio: gated(),
             OnStarted: _ => Task.CompletedTask,
             OnPreempted: _ => Task.CompletedTask,
             OnDrained: () => { drained.Add("reply:kitchen-01"); return Task.CompletedTask; });
@@ -207,7 +207,7 @@ public class SatelliteSessionPlaybackTests
         var loud = new byte[3200];
         for (var i = 0; i < loud.Length; i += 2)
         { loud[i] = 0x40; loud[i + 1] = 0x1F; }
-        AudioChunk Loud() => new() { Data = loud, Format = AudioFormat.WyomingStandard };
+        AudioChunk loudChunk() => new() { Data = loud, Format = AudioFormat.WyomingStandard };
         var silent = new AudioChunk { Data = new byte[3200], Format = AudioFormat.WyomingStandard };
 
         // No active capture: routing is a safe no-op.
@@ -220,8 +220,8 @@ public class SatelliteSessionPlaybackTests
             minSpeech: TimeSpan.FromMilliseconds(100)));
 
         // Speech then trailing silence routed through the session must end the active capture.
-        session.RouteAudio(Loud());
-        session.RouteAudio(Loud());
+        session.RouteAudio(loudChunk());
+        session.RouteAudio(loudChunk());
         session.RouteAudio(silent);
         session.RouteAudio(silent);
 
@@ -229,7 +229,7 @@ public class SatelliteSessionPlaybackTests
 
         // After close, routing must not reach any capture (no throw, no effect).
         session.CloseCapture();
-        Should.NotThrow(() => session.RouteAudio(Loud()));
+        Should.NotThrow(() => session.RouteAudio(loudChunk()));
     }
 
     private static async IAsyncEnumerable<AudioChunk> GenerateAudio(string label, int count)
